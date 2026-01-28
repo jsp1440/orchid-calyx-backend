@@ -99,3 +99,136 @@ class AwardOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class OrganizationCreate(BaseModel):
+    name: str
+
+
+class OrganizationOut(BaseModel):
+    id: str
+    name: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ContactCreate(BaseModel):
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    city: Optional[str] = None
+    contact_type: Optional[str] = None
+
+
+class ContactOut(BaseModel):
+    id: str
+    organization_id: Optional[str]
+    show_id: Optional[str]
+    name: str
+    email: Optional[str]
+    phone: Optional[str]
+    city: Optional[str]
+    contact_type: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class MessageTemplateCreate(BaseModel):
+    name: str
+    audience: Optional[str] = None
+    subject_template: Optional[str] = None
+    body_template: Optional[str] = None
+
+
+class MessageTemplateOut(BaseModel):
+    id: str
+    organization_id: Optional[str]
+    show_id: Optional[str]
+    name: str
+    audience: Optional[str]
+    subject_template: Optional[str]
+    body_template: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TemplateRenderRequest(BaseModel):
+    variables: dict
+
+
+class TemplateRenderResponse(BaseModel):
+    subject: str
+    body: str
+
+
+class EventCreate(BaseModel):
+    title: str
+    starts_at: datetime
+    ends_at: Optional[datetime] = None
+    category: Optional[str] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class EventOut(BaseModel):
+    id: str
+    show_id: str
+    title: str
+    starts_at: datetime
+    ends_at: Optional[datetime]
+    category: Optional[str]
+    location: Optional[str]
+    notes: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FileCreate(BaseModel):
+    filename: str
+    content_type: Optional[str] = None
+    size_bytes: Optional[str] = None
+    storage_key: Optional[str] = None
+    uploaded_by: Optional[str] = None
+
+
+class FileOut(BaseModel):
+    id: str
+    show_id: str
+    filename: str
+    content_type: Optional[str]
+    size_bytes: Optional[str]
+    storage_key: Optional[str]
+    uploaded_by: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class IntegrationCreate(BaseModel):
+    provider: str
+    status: Optional[str] = "disabled"
+    display_name: Optional[str] = None
+    config_json: Optional[str] = None
+
+
+class IntegrationOut(BaseModel):
+    id: str
+    organization_id: Optional[str]
+    show_id: Optional[str]
+    provider: str
+    status: str
+    display_name: Optional[str]
+    config_json: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

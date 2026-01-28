@@ -7,6 +7,13 @@ _SessionLocal = None
 
 
 def get_database_url():
+    pghost = os.getenv("PGHOST")
+    if pghost:
+        pguser = os.getenv("PGUSER", "postgres")
+        pgpassword = os.getenv("PGPASSWORD", "")
+        pgdatabase = os.getenv("PGDATABASE", "postgres")
+        pgport = os.getenv("PGPORT", "5432")
+        return f"postgresql://{pguser}:{pgpassword}@{pghost}:{pgport}/{pgdatabase}"
     return os.getenv("DATABASE_URL", "sqlite:///./calyx.db")
 
 
@@ -17,8 +24,6 @@ def get_engine():
         connect_args = {}
         if database_url.startswith("sqlite"):
             connect_args["check_same_thread"] = False
-        if database_url.startswith("postgresql") and "sslmode=" not in database_url:
-            connect_args["sslmode"] = "require"
         _engine = create_engine(
             database_url,
             pool_pre_ping=True,

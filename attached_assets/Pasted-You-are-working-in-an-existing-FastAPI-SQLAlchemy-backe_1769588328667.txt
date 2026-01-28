@@ -1,0 +1,95 @@
+You are working in an existing FastAPI + SQLAlchemy backend repo.
+
+DO NOT restructure the project.
+DO NOT move files, rename modules, or refactor unrelated code.
+Make only additive changes (new files + small router additions).
+
+Project name: Calyx Backend (Orchid Show Management System)
+Tagline: Powered by the Orchid Continuum
+Judging criteria are configurable and NOT part of this task.
+
+GOAL (Phase 1):
+Implement “Org-level defaults + Show overrides” for:
+1) Contacts
+2) Message Templates
+3) Documents (metadata only; storage can be local placeholder)
+4) Events (and ICS export)
+5) Integrations Status (manual now, OAuth later)
+
+REQUIREMENTS
+A) Data Model (SQLAlchemy)
+Add new models with org defaults + show overrides:
+- Organization (already exists) is the root.
+- Add or confirm Show.organization_id exists.
+Add these tables (or equivalents) with timestamps:
+1) contacts
+   - id, organization_id (nullable), show_id (nullable)
+   - name, email, phone, city, contact_type
+2) message_templates
+   - id, organization_id (nullable), show_id (nullable)
+   - name, audience, subject_template, body_template
+3) message_logs
+   - id, show_id
+   - channel, to_contact_id (nullable), to_raw, subject, body
+   - status (drafted/copied/sent_external/failed)
+4) events
+   - id, show_id
+   - title, starts_at, ends_at, category, location, notes
+5) files
+   - id, show_id
+   - filename, content_type, size_bytes, storage_key, uploaded_by
+6) integration_connections
+   - id, organization_id (nullable), show_id (nullable)
+   - provider, status (disabled/manual/connected/error)
+   - display_name, config_json
+
+Org-defaults + show-overrides rule:
+- A record is “org default” if organization_id is set and show_id is NULL.
+- A record is “show override” if show_id is set.
+- When listing for a show: return (org defaults for that show’s org) UNION (show-specific), where show-specific can “override” by name when applicable (templates, contacts optional).
+Keep it simple: for v1, do NOT implement complex override resolution except for templates:
+- For templates: if show has a template with same name as an org template, prefer show version.
+
+B) API Routes (new router file only)
+Add app/api/calyx_core_api.py with these endpoints:
+AUTH: For now, NO auth required (demo mode). Do not add API key requirements.
+
+Organizations / Shows:
+- GET /api/organizations
+- POST /api/organizations
+- GET /api/organizations/{org_id}/shows
+- POST /api/organizations/{org_id}/shows
+
+Contacts:
+- GET /api/shows/{show_id}/contacts
+- POST /api/shows/{show_id}/contacts
+
+Templates:
+- GET /api/shows/{show_id}/templates
+- POST /api/shows/{show_id}/templates
+- POST /api/shows/{show_id}/templates/{template_id}/render  (accepts variables JSON, returns subject+body)
+
+Events:
+- GET /api/shows/{show_id}/events
+- POST /api/shows/{show_id}/events
+- GET /api/shows/{show_id}/events/ics   (returns ICS file text)
+
+Files (metadata only):
+- GET /api/shows/{show_id}/files
+- POST /api/shows/{show_id}/files (metadata create; storage_key can be placeholder)
+
+Integrations:
+- GET /api/shows/{show_id}/integrations
+- POST /api/shows/{show_id}/integrations (set status/manual config)
+
+C) Wiring
+- Add the router include to app/api/router.py under prefix="/api" WITHOUT changing existing routers.
+
+D) Database
+- Use DATABASE_URL from environment.
+- If migrations aren’t present, keep current behavior; do not introduce Alembic in this step.
+
+E) Output
+1) List exactly which files you added/edited.
+2) Provide a short “How to run” note.
+3) Print the full list of endpoints.

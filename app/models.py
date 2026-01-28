@@ -14,6 +14,7 @@ class Show(Base):
     __tablename__ = "shows"
 
     id = Column(String, primary_key=True, default=generate_uuid)
+    organization_id = Column(String, ForeignKey("organizations.id"), nullable=True)
     name = Column(String, nullable=False)
     start_date = Column(Date, nullable=False)
     location = Column(String, nullable=True)
@@ -50,4 +51,94 @@ class Award(Base):
     entry_id = Column(String, ForeignKey("entries.id"), nullable=False)
     award_name = Column(String, nullable=False)
     level = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    slug = Column(String, nullable=True)
+    name = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Contact(Base):
+    __tablename__ = "contacts"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    organization_id = Column(String, ForeignKey("organizations.id"), nullable=True)
+    show_id = Column(String, ForeignKey("shows.id"), nullable=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    contact_type = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MessageTemplate(Base):
+    __tablename__ = "message_templates"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    organization_id = Column(String, ForeignKey("organizations.id"), nullable=True)
+    show_id = Column(String, ForeignKey("shows.id"), nullable=True)
+    name = Column(String, nullable=False)
+    audience = Column(String, nullable=True)
+    subject_template = Column(Text, nullable=True)
+    body_template = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MessageLog(Base):
+    __tablename__ = "message_logs"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    show_id = Column(String, ForeignKey("shows.id"), nullable=False)
+    channel = Column(String, nullable=True)
+    to_contact_id = Column(String, ForeignKey("contacts.id"), nullable=True)
+    to_raw = Column(String, nullable=True)
+    subject = Column(String, nullable=True)
+    body = Column(Text, nullable=True)
+    status = Column(String, default="drafted")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Event(Base):
+    __tablename__ = "events"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    show_id = Column(String, ForeignKey("shows.id"), nullable=False)
+    title = Column(String, nullable=False)
+    starts_at = Column(DateTime, nullable=False)
+    ends_at = Column(DateTime, nullable=True)
+    category = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class File(Base):
+    __tablename__ = "files"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    show_id = Column(String, ForeignKey("shows.id"), nullable=False)
+    filename = Column(String, nullable=False)
+    content_type = Column(String, nullable=True)
+    size_bytes = Column(String, nullable=True)
+    storage_key = Column(String, nullable=True)
+    uploaded_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class IntegrationConnection(Base):
+    __tablename__ = "integration_connections"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    organization_id = Column(String, ForeignKey("organizations.id"), nullable=True)
+    show_id = Column(String, ForeignKey("shows.id"), nullable=True)
+    provider = Column(String, nullable=False)
+    status = Column(String, default="disabled")
+    display_name = Column(String, nullable=True)
+    config_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
