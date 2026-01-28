@@ -7,7 +7,7 @@ _SessionLocal = None
 
 
 def get_database_url():
-    return os.getenv("DATABASE_URL", "sqlite:///./orchid_judge.db")
+    return os.getenv("DATABASE_URL", "sqlite:///./calyx.db")
 
 
 def get_engine():
@@ -41,6 +41,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-
-engine = property(lambda self: get_engine())

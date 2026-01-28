@@ -1,0 +1,67 @@
+You are building the backend for “Calyx” — an Orchid Show Management System powered by the Orchid Continuum.
+
+STACK
+- Python + FastAPI
+- SQLAlchemy
+- Alembic migrations
+- Postgres via DATABASE_URL (from Replit Secrets)
+- Must also run locally with SQLite fallback if DATABASE_URL is not set
+- Must support Replit Deployments port via $PORT
+
+REQUIREMENTS
+1) App starts reliably in Replit Deployments:
+   - Run command must be compatible with $PORT
+   - No database table creation at import time
+   - Initialize DB lazily during startup or first request
+
+2) CORS:
+   - Allow configurable origins via env var CORS_ALLOW_ORIGINS (comma-separated)
+   - During prototype default to allow all origins
+
+3) Health endpoint:
+   GET /health -> returns {"status":"ok"}
+
+4) Tile registry endpoint (frontend depends on this):
+   GET /api/tiles/registry -> returns JSON describing UI tiles (id, title, route, role_visibility, status)
+
+5) Core data models (minimal but real):
+   - Show (name, start_date, location)
+   - Entry (exhibitor_name, plant_name, class_code, status)
+   - VolunteerTask (title, assigned_to, status)
+   - Award (entry_id, award_name, level)
+Provide CRUD endpoints for these under /api/...
+
+6) Authentication (prototype-friendly):
+   - Implement optional shared API key auth:
+     If CALYX_API_KEY is set in env, require header X-API-Key to match for all /api/* routes (but NOT /health).
+     If not set, allow open access (prototype mode).
+
+7) Documentation:
+   - /docs enabled
+   - Create a README with:
+     - run command
+     - env vars needed
+     - example curl calls
+     - the exact JSON schema for /api/tiles/registry
+
+FILE STRUCTURE
+app/
+  main.py
+  database.py
+  models.py
+  schemas.py
+  deps.py
+  routers/
+    health.py
+    tiles.py
+    shows.py
+    entries.py
+    volunteers.py
+    awards.py
+  security.py
+alembic/ + migrations
+
+OUTPUT
+- Create the full project with working endpoints.
+- Ensure the deployment does not crash loop.
+- Provide the exact Replit Deployments Run Command to use.
