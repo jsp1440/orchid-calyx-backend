@@ -30,6 +30,10 @@ waitForPort = 3000
 [workflows.workflow.metadata]
 outputType = "console"
 
+[deployment]
+run = ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3000"]
+deploymentTarget = "autoscale"
+
 [[ports]]
 localPort = 3000
-externalPort = 3000
+externalPort = 80

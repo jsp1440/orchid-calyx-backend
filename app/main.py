@@ -1,10 +1,11 @@
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import engine
-from app.migrations.run_migrations import run_migrations
 from app.api.router import router
+
+log = logging.getLogger("orchid_judge")
 
 app = FastAPI(title="Orchid Judge App")
 
@@ -16,15 +17,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-if os.getenv("AUTO_CREATE_TABLES", "1") == "1":
-    run_migrations(engine)
-
 app.include_router(router)
+
 
 @app.get("/")
 def root():
     return {"status": "ok"}
 
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.on_event("startup")
+def startup():
+    auto = os.getenv("AUTO_CREATE_TABLES", "0") == "1"
+    if not auto:
+        log.info("AUTO_CREATE_TABLES is off; skipping migrations.")
+        return
+
+    try:
+        from app.database import get_engine
+        from app.migrations.run_migrations import run_migrations
+        run_migrations(get_engine())
+        log.info("Migrations ran successfully.")
+    except Exception as e:
+        log.exception("Startup migrations failed (continuing anyway): %s", e)
