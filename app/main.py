@@ -5,9 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import router
 
-log = logging.getLogger("orchid_judge")
+log = logging.getLogger("calyx")
 
-app = FastAPI(title="Orchid Judge App")
+app = FastAPI(title="Calyx - Orchid Show Management System")
 
 app.add_middleware(
     CORSMiddleware,
