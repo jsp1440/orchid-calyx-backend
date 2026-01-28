@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy>=2.0
+psycopg2-binary
+pydantic
+python-multipart
+fastapi
+pydantic
+python-multipart
+sqlalchemy
+uvicorn
