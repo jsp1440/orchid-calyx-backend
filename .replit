@@ -22,18 +22,18 @@ args = "Orchid Judge API"
 name = "Orchid Judge API"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "uvicorn app.main:app --host 0.0.0.0 --port 3000"
-waitForPort = 3000
-
 [workflows.workflow.metadata]
 outputType = "console"
 
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}"
+waitForPort = 3000
+
 [deployment]
-run = ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3000"]
+run = ["bash", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}"]
 deploymentTarget = "autoscale"
 
 [[ports]]
 localPort = 3000
-externalPort = 80
+externalPort = 3000
