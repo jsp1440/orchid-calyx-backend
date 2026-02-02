@@ -2,7 +2,7 @@ import os
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from fastapi.middleware.cors import CORSMiddleware
 from app.routers import health, tiles, shows, entries, volunteers, awards, calyx_core
 
 logging.basicConfig(level=logging.INFO)
@@ -10,7 +10,8 @@ log = logging.getLogger("calyx")
 
 app = FastAPI(
     title="Calyx - Orchid Show Management System",
-    description="Backend API for orchid show operations, entries, volunteers, and judging. Powered by Orchid Continuum.",
+    description=
+    "Backend API for orchid show operations, entries, volunteers, and judging. Powered by Orchid Continuum.",
     version="1.0.0",
 )
 
@@ -18,7 +19,9 @@ cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "*")
 if cors_origins_env == "*":
     allow_origins = ["*"]
 else:
-    allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+    allow_origins = [
+        o.strip() for o in cors_origins_env.split(",") if o.strip()
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -55,4 +58,5 @@ def startup():
         Base.metadata.create_all(bind=get_engine())
         log.info("Database tables created/verified successfully.")
     except Exception as e:
-        log.exception("Database initialization failed (continuing anyway): %s", e)
+        log.exception("Database initialization failed (continuing anyway): %s",
+                      e)
