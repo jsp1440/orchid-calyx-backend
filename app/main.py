@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import health, tiles, shows, entries, volunteers, awards, calyx_core
+from app.routers import health, tiles, shows, entries, volunteers, awards, calyx_core, reference_docs
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("calyx")
@@ -38,6 +38,7 @@ app.include_router(entries.router)
 app.include_router(volunteers.router)
 app.include_router(awards.router)
 app.include_router(calyx_core.router)
+app.include_router(reference_docs.router, prefix="/api", tags=["Reference Documents"])
 
 
 @app.get("/")

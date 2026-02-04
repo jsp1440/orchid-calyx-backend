@@ -1,0 +1,76 @@
+You are working on the Calyx (Orchid Bloom) backend in Replit.
+
+Goal:
+Implement a “System Reference Documents” feature to store official AOS judging PDFs (and similar show documents) as immutable, versioned assets in the backend, and expose read-only access to the frontend.
+
+Key requirements:
+1) Storage:
+- Store uploaded PDFs in a server-side storage path (e.g., /data/reference_docs/) OR in object storage if available.
+- Do not store the entire PDF binary in Postgres; store only metadata in Postgres.
+- Compute SHA-256 hash on upload to detect duplicates and ensure immutability.
+
+2) Document Types:
+Support at least these document_type enums:
+- AOS_JUDGING_SCORE_SHEET
+- AOS_JUDGING_ENTRY_FORM
+- AOS_AWARDS_CRITERIA_CCM_CCE_AQ
+- AOS_JUDGES_STYLE_BOOK
+- OTHER_REFERENCE
+
+3) Database:
+Create a table: system_reference_documents
+Fields:
+- id (uuid)
+- document_type (text enum)
+- title (text)
+- version_label (text) e.g., "v1", "2024-10", etc.
+- source_org (text) default "AOS"
+- source_url (text nullable)
+- file_path (text) OR storage_key (text)
+- mime_type (text)
+- file_size_bytes (int)
+- sha256 (text)
+- is_active (boolean default true)
+- created_at, updated_at
+- notes (text nullable)
+
+4) API Endpoints (Express or Fastify):
+- POST /api/admin/reference-docs
+  - multipart/form-data upload (pdf)
+  - body fields: document_type, title, version_label, source_url (optional), notes (optional)
+  - compute sha256, save file, create db row
+  - if sha256 already exists for same document_type+version_label, reject or return existing record
+
+- GET /api/reference-docs
+  - returns list of active docs (id, type, title, version, source_url, file_size, updated_at)
+
+- GET /api/reference-docs/:id/download
+  - streams the pdf file
+  - set Content-Disposition: inline; filename="..."
+  - read-only: no edits
+
+- (optional) GET /api/reference-docs/:id
+  - metadata only
+
+- (optional admin) PATCH /api/admin/reference-docs/:id
+  - can toggle is_active and update notes (but cannot replace the file binary once uploaded)
+
+5) Security:
+- Admin upload endpoints require an admin role (or an ADMIN_API_KEY header).
+- Public read endpoints are allowed (or require authenticated show users—your call).
+- Absolutely forbid deletion by default; only deactivate with is_active=false.
+
+6) Frontend integration notes:
+- Frontend should fetch /api/reference-docs to show “Official AOS Documents” under Judging & Awards > Help/Reference.
+- Judges can open PDFs from /download links.
+- Later: allow attaching a reference doc to a judging session or a show configuration.
+
+Deliverables:
+- Migration SQL for system_reference_documents
+- Backend routes + controllers
+- File storage utility with sha256 hashing
+- Minimal config for ADMIN_API_KEY
+- Clear README snippet explaining how to upload docs and how to retrieve them
+
+Important:
+Keep the implementation simple and robust for Replit. Do not add unnecessary frameworks. Provide complete code changes, not partial diffs.

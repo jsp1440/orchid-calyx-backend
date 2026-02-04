@@ -232,3 +232,52 @@ class IntegrationOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ReferenceDocumentCreate(BaseModel):
+    document_type: str
+    title: str
+    version_label: str
+    source_org: Optional[str] = "AOS"
+    source_url: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ReferenceDocumentOut(BaseModel):
+    id: str
+    document_type: str
+    title: str
+    version_label: str
+    source_org: str
+    source_url: Optional[str]
+    file_path: str
+    mime_type: str
+    file_size_bytes: int
+    sha256: str
+    is_active: bool
+    notes: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ReferenceDocumentListOut(BaseModel):
+    id: str
+    document_type: str
+    title: str
+    version_label: str
+    source_org: str
+    source_url: Optional[str]
+    file_size_bytes: int
+    is_active: bool
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ReferenceDocumentUpdate(BaseModel):
+    is_active: Optional[bool] = None
+    notes: Optional[str] = None

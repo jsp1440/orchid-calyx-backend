@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, datetime
-from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Text, Boolean, Integer
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -142,3 +142,22 @@ class IntegrationConnection(Base):
     display_name = Column(String, nullable=True)
     config_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SystemReferenceDocument(Base):
+    __tablename__ = "system_reference_documents"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    document_type = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    version_label = Column(String, nullable=False)
+    source_org = Column(String, default="AOS")
+    source_url = Column(String, nullable=True)
+    file_path = Column(String, nullable=False)
+    mime_type = Column(String, nullable=False)
+    file_size_bytes = Column(Integer, nullable=False)
+    sha256 = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
