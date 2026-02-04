@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, datetime
-from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Text, Boolean, Integer
+from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Text, Boolean, Integer, UniqueConstraint
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -18,6 +18,7 @@ class Show(Base):
     name = Column(String, nullable=False)
     start_date = Column(Date, nullable=False)
     location = Column(String, nullable=True)
+    judging_locked = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -161,3 +162,29 @@ class SystemReferenceDocument(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Judge(Base):
+    __tablename__ = "judges"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ScoreSubmission(Base):
+    __tablename__ = "score_submissions"
+    __table_args__ = (
+        UniqueConstraint('show_id', 'entry_id', 'judge_id', name='uix_score_show_entry_judge'),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
+    entry_id = Column(String, ForeignKey("entries.id"), nullable=False, index=True)
+    judge_id = Column(String, ForeignKey("judges.id"), nullable=False, index=True)
+    total_points = Column(Integer, nullable=False)
+    points_breakdown = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -1,0 +1,103 @@
+REPLIT AI — MINIMAL DEMO JUDGING BACKEND PATCH (CALYX FastAPI + SQLAlchemy + Postgres)
+
+GOAL (DEMO BY THURSDAY)
+Add the smallest backend support needed so the Lovable frontend Judging module can be REAL (not fake):
+1) Add 2 new tables: judges, score_submissions
+2) Add 4 new endpoints:
+   - POST   /api/judges
+   - GET    /api/judges?show_id=
+   - POST   /api/score-submissions
+   - GET    /api/entries/{entry_id}/scores
+3) Add show locking:
+   - Add shows.judging_locked boolean DEFAULT false
+   - POST /api/score-submissions must reject writes if show is locked (HTTP 409)
+
+HARD CONSTRAINTS
+- Do NOT refactor unrelated modules (Treasury/Volunteers/Marketing/etc).
+- Do NOT add Alembic or migrations. This repo uses Base.metadata.create_all() at startup.
+- Use existing project conventions:
+  - Models live in app/models.py (if that’s how this repo is structured)
+  - Routers live under app/routers/
+  - Schemas live where current Pydantic schemas live (app/schemas.py or app/schemas/* — follow existing)
+  - Security: preserve existing X-API-Key dependency pattern EXACTLY (reuse the same dependency function used by current routers).
+- Do NOT invent new tables beyond judges + score_submissions.
+- Do NOT invent authentication (no JWT). Use the existing API-key gating.
+
+DATA MODEL REQUIREMENTS (MINIMAL)
+A) Add to shows table:
+   - judging_locked: Boolean, default False, not null
+
+B) New table: judges
+   - id: PK
+   - show_id: int (indexed)  (match type used by shows.id)
+   - name: string (required)
+   - email: string (optional but recommended)
+   - created_at: timestamp (if repo uses created_at patterns; else omit)
+
+C) New table: score_submissions
+   - id: PK
+   - show_id: int (indexed)
+   - entry_id: int (indexed)
+   - judge_id: int (indexed)
+   - total_points: int (required)
+   - points_breakdown: JSON (nullable)  <-- store AOS criteria detail here if provided (Form/Color/Size/Substance/Floriferousness/Other), but keep optional
+   - notes: text (nullable)
+   - created_at: timestamp (if repo uses it; else omit)
+   - UNIQUE constraint: (show_id, entry_id, judge_id)  <-- prevent duplicate scoring
+
+ENDPOINT BEHAVIOR (DEMO-READY)
+1) POST /api/judges
+   Request JSON:
+     { "show_id": 1, "name": "Alex Judge", "email": "alex@example.com" }
+   Response JSON includes id + fields.
+
+2) GET /api/judges?show_id=1
+   Returns array of judges for that show.
+
+3) POST /api/score-submissions
+   Request JSON (minimum):
+     { "show_id": 1, "entry_id": 12, "judge_id": 3, "total_points": 87, "notes": "Great form" }
+   Optional (if provided by frontend):
+     "points_breakdown": { "form": 28, "color": 14, "size": 12, "substance_texture": 18, "floriferousness": 10, "other_qualities": 5 }
+
+   MUST:
+   - Check show_id exists.
+   - If shows.judging_locked == true -> return HTTP 409 with message "Judging is locked for this show."
+   - Enforce UNIQUE(show_id, entry_id, judge_id):
+       If duplicate, return HTTP 409 with message "Score already submitted for this judge and entry."
+
+4) GET /api/entries/{entry_id}/scores
+   Returns all score_submissions for that entry, including judge_id, total_points, notes, breakdown.
+
+WIRING + ROUTING
+- Add a new router file: app/routers/judging.py (or similar name consistent with repo).
+- Include it in app/main.py using include_router, under prefix "/api".
+- Ensure CORS is not broken. Keep existing CORS configuration; if Lovable preview needs it, do NOT change it here unless the repo already has the allow_origins list — but if you must, only add the existing lovable domains as additional allowed origins (do not remove anything).
+
+OUTPUT REQUIREMENTS (IMPORTANT)
+A) First, list “FILES TO EDIT / ADD”.
+B) Then provide FULL FILE CONTENTS for each changed/added file (NO diffs).
+C) Then provide a single Postgres SEED SQL script that uses ONLY tables that actually exist + the 2 new ones.
+   Seed:
+   - 1 organization (ONLY if organizations table exists)
+   - 1 show
+   - 6 entries
+   - 3 judges
+   - 10 score_submissions
+   - 3 awards linked to entries (using existing awards table)
+   If any target table doesn’t exist, clearly write:
+     "CANNOT SEED — TABLE MISSING: <table>"
+   and proceed with what can be seeded.
+
+DO NOT TOUCH
+- Do not modify Lovable frontend.
+- Do not rename existing endpoints.
+- Do not change existing schemas unrelated to this patch.
+
+DELIVERABLE TARGET
+After patch:
+- Backend starts cleanly (Base.metadata.create_all creates the two new tables + adds judging_locked to shows).
+- The four endpoints respond successfully with the X-API-Key header like existing endpoints.
+- Lovable can wire "Register Judges" + "Submit Score" + "View Scores" for Thursday demo.
+
+BEGIN WORK NOW.

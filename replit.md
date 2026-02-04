@@ -9,6 +9,7 @@ Backend API for Calyx - Orchid Show Management System powered by Orchid Continuu
 - Frontend: Famous AI (separate project)
 
 ## Recent Changes
+- 2026-02-04: Added Judging module (judges, score_submissions, show locking)
 - 2026-02-04: Added System Reference Documents feature for AOS judging PDFs
 - 2026-01-28: Restructured with new routers, models, configurable CORS, API key auth
 
@@ -40,6 +41,7 @@ app/
     awards.py          - Awards CRUD
     calyx_core.py      - Organizations, contacts, events, templates
     reference_docs.py  - System reference documents (AOS PDFs)
+    judging.py         - Judges and score submissions
 ```
 
 ## Run Command
@@ -64,6 +66,14 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 - `PATCH /api/admin/reference-docs/{id}` - Update is_active/notes
 
 Document types: AOS_JUDGING_SCORE_SHEET, AOS_JUDGING_ENTRY_FORM, AOS_AWARDS_CRITERIA_CCM_CCE_AQ, AOS_JUDGES_STYLE_BOOK, OTHER_REFERENCE
+
+### Judging Module
+- `POST /api/judges` - Register a judge for a show
+- `GET /api/judges?show_id=` - List judges for a show
+- `POST /api/score-submissions` - Submit score (rejects if show locked or duplicate)
+- `GET /api/entries/{entry_id}/scores` - Get all scores for an entry
+
+Shows have `judging_locked` boolean - when true, score submissions are rejected (HTTP 409).
 
 ## User Preferences
 - Do NOT build UI

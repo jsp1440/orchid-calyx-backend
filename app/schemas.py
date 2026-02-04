@@ -281,3 +281,43 @@ class ReferenceDocumentListOut(BaseModel):
 class ReferenceDocumentUpdate(BaseModel):
     is_active: Optional[bool] = None
     notes: Optional[str] = None
+
+
+class JudgeCreate(BaseModel):
+    show_id: str
+    name: str
+    email: Optional[str] = None
+
+
+class JudgeOut(BaseModel):
+    id: str
+    show_id: str
+    name: str
+    email: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ScoreSubmissionCreate(BaseModel):
+    show_id: str
+    entry_id: str
+    judge_id: str
+    total_points: int
+    points_breakdown: Optional[dict] = None
+    notes: Optional[str] = None
+
+
+class ScoreSubmissionOut(BaseModel):
+    id: str
+    show_id: str
+    entry_id: str
+    judge_id: str
+    total_points: int
+    points_breakdown: Optional[str]
+    notes: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
