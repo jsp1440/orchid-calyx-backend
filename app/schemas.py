@@ -302,7 +302,10 @@ class JudgingEventOut(BaseModel):
     judging_type: str
     is_blind: bool
     status: str
+    published_at: Optional[datetime] = None
+    closed_at: Optional[datetime] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -318,6 +321,7 @@ class JudgingEventUpdate(BaseModel):
 class PlantCategoryCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    sort_order: Optional[int] = 0
 
 
 class PlantCategoryOut(BaseModel):
@@ -325,6 +329,7 @@ class PlantCategoryOut(BaseModel):
     judging_event_id: str
     name: str
     description: Optional[str] = None
+    sort_order: int = 0
     created_at: datetime
 
     class Config:
@@ -335,6 +340,10 @@ class JudgingCriterionCreate(BaseModel):
     label: str
     weight: Optional[float] = None
     max_points: Optional[int] = None
+    scoring_type: Optional[str] = "numeric"
+    min_value: Optional[int] = None
+    max_value: Optional[int] = None
+    choices_json: Optional[str] = None
 
 
 class JudgingCriterionOut(BaseModel):
@@ -343,6 +352,10 @@ class JudgingCriterionOut(BaseModel):
     label: str
     weight: Optional[float] = None
     max_points: Optional[int] = None
+    scoring_type: str = "numeric"
+    min_value: Optional[int] = None
+    max_value: Optional[int] = None
+    choices_json: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -400,7 +413,9 @@ class ScoreOut(BaseModel):
     criterion_id: str
     value: Optional[float] = None
     choice: Optional[str] = None
+    value_rank: Optional[int] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -553,6 +568,68 @@ class FeedbackOut(BaseModel):
     worked: Optional[bool] = None
     confusion: Optional[str] = None
     suggestions: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class JudgeAssignmentCreate(BaseModel):
+    judge_id: str
+    category_id: Optional[str] = None
+    active: Optional[bool] = True
+
+
+class JudgeAssignmentOut(BaseModel):
+    id: str
+    judging_event_id: str
+    judge_id: str
+    category_id: Optional[str] = None
+    active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ScorecardOut(BaseModel):
+    id: str
+    judging_event_id: str
+    plant_id: str
+    judge_id: str
+    status: str
+    total: Optional[float] = None
+    submitted_at: Optional[datetime] = None
+    version: int = 1
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ScorecardScoreItem(BaseModel):
+    criterion_id: str
+    value: Optional[float] = None
+    choice: Optional[str] = None
+    value_rank: Optional[int] = None
+
+
+class ScorecardSaveRequest(BaseModel):
+    scores: List[ScorecardScoreItem]
+    notes: Optional[str] = None
+
+
+class ScorecardSubmitRequest(BaseModel):
+    final_comment: Optional[str] = None
+
+
+class ScorecardAuditOut(BaseModel):
+    id: str
+    scorecard_id: str
+    actor_judge_id: Optional[str] = None
+    action: str
+    diff_json: Optional[str] = None
     created_at: datetime
 
     class Config:

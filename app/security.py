@@ -25,3 +25,9 @@ def require_admin(x_orchid_admin_key: Optional[str] = Header(default=None, alias
         return None
     if x_orchid_admin_key != admin_key:
         raise HTTPException(status_code=401, detail="Invalid admin key.")
+
+
+def require_judge(x_judge_id: Optional[str] = Header(default=None, alias="X-Judge-Id")) -> str:
+    if not x_judge_id:
+        raise HTTPException(status_code=401, detail="X-Judge-Id header is required.")
+    return x_judge_id

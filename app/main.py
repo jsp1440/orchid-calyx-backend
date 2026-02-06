@@ -125,6 +125,17 @@ def _reconcile_schema(engine):
     _safe_add_column(engine, "shows", "public_volunteer_token", "VARCHAR")
     _safe_add_column(engine, "judges", "role", "VARCHAR")
 
+    _safe_add_column(engine, "judging_events", "published_at", "TIMESTAMP")
+    _safe_add_column(engine, "judging_events", "closed_at", "TIMESTAMP")
+    _safe_add_column(engine, "judging_events", "updated_at", "TIMESTAMP")
+    _safe_add_column(engine, "plant_categories", "sort_order", "INTEGER DEFAULT 0")
+    _safe_add_column(engine, "judging_criteria", "scoring_type", "VARCHAR DEFAULT 'numeric'")
+    _safe_add_column(engine, "judging_criteria", "min_value", "INTEGER")
+    _safe_add_column(engine, "judging_criteria", "max_value", "INTEGER")
+    _safe_add_column(engine, "judging_criteria", "choices_json", "TEXT")
+    _safe_add_column(engine, "scores", "value_rank", "INTEGER")
+    _safe_add_column(engine, "scores", "updated_at", "TIMESTAMP")
+
 
 @app.on_event("startup")
 def startup():

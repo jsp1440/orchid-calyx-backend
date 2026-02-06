@@ -9,6 +9,9 @@ Backend API for Calyx - Orchid Show Management System powered by Orchid Continuu
 - Frontend: Famous AI (separate project)
 
 ## Recent Changes
+- 2026-02-06: Judge-facing scorecard workflow: GET/PUT/POST /judge/* endpoints, autosave drafts, submit with weighted totals, audit trail, access control via X-Judge-Id header
+- 2026-02-06: Admin generate-scorecards endpoint (idempotent), judge assignments (event+category), published_at/closed_at timestamps on judging events
+- 2026-02-06: Extended models: JudgeAssignment, Scorecard, ScorecardAuditLog; added scoring_type/min_value/max_value/choices_json to criteria, value_rank/updated_at to scores
 - 2026-02-06: Expanded judging system: JudgingEvent, PlantCategory, JudgingCriterion, Exhibitor, Plant, Score (per-criterion), QR codes, event lifecycle (draft/published/closed), weighted results
 - 2026-02-06: Aligned volunteer module to design doc v2: VolunteerAssignment (replaces Signup+Attendance), Volunteer has approved(bool)/opt_in_sms/notes, VolunteerShift uses datetime start_time/end_time + capacity, VolunteerRole has default_shift_length
 - 2026-02-06: Excel (xlsx) export/import with conflict detection and coordinator override
@@ -35,7 +38,7 @@ app/
   schemas.py        - Pydantic request/response schemas
   storage.py        - File storage utility with SHA256 hashing
   deps.py           - Dependencies (get_db)
-  security.py       - API key authentication (verify_api_key, require_admin)
+  security.py       - API key authentication (verify_api_key, require_admin, require_judge)
   routers/
     health.py          - Health check endpoint
     tiles.py           - Tile registry for frontend
@@ -59,7 +62,7 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 ## Database Models
 ### Core: Organization, Show, Entry, Award, Contact, MessageTemplate, MessageLog, Event, File, IntegrationConnection
 ### Reference: SystemReferenceDocument
-### Judging (expanded): JudgingEvent, PlantCategory, JudgingCriterion, Exhibitor, Plant, Judge, Score
+### Judging (expanded): JudgingEvent, PlantCategory, JudgingCriterion, Exhibitor, Plant, Judge, Score, JudgeAssignment, Scorecard, ScorecardAuditLog
 ### Judging (legacy): ScoreSubmission
 ### Volunteers: VolunteerRole, VolunteerShift, Volunteer, VolunteerAssignment
 ### Feedback: Feedback
@@ -109,8 +112,24 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 - `POST /api/judging/plants/{plant_id}/scores/{judge_id}` - Submit/update scores (batch, per criterion)
 - `GET  /api/judging/plants/{plant_id}/scores` - Get all scores (optional ?judge_id= filter)
 
+**Judge Assignments (admin):**
+- `POST /api/judging/events/{event_id}/assignments` - Assign judge to event (judge_id, category_id, active)
+- `GET  /api/judging/events/{event_id}/assignments` - List assignments for event
+
 **Results:**
 - `GET /api/judging/events/{event_id}/results` - Weighted leaderboard with per-judge breakdowns
+
+**Admin Utilities:**
+- `POST /api/admin/judging_events/{event_id}/generate_scorecards` - Generate scorecards for all assigned judges x plants (idempotent)
+
+### Judge-Facing Workflow (require X-Judge-Id header)
+- `GET  /api/judge/me` - Get current judge profile
+- `GET  /api/judge/events` - List events assigned to current judge
+- `GET  /api/judge/events/{event_id}/scorecards` - List scorecards for judge in event
+- `GET  /api/judge/scorecards/{scorecard_id}` - Get single scorecard (access-controlled)
+- `PUT  /api/judge/scorecards/{scorecard_id}` - Autosave draft (upsert Score rows, audit log)
+- `POST /api/judge/scorecards/{scorecard_id}/submit` - Submit scorecard (locks, computes weighted total, audit log)
+- `GET  /api/judge/scorecards/{scorecard_id}/audit` - View audit trail for scorecard
 
 ### Judges
 - `POST /api/judges` - Register judge (name, email, role)
@@ -167,17 +186,31 @@ All paths under `/api/shows/{show_id}/volunteer/...`
 - Unique constraint on (show_id, email) for volunteers — prevents duplicate profiles
 - Unique constraint on (shift_id, volunteer_id) for assignments — prevents duplicate assignments
 - Unique constraint on (plant_id, judge_id, criterion_id) for per-criterion scores
+- Unique constraint on (judging_event_id, judge_id, category_id) for judge assignments
+- Unique constraint on (judging_event_id, plant_id, judge_id) for scorecards
 - Assignment status: assigned | confirmed | checked_in | no_show
 - Judging event status: draft | published | closed
+- Scorecard status: draft | submitted
 - Shift capacity enforced server-side (409 if full)
-- Per-criterion scores allow revision (upsert) while event is not closed
+- Per-criterion scores allow revision (upsert) while event is not closed AND scorecard not submitted
 - Closed judging events freeze all score edits (409)
+- Submitted scorecards freeze edits (409) — no reopen endpoint yet
 - QR code auto-generated per plant on creation
-- Weighted scoring: criteria weights applied to results aggregation
-- Supports numeric scoring, ranking, and simple vote via value/choice fields
+- Weighted scoring: criteria weights applied to results aggregation and scorecard totals
+- Supports numeric scoring, ranking, and simple vote via value/choice/value_rank fields
 - Score submissions rejected if show.judging_locked=true (409)
 - Score submissions unique per (show_id, entry_id, judge_id)
 - Excel is a first-class interface — export and import as xlsx
+- Judge authentication via X-Judge-Id header (require_judge dependency)
+- Scorecard access control: judges can only see/edit their own scorecards
+- Audit trail: every autosave and submit action logged in scorecard_audit_log with diff_json
+- Generate scorecards is idempotent — skips existing (event_id, plant_id, judge_id) combos
+
+### Schema Management
+- No Alembic migrations — schema managed via Base.metadata.create_all() + _safe_add_column() at startup
+- Alembic is installed/scaffolded but alembic/versions/ is empty (not actively used)
+- New columns on existing tables added via _safe_add_column() in main.py _reconcile_schema()
+- New tables auto-created by SQLAlchemy create_all()
 
 ## Design Philosophy (from spec)
 - No user forced to register unless necessary
