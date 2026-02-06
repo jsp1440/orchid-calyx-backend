@@ -1,0 +1,123 @@
+CALYX CORE BACKEND DESIGN — VOLUNTEERS & WORKFLOWS
+
+GOAL
+Support BOTH:
+• High-tech self-service signups
+• Low-tech coordinator-managed scheduling
+
+Excel is a first-class interface, not an afterthought.
+
+--------------------------------
+VOLUNTEER DATA MODEL
+--------------------------------
+
+Volunteer
+- id
+- name
+- email
+- phone
+- opt_in_sms (bool)
+- notes
+- approved (bool)
+
+VolunteerRole
+- id
+- name
+- description
+- default_shift_length
+
+VolunteerShift
+- id
+- role_id
+- start_time
+- end_time
+- capacity
+
+VolunteerAssignment
+- id
+- volunteer_id
+- shift_id
+- status (assigned | confirmed | checked_in | no_show)
+
+--------------------------------
+IMPORT / EXPORT RULES
+--------------------------------
+
+• Export schedule as formatted Excel (xlsx)
+• Export printable PDF (auto-formatted)
+• Import Excel updates back into system
+• Conflict detection on re-import
+• Coordinator can override conflicts
+
+Excel is authoritative when uploaded.
+
+--------------------------------
+SIGNUP FLOWS
+--------------------------------
+
+1) SELF-SIGNUP (via link)
+• Minimal required fields
+• Coordinator approval required
+• Volunteer can edit own shifts
+
+2) COORDINATOR ENTRY
+• Add volunteer manually
+• Assign shifts directly
+• No account required for volunteer
+
+--------------------------------
+CHECK-IN SYSTEM
+--------------------------------
+
+• QR code per volunteer
+• Manual check-in fallback
+• Auto time-stamping
+• Sign-in / sign-out supported
+
+--------------------------------
+NOTIFICATIONS
+--------------------------------
+
+• Email reminders:
+  - One week before
+  - Day before
+• Optional SMS (opt-in only)
+
+--------------------------------
+JUDGING WIDGET (PLUG-IN)
+--------------------------------
+
+Judging module must be:
+• Embeddable
+• Callable via public link
+• Optional standalone use
+
+Backend exposes:
+POST /judging/evaluate
+POST /judging/submit
+GET  /judging/criteria
+
+Judging data must NOT pollute core workflow unless explicitly linked.
+
+--------------------------------
+FEEDBACK CAPTURE (BETA)
+--------------------------------
+
+Every workflow step emits:
+POST /feedback
+Fields:
+- module
+- step
+- worked (yes/no)
+- confusion (text)
+- suggestions (text)
+
+Feedback tagged by org and feature.
+
+--------------------------------
+DESIGN PHILOSOPHY (ENFORCED)
+--------------------------------
+
+• No user forced to register unless necessary
+• Coordinator always has override power
+• System adapts to humans, not the reverse
