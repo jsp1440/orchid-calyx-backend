@@ -1,0 +1,46 @@
+Proceed using the CURRENT auto-create + _safe_add_column() approach (do NOT introduce Alembic migrations right now).
+
+Goal: implement judge-facing workflow endpoints WITHOUT breaking existing admin endpoints.
+
+1) Update app/schemas.py:
+   - Add Pydantic schemas for:
+     JudgeAssignmentCreate/Read
+     ScorecardRead (include id, judging_event_id, plant_id, judge_id, status, submitted_at, updated_at)
+     ScorecardSaveRequest (scores payload + optional notes)
+     ScorecardSubmitRequest (optional final_comment)
+     ScorecardAuditRead
+   - Ensure existing schemas remain unchanged.
+
+2) Update app/routers/judging.py (additive only):
+   Add new judge-facing routes under /judge:
+     GET  /judge/me
+     GET  /judge/events (events assigned to me)
+     GET  /judge/events/{judging_event_id}/scorecards
+     GET  /judge/scorecards/{scorecard_id}
+     PUT  /judge/scorecards/{scorecard_id}        (autosave draft; writes Score rows + audit log)
+     POST /judge/scorecards/{scorecard_id}/submit (locks scorecard; writes audit log)
+
+3) Authorization:
+   - Add dependency require_judge()
+   - Add require_scorecard_access(scorecard_id): must match judge_id for current user
+   - Judges may only see scorecards assigned to them (via Scorecard.judge_id)
+
+4) Data behavior:
+   - PUT autosave:
+       upsert Score rows by (plant_id, judge_id, criterion_id)
+       set scorecard.status='draft' (unless already submitted)
+       write ScorecardAuditLog(action='autosave', payload contains changed scores)
+   - POST submit:
+       set status='submitted', submitted_at=now()
+       write ScorecardAuditLog(action='submit')
+       prevent further PUT unless an admin "reopen" endpoint exists (do not add reopen yet)
+
+5) Add a minimal admin utility endpoint (optional but recommended):
+     POST /admin/judging_events/{judging_event_id}/generate_scorecards
+   This creates Scorecard rows for all (assigned judges x plants in event).
+   It must be idempotent (skip existing).
+
+Return:
+- the full updated app/schemas.py (complete file)
+- the full updated app/routers/judging.py (complete file)
+- a short list of curl examples to test each new endpoint.
