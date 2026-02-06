@@ -203,7 +203,7 @@ class SystemReferenceDocument(Base):
 
 
 # -------------------------------------------------------------------
-# VOLUNTEERS (spec-aligned minimal model)
+# VOLUNTEERS (spec-aligned: design doc v2)
 # -------------------------------------------------------------------
 
 
@@ -214,8 +214,7 @@ class VolunteerRole(Base):
     show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
     name = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
-    location = Column(Text, nullable=True)
-    training_url = Column(Text, nullable=True)
+    default_shift_length = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -225,11 +224,9 @@ class VolunteerShift(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
     role_id = Column(String, ForeignKey("volunteer_roles.id"), nullable=False, index=True)
-    shift_date = Column(Date, nullable=False)
-    start_time = Column(Time, nullable=False)
-    end_time = Column(Time, nullable=False)
-    slots_needed = Column(Integer, default=1)
-    notes = Column(Text, nullable=True)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    capacity = Column(Integer, default=1)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -244,40 +241,41 @@ class Volunteer(Base):
     name = Column(Text, nullable=False)
     email = Column(Text, nullable=False)
     phone = Column(Text, nullable=True)
-    status = Column(Text, default="pending")
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
-class VolunteerSignup(Base):
-    __tablename__ = "volunteer_signups"
-    __table_args__ = (
-        UniqueConstraint("shift_id", "volunteer_id", name="uix_signup_shift_vol"),
-    )
-
-    id = Column(String, primary_key=True, default=generate_uuid)
-    show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
-    shift_id = Column(String, ForeignKey("volunteer_shifts.id"), nullable=False, index=True)
-    volunteer_id = Column(String, ForeignKey("volunteers.id"), nullable=False, index=True)
-    signup_source = Column(Text, default="self")
+    opt_in_sms = Column(Boolean, default=False)
+    notes = Column(Text, nullable=True)
     approved = Column(Boolean, default=False)
-    approved_by = Column(Text, nullable=True)
-    approved_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class VolunteerAttendance(Base):
-    __tablename__ = "volunteer_attendance"
+class VolunteerAssignment(Base):
+    __tablename__ = "volunteer_assignments"
     __table_args__ = (
-        UniqueConstraint("shift_id", "volunteer_id", name="uix_attend_shift_vol"),
+        UniqueConstraint("shift_id", "volunteer_id", name="uix_assign_shift_vol"),
     )
 
     id = Column(String, primary_key=True, default=generate_uuid)
     show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
-    shift_id = Column(String, ForeignKey("volunteer_shifts.id"), nullable=False, index=True)
     volunteer_id = Column(String, ForeignKey("volunteers.id"), nullable=False, index=True)
-    check_in_at = Column(DateTime, nullable=True)
-    check_out_at = Column(DateTime, nullable=True)
-    method = Column(Text, default="web")
+    shift_id = Column(String, ForeignKey("volunteer_shifts.id"), nullable=False, index=True)
+    status = Column(Text, default="assigned")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# -------------------------------------------------------------------
+# FEEDBACK (beta capture)
+# -------------------------------------------------------------------
+
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    organization_id = Column(String, ForeignKey("organizations.id"), nullable=True)
+    module = Column(Text, nullable=False)
+    step = Column(Text, nullable=True)
+    worked = Column(Boolean, nullable=True)
+    confusion = Column(Text, nullable=True)
+    suggestions = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

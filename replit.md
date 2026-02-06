@@ -4,14 +4,16 @@ Backend API for Calyx - Orchid Show Management System powered by Orchid Continuu
 
 ## Overview
 - Purpose: API backend for orchid show operations, entries, volunteers, and judging
-- Stack: Python 3.11, FastAPI, SQLAlchemy
+- Stack: Python 3.11, FastAPI, SQLAlchemy, openpyxl
 - Database: PostgreSQL (Replit-hosted via PGHOST) or SQLite fallback
 - Frontend: Famous AI (separate project)
 
 ## Recent Changes
-- 2026-02-06: Aligned volunteer module to spec: volunteer_signups (replaces assignments), volunteer_attendance (replaces checkins), shifts use date+time+slots_needed, volunteers use name+unique(show_id,email), signup approve/move/delete endpoints
-- 2026-02-06: Added seed.sql with demo data (1 org, 1 show, 5 entries, 3 roles, 5 shifts, 6 volunteers, 8 signups, 3 attendance, 3 judges, 10 scores, 3 awards)
-- 2026-02-06: Endpoint paths changed to /api/shows/{show_id}/volunteer/... pattern
+- 2026-02-06: Aligned volunteer module to design doc v2: VolunteerAssignment (replaces Signup+Attendance), Volunteer has approved(bool)/opt_in_sms/notes, VolunteerShift uses datetime start_time/end_time + capacity, VolunteerRole has default_shift_length
+- 2026-02-06: Excel (xlsx) export/import with conflict detection and coordinator override
+- 2026-02-06: Added Feedback endpoint (POST /api/feedback) for beta capture
+- 2026-02-06: Added Judging widget stubs (GET /judging/criteria, POST /judging/evaluate, POST /judging/submit)
+- 2026-02-06: Updated seed.sql for new schema (assignments, approved booleans, datetime shifts)
 - 2026-02-04: Added Judging module (judges, score_submissions, show locking, leaderboard)
 - 2026-02-04: Added System Reference Documents feature for AOS judging PDFs
 - 2026-01-28: Restructured with new routers, models, configurable CORS, API key auth
@@ -44,8 +46,9 @@ app/
     awards.py          - Awards CRUD
     calyx_core.py      - Organizations, contacts, events, templates
     reference_docs.py  - System reference documents (AOS PDFs)
-    judging.py         - Judges, score submissions, leaderboard
-    volunteer_ops.py   - Volunteer operations (roles, shifts, signups, attendance, export/import)
+    judging.py         - Judges, score submissions, leaderboard, widget stubs
+    volunteer_ops.py   - Volunteer operations (roles, shifts, assignments, Excel export/import)
+    feedback.py        - Feedback capture endpoint
 seed.sql              - Demo seed data (Postgres)
 ```
 
@@ -58,7 +61,8 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 ### Core: Organization, Show, Entry, Award, Contact, MessageTemplate, MessageLog, Event, File, IntegrationConnection
 ### Reference: SystemReferenceDocument
 ### Judging: Judge, ScoreSubmission
-### Volunteers: VolunteerRole, VolunteerShift, Volunteer, VolunteerSignup, VolunteerAttendance
+### Volunteers: VolunteerRole, VolunteerShift, Volunteer, VolunteerAssignment
+### Feedback: Feedback
 
 ## API Endpoints
 
@@ -80,49 +84,67 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 - `GET /api/entries/{entry_id}/scores` - Entry scores
 - `GET /api/shows/{show_id}/leaderboard` - Aggregate leaderboard
 
+### Judging Widget (plug-in)
+- `GET /api/judging/criteria` - Get scoring criteria (AOS defaults)
+- `POST /api/judging/evaluate` - Preview score calculation (no persist)
+- `POST /api/judging/submit` - Submit and persist score
+
+### Feedback (beta capture)
+- `POST /api/feedback` - Submit feedback (module, step, worked, confusion, suggestions)
+- `GET /api/feedback?module=` - List feedback (optional module filter)
+
 ### Volunteer Operations (all require X-API-Key)
 All paths under `/api/shows/{show_id}/volunteer/...`
 
 **Roles:**
-- `POST /api/shows/{show_id}/volunteer/roles` - Create role (name, description, location, training_url)
+- `POST /api/shows/{show_id}/volunteer/roles` - Create role (name, description, default_shift_length)
 - `GET  /api/shows/{show_id}/volunteer/roles` - List roles
 
 **Shifts:**
-- `POST   /api/shows/{show_id}/volunteer/shifts` - Create shift (role_id, shift_date, start_time, end_time, slots_needed)
+- `POST   /api/shows/{show_id}/volunteer/shifts` - Create shift (role_id, start_time, end_time as datetimes, capacity)
 - `GET    /api/shows/{show_id}/volunteer/shifts` - List shifts
 - `PATCH  /api/shows/{show_id}/volunteer/shifts/{shift_id}` - Update shift
 - `DELETE /api/shows/{show_id}/volunteer/shifts/{shift_id}` - Delete shift
 
 **Volunteers:**
-- `POST /api/shows/{show_id}/volunteer/volunteers` - Create (name, email required; status default pending)
-- `GET  /api/shows/{show_id}/volunteer/volunteers` - List all
+- `POST  /api/shows/{show_id}/volunteer/volunteers` - Create (name, email, phone, opt_in_sms, notes, approved)
+- `GET   /api/shows/{show_id}/volunteer/volunteers` - List all
+- `PATCH /api/shows/{show_id}/volunteer/volunteers/{id}` - Update volunteer
 
-**Signups:**
-- `POST   /api/shows/{show_id}/volunteer/signups` - Create signup (shift_id, volunteer_id, signup_source)
-- `GET    /api/shows/{show_id}/volunteer/signups` - List signups
-- `PATCH  /api/shows/{show_id}/volunteer/signups/{id}/approve` - Approve (sets approved=true, approved_by, approved_at)
-- `PATCH  /api/shows/{show_id}/volunteer/signups/{id}/move` - Move to different shift
-- `DELETE /api/shows/{show_id}/volunteer/signups/{id}` - Remove signup
+**Assignments:**
+- `POST   /api/shows/{show_id}/volunteer/assignments` - Create (volunteer_id, shift_id, status)
+- `GET    /api/shows/{show_id}/volunteer/assignments` - List assignments
+- `PATCH  /api/shows/{show_id}/volunteer/assignments/{id}/status?status=` - Update status
+- `PATCH  /api/shows/{show_id}/volunteer/assignments/{id}/move` - Move to different shift
+- `DELETE /api/shows/{show_id}/volunteer/assignments/{id}` - Remove assignment
 
-**Attendance:**
-- `POST /api/shows/{show_id}/volunteer/attendance/check-in` - Check in (volunteer_id, shift_id, method)
-- `POST /api/shows/{show_id}/volunteer/attendance/check-out` - Check out (409 if not checked in)
+**Check-in:**
+- `POST /api/shows/{show_id}/volunteer/check-in?volunteer_id=&shift_id=` - Check in (sets status=checked_in)
 
 **Export/Import:**
-- `GET  /api/shows/{show_id}/volunteer/export.csv` - CSV export
-- `POST /api/shows/{show_id}/volunteer/import` - CSV import (idempotent upsert by email)
+- `GET  /api/shows/{show_id}/volunteer/export.xlsx` - Excel export (formatted xlsx)
+- `POST /api/shows/{show_id}/volunteer/import` - Excel/CSV import (conflict detection, override_conflicts param)
 - `GET  /api/shows/{show_id}/volunteer/printable` - Printable HTML schedule
 
 ### Business Rules
 - Unique constraint on (show_id, email) for volunteers — prevents duplicate profiles
-- Unique constraint on (shift_id, volunteer_id) for signups — prevents duplicate signups
-- Unique constraint on (shift_id, volunteer_id) for attendance — prevents duplicate check-ins
-- Shift slots enforced server-side (409 if slots full)
-- CSV import matches volunteers by email; creates roles/shifts/signups as needed
+- Unique constraint on (shift_id, volunteer_id) for assignments — prevents duplicate assignments
+- Assignment status: assigned | confirmed | checked_in | no_show
+- Shift capacity enforced server-side (409 if full)
+- Excel import matches volunteers by email; creates roles/shifts/assignments as needed
+- Conflict detection on re-import: name/phone changes flagged unless override_conflicts=true
 - Re-imports are idempotent (no duplicate data)
 - Show's `public_volunteer_token` enables public signup link
 - Score submissions rejected if show.judging_locked=true (409)
 - Score submissions unique per (show_id, entry_id, judge_id)
+- Excel is a first-class interface — export and import as xlsx
+
+## Design Philosophy (from spec)
+- No user forced to register unless necessary
+- Coordinator always has override power
+- System adapts to humans, not the reverse
+- Excel is authoritative when uploaded
+- Calm beats clever, guidance beats power
 
 ## User Preferences
 - Do NOT build UI

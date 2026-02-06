@@ -13,6 +13,7 @@ from app.routers import (
     calyx_core,
     reference_docs,
     judging,
+    feedback,
 )
 from app.routers.volunteer_ops import router as volunteer_ops_router
 
@@ -58,8 +59,11 @@ app.include_router(reference_docs.router, prefix="/api", tags=["Reference Docume
 # Judging router already uses prefix="/api" internally (per your file), so include directly
 app.include_router(judging.router)
 
-# Volunteer operations (roles, shifts, signups, attendance, export/import)
+# Volunteer operations (roles, shifts, assignments, export/import)
 app.include_router(volunteer_ops_router)
+
+# Feedback capture
+app.include_router(feedback.router)
 
 
 @app.get("/")
@@ -88,8 +92,8 @@ def _reconcile_schema(engine):
     insp = sa_inspect(engine)
     existing_tables = insp.get_table_names()
 
-    old_tables = ["volunteer_checkins", "volunteer_assignments"]
-    for old in old_tables:
+    legacy_tables = ["volunteer_checkins", "volunteer_signups", "volunteer_attendance"]
+    for old in legacy_tables:
         if old in existing_tables:
             log.warning("Dropping legacy table: %s", old)
             with engine.connect() as conn:
@@ -97,11 +101,10 @@ def _reconcile_schema(engine):
                 conn.commit()
 
     expected = {
-        "volunteer_roles": ["id", "show_id", "name", "description", "location", "training_url", "created_at"],
-        "volunteer_shifts": ["id", "show_id", "role_id", "shift_date", "start_time", "end_time", "slots_needed", "notes", "created_at"],
-        "volunteers": ["id", "show_id", "name", "email", "phone", "status", "created_at"],
-        "volunteer_signups": ["id", "show_id", "shift_id", "volunteer_id", "signup_source", "approved", "approved_by", "approved_at", "created_at"],
-        "volunteer_attendance": ["id", "show_id", "shift_id", "volunteer_id", "check_in_at", "check_out_at", "method", "created_at"],
+        "volunteer_roles": ["id", "show_id", "name", "description", "default_shift_length", "created_at"],
+        "volunteer_shifts": ["id", "show_id", "role_id", "start_time", "end_time", "capacity", "created_at"],
+        "volunteers": ["id", "show_id", "name", "email", "phone", "opt_in_sms", "notes", "approved", "created_at"],
+        "volunteer_assignments": ["id", "show_id", "volunteer_id", "shift_id", "status", "created_at"],
     }
 
     stale = []
@@ -113,11 +116,10 @@ def _reconcile_schema(engine):
 
     if stale:
         log.warning("Detected stale volunteer schemas, dropping for recreation: %s", stale)
-        drop_order = ["volunteer_attendance", "volunteer_signups", "volunteer_shifts", "volunteers", "volunteer_roles"]
+        drop_order = ["volunteer_assignments", "volunteer_shifts", "volunteers", "volunteer_roles"]
         with engine.connect() as conn:
             for tbl in drop_order:
-                if tbl in stale or tbl in [t for t in drop_order if any(s in stale for s in drop_order[:drop_order.index(t)+1])]:
-                    conn.execute(text(f"DROP TABLE IF EXISTS {tbl} CASCADE"))
+                conn.execute(text(f"DROP TABLE IF EXISTS {tbl} CASCADE"))
             conn.commit()
 
     _safe_add_column(engine, "shows", "public_volunteer_token", "VARCHAR")

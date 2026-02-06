@@ -188,3 +188,63 @@ def show_leaderboard(show_id: str, db: Session = Depends(get_db)):
         })
 
     return {"show_id": show_id, "leaderboard": entries}
+
+
+# ── Judging Widget (plug-in stubs) ─────────────────────────────────
+
+@router.get("/judging/criteria")
+def get_judging_criteria(show_id: str = Query(None), db: Session = Depends(get_db)):
+    return {
+        "criteria": [
+            {"name": "form", "max_points": 35, "description": "Overall form and shape"},
+            {"name": "color", "max_points": 35, "description": "Color quality and intensity"},
+            {"name": "size", "max_points": 30, "description": "Size relative to species norms"},
+        ],
+        "total_max_points": 100,
+        "note": "Default AOS-style criteria. Configurable per show in future release.",
+    }
+
+
+@router.post("/judging/evaluate")
+def evaluate_entry(body: dict, db: Session = Depends(get_db)):
+    entry_id = body.get("entry_id")
+    judge_id = body.get("judge_id")
+    scores = body.get("scores", {})
+
+    if not entry_id or not judge_id:
+        raise HTTPException(status_code=422, detail="entry_id and judge_id are required")
+
+    total = sum(int(v) for v in scores.values() if isinstance(v, (int, float)))
+
+    return {
+        "entry_id": entry_id,
+        "judge_id": judge_id,
+        "scores": scores,
+        "total_points": total,
+        "status": "evaluated",
+        "note": "Preview only. Call POST /judging/submit to persist.",
+    }
+
+
+@router.post("/judging/submit")
+def submit_judging(body: dict, db: Session = Depends(get_db)):
+    show_id = body.get("show_id")
+    entry_id = body.get("entry_id")
+    judge_id = body.get("judge_id")
+    scores = body.get("scores", {})
+
+    if not show_id or not entry_id or not judge_id:
+        raise HTTPException(status_code=422, detail="show_id, entry_id, and judge_id are required")
+
+    total = sum(int(v) for v in scores.values() if isinstance(v, (int, float)))
+
+    from app.schemas import ScoreSubmissionCreate
+    data = ScoreSubmissionCreate(
+        show_id=show_id,
+        entry_id=entry_id,
+        judge_id=judge_id,
+        total_points=total,
+        points_breakdown=scores if scores else None,
+        notes=body.get("notes"),
+    )
+    return create_score_submission(data, db)

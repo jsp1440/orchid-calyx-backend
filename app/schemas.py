@@ -332,8 +332,7 @@ class ScoreSubmissionOut(BaseModel):
 class VolunteerRoleCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    location: Optional[str] = None
-    training_url: Optional[str] = None
+    default_shift_length: Optional[int] = None
 
 
 class VolunteerRoleOut(BaseModel):
@@ -341,8 +340,7 @@ class VolunteerRoleOut(BaseModel):
     show_id: str
     name: str
     description: Optional[str] = None
-    location: Optional[str] = None
-    training_url: Optional[str] = None
+    default_shift_length: Optional[int] = None
     created_at: datetime
 
     class Config:
@@ -351,22 +349,18 @@ class VolunteerRoleOut(BaseModel):
 
 class VolunteerShiftCreate(BaseModel):
     role_id: str
-    shift_date: date
-    start_time: str
-    end_time: str
-    slots_needed: Optional[int] = 1
-    notes: Optional[str] = None
+    start_time: datetime
+    end_time: datetime
+    capacity: Optional[int] = 1
 
 
 class VolunteerShiftOut(BaseModel):
     id: str
     show_id: str
     role_id: str
-    shift_date: date
-    start_time: str
-    end_time: str
-    slots_needed: int
-    notes: Optional[str] = None
+    start_time: datetime
+    end_time: datetime
+    capacity: int
     created_at: datetime
 
     class Config:
@@ -377,7 +371,9 @@ class VolunteerCreate(BaseModel):
     name: str
     email: str
     phone: Optional[str] = None
-    status: Optional[str] = "pending"
+    opt_in_sms: Optional[bool] = False
+    notes: Optional[str] = None
+    approved: Optional[bool] = False
 
 
 class VolunteerOut(BaseModel):
@@ -386,6 +382,26 @@ class VolunteerOut(BaseModel):
     name: str
     email: str
     phone: Optional[str] = None
+    opt_in_sms: bool
+    notes: Optional[str] = None
+    approved: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VolunteerAssignmentCreate(BaseModel):
+    volunteer_id: str
+    shift_id: str
+    status: Optional[str] = "assigned"
+
+
+class VolunteerAssignmentOut(BaseModel):
+    id: str
+    show_id: str
+    volunteer_id: str
+    shift_id: str
     status: str
     created_at: datetime
 
@@ -393,45 +409,27 @@ class VolunteerOut(BaseModel):
         from_attributes = True
 
 
-class VolunteerSignupCreate(BaseModel):
+class VolunteerAssignmentMove(BaseModel):
     shift_id: str
-    volunteer_id: str
-    signup_source: Optional[str] = "self"
 
 
-class VolunteerSignupOut(BaseModel):
+class FeedbackCreate(BaseModel):
+    module: str
+    step: Optional[str] = None
+    worked: Optional[bool] = None
+    confusion: Optional[str] = None
+    suggestions: Optional[str] = None
+    organization_id: Optional[str] = None
+
+
+class FeedbackOut(BaseModel):
     id: str
-    show_id: str
-    shift_id: str
-    volunteer_id: str
-    signup_source: str
-    approved: bool
-    approved_by: Optional[str] = None
-    approved_at: Optional[datetime] = None
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class VolunteerSignupMove(BaseModel):
-    shift_id: str
-
-
-class AttendanceRequest(BaseModel):
-    volunteer_id: str
-    shift_id: str
-    method: Optional[str] = "web"
-
-
-class AttendanceOut(BaseModel):
-    id: str
-    show_id: str
-    shift_id: str
-    volunteer_id: str
-    check_in_at: Optional[datetime] = None
-    check_out_at: Optional[datetime] = None
-    method: str
+    organization_id: Optional[str] = None
+    module: str
+    step: Optional[str] = None
+    worked: Optional[bool] = None
+    confusion: Optional[str] = None
+    suggestions: Optional[str] = None
     created_at: datetime
 
     class Config:
