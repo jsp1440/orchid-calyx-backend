@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Any, Dict, List
 from pydantic import BaseModel
 
 
@@ -7,19 +7,25 @@ class ShowCreate(BaseModel):
     name: str
     start_date: date
     location: Optional[str] = None
+    organization_id: Optional[str] = None
 
 
 class ShowUpdate(BaseModel):
     name: Optional[str] = None
     start_date: Optional[date] = None
     location: Optional[str] = None
+    judging_locked: Optional[bool] = None
+    public_volunteer_token: Optional[str] = None
 
 
 class ShowOut(BaseModel):
     id: str
+    organization_id: Optional[str] = None
     name: str
     start_date: date
     location: Optional[str]
+    judging_locked: bool
+    public_volunteer_token: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -159,12 +165,12 @@ class MessageTemplateOut(BaseModel):
 
 
 class TemplateRenderRequest(BaseModel):
-    variables: dict
+    context: dict
 
 
 class TemplateRenderResponse(BaseModel):
-    subject: str
-    body: str
+    subject: Optional[str]
+    body: Optional[str]
 
 
 class EventCreate(BaseModel):
@@ -305,7 +311,7 @@ class ScoreSubmissionCreate(BaseModel):
     entry_id: str
     judge_id: str
     total_points: int
-    points_breakdown: Optional[dict] = None
+    points_breakdown: Optional[Dict[str, Any]] = None
     notes: Optional[str] = None
 
 
@@ -315,9 +321,146 @@ class ScoreSubmissionOut(BaseModel):
     entry_id: str
     judge_id: str
     total_points: int
-    points_breakdown: Optional[str]
+    points_breakdown: Optional[Dict[str, Any]] = None
     notes: Optional[str]
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class VolunteerRoleCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    training_url: Optional[str] = None
+
+
+class VolunteerRoleUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    training_url: Optional[str] = None
+
+
+class VolunteerRoleOut(BaseModel):
+    id: str
+    show_id: str
+    name: str
+    description: Optional[str]
+    training_url: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VolunteerShiftCreate(BaseModel):
+    role_id: str
+    starts_at: datetime
+    ends_at: datetime
+    capacity: Optional[int] = 1
+    location: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class VolunteerShiftUpdate(BaseModel):
+    role_id: Optional[str] = None
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    capacity: Optional[int] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class VolunteerShiftOut(BaseModel):
+    id: str
+    show_id: str
+    role_id: str
+    starts_at: datetime
+    ends_at: datetime
+    capacity: int
+    location: Optional[str]
+    notes: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VolunteerCreate(BaseModel):
+    full_name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    sms_opt_in: Optional[bool] = False
+    org_id: Optional[str] = None
+    status: Optional[str] = "pending"
+
+
+class VolunteerUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    sms_opt_in: Optional[bool] = None
+    status: Optional[str] = None
+
+
+class VolunteerOut(BaseModel):
+    id: str
+    org_id: Optional[str]
+    show_id: str
+    full_name: str
+    email: Optional[str]
+    phone: Optional[str]
+    sms_opt_in: bool
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VolunteerAssignmentCreate(BaseModel):
+    show_id: str
+    volunteer_id: str
+    shift_id: str
+    source: Optional[str] = "self_signup"
+
+
+class VolunteerAssignmentOut(BaseModel):
+    id: str
+    show_id: str
+    volunteer_id: str
+    shift_id: str
+    status: str
+    source: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VolunteerCheckinRequest(BaseModel):
+    show_id: str
+    volunteer_id: str
+    shift_id: str
+    method: Optional[str] = "web"
+
+
+class VolunteerCheckinOut(BaseModel):
+    id: str
+    show_id: str
+    volunteer_id: str
+    shift_id: str
+    check_in_at: Optional[datetime]
+    check_out_at: Optional[datetime]
+    method: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PublicVolunteerSignup(BaseModel):
+    full_name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    sms_opt_in: Optional[bool] = False

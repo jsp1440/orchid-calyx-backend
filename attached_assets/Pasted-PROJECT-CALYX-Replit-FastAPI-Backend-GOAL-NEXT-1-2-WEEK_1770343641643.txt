@@ -1,0 +1,154 @@
+PROJECT: CALYX (Replit FastAPI Backend)
+
+GOAL (NEXT 1–2 WEEKS): Make Volunteers + Judging demo-usable with a “high-tech + low-tech” workflow, including Excel-first exports and optional imports.
+
+========================================================
+A) VOLUNTEERS — MINIMAL DATA MODEL (Postgres tables)
+========================================================
+
+1) volunteers
+- id (uuid pk)
+- org_id (uuid fk -> organizations.id, nullable)
+- show_id (uuid fk -> shows.id, indexed)
+- full_name (text, required)
+- email (text, nullable)
+- phone (text, nullable)
+- sms_opt_in (bool default false)
+- status (text default 'pending')  -- pending/approved/blocked
+- created_at (timestamp)
+
+2) volunteer_roles
+- id (uuid pk)
+- show_id (uuid fk -> shows.id, indexed)
+- name (text required)  -- e.g., “Admissions”, “Hospitality”, “Setup”, “Clerk”, etc.
+- description (text nullable)
+- training_url (text nullable)
+- created_at (timestamp)
+
+3) volunteer_shifts
+- id (uuid pk)
+- show_id (uuid fk -> shows.id, indexed)
+- role_id (uuid fk -> volunteer_roles.id, indexed)
+- starts_at (timestamp required)
+- ends_at (timestamp required)
+- capacity (int default 1)
+- location (text nullable)
+- notes (text nullable)
+- created_at (timestamp)
+
+4) volunteer_assignments
+- id (uuid pk)
+- show_id (uuid fk -> shows.id, indexed)
+- volunteer_id (uuid fk -> volunteers.id, indexed)
+- shift_id (uuid fk -> volunteer_shifts.id, indexed)
+- status (text default 'assigned')  -- assigned/cancelled/no_show/completed
+- source (text default 'self_signup')  -- self_signup/manual/import
+- created_at (timestamp)
+- UNIQUE(show_id, volunteer_id, shift_id) to prevent duplicates
+
+5) volunteer_checkins
+- id (uuid pk)
+- show_id (uuid fk -> shows.id, indexed)
+- volunteer_id (uuid fk -> volunteers.id, indexed)
+- shift_id (uuid fk -> volunteer_shifts.id, indexed)
+- check_in_at (timestamp nullable)
+- check_out_at (timestamp nullable)
+- method (text default 'web') -- web/qr/kiosk/manual
+- created_at (timestamp)
+- UNIQUE(show_id, volunteer_id, shift_id) (one checkin record per assignment)
+
+========================================================
+B) VOLUNTEERS — REQUIRED API ENDPOINTS (FastAPI)
+========================================================
+
+1) Roles
+- POST /api/shows/{show_id}/volunteer-roles
+- GET  /api/shows/{show_id}/volunteer-roles
+- PATCH/DELETE /api/volunteer-roles/{role_id}
+
+2) Shifts
+- POST /api/shows/{show_id}/volunteer-shifts
+- GET  /api/shows/{show_id}/volunteer-shifts?role_id=&date=
+- PATCH/DELETE /api/volunteer-shifts/{shift_id}
+
+3) Volunteer directory (for approval + manual entry)
+- POST /api/shows/{show_id}/volunteers   (create pending or approved)
+- GET  /api/shows/{show_id}/volunteers?status=
+- PATCH /api/volunteers/{volunteer_id}  (approve/block/update contact)
+
+4) Assignments (self-signup OR coordinator signup)
+- POST /api/volunteer-assignments
+  body: { show_id, volunteer_id, shift_id, source }
+  should reject if shift capacity exceeded (409)
+- GET  /api/shows/{show_id}/volunteer-assignments?shift_id=&volunteer_id=
+- DELETE /api/volunteer-assignments/{assignment_id}
+
+5) Check-in/out (web + QR + kiosk all hit same endpoints)
+- POST /api/volunteer-checkin
+  body: { show_id, volunteer_id, shift_id, method }
+  sets check_in_at if empty, else 409
+- POST /api/volunteer-checkout
+  body: { show_id, volunteer_id, shift_id, method }
+  sets check_out_at if checked in, else 409
+
+6) Export/Import (Excel-first requirement)
+- GET /api/shows/{show_id}/volunteers/export.csv
+  includes: shifts grid + assignments + contact list
+- POST /api/shows/{show_id}/volunteers/import.csv
+  accepts coordinator-edited CSV, upserts:
+   - roles (match by role name)
+   - shifts (match by role + start/end)
+   - volunteers (match by email; fallback full_name+phone)
+   - assignments (idempotent via UNIQUE)
+
+7) Printable schedule output (auto formatted)
+- GET /api/shows/{show_id}/volunteers/printable
+  returns HTML (simple tables) OR PDF later
+  must be printer-friendly without Excel formatting
+
+========================================================
+C) SIGNUP LINK + APPROVAL FLOW (events/logic)
+========================================================
+
+- Public signup page can be frontend-only; backend needs:
+  - POST /api/public/volunteer-signup?token=...
+  - token maps to show_id (store show.public_volunteer_token)
+- Approval:
+  - New volunteer defaults status='pending'
+  - Coordinator can approve via PATCH /api/volunteers/{id} status='approved'
+  - Only approved volunteers can self-assign shifts (enforced server-side)
+
+========================================================
+D) JUDGING — KEEP CURRENT MINIMAL SYSTEM
+========================================================
+
+- You already have judges + score_submissions + entry scores endpoint.
+- Keep it minimal for now.
+- Add optional: GET /api/shows/{show_id}/leaderboard (aggregate avg or sum).
+
+========================================================
+E) ACCEPTANCE TESTS (for demo readiness)
+========================================================
+
+Volunteers:
+- Create roles, shifts
+- Create volunteer (pending -> approved)
+- Self-assign volunteer to shift (respect capacity)
+- Export CSV, edit locally, re-import without duplicates
+- Check-in/out via web endpoint
+
+Judging:
+- Create judge
+- Submit score (duplicate rejected)
+- Lock show prevents scoring
+
+========================================================
+F) NOTES (Non-negotiable behavior)
+========================================================
+
+- Excel-first: export/import must be painless.
+- System must be adaptable: coordinator can add roles/shifts at any time; existing assignments preserved.
+- Low-tech fallback: coordinator can manually add volunteer and assign shifts without volunteer logging in.
+- High-tech option: volunteers self-signup from link and self-manage shift changes (if approved).
+
+END.
