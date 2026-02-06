@@ -294,7 +294,10 @@ class JudgingEvent(Base):
     judging_type = Column(String, default="standard")
     is_blind = Column(Boolean, default=False)
     status = Column(String, default="draft")
+    published_at = Column(DateTime, nullable=True)
+    closed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class PlantCategory(Base):
@@ -304,6 +307,7 @@ class PlantCategory(Base):
     judging_event_id = Column(String, ForeignKey("judging_events.id"), nullable=False, index=True)
     name = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
+    sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -315,6 +319,10 @@ class JudgingCriterion(Base):
     label = Column(Text, nullable=False)
     weight = Column(Float, nullable=True)
     max_points = Column(Integer, nullable=True)
+    scoring_type = Column(String, default="numeric")
+    min_value = Column(Integer, nullable=True)
+    max_value = Column(Integer, nullable=True)
+    choices_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -364,6 +372,51 @@ class Score(Base):
     criterion_id = Column(String, ForeignKey("judging_criteria.id"), nullable=False, index=True)
     value = Column(Float, nullable=True)
     choice = Column(String, nullable=True)
+    value_rank = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class JudgeAssignment(Base):
+    __tablename__ = "judge_assignments"
+    __table_args__ = (
+        UniqueConstraint("judging_event_id", "judge_id", "category_id", name="uix_judge_assign_evt_judge_cat"),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    judging_event_id = Column(String, ForeignKey("judging_events.id"), nullable=False, index=True)
+    judge_id = Column(String, ForeignKey("judges.id"), nullable=False, index=True)
+    category_id = Column(String, ForeignKey("plant_categories.id"), nullable=True, index=True)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Scorecard(Base):
+    __tablename__ = "scorecards"
+    __table_args__ = (
+        UniqueConstraint("judging_event_id", "plant_id", "judge_id", name="uix_scorecard_evt_plant_judge"),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    judging_event_id = Column(String, ForeignKey("judging_events.id"), nullable=False, index=True)
+    plant_id = Column(String, ForeignKey("plants.id"), nullable=False, index=True)
+    judge_id = Column(String, ForeignKey("judges.id"), nullable=False, index=True)
+    status = Column(String, default="draft")
+    total = Column(Float, nullable=True)
+    submitted_at = Column(DateTime, nullable=True)
+    version = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ScorecardAuditLog(Base):
+    __tablename__ = "scorecard_audit_log"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    scorecard_id = Column(String, ForeignKey("scorecards.id"), nullable=False, index=True)
+    actor_judge_id = Column(String, nullable=True)
+    action = Column(String, nullable=False)
+    diff_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
