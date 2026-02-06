@@ -332,12 +332,7 @@ class ScoreSubmissionOut(BaseModel):
 class VolunteerRoleCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    training_url: Optional[str] = None
-
-
-class VolunteerRoleUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    location: Optional[str] = None
     training_url: Optional[str] = None
 
 
@@ -345,8 +340,9 @@ class VolunteerRoleOut(BaseModel):
     id: str
     show_id: str
     name: str
-    description: Optional[str]
-    training_url: Optional[str]
+    description: Optional[str] = None
+    location: Optional[str] = None
+    training_url: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -355,19 +351,10 @@ class VolunteerRoleOut(BaseModel):
 
 class VolunteerShiftCreate(BaseModel):
     role_id: str
-    starts_at: datetime
-    ends_at: datetime
-    capacity: Optional[int] = 1
-    location: Optional[str] = None
-    notes: Optional[str] = None
-
-
-class VolunteerShiftUpdate(BaseModel):
-    role_id: Optional[str] = None
-    starts_at: Optional[datetime] = None
-    ends_at: Optional[datetime] = None
-    capacity: Optional[int] = None
-    location: Optional[str] = None
+    shift_date: date
+    start_time: str
+    end_time: str
+    slots_needed: Optional[int] = 1
     notes: Optional[str] = None
 
 
@@ -375,11 +362,11 @@ class VolunteerShiftOut(BaseModel):
     id: str
     show_id: str
     role_id: str
-    starts_at: datetime
-    ends_at: datetime
-    capacity: int
-    location: Optional[str]
-    notes: Optional[str]
+    shift_date: date
+    start_time: str
+    end_time: str
+    slots_needed: int
+    notes: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -387,30 +374,18 @@ class VolunteerShiftOut(BaseModel):
 
 
 class VolunteerCreate(BaseModel):
-    full_name: str
-    email: Optional[str] = None
+    name: str
+    email: str
     phone: Optional[str] = None
-    sms_opt_in: Optional[bool] = False
-    org_id: Optional[str] = None
     status: Optional[str] = "pending"
-
-
-class VolunteerUpdate(BaseModel):
-    full_name: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    sms_opt_in: Optional[bool] = None
-    status: Optional[str] = None
 
 
 class VolunteerOut(BaseModel):
     id: str
-    org_id: Optional[str]
     show_id: str
-    full_name: str
-    email: Optional[str]
-    phone: Optional[str]
-    sms_opt_in: bool
+    name: str
+    email: str
+    phone: Optional[str] = None
     status: str
     created_at: datetime
 
@@ -418,49 +393,46 @@ class VolunteerOut(BaseModel):
         from_attributes = True
 
 
-class VolunteerAssignmentCreate(BaseModel):
-    show_id: str
-    volunteer_id: str
+class VolunteerSignupCreate(BaseModel):
     shift_id: str
-    source: Optional[str] = "self_signup"
+    volunteer_id: str
+    signup_source: Optional[str] = "self"
 
 
-class VolunteerAssignmentOut(BaseModel):
+class VolunteerSignupOut(BaseModel):
     id: str
     show_id: str
-    volunteer_id: str
     shift_id: str
-    status: str
-    source: str
+    volunteer_id: str
+    signup_source: str
+    approved: bool
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
 
 
-class VolunteerCheckinRequest(BaseModel):
-    show_id: str
+class VolunteerSignupMove(BaseModel):
+    shift_id: str
+
+
+class AttendanceRequest(BaseModel):
     volunteer_id: str
     shift_id: str
     method: Optional[str] = "web"
 
 
-class VolunteerCheckinOut(BaseModel):
+class AttendanceOut(BaseModel):
     id: str
     show_id: str
-    volunteer_id: str
     shift_id: str
-    check_in_at: Optional[datetime]
-    check_out_at: Optional[datetime]
+    volunteer_id: str
+    check_in_at: Optional[datetime] = None
+    check_out_at: Optional[datetime] = None
     method: str
     created_at: datetime
 
     class Config:
         from_attributes = True
-
-
-class PublicVolunteerSignup(BaseModel):
-    full_name: str
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    sms_opt_in: Optional[bool] = False

@@ -1,0 +1,133 @@
+BACKEND TARGET: Replit-hosted FastAPI + SQLAlchemy + Postgres for CALYX
+GOAL: Support volunteer + judging flows in a demo-safe way. Implement minimal endpoints + data model needed for:
+1) Volunteer scheduling that is Excel-friendly (import/export + printable)
+2) Volunteer signup + coordinator approval + manual override
+3) Volunteer check-in/out (mobile/QR-ready)
+4) Judging: judges + score submissions + entry score list + show lock
+
+NON-NEGOTIABLE RULES
+- Do not invent unrelated features.
+- Preserve existing auth behavior (X-API-Key / existing security dependency).
+- Full-file replacement outputs when providing code.
+- Idempotent endpoints where appropriate.
+- Add uniqueness constraints to prevent duplicates.
+- Keep schema minimal and compatible with existing models pattern.
+
+A) VOLUNTEER DATA MODEL (MINIMAL)
+Tables:
+1) volunteer_roles
+- id (uuid PK)
+- show_id (FK shows.id)
+- name (text, required)
+- description (text, nullable)
+- location (text, nullable)
+- training_url (text, nullable)
+- created_at
+
+2) volunteer_shifts
+- id (uuid PK)
+- show_id (FK shows.id)
+- role_id (FK volunteer_roles.id)
+- shift_date (date)
+- start_time (time)
+- end_time (time)
+- slots_needed (int)
+- notes (text, nullable)
+- created_at
+
+3) volunteers
+- id (uuid PK)
+- show_id (FK shows.id)
+- name (text)
+- email (text)
+- phone (text, nullable)
+- status (enum/text: pending|approved|blocked) default pending
+- created_at
+Unique: (show_id, email) to prevent duplicates
+
+4) volunteer_signups
+- id (uuid PK)
+- show_id (FK shows.id)
+- shift_id (FK volunteer_shifts.id)
+- volunteer_id (FK volunteers.id)
+- signup_source (text: self|coordinator) default self
+- approved (bool) default false
+- approved_by (text nullable)
+- approved_at (timestamp nullable)
+- created_at
+Unique: (shift_id, volunteer_id) to prevent duplicate signups
+
+5) volunteer_attendance
+- id (uuid PK)
+- show_id (FK shows.id)
+- shift_id (FK volunteer_shifts.id)
+- volunteer_id (FK volunteers.id)
+- check_in_at (timestamp nullable)
+- check_out_at (timestamp nullable)
+- method (text: web|qr|kiosk) default web
+Unique: (shift_id, volunteer_id)
+
+B) VOLUNTEER API ENDPOINTS (MINIMAL)
+1) Roles
+POST /api/shows/{show_id}/volunteer/roles
+GET  /api/shows/{show_id}/volunteer/roles
+
+2) Shifts
+POST /api/shows/{show_id}/volunteer/shifts
+GET  /api/shows/{show_id}/volunteer/shifts
+PATCH/DELETE shift optional (only if easy)
+
+3) Volunteers + Signup
+POST /api/shows/{show_id}/volunteer/volunteers   (create volunteer profile; status pending)
+GET  /api/shows/{show_id}/volunteer/volunteers
+
+POST /api/shows/{show_id}/volunteer/signups      (self-signup or coordinator signup)
+PATCH /api/shows/{show_id}/volunteer/signups/{signup_id}/approve
+PATCH /api/shows/{show_id}/volunteer/signups/{signup_id}/move   (move signup to another shift_id)
+DELETE /api/shows/{show_id}/volunteer/signups/{signup_id}       (remove)
+
+4) Check-in/out
+POST /api/shows/{show_id}/volunteer/attendance/check-in
+POST /api/shows/{show_id}/volunteer/attendance/check-out
+(accept volunteer_id + shift_id, return attendance row)
+
+5) Excel-friendly Import/Export
+GET /api/shows/{show_id}/volunteer/export.xlsx  (or .csv if easier)
+POST /api/shows/{show_id}/volunteer/import      (accept CSV upload or JSON rows)
+Rules: import creates/updates roles, shifts, volunteers, signups; never duplicates due to unique keys.
+
+C) JUDGING (VERIFY CURRENT STATE FIRST)
+- Confirm whether Judge and ScoreSubmission already exist in app/models.py and app/routers/judging.py.
+- If they exist: do NOT create duplicates.
+- Ensure they are in the correct file (models.py only; NOT main.py).
+- Ensure show has judging_locked boolean default false.
+- Ensure ScoreSubmission has UNIQUE(show_id, entry_id, judge_id).
+
+Judging endpoints (must exist and be wired):
+POST /api/judges
+GET  /api/judges?show_id=
+POST /api/score-submissions   (reject 409 if show.judging_locked; reject 409 duplicates)
+GET  /api/entries/{entry_id}/scores
+
+D) IMPLEMENTATION CHECKS (COMMON FAILURE MODES)
+- Confirm routers are included in app/main.py via app.include_router(...)
+- Confirm models Base is consistent (only one Base, used everywhere)
+- Confirm create_all runs on startup and sees imported models
+- Confirm types match: if ids are UUID strings, do NOT mix with Integer ids
+
+E) OUTPUT REQUIRED FROM BACKEND DEV
+1) List of files modified/added
+2) Full replacement content for each modified/added file
+3) Minimal seed SQL script (Postgres) that seeds:
+- 1 organization
+- 1 show
+- volunteer roles + shifts
+- 6 volunteers + signups
+- attendance samples
+- 3 judges
+- 10 score_submissions
+- 3 awards linked to entries
+If a table does not exist, explicitly output: CANNOT SEED — TABLE MISSING: <name>
+
+FOCUS
+Volunteer + judging only. Keep it small, correct, and demo-safe.

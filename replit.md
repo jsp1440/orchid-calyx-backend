@@ -9,10 +9,10 @@ Backend API for Calyx - Orchid Show Management System powered by Orchid Continuu
 - Frontend: Famous AI (separate project)
 
 ## Recent Changes
-- 2026-02-06: Full Volunteer Operations module (roles, shifts, directory, assignments, check-in/out, CSV export/import, printable schedule, public signup)
-- 2026-02-06: Fixed schemas.py (was corrupted), added Base to database.py
-- 2026-02-06: Added judging leaderboard endpoint
-- 2026-02-04: Added Judging module (judges, score_submissions, show locking)
+- 2026-02-06: Aligned volunteer module to spec: volunteer_signups (replaces assignments), volunteer_attendance (replaces checkins), shifts use date+time+slots_needed, volunteers use name+unique(show_id,email), signup approve/move/delete endpoints
+- 2026-02-06: Added seed.sql with demo data (1 org, 1 show, 5 entries, 3 roles, 5 shifts, 6 volunteers, 8 signups, 3 attendance, 3 judges, 10 scores, 3 awards)
+- 2026-02-06: Endpoint paths changed to /api/shows/{show_id}/volunteer/... pattern
+- 2026-02-04: Added Judging module (judges, score_submissions, show locking, leaderboard)
 - 2026-02-04: Added System Reference Documents feature for AOS judging PDFs
 - 2026-01-28: Restructured with new routers, models, configurable CORS, API key auth
 
@@ -28,7 +28,7 @@ Backend API for Calyx - Orchid Show Management System powered by Orchid Continuu
 ## Project Structure
 ```
 app/
-  main.py           - FastAPI app entry point
+  main.py           - FastAPI app entry point, startup schema reconciliation
   database.py       - Database configuration (Base, engine, session)
   models.py         - SQLAlchemy models (imports Base from database.py)
   schemas.py        - Pydantic request/response schemas
@@ -45,7 +45,8 @@ app/
     calyx_core.py      - Organizations, contacts, events, templates
     reference_docs.py  - System reference documents (AOS PDFs)
     judging.py         - Judges, score submissions, leaderboard
-    volunteer_ops.py   - Full volunteer operations module
+    volunteer_ops.py   - Volunteer operations (roles, shifts, signups, attendance, export/import)
+seed.sql              - Demo seed data (Postgres)
 ```
 
 ## Run Command
@@ -57,7 +58,7 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 ### Core: Organization, Show, Entry, Award, Contact, MessageTemplate, MessageLog, Event, File, IntegrationConnection
 ### Reference: SystemReferenceDocument
 ### Judging: Judge, ScoreSubmission
-### Volunteers: Volunteer, VolunteerRole, VolunteerShift, VolunteerAssignment, VolunteerCheckin
+### Volunteers: VolunteerRole, VolunteerShift, Volunteer, VolunteerSignup, VolunteerAttendance
 
 ## API Endpoints
 
@@ -79,48 +80,49 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 - `GET /api/entries/{entry_id}/scores` - Entry scores
 - `GET /api/shows/{show_id}/leaderboard` - Aggregate leaderboard
 
-### Volunteer Operations (all require X-API-Key except public signup)
+### Volunteer Operations (all require X-API-Key)
+All paths under `/api/shows/{show_id}/volunteer/...`
+
 **Roles:**
-- `POST /api/shows/{show_id}/volunteer-roles` - Create role
-- `GET /api/shows/{show_id}/volunteer-roles` - List roles
-- `PATCH /api/volunteer-roles/{role_id}` - Update role
-- `DELETE /api/volunteer-roles/{role_id}` - Delete role
+- `POST /api/shows/{show_id}/volunteer/roles` - Create role (name, description, location, training_url)
+- `GET  /api/shows/{show_id}/volunteer/roles` - List roles
 
 **Shifts:**
-- `POST /api/shows/{show_id}/volunteer-shifts` - Create shift
-- `GET /api/shows/{show_id}/volunteer-shifts?role_id=&date=` - List shifts
-- `PATCH /api/volunteer-shifts/{shift_id}` - Update shift
-- `DELETE /api/volunteer-shifts/{shift_id}` - Delete shift
+- `POST   /api/shows/{show_id}/volunteer/shifts` - Create shift (role_id, shift_date, start_time, end_time, slots_needed)
+- `GET    /api/shows/{show_id}/volunteer/shifts` - List shifts
+- `PATCH  /api/shows/{show_id}/volunteer/shifts/{shift_id}` - Update shift
+- `DELETE /api/shows/{show_id}/volunteer/shifts/{shift_id}` - Delete shift
 
-**Directory:**
-- `POST /api/shows/{show_id}/volunteers` - Create volunteer (pending/approved)
-- `GET /api/shows/{show_id}/volunteers?status=` - List volunteers
-- `PATCH /api/volunteers/{volunteer_id}` - Update/approve/block
+**Volunteers:**
+- `POST /api/shows/{show_id}/volunteer/volunteers` - Create (name, email required; status default pending)
+- `GET  /api/shows/{show_id}/volunteer/volunteers` - List all
 
-**Assignments:**
-- `POST /api/volunteer-assignments` - Assign (rejects if unapproved or capacity exceeded, 409)
-- `GET /api/shows/{show_id}/volunteer-assignments?shift_id=&volunteer_id=` - List
-- `DELETE /api/volunteer-assignments/{assignment_id}` - Remove
+**Signups:**
+- `POST   /api/shows/{show_id}/volunteer/signups` - Create signup (shift_id, volunteer_id, signup_source)
+- `GET    /api/shows/{show_id}/volunteer/signups` - List signups
+- `PATCH  /api/shows/{show_id}/volunteer/signups/{id}/approve` - Approve (sets approved=true, approved_by, approved_at)
+- `PATCH  /api/shows/{show_id}/volunteer/signups/{id}/move` - Move to different shift
+- `DELETE /api/shows/{show_id}/volunteer/signups/{id}` - Remove signup
 
-**Check-in/out:**
-- `POST /api/volunteer-checkin` - Check in (409 if already checked in)
-- `POST /api/volunteer-checkout` - Check out (409 if not checked in)
+**Attendance:**
+- `POST /api/shows/{show_id}/volunteer/attendance/check-in` - Check in (volunteer_id, shift_id, method)
+- `POST /api/shows/{show_id}/volunteer/attendance/check-out` - Check out (409 if not checked in)
 
 **Export/Import:**
-- `GET /api/shows/{show_id}/volunteers/export.csv` - Export CSV
-- `POST /api/shows/{show_id}/volunteers/import.csv` - Import CSV (idempotent upsert)
-- `GET /api/shows/{show_id}/volunteers/printable` - Printable HTML schedule
-
-**Public Signup (no API key required):**
-- `POST /api/public/volunteer-signup?token=` - Public self-registration (pending status)
+- `GET  /api/shows/{show_id}/volunteer/export.csv` - CSV export
+- `POST /api/shows/{show_id}/volunteer/import` - CSV import (idempotent upsert by email)
+- `GET  /api/shows/{show_id}/volunteer/printable` - Printable HTML schedule
 
 ### Business Rules
-- Volunteers must be `approved` before assignment to shifts
-- Shift capacity enforced server-side (409 if exceeded)
-- Unique constraints prevent duplicate assignments and check-ins
-- CSV import matches by email first, then full_name+phone
+- Unique constraint on (show_id, email) for volunteers — prevents duplicate profiles
+- Unique constraint on (shift_id, volunteer_id) for signups — prevents duplicate signups
+- Unique constraint on (shift_id, volunteer_id) for attendance — prevents duplicate check-ins
+- Shift slots enforced server-side (409 if slots full)
+- CSV import matches volunteers by email; creates roles/shifts/signups as needed
 - Re-imports are idempotent (no duplicate data)
 - Show's `public_volunteer_token` enables public signup link
+- Score submissions rejected if show.judging_locked=true (409)
+- Score submissions unique per (show_id, entry_id, judge_id)
 
 ## User Preferences
 - Do NOT build UI

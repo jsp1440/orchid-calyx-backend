@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, time, date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
@@ -14,29 +14,29 @@ from app.models import (
     Volunteer,
     VolunteerRole,
     VolunteerShift,
-    VolunteerAssignment,
-    VolunteerCheckin,
+    VolunteerSignup,
+    VolunteerAttendance,
 )
 from app.schemas import (
     VolunteerRoleCreate,
-    VolunteerRoleUpdate,
     VolunteerRoleOut,
     VolunteerShiftCreate,
-    VolunteerShiftUpdate,
     VolunteerShiftOut,
     VolunteerCreate,
-    VolunteerUpdate,
     VolunteerOut,
-    VolunteerAssignmentCreate,
-    VolunteerAssignmentOut,
-    VolunteerCheckinRequest,
-    VolunteerCheckinOut,
-    PublicVolunteerSignup,
+    VolunteerSignupCreate,
+    VolunteerSignupOut,
+    VolunteerSignupMove,
+    AttendanceRequest,
+    AttendanceOut,
 )
 from app.security import verify_api_key
 
-router = APIRouter(prefix="/api", tags=["Volunteer Operations"], dependencies=[Depends(verify_api_key)])
-public_router = APIRouter(prefix="/api/public", tags=["Public Volunteer"])
+router = APIRouter(
+    prefix="/api/shows/{show_id}/volunteer",
+    tags=["Volunteer Operations"],
+    dependencies=[Depends(verify_api_key)],
+)
 
 
 def _require_show(db: Session, show_id: str) -> Show:
@@ -46,7 +46,27 @@ def _require_show(db: Session, show_id: str) -> Show:
     return show
 
 
-@router.post("/shows/{show_id}/volunteer-roles", response_model=VolunteerRoleOut)
+def _time_str(t) -> str:
+    if isinstance(t, time):
+        return t.strftime("%H:%M")
+    return str(t) if t else ""
+
+
+def _shift_to_out(s) -> dict:
+    return {
+        "id": s.id,
+        "show_id": s.show_id,
+        "role_id": s.role_id,
+        "shift_date": s.shift_date,
+        "start_time": _time_str(s.start_time),
+        "end_time": _time_str(s.end_time),
+        "slots_needed": s.slots_needed,
+        "notes": s.notes,
+        "created_at": s.created_at,
+    }
+
+
+@router.post("/roles", response_model=VolunteerRoleOut)
 def create_role(show_id: str, data: VolunteerRoleCreate, db: Session = Depends(get_db)):
     _require_show(db, show_id)
     role = VolunteerRole(show_id=show_id, **data.model_dump())
@@ -56,198 +76,211 @@ def create_role(show_id: str, data: VolunteerRoleCreate, db: Session = Depends(g
     return role
 
 
-@router.get("/shows/{show_id}/volunteer-roles", response_model=List[VolunteerRoleOut])
+@router.get("/roles", response_model=List[VolunteerRoleOut])
 def list_roles(show_id: str, db: Session = Depends(get_db)):
     return db.execute(select(VolunteerRole).where(VolunteerRole.show_id == show_id)).scalars().all()
 
 
-@router.patch("/volunteer-roles/{role_id}", response_model=VolunteerRoleOut)
-def update_role(role_id: str, data: VolunteerRoleUpdate, db: Session = Depends(get_db)):
-    role = db.get(VolunteerRole, role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-    for k, v in data.model_dump(exclude_unset=True).items():
-        setattr(role, k, v)
-    db.commit()
-    db.refresh(role)
-    return role
-
-
-@router.delete("/volunteer-roles/{role_id}")
-def delete_role(role_id: str, db: Session = Depends(get_db)):
-    role = db.get(VolunteerRole, role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="Role not found")
-    db.delete(role)
-    db.commit()
-    return {"status": "deleted"}
-
-
-@router.post("/shows/{show_id}/volunteer-shifts", response_model=VolunteerShiftOut)
+@router.post("/shifts")
 def create_shift(show_id: str, data: VolunteerShiftCreate, db: Session = Depends(get_db)):
     _require_show(db, show_id)
     role = db.get(VolunteerRole, data.role_id)
     if not role or role.show_id != show_id:
         raise HTTPException(status_code=404, detail="Role not found for this show")
-    shift = VolunteerShift(show_id=show_id, **data.model_dump())
+
+    try:
+        st = time.fromisoformat(data.start_time)
+        et = time.fromisoformat(data.end_time)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid time format. Use HH:MM or HH:MM:SS")
+
+    shift = VolunteerShift(
+        show_id=show_id,
+        role_id=data.role_id,
+        shift_date=data.shift_date,
+        start_time=st,
+        end_time=et,
+        slots_needed=data.slots_needed or 1,
+        notes=data.notes,
+    )
     db.add(shift)
     db.commit()
     db.refresh(shift)
-    return shift
+    return _shift_to_out(shift)
 
 
-@router.get("/shows/{show_id}/volunteer-shifts", response_model=List[VolunteerShiftOut])
-def list_shifts(
-    show_id: str,
-    role_id: Optional[str] = Query(None),
-    date: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-):
-    q = select(VolunteerShift).where(VolunteerShift.show_id == show_id)
-    if role_id:
-        q = q.where(VolunteerShift.role_id == role_id)
-    if date:
-        q = q.where(func.date(VolunteerShift.starts_at) == date)
-    return db.execute(q).scalars().all()
+@router.get("/shifts")
+def list_shifts(show_id: str, db: Session = Depends(get_db)):
+    shifts = db.execute(
+        select(VolunteerShift).where(VolunteerShift.show_id == show_id)
+    ).scalars().all()
+    return [_shift_to_out(s) for s in shifts]
 
 
-@router.patch("/volunteer-shifts/{shift_id}", response_model=VolunteerShiftOut)
-def update_shift(shift_id: str, data: VolunteerShiftUpdate, db: Session = Depends(get_db)):
+@router.patch("/shifts/{shift_id}")
+def update_shift(show_id: str, shift_id: str, db: Session = Depends(get_db),
+                 role_id: Optional[str] = None, shift_date: Optional[str] = None,
+                 start_time: Optional[str] = None, end_time: Optional[str] = None,
+                 slots_needed: Optional[int] = None, notes: Optional[str] = None):
     shift = db.get(VolunteerShift, shift_id)
-    if not shift:
+    if not shift or shift.show_id != show_id:
         raise HTTPException(status_code=404, detail="Shift not found")
-    for k, v in data.model_dump(exclude_unset=True).items():
-        setattr(shift, k, v)
+    if role_id is not None:
+        shift.role_id = role_id
+    if shift_date is not None:
+        shift.shift_date = date.fromisoformat(shift_date)
+    if start_time is not None:
+        shift.start_time = time.fromisoformat(start_time)
+    if end_time is not None:
+        shift.end_time = time.fromisoformat(end_time)
+    if slots_needed is not None:
+        shift.slots_needed = slots_needed
+    if notes is not None:
+        shift.notes = notes
     db.commit()
     db.refresh(shift)
-    return shift
+    return _shift_to_out(shift)
 
 
-@router.delete("/volunteer-shifts/{shift_id}")
-def delete_shift(shift_id: str, db: Session = Depends(get_db)):
+@router.delete("/shifts/{shift_id}")
+def delete_shift(show_id: str, shift_id: str, db: Session = Depends(get_db)):
     shift = db.get(VolunteerShift, shift_id)
-    if not shift:
+    if not shift or shift.show_id != show_id:
         raise HTTPException(status_code=404, detail="Shift not found")
     db.delete(shift)
     db.commit()
     return {"status": "deleted"}
 
 
-@router.post("/shows/{show_id}/volunteers", response_model=VolunteerOut)
+@router.post("/volunteers", response_model=VolunteerOut)
 def create_volunteer(show_id: str, data: VolunteerCreate, db: Session = Depends(get_db)):
     _require_show(db, show_id)
     vol = Volunteer(show_id=show_id, **data.model_dump())
     db.add(vol)
-    db.commit()
-    db.refresh(vol)
-    return vol
-
-
-@router.get("/shows/{show_id}/volunteers", response_model=List[VolunteerOut])
-def list_volunteers(
-    show_id: str,
-    status: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-):
-    q = select(Volunteer).where(Volunteer.show_id == show_id)
-    if status:
-        q = q.where(Volunteer.status == status)
-    return db.execute(q).scalars().all()
-
-
-@router.patch("/volunteers/{volunteer_id}", response_model=VolunteerOut)
-def update_volunteer(volunteer_id: str, data: VolunteerUpdate, db: Session = Depends(get_db)):
-    vol = db.get(Volunteer, volunteer_id)
-    if not vol:
-        raise HTTPException(status_code=404, detail="Volunteer not found")
-    for k, v in data.model_dump(exclude_unset=True).items():
-        setattr(vol, k, v)
-    db.commit()
-    db.refresh(vol)
-    return vol
-
-
-def _count_assigned(db: Session, shift_id: str) -> int:
-    return db.execute(
-        select(func.count(VolunteerAssignment.id)).where(
-            VolunteerAssignment.shift_id == shift_id,
-            VolunteerAssignment.status == "assigned",
-        )
-    ).scalar_one()
-
-
-@router.post("/volunteer-assignments", response_model=VolunteerAssignmentOut)
-def create_assignment(data: VolunteerAssignmentCreate, db: Session = Depends(get_db)):
-    _require_show(db, data.show_id)
-
-    vol = db.get(Volunteer, data.volunteer_id)
-    if not vol or vol.show_id != data.show_id:
-        raise HTTPException(status_code=404, detail="Volunteer not found for this show")
-
-    if vol.status != "approved":
-        raise HTTPException(status_code=409, detail="Volunteer must be approved before assignment")
-
-    shift = db.get(VolunteerShift, data.shift_id)
-    if not shift or shift.show_id != data.show_id:
-        raise HTTPException(status_code=404, detail="Shift not found for this show")
-
-    current = _count_assigned(db, data.shift_id)
-    if current >= shift.capacity:
-        raise HTTPException(status_code=409, detail="Shift capacity exceeded")
-
-    existing = db.execute(
-        select(VolunteerAssignment).where(
-            VolunteerAssignment.show_id == data.show_id,
-            VolunteerAssignment.volunteer_id == data.volunteer_id,
-            VolunteerAssignment.shift_id == data.shift_id,
-        )
-    ).scalar_one_or_none()
-    if existing:
-        raise HTTPException(status_code=409, detail="Volunteer already assigned to this shift")
-
-    assignment = VolunteerAssignment(**data.model_dump())
-    db.add(assignment)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Duplicate assignment")
-    db.refresh(assignment)
-    return assignment
+        raise HTTPException(status_code=409, detail="Volunteer with this email already exists for this show")
+    db.refresh(vol)
+    return vol
 
 
-@router.get("/shows/{show_id}/volunteer-assignments", response_model=List[VolunteerAssignmentOut])
-def list_assignments(
-    show_id: str,
-    shift_id: Optional[str] = Query(None),
-    volunteer_id: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-):
-    q = select(VolunteerAssignment).where(VolunteerAssignment.show_id == show_id)
-    if shift_id:
-        q = q.where(VolunteerAssignment.shift_id == shift_id)
-    if volunteer_id:
-        q = q.where(VolunteerAssignment.volunteer_id == volunteer_id)
-    return db.execute(q).scalars().all()
+@router.get("/volunteers", response_model=List[VolunteerOut])
+def list_volunteers(show_id: str, db: Session = Depends(get_db)):
+    return db.execute(select(Volunteer).where(Volunteer.show_id == show_id)).scalars().all()
 
 
-@router.delete("/volunteer-assignments/{assignment_id}")
-def delete_assignment(assignment_id: str, db: Session = Depends(get_db)):
-    a = db.get(VolunteerAssignment, assignment_id)
-    if not a:
-        raise HTTPException(status_code=404, detail="Assignment not found")
-    db.delete(a)
+@router.post("/signups", response_model=VolunteerSignupOut)
+def create_signup(show_id: str, data: VolunteerSignupCreate, db: Session = Depends(get_db)):
+    _require_show(db, show_id)
+
+    vol = db.get(Volunteer, data.volunteer_id)
+    if not vol or vol.show_id != show_id:
+        raise HTTPException(status_code=404, detail="Volunteer not found for this show")
+
+    shift = db.get(VolunteerShift, data.shift_id)
+    if not shift or shift.show_id != show_id:
+        raise HTTPException(status_code=404, detail="Shift not found for this show")
+
+    current = db.execute(
+        select(func.count(VolunteerSignup.id)).where(
+            VolunteerSignup.shift_id == data.shift_id,
+        )
+    ).scalar_one()
+    if current >= shift.slots_needed:
+        raise HTTPException(status_code=409, detail="Shift slots full")
+
+    signup = VolunteerSignup(
+        show_id=show_id,
+        shift_id=data.shift_id,
+        volunteer_id=data.volunteer_id,
+        signup_source=data.signup_source or "self",
+    )
+    db.add(signup)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Volunteer already signed up for this shift")
+    db.refresh(signup)
+    return signup
+
+
+@router.get("/signups", response_model=List[VolunteerSignupOut])
+def list_signups(show_id: str, db: Session = Depends(get_db)):
+    return db.execute(
+        select(VolunteerSignup).where(VolunteerSignup.show_id == show_id)
+    ).scalars().all()
+
+
+@router.patch("/signups/{signup_id}/approve", response_model=VolunteerSignupOut)
+def approve_signup(show_id: str, signup_id: str,
+                   approved_by: Optional[str] = Query(None),
+                   db: Session = Depends(get_db)):
+    signup = db.get(VolunteerSignup, signup_id)
+    if not signup or signup.show_id != show_id:
+        raise HTTPException(status_code=404, detail="Signup not found")
+    signup.approved = True
+    signup.approved_by = approved_by
+    signup.approved_at = datetime.utcnow()
+    db.commit()
+    db.refresh(signup)
+    return signup
+
+
+@router.patch("/signups/{signup_id}/move", response_model=VolunteerSignupOut)
+def move_signup(show_id: str, signup_id: str, data: VolunteerSignupMove, db: Session = Depends(get_db)):
+    signup = db.get(VolunteerSignup, signup_id)
+    if not signup or signup.show_id != show_id:
+        raise HTTPException(status_code=404, detail="Signup not found")
+
+    new_shift = db.get(VolunteerShift, data.shift_id)
+    if not new_shift or new_shift.show_id != show_id:
+        raise HTTPException(status_code=404, detail="Target shift not found")
+
+    existing = db.execute(
+        select(VolunteerSignup).where(
+            VolunteerSignup.shift_id == data.shift_id,
+            VolunteerSignup.volunteer_id == signup.volunteer_id,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="Volunteer already signed up for target shift")
+
+    current = db.execute(
+        select(func.count(VolunteerSignup.id)).where(
+            VolunteerSignup.shift_id == data.shift_id,
+        )
+    ).scalar_one()
+    if current >= new_shift.slots_needed:
+        raise HTTPException(status_code=409, detail="Target shift slots full")
+
+    signup.shift_id = data.shift_id
+    db.commit()
+    db.refresh(signup)
+    return signup
+
+
+@router.delete("/signups/{signup_id}")
+def delete_signup(show_id: str, signup_id: str, db: Session = Depends(get_db)):
+    signup = db.get(VolunteerSignup, signup_id)
+    if not signup or signup.show_id != show_id:
+        raise HTTPException(status_code=404, detail="Signup not found")
+    db.delete(signup)
     db.commit()
     return {"status": "deleted"}
 
 
-@router.post("/volunteer-checkin", response_model=VolunteerCheckinOut)
-def volunteer_checkin(data: VolunteerCheckinRequest, db: Session = Depends(get_db)):
+@router.post("/attendance/check-in", response_model=AttendanceOut)
+def attendance_checkin(show_id: str, data: AttendanceRequest, db: Session = Depends(get_db)):
+    _require_show(db, show_id)
+
     existing = db.execute(
-        select(VolunteerCheckin).where(
-            VolunteerCheckin.show_id == data.show_id,
-            VolunteerCheckin.volunteer_id == data.volunteer_id,
-            VolunteerCheckin.shift_id == data.shift_id,
+        select(VolunteerAttendance).where(
+            VolunteerAttendance.show_id == show_id,
+            VolunteerAttendance.volunteer_id == data.volunteer_id,
+            VolunteerAttendance.shift_id == data.shift_id,
         )
     ).scalar_one_or_none()
 
@@ -260,36 +293,35 @@ def volunteer_checkin(data: VolunteerCheckinRequest, db: Session = Depends(get_d
         db.refresh(existing)
         return existing
 
-    checkin = VolunteerCheckin(
-        show_id=data.show_id,
-        volunteer_id=data.volunteer_id,
+    att = VolunteerAttendance(
+        show_id=show_id,
         shift_id=data.shift_id,
+        volunteer_id=data.volunteer_id,
         check_in_at=datetime.utcnow(),
         method=data.method or "web",
     )
-    db.add(checkin)
+    db.add(att)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Duplicate check-in record")
-    db.refresh(checkin)
-    return checkin
+        raise HTTPException(status_code=409, detail="Duplicate attendance record")
+    db.refresh(att)
+    return att
 
 
-@router.post("/volunteer-checkout", response_model=VolunteerCheckinOut)
-def volunteer_checkout(data: VolunteerCheckinRequest, db: Session = Depends(get_db)):
+@router.post("/attendance/check-out", response_model=AttendanceOut)
+def attendance_checkout(show_id: str, data: AttendanceRequest, db: Session = Depends(get_db)):
     existing = db.execute(
-        select(VolunteerCheckin).where(
-            VolunteerCheckin.show_id == data.show_id,
-            VolunteerCheckin.volunteer_id == data.volunteer_id,
-            VolunteerCheckin.shift_id == data.shift_id,
+        select(VolunteerAttendance).where(
+            VolunteerAttendance.show_id == show_id,
+            VolunteerAttendance.volunteer_id == data.volunteer_id,
+            VolunteerAttendance.shift_id == data.shift_id,
         )
     ).scalar_one_or_none()
 
     if not existing or existing.check_in_at is None:
         raise HTTPException(status_code=409, detail="Not checked in yet")
-
     if existing.check_out_at is not None:
         raise HTTPException(status_code=409, detail="Already checked out")
 
@@ -299,56 +331,52 @@ def volunteer_checkout(data: VolunteerCheckinRequest, db: Session = Depends(get_
     return existing
 
 
-@router.get("/shows/{show_id}/volunteers/export.csv")
-def export_volunteers_csv(show_id: str, db: Session = Depends(get_db)):
+@router.get("/export.csv")
+def export_csv(show_id: str, db: Session = Depends(get_db)):
     _require_show(db, show_id)
 
-    roles = db.execute(select(VolunteerRole).where(VolunteerRole.show_id == show_id)).scalars().all()
-    shifts = db.execute(select(VolunteerShift).where(VolunteerShift.show_id == show_id)).scalars().all()
-    vols = db.execute(select(Volunteer).where(Volunteer.show_id == show_id)).scalars().all()
-    assignments = db.execute(select(VolunteerAssignment).where(VolunteerAssignment.show_id == show_id)).scalars().all()
-    checkins = db.execute(select(VolunteerCheckin).where(VolunteerCheckin.show_id == show_id)).scalars().all()
-
-    role_map = {r.id: r for r in roles}
-    shift_map = {s.id: s for s in shifts}
-    vol_map = {v.id: v for v in vols}
-    checkin_map = {(c.volunteer_id, c.shift_id): c for c in checkins}
+    roles = {r.id: r for r in db.execute(select(VolunteerRole).where(VolunteerRole.show_id == show_id)).scalars().all()}
+    shifts = {s.id: s for s in db.execute(select(VolunteerShift).where(VolunteerShift.show_id == show_id)).scalars().all()}
+    vols = {v.id: v for v in db.execute(select(Volunteer).where(Volunteer.show_id == show_id)).scalars().all()}
+    signups = db.execute(select(VolunteerSignup).where(VolunteerSignup.show_id == show_id)).scalars().all()
+    attendances = db.execute(select(VolunteerAttendance).where(VolunteerAttendance.show_id == show_id)).scalars().all()
+    att_map = {(a.volunteer_id, a.shift_id): a for a in attendances}
 
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
-        "volunteer_name", "email", "phone", "sms_opt_in", "status",
-        "role_name", "shift_starts_at", "shift_ends_at", "shift_location",
-        "assignment_status", "assignment_source",
+        "volunteer_name", "email", "phone", "status",
+        "role_name", "shift_date", "start_time", "end_time",
+        "signup_source", "approved", "approved_by",
         "check_in_at", "check_out_at",
     ])
 
-    if assignments:
-        for a in assignments:
-            vol = vol_map.get(a.volunteer_id)
-            shift = shift_map.get(a.shift_id)
-            role = role_map.get(shift.role_id) if shift else None
-            ck = checkin_map.get((a.volunteer_id, a.shift_id))
+    if signups:
+        for su in signups:
+            vol = vols.get(su.volunteer_id)
+            shift = shifts.get(su.shift_id)
+            role = roles.get(shift.role_id) if shift else None
+            att = att_map.get((su.volunteer_id, su.shift_id))
             writer.writerow([
-                vol.full_name if vol else "",
+                vol.name if vol else "",
                 vol.email if vol else "",
                 vol.phone if vol else "",
-                vol.sms_opt_in if vol else "",
                 vol.status if vol else "",
                 role.name if role else "",
-                shift.starts_at.isoformat() if shift else "",
-                shift.ends_at.isoformat() if shift else "",
-                shift.location if shift else "",
-                a.status,
-                a.source,
-                ck.check_in_at.isoformat() if ck and ck.check_in_at else "",
-                ck.check_out_at.isoformat() if ck and ck.check_out_at else "",
+                str(shift.shift_date) if shift else "",
+                _time_str(shift.start_time) if shift else "",
+                _time_str(shift.end_time) if shift else "",
+                su.signup_source,
+                su.approved,
+                su.approved_by or "",
+                att.check_in_at.isoformat() if att and att.check_in_at else "",
+                att.check_out_at.isoformat() if att and att.check_out_at else "",
             ])
     else:
-        for vol in vols:
+        for vol in vols.values():
             writer.writerow([
-                vol.full_name, vol.email, vol.phone, vol.sms_opt_in, vol.status,
-                "", "", "", "", "", "", "", "",
+                vol.name, vol.email, vol.phone, vol.status,
+                "", "", "", "", "", "", "", "", "",
             ])
 
     content = output.getvalue()
@@ -359,30 +387,27 @@ def export_volunteers_csv(show_id: str, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/shows/{show_id}/volunteers/import.csv")
-async def import_volunteers_csv(show_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+@router.post("/import")
+async def import_volunteers(show_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
     _require_show(db, show_id)
 
     raw = await file.read()
     text = raw.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
 
-    stats = {"volunteers_created": 0, "volunteers_updated": 0, "roles_created": 0, "shifts_created": 0, "assignments_created": 0, "rows_processed": 0}
+    stats = {
+        "volunteers_created": 0, "volunteers_updated": 0,
+        "roles_created": 0, "shifts_created": 0,
+        "signups_created": 0, "rows_processed": 0,
+    }
 
     role_cache = {}
-    existing_roles = db.execute(select(VolunteerRole).where(VolunteerRole.show_id == show_id)).scalars().all()
-    for r in existing_roles:
+    for r in db.execute(select(VolunteerRole).where(VolunteerRole.show_id == show_id)).scalars().all():
         role_cache[r.name.strip().lower()] = r
 
     shift_cache = {}
-    existing_shifts = db.execute(select(VolunteerShift).where(VolunteerShift.show_id == show_id)).scalars().all()
-    for s in existing_shifts:
-        role = role_cache.get("") or None
-        for rn, ro in role_cache.items():
-            if ro.id == s.role_id:
-                role = ro
-                break
-        key = (s.role_id, s.starts_at.isoformat() if s.starts_at else "", s.ends_at.isoformat() if s.ends_at else "")
+    for s in db.execute(select(VolunteerShift).where(VolunteerShift.show_id == show_id)).scalars().all():
+        key = (s.role_id, str(s.shift_date), _time_str(s.start_time), _time_str(s.end_time))
         shift_cache[key] = s
 
     for row in reader:
@@ -391,123 +416,105 @@ async def import_volunteers_csv(show_id: str, file: UploadFile = File(...), db: 
         vol_name = (row.get("volunteer_name") or "").strip()
         vol_email = (row.get("email") or "").strip()
         vol_phone = (row.get("phone") or "").strip()
-        vol_sms = (row.get("sms_opt_in") or "").strip().lower() in ("true", "1", "yes")
         vol_status = (row.get("status") or "pending").strip()
         role_name = (row.get("role_name") or "").strip()
-        shift_start = (row.get("shift_starts_at") or "").strip()
-        shift_end = (row.get("shift_ends_at") or "").strip()
-        shift_location = (row.get("shift_location") or "").strip()
+        s_date = (row.get("shift_date") or "").strip()
+        s_start = (row.get("start_time") or "").strip()
+        s_end = (row.get("end_time") or "").strip()
 
-        if not vol_name:
+        if not vol_name or not vol_email:
             continue
 
-        vol = None
-        if vol_email:
-            vol = db.execute(
-                select(Volunteer).where(Volunteer.show_id == show_id, Volunteer.email == vol_email)
-            ).scalar_one_or_none()
-        if not vol:
-            vol = db.execute(
-                select(Volunteer).where(
-                    Volunteer.show_id == show_id,
-                    Volunteer.full_name == vol_name,
-                    Volunteer.phone == vol_phone if vol_phone else Volunteer.phone.is_(None),
-                )
-            ).scalar_one_or_none()
+        vol = db.execute(
+            select(Volunteer).where(Volunteer.show_id == show_id, Volunteer.email == vol_email)
+        ).scalar_one_or_none()
 
         if vol:
-            vol.full_name = vol_name
-            if vol_email:
-                vol.email = vol_email
+            vol.name = vol_name
             if vol_phone:
                 vol.phone = vol_phone
-            vol.sms_opt_in = vol_sms
             if vol_status:
                 vol.status = vol_status
             stats["volunteers_updated"] += 1
         else:
             vol = Volunteer(
                 show_id=show_id,
-                full_name=vol_name,
-                email=vol_email or None,
+                name=vol_name,
+                email=vol_email,
                 phone=vol_phone or None,
-                sms_opt_in=vol_sms,
                 status=vol_status,
             )
             db.add(vol)
             db.flush()
             stats["volunteers_created"] += 1
 
-        if not role_name or not shift_start or not shift_end:
+        if not role_name or not s_date or not s_start or not s_end:
             continue
 
-        role_key = role_name.lower()
-        if role_key not in role_cache:
+        rkey = role_name.lower()
+        if rkey not in role_cache:
             role = VolunteerRole(show_id=show_id, name=role_name)
             db.add(role)
             db.flush()
-            role_cache[role_key] = role
+            role_cache[rkey] = role
             stats["roles_created"] += 1
-        role = role_cache[role_key]
+        role = role_cache[rkey]
 
-        shift_key = (role.id, shift_start, shift_end)
-        if shift_key not in shift_cache:
-            try:
-                starts = datetime.fromisoformat(shift_start)
-                ends = datetime.fromisoformat(shift_end)
-            except ValueError:
-                continue
+        try:
+            sd = date.fromisoformat(s_date)
+            st = time.fromisoformat(s_start)
+            et = time.fromisoformat(s_end)
+        except ValueError:
+            continue
+
+        skey = (role.id, str(sd), _time_str(st), _time_str(et))
+        if skey not in shift_cache:
             shift = VolunteerShift(
-                show_id=show_id,
-                role_id=role.id,
-                starts_at=starts,
-                ends_at=ends,
-                location=shift_location or None,
+                show_id=show_id, role_id=role.id,
+                shift_date=sd, start_time=st, end_time=et,
             )
             db.add(shift)
             db.flush()
-            shift_cache[shift_key] = shift
+            shift_cache[skey] = shift
             stats["shifts_created"] += 1
-        shift = shift_cache[shift_key]
+        shift = shift_cache[skey]
 
-        existing_a = db.execute(
-            select(VolunteerAssignment).where(
-                VolunteerAssignment.show_id == show_id,
-                VolunteerAssignment.volunteer_id == vol.id,
-                VolunteerAssignment.shift_id == shift.id,
+        existing_su = db.execute(
+            select(VolunteerSignup).where(
+                VolunteerSignup.shift_id == shift.id,
+                VolunteerSignup.volunteer_id == vol.id,
             )
         ).scalar_one_or_none()
-        if not existing_a:
-            a = VolunteerAssignment(
+        if not existing_su:
+            su = VolunteerSignup(
                 show_id=show_id,
-                volunteer_id=vol.id,
                 shift_id=shift.id,
-                source="import",
+                volunteer_id=vol.id,
+                signup_source="coordinator",
             )
-            db.add(a)
-            stats["assignments_created"] += 1
+            db.add(su)
+            stats["signups_created"] += 1
 
     db.commit()
     return stats
 
 
-@router.get("/shows/{show_id}/volunteers/printable")
+@router.get("/printable")
 def printable_schedule(show_id: str, db: Session = Depends(get_db)):
     show = _require_show(db, show_id)
-    roles = db.execute(select(VolunteerRole).where(VolunteerRole.show_id == show_id)).scalars().all()
+    roles = {r.id: r.name for r in db.execute(select(VolunteerRole).where(VolunteerRole.show_id == show_id)).scalars().all()}
     shifts = db.execute(
-        select(VolunteerShift).where(VolunteerShift.show_id == show_id).order_by(VolunteerShift.starts_at)
+        select(VolunteerShift).where(VolunteerShift.show_id == show_id)
+        .order_by(VolunteerShift.shift_date, VolunteerShift.start_time)
     ).scalars().all()
-    assignments = db.execute(select(VolunteerAssignment).where(VolunteerAssignment.show_id == show_id)).scalars().all()
-    vols = db.execute(select(Volunteer).where(Volunteer.show_id == show_id)).scalars().all()
+    signups = db.execute(select(VolunteerSignup).where(VolunteerSignup.show_id == show_id)).scalars().all()
+    vols = {v.id: v for v in db.execute(select(Volunteer).where(Volunteer.show_id == show_id)).scalars().all()}
 
-    role_map = {r.id: r.name for r in roles}
-    vol_map = {v.id: v for v in vols}
-    shift_assignments = {}
-    for a in assignments:
-        shift_assignments.setdefault(a.shift_id, []).append(a)
+    shift_signups = {}
+    for su in signups:
+        shift_signups.setdefault(su.shift_id, []).append(su)
 
-    html_parts = [
+    html = [
         "<!DOCTYPE html><html><head><meta charset='utf-8'>",
         "<style>",
         "body{font-family:Arial,sans-serif;margin:20px}",
@@ -521,62 +528,23 @@ def printable_schedule(show_id: str, db: Session = Depends(get_db)):
     ]
 
     for shift in shifts:
-        rname = role_map.get(shift.role_id, "Unknown")
-        start_str = shift.starts_at.strftime("%b %d %I:%M%p") if shift.starts_at else ""
-        end_str = shift.ends_at.strftime("%I:%M%p") if shift.ends_at else ""
-        loc = f" &mdash; {shift.location}" if shift.location else ""
-        html_parts.append(f"<h2>{rname}: {start_str} – {end_str}{loc}</h2>")
-        html_parts.append("<table><tr><th>#</th><th>Name</th><th>Phone</th><th>Status</th></tr>")
-
-        assigned = shift_assignments.get(shift.id, [])
+        rname = roles.get(shift.role_id, "Unknown")
+        html.append(
+            f"<h2>{rname}: {shift.shift_date} {_time_str(shift.start_time)}&ndash;{_time_str(shift.end_time)}</h2>"
+        )
+        html.append("<table><tr><th>#</th><th>Name</th><th>Phone</th><th>Approved</th></tr>")
+        assigned = shift_signups.get(shift.id, [])
         if assigned:
-            for i, a in enumerate(assigned, 1):
-                v = vol_map.get(a.volunteer_id)
-                name = v.full_name if v else "?"
-                phone = v.phone or "" if v else ""
-                html_parts.append(f"<tr><td>{i}</td><td>{name}</td><td>{phone}</td><td>{a.status}</td></tr>")
+            for i, su in enumerate(assigned, 1):
+                v = vols.get(su.volunteer_id)
+                html.append(
+                    f"<tr><td>{i}</td><td>{v.name if v else '?'}</td>"
+                    f"<td>{v.phone or '' if v else ''}</td>"
+                    f"<td>{'Yes' if su.approved else 'No'}</td></tr>"
+                )
         else:
-            html_parts.append(f"<tr><td colspan='4' style='text-align:center'>No volunteers assigned (capacity: {shift.capacity})</td></tr>")
+            html.append(f"<tr><td colspan='4' style='text-align:center'>No signups (slots: {shift.slots_needed})</td></tr>")
+        html.append("</table>")
 
-        html_parts.append("</table>")
-
-    html_parts.append("</body></html>")
-    return Response(content="".join(html_parts), media_type="text/html")
-
-
-@public_router.post("/volunteer-signup")
-def public_volunteer_signup(
-    token: str = Query(..., description="Public signup token"),
-    data: PublicVolunteerSignup = ...,
-    db: Session = Depends(get_db),
-):
-    show = db.execute(
-        select(Show).where(Show.public_volunteer_token == token)
-    ).scalar_one_or_none()
-    if not show:
-        raise HTTPException(status_code=404, detail="Invalid signup token")
-
-    if data.email:
-        existing = db.execute(
-            select(Volunteer).where(Volunteer.show_id == show.id, Volunteer.email == data.email)
-        ).scalar_one_or_none()
-        if existing:
-            raise HTTPException(status_code=409, detail="Volunteer with this email already signed up")
-
-    vol = Volunteer(
-        show_id=show.id,
-        full_name=data.full_name,
-        email=data.email,
-        phone=data.phone,
-        sms_opt_in=data.sms_opt_in or False,
-        status="pending",
-    )
-    db.add(vol)
-    db.commit()
-    db.refresh(vol)
-    return {
-        "id": vol.id,
-        "full_name": vol.full_name,
-        "status": vol.status,
-        "message": "Signup received. A coordinator will approve your registration.",
-    }
+    html.append("</body></html>")
+    return Response(content="".join(html), media_type="text/html")

@@ -4,6 +4,7 @@ from sqlalchemy import (
     Column,
     String,
     Date,
+    Time,
     DateTime,
     ForeignKey,
     Text,
@@ -12,8 +13,6 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 
-# IMPORTANT:
-# Use the shared Base from app.database so create_all() sees everything consistently.
 from app.database import Base
 
 
@@ -204,22 +203,8 @@ class SystemReferenceDocument(Base):
 
 
 # -------------------------------------------------------------------
-# VOLUNTEERS (full module)
+# VOLUNTEERS (spec-aligned minimal model)
 # -------------------------------------------------------------------
-
-
-class Volunteer(Base):
-    __tablename__ = "volunteers"
-
-    id = Column(String, primary_key=True, default=generate_uuid)
-    org_id = Column(String, ForeignKey("organizations.id"), nullable=True)
-    show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
-    full_name = Column(Text, nullable=False)
-    email = Column(Text, nullable=True)
-    phone = Column(Text, nullable=True)
-    sms_opt_in = Column(Boolean, default=False)
-    status = Column(Text, default="pending")
-    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class VolunteerRole(Base):
@@ -229,6 +214,7 @@ class VolunteerRole(Base):
     show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
     name = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
+    location = Column(Text, nullable=True)
     training_url = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -239,39 +225,56 @@ class VolunteerShift(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
     role_id = Column(String, ForeignKey("volunteer_roles.id"), nullable=False, index=True)
-    starts_at = Column(DateTime, nullable=False)
-    ends_at = Column(DateTime, nullable=False)
-    capacity = Column(Integer, default=1)
-    location = Column(Text, nullable=True)
+    shift_date = Column(Date, nullable=False)
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+    slots_needed = Column(Integer, default=1)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class VolunteerAssignment(Base):
-    __tablename__ = "volunteer_assignments"
+class Volunteer(Base):
+    __tablename__ = "volunteers"
     __table_args__ = (
-        UniqueConstraint("show_id", "volunteer_id", "shift_id", name="uix_vol_assignment"),
+        UniqueConstraint("show_id", "email", name="uix_vol_show_email"),
     )
 
     id = Column(String, primary_key=True, default=generate_uuid)
     show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
-    volunteer_id = Column(String, ForeignKey("volunteers.id"), nullable=False, index=True)
-    shift_id = Column(String, ForeignKey("volunteer_shifts.id"), nullable=False, index=True)
-    status = Column(Text, default="assigned")
-    source = Column(Text, default="self_signup")
+    name = Column(Text, nullable=False)
+    email = Column(Text, nullable=False)
+    phone = Column(Text, nullable=True)
+    status = Column(Text, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class VolunteerCheckin(Base):
-    __tablename__ = "volunteer_checkins"
+class VolunteerSignup(Base):
+    __tablename__ = "volunteer_signups"
     __table_args__ = (
-        UniqueConstraint("show_id", "volunteer_id", "shift_id", name="uix_vol_checkin"),
+        UniqueConstraint("shift_id", "volunteer_id", name="uix_signup_shift_vol"),
     )
 
     id = Column(String, primary_key=True, default=generate_uuid)
     show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
-    volunteer_id = Column(String, ForeignKey("volunteers.id"), nullable=False, index=True)
     shift_id = Column(String, ForeignKey("volunteer_shifts.id"), nullable=False, index=True)
+    volunteer_id = Column(String, ForeignKey("volunteers.id"), nullable=False, index=True)
+    signup_source = Column(Text, default="self")
+    approved = Column(Boolean, default=False)
+    approved_by = Column(Text, nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class VolunteerAttendance(Base):
+    __tablename__ = "volunteer_attendance"
+    __table_args__ = (
+        UniqueConstraint("shift_id", "volunteer_id", name="uix_attend_shift_vol"),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
+    shift_id = Column(String, ForeignKey("volunteer_shifts.id"), nullable=False, index=True)
+    volunteer_id = Column(String, ForeignKey("volunteers.id"), nullable=False, index=True)
     check_in_at = Column(DateTime, nullable=True)
     check_out_at = Column(DateTime, nullable=True)
     method = Column(Text, default="web")

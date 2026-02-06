@@ -14,7 +14,7 @@ from app.routers import (
     reference_docs,
     judging,
 )
-from app.routers.volunteer_ops import router as volunteer_ops_router, public_router as volunteer_public_router
+from app.routers.volunteer_ops import router as volunteer_ops_router
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("calyx")
@@ -58,9 +58,8 @@ app.include_router(reference_docs.router, prefix="/api", tags=["Reference Docume
 # Judging router already uses prefix="/api" internally (per your file), so include directly
 app.include_router(judging.router)
 
-# Volunteer operations (full module: roles, shifts, directory, assignments, check-in/out, export/import)
+# Volunteer operations (roles, shifts, signups, attendance, export/import)
 app.include_router(volunteer_ops_router)
-app.include_router(volunteer_public_router)
 
 
 @app.get("/")
@@ -85,32 +84,41 @@ def _safe_add_column(engine, table_name: str, col_name: str, col_type: str):
 
 
 def _reconcile_schema(engine):
-    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text, inspect as sa_inspect
     insp = sa_inspect(engine)
     existing_tables = insp.get_table_names()
 
-    stale_schemas = {}
+    old_tables = ["volunteer_checkins", "volunteer_assignments"]
+    for old in old_tables:
+        if old in existing_tables:
+            log.warning("Dropping legacy table: %s", old)
+            with engine.connect() as conn:
+                conn.execute(text(f"DROP TABLE IF EXISTS {old} CASCADE"))
+                conn.commit()
+
     expected = {
-        "volunteer_roles": ["id", "show_id", "name", "description", "training_url", "created_at"],
-        "volunteer_shifts": ["id", "show_id", "role_id", "starts_at", "ends_at", "capacity", "location", "notes", "created_at"],
+        "volunteer_roles": ["id", "show_id", "name", "description", "location", "training_url", "created_at"],
+        "volunteer_shifts": ["id", "show_id", "role_id", "shift_date", "start_time", "end_time", "slots_needed", "notes", "created_at"],
+        "volunteers": ["id", "show_id", "name", "email", "phone", "status", "created_at"],
+        "volunteer_signups": ["id", "show_id", "shift_id", "volunteer_id", "signup_source", "approved", "approved_by", "approved_at", "created_at"],
+        "volunteer_attendance": ["id", "show_id", "shift_id", "volunteer_id", "check_in_at", "check_out_at", "method", "created_at"],
     }
-    for tbl, expected_cols in expected.items():
+
+    stale = []
+    for tbl, cols in expected.items():
         if tbl in existing_tables:
             actual = [c["name"] for c in insp.get_columns(tbl)]
-            missing = set(expected_cols) - set(actual)
-            if missing:
-                stale_schemas[tbl] = missing
+            if set(cols) - set(actual):
+                stale.append(tbl)
 
-    if stale_schemas:
-        from sqlalchemy import text
-        log.warning("Detected stale table schemas, recreating: %s", list(stale_schemas.keys()))
+    if stale:
+        log.warning("Detected stale volunteer schemas, dropping for recreation: %s", stale)
+        drop_order = ["volunteer_attendance", "volunteer_signups", "volunteer_shifts", "volunteers", "volunteer_roles"]
         with engine.connect() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS volunteer_checkins CASCADE"))
-            conn.execute(text("DROP TABLE IF EXISTS volunteer_assignments CASCADE"))
-            conn.execute(text("DROP TABLE IF EXISTS volunteer_shifts CASCADE"))
-            conn.execute(text("DROP TABLE IF EXISTS volunteer_roles CASCADE"))
+            for tbl in drop_order:
+                if tbl in stale or tbl in [t for t in drop_order if any(s in stale for s in drop_order[:drop_order.index(t)+1])]:
+                    conn.execute(text(f"DROP TABLE IF EXISTS {tbl} CASCADE"))
             conn.commit()
-        log.info("Dropped stale volunteer tables; create_all will recreate them.")
 
     _safe_add_column(engine, "shows", "public_volunteer_token", "VARCHAR")
 
