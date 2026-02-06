@@ -58,11 +58,11 @@ INSERT INTO volunteer_assignments (id, show_id, volunteer_id, shift_id, status, 
   ('asgn-008', 'show-001', 'vol-005', 'shift-002', 'assigned',  NOW())
 ON CONFLICT (id) DO NOTHING;
 
--- 8) Judges (3)
-INSERT INTO judges (id, show_id, name, email, created_at) VALUES
-  ('judge-001', 'show-001', 'Dr. Patricia Fielding', 'p.fielding@orchids.org', NOW()),
-  ('judge-002', 'show-001', 'Robert Tanaka',         'r.tanaka@orchids.org',   NOW()),
-  ('judge-003', 'show-001', 'Helen Marchetti',       'h.marchetti@orchids.org', NOW())
+-- 8) Judges (3, with roles)
+INSERT INTO judges (id, show_id, name, email, role, created_at) VALUES
+  ('judge-001', 'show-001', 'Dr. Patricia Fielding', 'p.fielding@orchids.org', 'head_judge', NOW()),
+  ('judge-002', 'show-001', 'Robert Tanaka',         'r.tanaka@orchids.org',   'judge', NOW()),
+  ('judge-003', 'show-001', 'Helen Marchetti',       'h.marchetti@orchids.org', 'judge', NOW())
 ON CONFLICT (id) DO NOTHING;
 
 -- 9) Score Submissions (10 total across 5 entries x 2-3 judges)
@@ -90,4 +90,60 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO feedback (id, module, step, worked, confusion, suggestions, created_at) VALUES
   ('fb-001', 'volunteers', 'import', true, NULL, 'Excel import worked great', NOW()),
   ('fb-002', 'volunteers', 'signup', false, 'Could not find the signup link', 'Make the link more visible', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- 12) Judging Event (expanded system)
+INSERT INTO judging_events (id, show_id, name, judging_type, is_blind, status, created_at) VALUES
+  ('jevt-001', 'show-001', 'Main Judging - Spring 2026', 'standard', false, 'published', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- 13) Plant Categories
+INSERT INTO plant_categories (id, judging_event_id, name, description, created_at) VALUES
+  ('pcat-001', 'jevt-001', 'Cattleya Alliance', 'All Cattleya species and hybrids', NOW()),
+  ('pcat-002', 'jevt-001', 'Phalaenopsis', 'Moth orchids, species and hybrids', NOW()),
+  ('pcat-003', 'jevt-001', 'Dendrobium', 'Dendrobium species and hybrids', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- 14) Judging Criteria (per category)
+INSERT INTO judging_criteria (id, category_id, label, weight, max_points, created_at) VALUES
+  ('crit-001', 'pcat-001', 'Form & Shape', 1.0, 35, NOW()),
+  ('crit-002', 'pcat-001', 'Color & Pattern', 1.0, 35, NOW()),
+  ('crit-003', 'pcat-001', 'Size & Substance', 1.0, 30, NOW()),
+  ('crit-004', 'pcat-002', 'Form & Shape', 1.0, 35, NOW()),
+  ('crit-005', 'pcat-002', 'Color & Pattern', 1.2, 35, NOW()),
+  ('crit-006', 'pcat-002', 'Size & Substance', 0.8, 30, NOW()),
+  ('crit-007', 'pcat-003', 'Form & Shape', 1.0, 35, NOW()),
+  ('crit-008', 'pcat-003', 'Color & Pattern', 1.0, 35, NOW()),
+  ('crit-009', 'pcat-003', 'Size & Substance', 1.0, 30, NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- 15) Exhibitors
+INSERT INTO exhibitors (id, name, email, phone, created_at) VALUES
+  ('exh-001', 'Maria Lopez',  'maria@orchids.com',  '555-2001', NOW()),
+  ('exh-002', 'James Nguyen', 'james@orchids.com',  '555-2002', NOW()),
+  ('exh-003', 'Susan Park',   'susan@orchids.com',  '555-2003', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- 16) Plants (with QR codes)
+INSERT INTO plants (id, exhibitor_id, judging_event_id, category_id, name, qr_code, notes, created_at) VALUES
+  ('plant-001', 'exh-001', 'jevt-001', 'pcat-001', 'Cattleya labiata var. semi-alba',  'QR-A1B2C3D4E5F6', NULL, NOW()),
+  ('plant-002', 'exh-002', 'jevt-001', 'pcat-002', 'Phalaenopsis equestris',            'QR-F6E5D4C3B2A1', 'Miniature species', NOW()),
+  ('plant-003', 'exh-003', 'jevt-001', 'pcat-003', 'Dendrobium kingianum',               'QR-112233445566', 'Australian native', NOW()),
+  ('plant-004', 'exh-001', 'jevt-001', 'pcat-001', 'Cattleya trianae',                   'QR-AABB11223344', 'Colombian species', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- 17) Per-criterion Scores
+INSERT INTO scores (id, plant_id, judge_id, criterion_id, value, choice, created_at) VALUES
+  ('sc-001', 'plant-001', 'judge-001', 'crit-001', 30, NULL, NOW()),
+  ('sc-002', 'plant-001', 'judge-001', 'crit-002', 32, NULL, NOW()),
+  ('sc-003', 'plant-001', 'judge-001', 'crit-003', 28, NULL, NOW()),
+  ('sc-004', 'plant-001', 'judge-002', 'crit-001', 28, NULL, NOW()),
+  ('sc-005', 'plant-001', 'judge-002', 'crit-002', 30, NULL, NOW()),
+  ('sc-006', 'plant-001', 'judge-002', 'crit-003', 27, NULL, NOW()),
+  ('sc-007', 'plant-002', 'judge-001', 'crit-004', 26, NULL, NOW()),
+  ('sc-008', 'plant-002', 'judge-001', 'crit-005', 28, NULL, NOW()),
+  ('sc-009', 'plant-002', 'judge-001', 'crit-006', 25, NULL, NOW()),
+  ('sc-010', 'plant-003', 'judge-003', 'crit-007', 24, NULL, NOW()),
+  ('sc-011', 'plant-003', 'judge-003', 'crit-008', 27, NULL, NOW()),
+  ('sc-012', 'plant-003', 'judge-003', 'crit-009', 26, NULL, NOW())
 ON CONFLICT (id) DO NOTHING;

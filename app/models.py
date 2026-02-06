@@ -10,6 +10,7 @@ from sqlalchemy import (
     Text,
     Boolean,
     Integer,
+    Float,
     UniqueConstraint,
 )
 
@@ -280,21 +281,89 @@ class Feedback(Base):
 
 
 # -------------------------------------------------------------------
-# JUDGING (minimal demo tables)
+# JUDGING (expanded system)
 # -------------------------------------------------------------------
+
+
+class JudgingEvent(Base):
+    __tablename__ = "judging_events"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
+    name = Column(Text, nullable=True)
+    judging_type = Column(String, default="standard")
+    is_blind = Column(Boolean, default=False)
+    status = Column(String, default="draft")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PlantCategory(Base):
+    __tablename__ = "plant_categories"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    judging_event_id = Column(String, ForeignKey("judging_events.id"), nullable=False, index=True)
+    name = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class JudgingCriterion(Base):
+    __tablename__ = "judging_criteria"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    category_id = Column(String, ForeignKey("plant_categories.id"), nullable=False, index=True)
+    label = Column(Text, nullable=False)
+    weight = Column(Float, nullable=True)
+    max_points = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Exhibitor(Base):
+    __tablename__ = "exhibitors"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    name = Column(Text, nullable=False)
+    email = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Plant(Base):
+    __tablename__ = "plants"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    exhibitor_id = Column(String, ForeignKey("exhibitors.id"), nullable=False, index=True)
+    judging_event_id = Column(String, ForeignKey("judging_events.id"), nullable=False, index=True)
+    category_id = Column(String, ForeignKey("plant_categories.id"), nullable=False, index=True)
+    name = Column(Text, nullable=True)
+    qr_code = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Judge(Base):
     __tablename__ = "judges"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    show_id = Column(String,
-                     ForeignKey("shows.id"),
-                     nullable=False,
-                     index=True)
-
+    show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     email = Column(String, nullable=True)
+    role = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Score(Base):
+    __tablename__ = "scores"
+    __table_args__ = (
+        UniqueConstraint("plant_id", "judge_id", "criterion_id", name="uix_score_plant_judge_criterion"),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    plant_id = Column(String, ForeignKey("plants.id"), nullable=False, index=True)
+    judge_id = Column(String, ForeignKey("judges.id"), nullable=False, index=True)
+    criterion_id = Column(String, ForeignKey("judging_criteria.id"), nullable=False, index=True)
+    value = Column(Float, nullable=True)
+    choice = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -306,24 +375,10 @@ class ScoreSubmission(Base):
                                        name="uix_score_show_entry_judge"), )
 
     id = Column(String, primary_key=True, default=generate_uuid)
-
-    show_id = Column(String,
-                     ForeignKey("shows.id"),
-                     nullable=False,
-                     index=True)
-    entry_id = Column(String,
-                      ForeignKey("entries.id"),
-                      nullable=False,
-                      index=True)
-    judge_id = Column(String,
-                      ForeignKey("judges.id"),
-                      nullable=False,
-                      index=True)
-
+    show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
+    entry_id = Column(String, ForeignKey("entries.id"), nullable=False, index=True)
+    judge_id = Column(String, ForeignKey("judges.id"), nullable=False, index=True)
     total_points = Column(Integer, nullable=False)
-
-    # Optional structured criteria dump (store JSON as text for now, demo-safe)
     points_breakdown = Column(Text, nullable=True)
-
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

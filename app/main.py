@@ -123,6 +123,7 @@ def _reconcile_schema(engine):
             conn.commit()
 
     _safe_add_column(engine, "shows", "public_volunteer_token", "VARCHAR")
+    _safe_add_column(engine, "judges", "role", "VARCHAR")
 
 
 @app.on_event("startup")

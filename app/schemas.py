@@ -289,17 +289,140 @@ class ReferenceDocumentUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class JudgingEventCreate(BaseModel):
+    name: Optional[str] = None
+    judging_type: Optional[str] = "standard"
+    is_blind: Optional[bool] = False
+
+
+class JudgingEventOut(BaseModel):
+    id: str
+    show_id: str
+    name: Optional[str] = None
+    judging_type: str
+    is_blind: bool
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class JudgingEventUpdate(BaseModel):
+    name: Optional[str] = None
+    judging_type: Optional[str] = None
+    is_blind: Optional[bool] = None
+    status: Optional[str] = None
+
+
+class PlantCategoryCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class PlantCategoryOut(BaseModel):
+    id: str
+    judging_event_id: str
+    name: str
+    description: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class JudgingCriterionCreate(BaseModel):
+    label: str
+    weight: Optional[float] = None
+    max_points: Optional[int] = None
+
+
+class JudgingCriterionOut(BaseModel):
+    id: str
+    category_id: str
+    label: str
+    weight: Optional[float] = None
+    max_points: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ExhibitorCreate(BaseModel):
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class ExhibitorOut(BaseModel):
+    id: str
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PlantCreate(BaseModel):
+    exhibitor_id: str
+    category_id: str
+    name: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PlantOut(BaseModel):
+    id: str
+    exhibitor_id: str
+    judging_event_id: str
+    category_id: str
+    name: Optional[str] = None
+    qr_code: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ScoreCreate(BaseModel):
+    criterion_id: str
+    value: Optional[float] = None
+    choice: Optional[str] = None
+
+
+class ScoreOut(BaseModel):
+    id: str
+    plant_id: str
+    judge_id: str
+    criterion_id: str
+    value: Optional[float] = None
+    choice: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ScoreBatchCreate(BaseModel):
+    scores: List[ScoreCreate]
+
+
 class JudgeCreate(BaseModel):
     show_id: str
     name: str
     email: Optional[str] = None
+    role: Optional[str] = None
 
 
 class JudgeOut(BaseModel):
     id: str
     show_id: str
     name: str
-    email: Optional[str]
+    email: Optional[str] = None
+    role: Optional[str] = None
     created_at: datetime
 
     class Config:

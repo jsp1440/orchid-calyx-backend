@@ -4,17 +4,16 @@ Backend API for Calyx - Orchid Show Management System powered by Orchid Continuu
 
 ## Overview
 - Purpose: API backend for orchid show operations, entries, volunteers, and judging
-- Stack: Python 3.11, FastAPI, SQLAlchemy, openpyxl
+- Stack: Python 3.11, FastAPI, SQLAlchemy, openpyxl, qrcode
 - Database: PostgreSQL (Replit-hosted via PGHOST) or SQLite fallback
 - Frontend: Famous AI (separate project)
 
 ## Recent Changes
+- 2026-02-06: Expanded judging system: JudgingEvent, PlantCategory, JudgingCriterion, Exhibitor, Plant, Score (per-criterion), QR codes, event lifecycle (draft/published/closed), weighted results
 - 2026-02-06: Aligned volunteer module to design doc v2: VolunteerAssignment (replaces Signup+Attendance), Volunteer has approved(bool)/opt_in_sms/notes, VolunteerShift uses datetime start_time/end_time + capacity, VolunteerRole has default_shift_length
 - 2026-02-06: Excel (xlsx) export/import with conflict detection and coordinator override
 - 2026-02-06: Added Feedback endpoint (POST /api/feedback) for beta capture
 - 2026-02-06: Added Judging widget stubs (GET /judging/criteria, POST /judging/evaluate, POST /judging/submit)
-- 2026-02-06: Updated seed.sql for new schema (assignments, approved booleans, datetime shifts)
-- 2026-02-04: Added Judging module (judges, score_submissions, show locking, leaderboard)
 - 2026-02-04: Added System Reference Documents feature for AOS judging PDFs
 - 2026-01-28: Restructured with new routers, models, configurable CORS, API key auth
 
@@ -46,7 +45,7 @@ app/
     awards.py          - Awards CRUD
     calyx_core.py      - Organizations, contacts, events, templates
     reference_docs.py  - System reference documents (AOS PDFs)
-    judging.py         - Judges, score submissions, leaderboard, widget stubs
+    judging.py         - Expanded judging system + legacy score submissions + widget stubs
     volunteer_ops.py   - Volunteer operations (roles, shifts, assignments, Excel export/import)
     feedback.py        - Feedback capture endpoint
 seed.sql              - Demo seed data (Postgres)
@@ -60,7 +59,8 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 ## Database Models
 ### Core: Organization, Show, Entry, Award, Contact, MessageTemplate, MessageLog, Event, File, IntegrationConnection
 ### Reference: SystemReferenceDocument
-### Judging: Judge, ScoreSubmission
+### Judging (expanded): JudgingEvent, PlantCategory, JudgingCriterion, Exhibitor, Plant, Judge, Score
+### Judging (legacy): ScoreSubmission
 ### Volunteers: VolunteerRole, VolunteerShift, Volunteer, VolunteerAssignment
 ### Feedback: Feedback
 
@@ -77,9 +77,46 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 - `GET /api/reference-docs` - List active documents
 - `POST /api/admin/reference-docs` - Upload document (admin only)
 
-### Judging
-- `POST /api/judges` - Register judge
+### Judging System (expanded)
+
+**Judging Events:**
+- `POST /api/shows/{show_id}/judging/events` - Create judging event (name, judging_type, is_blind)
+- `GET  /api/shows/{show_id}/judging/events` - List events for show
+- `GET  /api/judging/events/{event_id}` - Get single event
+- `PATCH /api/judging/events/{event_id}` - Update event
+- `POST /api/judging/events/{event_id}/publish` - Publish event (enable judge access)
+- `POST /api/judging/events/{event_id}/close` - Close event (freeze edits)
+
+**Plant Categories:**
+- `POST /api/judging/events/{event_id}/categories` - Create category
+- `GET  /api/judging/events/{event_id}/categories` - List categories
+
+**Judging Criteria:**
+- `POST /api/judging/categories/{category_id}/criteria` - Create criterion (label, weight, max_points)
+- `GET  /api/judging/categories/{category_id}/criteria` - List criteria
+
+**Exhibitors:**
+- `POST /api/exhibitors` - Create exhibitor (name, email, phone)
+- `GET  /api/exhibitors` - List all exhibitors
+- `GET  /api/exhibitors/{id}` - Get exhibitor
+
+**Plants:**
+- `POST /api/judging/events/{event_id}/plants` - Register plant (auto QR code)
+- `GET  /api/judging/events/{event_id}/plants` - List plants (optional ?category_id= filter)
+- `GET  /api/judging/plants/{plant_id}` - Get single plant
+
+**Per-Criterion Scoring:**
+- `POST /api/judging/plants/{plant_id}/scores/{judge_id}` - Submit/update scores (batch, per criterion)
+- `GET  /api/judging/plants/{plant_id}/scores` - Get all scores (optional ?judge_id= filter)
+
+**Results:**
+- `GET /api/judging/events/{event_id}/results` - Weighted leaderboard with per-judge breakdowns
+
+### Judges
+- `POST /api/judges` - Register judge (name, email, role)
 - `GET /api/judges?show_id=` - List judges
+
+### Legacy Score Submissions
 - `POST /api/score-submissions` - Submit score (rejects if locked/duplicate, 409)
 - `GET /api/entries/{entry_id}/scores` - Entry scores
 - `GET /api/shows/{show_id}/leaderboard` - Aggregate leaderboard
@@ -129,12 +166,15 @@ All paths under `/api/shows/{show_id}/volunteer/...`
 ### Business Rules
 - Unique constraint on (show_id, email) for volunteers — prevents duplicate profiles
 - Unique constraint on (shift_id, volunteer_id) for assignments — prevents duplicate assignments
+- Unique constraint on (plant_id, judge_id, criterion_id) for per-criterion scores
 - Assignment status: assigned | confirmed | checked_in | no_show
+- Judging event status: draft | published | closed
 - Shift capacity enforced server-side (409 if full)
-- Excel import matches volunteers by email; creates roles/shifts/assignments as needed
-- Conflict detection on re-import: name/phone changes flagged unless override_conflicts=true
-- Re-imports are idempotent (no duplicate data)
-- Show's `public_volunteer_token` enables public signup link
+- Per-criterion scores allow revision (upsert) while event is not closed
+- Closed judging events freeze all score edits (409)
+- QR code auto-generated per plant on creation
+- Weighted scoring: criteria weights applied to results aggregation
+- Supports numeric scoring, ranking, and simple vote via value/choice fields
 - Score submissions rejected if show.judging_locked=true (409)
 - Score submissions unique per (show_id, entry_id, judge_id)
 - Excel is a first-class interface — export and import as xlsx
@@ -144,6 +184,7 @@ All paths under `/api/shows/{show_id}/volunteer/...`
 - Coordinator always has override power
 - System adapts to humans, not the reverse
 - Excel is authoritative when uploaded
+- Judging systems vary — Calyx adapts, no single "right way" enforced
 - Calm beats clever, guidance beats power
 
 ## User Preferences
