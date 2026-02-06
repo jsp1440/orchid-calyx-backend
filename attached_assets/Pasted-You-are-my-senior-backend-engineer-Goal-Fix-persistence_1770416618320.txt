@@ -1,0 +1,54 @@
+You are my senior backend engineer.
+
+Goal: Fix persistence of scrapes in the Calyx backend so that every scrape that is marked success in public.scraping_log ALSO writes a durable row into public.external_database_cache. Currently scraping_log has rows but external_database_cache stays at 0 (or only manual tests). The schema requires external_database_cache columns:
+(database_source varchar NOT NULL,
+ query_type varchar NOT NULL,
+ query_key varchar NOT NULL,
+ response_data json NOT NULL,
+ cache_expires timestamp NOT NULL).
+
+Task:
+1) Search the codebase for where we write to scraping_log, especially where status='success' is set and items_found/items_processed are updated.
+   Use these GREP targets in search:
+   - "scraping_log"
+   - "items_found"
+   - "items_processed"
+   - "roberta_fox"
+   - "gary_yong_gee"
+   - "RemoteDisconnected"
+
+2) Identify the function(s) that run after a scrape completes (success path) and currently persist only scraping_log (or logs) but NOT external_database_cache.
+
+3) Implement the minimal durable write into external_database_cache on the success path, before/when scraping_log status becomes 'success':
+   INSERT INTO public.external_database_cache
+     (database_source, query_type, query_key, response_data, cache_expires)
+   VALUES
+     (:source, 'html_page', :url, :response_json, NOW() + INTERVAL '30 days');
+
+   - :source must be the scraper source name (e.g., roberta_fox / gary_yong_gee)
+   - :url must be the scraped URL
+   - :response_json must be valid JSON.
+     If we already have parsed items, store {"items": <parsed_items>, "meta": {...}}.
+     If we only have raw HTML, store {"raw_html": "<...>", "meta": {...}}.
+   Ensure response_json is valid JSON (no raw python dicts), and cast to json if needed.
+
+4) Do NOT change the DB schema. Only code changes.
+
+5) Add minimal error handling:
+   - If inserting into external_database_cache fails, mark scraping_log status='error' and store the error_message (so we do not claim success without durable persistence).
+
+6) Add a tiny “smoke check” script/endpoint or CLI command (whichever pattern this repo uses) that runs ONE scrape of a single URL and then prints:
+   - count(*) from scraping_log
+   - count(*) from external_database_cache
+   - last 1 row from external_database_cache (database_source, query_key, cache_expires)
+
+7) Return:
+   - The exact file paths you changed
+   - A unified diff patch (or full file replacements if that’s easier)
+   - Exact commands to run locally in Replit Shell to test (e.g., `python -m ...` or `npm run ...`)
+   - Exact steps to deploy (commit message + push)
+
+Constraints:
+- Be precise and implementable.
+- Do not ask me to manually hunt files; you must locate them in the repo.
+- Prefer minimal, safe changes.

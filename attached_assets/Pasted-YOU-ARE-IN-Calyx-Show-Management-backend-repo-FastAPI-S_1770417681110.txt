@@ -1,0 +1,171 @@
+YOU ARE IN: Calyx Show Management backend repo (FastAPI + SQLAlchemy + Alembic).
+
+TASK: Expand the Judging system to support a real show-day workflow with autosave + assignments + audit trail, while staying flexible (numeric scoring, ranking, vote), QR-per-plant support, and a clean separation so we can later plug a standalone “Judging Widget” frontend into these endpoints.
+
+NON-NEGOTIABLES:
+- Do NOT implement scraping/harvesting in this repo.
+- Keep judging adaptable: do not hardcode one judging method.
+- Add auditability: who changed what and when.
+- Support: draft autosave + submit + optional revision.
+- Keep permissions strict: judges only see assigned scorecards.
+- Include seed data compatibility for existing AOS judging standards if present.
+
+DELIVERABLES (code):
+A) DATABASE (Alembic migrations + SQLAlchemy models)
+Create/extend tables (names can be pluralized consistently, but keep these concepts):
+1) judging_events
+  - id (pk)
+  - show_id (fk -> shows.id) OR event_id depending on existing schema naming
+  - name (string)
+  - judging_type (enum/string: "numeric" | "ranking" | "vote")
+  - is_blind (bool default false)
+  - status (string: "draft" | "published" | "closed")
+  - published_at (nullable ts)
+  - closed_at (nullable ts)
+  - created_at, updated_at
+
+2) plant_categories
+  - id (pk)
+  - judging_event_id (fk)
+  - name, description
+  - sort_order (int default 0)
+
+3) judging_criteria
+  - id (pk)
+  - category_id (fk)
+  - label
+  - weight (nullable numeric)
+  - scoring_type (string: "numeric"|"rank"|"choice")
+  - min_value/max_value (nullable int) for numeric scoring
+  - choices_json (nullable json) for vote/choice
+
+4) judges
+  - id (pk)
+  - user_id (nullable fk to existing users table if present; otherwise store email)
+  - name
+  - email
+  - role (string: "judge"|"clerk"|"admin")
+  - created_at
+
+5) judge_assignments
+  - id (pk)
+  - judging_event_id (fk)
+  - judge_id (fk)
+  - category_id (nullable fk) OR assignment_scope (string) + scope_id
+  - active (bool default true)
+
+6) plants (or re-use existing entries/plants table if already exists)
+  - id (pk)
+  - exhibitor_id (fk if exists)
+  - category_id (fk to plant_categories OR existing category table)
+  - qr_code (string unique nullable) OR qr_token
+  - notes
+  - created_at
+NOTE: If you already have an "entries" table that represents a plant entry, do NOT duplicate. Instead add:
+  - entry.qr_token
+  - entry.category_id (if missing)
+And treat "entry" as the judging subject.
+
+7) scorecards
+  - id (pk)
+  - judging_event_id (fk)
+  - plant_id/entry_id (fk)
+  - judge_id (fk)
+  - status (string: "draft"|"submitted")
+  - total (nullable numeric)
+  - submitted_at (nullable ts)
+  - version (int default 1) for optimistic concurrency
+  - created_at, updated_at
+Unique constraint: (judging_event_id, plant_id/entry_id, judge_id)
+
+8) scores
+  - id (pk)
+  - scorecard_id (fk)
+  - criterion_id (fk)
+  - value_numeric (nullable numeric)
+  - value_rank (nullable int)
+  - value_choice (nullable string)
+  - created_at, updated_at
+Unique constraint: (scorecard_id, criterion_id)
+
+9) scorecard_audit_log
+  - id (pk)
+  - scorecard_id (fk)
+  - actor_user_id (nullable)
+  - action (string: "save_draft"|"submit"|"revise")
+  - diff_json (json) minimal (store changed criterion_id + old/new)
+  - created_at
+
+B) Pydantic Schemas (schemas.py)
+Add request/response schemas for:
+- JudgingEventCreate/Update/Out
+- CategoryCreate/Out
+- CriteriaCreate/Out
+- JudgeOut
+- AssignmentCreate/Out
+- ScorecardOut (includes criterion list and current values)
+- ScorecardSaveIn (draft autosave payload)
+- ScorecardSubmitIn
+- ResultsOut (category winners etc. can be stubbed MVP)
+
+C) API ROUTES (app/routers/judging.py)
+Implement endpoints (exact paths below; adjust prefix if needed but keep semantics):
+Admin/Chair:
+- POST   /judging/events                     create judging event
+- PATCH  /judging/events/{event_id}          update (type, blind, status)
+- POST   /judging/events/{event_id}/publish  set status=published, timestamp
+- POST   /judging/events/{event_id}/close    set status=closed, timestamp
+- POST   /judging/events/{event_id}/categories
+- POST   /judging/categories/{category_id}/criteria
+- POST   /judging/events/{event_id}/assignments   assign judges to categories/event
+- GET    /judging/events/{event_id}/export/results (can be placeholder)
+
+Judge-facing (must enforce assignment):
+- GET    /judge/me/assignments
+- GET    /judge/events/{event_id}/scorecards         list only assigned plants/entries
+- GET    /judge/scorecards/{scorecard_id}            load one scorecard
+- PUT    /judge/scorecards/{scorecard_id}            autosave draft (idempotent)
+- POST   /judge/scorecards/{scorecard_id}/submit     submit (locks; increments audit)
+- POST   /judge/scorecards/{scorecard_id}/revise     optional if event allows revisions
+
+D) PERMISSIONS / SECURITY
+- Judges can only access:
+  - events they are assigned to
+  - scorecards where scorecard.judge_id == current judge
+- Admin/chair can access everything for their show/org.
+- Add an auth gate: ORCHID_JUDGE_ADMIN_KEY can remain for admin test access, but do NOT leak it via API. If you already have `security.py`, implement dependency functions:
+  - require_admin()
+  - require_judge()
+  - require_assigned_to_event(event_id)
+
+E) SERVER-SIDE VALIDATION (do not rely on frontend)
+- For numeric criteria: enforce min/max if present.
+- For rank: enforce integer 1..N if you define N.
+- For choice: enforce in choices_json if provided.
+- Total should be recomputed server-side on save/submit; do not trust client total.
+- On submit: set status=submitted, submitted_at; prevent further PUT unless revise endpoint used.
+
+F) MINIMAL SEED / COMPATIBILITY
+- If `judging_standard` already exists (Julius said 60 rows in calyx-new-db-prod; you may or may not have it here), add a seed helper endpoint or script (tools/seed_judging_standard.py) to load default AOS-like criteria sets.
+- If the show already has entries, add a helper route to generate scorecards for assignments:
+  - POST /judging/events/{event_id}/generate-scorecards
+This should create scorecard rows for each (plant/entry x assigned judge) pair.
+
+G) README / Reference Docs
+Update README.md (or add docs/judging.md) with:
+- how to create an event
+- publish it
+- assign judges
+- judge flow
+- how the future Judging Widget will use the /judge/* endpoints
+
+OUTPUT REQUIRED:
+1) Provide the Alembic migration(s).
+2) Provide complete updated files (full file contents) for any file you modify: models.py, schemas.py, routers/judging.py, and any new files.
+3) Ensure `uvicorn app.main:app` still runs.
+4) Add minimal tests OR at least a `tools/smoke_judging.py` script that hits the DB and creates an event + category + criteria + judge + assignment + scorecard.
+
+IMPORTANT:
+- Keep changes isolated to judging modules.
+- Do not break volunteers/entries/shows routes.
+- If a "users" table does not exist, implement judge identity by email + name and map current user from token if available; otherwise, keep a simple judge login mechanism behind a secret for now, but don’t expose admin secrets in responses.
