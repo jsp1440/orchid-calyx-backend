@@ -11,3 +11,4 @@ sqlalchemy
 uvicorn
 alembic
 qrcode
+openpyxl==3.1.5
