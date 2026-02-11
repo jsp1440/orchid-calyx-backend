@@ -1,0 +1,144 @@
+HARDEN THE CALYX BACKEND FOR SECURITY & APP STORE COMPLIANCE
+
+Project: FastAPI + SQLAlchemy backend for Calyx Orchid Show Management System.
+
+DO NOT rebuild the project.
+DO NOT regenerate the schema.
+ONLY add security hardening, privacy compliance, and safe configuration.
+
+--------------------------------------------------
+1. ADD SECURITY MIDDLEWARE
+--------------------------------------------------
+
+Implement:
+
+• HTTPS redirect enforcement (if behind proxy respect X-Forwarded-Proto)
+• CORS configuration (restrict to allowed frontend origins via ENV variable FRONTEND_ORIGINS)
+• Rate limiting (100 requests per minute per IP) using slowapi
+• Request size limit for uploads (max 10MB)
+• Security headers middleware:
+  - X-Content-Type-Options: nosniff
+  - X-Frame-Options: DENY
+  - Referrer-Policy: strict-origin-when-cross-origin
+  - Content-Security-Policy basic default-src 'self'
+
+--------------------------------------------------
+2. ENVIRONMENT VARIABLE VALIDATION
+--------------------------------------------------
+
+On startup:
+
+• Validate required ENV vars:
+  DATABASE_URL
+  STRIPE_SECRET_KEY
+  STRIPE_WEBHOOK_SECRET
+  FRONTEND_ORIGINS
+
+If missing, raise startup error.
+
+--------------------------------------------------
+3. STRIPE SECURITY
+--------------------------------------------------
+
+• Verify webhook signatures using STRIPE_WEBHOOK_SECRET
+• Reject unsigned webhook requests
+• Do not log full payment payloads
+• Do not store full card data
+
+--------------------------------------------------
+4. ROLE-BASED ACCESS CONTROL
+--------------------------------------------------
+
+Add simple RBAC:
+
+Roles:
+  admin
+  judge
+  exhibitor
+  public
+
+Protect:
+  /admin/*
+  /judging/*
+  /entries/*
+  /scores/*
+
+Only allow appropriate roles.
+
+--------------------------------------------------
+5. INPUT VALIDATION
+--------------------------------------------------
+
+• Ensure all POST/PUT endpoints use Pydantic models
+• Sanitize text fields
+• Prevent raw SQL execution
+• Ensure all DB access uses SQLAlchemy ORM only
+
+--------------------------------------------------
+6. IMAGE UPLOAD SAFETY
+--------------------------------------------------
+
+• Accept only image MIME types
+• Validate file extension
+• Do not execute uploaded files
+• Store images in defined media directory or object storage
+• Generate random filenames
+
+--------------------------------------------------
+7. ADD DATA DELETION ENDPOINT
+--------------------------------------------------
+
+Create:
+
+DELETE /users/me
+
+This:
+• Deletes user record
+• Deletes associated plant entries
+• Deletes associated judging data
+• Returns confirmation JSON
+
+--------------------------------------------------
+8. PRIVACY META ENDPOINT
+--------------------------------------------------
+
+Create public route:
+
+GET /security
+
+Return JSON describing:
+• Hosting provider
+• Encryption status
+• Stripe usage
+• No data selling statement
+• Data deletion availability
+
+--------------------------------------------------
+9. LOGGING RULES
+--------------------------------------------------
+
+• Do not log passwords
+• Do not log Stripe tokens
+• Log only minimal request metadata
+• Use INFO level for normal operations
+
+--------------------------------------------------
+10. DO NOT CHANGE EXISTING BUSINESS LOGIC
+--------------------------------------------------
+
+Preserve:
+• Judging logic
+• Plant scoring
+• Certificate generation
+• Database schema
+
+Only add security layers.
+
+Return:
+• List of new files created
+• List of modified files
+• Exact pip packages added to requirements.txt
+• Confirmation that backend still runs with uvicorn
+
+DO NOT generate a new project.
+ONLY modify the current Calyx backend securely.

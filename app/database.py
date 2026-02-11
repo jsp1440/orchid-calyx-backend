@@ -8,7 +8,18 @@ _engine = None
 _SessionLocal = None
 
 
-def get_database_url():
+def get_database_url() -> str:
+    """
+    CANONICAL RULE:
+    1) If DATABASE_URL is set, ALWAYS use it. (This is the intended single source of truth.)
+    2) Only fall back to Replit PG* vars if DATABASE_URL is NOT set.
+    3) Final fallback: sqlite local dev.
+    """
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        return database_url
+
+    # Fallback (Replit / legacy)
     pghost = os.getenv("PGHOST")
     if pghost:
         pguser = os.getenv("PGUSER", "postgres")
@@ -16,16 +27,22 @@ def get_database_url():
         pgdatabase = os.getenv("PGDATABASE", "postgres")
         pgport = os.getenv("PGPORT", "5432")
         return f"postgresql://{pguser}:{pgpassword}@{pghost}:{pgport}/{pgdatabase}"
-    return os.getenv("DATABASE_URL", "sqlite:///./calyx.db")
+
+    return "sqlite:///./calyx.db"
 
 
 def get_engine():
     global _engine
     if _engine is None:
         database_url = get_database_url()
+
         connect_args = {}
         if database_url.startswith("sqlite"):
             connect_args["check_same_thread"] = False
+
+        # Optional: loud startup log so you ALWAYS see which DB is in use
+        print(f"[DB] Using database_url={database_url}")
+
         _engine = create_engine(
             database_url,
             pool_pre_ping=True,
@@ -37,7 +54,9 @@ def get_engine():
 def get_session_local():
     global _SessionLocal
     if _SessionLocal is None:
-        _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
+        _SessionLocal = sessionmaker(autocommit=False,
+                                     autoflush=False,
+                                     bind=get_engine())
     return _SessionLocal
 
 
