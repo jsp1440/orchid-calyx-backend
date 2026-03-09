@@ -10,16 +10,12 @@ _SessionLocal = None
 
 def get_database_url() -> str:
     """
-    CANONICAL RULE:
-    1) If DATABASE_URL is set, ALWAYS use it. (This is the intended single source of truth.)
-    2) Only fall back to Replit PG* vars if DATABASE_URL is NOT set.
-    3) Final fallback: sqlite local dev.
+    Connection priority:
+    1) PGHOST (Replit-hosted Postgres) — used for Calyx show data
+    2) DATABASE_URL — currently points to Neon/Orchid Continuum (NOT used by Calyx
+       until schema conflicts are resolved)
+    3) SQLite fallback for local dev
     """
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        return database_url
-
-    # Fallback (Replit / legacy)
     pghost = os.getenv("PGHOST")
     if pghost:
         pguser = os.getenv("PGUSER", "postgres")
@@ -27,6 +23,10 @@ def get_database_url() -> str:
         pgdatabase = os.getenv("PGDATABASE", "postgres")
         pgport = os.getenv("PGPORT", "5432")
         return f"postgresql://{pguser}:{pgpassword}@{pghost}:{pgport}/{pgdatabase}"
+
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        return database_url
 
     return "sqlite:///./calyx.db"
 
