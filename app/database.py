@@ -40,8 +40,12 @@ def get_engine():
         if database_url.startswith("sqlite"):
             connect_args["check_same_thread"] = False
 
-        # Optional: loud startup log so you ALWAYS see which DB is in use
-        print(f"[DB] Using database_url={database_url}")
+        if '@' in database_url:
+            scheme_part = database_url.split('://')[0]
+            host_part = database_url.split('@', 1)[1]
+            print(f"[DB] Connecting to: {scheme_part}://***@{host_part}")
+        else:
+            print(f"[DB] Connecting to: {database_url}")
 
         _engine = create_engine(
             database_url,

@@ -2,6 +2,7 @@ import os
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.routers import (
     health,
@@ -13,6 +14,8 @@ from app.routers import (
     calyx_core,
     reference_docs,
     judging,
+    volunteer_ops,
+    feedback,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +44,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers
 app.include_router(health.router)
 app.include_router(tiles.router)
 app.include_router(shows.router)
@@ -49,19 +51,44 @@ app.include_router(entries.router)
 app.include_router(volunteers.router)
 app.include_router(awards.router)
 app.include_router(calyx_core.router)
-
-# reference_docs router already has its own prefix/tags pattern in your project
 app.include_router(reference_docs.router,
                    prefix="/api",
                    tags=["Reference Documents"])
-
-# judging router defines prefix="/api" internally already (per your judging.py)
 app.include_router(judging.router)
+app.include_router(volunteer_ops.router)
+app.include_router(feedback.router)
 
 
 @app.get("/")
 def root():
     return {"status": "ok", "app": "Calyx", "docs": "/docs"}
+
+
+def _safe_add_column(engine, table: str, column: str, col_type: str):
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+            conn.commit()
+            log.info("Added column %s.%s", table, column)
+    except Exception:
+        pass
+
+
+def _reconcile_schema(engine):
+    _safe_add_column(engine, "shows", "public_volunteer_token", "VARCHAR")
+    _safe_add_column(engine, "judges", "role", "VARCHAR")
+
+    _safe_add_column(engine, "judging_events", "published_at", "TIMESTAMP")
+    _safe_add_column(engine, "judging_events", "closed_at", "TIMESTAMP")
+    _safe_add_column(engine, "judging_events", "updated_at", "TIMESTAMP")
+    _safe_add_column(engine, "plant_categories", "sort_order", "INTEGER DEFAULT 0")
+    _safe_add_column(engine, "judging_criteria", "scoring_type", "VARCHAR DEFAULT 'numeric'")
+    _safe_add_column(engine, "judging_criteria", "min_value", "INTEGER")
+    _safe_add_column(engine, "judging_criteria", "max_value", "INTEGER")
+    _safe_add_column(engine, "judging_criteria", "choices_json", "TEXT")
+    _safe_add_column(engine, "scores", "value_rank", "INTEGER")
+    _safe_add_column(engine, "scores", "updated_at", "TIMESTAMP")
 
 
 @app.on_event("startup")
@@ -75,7 +102,9 @@ def startup():
         from app.database import get_engine
         from app.models import Base
 
-        Base.metadata.create_all(bind=get_engine())
+        engine = get_engine()
+        Base.metadata.create_all(bind=engine)
+        _reconcile_schema(engine)
         log.info("Database tables created/verified successfully.")
     except Exception as e:
         log.exception("Database initialization failed (continuing anyway): %s",
