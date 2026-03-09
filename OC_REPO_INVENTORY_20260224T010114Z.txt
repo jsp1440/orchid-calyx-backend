@@ -1,0 +1,267 @@
+============================================================
+ORCHID CONTINUUM — REPO INVENTORY
+UTC: Tue Feb 24 01:01:14 AM UTC 2026
+PWD: /home/runner/workspace
+============================================================
+
+[GIT]
+Repo root: /home/runner/workspace
+Branch:    main
+Commit:    3d3f4b76bb79e7634be4d3828eb1311470065a9e
+Last:      2026-02-11 17:46:09 +0000 | fcospresident | Improve database connection configuration and CORS handling
+Remotes:
+gitsafe-backup	git://gitsafe:5418/backup.git (fetch)
+gitsafe-backup	git://gitsafe:5418/backup.git (push)
+origin	https://github.com/jsp1440/orchid-calyx-backend (fetch)
+origin	https://github.com/jsp1440/orchid-calyx-backend (push)
+
+[TOP LEVEL]
+total 56
+drwxr-xr-x 1 runner runner   848 Feb 24 01:01 .
+drwxrwxrwx 1 runner runner    58 Feb 24 01:01 ..
+drwxr-xr-x 1 runner runner    68 Jan 28 04:45 alembic
+-rw-r--r-- 1 runner runner  5008 Jan 28 04:44 alembic.ini
+drwxr-xr-x 1 runner runner   184 Feb  7 07:56 app
+-rw-r--r-- 1 runner runner     0 Jan 29 07:27 app → main.py
+drwxr-xr-x 1 runner runner  4582 Feb 11 17:45 attached_assets
+drwxr-xr-x 1 runner runner    26 Jan 28 02:10 .cache
+drwxr-xr-x 1 runner runner   146 Jan 30 08:37 client
+drwxr-xr-x 1 runner runner    12 Jan 28 02:31 .config
+drwxr-xr-x 1 runner runner    28 Feb  4 06:39 data
+drwxr-xr-x 1 runner runner   148 Feb 24 01:01 .git
+-rw-r--r-- 1 runner runner   210 Jan 28 01:09 .gitignore
+drwxr-xr-x 1 runner runner   260 Jan 30 01:34 import React from "react";  export default function App() {   return (     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>       <h1>🌸 Calyx — Orchid Show Demo<
+drwxr-xr-x 1 runner runner    22 Feb  3 12:19 .local
+drwxr-xr-x 1 runner runner    82 Feb  4 06:41 migrations
+-rw-r--r-- 1 runner runner   699 Feb 24 01:01 OC_REPO_INVENTORY_20260224T010114Z.txt
+-rwxr-xr-x 1 runner runner  2231 Feb 24 01:01 oc_repo_inventory.sh
+-rw-r--r-- 1 runner runner     0 Feb  5 02:49 orchid_dump.dump
+drwxr-xr-x 1 runner runner    26 Jan 28 01:08 .pythonlibs
+-rw-r--r-- 1 runner runner  2944 Jan 28 04:44 README.md
+-rw-r--r-- 1 runner runner   811 Feb  6 04:45 .replit
+-rw-r--r-- 1 runner runner 11969 Feb  6 22:54 replit.md
+-rw-r--r-- 1 runner runner   142 Feb  6 05:01 requirements.txt
+-rw-r--r-- 1 runner runner  9790 Feb  6 05:03 seed.sql
+drwxr-xr-x 1 runner runner    58 Feb  6 05:23 tools
+drwxr-xr-x 1 runner runner    20 Feb  6 05:01 .upm
+
+[KEY FILES FOUND]
+FOUND: README.md
+FOUND: requirements.txt
+FOUND: requirements.txt
+FOUND: .replit
+
+[LIKELY ENTRYPOINTS]
+app/main.py
+app/worker.py
+client/main.tsx src/main.tsx
+
+[QUIZ / PHILOSOPHY SIGNALS]
+./oc_repo_inventory.sh:51:# “Philosophy quiz” / quiz signals
+./oc_repo_inventory.sh:53:( rg -n --no-heading --hidden --glob='!.git/*' "(philosophy quiz|orchid philosophy|quiz)" . 2>/dev/null || true ) | head -n 200 | tee -a "$OUT" >/dev/null
+
+[STACK SIGNALS]
+./OC_REPO_INVENTORY_20260224T010114Z.txt:33:drwxr-xr-x 1 runner runner   260 Jan 30 01:34 import React from "react";  export default function App() {   return (     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>       <h1>🌸 Calyx — Orchid Show Demo<
+./oc_repo_inventory.sh:58:( rg -n --no-heading --hidden --glob='!.git/*' "(fastapi|uvicorn|flask|django|nextjs|react|vite|express)" . 2>/dev/null || true ) | head -n 200 | tee -a "$OUT" >/dev/null
+./replit.md:59:uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
+./.replit:27:args = "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}"
+./.replit:34:run = ["bash", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}"]
+./client/package-lock.json:11:        "react": "^18.2.0",
+./client/package-lock.json:12:        "react-dom": "^18.2.0"
+./client/package-lock.json:15:        "@types/react": "^18.2.0",
+./client/package-lock.json:16:        "@types/react-dom": "^18.2.0",
+./client/package-lock.json:17:        "@vitejs/plugin-react": "^4.2.0",
+./client/package-lock.json:19:        "vite": "^5.0.0"
+./client/package-lock.json:224:    "node_modules/@babel/plugin-transform-react-jsx-self": {
+./client/package-lock.json:226:      "resolved": "https://registry.npmjs.org/@babel/plugin-transform-react-jsx-self/-/plugin-transform-react-jsx-self-7.27.1.tgz",
+./client/package-lock.json:240:    "node_modules/@babel/plugin-transform-react-jsx-source": {
+./client/package-lock.json:242:      "resolved": "https://registry.npmjs.org/@babel/plugin-transform-react-jsx-source/-/plugin-transform-react-jsx-source-7.27.1.tgz",
+./client/package-lock.json:1161:    "node_modules/@types/react": {
+./client/package-lock.json:1163:      "resolved": "https://registry.npmjs.org/@types/react/-/react-18.3.27.tgz",
+./client/package-lock.json:1172:    "node_modules/@types/react-dom": {
+./client/package-lock.json:1174:      "resolved": "https://registry.npmjs.org/@types/react-dom/-/react-dom-18.3.7.tgz",
+./client/package-lock.json:1179:        "@types/react": "^18.0.0"
+./client/package-lock.json:1182:    "node_modules/@vitejs/plugin-react": {
+./client/package-lock.json:1184:      "resolved": "https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-4.7.0.tgz",
+./client/package-lock.json:1190:        "@babel/plugin-transform-react-jsx-self": "^7.27.1",
+./client/package-lock.json:1191:        "@babel/plugin-transform-react-jsx-source": "^7.27.1",
+./client/package-lock.json:1194:        "react-refresh": "^0.17.0"
+./client/package-lock.json:1200:        "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0"
+./client/package-lock.json:1504:    "node_modules/react": {
+./client/package-lock.json:1506:      "resolved": "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+./client/package-lock.json:1516:    "node_modules/react-dom": {
+./client/package-lock.json:1518:      "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz",
+./client/package-lock.json:1526:        "react": "^18.3.1"
+./client/package-lock.json:1529:    "node_modules/react-refresh": {
+./client/package-lock.json:1531:      "resolved": "https://registry.npmjs.org/react-refresh/-/react-refresh-0.17.0.tgz",
+./client/package-lock.json:1658:    "node_modules/vite": {
+./client/package-lock.json:1660:      "resolved": "https://registry.npmjs.org/vite/-/vite-5.4.21.tgz",
+./client/package-lock.json:1670:        "vite": "bin/vite.js"
+./client/package-lock.json:1676:        "url": "https://github.com/vitejs/vite?sponsor=1"
+./client/node_modules/.package-lock.json:209:    "node_modules/@babel/plugin-transform-react-jsx-self": {
+./client/node_modules/.package-lock.json:211:      "resolved": "https://registry.npmjs.org/@babel/plugin-transform-react-jsx-self/-/plugin-transform-react-jsx-self-7.27.1.tgz",
+./client/node_modules/.package-lock.json:225:    "node_modules/@babel/plugin-transform-react-jsx-source": {
+./client/node_modules/.package-lock.json:227:      "resolved": "https://registry.npmjs.org/@babel/plugin-transform-react-jsx-source/-/plugin-transform-react-jsx-source-7.27.1.tgz",
+./client/node_modules/.package-lock.json:436:    "node_modules/@types/react": {
+./client/node_modules/.package-lock.json:438:      "resolved": "https://registry.npmjs.org/@types/react/-/react-18.3.27.tgz",
+./client/node_modules/.package-lock.json:447:    "node_modules/@types/react-dom": {
+./client/node_modules/.package-lock.json:449:      "resolved": "https://registry.npmjs.org/@types/react-dom/-/react-dom-18.3.7.tgz",
+./client/node_modules/.package-lock.json:454:        "@types/react": "^18.0.0"
+./client/node_modules/.package-lock.json:457:    "node_modules/@vitejs/plugin-react": {
+./client/node_modules/.package-lock.json:459:      "resolved": "https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-4.7.0.tgz",
+./client/node_modules/.package-lock.json:465:        "@babel/plugin-transform-react-jsx-self": "^7.27.1",
+./client/node_modules/.package-lock.json:466:        "@babel/plugin-transform-react-jsx-source": "^7.27.1",
+./client/node_modules/.package-lock.json:469:        "react-refresh": "^0.17.0"
+./client/node_modules/.package-lock.json:475:        "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0"
+./client/node_modules/.package-lock.json:764:    "node_modules/react": {
+./client/node_modules/.package-lock.json:766:      "resolved": "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+./client/node_modules/.package-lock.json:776:    "node_modules/react-dom": {
+./client/node_modules/.package-lock.json:778:      "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz",
+./client/node_modules/.package-lock.json:786:        "react": "^18.3.1"
+./client/node_modules/.package-lock.json:789:    "node_modules/react-refresh": {
+./client/node_modules/.package-lock.json:791:      "resolved": "https://registry.npmjs.org/react-refresh/-/react-refresh-0.17.0.tgz",
+./client/node_modules/.package-lock.json:918:    "node_modules/vite": {
+./client/node_modules/.package-lock.json:920:      "resolved": "https://registry.npmjs.org/vite/-/vite-5.4.21.tgz",
+./client/node_modules/.package-lock.json:930:        "vite": "bin/vite.js"
+./client/node_modules/.package-lock.json:936:        "url": "https://github.com/vitejs/vite?sponsor=1"
+./client/node_modules/react-dom/README.md:1:# `react-dom`
+./client/node_modules/react-dom/README.md:3:This package serves as the entry point to the DOM and server renderers for React. It is intended to be paired with the generic React package, which is shipped as `react` to npm.
+./client/node_modules/react-dom/README.md:8:npm install react react-dom
+./client/node_modules/react-dom/README.md:16:import { createRoot } from 'react-dom/client';
+./client/node_modules/react-dom/README.md:29:import { renderToPipeableStream } from 'react-dom/server';
+./client/node_modules/react-dom/README.md:50:### `react-dom`
+./client/node_modules/react-dom/README.md:52:See https://reactjs.org/docs/react-dom.html
+./client/node_modules/react-dom/README.md:54:### `react-dom/client`
+./client/node_modules/react-dom/README.md:56:See https://reactjs.org/docs/react-dom-client.html
+./client/node_modules/react-dom/README.md:58:### `react-dom/server`
+./client/node_modules/react-dom/README.md:60:See https://reactjs.org/docs/react-dom-server.html
+./client/node_modules/react-dom/package.json:2:  "name": "react-dom",
+./client/node_modules/react-dom/package.json:8:    "url": "https://github.com/facebook/react.git",
+./client/node_modules/react-dom/package.json:9:    "directory": "packages/react-dom"
+./client/node_modules/react-dom/package.json:12:    "react"
+./client/node_modules/react-dom/package.json:16:    "url": "https://github.com/facebook/react/issues"
+./client/node_modules/react-dom/package.json:18:  "homepage": "https://reactjs.org/",
+./client/node_modules/react-dom/package.json:24:    "react": "^18.3.1"
+./client/node_modules/react-dom/test-utils.js:4:  module.exports = require('./cjs/react-dom-test-utils.production.min.js');
+./client/node_modules/react-dom/test-utils.js:6:  module.exports = require('./cjs/react-dom-test-utils.development.js');
+./client/node_modules/react-dom/server.node.js:5:  l = require('./cjs/react-dom-server-legacy.node.production.min.js');
+./client/node_modules/react-dom/server.node.js:6:  s = require('./cjs/react-dom-server.node.production.min.js');
+./client/node_modules/react-dom/server.node.js:8:  l = require('./cjs/react-dom-server-legacy.node.development.js');
+./client/node_modules/react-dom/server.node.js:9:  s = require('./cjs/react-dom-server.node.development.js');
+./client/node_modules/react-dom/server.browser.js:5:  l = require('./cjs/react-dom-server-legacy.browser.production.min.js');
+./client/node_modules/react-dom/server.browser.js:6:  s = require('./cjs/react-dom-server.browser.production.min.js');
+./client/node_modules/react-dom/server.browser.js:8:  l = require('./cjs/react-dom-server-legacy.browser.development.js');
+./client/node_modules/react-dom/server.browser.js:9:  s = require('./cjs/react-dom-server.browser.development.js');
+./client/node_modules/react/README.md:1:# `react`
+./client/node_modules/react/README.md:5:The `react` package contains only the functionality necessary to define React components. It is typically used together with a React renderer like `react-dom` for the web, or `react-native` for the native environments.
+./client/node_modules/react/README.md:7:**Note:** by default, React will be in development mode. The development version includes extra warnings about common mistakes, whereas the production version includes extra performance optimizations and strips all error messages. Don't forget to use the [production build](https://reactjs.org/docs/optimizing-performance.html#use-the-production-build) when deploying your application.
+./client/node_modules/react/README.md:12:import { useState } from 'react';
+./client/node_modules/react/README.md:13:import { createRoot } from 'react-dom/client';
+./client/node_modules/react/README.md:33:See https://reactjs.org/
+./client/node_modules/react/README.md:37:See https://reactjs.org/docs/react-api.html
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:3: * react-dom.profiling.min.js
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:13:'use strict';(function(R,Ib){"object"===typeof exports&&"undefined"!==typeof module?Ib(exports,require("react")):"function"===typeof define&&define.amd?define(["exports","react"],Ib):(R=R||self,Ib(R.ReactDOM={},R.React))})(this,function(R,Ib){function m(a){for(var b="https://reactjs.org/docs/error-decoder.html?invariant="+a,c=1;c<arguments.length;c++)b+="&args[]="+encodeURIComponent(arguments[c]);return"Minified React error #"+a+"; visit "+b+" for the full message or use the non-minified dev environment for full errors and additional helpful warnings."}
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:54:var a,b=Ye,c=b.length,d,e="value"in db?db.value:db.textContent,f=e.length;for(a=0;a<c&&b[a]===e[a];a++);var g=c-a;for(d=1;d<=g&&b[c-d]===e[f-d];d++);return rd=e.slice(a,1<d?1-d:void 0)}function sd(a){var b=a.keyCode;"charCode"in a?(a=a.charCode,0===a&&13===b&&(a=13)):a=b;10===a&&(a=13);return 32<=a||13===a?a:0}function td(){return!0}function rh(){return!1}function la(a){function b(b,d,e,f,g){this._reactName=b;this._targetInst=e;this.type=d;this.nativeEvent=f;this.target=g;this.currentTarget=null;
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:77:f&&(e=f,f=sc(a,c),null!=f&&d.unshift(Hc(a,f,e)),f=sc(a,b),null!=f&&d.push(Hc(a,f,e)));a=a.return}return d}function Vb(a){if(null===a)return null;do a=a.return;while(a&&5!==a.tag);return a?a:null}function Rh(a,b,c,d,e){for(var f=b._reactName,g=[];null!==c&&c!==d;){var h=c,k=h.alternate,n=h.stateNode;if(null!==k&&k===d)break;5===h.tag&&null!==n&&(h=n,e?(k=sc(c,f),null!=k&&g.unshift(Hc(c,k,h))):e||(k=sc(c,f),null!=k&&g.push(Hc(c,k,h))));c=c.return}0!==g.length&&a.push({event:b,listeners:g})}function Uh(a){return("string"===
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:81:function E(a,b,c){Wb++;nf[Wb]=a.current;a.current=b}function Xb(a,b){var c=a.type.contextTypes;if(!c)return hb;var d=a.stateNode;if(d&&d.__reactInternalMemoizedUnmaskedChildContext===b)return d.__reactInternalMemoizedMaskedChildContext;var e={},f;for(f in c)e[f]=b[f];d&&(a=a.stateNode,a.__reactInternalMemoizedUnmaskedChildContext=b,a.__reactInternalMemoizedMaskedChildContext=e);return e}function ea(a){a=a.childContextTypes;return null!==a&&void 0!==a}function Wh(a,b,c){if(K.current!==hb)throw Error(m(168));
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:82:E(K,b);E(T,c)}function Xh(a,b,c){var d=a.stateNode;b=b.childContextTypes;if("function"!==typeof d.getChildContext)return c;d=d.getChildContext();for(var e in d)if(!(e in b))throw Error(m(108,Nj(a)||"Unknown",e));return D({},c,d)}function Bd(a){a=(a=a.stateNode)&&a.__reactInternalMemoizedMergedChildContext||hb;vb=K.current;E(K,a);E(T,T.current);return!0}function Yh(a,b,c){var d=a.stateNode;if(!d)throw Error(m(169));c?(a=Xh(a,b,vb),d.__reactInternalMemoizedMergedChildContext=a,t(T),t(K),E(K,a)):t(T);
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:123:!Ec(c,d)||!Ec(e,f):!0}function Hi(a,b,c){var d=!1,e=hb;var f=b.contextType;"object"===typeof f&&null!==f?f=ra(f):(e=ea(b)?vb:K.current,d=b.contextTypes,f=(d=null!==d&&void 0!==d)?Xb(a,e):hb);b=new b(c,f);a.memoizedState=null!==b.state&&void 0!==b.state?b.state:null;b.updater=Vd;a.stateNode=b;b._reactInternals=a;d&&(a=a.stateNode,a.__reactInternalMemoizedUnmaskedChildContext=e,a.__reactInternalMemoizedMaskedChildContext=f);return b}function Ii(a,b,c,d){a=b.state;"function"===typeof b.componentWillReceiveProps&&
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:145:32;break;case 536870912:e=268435456;break;default:e=0}e=0!==(e&(d.suspendedLanes|g))?0:e;0!==e&&e!==f.retryLane&&(f.retryLane=e,Sa(a,e),ya(d,a,e,-1))}ag();d=Sf(Error(m(421)));return Zd(a,b,g,d)}if("$?"===e.data)return b.flags|=128,b.child=a.child,b=fl.bind(null,a),e._reactRetry=b,null;a=f.treeContext;fa=Oa(e.nextSibling);ma=b;C=!0;xa=null;null!==a&&(oa[pa++]=Qa,oa[pa++]=Ra,oa[pa++]=xb,Qa=a.id,Ra=a.overflow,xb=b);b=$f(b,d.children);b.flags|=4096;return b}function Yi(a,b,c){a.lanes|=b;var d=a.alternate;
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:171:end:0}}else c=null;fg={focusedElem:a,selectionRange:c};pd=!1;for(p=b;null!==p;)if(b=p,a=b.child,0!==(b.subtreeFlags&1028)&&null!==a)a.return=b,p=a;else for(;null!==p;){b=p;try{var v=b.alternate;if(0!==(b.flags&1024))switch(b.tag){case 0:case 11:case 15:break;case 1:if(null!==v){var w=v.memoizedProps,x=v.memoizedState,B=b.stateNode,y=B.getSnapshotBeforeUpdate(b.elementType===b.type?w:za(b.type,w),x);B.__reactInternalSnapshotBeforeUpdate=y}break;case 3:var r=b.stateNode.containerInfo;1===r.nodeType?
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:176:a.sibling;){if(null===a.return||ej(a.return))return null;a=a.return}a.sibling.return=a.return;for(a=a.sibling;5!==a.tag&&6!==a.tag&&18!==a.tag;){if(a.flags&2)continue a;if(null===a.child||4===a.tag)continue a;else a.child.return=a,a=a.child}if(!(a.flags&2))return a.stateNode}}function hg(a,b,c){var d=a.tag;if(5===d||6===d)a=a.stateNode,b?8===c.nodeType?c.parentNode.insertBefore(a,b):c.insertBefore(a,b):(8===c.nodeType?(b=c.parentNode,b.insertBefore(a,c)):(b=c,b.appendChild(a)),c=c._reactRootContainer,
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:190:else{var f=b.elementType===b.type?d.memoizedProps:za(b.type,d.memoizedProps),g=d.memoizedState;if(b.mode&2)try{Ia(),e.componentDidUpdate(f,g,e.__reactInternalSnapshotBeforeUpdate)}finally{Ha(b)}else e.componentDidUpdate(f,g,e.__reactInternalSnapshotBeforeUpdate)}var h=b.updateQueue;null!==h&&ji(b,h,e);break;case 3:var k=b.updateQueue;if(null!==k){c=null;if(null!==b.child)switch(b.child.tag){case 5:c=b.child.stateNode;break;case 1:c=b.child.stateNode}ji(b,k,c)}break;case 5:var l=b.stateNode;if(null===
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:225:b,c,d,e,f,g,h,k,l){a=new Fl(a,b,c,h,k);1===b?(b=1,!0===f&&(b|=8)):b=0;ua&&(b|=2);f=qa(3,null,null,b);a.current=f;f.stateNode=a;f.memoizedState={element:d,isDehydrated:c,cache:null,transitions:null,pendingSuspenseBoundaries:null};Bf(f);return a}function Gl(a,b,c){var d=3<arguments.length&&void 0!==arguments[3]?arguments[3]:null;return{$$typeof:Lb,key:null==d?null:""+d,children:a,containerInfo:b,implementation:c}}function Aj(a){if(!a)return hb;a=a._reactInternals;a:{if(sb(a)!==a||1!==a.tag)throw Error(m(170));
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:226:var b=a;do{switch(b.tag){case 3:b=b.stateNode.context;break a;case 1:if(ea(b.type)){b=b.stateNode.__reactInternalMemoizedMergedChildContext;break a}}b=b.return}while(null!==b);throw Error(m(171));}if(1===a.tag){var c=a.type;if(ea(c))return Xh(a,c,b)}return b}function Bj(a,b,c,d,e,f,g,h,k,l){a=sg(c,d,!0,a,e,f,g,h,k);a.context=Aj(null);c=a.current;d=aa();e=mb(c);f=Ta(d,e);f.callback=void 0!==b&&null!==b?b:null;kb(c,f,e);a.current.lanes=e;wc(a,e,d);ia(a,d);return a}function ke(a,b,c,d){var e=b.current,
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:228:a.retryLane=0!==c&&c<b?c:b}}function tg(a,b){Cj(a,b);(a=a.alternate)&&Cj(a,b)}function Hl(a){a=Zg(a);return null===a?null:a.stateNode}function Il(a){return null}function ug(a){this._internalRoot=a}function me(a){this._internalRoot=a}function vg(a){return!(!a||1!==a.nodeType&&9!==a.nodeType&&11!==a.nodeType)}function ne(a){return!(!a||1!==a.nodeType&&9!==a.nodeType&&11!==a.nodeType&&(8!==a.nodeType||" react-mount-point-unstable "!==a.nodeValue))}function Dj(){}function Jl(a,b,c,d,e){if(e){if("function"===
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:229:typeof d){var f=d;d=function(){var a=le(g);f.call(a)}}var g=Bj(b,d,a,0,null,!1,!1,"",Dj);a._reactRootContainer=g;a[Ma]=g.current;Gc(8===a.nodeType?a.parentNode:a);Hb();return g}for(;e=a.lastChild;)a.removeChild(e);if("function"===typeof d){var h=d;d=function(){var a=le(k);h.call(a)}}var k=sg(a,0,!1,null,null,!1,!1,"",Dj);a._reactRootContainer=k;a[Ma]=k.current;Gc(8===a.nodeType?a.parentNode:a);Hb(function(){ke(b,k,c,d)});return k}function oe(a,b,c,d,e){var f=c._reactRootContainer;if(f){var g=f;if("function"===
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:235:1,!1,"xlink:href","http://www.w3.org/1999/xlink",!0,!1);["src","href","action","formAction"].forEach(function(a){S[a]=new Z(a,1,!1,a.toLowerCase(),null,!0,!0)});var Xa=Ib.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED,Id=Symbol.for("react.element"),Lb=Symbol.for("react.portal"),Kb=Symbol.for("react.fragment"),ye=Symbol.for("react.strict_mode"),xe=Symbol.for("react.profiler"),Fg=Symbol.for("react.provider"),Eg=Symbol.for("react.context"),Be=Symbol.for("react.forward_ref"),ze=Symbol.for("react.suspense"),
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:236:Ae=Symbol.for("react.suspense_list"),Ce=Symbol.for("react.memo"),Ya=Symbol.for("react.lazy");Symbol.for("react.scope");Symbol.for("react.debug_trace_mode");var zj=Symbol.for("react.offscreen");Symbol.for("react.legacy_hidden");Symbol.for("react.cache");Symbol.for("react.tracing_marker");var Dg=Symbol.iterator,D=Object.assign,te,ve=!1,pc=Array.isArray,pe,bj=function(a){return"undefined"!==typeof MSApp&&MSApp.execUnsafeLocalFunction?function(b,c,d,e){MSApp.execUnsafeLocalFunction(function(){return a(b,
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:253:var Tc="abort canplay canplaythrough durationchange emptied encrypted ended error loadeddata loadedmetadata loadstart pause play playing progress ratechange resize seeked seeking stalled suspend timeupdate volumechange waiting".split(" "),Fk=new Set("cancel close invalid load scroll toggle".split(" ").concat(Tc)),yd="_reactListening"+Math.random().toString(36).slice(2),Rk=/\r\n?/g,Sk=/\u0000|\uFFFD/g,eg=null,fg=null,ng="function"===typeof setTimeout?setTimeout:void 0,yl="function"===typeof clearTimeout?
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:254:clearTimeout:void 0,Gj="function"===typeof Promise?Promise:void 0,ul="function"===typeof queueMicrotask?queueMicrotask:"undefined"!==typeof Gj?function(a){return Gj.resolve(null).then(a).catch(Tk)}:ng,lc=Math.random().toString(36).slice(2),Ea="__reactFiber$"+lc,Ic="__reactProps$"+lc,Ma="__reactContainer$"+lc,ff="__reactEvents$"+lc,ml="__reactListeners$"+lc,nl="__reactHandles$"+lc,nf=[],Wb=-1,hb={},K=gb(hb),T=gb(!1),vb=hb,Pa=null,Cd=!1,of=!1,Yb=[],Zb=0,Ed=null,Dd=0,oa=[],pa=0,xb=null,Qa=1,Ra="",ma=
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:261:unstable_isNewReconciler:!1},na=Ej,be=0,Ud=-1,Cb=-1,dc=-1,ce=!1,ge=!1,Vd={isMounted:function(a){return(a=a._reactInternals)?sb(a)===a:!1},enqueueSetState:function(a,b,c){a=a._reactInternals;var d=aa(),e=mb(a),f=Ta(d,e);f.payload=b;void 0!==c&&null!==c&&(f.callback=c);b=kb(a,f,e);null!==b&&(ya(b,a,e,d),Ld(b,a,e));kd(a,e)},enqueueReplaceState:function(a,b,c){a=a._reactInternals;var d=aa(),e=mb(a),f=Ta(d,e);f.tag=1;f.payload=b;void 0!==c&&null!==c&&(f.callback=c);b=kb(a,f,e);null!==b&&(ya(b,a,e,d),Ld(b,
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:262:a,e));kd(a,e)},enqueueForceUpdate:function(a,b){a=a._reactInternals;var c=aa(),d=mb(a),e=Ta(c,d);e.tag=2;void 0!==b&&null!==b&&(e.callback=b);b=kb(a,e,d);null!==b&&(ya(b,a,d,c),Ld(b,a,d));null!==l&&"function"===typeof l.markForceUpdateScheduled&&l.markForceUpdateScheduled(a,d)}},bl="function"===typeof WeakMap?WeakMap:Map,dl=Xa.ReactCurrentOwner,ha=!1,Zf={dehydrated:null,treeContext:null,retryLane:0};var il=function(a,b,c,d){for(c=b.child;null!==c;){if(5===c.tag||6===c.tag)a.appendChild(c.stateNode);
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:268:var e=Xb(b,K.current);bc(b,c);uc(b);e=Hf(null,b,d,a,e,c);var f=If();Pb();b.flags|=1;"object"===typeof e&&null!==e&&"function"===typeof e.render&&void 0===e.$$typeof?(b.tag=1,b.memoizedState=null,b.updateQueue=null,ea(d)?(f=!0,Bd(b)):f=!1,b.memoizedState=null!==e.state&&void 0!==e.state?e.state:null,Bf(b),e.updater=Vd,b.stateNode=e,e._reactInternals=b,Rf(b,d,a,c),b=Xf(null,b,d,!0,f,c)):(b.tag=0,C&&f&&pf(b),ba(null,b,e,c),b=b.child);return b;case 16:d=b.elementType;a:{Xd(a,b);a=b.pendingProps;e=d._init;
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:280:scheduleRoot:null,setRefreshHandler:null,getCurrentFiber:null,reconcilerVersion:"18.3.1"})})({findFiberByHostInstance:ub,bundleType:0,version:"18.3.1-next-f1338f8080-20240426",rendererPackageName:"react-dom"});R.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED=Zl;R.createPortal=function(a,b){var c=2<arguments.length&&void 0!==arguments[2]?arguments[2]:null;if(!vg(b))throw Error(m(200));return Gl(a,b,null,c)};R.createRoot=function(a,b){if(!vg(a))throw Error(m(299));var c=
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:281:!1,d="",e=Hj;null!==b&&void 0!==b&&(!0===b.unstable_strictMode&&(c=!0),void 0!==b.identifierPrefix&&(d=b.identifierPrefix),void 0!==b.onRecoverableError&&(e=b.onRecoverableError));b=sg(a,1,!1,null,null,c,!1,d,e);a[Ma]=b.current;Gc(8===a.nodeType?a.parentNode:a);return new ug(b)};R.findDOMNode=function(a){if(null==a)return null;if(1===a.nodeType)return a;var b=a._reactInternals;if(void 0===b){if("function"===typeof a.render)throw Error(m(188));a=Object.keys(a).join(",");throw Error(m(268,a));}a=Zg(b);
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:283:if(d)for(a=0;a<d.length;a++)c=d[a],e=c._getVersion,e=e(c._source),null==b.mutableSourceEagerHydrationData?b.mutableSourceEagerHydrationData=[c,e]:b.mutableSourceEagerHydrationData.push(c,e);return new me(b)};R.render=function(a,b,c){if(!ne(b))throw Error(m(200));return oe(null,a,b,!1,c)};R.unmountComponentAtNode=function(a){if(!ne(a))throw Error(m(40));return a._reactRootContainer?(Hb(function(){oe(null,null,a,!1,function(){a._reactRootContainer=null;a[Ma]=null})}),!0):!1};R.unstable_batchedUpdates=
+./client/node_modules/react-dom/umd/react-dom.profiling.min.js:284:pg;R.unstable_renderSubtreeIntoContainer=function(a,b,c,d){if(!ne(c))throw Error(m(200));if(null==a||void 0===a._reactInternals)throw Error(m(38));return oe(a,b,c,!1,d)};R.version="18.3.1-next-f1338f8080-20240426"});
+./client/node_modules/react/package.json:2:  "name": "react",
+./client/node_modules/react/package.json:5:    "react"
+./client/node_modules/react/package.json:8:  "homepage": "https://reactjs.org/",
+./client/node_modules/react/package.json:9:  "bugs": "https://github.com/facebook/react/issues",
+./client/node_modules/react/package.json:19:    "react.shared-subset.js"
+./client/node_modules/react/package.json:24:      "react-server": "./react.shared-subset.js",
+./client/node_modules/react/package.json:33:    "url": "https://github.com/facebook/react.git",
+./client/node_modules/react/package.json:34:    "directory": "packages/react"
+./client/node_modules/react/react.shared-subset.js:4:  module.exports = require('./cjs/react.shared-subset.production.min.js');
+./client/node_modules/react/react.shared-subset.js:6:  module.exports = require('./cjs/react.shared-subset.development.js');
+./client/node_modules/react/umd/react.profiling.min.js:3: * react.profiling.min.js
+./client/node_modules/react/umd/react.profiling.min.js:17:k=n.priorityLevel;var d=m(n.expirationTime<=b);b=v();"function"===typeof d?n.callback=d:n===p(q)&&E(q);P(b)}else E(q);n=p(q)}if(null!==n)var g=!0;else{var h=p(r);null!==h&&T(Q,h.startTime-b);g=!1}return g}finally{n=null,k=c,F=!1}}function fa(){return v()-ha<ia?!1:!0}function R(a){G=a;H||(H=!0,I())}function T(a,b){A=ja(function(){a(v())},b)}function ka(a){throw Error("act(...) is not supported in production builds of React.");}var y=Symbol.for("react.element"),qa=Symbol.for("react.portal"),sa=Symbol.for("react.fragment"),
+./client/node_modules/react/umd/react.profiling.min.js:18:ta=Symbol.for("react.strict_mode"),ua=Symbol.for("react.profiler"),va=Symbol.for("react.provider"),wa=Symbol.for("react.context"),xa=Symbol.for("react.forward_ref"),ya=Symbol.for("react.suspense"),za=Symbol.for("react.memo"),Aa=Symbol.for("react.lazy"),V=Symbol.iterator,X={isMounted:function(a){return!1},enqueueForceUpdate:function(a,b,c){},enqueueReplaceState:function(a,b,c,m){},enqueueSetState:function(a,b,c,m){}},la=Object.assign,W={};w.prototype.isReactComponent={};w.prototype.setState=function(a,
+./client/node_modules/react/umd/react.production.min.js:3: * react.production.min.js
+./client/node_modules/react/umd/react.production.min.js:17:k=n.priorityLevel;var d=m(n.expirationTime<=b);b=v();"function"===typeof d?n.callback=d:n===p(q)&&E(q);P(b)}else E(q);n=p(q)}if(null!==n)var g=!0;else{var h=p(r);null!==h&&T(Q,h.startTime-b);g=!1}return g}finally{n=null,k=c,F=!1}}function fa(){return v()-ha<ia?!1:!0}function R(a){G=a;H||(H=!0,I())}function T(a,b){A=ja(function(){a(v())},b)}function ka(a){throw Error("act(...) is not supported in production builds of React.");}var y=Symbol.for("react.element"),qa=Symbol.for("react.portal"),sa=Symbol.for("react.fragment"),
+./client/node_modules/react/umd/react.production.min.js:18:ta=Symbol.for("react.strict_mode"),ua=Symbol.for("react.profiler"),va=Symbol.for("react.provider"),wa=Symbol.for("react.context"),xa=Symbol.for("react.forward_ref"),ya=Symbol.for("react.suspense"),za=Symbol.for("react.memo"),Aa=Symbol.for("react.lazy"),V=Symbol.iterator,X={isMounted:function(a){return!1},enqueueForceUpdate:function(a,b,c){},enqueueReplaceState:function(a,b,c,m){},enqueueSetState:function(a,b,c,m){}},la=Object.assign,W={};w.prototype.isReactComponent={};w.prototype.setState=function(a,
+./client/node_modules/react-dom/umd/react-dom.production.min.js:3: * react-dom.production.min.js
+./client/node_modules/react-dom/umd/react-dom.production.min.js:13:'use strict';(function(Q,zb){"object"===typeof exports&&"undefined"!==typeof module?zb(exports,require("react")):"function"===typeof define&&define.amd?define(["exports","react"],zb):(Q=Q||self,zb(Q.ReactDOM={},Q.React))})(this,function(Q,zb){function m(a){for(var b="https://reactjs.org/docs/error-decoder.html?invariant="+a,c=1;c<arguments.length;c++)b+="&args[]="+encodeURIComponent(arguments[c]);return"Minified React error #"+a+"; visit "+b+" for the full message or use the non-minified dev environment for full errors and additional helpful warnings."}
+./client/node_modules/react-dom/umd/react-dom.production.min.js:50:var a,b=Ee,c=b.length,d,e="value"in Za?Za.value:Za.textContent,f=e.length;for(a=0;a<c&&b[a]===e[a];a++);var g=c-a;for(d=1;d<=g&&b[c-d]===e[f-d];d++);return bd=e.slice(a,1<d?1-d:void 0)}function cd(a){var b=a.keyCode;"charCode"in a?(a=a.charCode,0===a&&13===b&&(a=13)):a=b;10===a&&(a=13);return 32<=a||13===a?a:0}function dd(){return!0}function Pg(){return!1}function ka(a){function b(b,d,e,f,g){this._reactName=b;this._targetInst=e;this.type=d;this.nativeEvent=f;this.target=g;this.currentTarget=null;
+./client/node_modules/react-dom/umd/react-dom.production.min.js:73:f&&(e=f,f=fc(a,c),null!=f&&d.unshift(tc(a,f,e)),f=fc(a,b),null!=f&&d.push(tc(a,f,e)));a=a.return}return d}function Lb(a){if(null===a)return null;do a=a.return;while(a&&5!==a.tag);return a?a:null}function oh(a,b,c,d,e){for(var f=b._reactName,g=[];null!==c&&c!==d;){var h=c,k=h.alternate,n=h.stateNode;if(null!==k&&k===d)break;5===h.tag&&null!==n&&(h=n,e?(k=fc(c,f),null!=k&&g.unshift(tc(c,k,h))):e||(k=fc(c,f),null!=k&&g.push(tc(c,k,h))));c=c.return}0!==g.length&&a.push({event:b,listeners:g})}function rh(a){return("string"===
+./client/node_modules/react-dom/umd/react-dom.production.min.js:77:function y(a,b,c){Mb++;Se[Mb]=a.current;a.current=b}function Nb(a,b){var c=a.type.contextTypes;if(!c)return cb;var d=a.stateNode;if(d&&d.__reactInternalMemoizedUnmaskedChildContext===b)return d.__reactInternalMemoizedMaskedChildContext;var e={},f;for(f in c)e[f]=b[f];d&&(a=a.stateNode,a.__reactInternalMemoizedUnmaskedChildContext=b,a.__reactInternalMemoizedMaskedChildContext=e);return e}function ea(a){a=a.childContextTypes;return null!==a&&void 0!==a}function th(a,b,c){if(J.current!==cb)throw Error(m(168));
+./client/node_modules/react-dom/umd/react-dom.production.min.js:78:y(J,b);y(S,c)}function uh(a,b,c){var d=a.stateNode;b=b.childContextTypes;if("function"!==typeof d.getChildContext)return c;d=d.getChildContext();for(var e in d)if(!(e in b))throw Error(m(108,gj(a)||"Unknown",e));return E({},c,d)}function ld(a){a=(a=a.stateNode)&&a.__reactInternalMemoizedMergedChildContext||cb;pb=J.current;y(J,a);y(S,S.current);return!0}function vh(a,b,c){var d=a.stateNode;if(!d)throw Error(m(169));c?(a=uh(a,b,pb),d.__reactInternalMemoizedMergedChildContext=a,v(S),v(J),y(J,a)):v(S);
+./client/node_modules/react-dom/umd/react-dom.production.min.js:118:null!==f?f=qa(f):(e=ea(b)?pb:J.current,d=b.contextTypes,f=(d=null!==d&&void 0!==d)?Nb(a,e):cb);b=new b(c,f);a.memoizedState=null!==b.state&&void 0!==b.state?b.state:null;b.updater=Dd;a.stateNode=b;b._reactInternals=a;d&&(a=a.stateNode,a.__reactInternalMemoizedUnmaskedChildContext=e,a.__reactInternalMemoizedMaskedChildContext=f);return b}function fi(a,b,c,d){a=b.state;"function"===typeof b.componentWillReceiveProps&&b.componentWillReceiveProps(c,d);"function"===typeof b.UNSAFE_componentWillReceiveProps&&
+./client/node_modules/react-dom/umd/react-dom.production.min.js:139:32;break;case 536870912:e=268435456;break;default:e=0}e=0!==(e&(d.suspendedLanes|g))?0:e;0!==e&&e!==f.retryLane&&(f.retryLane=e,Oa(a,e),xa(d,a,e,-1))}Ef();d=vf(Error(m(421)));return Hd(a,b,g,d)}if("$?"===e.data)return b.flags|=128,b.child=a.child,b=vk.bind(null,a),e._reactRetry=b,null;a=f.treeContext;fa=Ka(e.nextSibling);la=b;D=!0;wa=null;null!==a&&(na[oa++]=Ma,na[oa++]=Na,na[oa++]=rb,Ma=a.id,Na=a.overflow,rb=b);b=Df(b,d.children);b.flags|=4096;return b}function vi(a,b,c){a.lanes|=b;var d=a.alternate;
+./client/node_modules/react-dom/umd/react-dom.production.min.js:163:{start:h,end:k}}else c=null}c=c||{start:0,end:0}}else c=null;Kf={focusedElem:a,selectionRange:c};Zc=!1;for(l=b;null!==l;)if(b=l,a=b.child,0!==(b.subtreeFlags&1028)&&null!==a)a.return=b,l=a;else for(;null!==l;){b=l;try{var x=b.alternate;if(0!==(b.flags&1024))switch(b.tag){case 0:case 11:case 15:break;case 1:if(null!==x){var v=x.memoizedProps,z=x.memoizedState,w=b.stateNode,A=w.getSnapshotBeforeUpdate(b.elementType===b.type?v:ya(b.type,v),z);w.__reactInternalSnapshotBeforeUpdate=A}break;case 3:var t=
+./client/node_modules/react-dom/umd/react-dom.production.min.js:167:2))return a.stateNode}}function Mf(a,b,c){var d=a.tag;if(5===d||6===d)a=a.stateNode,b?8===c.nodeType?c.parentNode.insertBefore(a,b):c.insertBefore(a,b):(8===c.nodeType?(b=c.parentNode,b.insertBefore(a,c)):(b=c,b.appendChild(a)),c=c._reactRootContainer,null!==c&&void 0!==c||null!==b.onclick||(b.onclick=kd));else if(4!==d&&(a=a.child,null!==a))for(Mf(a,b,c),a=a.sibling;null!==a;)Mf(a,b,c),a=a.sibling}function Nf(a,b,c){var d=a.tag;if(5===d||6===d)a=a.stateNode,b?c.insertBefore(a,b):c.appendChild(a);
+./client/node_modules/react-dom/umd/react-dom.production.min.js:180:else{var e=b.elementType===b.type?c.memoizedProps:ya(b.type,c.memoizedProps);d.componentDidUpdate(e,c.memoizedState,d.__reactInternalSnapshotBeforeUpdate)}var f=b.updateQueue;null!==f&&Hh(b,f,d);break;case 3:var g=b.updateQueue;if(null!==g){c=null;if(null!==b.child)switch(b.child.tag){case 5:c=b.child.stateNode;break;case 1:c=b.child.stateNode}Hh(b,g,c)}break;case 5:var h=b.stateNode;if(null===c&&b.flags&4){c=h;var k=b.memoizedProps;switch(b.type){case "button":case "input":case "select":case "textarea":k.autoFocus&&
+./client/node_modules/react-dom/umd/react-dom.production.min.js:209:pendingSuspenseBoundaries:null};ff(f);return a}function Wk(a,b,c){var d=3<arguments.length&&void 0!==arguments[3]?arguments[3]:null;return{$$typeof:Cb,key:null==d?null:""+d,children:a,containerInfo:b,implementation:c}}function Vi(a){if(!a)return cb;a=a._reactInternals;a:{if(nb(a)!==a||1!==a.tag)throw Error(m(170));var b=a;do{switch(b.tag){case 3:b=b.stateNode.context;break a;case 1:if(ea(b.type)){b=b.stateNode.__reactInternalMemoizedMergedChildContext;break a}}b=b.return}while(null!==b);throw Error(m(171));
+./client/node_modules/react-dom/umd/react-dom.production.min.js:212:a.nodeType&&11!==a.nodeType)}function Vd(a){return!(!a||1!==a.nodeType&&9!==a.nodeType&&11!==a.nodeType&&(8!==a.nodeType||" react-mount-point-unstable "!==a.nodeValue))}function Yi(){}function Zk(a,b,c,d,e){if(e){if("function"===typeof d){var f=d;d=function(){var a=Td(g);f.call(a)}}var g=Wi(b,d,a,0,null,!1,!1,"",Yi);a._reactRootContainer=g;a[Ja]=g.current;sc(8===a.nodeType?a.parentNode:a);yb();return g}for(;e=a.lastChild;)a.removeChild(e);if("function"===typeof d){var h=d;d=function(){var a=Td(k);
+./client/node_modules/react-dom/umd/react-dom.production.min.js:213:h.call(a)}}var k=Vf(a,0,!1,null,null,!1,!1,"",Yi);a._reactRootContainer=k;a[Ja]=k.current;sc(8===a.nodeType?a.parentNode:a);yb(function(){Sd(b,k,c,d)});return k}function Wd(a,b,c,d,e){var f=c._reactRootContainer;if(f){var g=f;if("function"===typeof e){var h=e;e=function(){var a=Td(g);h.call(a)}}Sd(b,g,a,e)}else g=Zk(c,b,a,e,d);return Td(g)}var cg=new Set,$b={},Ia=!("undefined"===typeof window||"undefined"===typeof window.document||"undefined"===typeof window.document.createElement),Zd=Object.prototype.hasOwnProperty,
+./client/node_modules/react-dom/umd/react-dom.production.min.js:218:1,!1,"xlink:href","http://www.w3.org/1999/xlink",!0,!1);["src","href","action","formAction"].forEach(function(a){R[a]=new Y(a,1,!1,a.toLowerCase(),null,!0,!0)});var Sa=zb.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED,sd=Symbol.for("react.element"),Cb=Symbol.for("react.portal"),Bb=Symbol.for("react.fragment"),fe=Symbol.for("react.strict_mode"),ee=Symbol.for("react.profiler"),hg=Symbol.for("react.provider"),gg=Symbol.for("react.context"),ie=Symbol.for("react.forward_ref"),ge=Symbol.for("react.suspense"),
+./client/node_modules/react-dom/umd/react-dom.production.min.js:219:he=Symbol.for("react.suspense_list"),je=Symbol.for("react.memo"),Ta=Symbol.for("react.lazy");Symbol.for("react.scope");Symbol.for("react.debug_trace_mode");var Ui=Symbol.for("react.offscreen");Symbol.for("react.legacy_hidden");Symbol.for("react.cache");Symbol.for("react.tracing_marker");var fg=Symbol.iterator,E=Object.assign,ae,ce=!1,cc=Array.isArray,Xd,yi=function(a){return"undefined"!==typeof MSApp&&MSApp.execUnsafeLocalFunction?function(b,c,d,e){MSApp.execUnsafeLocalFunction(function(){return a(b,
+./client/node_modules/react-dom/umd/react-dom.production.min.js:236:var Ec="abort canplay canplaythrough durationchange emptied encrypted ended error loadeddata loadedmetadata loadstart pause play playing progress ratechange resize seeked seeking stalled suspend timeupdate volumechange waiting".split(" "),Uj=new Set("cancel close invalid load scroll toggle".split(" ").concat(Ec)),id="_reactListening"+Math.random().toString(36).slice(2),gk=/\r\n?/g,hk=/\u0000|\uFFFD/g,Jf=null,Kf=null,Rf="function"===typeof setTimeout?setTimeout:void 0,Nk="function"===typeof clearTimeout?
+./client/node_modules/react-dom/umd/react-dom.production.min.js:237:clearTimeout:void 0,$i="function"===typeof Promise?Promise:void 0,Jk="function"===typeof queueMicrotask?queueMicrotask:"undefined"!==typeof $i?function(a){return $i.resolve(null).then(a).catch(ik)}:Rf,Zb=Math.random().toString(36).slice(2),Da="__reactFiber$"+Zb,uc="__reactProps$"+Zb,Ja="__reactContainer$"+Zb,Me="__reactEvents$"+Zb,Dk="__reactListeners$"+Zb,Ek="__reactHandles$"+Zb,Se=[],Mb=-1,cb={},J=bb(cb),S=bb(!1),pb=cb,La=null,md=!1,Te=!1,Ob=[],Pb=0,od=null,nd=0,na=[],oa=0,rb=null,Ma=1,Na="",la=
+./client/node_modules/react-dom/umd/react-dom.production.min.js:244:unstable_isNewReconciler:!1},Dd={isMounted:function(a){return(a=a._reactInternals)?nb(a)===a:!1},enqueueSetState:function(a,b,c){a=a._reactInternals;var d=Z(),e=hb(a),f=Pa(d,e);f.payload=b;void 0!==c&&null!==c&&(f.callback=c);b=fb(a,f,e);null!==b&&(xa(b,a,e,d),vd(b,a,e))},enqueueReplaceState:function(a,b,c){a=a._reactInternals;var d=Z(),e=hb(a),f=Pa(d,e);f.tag=1;f.payload=b;void 0!==c&&null!==c&&(f.callback=c);b=fb(a,f,e);null!==b&&(xa(b,a,e,d),vd(b,a,e))},enqueueForceUpdate:function(a,b){a=a._reactInternals;
+./client/node_modules/react-dom/umd/react-dom.production.min.js:251:e,e._reactInternals=b,uf(b,d,a,c),b=Af(null,b,d,!0,f,c)):(b.tag=0,D&&f&&Ue(b),aa(null,b,e,c),b=b.child);return b;case 16:d=b.elementType;a:{Fd(a,b);a=b.pendingProps;e=d._init;d=e(d._payload);b.type=d;e=b.tag=Uk(d);a=ya(d,a);switch(e){case 0:b=zf(null,b,d,a,c);break a;case 1:b=ri(null,b,d,a,c);break a;case 11:b=mi(null,b,d,a,c);break a;case 14:b=ni(null,b,d,ya(d.type,a),c);break a}throw Error(m(306,d,""));}return b;case 0:return d=b.type,e=b.pendingProps,e=b.elementType===d?e:ya(d,e),zf(a,b,d,e,c);
+./client/node_modules/react-dom/umd/react-dom.production.min.js:263:rendererPackageName:"react-dom"});Q.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED=ol;Q.createPortal=function(a,b){var c=2<arguments.length&&void 0!==arguments[2]?arguments[2]:null;if(!Yf(b))throw Error(m(200));return Wk(a,b,null,c)};Q.createRoot=function(a,b){if(!Yf(a))throw Error(m(299));var c=!1,d="",e=aj;null!==b&&void 0!==b&&(!0===b.unstable_strictMode&&(c=!0),void 0!==b.identifierPrefix&&(d=b.identifierPrefix),void 0!==b.onRecoverableError&&(e=b.onRecoverableError));b=Vf(a,1,!1,null,null,
+./client/node_modules/react-dom/umd/react-dom.production.min.js:264:c,!1,d,e);a[Ja]=b.current;sc(8===a.nodeType?a.parentNode:a);return new Xf(b)};Q.findDOMNode=function(a){if(null==a)return null;if(1===a.nodeType)return a;var b=a._reactInternals;if(void 0===b){if("function"===typeof a.render)throw Error(m(188));a=Object.keys(a).join(",");throw Error(m(268,a));}a=Bg(b);a=null===a?null:a.stateNode;return a};Q.flushSync=function(a){return yb(a)};Q.hydrate=function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!0,c)};Q.hydrateRoot=function(a,b,c){if(!Yf(a))throw Error(m(405));
+./client/node_modules/react-dom/umd/react-dom.production.min.js:266:function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmountComponentAtNode=function(a){if(!Vd(a))throw Error(m(40));return a._reactRootContainer?(yb(function(){Wd(null,null,a,!1,function(){a._reactRootContainer=null;a[Ja]=null})}),!0):!1};Q.unstable_batchedUpdates=Tf;Q.unstable_renderSubtreeIntoContainer=function(a,b,c,d){if(!Vd(c))throw Error(m(200));if(null==a||void 0===a._reactInternals)throw Error(m(38));return Wd(a,b,c,!1,d)};Q.version="18.3.1-next-f1338f8080-20240426"});
+./client/node_modules/react/umd/react.development.js:3: * react.development.js
+./client/node_modules/react/umd/react.development.js:20:  // Please consider also adding to 'react-devtools-shared/src/backend/ReactSymbols'
+./client/node_modules/react/umd/react.development.js:22:  var REACT_ELEMENT_TYPE = Symbol.for('react.element');
+./client/node_modules/react/umd/react.development.js:23:  var REACT_PORTAL_TYPE = Symbol.for('react.portal');
+./client/node_modules/react/umd/react.development.js:24:  var REACT_FRAGMENT_TYPE = Symbol.for('react.fragment');
+./client/node_modules/react/umd/react.development.js:25:  var REACT_STRICT_MODE_TYPE = Symbol.for('react.strict_mode');
+./client/node_modules/react/umd/react.development.js:26:  var REACT_PROFILER_TYPE = Symbol.for('react.profiler');
+./client/node_modules/react/umd/react.development.js:27:  var REACT_PROVIDER_TYPE = Symbol.for('react.provider');
+./client/node_modules/react/umd/react.development.js:28:  var REACT_CONTEXT_TYPE = Symbol.for('react.context');
+./client/node_modules/react/umd/react.development.js:29:  var REACT_FORWARD_REF_TYPE = Symbol.for('react.forward_ref');
+./client/node_modules/react/umd/react.development.js:30:  var REACT_SUSPENSE_TYPE = Symbol.for('react.suspense');
+./client/node_modules/react/umd/react.development.js:31:  var REACT_SUSPENSE_LIST_TYPE = Symbol.for('react.suspense_list');
+./client/node_modules/react/umd/react.development.js:32:  var REACT_MEMO_TYPE = Symbol.for('react.memo');
+./client/node_modules/react/umd/react.development.js:33:  var REACT_LAZY_TYPE = Symbol.for('react.lazy');
+./client/node_modules/react/umd/react.development.js:34:  var REACT_OFFSCREEN_TYPE = Symbol.for('react.offscreen');
+./client/node_modules/react/umd/react.development.js:188:      } // eslint-disable-next-line react-internal/safe-string-coercion
+./client/node_modules/react/umd/react.development.js:196:      // breaks IE9: https://github.com/facebook/react/issues/13610
+./client/node_modules/react/umd/react.development.js:197:      // eslint-disable-next-line react-internal/no-production-logging
+./client/node_modules/react/umd/react.development.js:375:      replaceState: ['replaceState', 'Refactor your code to use setState instead (see ' + 'https://github.com/facebook/react/issues/3236).']
+./client/node_modules/react/umd/react.development.js:437:   * and Temporal.* types. See https://github.com/facebook/react/pull/22064.
+./client/node_modules/react/umd/react.development.js:489:    // eslint-disable-next-line react-internal/safe-string-coercion
+./client/node_modules/react/umd/react.development.js:511:  } // Keep in sync with react-reconciler/getComponentNameFromFiber
+./client/node_modules/react/umd/react.development.js:650:          error('%s: `key` is not a prop. Trying to access it will result ' + 'in `undefined` being returned. If you need to access the same ' + 'value within the child component, you should pass it as a different ' + 'prop. (https://reactjs.org/link/special-props)', displayName);
+./client/node_modules/react/umd/react.development.js:668:          error('%s: `ref` is not a prop. Trying to access it will result ' + 'in `undefined` being returned. If you need to access the same ' + 'value within the child component, you should pass it as a different ' + 'prop. (https://reactjs.org/link/special-props)', displayName);
+./client/node_modules/react/umd/react.development.js:686:          error('Component "%s" contains the string ref "%s". ' + 'Support for string refs will be removed in a future major release. ' + 'This case cannot be automatically converted to an arrow function. ' + 'We ask you to manually fix this case by using useRef() or createRef() instead. ' + 'Learn more about using refs safely here: ' + 'https://reactjs.org/link/strict-mode-string-ref', componentName, config.ref);
+./client/node_modules/react/umd/react.development.js:696:   * will not work. Instead test $$typeof field against Symbol.for('react.element') to check
+./client/node_modules/react/umd/react.development.js:770:   * See https://reactjs.org/docs/react-api.html#createelement
+./client/node_modules/react/umd/react.development.js:864:   * See https://reactjs.org/docs/react-api.html#cloneelement
+./client/node_modules/react/umd/react.development.js:941:   * See https://reactjs.org/docs/react-api.html#isvalidelement
+./client/node_modules/react/umd/react.development.js:954:   * Escape and wrap key so it is safe to use as a reactid
+./client/node_modules/react/umd/react.development.js:1069:          // eslint-disable-next-line react-internal/safe-string-coercion
+./client/node_modules/react/umd/react.development.js:1118:        // eslint-disable-next-line react-internal/safe-string-coercion
+./client/node_modules/react/umd/react.development.js:1130:   * See https://reactjs.org/docs/react-api.html#reactchildrenmap
+./client/node_modules/react/umd/react.development.js:1156:   * See https://reactjs.org/docs/react-api.html#reactchildrencount
+./client/node_modules/react/umd/react.development.js:1174:   * See https://reactjs.org/docs/react-api.html#reactchildrenforeach
+./client/node_modules/react/umd/react.development.js:1192:   * See https://reactjs.org/docs/react-api.html#reactchildrentoarray
+./client/node_modules/react/umd/react.development.js:1205:   * See https://reactjs.org/docs/react-api.html#reactchildrenonly
+
+============================================================
+DONE. Report: OC_REPO_INVENTORY_20260224T010114Z.txt
+============================================================
