@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.deps import get_db
 from app.models import (
     Show, Entry, Judge, ScoreSubmission,
-    JudgingEvent, PlantCategory, JudgingCriterion,
+    JudgingEvent, PlantCategory, JudgingCriterion, JudgingAward,
     Exhibitor, Plant, Score,
     JudgeAssignment, Scorecard, ScorecardAuditLog,
 )
@@ -22,6 +22,7 @@ from app.schemas import (
     JudgingEventCreate, JudgingEventOut, JudgingEventUpdate,
     PlantCategoryCreate, PlantCategoryOut,
     JudgingCriterionCreate, JudgingCriterionOut,
+    JudgingAwardOut,
     ExhibitorCreate, ExhibitorOut,
     PlantCreate, PlantOut,
     ScoreCreate, ScoreOut, ScoreBatchCreate,
@@ -170,34 +171,59 @@ def list_categories(event_id: str, db: Session = Depends(get_db)):
     return cats
 
 
-# ── Judging Criteria ──────────────────────────────────────────────
+# ── Judging Awards (read-only from Orchid Continuum) ─────────────
 
-@router.post("/judging/categories/{category_id}/criteria", response_model=JudgingCriterionOut)
-def create_criterion(category_id: str, data: JudgingCriterionCreate, db: Session = Depends(get_db)):
-    cat = db.get(PlantCategory, category_id)
-    if not cat:
-        raise HTTPException(status_code=404, detail="Category not found")
+@router.get("/judging/awards", response_model=List[JudgingAwardOut])
+def list_awards(system_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
+    q = select(JudgingAward)
+    if system_id:
+        q = q.where(JudgingAward.system_id == system_id)
+    return db.execute(q).scalars().all()
+
+
+@router.get("/judging/awards/{award_id}", response_model=JudgingAwardOut)
+def get_award(award_id: str, db: Session = Depends(get_db)):
+    award = db.get(JudgingAward, award_id)
+    if not award:
+        raise HTTPException(status_code=404, detail="Award not found")
+    return award
+
+
+# ── Judging Criteria (per award) ─────────────────────────────────
+
+@router.post("/judging/awards/{award_id}/criteria", response_model=JudgingCriterionOut)
+def create_criterion(award_id: str, data: JudgingCriterionCreate, db: Session = Depends(get_db)):
+    award = db.get(JudgingAward, award_id)
+    if not award:
+        raise HTTPException(status_code=404, detail="Award not found")
 
     criterion = JudgingCriterion(
-        category_id=category_id,
-        label=data.label,
-        weight=data.weight,
-        max_points=data.max_points,
+        award_id=award_id,
+        criteria_name=data.criteria_name,
+        criteria_description=data.criteria_description,
+        points_min=data.points_min,
+        points_max=data.points_max,
+        weighting=data.weighting,
+        rubric_json=data.rubric_json,
         scoring_type=data.scoring_type or "numeric",
         min_value=data.min_value,
         max_value=data.max_value,
         choices_json=data.choices_json,
     )
     db.add(criterion)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Criterion with this name already exists for this award.")
     db.refresh(criterion)
     return criterion
 
 
-@router.get("/judging/categories/{category_id}/criteria", response_model=List[JudgingCriterionOut])
-def list_criteria(category_id: str, db: Session = Depends(get_db)):
+@router.get("/judging/awards/{award_id}/criteria", response_model=List[JudgingCriterionOut])
+def list_criteria(award_id: str, db: Session = Depends(get_db)):
     criteria = db.execute(
-        select(JudgingCriterion).where(JudgingCriterion.category_id == category_id)
+        select(JudgingCriterion).where(JudgingCriterion.award_id == award_id)
     ).scalars().all()
     return criteria
 
@@ -298,7 +324,9 @@ def submit_scores(plant_id: str, judge_id: str, data: ScoreBatchCreate, db: Sess
 
     results = []
     for sc in data.scores:
-        criterion = db.get(JudgingCriterion, sc.criterion_id)
+        criterion = db.execute(
+            select(JudgingCriterion).where(JudgingCriterion.criteria_id == sc.criterion_id)
+        ).scalar_one_or_none()
         if not criterion:
             raise HTTPException(status_code=404, detail=f"Criterion {sc.criterion_id} not found")
 
@@ -365,8 +393,10 @@ def get_event_results(event_id: str, db: Session = Depends(get_db)):
         for s in scores:
             total_by_judge.setdefault(s.judge_id, 0)
             if s.value is not None:
-                criterion = db.get(JudgingCriterion, s.criterion_id)
-                weight = criterion.weight if criterion and criterion.weight else 1.0
+                criterion = db.execute(
+                    select(JudgingCriterion).where(JudgingCriterion.criteria_id == s.criterion_id)
+                ).scalar_one_or_none()
+                weight = criterion.weighting if criterion and criterion.weighting else 1.0
                 total_by_judge[s.judge_id] += s.value * weight
 
         avg_total = sum(total_by_judge.values()) / len(total_by_judge) if total_by_judge else 0
@@ -859,8 +889,10 @@ def judge_submit_scorecard(
     total = 0.0
     for s in all_scores:
         if s.value is not None:
-            criterion = db.get(JudgingCriterion, s.criterion_id)
-            weight = criterion.weight if criterion and criterion.weight else 1.0
+            criterion = db.execute(
+                select(JudgingCriterion).where(JudgingCriterion.criteria_id == s.criterion_id)
+            ).scalar_one_or_none()
+            weight = criterion.weighting if criterion and criterion.weighting else 1.0
             total += float(s.value) * float(weight)
 
     now = datetime.utcnow()

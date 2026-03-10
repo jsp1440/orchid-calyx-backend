@@ -337,9 +337,12 @@ class PlantCategoryOut(BaseModel):
 
 
 class JudgingCriterionCreate(BaseModel):
-    label: str
-    weight: Optional[float] = None
-    max_points: Optional[int] = None
+    criteria_name: str
+    criteria_description: Optional[str] = None
+    points_min: Optional[float] = None
+    points_max: Optional[float] = None
+    weighting: Optional[float] = None
+    rubric_json: Optional[str] = None
     scoring_type: Optional[str] = "numeric"
     min_value: Optional[int] = None
     max_value: Optional[int] = None
@@ -347,16 +350,36 @@ class JudgingCriterionCreate(BaseModel):
 
 
 class JudgingCriterionOut(BaseModel):
-    id: str
-    category_id: str
-    label: str
-    weight: Optional[float] = None
-    max_points: Optional[int] = None
+    criteria_id: str
+    award_id: str
+    criteria_name: str
+    criteria_description: Optional[str] = None
+    points_min: Optional[float] = None
+    points_max: Optional[float] = None
+    weighting: Optional[float] = None
+    rubric_json: Optional[str] = None
     scoring_type: str = "numeric"
     min_value: Optional[int] = None
     max_value: Optional[int] = None
     choices_json: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class JudgingAwardOut(BaseModel):
+    award_id: str
+    system_id: Optional[str] = None
+    award_name: str
+    award_type: Optional[str] = None
+    target: Optional[str] = None
+    eligibility_notes: Optional[str] = None
+    score_min: Optional[float] = None
+    score_max: Optional[float] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

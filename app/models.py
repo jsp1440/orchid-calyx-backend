@@ -309,19 +309,39 @@ class PlantCategory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class JudgingAward(Base):
+    __tablename__ = "judging_awards"
+
+    award_id = Column(String, primary_key=True, default=generate_uuid)
+    system_id = Column(String, nullable=False)
+    award_name = Column(Text, nullable=False)
+    award_type = Column(Text, nullable=True)
+    target = Column(Text, nullable=True)
+    eligibility_notes = Column(Text, nullable=True)
+    score_min = Column(Float, nullable=True)
+    score_max = Column(Float, nullable=True)
+    score_thresholds_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class JudgingCriterion(Base):
     __tablename__ = "judging_criteria"
 
-    id = Column(String, primary_key=True, default=generate_uuid)
-    category_id = Column(String, ForeignKey("plant_categories.id"), nullable=False, index=True)
-    label = Column(Text, nullable=False)
-    weight = Column(Float, nullable=True)
-    max_points = Column(Integer, nullable=True)
+    criteria_id = Column(String, primary_key=True, default=generate_uuid)
+    award_id = Column(String, ForeignKey("judging_awards.award_id"), nullable=False, index=True)
+    criteria_name = Column(Text, nullable=False)
+    criteria_description = Column(Text, nullable=True)
+    points_min = Column(Float, nullable=True)
+    points_max = Column(Float, nullable=True)
+    weighting = Column(Float, nullable=True)
+    rubric_json = Column(Text, nullable=True)
     scoring_type = Column(String, default="numeric")
     min_value = Column(Integer, nullable=True)
     max_value = Column(Integer, nullable=True)
     choices_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Exhibitor(Base):
@@ -367,7 +387,7 @@ class Score(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     plant_id = Column(String, ForeignKey("plants.id"), nullable=False, index=True)
     judge_id = Column(String, ForeignKey("judges.id"), nullable=False, index=True)
-    criterion_id = Column(String, ForeignKey("judging_criteria.id"), nullable=False, index=True)
+    criterion_id = Column(String, ForeignKey("judging_criteria.criteria_id"), nullable=False, index=True)
     value = Column(Float, nullable=True)
     choice = Column(String, nullable=True)
     value_rank = Column(Integer, nullable=True)

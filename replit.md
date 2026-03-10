@@ -9,6 +9,7 @@ Backend API for Calyx - Orchid Show Management System powered by Orchid Continuu
 - Frontend: Famous AI (separate project)
 
 ## Recent Changes
+- 2026-03-09: Adapted JudgingCriterion to match Neon/Orchid Continuum schema: PK `criteria_id`, FK `award_id` → `judging_awards`, fields `criteria_name`/`criteria_description`/`points_min`/`points_max`/`weighting`/`rubric_json`; added read-only JudgingAward model; criteria endpoints moved to `/judging/awards/{id}/criteria`; Score FK now references `judging_criteria.criteria_id`
 - 2026-02-06: Judge-facing scorecard workflow: GET/PUT/POST /judge/* endpoints, autosave drafts, submit with weighted totals, audit trail, access control via X-Judge-Id header
 - 2026-02-06: Admin generate-scorecards endpoint (idempotent), judge assignments (event+category), published_at/closed_at timestamps on judging events
 - 2026-02-06: Extended models: JudgeAssignment, Scorecard, ScorecardAuditLog; added scoring_type/min_value/max_value/choices_json to criteria, value_rank/updated_at to scores
@@ -62,7 +63,7 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 ## Database Models
 ### Core: Organization, Show, Entry, Award, Contact, MessageTemplate, MessageLog, Event, File, IntegrationConnection
 ### Reference: SystemReferenceDocument
-### Judging (expanded): JudgingEvent, PlantCategory, JudgingCriterion, Exhibitor, Plant, Judge, Score, JudgeAssignment, Scorecard, ScorecardAuditLog
+### Judging (expanded): JudgingEvent, PlantCategory, JudgingAward (read-only), JudgingCriterion (PK criteria_id, FK award_id→judging_awards), Exhibitor, Plant, Judge, Score (FK criterion_id→judging_criteria.criteria_id), JudgeAssignment, Scorecard, ScorecardAuditLog
 ### Judging (legacy): ScoreSubmission
 ### Volunteers: VolunteerRole, VolunteerShift, Volunteer, VolunteerAssignment
 ### Feedback: Feedback
@@ -94,9 +95,12 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 - `POST /api/judging/events/{event_id}/categories` - Create category
 - `GET  /api/judging/events/{event_id}/categories` - List categories
 
-**Judging Criteria:**
-- `POST /api/judging/categories/{category_id}/criteria` - Create criterion (label, weight, max_points)
-- `GET  /api/judging/categories/{category_id}/criteria` - List criteria
+**Judging Awards (read-only from Orchid Continuum):**
+- `GET  /api/judging/awards` - List all awards
+
+**Judging Criteria (award-based):**
+- `POST /api/judging/awards/{award_id}/criteria` - Create criterion (criteria_name, criteria_description, points_min, points_max, weighting, rubric_json)
+- `GET  /api/judging/awards/{award_id}/criteria` - List criteria for award
 
 **Exhibitors:**
 - `POST /api/exhibitors` - Create exhibitor (name, email, phone)
