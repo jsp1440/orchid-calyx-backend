@@ -82,7 +82,8 @@ def _reconcile_schema(engine):
     _safe_add_column(engine, "judging_events", "published_at", "TIMESTAMP")
     _safe_add_column(engine, "judging_events", "closed_at", "TIMESTAMP")
     _safe_add_column(engine, "judging_events", "updated_at", "TIMESTAMP")
-    _safe_add_column(engine, "plant_categories", "sort_order", "INTEGER DEFAULT 0")
+    _safe_add_column(engine, "plant_categories", "sort_order",
+                     "INTEGER DEFAULT 0")
     _safe_add_column(engine, "scores", "value_rank", "INTEGER")
     _safe_add_column(engine, "scores", "updated_at", "TIMESTAMP")
 
@@ -105,3 +106,13 @@ def startup():
     except Exception as e:
         log.exception("Database initialization failed (continuing anyway): %s",
                       e)
+
+
+@app.get("/system/status")
+async def system_status():
+    return {
+        "status": "ok",
+        "service": "orchid-continuum",
+        "backend": "calyx",
+        "message": "System operational"
+    }
