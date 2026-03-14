@@ -1,0 +1,23 @@
+                                                    Table "public.record_traits"
+      Column       |           Type           | Collation | Nullable | Default | Storage  | Compression | Stats target | Description 
+-------------------+--------------------------+-----------+----------+---------+----------+-------------+--------------+-------------
+ record_id         | text                     |           | not null |         | extended |             |              | 
+ source            | text                     |           | not null |         | extended |             |              | 
+ elev_m            | numeric                  |           |          |         | main     |             |              | 
+ elev_min_m        | numeric                  |           |          |         | main     |             |              | 
+ elev_max_m        | numeric                  |           |          |         | main     |             |              | 
+ elev_raw_key      | text                     |           |          |         | extended |             |              | 
+ elev_raw_value    | text                     |           |          |         | extended |             |              | 
+ elev_parse_method | text                     |           |          |         | extended |             |              | 
+ elev_flag_invalid | boolean                  |           | not null | false   | plain    |             |              | 
+ elev_flag_outlier | boolean                  |           | not null | false   | plain    |             |              | 
+ updated_at        | timestamp with time zone |           | not null | now()   | plain    |             |              | 
+ elev_m_valid      | numeric                  |           |          |         | main     |             |              | 
+Indexes:
+    "record_traits_pkey" PRIMARY KEY, btree (record_id)
+    "idx_record_traits_elev_m" btree (elev_m)
+    "idx_record_traits_source" btree (source)
+Triggers:
+    record_traits_normalize_elevation BEFORE INSERT OR UPDATE OF elev_m, elev_raw_value, elev_parse_method ON record_traits FOR EACH ROW EXECUTE FUNCTION trg_normalize_elevation()
+Access method: heap
+

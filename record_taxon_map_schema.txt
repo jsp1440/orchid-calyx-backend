@@ -1,0 +1,17 @@
+                                               Table "public.record_taxon_map"
+   Column   |           Type           | Collation | Nullable | Default | Storage  | Compression | Stats target | Description 
+------------+--------------------------+-----------+----------+---------+----------+-------------+--------------+-------------
+ record_id  | text                     |           | not null |         | extended |             |              | 
+ taxon_id   | bigint                   |           | not null |         | plain    |             |              | 
+ source     | text                     |           | not null |         | extended |             |              | 
+ confidence | numeric                  |           |          |         | main     |             |              | 
+ mapped_at  | timestamp with time zone |           | not null | now()   | plain    |             |              | 
+ is_primary | boolean                  |           | not null | false   | plain    |             |              | 
+Indexes:
+    "record_taxon_map_pkey" PRIMARY KEY, btree (record_id, source)
+    "record_taxon_map_primary_idx" btree (record_id) WHERE is_primary = true
+    "record_taxon_map_taxon_id_idx" btree (taxon_id)
+Foreign-key constraints:
+    "record_taxon_map_taxon_id_fkey" FOREIGN KEY (taxon_id) REFERENCES taxa(taxon_id) ON DELETE RESTRICT
+Access method: heap
+

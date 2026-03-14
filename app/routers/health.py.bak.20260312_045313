@@ -10,8 +10,4 @@ def health():
 
 @router.get("/system/status")
 def system_status():
-    return {
-        "status": "ok",
-        "service": "orchid-continuum",
-        "backend": "calyx",
-    }
+    return {"status": "ok", "service": "orchid-continuum", "backend": "calyx"}s

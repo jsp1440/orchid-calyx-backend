@@ -13,5 +13,5 @@ def system_status():
     return {
         "status": "ok",
         "service": "orchid-continuum",
-        "backend": "calyx",
+        "backend": "calyx"
     }

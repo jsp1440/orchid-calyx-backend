@@ -1,0 +1,196 @@
+        audit_timestamp        
+-------------------------------
+ 2026-03-14 04:32:28.622293+00
+(1 row)
+
+ database |   db_user    |      host       
+----------+--------------+-----------------
+ neondb   | neondb_owner | 169.254.254.254
+(1 row)
+
+ total_tables 
+--------------
+          324
+(1 row)
+
+                 table_name                 
+--------------------------------------------
+ backup_orchid_images_record_link_fix
+ backup_orchid_images_unlinked_taxonomy_fix
+ elevation_backfill_queue
+ elevation_lookup_log
+ eol_images
+ eol_images_raw
+ gbif_occurrence_key_refetch_queue
+ gbif_occurrence_rehydrate_queue
+ gbif_occurrence_rehydrate_queue_v2
+ gbif_occurrence_rehydrate_results
+ harvest_jobs
+ harvest_logs
+ harvest_state
+ harvesters
+ image_assets
+ image_validation_feedback
+ image_validation_results
+ image_validation_runs
+ oc_active_handoffs
+ oc_docs
+ oc_documentation_log
+ oc_eol_orchid_candidates
+ oc_eol_orchid_images
+ oc_gbif_occurrence_refetch_queue
+ oc_gbif_orchid_images
+ oc_gbif_taxon_map
+ oc_handoffs
+ oc_harvest_commands
+ oc_harvest_runs
+ oc_harvest_targets
+ oc_harvester_heartbeat
+ oc_harvester_registry
+ oc_ingest_runs
+ oc_job_artifact
+ oc_job_artifacts
+ oc_job_log
+ oc_job_queue
+ oc_job_run
+ oc_job_runs
+ oc_morphology_interpretation_rules
+ oc_occurrences
+ oc_phase_log
+ oc_species_culture_interpretation
+ oc_species_habitat_claims
+ oc_species_image_inference_claims
+ oc_species_profile_current
+ oc_species_trait_claims
+ oc_taxa_universe
+ oc_taxon_coverage
+ oc_taxonomy_repair_queue
+ oc_taxonomy_repair_result
+ oc_taxonomy_repair_rule
+ oc_tracker
+ oc_tracker_log
+ oc_trait_glossary_map
+ oc_worker_registry
+ ocu_certificates
+ ocu_courses
+ ocu_glossary_terms
+ ocu_lessons
+ ocu_quiz_attempts
+ ocu_user_progress
+ orchid_image_derivatives
+ orchid_image_reports
+ orchid_images
+ orchid_images_old_schema
+ orchid_occurrence
+ pipeline_runs
+ pipeline_schedules
+ pipeline_steps
+ pipeline_tasks
+ pipeline_templates
+ pollinator_images
+ source_elevation_backfill_queue
+ species_elevation_profile
+ staging_calphotos_images
+ staging_commons_images
+ staging_eol_images
+ staging_gbif_images
+ taxon_elevation_profile
+ taxonomy_authority_claims
+ taxonomy_family
+ taxonomy_genus
+ taxonomy_name_resolution
+ taxonomy_queue
+ taxonomy_relationships
+ taxonomy_resolution
+ taxonomy_species
+ taxonomy_staging_names
+ taxonomy_staging_synonyms
+ taxonomy_subfamily
+ taxonomy_subtribe
+ taxonomy_synonym_links
+ taxonomy_synonyms
+ taxonomy_tribe
+ trait_analyses
+ trait_assertions
+ trait_candidates
+ trait_definitions
+ trait_dna_links
+ trait_documents
+ trait_elevation
+ trait_extraction_queue
+ trait_geography
+ trait_growth_habit
+ trait_observations
+ trait_run_log
+ trait_sources
+ trait_variations
+ traitbank_orchid_traits
+ traits
+ v_gbif_images_joined_records
+ v_records_elevation
+(113 rows)
+
+        table_name         | row_count 
+---------------------------+-----------
+ species_elevation_profile |         0
+ oc_gbif_orchid_images     |         0
+ taxon_elevation_profile   |         0
+ oc_ingest_runs            |         0
+ oc_harvest_runs           |         0
+ taxonomy_genus            |       733
+ oc_job_runs               |         6
+ oc_job_queue              |       739
+ taxonomy_species          |     33786
+ oc_occurrences            |    114517
+ record_media_link         |   1889737
+ orchid_images             |   1074218
+(12 rows)
+
+ total_occurrences | with_elevation | missing_elevation 
+-------------------+----------------+-------------------
+            114517 |          37794 |             76723
+(1 row)
+
+ total_occurrences | with_coordinates | missing_coordinates 
+-------------------+------------------+---------------------
+            114517 |           114517 |                   0
+(1 row)
+
+ id  |         job_type         | status  | priority |                        payload                        | requested_by | source_system | idempotency_key | retry_count | max_retries |         available_at          | locked_at | lock_token | worker_name |          created_at           | started_at | finished_at | error_summary 
+-----+--------------------------+---------+----------+-------------------------------------------------------+--------------+---------------+-----------------+-------------+-------------+-------------------------------+-----------+------------+-------------+-------------------------------+------------+-------------+---------------
+ 741 | harvest_gbif_occurrences | pending |      100 | {"target_id": "c38934c5-6774-442a-989c-e52c19c35a64"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:27.465478+00 |           |            |             | 2026-03-12 22:42:27.465478+00 |            |             | 
+ 740 | harvest_gbif_occurrences | pending |      100 | {"target_id": "0aef8c00-6306-4d7a-af3f-c6f8e0f82394"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:27.369825+00 |           |            |             | 2026-03-12 22:42:27.369825+00 |            |             | 
+ 739 | harvest_gbif_occurrences | pending |      100 | {"target_id": "02a45f75-bb08-4ded-b51f-765ec2c0d8f8"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:27.277093+00 |           |            |             | 2026-03-12 22:42:27.277093+00 |            |             | 
+ 738 | harvest_gbif_occurrences | pending |      100 | {"target_id": "f34db9e0-2a72-42fd-9dc9-bd57396c4075"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:27.183527+00 |           |            |             | 2026-03-12 22:42:27.183527+00 |            |             | 
+ 737 | harvest_gbif_occurrences | pending |      100 | {"target_id": "669444f8-16f4-481a-93c5-17c23a6af7e8"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:27.083282+00 |           |            |             | 2026-03-12 22:42:27.083282+00 |            |             | 
+ 736 | harvest_gbif_occurrences | pending |      100 | {"target_id": "3da03bf3-0d6c-40a6-8865-0c2fb2e2cb4b"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:26.982867+00 |           |            |             | 2026-03-12 22:42:26.982867+00 |            |             | 
+ 735 | harvest_gbif_occurrences | pending |      100 | {"target_id": "462ea110-9311-436d-bc59-1ce39e8a39d0"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:26.886269+00 |           |            |             | 2026-03-12 22:42:26.886269+00 |            |             | 
+ 734 | harvest_gbif_occurrences | pending |      100 | {"target_id": "f0e61ced-9d8e-4997-87ba-74bdd502c294"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:26.779374+00 |           |            |             | 2026-03-12 22:42:26.779374+00 |            |             | 
+ 733 | harvest_gbif_occurrences | pending |      100 | {"target_id": "22aac2b2-e4c1-4c90-a727-a4f0118650ca"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:26.680415+00 |           |            |             | 2026-03-12 22:42:26.680415+00 |            |             | 
+ 732 | harvest_gbif_occurrences | pending |      100 | {"target_id": "55b033a8-1bb1-426b-b172-4e3ca2238769"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:26.589196+00 |           |            |             | 2026-03-12 22:42:26.589196+00 |            |             | 
+ 731 | harvest_gbif_occurrences | pending |      100 | {"target_id": "3b9ddcbd-a803-44c6-b95b-795c6674ddeb"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:26.496427+00 |           |            |             | 2026-03-12 22:42:26.496427+00 |            |             | 
+ 730 | harvest_gbif_occurrences | pending |      100 | {"target_id": "147b6a05-3da8-408b-8418-10d6eee8afe5"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:26.404522+00 |           |            |             | 2026-03-12 22:42:26.404522+00 |            |             | 
+ 729 | harvest_gbif_occurrences | pending |      100 | {"target_id": "bd3c743d-0751-4064-bfa4-b47b324e8e61"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:26.313269+00 |           |            |             | 2026-03-12 22:42:26.313269+00 |            |             | 
+ 728 | harvest_gbif_occurrences | pending |      100 | {"target_id": "69ecc51c-d0d2-4d21-a6c6-381767d2464f"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:26.212678+00 |           |            |             | 2026-03-12 22:42:26.212678+00 |            |             | 
+ 727 | harvest_gbif_occurrences | pending |      100 | {"target_id": "0ae8e8d0-6afb-49ca-afac-6a638bfe4204"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:26.120143+00 |           |            |             | 2026-03-12 22:42:26.120143+00 |            |             | 
+ 726 | harvest_gbif_occurrences | pending |      100 | {"target_id": "39f45ceb-b088-4e88-9605-eebfcecc6fb3"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:26.025762+00 |           |            |             | 2026-03-12 22:42:26.025762+00 |            |             | 
+ 725 | harvest_gbif_occurrences | pending |      100 | {"target_id": "0da78c97-22fe-4b17-ba02-b46c214f44a0"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:25.933542+00 |           |            |             | 2026-03-12 22:42:25.933542+00 |            |             | 
+ 724 | harvest_gbif_occurrences | pending |      100 | {"target_id": "bd895718-b2cc-4975-90ad-acc76d2dab1d"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:25.842754+00 |           |            |             | 2026-03-12 22:42:25.842754+00 |            |             | 
+ 723 | harvest_gbif_occurrences | pending |      100 | {"target_id": "d11c1357-3cef-4c4c-828d-eb9d39e46560"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:25.749788+00 |           |            |             | 2026-03-12 22:42:25.749788+00 |            |             | 
+ 722 | harvest_gbif_occurrences | pending |      100 | {"target_id": "f1882ff1-434f-4e2d-b11e-18d99b48980b"} |              |               |                 |           0 |           3 | 2026-03-12 22:42:25.657463+00 |           |            |             | 2026-03-12 22:42:25.657463+00 |            |             | 
+(20 rows)
+
+ name | base_url | sources_json | enabled | notes | created_at | updated_at 
+------+----------+--------------+---------+-------+------------+------------
+(0 rows)
+
+ elevation_backfill_queue_count 
+--------------------------------
+                         492722
+(1 row)
+
+ source_elevation_backfill_queue_count 
+---------------------------------------
+                                179805
+(1 row)
+
