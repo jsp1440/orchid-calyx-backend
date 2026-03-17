@@ -16,6 +16,7 @@ from app.routers import (
     judging,
     volunteer_ops,
     feedback,
+    governance,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -23,8 +24,10 @@ log = logging.getLogger("calyx")
 
 app = FastAPI(
     title="Calyx - Orchid Show Management System",
-    description=
-    "Backend API for orchid show operations, entries, volunteers, and judging. Powered by Orchid Continuum.",
+    description=(
+        "Backend API for orchid show operations, entries, volunteers, "
+        "and judging. Powered by Orchid Continuum."
+    ),
     version="1.0.0",
 )
 
@@ -32,9 +35,7 @@ cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "*")
 if cors_origins_env.strip() == "*":
     allow_origins = ["*"]
 else:
-    allow_origins = [
-        o.strip() for o in cors_origins_env.split(",") if o.strip()
-    ]
+    allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,12 +52,15 @@ app.include_router(entries.router)
 app.include_router(volunteers.router)
 app.include_router(awards.router)
 app.include_router(calyx_core.router)
-app.include_router(reference_docs.router,
-                   prefix="/api",
-                   tags=["Reference Documents"])
+app.include_router(
+    reference_docs.router,
+    prefix="/api",
+    tags=["Reference Documents"],
+)
 app.include_router(judging.router)
 app.include_router(volunteer_ops.router)
 app.include_router(feedback.router)
+app.include_router(governance.router)
 
 
 @app.get("/")
@@ -67,8 +71,7 @@ def root():
 def _safe_add_column(engine, table: str, column: str, col_type: str):
     try:
         with engine.connect() as conn:
-            conn.execute(
-                text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
             conn.commit()
             log.info("Added column %s.%s", table, column)
     except Exception:
@@ -82,8 +85,7 @@ def _reconcile_schema(engine):
     _safe_add_column(engine, "judging_events", "published_at", "TIMESTAMP")
     _safe_add_column(engine, "judging_events", "closed_at", "TIMESTAMP")
     _safe_add_column(engine, "judging_events", "updated_at", "TIMESTAMP")
-    _safe_add_column(engine, "plant_categories", "sort_order",
-                     "INTEGER DEFAULT 0")
+    _safe_add_column(engine, "plant_categories", "sort_order", "INTEGER DEFAULT 0")
     _safe_add_column(engine, "scores", "value_rank", "INTEGER")
     _safe_add_column(engine, "scores", "updated_at", "TIMESTAMP")
 
@@ -104,8 +106,10 @@ def startup():
         _reconcile_schema(engine)
         log.info("Database tables created/verified successfully.")
     except Exception as e:
-        log.exception("Database initialization failed (continuing anyway): %s",
-                      e)
+        log.exception(
+            "Database initialization failed (continuing anyway): %s",
+            e,
+        )
 
 
 @app.get("/system/status")
@@ -114,5 +118,5 @@ async def system_status():
         "status": "ok",
         "service": "orchid-continuum",
         "backend": "calyx",
-        "message": "System operational"
+        "message": "System operational",
     }
