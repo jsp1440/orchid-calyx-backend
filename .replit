@@ -22,13 +22,12 @@ args = "Calyx API"
 name = "Calyx API"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}"
-waitForPort = 3000
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "uvicorn app.main:app --host 0.0.0.0 --port 3000"
 
 [deployment]
 run = ["bash", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}"]

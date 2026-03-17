@@ -16,7 +16,6 @@ from app.routers import (
     judging,
     volunteer_ops,
     feedback,
-    governance,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -60,7 +59,6 @@ app.include_router(
 app.include_router(judging.router)
 app.include_router(volunteer_ops.router)
 app.include_router(feedback.router)
-app.include_router(governance.router)
 
 
 @app.get("/")
