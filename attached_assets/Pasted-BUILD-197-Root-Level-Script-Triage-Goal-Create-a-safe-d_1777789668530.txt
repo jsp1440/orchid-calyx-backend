@@ -1,0 +1,70 @@
+BUILD 197 — Root-Level Script Triage
+
+Goal:
+Create a safe documentation-only triage of root-level Python/scripts in the Calyx Backend workspace so future agents know which files are active, legacy, prototype, dangerous, broken, or safe.
+
+Hard constraints:
+- Documentation only.
+- Do not run any scripts.
+- Do not run SQL.
+- Do not touch the database.
+- Do not modify production code.
+- Do not delete, move, rename, or archive files.
+- Do not edit .env files.
+- Do not commit unless explicitly asked.
+- Static inspection only.
+
+Tasks:
+
+1. Create directory if missing:
+   docs/preservation/
+
+2. Create file:
+   docs/preservation/build_197_root_level_script_triage.md
+
+3. Inspect root-level files only, especially:
+   - *.py
+   - *.sh
+   - *.sql
+   - requirements files
+   - render/replit config files
+   - README/replit docs
+
+4. For each root-level script, classify it as one of:
+   - ACTIVE_PRODUCTION
+   - ACTIVE_SUPPORT
+   - LEGACY
+   - PROTOTYPE
+   - BROKEN_OR_ORPHANED
+   - WRITE_CAPABLE_HIGH_RISK
+   - UNKNOWN_NEEDS_REVIEW
+
+5. For each file include:
+   - filename
+   - apparent purpose
+   - whether it imports database libraries
+   - whether it references DATABASE_URL or environment variables
+   - whether it contains INSERT / UPDATE / DELETE / CREATE / ALTER / DROP / TRUNCATE / FOR UPDATE
+   - whether it appears runnable
+   - risk level: low / medium / high / critical
+   - recommendation: keep, document, quarantine later, archive later, inspect manually, never run without review
+
+6. Create companion file:
+   docs/preservation/build_197_root_script_start_here.md
+
+   Include:
+   - top 10 root-level files not to run casually
+   - safest files to read first
+   - what should be handled by Replit Agent
+   - what should be handled by Julius
+   - what should wait for manual review
+
+7. Final response:
+   Print:
+   - files created
+   - number of root-level scripts inspected
+   - critical/high-risk files found
+   - best next build
+
+Reminder:
+This is a labeling and triage report only. Do not fix or move anything tonight.
