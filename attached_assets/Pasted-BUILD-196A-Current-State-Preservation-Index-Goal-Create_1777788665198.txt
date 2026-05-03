@@ -1,0 +1,125 @@
+BUILD 196A — Current State Preservation Index
+
+Goal:
+Create a documentation-only preservation index for the Orchid Continuum workspace so future agents, advisors, grant reviewers, and collaborators can understand what exists, what is active, what is archived, and where the risks are.
+
+Hard constraints:
+- Documentation only.
+- Do not touch the database.
+- Do not run SQL.
+- Do not run harvesters or workers.
+- Do not modify production code.
+- Do not delete, move, rename, clean, or reorganize files.
+- Do not edit .env files.
+- Do not commit unless explicitly asked.
+- Inspect and document only.
+
+Tasks:
+
+1. Create directory if missing:
+   docs/preservation/
+
+2. Create file:
+   docs/preservation/build_196A_current_state_preservation_index.md
+
+3. The document must include:
+
+   A. Executive summary
+   - What the repository/workspace appears to contain
+   - Why preservation is urgent
+   - What should be treated as active vs archived if detectable
+
+   B. Workspace map
+   - Top-level folders
+   - Key subfolders
+   - Which areas appear active
+   - Which areas appear archival, generated, duplicated, or extracted bundles
+
+   C. Critical systems inventory
+   Identify and summarize files/folders related to:
+   - OrchidContinuumHarvester
+   - literature intelligence pipeline / Build 188
+   - TraitBank batches
+   - taxonomy reconciliation
+   - media/image harvesting
+   - matrix keys / Build 193
+   - safe preflight / Build 196
+   - oc_review
+   - oc_identification
+   - Orchid Zoo
+   - governance
+   - advisor/grant materials
+   - backend/API services
+   - Render deployment
+   - Replit configuration
+   - Neon/Postgres access
+
+   D. Write-capable components
+   List files that appear capable of writing to production or modifying data, based only on static inspection.
+   Look for:
+   - INSERT
+   - UPDATE
+   - DELETE
+   - CREATE
+   - ALTER
+   - DROP
+   - TRUNCATE
+   - FOR UPDATE
+   - database connection strings
+   - worker loops
+   - harvester writes
+   Do not run them.
+
+   E. Documentation inventory
+   List important docs, runbooks, build reports, README files, manifests, architecture docs, and grant/advisor materials.
+
+   F. Preservation risks
+   Report risks only:
+   - unclear build numbering
+   - duplicate folders/scripts
+   - missing README
+   - missing .env.example
+   - exposed .env files
+   - archived bundles mixed with active code
+   - generated outputs not clearly labeled
+   - old scripts that may still write to production
+   - undocumented active systems
+
+   G. Recommended reading order
+   Provide a short “start here” reading path for:
+   - Jeff
+   - Replit Agent
+   - Julius
+   - external advisor
+   - fiscal sponsor / grant reviewer
+   - future developer
+
+   H. Recommended next builds
+   Provide 5–10 next builds, ranked.
+   Each should include:
+   - build label
+   - purpose
+   - risk level
+   - documentation-only / audit-only / code-changing
+   - database touch yes/no
+   - safe for Replit tonight yes/no
+
+4. Create companion file:
+   docs/preservation/build_196A_start_here.md
+
+   This should be a concise one-page guide answering:
+   - What is this workspace?
+   - What should not be touched?
+   - What should be read first?
+   - What is safe to ask Replit Agent to do?
+   - What should be reserved for Julius, Colab, or manual review?
+
+5. Final response:
+   Print:
+   - files created
+   - approximate number of folders/files inspected if available
+   - top 5 preservation risks
+   - best next build
+
+Reminder:
+This build is preservation and orientation only. Do not fix anything tonight.
