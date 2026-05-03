@@ -1,0 +1,64 @@
+BUILD 199 — Emergency Legacy Script Safety Lock
+
+Goal:
+Prevent accidental execution of dangerous legacy Orchid Continuum root-level scripts in the Calyx Backend repo.
+
+Hard constraints:
+- Do NOT touch the database.
+- Do NOT run any scripts.
+- Do NOT run SQL.
+- Do NOT run migrations.
+- Do NOT delete, rename, or move files.
+- Only edit the listed high-risk root-level scripts by adding a fail-closed safety guard at the top.
+- Also create one documentation file explaining the lock.
+
+Target files:
+- oc_extract_all.py
+- oc_automation_worker.py
+- mission_control_scheduler.py
+- oc_scheduler.py
+- oc_extract_taxonomy.py
+- oc_system_check_v2.py
+- orchid_api.py
+- oc_system_health.py
+
+Task:
+1. For each target file that exists, add a top-of-file emergency safety guard BEFORE any database connection or executable logic.
+
+2. The guard must stop execution unless this exact environment variable is set:
+
+OC_ALLOW_LEGACY_OC_SCRIPT_RUN=YES_I_UNDERSTAND_THIS_CAN_WRITE_TO_PRODUCTION
+
+3. The guard should print a clear message and exit safely.
+
+Use this pattern:
+
+import os
+import sys
+
+if os.getenv("OC_ALLOW_LEGACY_OC_SCRIPT_RUN") != "YES_I_UNDERSTAND_THIS_CAN_WRITE_TO_PRODUCTION":
+    print("BLOCKED: This legacy Orchid Continuum/Calyx root-level script is write-capable or schema-stale and is disabled by default.")
+    print("This safety guard prevents accidental production database writes.")
+    print("To run intentionally, set OC_ALLOW_LEGACY_OC_SCRIPT_RUN=YES_I_UNDERSTAND_THIS_CAN_WRITE_TO_PRODUCTION after manual review.")
+    sys.exit(2)
+
+4. Do not add duplicate guards if one already exists.
+
+5. Create:
+docs/preservation/build_199_emergency_legacy_script_safety_lock.md
+
+Include:
+- files guarded
+- files not found
+- why the guard was added
+- how to intentionally override
+- warning that override should only happen after manual schema review
+
+6. Final response:
+- files modified
+- files skipped/not found
+- confirmation that no database commands were run
+- recommended next step
+
+Reminder:
+This is an emergency safety lock. Do not fix schemas. Do not execute anything.
