@@ -6,3 +6,9 @@ id = "Kg2QWqhcItE40rhib-HOF"
 uri = "file://docs/preservation/calyx_and_orchid_continuum_capability_audit.md"
 type = "text"
 title = "Calyx + Orchid Continuum Capability Audit"
+
+[[outputs]]
+id = "q1GeyruIe8Fzmjo5TbbL-"
+uri = "file://ecuador_orchids.geojson.json"
+type = "unspecified"
+title = "Ecuador Orchid Occurrences (544 georeferenced records, GeoJSON)"
