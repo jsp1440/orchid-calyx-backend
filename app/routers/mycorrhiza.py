@@ -10,9 +10,6 @@ import re
 import psycopg
 from psycopg.types.json import Jsonb
 
-from app.routers import orchid_zoo_literature, orchid_zoo_reviewer, identification
-from app.routers import orchidfest_demo, mycorrhiza
-
 app = FastAPI()
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -639,12 +636,4 @@ def startup_event():
         threading.Thread(target=autoloop_forever, daemon=True).start()
 
 
-app.include_router(orchid_zoo_literature.router)
-app.include_router(orchid_zoo_reviewer.router)
-app.include_router(identification.router)
-
 # Build 196A — OrchidFest Demo API
-app.include_router(orchidfest_demo.router)
-
-# Build 200L — Mycorrhiza API
-app.include_router(mycorrhiza.router)
