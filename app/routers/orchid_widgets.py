@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import text
-from app.database import engine
+from app.database import get_engine
 
 router = APIRouter(prefix="/api/widgets", tags=["Orchid Widgets"])
 
@@ -26,7 +26,7 @@ def genus_of_day(limit: int = 25):
     """)
 
     try:
-        with engine.connect() as conn:
+        with get_engine().connect() as conn:
             rows = conn.execute(sql, {"limit": limit}).mappings().all()
 
         return {

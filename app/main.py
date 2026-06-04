@@ -17,7 +17,6 @@ from app.routers import (
     feedback,
     health,
     judging,
-    mycorrhiza,
     reference_docs,
 )
 
@@ -452,8 +451,6 @@ app.include_router(feedback.router)
 app.include_router(judging.router)
 app.include_router(reference_docs.router)
 
-# Build 200L — Mycorrhiza API
-app.include_router(mycorrhiza.router)
 from app.routers import orchid_widgets
 
 app.include_router(orchid_widgets.router)
