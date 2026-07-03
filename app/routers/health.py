@@ -1,7 +1,5 @@
 from fastapi import APIRouter
 
-from runtime.router_fastapi import router as runtime_router
-
 router = APIRouter(tags=["health"])
 
 
@@ -17,6 +15,3 @@ def system_status():
         "service": "orchid-continuum",
         "backend": "calyx",
     }
-
-
-router.include_router(runtime_router)
