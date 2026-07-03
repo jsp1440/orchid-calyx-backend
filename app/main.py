@@ -19,6 +19,7 @@ from app.routers import (
     judging,
     reference_docs,
 )
+from runtime.router_fastapi import router as runtime_router
 
 app = FastAPI()
 
@@ -450,6 +451,7 @@ app.include_router(entries.router)
 app.include_router(feedback.router)
 app.include_router(judging.router)
 app.include_router(reference_docs.router)
+app.include_router(runtime_router)
 
 from app.routers import orchid_widgets
 
