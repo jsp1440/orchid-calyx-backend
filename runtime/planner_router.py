@@ -1,4 +1,4 @@
-"""FastAPI endpoints for runtime planning, execution, Brain integration, autonomous discovery, and discovery snapshots."""
+"""FastAPI endpoints for runtime planning, execution, Brain integration, autonomous discovery, discovery snapshots, and knowledge gaps."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from .autonomous_discovery import AutonomousDiscoveryEngine
 from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
 from .discovery_memory import DiscoveryMemoryStore
+from .knowledge_gap_discovery import KnowledgeGapDiscoveryEngine
 from .runtime_executor import RuntimeExecutor
 from .runtime_planner import RuntimePlanner
 
@@ -29,6 +30,10 @@ def discovery_engine() -> AutonomousDiscoveryEngine:
 
 def snapshot_store() -> DiscoveryMemoryStore:
     return DiscoveryMemoryStore()
+
+
+def gap_engine() -> KnowledgeGapDiscoveryEngine:
+    return KnowledgeGapDiscoveryEngine()
 
 
 def brain_worker(module_id: str, module_name: str, action: str) -> BrainIntegrationWorker:
@@ -250,3 +255,38 @@ def discovery_snapshot_timeline(limit: int = Query(default=20, ge=1, le=100)):
 @router.get("/discovery-snapshots/health")
 def discovery_snapshot_health():
     return snapshot_store().health()
+
+
+@router.get("/knowledge-gaps")
+def knowledge_gaps():
+    return gap_engine().gaps()
+
+
+@router.post("/knowledge-gaps/discover")
+def discover_knowledge_gaps():
+    return gap_engine().discover(write_cache=True)
+
+
+@router.get("/knowledge-gaps/latest")
+def latest_knowledge_gaps():
+    return gap_engine().latest()
+
+
+@router.get("/knowledge-gaps/domains")
+def knowledge_gap_domains():
+    return gap_engine().domains()
+
+
+@router.get("/knowledge-gaps/priorities")
+def knowledge_gap_priorities():
+    return gap_engine().priorities()
+
+
+@router.get("/knowledge-gaps/queue")
+def knowledge_gap_queue(limit: int = Query(default=10, ge=1, le=50)):
+    return gap_engine().research_queue(limit=limit)
+
+
+@router.get("/knowledge-gaps/dashboard")
+def knowledge_gap_dashboard():
+    return gap_engine().dashboard()
