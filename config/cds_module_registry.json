@@ -1,0 +1,79 @@
+[
+  {
+    "module_id": "CDS-COG-001",
+    "name": "CognitiveAudit",
+    "domain": "Cognitive",
+    "purpose": "Evaluate Calyx cognitive architecture and readiness.",
+    "status": "framework",
+    "inputs": "Engineering Memory, Observation Engine, Evaluation Engine, database inventory",
+    "outputs": "cognitive_readiness.json, cognitive audit report",
+    "dependencies": "BUILD-008, BUILD-011",
+    "next_action": "Connect to live Mission Control and Engineering Memory tables"
+  },
+  {
+    "module_id": "CDS-SCI-001",
+    "name": "DependencyIntelligence",
+    "domain": "Scientific",
+    "purpose": "Measure ecological dependency completeness and identify knowledge gaps.",
+    "status": "framework",
+    "inputs": "species, pollinators, mycorrhizae, habitat, climate, literature",
+    "outputs": "dependency_dashboard.json, knowledge_gap_priorities.csv",
+    "dependencies": "BUILD-009, database relationships",
+    "next_action": "Connect to live Brain relationship tables"
+  },
+  {
+    "module_id": "CDS-ENG-001",
+    "name": "EngineeringMemoryHarvester",
+    "domain": "Engineering",
+    "purpose": "Harvest BUILD reports and engineering documents into structured memory objects.",
+    "status": "framework",
+    "inputs": "BUILD reports, Google Drive catalog, architecture documents",
+    "outputs": "engineering_memory_schema.json, engineering priorities",
+    "dependencies": "BUILD-010, Memory Intake catalog",
+    "next_action": "Parse actual BUILD reports and create memory-object import package"
+  },
+  {
+    "module_id": "CDS-ENG-002",
+    "name": "DatabaseInspector",
+    "domain": "Engineering",
+    "purpose": "Inspect live PostgreSQL schemas, tables, row counts, and Calyx memory tables.",
+    "status": "live-ready",
+    "inputs": "DATABASE_URL",
+    "outputs": "database_inventory.csv, database_health_summary.json",
+    "dependencies": "BUILD-011",
+    "next_action": "Run regularly and compare results over time"
+  },
+  {
+    "module_id": "CDS-MC-001",
+    "name": "MissionReporter",
+    "domain": "Mission Control",
+    "purpose": "Aggregate module outputs into a unified Mission Control report.",
+    "status": "planned",
+    "inputs": "all CDS module outputs",
+    "outputs": "CDS mission report, dashboard JSON",
+    "dependencies": "CDS module registry",
+    "next_action": "Build output collector"
+  },
+  {
+    "module_id": "CDS-STORY-001",
+    "name": "StoryEngine",
+    "domain": "Narrative",
+    "purpose": "Classify and curate orchid stories with strict provenance separation.",
+    "status": "planned",
+    "inputs": "literature, history, field notes, Legend & Lore assets",
+    "outputs": "story_schema.md, story_inventory.csv",
+    "dependencies": "Story architecture",
+    "next_action": "Create story classification schema and sample importer"
+  },
+  {
+    "module_id": "CDS-CURIOSITY-001",
+    "name": "CuriosityEngine",
+    "domain": "Exploration",
+    "purpose": "Generate recursive exploration paths through species, dependencies, stories, literature, and conservation.",
+    "status": "planned",
+    "inputs": "knowledge graph, relationship explorer, species dossiers",
+    "outputs": "curiosity_paths.json, exploration graph",
+    "dependencies": "Relationship Explorer, Dependency Intelligence",
+    "next_action": "Define path-scoring rules"
+  }
+]
