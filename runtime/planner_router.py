@@ -1,4 +1,4 @@
-"""FastAPI endpoints for runtime planning, execution, Brain integration, autonomous discovery, discovery snapshots, and knowledge gaps."""
+"""FastAPI endpoints for runtime planning, execution, Brain integration, autonomous discovery, discovery snapshots, knowledge gaps, and diagnostics."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from .autonomous_discovery import AutonomousDiscoveryEngine
 from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
 from .discovery_memory import DiscoveryMemoryStore
+from .knowledge_gap_diagnostics import KnowledgeGapDiagnosticsEngine
 from .knowledge_gap_discovery import KnowledgeGapDiscoveryEngine
 from .runtime_executor import RuntimeExecutor
 from .runtime_planner import RuntimePlanner
@@ -34,6 +35,10 @@ def snapshot_store() -> DiscoveryMemoryStore:
 
 def gap_engine() -> KnowledgeGapDiscoveryEngine:
     return KnowledgeGapDiscoveryEngine()
+
+
+def diagnostic_engine() -> KnowledgeGapDiagnosticsEngine:
+    return KnowledgeGapDiagnosticsEngine()
 
 
 def brain_worker(module_id: str, module_name: str, action: str) -> BrainIntegrationWorker:
@@ -290,3 +295,33 @@ def knowledge_gap_queue(limit: int = Query(default=10, ge=1, le=50)):
 @router.get("/knowledge-gaps/dashboard")
 def knowledge_gap_dashboard():
     return gap_engine().dashboard()
+
+
+@router.post("/knowledge-diagnostics/discover")
+def discover_knowledge_diagnostics():
+    return diagnostic_engine().diagnose(write_cache=True)
+
+
+@router.get("/knowledge-diagnostics/latest")
+def latest_knowledge_diagnostics():
+    return diagnostic_engine().latest()
+
+
+@router.get("/knowledge-diagnostics/domains")
+def knowledge_diagnostic_domains():
+    return diagnostic_engine().domains()
+
+
+@router.get("/knowledge-diagnostics/gaps")
+def knowledge_diagnostic_gaps():
+    return diagnostic_engine().gaps()
+
+
+@router.get("/knowledge-diagnostics/queue")
+def knowledge_diagnostic_queue(limit: int = Query(default=10, ge=1, le=50)):
+    return diagnostic_engine().queue(limit=limit)
+
+
+@router.get("/knowledge-diagnostics/dashboard")
+def knowledge_diagnostic_dashboard():
+    return diagnostic_engine().dashboard()
