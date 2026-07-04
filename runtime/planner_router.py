@@ -1,9 +1,10 @@
-"""FastAPI endpoints for BUILD-012C runtime planning and BUILD-012D execution."""
+"""FastAPI endpoints for runtime planning, execution, and Brain integration."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
 from .runtime_executor import RuntimeExecutor
 from .runtime_planner import RuntimePlanner
@@ -18,6 +19,17 @@ def planner() -> RuntimePlanner:
 
 def executor() -> RuntimeExecutor:
     return RuntimeExecutor()
+
+
+def brain_worker(module_id: str, module_name: str, action: str) -> BrainIntegrationWorker:
+    return BrainIntegrationWorker(
+        {
+            "module_id": module_id,
+            "module_name": module_name,
+            "job_name": f"cds:{module_id}",
+            "action": action,
+        }
+    )
 
 
 @router.get("/discovery")
@@ -116,3 +128,39 @@ def cancel_execution(execution_id: str):
     if result.get("status") == "not_found":
         raise HTTPException(status_code=404, detail=result)
     return result
+
+
+@router.get("/brain-summary")
+def brain_summary():
+    queue = planner().queue()
+    return {
+        "build": "BUILD-013",
+        "status": "brain_integration_available",
+        "queue_depth": queue.get("queue_depth"),
+        "first_live_modules": [
+            "DatabaseInspector",
+            "EngineeringMemoryHarvester",
+            "DependencyIntelligence",
+            "CognitiveAudit",
+        ],
+    }
+
+
+@router.get("/brain-status")
+def brain_status():
+    return brain_worker("CDS-ENG-002", "DatabaseInspector", "Inspect live Brain database state").database_inspector()
+
+
+@router.get("/engineering-memory")
+def engineering_memory_status():
+    return brain_worker("CDS-ENG-001", "EngineeringMemoryHarvester", "Harvest BUILD reports").engineering_memory_harvester()
+
+
+@router.get("/dependency-intelligence")
+def dependency_intelligence_status():
+    return brain_worker("CDS-SCI-001", "DependencyIntelligence", "Inspect dependency graph").dependency_intelligence()
+
+
+@router.get("/cognitive-audit")
+def cognitive_audit_status():
+    return brain_worker("CDS-COG-001", "CognitiveAudit", "Audit runtime readiness").cognitive_audit()
