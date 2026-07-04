@@ -1,0 +1,5 @@
+rank,priority
+1,Connect DatabaseInspector outputs to CDS dashboard
+2,Convert EngineeringMemoryHarvester from framework to live BUILD report parser
+3,Connect DependencyIntelligence to live Brain relationship tables
+4,Build MissionReporter output aggregator
