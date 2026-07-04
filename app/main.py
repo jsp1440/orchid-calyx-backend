@@ -19,6 +19,7 @@ from app.routers import (
 )
 from runtime.router_fastapi import router as runtime_router
 from runtime.cds_router import router as cds_router
+from runtime.planner_router import router as planner_router
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
@@ -57,7 +58,7 @@ def runner_health():
         "autoloop_enabled": AUTO_LOOP_ENABLED,
         "interval_seconds": AUTO_LOOP_INTERVAL_SECONDS,
         "active_mode": ACTIVE_MODE,
-        "mode": "build_012b_cds_runtime_registry",
+        "mode": "build_012c_runtime_planner",
     }
 
 
@@ -528,6 +529,7 @@ app.include_router(judging.router)
 app.include_router(reference_docs.router)
 app.include_router(runtime_router)
 app.include_router(cds_router)
+app.include_router(planner_router)
 
 from app.routers import orchid_widgets
 
