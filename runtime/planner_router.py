@@ -1,4 +1,4 @@
-"""FastAPI endpoints for runtime planning, execution, Brain integration, and autonomous discovery."""
+"""FastAPI endpoints for runtime planning, execution, Brain integration, autonomous discovery, and discovery snapshots."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from .autonomous_discovery import AutonomousDiscoveryEngine
 from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
+from .discovery_memory import DiscoveryMemoryStore
 from .runtime_executor import RuntimeExecutor
 from .runtime_planner import RuntimePlanner
 
@@ -24,6 +25,10 @@ def executor() -> RuntimeExecutor:
 
 def discovery_engine() -> AutonomousDiscoveryEngine:
     return AutonomousDiscoveryEngine()
+
+
+def snapshot_store() -> DiscoveryMemoryStore:
+    return DiscoveryMemoryStore()
 
 
 def brain_worker(module_id: str, module_name: str, action: str) -> BrainIntegrationWorker:
@@ -215,3 +220,33 @@ def discovery_dashboard():
 @router.post("/rebuild")
 def rebuild_discovery():
     return discovery_engine().discover(write_cache=True)
+
+
+@router.post("/discovery-snapshots/capture")
+def capture_discovery_snapshot():
+    return snapshot_store().capture()
+
+
+@router.get("/discovery-snapshots/latest")
+def latest_discovery_snapshot():
+    return snapshot_store().latest()
+
+
+@router.get("/discovery-snapshots")
+def list_discovery_snapshots(limit: int = Query(default=20, ge=1, le=100)):
+    return snapshot_store().list_snapshots(limit=limit)
+
+
+@router.get("/discovery-snapshots/diff")
+def diff_discovery_snapshots():
+    return snapshot_store().diff_latest()
+
+
+@router.get("/discovery-snapshots/timeline")
+def discovery_snapshot_timeline(limit: int = Query(default=20, ge=1, le=100)):
+    return snapshot_store().timeline(limit=limit)
+
+
+@router.get("/discovery-snapshots/health")
+def discovery_snapshot_health():
+    return snapshot_store().health()
