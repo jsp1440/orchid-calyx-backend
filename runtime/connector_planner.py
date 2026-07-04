@@ -62,7 +62,7 @@ class BrainConnectorPlanner:
 
     def generate(self, write_cache: bool = True) -> dict[str, Any]:
         diagnostics = self.diagnostic_engine.latest()
-        gaps = diagnostics.get("gaps", [])
+        gaps = self._connector_gaps(diagnostics)
         plans = [self._plan_for_gap(gap, index + 1) for index, gap in enumerate(gaps)]
         grouped = self._group_by_domain(plans)
         payload = {
@@ -120,6 +120,55 @@ class BrainConnectorPlanner:
             "top_plans": payload.get("plans", [])[:5],
             "top_actions": payload.get("top_actions", []),
         }
+
+    def _connector_gaps(self, diagnostics: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return actionable connector gaps.
+
+        BUILD-017 marks domains as covered when Brain tables exist. BUILD-018 must
+        still plan connector work when runtime coverage is missing or thin, because
+        the actual gap is wiring Brain evidence into runtime APIs/validators.
+        """
+        explicit_gaps = diagnostics.get("gaps") or []
+        if explicit_gaps:
+            return explicit_gaps
+
+        connector_gaps: list[dict[str, Any]] = []
+        domain_diagnostics = diagnostics.get("domain_diagnostics", {}) or {}
+        for domain, detail in domain_diagnostics.items():
+            runtime_status = detail.get("runtime_status")
+            runtime_score = int(detail.get("runtime_score") or 0)
+            brain_score = int(detail.get("brain_score") or 0)
+            brain_matches = detail.get("brain_matches", []) or []
+            if runtime_status not in {"gap", "thin"}:
+                continue
+
+            priority = "CRITICAL" if runtime_status == "gap" else "HIGH"
+            if brain_score >= 80 and brain_matches:
+                action = (
+                    f"Wire existing Brain {domain} tables into runtime connectors, validators, "
+                    "review queues, and API-ready outputs."
+                )
+                title = f"{domain} Brain-to-runtime connector is missing"
+            else:
+                action = f"Add or connect {domain} data sources, validators, and review-ready outputs."
+                title = f"{domain} coverage is missing"
+
+            connector_gaps.append(
+                {
+                    "gap_id": f"CPG-{domain.upper().replace(' ', '-')}-001",
+                    "domain": domain,
+                    "priority": priority,
+                    "title": title,
+                    "proposed_action": action,
+                    "runtime_status": runtime_status,
+                    "runtime_score": runtime_score,
+                    "brain_score": brain_score,
+                    "brain_match_count": len(brain_matches),
+                    "evidence": detail.get("evidence", []),
+                    "source": "BUILD-018-runtime-bridge",
+                }
+            )
+        return connector_gaps
 
     def _plan_for_gap(self, gap: dict[str, Any], rank: int) -> ConnectorPlan:
         domain = str(gap.get("domain", "Governance"))
