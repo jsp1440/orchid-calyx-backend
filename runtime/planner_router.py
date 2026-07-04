@@ -1,4 +1,4 @@
-"""FastAPI endpoints for runtime planning, execution, Brain integration, autonomous discovery, discovery snapshots, knowledge gaps, and diagnostics."""
+"""FastAPI endpoints for runtime planning, execution, Brain integration, autonomous discovery, discovery snapshots, knowledge gaps, diagnostics, and connector planning."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from .autonomous_discovery import AutonomousDiscoveryEngine
 from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
+from .connector_planner import BrainConnectorPlanner
 from .discovery_memory import DiscoveryMemoryStore
 from .knowledge_gap_diagnostics import KnowledgeGapDiagnosticsEngine
 from .knowledge_gap_discovery import KnowledgeGapDiscoveryEngine
@@ -39,6 +40,10 @@ def gap_engine() -> KnowledgeGapDiscoveryEngine:
 
 def diagnostic_engine() -> KnowledgeGapDiagnosticsEngine:
     return KnowledgeGapDiagnosticsEngine()
+
+
+def connector_planner() -> BrainConnectorPlanner:
+    return BrainConnectorPlanner()
 
 
 def brain_worker(module_id: str, module_name: str, action: str) -> BrainIntegrationWorker:
@@ -325,3 +330,28 @@ def knowledge_diagnostic_queue(limit: int = Query(default=10, ge=1, le=50)):
 @router.get("/knowledge-diagnostics/dashboard")
 def knowledge_diagnostic_dashboard():
     return diagnostic_engine().dashboard()
+
+
+@router.get("/connector-plans")
+def get_connector_plans():
+    return connector_planner().latest()
+
+
+@router.post("/connector-plans/generate")
+def generate_connector_plans():
+    return connector_planner().generate(write_cache=True)
+
+
+@router.get("/connector-plans/domains")
+def connector_plan_domains():
+    return connector_planner().domains()
+
+
+@router.get("/connector-plans/queue")
+def connector_plan_queue(limit: int = Query(default=10, ge=1, le=50)):
+    return connector_planner().queue(limit=limit)
+
+
+@router.get("/connector-plans/dashboard")
+def connector_plan_dashboard():
+    return connector_planner().dashboard()
