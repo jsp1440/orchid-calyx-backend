@@ -2,10 +2,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional, Any
 import os
-import time
-from datetime import datetime, timezone
-import threading
 import re
+from datetime import datetime, timezone
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -20,6 +18,8 @@ from app.routers import (
     reference_docs,
 )
 from runtime.router_fastapi import router as runtime_router
+from runtime.runtime_engine import RuntimeEngine
+from runtime.scheduler import CalyxHeartbeat
 
 app = FastAPI()
 
@@ -27,6 +27,12 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 AUTO_LOOP_ENABLED = os.environ.get("OC_RUNNER_AUTOLOOP", "false").lower() == "true"
 AUTO_LOOP_INTERVAL_SECONDS = int(os.environ.get("OC_RUNNER_INTERVAL_SECONDS", "30"))
 ACTIVE_MODE = os.environ.get("OC_RUNNER_ACTIVE_MODE", "true").lower() == "true"
+
+
+def require_database_url() -> str:
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is required for Calyx runner operations")
+    return DATABASE_URL
 
 
 class VerificationRequest(BaseModel):
@@ -50,7 +56,7 @@ def runner_health():
         "autoloop_enabled": AUTO_LOOP_ENABLED,
         "interval_seconds": AUTO_LOOP_INTERVAL_SECONDS,
         "active_mode": ACTIVE_MODE,
-        "mode": "calyx_backend_repaired_build_200l",
+        "mode": "build_012a_autonomous_runtime_engine",
     }
 
 
@@ -67,7 +73,7 @@ def runner_summary():
     jobs: list[dict[str, Any]] = []
     runtime_actions: list[dict[str, Any]] = []
 
-    with psycopg.connect(DATABASE_URL) as conn:
+    with psycopg.connect(require_database_url()) as conn:
         with conn.cursor() as cur:
             ensure_runtime_log_table(cur)
 
@@ -115,7 +121,12 @@ def runner_summary():
                     }
                 )
 
-    return {"modules": modules, "jobs": jobs, "runtime_actions": runtime_actions}
+    return {
+        "modules": modules,
+        "jobs": jobs,
+        "runtime_actions": runtime_actions,
+        "runtime_engine": runtime_engine.status(),
+    }
 
 
 @app.post("/api/runner/run-once")
@@ -131,7 +142,7 @@ def run_once():
     created: list[str] = []
     skipped: list[str] = []
 
-    with psycopg.connect(DATABASE_URL) as conn:
+    with psycopg.connect(require_database_url()) as conn:
         with conn.cursor() as cur:
             ensure_execution_jobs_table(cur)
             for job in jobs:
@@ -155,7 +166,7 @@ def run_once():
 
 @app.post("/api/runner/execute-next")
 def execute_next():
-    with psycopg.connect(DATABASE_URL) as conn:
+    with psycopg.connect(require_database_url()) as conn:
         with conn.cursor() as cur:
             ensure_execution_jobs_table(cur)
 
@@ -164,6 +175,7 @@ def execute_next():
                 SELECT id, job_name
                 FROM oc_admin.ocp_execution_jobs
                 WHERE status = 'pending'
+                  AND job_name IS NOT NULL
                 ORDER BY id ASC
                 LIMIT 1
                 """
@@ -202,6 +214,13 @@ def execute_next():
                     """,
                     (Jsonb(result), job_id),
                 )
+                log_runtime_action(
+                    cur,
+                    module_name=result.get("module", "runner"),
+                    action_name=job_name,
+                    action_status="completed",
+                    action_details={"job_id": job_id, "result": result},
+                )
                 conn.commit()
 
                 return {
@@ -212,6 +231,11 @@ def execute_next():
                 }
 
             except Exception as exec_err:
+                failure_details = {
+                    "message": "execution failed",
+                    "error": str(exec_err),
+                    "timestamp": utc_now(),
+                }
                 cur.execute(
                     """
                     UPDATE oc_admin.ocp_execution_jobs
@@ -225,15 +249,16 @@ def execute_next():
                     """,
                     (
                         str(exec_err),
-                        Jsonb(
-                            {
-                                "message": "execution failed",
-                                "error": str(exec_err),
-                                "timestamp": utc_now(),
-                            }
-                        ),
+                        Jsonb(failure_details),
                         job_id,
                     ),
+                )
+                log_runtime_action(
+                    cur,
+                    module_name="runner",
+                    action_name=job_name,
+                    action_status="failed",
+                    action_details={"job_id": job_id, **failure_details},
                 )
                 conn.commit()
 
@@ -271,6 +296,28 @@ def execute_all():
             "completed": completed,
             "failed": failed,
         }
+
+
+@app.get("/api/runner/autonomous-status")
+def autonomous_status():
+    return runtime_engine.status()
+
+
+@app.post("/api/runner/autonomous-cycle")
+def autonomous_cycle():
+    return runtime_engine.run_cycle()
+
+
+@app.post("/api/runner/autonomous-start")
+def autonomous_start():
+    started = runtime_engine.start()
+    return {"status": "started" if started else "already_running_or_disabled", "engine": runtime_engine.status()}
+
+
+@app.post("/api/runner/autonomous-stop")
+def autonomous_stop():
+    stopped = runtime_engine.stop()
+    return {"status": "stopped" if stopped else "still_running", "engine": runtime_engine.status()}
 
 
 def utc_now() -> str:
@@ -326,6 +373,26 @@ def ensure_execution_jobs_table(cur):
     )
 
 
+def log_runtime_action(
+    cur,
+    *,
+    module_name: str,
+    action_name: str,
+    action_status: str,
+    action_details: Optional[dict[str, Any]] = None,
+) -> None:
+    ensure_runtime_log_table(cur)
+    cur.execute(
+        """
+        INSERT INTO oc_admin.ocp_runtime_actions
+            (module_name, action_name, action_status, action_details)
+        VALUES
+            (%s, %s, %s, %s)
+        """,
+        (module_name, action_name, action_status, Jsonb(action_details or {})),
+    )
+
+
 def insert_job_if_missing(
     cur,
     job_name: str,
@@ -363,7 +430,7 @@ def normalize_doi(value: Optional[str]) -> str:
 
 
 def run_job_logic(job_name: str):
-    with psycopg.connect(DATABASE_URL) as conn:
+    with psycopg.connect(require_database_url()) as conn:
         with conn.cursor() as cur:
             if job_name == "optimize_calyx_core":
                 return {
@@ -428,20 +495,27 @@ def run_job_logic(job_name: str):
             }
 
 
-def autoloop_forever():
-    while True:
-        try:
-            run_once()
-            execute_all()
-        except Exception:
-            pass
-        time.sleep(AUTO_LOOP_INTERVAL_SECONDS)
+def heartbeat_once():
+    return CalyxHeartbeat().run_once()
+
+
+runtime_engine = RuntimeEngine(
+    heartbeat=heartbeat_once,
+    enqueue_jobs=run_once,
+    execute_jobs=execute_all,
+    interval_seconds=AUTO_LOOP_INTERVAL_SECONDS,
+    enabled=AUTO_LOOP_ENABLED,
+)
 
 
 @app.on_event("startup")
 def startup_event():
-    if AUTO_LOOP_ENABLED:
-        threading.Thread(target=autoloop_forever, daemon=True).start()
+    runtime_engine.start()
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    runtime_engine.stop()
 
 
 app.include_router(health.router)
