@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-07-02T23:09:38",
+  "suite": "Calyx Development Suite",
+  "version": "v2",
+  "module_count": 7,
+  "status_counts": {
+    "framework": 3,
+    "live-ready": 1,
+    "planned": 3
+  },
+  "domain_counts": {
+    "Cognitive": 1,
+    "Scientific": 1,
+    "Engineering": 2,
+    "Mission Control": 1,
+    "Narrative": 1,
+    "Exploration": 1
+  },
+  "next_highest_priority": [
+    "Connect DatabaseInspector outputs to CDS dashboard",
+    "Convert EngineeringMemoryHarvester from framework to live BUILD report parser",
+    "Connect DependencyIntelligence to live Brain relationship tables",
+    "Build MissionReporter output aggregator"
+  ]
+}
