@@ -1,9 +1,10 @@
-"""FastAPI endpoints for runtime planning, execution, and Brain integration."""
+"""FastAPI endpoints for runtime planning, execution, Brain integration, and autonomous discovery."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from .autonomous_discovery import AutonomousDiscoveryEngine
 from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
 from .runtime_executor import RuntimeExecutor
@@ -19,6 +20,10 @@ def planner() -> RuntimePlanner:
 
 def executor() -> RuntimeExecutor:
     return RuntimeExecutor()
+
+
+def discovery_engine() -> AutonomousDiscoveryEngine:
+    return AutonomousDiscoveryEngine()
 
 
 def brain_worker(module_id: str, module_name: str, action: str) -> BrainIntegrationWorker:
@@ -164,3 +169,49 @@ def dependency_intelligence_status():
 @router.get("/cognitive-audit")
 def cognitive_audit_status():
     return brain_worker("CDS-COG-001", "CognitiveAudit", "Audit runtime readiness").cognitive_audit()
+
+
+@router.get("/discover")
+def get_autonomous_discovery():
+    return discovery_engine().cached_or_discover()
+
+
+@router.post("/discover")
+def run_autonomous_discovery():
+    return discovery_engine().discover(write_cache=True)
+
+
+@router.get("/modules")
+def discovered_modules():
+    return discovery_engine().modules()
+
+
+@router.get("/capabilities")
+def discovered_capabilities():
+    return discovery_engine().capabilities()
+
+
+@router.get("/graph")
+def discovered_graph():
+    return discovery_engine().graph()
+
+
+@router.get("/recommendations")
+def discovered_recommendations():
+    return discovery_engine().recommendations()
+
+
+@router.get("/schedule")
+def discovered_schedule():
+    return discovery_engine().schedule()
+
+
+@router.get("/discovery-dashboard")
+def discovery_dashboard():
+    payload = discovery_engine().cached_or_discover()
+    return {"build": "BUILD-014", "dashboard": payload.get("summary", {}), "recommendations": payload.get("recommendations", [])[:5]}
+
+
+@router.post("/rebuild")
+def rebuild_discovery():
+    return discovery_engine().discover(write_cache=True)
