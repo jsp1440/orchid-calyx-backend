@@ -1,8 +1,8 @@
-"""BUILD-012D runtime executor.
+"""BUILD-013 runtime executor.
 
 The executor consumes the BUILD-012C planner queue and turns queue items into
-execution records. This first executor is intentionally deterministic and
-file-backed so it can run safely in Render without requiring database access.
+execution records. BUILD-013 connects selected CDS modules to live-aware Brain
+integration workers while preserving safe file-backed execution records.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .brain_integration import BrainIntegrationWorker
 from .runtime_planner import RuntimePlanner
 
 
@@ -69,24 +70,17 @@ class ExecutionRecord:
 
 
 class RuntimeWorker:
-    """Minimal module worker for BUILD-012D.
+    """Module worker dispatcher for BUILD-013.
 
-    Later builds can replace this with module-specific workers. For now each
-    worker validates the queue item and emits a deterministic result.
+    Known CDS modules are routed to BrainIntegrationWorker. Unknown modules use
+    a safe generic worker so the runtime can keep operating as modules evolve.
     """
 
     def __init__(self, queue_item: dict[str, Any]) -> None:
         self.queue_item = queue_item
 
     def execute(self) -> dict[str, Any]:
-        return {
-            "module_id": self.queue_item["module_id"],
-            "module_name": self.queue_item["module_name"],
-            "action": self.queue_item.get("action"),
-            "status": "completed",
-            "message": f"{self.queue_item['module_name']} execution placeholder completed.",
-            "executed_at": utc_now(),
-        }
+        return BrainIntegrationWorker(self.queue_item).execute()
 
 
 class RuntimeExecutor:
@@ -103,7 +97,7 @@ class RuntimeExecutor:
 
         records = [self.execute_item(item) for item in queue]
         return {
-            "build": "BUILD-012D",
+            "build": "BUILD-013",
             "status": "completed",
             "executed_count": len(records),
             "executions": [asdict(record) for record in records],
@@ -114,9 +108,9 @@ class RuntimeExecutor:
         for item in RuntimePlanner().queue()["queue"]:
             if item["module_id"].lower() == wanted or item["module_name"].lower() == wanted:
                 record = self.execute_item(item)
-                return {"build": "BUILD-012D", "status": "completed", "execution": asdict(record)}
+                return {"build": "BUILD-013", "status": "completed", "execution": asdict(record)}
         return {
-            "build": "BUILD-012D",
+            "build": "BUILD-013",
             "status": "not_found_or_not_selectable",
             "module_id": module_id,
         }
@@ -131,16 +125,21 @@ class RuntimeExecutor:
             status="queued",
         )
         record.add_event("execution_queued", "Execution record created from planner queue.")
+        self._write_record(record)
+
         started = datetime.now(timezone.utc)
         record.started_at = started.isoformat()
         record.status = "running"
         record.add_event("execution_started", "Worker started.")
+        self._write_record(record)
 
         try:
             result = RuntimeWorker(item).execute()
             record.result = result
-            record.status = "completed"
-            record.add_event("execution_completed", result.get("message"))
+            record.status = "completed" if result.get("status") != "degraded" else "completed_degraded"
+            if result.get("memory_objects_created"):
+                record.memory_objects = result["memory_objects_created"]
+            record.add_event("execution_completed", result.get("message") or f"{item['module_name']} completed.")
         except Exception as exc:  # pragma: no cover - defensive safety net
             record.status = "failed"
             record.error = str(exc)
@@ -154,13 +153,12 @@ class RuntimeExecutor:
         return record
 
     def list_executions(self, limit: int = 50) -> dict[str, Any]:
-        records = []
-        for path in sorted(self.execution_dir.glob("EXE-*.json"), reverse=True)[:limit]:
-            records.append(self._read_json(path))
+        records = [self._read_json(path) for path in self.execution_dir.glob("EXE-*.json")]
+        records.sort(key=lambda record: record.get("started_at") or record.get("finished_at") or "", reverse=True)
         return {
-            "build": "BUILD-012D",
-            "count": len(records),
-            "executions": records,
+            "build": "BUILD-013",
+            "count": len(records[:limit]),
+            "executions": records[:limit],
         }
 
     def get_execution(self, execution_id: str) -> dict[str, Any] | None:
@@ -171,11 +169,11 @@ class RuntimeExecutor:
 
     def history(self) -> dict[str, Any]:
         records = self.list_executions(limit=500)["executions"]
-        completed = [record for record in records if record.get("status") == "completed"]
+        completed = [record for record in records if record.get("status") in {"completed", "completed_degraded"}]
         failed = [record for record in records if record.get("status") == "failed"]
         durations = [record.get("duration_ms") for record in records if record.get("duration_ms") is not None]
         return {
-            "build": "BUILD-012D",
+            "build": "BUILD-013",
             "total_executions": len(records),
             "completed": len(completed),
             "failed": len(failed),
@@ -190,7 +188,7 @@ class RuntimeExecutor:
             all_events.extend(record.get("events", []))
         all_events.sort(key=lambda event: event.get("timestamp", ""), reverse=True)
         return {
-            "build": "BUILD-012D",
+            "build": "BUILD-013",
             "count": min(len(all_events), limit),
             "events": all_events[:limit],
         }
@@ -199,7 +197,7 @@ class RuntimeExecutor:
         record = self.get_execution(execution_id)
         if not record:
             return {"status": "not_found", "execution_id": execution_id}
-        if record.get("status") in {"completed", "failed", "cancelled"}:
+        if record.get("status") in {"completed", "completed_degraded", "failed", "cancelled"}:
             return {"status": "not_cancellable", "execution": record}
         record["status"] = "cancelled"
         record.setdefault("events", []).append(
