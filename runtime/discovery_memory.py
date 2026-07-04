@@ -8,6 +8,7 @@ history across requests.
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,7 +63,9 @@ class DiscoveryMemoryStore:
 
     def capture(self) -> dict[str, Any]:
         payload = self.engine.discover(write_cache=True)
-        snapshot_id = f"DSM-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+        snapshot_id = (
+            f"DSM-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}-{uuid.uuid4().hex[:8]}"
+        )
         record = {
             "build": "BUILD-015",
             "snapshot_id": snapshot_id,
