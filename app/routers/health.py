@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from runtime.router_fastapi import config_router, infrastructure_router
+
 router = APIRouter(tags=["health"])
 
 
@@ -15,3 +17,7 @@ def system_status():
         "service": "orchid-continuum",
         "backend": "calyx",
     }
+
+
+router.include_router(config_router)
+router.include_router(infrastructure_router)

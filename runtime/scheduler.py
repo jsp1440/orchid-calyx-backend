@@ -1,9 +1,11 @@
 from __future__ import annotations
 from dataclasses import asdict
+
 from .health import HealthMonitorService
 from .bottlenecks import BottleneckService
 from .goals import GoalPlannerService
 from .governance import GovernanceService
+from .infrastructure import InfrastructureRegistryService
 from .mission import MissionReporterService
 from .memory import RuntimeMemoryWriter
 
@@ -16,6 +18,7 @@ class CalyxHeartbeat:
 
     def __init__(self) -> None:
         self.health = HealthMonitorService()
+        self.infrastructure = InfrastructureRegistryService()
         self.bottlenecks = BottleneckService()
         self.goals = GoalPlannerService()
         self.governance = GovernanceService()
@@ -24,12 +27,15 @@ class CalyxHeartbeat:
 
     def run_once(self) -> dict:
         health = self.health.run()
+        infrastructure_health = self.infrastructure.health()
         bottleneck = self.bottlenecks.detect(health)
         goal = self.goals.plan(bottleneck)
         governance = self.governance.review_action("write_mission_report", requested_level=3)
         report = self.mission.build_report(health, bottleneck, goal, governance)
 
         payload = asdict(report)
+        payload["brain_config"] = infrastructure_health.get("config_source")
+        payload["infrastructure"] = infrastructure_health
         self.memory.write_event({"event_type": "calyx_heartbeat", "report": payload})
         return payload
 
