@@ -1,87 +1,84 @@
 """BUILD-014 autonomous discovery engine.
 
-This module lets Calyx inspect its own repository and derive a live capability
-inventory without requiring every runtime component to be manually registered.
-The first implementation is deterministic, dependency-light, and safe for
-Render: it scans Python files, discovers routers/workers/classes/metadata, and
-builds a capability registry, graph, schedule, and recommendations.
+Calyx can inspect its own repository, derive module/capability metadata,
+build a dependency graph, and recommend next runtime actions without requiring
+every component to be manually registered.
 """
 
 from __future__ import annotations
 
 import ast
 import json
-from collections import Counter, defaultdict, deque
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .runtime_planner import RuntimePlanner
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DISCOVERY_CACHE = REPO_ROOT / "runtime" / "discovery_registry.json"
-
-
-CATEGORY_RULES = {
-    "router": "api",
-    "worker": "worker",
-    "executor": "runtime",
-    "planner": "runtime",
-    "discovery": "runtime",
-    "brain": "brain",
-    "scheduler": "runtime",
-    "config": "configuration",
-    "infrastructure": "infrastructure",
-}
+SCAN_DIRS = ["runtime", "app"]
 
 
 @dataclass
-class ModuleDescriptor:
+class DiscoveredModule:
     name: str
     path: str
-    category: str
     module_type: str
-    description: str | None = None
+    category: str
+    status: str
+    capabilities: list[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
+    routers: list[str] = field(default_factory=list)
     classes: list[str] = field(default_factory=list)
     functions: list[str] = field(default_factory=list)
-    imports: list[str] = field(default_factory=list)
-    api_routes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Capability:
+    name: str
+    provider: str
+    category: str
+    description: str
+    inputs: list[str] = field(default_factory=list)
+    outputs: list[str] = field(default_factory=list)
     dependencies: list[str] = field(default_factory=list)
-    capabilities: list[str] = field(default_factory=list)
-    health: str = "healthy"
-    tags: list[str] = field(default_factory=list)
+    health: str = "unknown"
 
 
-class DiscoveryEngine:
-    """Discover runtime modules, capabilities, graph, and recommendations."""
+@dataclass
+class Recommendation:
+    priority: str
+    recommendation: str
+    reason: str
+    source: str
+
+
+class AutonomousDiscoveryEngine:
+    """Discover runtime modules and derive operational metadata."""
 
     def __init__(self, repo_root: Path | None = None, cache_path: Path | None = None) -> None:
         self.repo_root = repo_root or REPO_ROOT
         self.cache_path = cache_path or DISCOVERY_CACHE
 
     def discover(self, write_cache: bool = True) -> dict[str, Any]:
-        modules = [self._inspect_python_file(path) for path in self._python_files()]
-        modules = [module for module in modules if module is not None]
-        capabilities = self.capabilities_from_modules(modules)
-        graph = self.dependency_graph(modules)
-        schedule = self.schedule_from_graph(modules, graph)
-        recommendations = self.recommendations(modules, graph, schedule)
-        result = {
+        modules = self._discover_python_modules()
+        capabilities = self._capabilities_from_modules(modules)
+        graph = self._dependency_graph(modules)
+        recommendations = self._recommendations(modules, capabilities, graph)
+        payload = {
             "build": "BUILD-014",
-            "generated_at": utc_now(),
-            "module_count": len(modules),
-            "capability_count": len(capabilities),
+            "status": "discovered",
+            "summary": self._summary(modules, capabilities, graph, recommendations),
             "modules": [asdict(module) for module in modules],
-            "capabilities": capabilities,
+            "capabilities": [asdict(capability) for capability in capabilities],
             "graph": graph,
-            "schedule": schedule,
-            "recommendations": recommendations,
-            "dashboard": self.dashboard(modules, capabilities, graph, recommendations),
+            "recommendations": [asdict(item) for item in recommendations],
         }
         if write_cache:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-            self.cache_path.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
-        return result
+            self.cache_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        return payload
 
     def cached_or_discover(self) -> dict[str, Any]:
         if self.cache_path.exists():
@@ -89,373 +86,263 @@ class DiscoveryEngine:
         return self.discover(write_cache=True)
 
     def modules(self) -> dict[str, Any]:
-        data = self.cached_or_discover()
-        return {"build": "BUILD-014", "modules": data.get("modules", []), "module_count": data.get("module_count", 0)}
+        payload = self.cached_or_discover()
+        return {"build": "BUILD-014", "count": len(payload.get("modules", [])), "modules": payload.get("modules", [])}
 
     def capabilities(self) -> dict[str, Any]:
-        data = self.cached_or_discover()
-        return {
-            "build": "BUILD-014",
-            "capabilities": data.get("capabilities", []),
-            "capability_count": data.get("capability_count", 0),
-        }
+        payload = self.cached_or_discover()
+        return {"build": "BUILD-014", "count": len(payload.get("capabilities", [])), "capabilities": payload.get("capabilities", [])}
 
     def graph(self) -> dict[str, Any]:
-        data = self.cached_or_discover()
-        return {"build": "BUILD-014", **data.get("graph", {})}
+        payload = self.cached_or_discover()
+        return {"build": "BUILD-014", **payload.get("graph", {})}
+
+    def recommendations(self) -> dict[str, Any]:
+        payload = self.cached_or_discover()
+        items = payload.get("recommendations", [])
+        return {"build": "BUILD-014", "count": len(items), "recommendations": items}
 
     def schedule(self) -> dict[str, Any]:
-        data = self.cached_or_discover()
-        return {"build": "BUILD-014", **data.get("schedule", {})}
-
-    def recommendation_report(self) -> dict[str, Any]:
-        data = self.cached_or_discover()
-        return {"build": "BUILD-014", "recommendations": data.get("recommendations", [])}
-
-    def dashboard_report(self) -> dict[str, Any]:
-        data = self.cached_or_discover()
-        return {"build": "BUILD-014", **data.get("dashboard", {})}
-
-    def capabilities_from_modules(self, modules: list[ModuleDescriptor]) -> list[dict[str, Any]]:
-        capabilities: list[dict[str, Any]] = []
-        for module in modules:
-            for capability in module.capabilities:
-                capabilities.append(
-                    {
-                        "name": capability,
-                        "module": module.name,
-                        "category": module.category,
-                        "source_file": module.path,
-                        "health": module.health,
-                        "dependencies": module.dependencies,
-                        "tags": module.tags,
-                    }
-                )
-        return capabilities
-
-    def dependency_graph(self, modules: list[ModuleDescriptor]) -> dict[str, Any]:
-        names = {module.name for module in modules}
-        nodes = [
-            {
-                "id": module.name,
-                "path": module.path,
-                "category": module.category,
-                "health": module.health,
-            }
-            for module in modules
-        ]
-        edges = []
-        missing = []
-        for module in modules:
-            for dependency in module.dependencies:
-                target = self._match_dependency(dependency, names)
-                if target:
-                    edges.append({"from": target, "to": module.name, "type": "import"})
-                else:
-                    missing.append({"module": module.name, "dependency": dependency})
-        cycles = self._detect_cycles([node["id"] for node in nodes], edges)
+        payload = self.cached_or_discover()
+        nodes = payload.get("graph", {}).get("nodes", [])
+        healthy = [node for node in nodes if node.get("health") in {"healthy", "available"}]
         return {
-            "nodes": nodes,
-            "edges": edges,
-            "missing_dependencies": missing,
-            "cycles": cycles,
-            "node_count": len(nodes),
-            "edge_count": len(edges),
+            "build": "BUILD-014",
+            "status": "scheduled",
+            "queue_depth": len(healthy),
+            "schedule": [
+                {"rank": idx + 1, "module": node["name"], "reason": "healthy discovered capability"}
+                for idx, node in enumerate(healthy)
+            ],
+            "top_recommendations": payload.get("recommendations", [])[:5],
         }
 
-    def schedule_from_graph(self, modules: list[ModuleDescriptor], graph: dict[str, Any]) -> dict[str, Any]:
-        nodes = [node["id"] for node in graph.get("nodes", [])]
-        indegree = {node: 0 for node in nodes}
-        children: dict[str, list[str]] = defaultdict(list)
-        for edge in graph.get("edges", []):
-            parent = edge["from"]
-            child = edge["to"]
-            children[parent].append(child)
-            indegree[child] = indegree.get(child, 0) + 1
-        ready = deque(sorted([node for node, degree in indegree.items() if degree == 0]))
-        ordered: list[str] = []
-        while ready:
-            node = ready.popleft()
-            ordered.append(node)
-            for child in sorted(children.get(node, [])):
-                indegree[child] -= 1
-                if indegree[child] == 0:
-                    ready.append(child)
-        blocked = sorted([node for node in nodes if node not in ordered])
-        module_index = {module.name: module for module in modules}
-        queue = [
-            {
-                "rank": index + 1,
-                "module": name,
-                "category": module_index[name].category,
-                "health": module_index[name].health,
-                "action": f"Run discovered capability module {name}",
-            }
-            for index, name in enumerate(ordered)
-        ]
-        return {
-            "status": "ready" if not blocked else "blocked",
-            "queue_depth": len(queue),
-            "queue": queue,
-            "blocked": blocked,
-        }
+    def _discover_python_modules(self) -> list[DiscoveredModule]:
+        discovered: list[DiscoveredModule] = []
+        for scan_dir in SCAN_DIRS:
+            root = self.repo_root / scan_dir
+            if not root.exists():
+                continue
+            for path in sorted(root.rglob("*.py")):
+                if "__pycache__" in path.parts:
+                    continue
+                module = self._inspect_python_file(path)
+                if module:
+                    discovered.append(module)
+        return discovered
 
-    def recommendations(
-        self,
-        modules: list[ModuleDescriptor],
-        graph: dict[str, Any],
-        schedule: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        recommendations: list[dict[str, Any]] = []
-        missing = graph.get("missing_dependencies", [])
-        cycles = graph.get("cycles", [])
-        if missing:
-            recommendations.append(
-                {
-                    "priority": "HIGH",
-                    "recommendation": "Normalize or register missing dependencies",
-                    "reason": f"{len(missing)} discovered dependencies do not map to known modules.",
-                }
-            )
-        if cycles:
-            recommendations.append(
-                {
-                    "priority": "HIGH",
-                    "recommendation": "Resolve dependency cycles before autonomous scheduling",
-                    "reason": f"{len(cycles)} dependency cycles were detected.",
-                }
-            )
-        categories = Counter(module.category for module in modules)
-        if categories.get("brain", 0) > 0:
-            recommendations.append(
-                {
-                    "priority": "HIGH",
-                    "recommendation": "Run Brain-aware inspections on a recurring schedule",
-                    "reason": f"{categories['brain']} Brain-related modules are discoverable.",
-                }
-            )
-        if schedule.get("queue_depth", 0) > 0:
-            recommendations.append(
-                {
-                    "priority": "MEDIUM",
-                    "recommendation": "Use discovery schedule to seed the RuntimeExecutor queue",
-                    "reason": f"{schedule['queue_depth']} modules are schedulable from autonomous discovery.",
-                }
-            )
-        recommendations.append(
-            {
-                "priority": "MEDIUM",
-                "recommendation": "Persist discovery snapshots into Engineering Memory",
-                "reason": "Discovery currently caches to repository runtime JSON; BUILD-015 should store longitudinal history.",
-            }
-        )
-        return recommendations
-
-    def dashboard(
-        self,
-        modules: list[ModuleDescriptor],
-        capabilities: list[dict[str, Any]],
-        graph: dict[str, Any],
-        recommendations: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        category_counts = Counter(module.category for module in modules)
-        health_counts = Counter(module.health for module in modules)
-        return {
-            "modules": len(modules),
-            "capabilities": len(capabilities),
-            "category_counts": dict(category_counts),
-            "health_counts": dict(health_counts),
-            "failed": health_counts.get("failed", 0),
-            "degraded": health_counts.get("degraded", 0),
-            "healthy": health_counts.get("healthy", 0),
-            "execution_graph_nodes": graph.get("node_count", 0),
-            "execution_graph_edges": graph.get("edge_count", 0),
-            "recommendations": len(recommendations),
-        }
-
-    def _python_files(self) -> list[Path]:
-        roots = [self.repo_root / "runtime", self.repo_root / "app"]
-        files: list[Path] = []
-        for root in roots:
-            if root.exists():
-                files.extend(path for path in root.rglob("*.py") if "__pycache__" not in path.parts)
-        return sorted(files)
-
-    def _inspect_python_file(self, path: Path) -> ModuleDescriptor | None:
+    def _inspect_python_file(self, path: Path) -> DiscoveredModule | None:
+        rel = path.relative_to(self.repo_root).as_posix()
         try:
-            source = path.read_text(encoding="utf-8")
-            tree = ast.parse(source)
+            tree = ast.parse(path.read_text(encoding="utf-8"))
         except Exception:
-            return ModuleDescriptor(
-                name=path.stem,
-                path=str(path.relative_to(self.repo_root)),
-                category="unknown",
-                module_type="python",
-                health="failed",
-                tags=["parse_failed"],
-            )
+            return DiscoveredModule(path.stem, rel, "python_module", "Unknown", "degraded")
 
-        classes: list[str] = []
-        functions: list[str] = []
+        classes = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+        functions = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+        imports = self._imports(tree)
+        routers = self._routes(tree)
+        module_info = self._module_info(tree)
+        name = module_info.get("name") or self._friendly_name(path, classes)
+        category = module_info.get("category") or self._category_for_path(rel, classes, routers)
+        module_type = self._module_type(rel, classes, routers)
+        capabilities = module_info.get("capabilities") or self._infer_capabilities(name, rel, classes, functions, routers)
+        dependencies = module_info.get("dependencies") or imports
+        status = "healthy" if capabilities or routers or classes else "available"
+        return DiscoveredModule(
+            name=name,
+            path=rel,
+            module_type=module_type,
+            category=category,
+            status=status,
+            capabilities=capabilities,
+            dependencies=dependencies[:25],
+            routers=routers,
+            classes=classes[:25],
+            functions=functions[:25],
+        )
+
+    def _imports(self, tree: ast.AST) -> list[str]:
         imports: list[str] = []
-        routes: list[str] = []
-        module_info: dict[str, Any] = {}
-        docstring = ast.get_docstring(tree)
-
         for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef):
-                classes.append(node.name)
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                functions.append(node.name)
+            if isinstance(node, ast.Import):
+                imports.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.append(node.module)
+        return sorted(set(imports))
+
+    def _routes(self, tree: ast.AST) -> list[str]:
+        routes: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
                 for decorator in node.decorator_list:
                     route = self._route_from_decorator(decorator)
                     if route:
                         routes.append(route)
-            elif isinstance(node, ast.Import):
-                imports.extend(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    imports.append(node.module)
-            elif isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "MODULE_INFO":
-                        try:
-                            value = ast.literal_eval(node.value)
-                            if isinstance(value, dict):
-                                module_info = value
-                        except Exception:
-                            pass
-
-        name = str(module_info.get("name") or self._module_name_from_path(path))
-        category = str(module_info.get("category") or self._infer_category(path, classes, functions, routes))
-        dependencies = module_info.get("dependencies") or self._runtime_import_dependencies(imports)
-        tags = module_info.get("tags") or self._infer_tags(path, classes, functions, routes)
-        capabilities = module_info.get("outputs") or self._infer_capabilities(name, path, classes, functions, routes)
-        module_type = "api_router" if routes else "python_module"
-        if any("Worker" in class_name for class_name in classes):
-            module_type = "worker"
-        if any("Executor" in class_name for class_name in classes):
-            module_type = "executor"
-        return ModuleDescriptor(
-            name=name,
-            path=str(path.relative_to(self.repo_root)),
-            category=category,
-            module_type=module_type,
-            description=str(module_info.get("description") or docstring or "").strip()[:500] or None,
-            classes=sorted(classes),
-            functions=sorted(functions),
-            imports=sorted(set(imports)),
-            api_routes=sorted(routes),
-            dependencies=sorted(set(str(item) for item in dependencies)),
-            capabilities=sorted(set(str(item) for item in capabilities)),
-            health="healthy",
-            tags=sorted(set(str(item) for item in tags)),
-        )
-
-    def _module_name_from_path(self, path: Path) -> str:
-        return path.stem.replace("_", "-")
-
-    def _infer_category(self, path: Path, classes: list[str], functions: list[str], routes: list[str]) -> str:
-        text = " ".join([str(path), *classes, *functions]).lower()
-        if routes:
-            return "api"
-        for key, category in CATEGORY_RULES.items():
-            if key in text:
-                return category
-        return "runtime"
-
-    def _infer_tags(self, path: Path, classes: list[str], functions: list[str], routes: list[str]) -> list[str]:
-        tags = [self._infer_category(path, classes, functions, routes)]
-        if routes:
-            tags.append("fastapi")
-        if classes:
-            tags.append("classes")
-        return tags
-
-    def _infer_capabilities(
-        self,
-        name: str,
-        path: Path,
-        classes: list[str],
-        functions: list[str],
-        routes: list[str],
-    ) -> list[str]:
-        capabilities = []
-        if routes:
-            capabilities.append("Expose API routes")
-        for class_name in classes:
-            if class_name.endswith("Worker"):
-                capabilities.append(f"Run {class_name}")
-            elif class_name.endswith("Engine"):
-                capabilities.append(f"Operate {class_name}")
-            elif class_name.endswith("Planner"):
-                capabilities.append(f"Plan with {class_name}")
-            elif class_name.endswith("Executor"):
-                capabilities.append(f"Execute with {class_name}")
-            elif class_name.endswith("Loader"):
-                capabilities.append(f"Load with {class_name}")
-        if not capabilities:
-            capabilities.append(f"Provide {name} runtime behavior")
-        return capabilities
-
-    def _runtime_import_dependencies(self, imports: list[str]) -> list[str]:
-        dependencies = []
-        for item in imports:
-            if item.startswith("runtime."):
-                dependencies.append(item.split(".")[-1].replace("_", "-"))
-            elif item.startswith("app."):
-                dependencies.append(item.split(".")[-1].replace("_", "-"))
-        return dependencies
+        return routes
 
     def _route_from_decorator(self, decorator: ast.AST) -> str | None:
         if not isinstance(decorator, ast.Call):
             return None
-        func = decorator.func
-        if not isinstance(func, ast.Attribute):
+        if not isinstance(decorator.func, ast.Attribute):
             return None
-        if func.attr not in {"get", "post", "put", "delete", "patch"}:
+        if decorator.func.attr not in {"get", "post", "put", "delete", "patch"}:
             return None
-        if not decorator.args:
-            return f"{func.attr.upper()} <unknown>"
-        arg = decorator.args[0]
-        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-            return f"{func.attr.upper()} {arg.value}"
-        return f"{func.attr.upper()} <dynamic>"
+        if not decorator.args or not isinstance(decorator.args[0], ast.Constant):
+            return None
+        return f"{decorator.func.attr.upper()} {decorator.args[0].value}"
 
-    def _match_dependency(self, dependency: str, names: set[str]) -> str | None:
-        normalized = dependency.lower().replace("_", "-")
-        for name in names:
-            if normalized == name.lower().replace("_", "-"):
-                return name
-        return None
+    def _module_info(self, tree: ast.AST) -> dict[str, Any]:
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "MODULE_INFO":
+                        try:
+                            value = ast.literal_eval(node.value)
+                            return value if isinstance(value, dict) else {}
+                        except Exception:
+                            return {}
+        return {}
 
-    def _detect_cycles(self, nodes: list[str], edges: list[dict[str, str]]) -> list[list[str]]:
-        adjacency: dict[str, list[str]] = defaultdict(list)
-        for edge in edges:
-            adjacency[edge["from"]].append(edge["to"])
-        visited: set[str] = set()
-        stack: set[str] = set()
-        cycles: list[list[str]] = []
+    def _friendly_name(self, path: Path, classes: list[str]) -> str:
+        preferred = [name for name in classes if name.endswith(("Engine", "Worker", "Service", "Planner", "Executor"))]
+        if preferred:
+            return preferred[0]
+        if classes:
+            return classes[0]
+        return "".join(part.capitalize() for part in path.stem.split("_"))
 
-        def visit(node: str, path: list[str]) -> None:
-            visited.add(node)
-            stack.add(node)
-            for child in adjacency.get(node, []):
-                if child not in visited:
-                    visit(child, [*path, child])
-                elif child in stack:
-                    try:
-                        start = path.index(child)
-                        cycles.append(path[start:] + [child])
-                    except ValueError:
-                        cycles.append([node, child])
-            stack.discard(node)
+    def _category_for_path(self, rel: str, classes: list[str], routers: list[str]) -> str:
+        lowered = rel.lower()
+        joined = " ".join(classes).lower()
+        if routers or "router" in lowered:
+            return "API"
+        if "brain" in lowered or "brain" in joined:
+            return "Brain"
+        if "executor" in lowered or "worker" in lowered:
+            return "Execution"
+        if "planner" in lowered or "discovery" in lowered:
+            return "Planning"
+        if "config" in lowered:
+            return "Configuration"
+        return "Runtime"
 
-        for node in nodes:
-            if node not in visited:
-                visit(node, [node])
-        return cycles
+    def _module_type(self, rel: str, classes: list[str], routers: list[str]) -> str:
+        lowered = rel.lower()
+        if routers or "router" in lowered:
+            return "api_router"
+        if any(name.endswith("Worker") for name in classes):
+            return "worker"
+        if any(name.endswith("Engine") for name in classes):
+            return "engine"
+        if any(name.endswith("Service") for name in classes):
+            return "service"
+        return "python_module"
 
+    def _infer_capabilities(self, name: str, rel: str, classes: list[str], functions: list[str], routers: list[str]) -> list[str]:
+        caps: list[str] = []
+        lowered = f"{name} {rel} {' '.join(classes)} {' '.join(functions)}".lower()
+        if routers:
+            caps.append("Expose API endpoints")
+        if "database" in lowered or "brain" in lowered:
+            caps.append("Inspect Brain state")
+        if "planner" in lowered or "plan" in lowered:
+            caps.append("Plan runtime work")
+        if "executor" in lowered or "execute" in lowered:
+            caps.append("Execute runtime work")
+        if "discovery" in lowered or "discover" in lowered:
+            caps.append("Discover runtime capabilities")
+        if "memory" in lowered:
+            caps.append("Harvest engineering memory")
+        if "dependency" in lowered:
+            caps.append("Analyze dependencies")
+        if not caps and classes:
+            caps.append("Provide runtime component")
+        return sorted(set(caps))
 
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    def _capabilities_from_modules(self, modules: list[DiscoveredModule]) -> list[Capability]:
+        capabilities: list[Capability] = []
+        for module in modules:
+            for cap in module.capabilities:
+                inputs = []
+                joined = f"{module.name} {module.path} {cap}".lower()
+                if "database" in joined or "brain" in joined:
+                    inputs.append("DATABASE_URL")
+                if module.routers:
+                    inputs.append("HTTP request")
+                capabilities.append(
+                    Capability(
+                        name=cap,
+                        provider=module.name,
+                        category=module.category,
+                        description=f"{module.name} provides: {cap}",
+                        inputs=inputs,
+                        outputs=[cap],
+                        dependencies=module.dependencies,
+                        health="healthy" if module.status == "healthy" else "available",
+                    )
+                )
+        return capabilities
+
+    def _dependency_graph(self, modules: list[DiscoveredModule]) -> dict[str, Any]:
+        nodes = [
+            {
+                "name": module.name,
+                "path": module.path,
+                "type": module.module_type,
+                "category": module.category,
+                "health": "healthy" if module.status == "healthy" else "available",
+            }
+            for module in modules
+        ]
+        module_names = {module.name.lower().replace("_", ""): module.name for module in modules}
+        edges: list[dict[str, str]] = []
+        missing: list[dict[str, str]] = []
+        for module in modules:
+            for dep in module.dependencies:
+                dep_key = dep.split(".")[-1].lower().replace("_", "")
+                matched = None
+                for key, candidate in module_names.items():
+                    if dep_key and (dep_key in key or key in dep_key):
+                        matched = candidate
+                        break
+                if matched and matched != module.name:
+                    edges.append({"from": matched, "to": module.name, "type": "import"})
+                elif dep.startswith(("runtime", "app")):
+                    missing.append({"module": module.name, "dependency": dep})
+        return {
+            "node_count": len(nodes),
+            "edge_count": len(edges),
+            "nodes": nodes,
+            "edges": edges,
+            "missing_dependencies": missing[:100],
+            "cycles": [],
+        }
+
+    def _recommendations(self, modules: list[DiscoveredModule], capabilities: list[Capability], graph: dict[str, Any]) -> list[Recommendation]:
+        recs: list[Recommendation] = []
+        if graph.get("missing_dependencies"):
+            recs.append(Recommendation("MEDIUM", "Normalize internal dependency declarations", f"{len(graph['missing_dependencies'])} internal dependency hints were not matched to modules.", "dependency_graph"))
+        if not any(cap.name == "Discover runtime capabilities" for cap in capabilities):
+            recs.append(Recommendation("HIGH", "Register discovery capability", "Discovery engine capability is not visible.", "capability_registry"))
+        try:
+            queue = RuntimePlanner().queue()
+            if queue.get("queue_depth", 0) > 0:
+                recs.append(Recommendation("HIGH", "Execute planner queue", f"{queue.get('queue_depth')} planner-selected modules are ready to run.", "runtime_planner"))
+        except Exception:
+            recs.append(Recommendation("MEDIUM", "Check RuntimePlanner", "Planner queue could not be evaluated.", "runtime_planner"))
+        recs.append(Recommendation("LOW", "Persist discovery results into Brain memory", "BUILD-014 writes a file-backed cache; BUILD-015 should persist discovery snapshots.", "brain_sync"))
+        return recs
+
+    def _summary(self, modules: list[DiscoveredModule], capabilities: list[Capability], graph: dict[str, Any], recommendations: list[Recommendation]) -> dict[str, Any]:
+        healthy = len([module for module in modules if module.status == "healthy"])
+        return {
+            "modules": len(modules),
+            "capabilities": len(capabilities),
+            "healthy": healthy,
+            "degraded": len([module for module in modules if module.status == "degraded"]),
+            "graph_nodes": graph.get("node_count", 0),
+            "graph_edges": graph.get("edge_count", 0),
+            "recommendations": len(recommendations),
+            "brain_connected": any("DATABASE_URL" in cap.inputs for cap in capabilities),
+        }
