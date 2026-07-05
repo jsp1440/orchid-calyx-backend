@@ -20,6 +20,7 @@ from app.routers import (
 from runtime.router_fastapi import router as runtime_router
 from runtime.cds_router import router as cds_router
 from runtime.planner_router import router as planner_router
+from runtime.constitutional_router import router as constitutional_router
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
@@ -58,7 +59,7 @@ def runner_health():
         "autoloop_enabled": AUTO_LOOP_ENABLED,
         "interval_seconds": AUTO_LOOP_INTERVAL_SECONDS,
         "active_mode": ACTIVE_MODE,
-        "mode": "build_012c_runtime_planner",
+        "mode": "build_034_constitutional_orchestrator",
     }
 
 
@@ -70,6 +71,7 @@ def runner_summary():
         {"module_name": "Judging", "state": "functional", "priority": 96},
         {"module_name": "Awards", "state": "functional", "priority": 95},
         {"module_name": "Mycorrhiza", "state": "functional", "priority": 94},
+        {"module_name": "Constitutional Orchestrator", "state": "functional", "priority": 99},
     ]
 
     jobs: list[dict[str, Any]] = []
@@ -139,6 +141,7 @@ def run_once():
         "optimize_judging",
         "optimize_awards",
         "optimize_mycorrhiza",
+        "optimize_constitutional_orchestrator",
     ]
 
     created: list[str] = []
@@ -479,6 +482,17 @@ def run_job_logic(job_name: str):
                     "timestamp": utc_now(),
                 }
 
+            if job_name == "optimize_constitutional_orchestrator":
+                from runtime.constitutional_orchestrator import orchestrator
+
+                return {
+                    "module": "constitutional_orchestrator",
+                    "status": "completed",
+                    "orchestrator_status": orchestrator.status(),
+                    "message": "Constitutional orchestrator guardrail kernel checked.",
+                    "timestamp": utc_now(),
+                }
+
             if job_name.startswith("job_"):
                 return {
                     "module": "downstream_executor",
@@ -530,6 +544,7 @@ app.include_router(reference_docs.router)
 app.include_router(runtime_router)
 app.include_router(cds_router)
 app.include_router(planner_router)
+app.include_router(constitutional_router)
 
 from app.routers import orchid_widgets
 
