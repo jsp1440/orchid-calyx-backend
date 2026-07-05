@@ -3,6 +3,8 @@
 Provides:
 - GET /api/connectors - List all connectors and their status
 - GET /api/connectors/health - Aggregate health check
+- GET /api/connectors/tasks - List supported tasks for all connectors
+- GET /api/connectors/tasks/{connector} - List supported tasks for one connector
 - POST /api/connectors/execute - Execute a task through a connector
 """
 
@@ -58,6 +60,33 @@ def parse_kwargs(raw_kwargs: str | None) -> dict[str, Any]:
     return parsed
 
 
+def connector_task_payload(name: str) -> dict[str, Any]:
+    """Return a normalized task/capability payload for one connector."""
+    registry = get_registry()
+    connector = registry.get_connector(name)
+    if connector is None:
+        raise HTTPException(status_code=404, detail=f"Connector not found: {name}")
+
+    try:
+        health_info = connector.health()
+    except Exception as exc:
+        logger.error("Failed to read connector health for task discovery: %s", name, exc_info=True)
+        health_info = {"status": "unhealthy", "error": str(exc)}
+
+    supported_tasks = health_info.get("supported_tasks") or []
+    if not isinstance(supported_tasks, list):
+        supported_tasks = []
+
+    return {
+        "name": name,
+        "healthy": health_info.get("status") == "healthy",
+        "status": health_info.get("status"),
+        "mode": health_info.get("mode"),
+        "supported_tasks": supported_tasks,
+        "task_count": len(supported_tasks),
+    }
+
+
 @router.get("")
 def list_connectors() -> dict[str, Any]:
     """List all discovered connectors and their health status.
@@ -100,6 +129,30 @@ def connector_health() -> dict[str, Any]:
     """
     registry = get_registry()
     return registry.health()
+
+
+@router.get("/tasks")
+def connector_tasks() -> dict[str, Any]:
+    """List supported tasks for all discovered connectors."""
+    registry = get_registry()
+    connectors = [connector_task_payload(name) for name in registry.list_connectors()]
+    return {
+        "build": "BUILD-027",
+        "status": "connector_tasks_ready",
+        "total": len(connectors),
+        "connectors": connectors,
+    }
+
+
+@router.get("/tasks/{connector}")
+def connector_tasks_for(connector: str) -> dict[str, Any]:
+    """List supported tasks for one connector."""
+    payload = connector_task_payload(connector)
+    return {
+        "build": "BUILD-027",
+        "status": "connector_tasks_ready",
+        "connector": payload,
+    }
 
 
 @router.post("/execute")
