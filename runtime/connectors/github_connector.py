@@ -1,9 +1,10 @@
 """Read-only GitHub connector for Calyx.
 
 BUILD-021 established the first production connector on top of the
-BUILD-020 Connector Execution Framework. BUILD-023 expands it with safe
-file-inspection tasks so Calyx can inspect repository structure and source
-files before later builds add write capabilities.
+BUILD-020 Connector Execution Framework. BUILD-023 expanded it with safe
+file-inspection tasks. BUILD-025 adds a deterministic repository audit task
+so Calyx can inspect repository structure and recommend next actions before
+later builds add write capabilities.
 """
 
 from __future__ import annotations
@@ -18,21 +19,7 @@ from ..connector_interface import ConnectorInterface
 
 
 class GitHubConnector(ConnectorInterface):
-    """Read-only GitHub repository inspection connector.
-
-    Supported tasks:
-    - status / repo_status: repository metadata
-    - list_open_prs: recent open pull requests
-    - list_recent_commits: recent commits on the default branch
-    - branch_status: branch metadata and latest commit
-    - repo_tree: recursive repository tree from a branch
-    - list_files: filtered file listing from the repository tree
-    - get_file: decoded UTF-8 file contents by path
-
-    This connector is dependency-light and does not require PyGithub. It uses
-    the public GitHub REST API through urllib. Private repositories require a
-    token via CALYX_GITHUB_TOKEN or GITHUB_TOKEN.
-    """
+    """Read-only GitHub repository inspection connector."""
 
     default_repo = "jsp1440/orchid-calyx-backend"
 
@@ -57,6 +44,7 @@ class GitHubConnector(ConnectorInterface):
                 "repo_tree",
                 "list_files",
                 "get_file",
+                "repo_audit",
             ],
             "timestamp": self._now(),
         }
@@ -85,6 +73,8 @@ class GitHubConnector(ConnectorInterface):
             if not path:
                 raise ValueError("get_file requires kwargs.path")
             return self._get_file(repo, path, branch)
+        if task == "repo_audit":
+            return self._repo_audit(repo, branch)
 
         raise ValueError(f"Unknown GitHub task: {task}")
 
@@ -212,6 +202,86 @@ class GitHubConnector(ConnectorInterface):
             "encoding": encoding,
             "content": decoded,
             "html_url": data.get("html_url"),
+        }
+
+    def _repo_audit(self, repo: str, branch: str) -> dict[str, Any]:
+        status = self._repo_status(repo)
+        branch_status = self._branch_status(repo, branch)
+        open_prs = self._list_open_prs(repo, 20)
+        recent_commits = self._list_recent_commits(repo, 10)
+        files_payload = self._list_files(repo, branch, 500)
+        files = files_payload.get("files", [])
+        paths = [item.get("path") for item in files if item.get("path")]
+
+        key_paths = [
+            "app/main.py",
+            "runtime/connector_routes.py",
+            "runtime/connector_registry.py",
+            "runtime/connectors/github_connector.py",
+            "README.md",
+            "render.yaml",
+            "requirements.txt",
+        ]
+        key_files = []
+        for path in key_paths:
+            if path in paths:
+                file_info = self._get_file(repo, path, branch)
+                content = file_info.get("content") or ""
+                key_files.append(
+                    {
+                        "path": path,
+                        "size": file_info.get("size"),
+                        "sha": file_info.get("sha"),
+                        "line_count": len(content.splitlines()),
+                        "contains_fastapi_router": "APIRouter" in content or "include_router" in content,
+                        "contains_connector_reference": "connector" in content.lower(),
+                    }
+                )
+
+        router_files = [path for path in paths if path.startswith("app/routers/") and path.endswith(".py")]
+        runtime_files = [path for path in paths if path.startswith("runtime/") and path.endswith(".py")]
+        connector_files = [path for path in paths if path.startswith("runtime/connectors/") and path.endswith(".py")]
+        test_files = [path for path in paths if path.startswith("tests/") and path.endswith(".py")]
+        doc_files = [path for path in paths if path.startswith("docs/") or path.endswith(".md")]
+
+        risks: list[str] = []
+        if not test_files:
+            risks.append("No Python test files were found in the first 500 repository files returned by GitHub.")
+        if "runtime/connector_routes.py" not in paths:
+            risks.append("Connector route module was not found in the repository tree.")
+        if "runtime/connectors/github_connector.py" not in paths:
+            risks.append("GitHub connector module was not found in the repository tree.")
+        if open_prs.get("count", 0) > 0:
+            risks.append("Open pull requests are present and should be reviewed before major connector changes.")
+
+        next_actions = [
+            "Add a dedicated tasks/capabilities endpoint so clients can discover supported connector tasks without reading health payloads.",
+            "Add route-level tests for kwargs parsing and connector execution error handling.",
+            "Add repository audit persistence so Calyx can compare repo health over time.",
+            "Keep GitHub connector read-only until branch and PR creation are protected by explicit approvals.",
+        ]
+
+        return {
+            "build": "BUILD-025",
+            "status": "repo_audit_complete",
+            "repo": repo,
+            "branch": branch,
+            "repo_status": status,
+            "branch_status": branch_status,
+            "inventory": {
+                "files_sampled": len(paths),
+                "router_files": router_files,
+                "runtime_file_count": len(runtime_files),
+                "connector_files": connector_files,
+                "test_file_count": len(test_files),
+                "doc_file_count": len(doc_files),
+            },
+            "key_files": key_files,
+            "open_prs": open_prs,
+            "recent_commits": recent_commits,
+            "risks": risks,
+            "recommended_next_actions": next_actions,
+            "timestamp": self._now(),
         }
 
     def _request(self, path: str) -> Any:
