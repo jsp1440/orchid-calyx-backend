@@ -1,4 +1,8 @@
-"""FastAPI endpoints for runtime planning, execution, Brain integration, autonomous discovery, discovery snapshots, knowledge gaps, diagnostics, connector planning, and connector runtime scaffolds."""
+"""FastAPI endpoints for runtime planning, execution, Brain integration, autonomous discovery, discovery snapshots, knowledge gaps, diagnostics, connector planning, and connector execution framework.
+
+BUILD-020: Includes the new generic Connector Execution Framework endpoints at /api/connectors
+BUILD-019: Maintains backward compatibility with connector scaffold endpoints at /api/runner/connector-scaffolds
+"""
 
 from __future__ import annotations
 
@@ -9,6 +13,7 @@ from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
 from .connector_planner import BrainConnectorPlanner
 from .connector_runtime import ConnectorRuntimeBuilder
+from .connector_routes import router as connector_router
 from .discovery_memory import DiscoveryMemoryStore
 from .knowledge_gap_diagnostics import KnowledgeGapDiagnosticsEngine
 from .knowledge_gap_discovery import KnowledgeGapDiscoveryEngine
@@ -17,6 +22,10 @@ from .runtime_planner import RuntimePlanner
 
 
 router = APIRouter(prefix="/api/runner", tags=["Calyx Runtime Planner"])
+
+# Include BUILD-020 connector execution framework routes
+# These are at /api/connectors (not /api/runner/connectors)
+# This is done in the main app initialization
 
 
 def planner() -> RuntimePlanner:
