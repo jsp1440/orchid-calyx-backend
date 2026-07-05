@@ -2,9 +2,9 @@
 
 BUILD-021 established the first production connector on top of the
 BUILD-020 Connector Execution Framework. BUILD-023 expanded it with safe
-file-inspection tasks. BUILD-025 adds a deterministic repository audit task
-so Calyx can inspect repository structure and recommend next actions before
-later builds add write capabilities.
+file-inspection tasks. BUILD-025 added a deterministic repository audit task.
+BUILD-026 adds an autonomous repository engineer task that turns the audit
+into a prioritized engineering queue without writing to GitHub.
 """
 
 from __future__ import annotations
@@ -45,6 +45,8 @@ class GitHubConnector(ConnectorInterface):
                 "list_files",
                 "get_file",
                 "repo_audit",
+                "repo_engineer",
+                "engineering_queue",
             ],
             "timestamp": self._now(),
         }
@@ -75,6 +77,8 @@ class GitHubConnector(ConnectorInterface):
             return self._get_file(repo, path, branch)
         if task == "repo_audit":
             return self._repo_audit(repo, branch)
+        if task in {"repo_engineer", "engineering_queue"}:
+            return self._repo_engineer(repo, branch)
 
         raise ValueError(f"Unknown GitHub task: {task}")
 
@@ -281,6 +285,156 @@ class GitHubConnector(ConnectorInterface):
             "recent_commits": recent_commits,
             "risks": risks,
             "recommended_next_actions": next_actions,
+            "timestamp": self._now(),
+        }
+
+    def _repo_engineer(self, repo: str, branch: str) -> dict[str, Any]:
+        audit = self._repo_audit(repo, branch)
+        inventory = audit.get("inventory", {})
+        key_files = audit.get("key_files", [])
+        key_file_paths = {item.get("path") for item in key_files}
+        risks = audit.get("risks", [])
+        open_pr_count = (audit.get("open_prs") or {}).get("count", 0)
+
+        tasks: list[dict[str, Any]] = []
+
+        def add_task(
+            task_id: str,
+            title: str,
+            priority: int,
+            rationale: str,
+            target_files: list[str] | None = None,
+            acceptance: list[str] | None = None,
+        ) -> None:
+            tasks.append(
+                {
+                    "task_id": task_id,
+                    "title": title,
+                    "priority": priority,
+                    "status": "proposed",
+                    "mode": "review_required",
+                    "rationale": rationale,
+                    "target_files": target_files or [],
+                    "acceptance_criteria": acceptance or [],
+                }
+            )
+
+        add_task(
+            "GH-ENG-001",
+            "Add connector task discovery endpoint",
+            95,
+            "Clients currently discover connector capabilities indirectly through health payloads. A dedicated endpoint will reduce Swagger confusion and make connector usage self-describing.",
+            ["runtime/connector_routes.py", "runtime/connector_registry.py"],
+            [
+                "GET /api/connectors/tasks returns supported tasks for all connectors.",
+                "GET /api/connectors/tasks/{connector} returns supported tasks for one connector.",
+                "Unknown connector returns 404.",
+            ],
+        )
+
+        add_task(
+            "GH-ENG-002",
+            "Add tests for connector kwargs parsing",
+            92,
+            "BUILD-024 fixed a production bug where Swagger kwargs were not parsed before connector execution. Route-level tests should lock this behavior down.",
+            ["runtime/connector_routes.py", "tests/test_connector_routes.py"],
+            [
+                "POST /api/connectors/execute parses kwargs JSON object strings.",
+                "Invalid kwargs JSON returns HTTP 400.",
+                "Non-object kwargs returns HTTP 400.",
+            ],
+        )
+
+        add_task(
+            "GH-ENG-003",
+            "Persist repository audit snapshots",
+            86,
+            "BUILD-025 produces a useful live audit, but Calyx cannot yet compare repository health over time.",
+            ["runtime/connectors/github_connector.py", "runtime/planner_router.py"],
+            [
+                "Repo audit results can be written to a durable store or runtime artifact directory.",
+                "Latest audit can be retrieved without re-running GitHub API calls.",
+                "Audit history includes timestamp and commit SHA.",
+            ],
+        )
+
+        add_task(
+            "GH-ENG-004",
+            "Add guarded GitHub write plan without enabling writes",
+            78,
+            "The connector is intentionally read-only. The next architecture step is a written plan for branch/PR creation with explicit approvals before code write support is added.",
+            ["docs/BUILD-026-github-write-safety.md"],
+            [
+                "Document branch creation, file update, and PR opening flow.",
+                "Require explicit human approval before write operations.",
+                "Define rollback and audit log requirements.",
+            ],
+        )
+
+        if inventory.get("test_file_count", 0) < 10:
+            add_task(
+                "GH-ENG-005",
+                "Expand backend regression tests",
+                74,
+                "The audit found a relatively small number of tests for a growing runtime system.",
+                ["tests/"],
+                [
+                    "Add tests for GitHub connector read-only tasks.",
+                    "Add tests for repo_audit and repo_engineer task outputs.",
+                ],
+            )
+
+        if "render.yaml" not in key_file_paths:
+            add_task(
+                "GH-ENG-006",
+                "Document Render deployment configuration",
+                62,
+                "The audit did not find render.yaml among key files. Runtime deployment settings are currently external to the repo or not sampled.",
+                ["README.md", "docs/"],
+                [
+                    "Document current Render start command.",
+                    "Document required environment variables.",
+                    "Document deployment verification endpoints.",
+                ],
+            )
+
+        if open_pr_count > 0:
+            add_task(
+                "GH-ENG-007",
+                "Review open pull requests before new engineering changes",
+                90,
+                "Open PRs are present. New code changes should not proceed until they are reviewed or merged.",
+                [],
+                ["Open PR list reviewed.", "Conflicts or duplicate efforts identified."],
+            )
+
+        for idx, risk in enumerate(risks, start=1):
+            add_task(
+                f"GH-RISK-{idx:03d}",
+                "Address repository audit risk",
+                88,
+                risk,
+                [],
+                ["Risk is either resolved or explicitly accepted."],
+            )
+
+        tasks = sorted(tasks, key=lambda item: item["priority"], reverse=True)
+
+        return {
+            "build": "BUILD-026",
+            "status": "engineering_queue_ready",
+            "repo": repo,
+            "branch": branch,
+            "source_audit_status": audit.get("status"),
+            "source_commit_sha": (audit.get("branch_status") or {}).get("commit_sha"),
+            "queue_summary": {
+                "total": len(tasks),
+                "highest_priority": tasks[0]["priority"] if tasks else None,
+                "mode": "read_only_review_required",
+            },
+            "engineering_task_queue": tasks,
+            "recommended_next_task": tasks[0] if tasks else None,
+            "audit_inventory": audit.get("inventory", {}),
             "timestamp": self._now(),
         }
 
