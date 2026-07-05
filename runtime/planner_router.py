@@ -1,4 +1,4 @@
-"""FastAPI endpoints for runtime planning, execution, Brain integration, autonomous discovery, discovery snapshots, knowledge gaps, diagnostics, and connector planning."""
+"""FastAPI endpoints for runtime planning, execution, Brain integration, autonomous discovery, discovery snapshots, knowledge gaps, diagnostics, connector planning, and connector runtime scaffolds."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from .autonomous_discovery import AutonomousDiscoveryEngine
 from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
 from .connector_planner import BrainConnectorPlanner
+from .connector_runtime import ConnectorRuntimeBuilder
 from .discovery_memory import DiscoveryMemoryStore
 from .knowledge_gap_diagnostics import KnowledgeGapDiagnosticsEngine
 from .knowledge_gap_discovery import KnowledgeGapDiscoveryEngine
@@ -44,6 +45,10 @@ def diagnostic_engine() -> KnowledgeGapDiagnosticsEngine:
 
 def connector_planner() -> BrainConnectorPlanner:
     return BrainConnectorPlanner()
+
+
+def connector_runtime() -> ConnectorRuntimeBuilder:
+    return ConnectorRuntimeBuilder()
 
 
 def brain_worker(module_id: str, module_name: str, action: str) -> BrainIntegrationWorker:
@@ -355,3 +360,71 @@ def connector_plan_queue(limit: int = Query(default=10, ge=1, le=50)):
 @router.get("/connector-plans/dashboard")
 def connector_plan_dashboard():
     return connector_planner().dashboard()
+
+
+@router.post("/connector-scaffolds/build")
+def build_connector_scaffolds(limit: int | None = Query(default=None, ge=1, le=50)):
+    return connector_runtime().build_queue(limit=limit, write_cache=True)
+
+
+@router.post("/connector-scaffolds/build/{plan_id}")
+def build_connector_scaffold(plan_id: str):
+    result = connector_runtime().build_plan(plan_id, write_cache=True)
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=result)
+    return result
+
+
+@router.get("/connector-scaffolds")
+def connector_scaffolds():
+    return connector_runtime().latest()
+
+
+@router.get("/connector-scaffolds/runs")
+def connector_scaffold_runs(limit: int = Query(default=20, ge=1, le=100)):
+    return connector_runtime().runs(limit=limit)
+
+
+@router.get("/connector-scaffolds/runs/{run_id}")
+def connector_scaffold_run(run_id: str):
+    result = connector_runtime().get_run(run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Connector scaffold run not found: {run_id}")
+    return result
+
+
+@router.get("/connector-scaffolds/queue")
+def connector_scaffold_queue(limit: int = Query(default=10, ge=1, le=50)):
+    return connector_runtime().queue(limit=limit)
+
+
+@router.get("/connector-scaffolds/dashboard")
+def connector_scaffold_dashboard():
+    return connector_runtime().dashboard()
+
+
+@router.get("/connectors/{slug}")
+def connector_runtime_endpoint(slug: str):
+    expected_prefix = f"/api/runner/connectors/{slug}"
+    for row in connector_runtime().latest().get("runs", []):
+        if row.get("scaffold", {}).get("endpoint_prefix") == expected_prefix:
+            return {"build": "BUILD-019", "status": "connector_scaffold_available", "connector": row}
+    raise HTTPException(status_code=404, detail=f"Connector scaffold not found: {slug}")
+
+
+@router.get("/connectors/{slug}/dashboard")
+def connector_runtime_dashboard(slug: str):
+    payload = connector_runtime_endpoint(slug)
+    connector = payload.get("connector", {})
+    scaffold = connector.get("scaffold", {})
+    return {
+        "build": "BUILD-019",
+        "status": payload.get("status"),
+        "domain": connector.get("domain"),
+        "priority": connector.get("priority"),
+        "adapter_name": scaffold.get("adapter_name"),
+        "module_path": scaffold.get("module_path"),
+        "connector_targets": scaffold.get("connector_targets", []),
+        "validation_contract": scaffold.get("validation_contract", {}),
+        "next_actions": scaffold.get("next_actions", []),
+    }
