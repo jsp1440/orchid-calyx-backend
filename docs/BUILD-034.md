@@ -24,7 +24,7 @@ Provides:
 
 ### Runtime API endpoints
 
-Added to `runtime/router_fastapi.py` under `/api/runtime/constitutional/*`:
+The orchestrator is exposed through runtime endpoints:
 
 - `GET /api/runtime/constitutional/status`
 - `GET /api/runtime/constitutional/policies`
@@ -32,6 +32,33 @@ Added to `runtime/router_fastapi.py` under `/api/runtime/constitutional/*`:
 - `GET /api/runtime/constitutional/decision-ledger`
 - `GET /api/runtime/constitutional/governance-questions`
 - `POST /api/runtime/constitutional/evaluate`
+
+### Runner API endpoints
+
+BUILD-034 also adds a dedicated runner-oriented router:
+
+- `runtime/constitutional_router.py`
+
+Exposed endpoints:
+
+- `GET /api/runner/constitutional/status`
+- `GET /api/runner/constitutional/policies`
+- `GET /api/runner/constitutional/missions`
+- `GET /api/runner/constitutional/decision-ledger`
+- `GET /api/runner/constitutional/governance-questions`
+- `POST /api/runner/constitutional/evaluate`
+
+### Main application wiring
+
+- `app/main.py`
+
+Updates:
+
+- Runner mode reports `build_034_constitutional_orchestrator`.
+- Runner summary includes `Constitutional Orchestrator`.
+- `run-once` enqueues `optimize_constitutional_orchestrator`.
+- `execute-next` can run `optimize_constitutional_orchestrator`.
+- The constitutional router is included in FastAPI startup.
 
 ### Governance schema foundation
 
@@ -44,12 +71,6 @@ Creates:
 - `oc_governance.decision_ledger`
 - `oc_governance.governance_questions`
 - `oc_governance.checkpoints`
-
-### Additional kernel artifact
-
-- `runtime/constitutional_kernel.py`
-
-Preserves a dataclass-based policy evaluator artifact for future consolidation with the runtime orchestrator.
 
 ## Autonomy levels
 
