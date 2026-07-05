@@ -25,7 +25,7 @@ class GitHubConnector(ConnectorInterface):
 
     This connector is dependency-light and does not require PyGithub. It uses
     the public GitHub REST API through urllib. Private repositories require a
-    token via GITHUB_TOKEN.
+    token via CALYX_GITHUB_TOKEN or GITHUB_TOKEN.
     """
 
     default_repo = "jsp1440/orchid-calyx-backend"
@@ -36,7 +36,7 @@ class GitHubConnector(ConnectorInterface):
 
     def health(self) -> dict[str, Any]:
         repo = os.environ.get("GITHUB_REPOSITORY", self.default_repo)
-        token_configured = bool(os.environ.get("GITHUB_TOKEN"))
+        token_configured = bool(self._token())
         return {
             "status": "healthy",
             "name": self.name,
@@ -121,7 +121,7 @@ class GitHubConnector(ConnectorInterface):
         request = urllib.request.Request(url)
         request.add_header("Accept", "application/vnd.github+json")
         request.add_header("X-GitHub-Api-Version", "2022-11-28")
-        token = os.environ.get("GITHUB_TOKEN")
+        token = self._token()
         if token:
             request.add_header("Authorization", f"Bearer {token}")
 
@@ -131,6 +131,9 @@ class GitHubConnector(ConnectorInterface):
         except urllib.error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"GitHub API error {exc.code}: {details}") from exc
+
+    def _token(self) -> str | None:
+        return os.environ.get("CALYX_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
