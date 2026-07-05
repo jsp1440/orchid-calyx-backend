@@ -8,6 +8,7 @@ Provides:
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -30,6 +31,31 @@ def get_registry() -> ConnectorRegistry:
         _registry = ConnectorRegistry()
         _registry.discover()
     return _registry
+
+
+def parse_kwargs(raw_kwargs: str | None) -> dict[str, Any]:
+    """Parse JSON kwargs from Swagger query string input.
+
+    Swagger sends kwargs as a query parameter string, so `**kwargs` in the
+    route signature never receives nested values. This helper accepts either
+    an empty value, `{}`, or a JSON object string and returns a dictionary that
+    can be passed to connector.execute(..., **kwargs).
+    """
+    if raw_kwargs is None or raw_kwargs.strip() == "":
+        return {}
+
+    try:
+        parsed = json.loads(raw_kwargs)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="kwargs must be valid JSON") from exc
+
+    if parsed in (None, []):
+        return {}
+
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail="kwargs must be a JSON object")
+
+    return parsed
 
 
 @router.get("")
@@ -80,21 +106,21 @@ def connector_health() -> dict[str, Any]:
 def execute_task(
     connector: str = Query(..., description="Connector name"),
     task: str = Query(..., description="Task to execute"),
-    **kwargs,
+    kwargs: str | None = Query(default=None, description="JSON object of task-specific parameters"),
 ) -> dict[str, Any]:
     """Execute a task through a connector.
 
     Args:
         connector: Name of the connector
         task: Task to execute
-        **kwargs: Task-specific parameters
+        kwargs: JSON object string of task-specific parameters
 
     Returns:
         Execution result with status, result/error, and execution time
 
     Raises:
         404: If connector not found
-        400: If task execution fails
+        400: If task execution fails or kwargs is invalid
     """
     if not connector:
         logger.warning("Execute request with missing connector name")
@@ -104,9 +130,9 @@ def execute_task(
         logger.warning("Execute request with missing task")
         raise HTTPException(status_code=400, detail="task parameter is required")
 
+    task_kwargs = parse_kwargs(kwargs)
     registry = get_registry()
 
-    # Check if connector exists
     if registry.get_connector(connector) is None:
         logger.warning("Execute request for unknown connector: %s", connector)
         raise HTTPException(
@@ -114,9 +140,8 @@ def execute_task(
             detail=f"Connector not found: {connector}",
         )
 
-    # Execute the task
     try:
-        result = registry.execute(connector, task, **kwargs)
+        result = registry.execute(connector, task, **task_kwargs)
         if result["status"] == "failure":
             logger.warning(
                 "Task '%s' failed on connector '%s': %s",
@@ -126,6 +151,8 @@ def execute_task(
             )
             raise HTTPException(status_code=400, detail=result.get("error"))
         return result
+    except HTTPException:
+        raise
     except ValueError as exc:
         logger.error("Invalid connector/task: %s", str(exc))
         raise HTTPException(status_code=400, detail=str(exc)) from exc
