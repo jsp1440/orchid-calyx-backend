@@ -56,7 +56,6 @@ class ConnectorRegistry:
             self.connectors_dir.mkdir(parents=True, exist_ok=True)
             return
 
-        # Discover Python files
         py_files = [f for f in self.connectors_dir.glob("*.py") if f.name != "__init__.py"]
         logger.info("Found %d potential connector files", len(py_files))
 
@@ -76,21 +75,16 @@ class ConnectorRegistry:
             py_file: Path to the Python file
         """
         module_name = py_file.stem
+        package_module_name = f"runtime.connectors.{module_name}"
 
         try:
-            # Dynamically import the module
-            spec = importlib.util.spec_from_file_location(module_name, py_file)
-            if spec is None or spec.loader is None:
-                raise ImportError(f"Cannot load spec for {py_file}")
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+            module = importlib.import_module(package_module_name)
 
-            # Find classes implementing ConnectorInterface
             for name, obj in inspect.getmembers(module, inspect.isclass):
                 if (
                     obj is not ConnectorInterface
                     and issubclass(obj, ConnectorInterface)
-                    and hasattr(obj, "__abstractmethods__") is False
+                    and not inspect.isabstract(obj)
                 ):
                     try:
                         instance = obj()
