@@ -126,7 +126,7 @@ class ConnectorRuntimeBuilder:
         scaffold = ConnectorScaffold(
             adapter_name=f"{domain}ConnectorAdapter".replace(" ", ""),
             module_path=f"runtime/connectors/{slug}_connector.py",
-            endpoint_prefix=f"/api/runner/connectors/{slug}",
+            endpoint_prefix="/api/runner/connector-runs",
             connector_targets=list(plan.get("connector_targets", []) or []),
             validation_contract={
                 "plan_id": plan.get("plan_id"),
@@ -137,7 +137,7 @@ class ConnectorRuntimeBuilder:
             },
             next_actions=[
                 f"Create {domain} adapter scaffold at runtime/connectors/{slug}_connector.py.",
-                f"Expose {domain} connector endpoints under /api/runner/connectors/{slug}.",
+                "Expose connector records through the mounted /api/runner/connector-runs routes.",
                 f"Map Brain evidence tables into {domain} source-count and provenance output.",
                 f"Add tests for {domain} connector dashboard and validation contract.",
             ],
