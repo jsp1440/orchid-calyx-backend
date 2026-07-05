@@ -3,8 +3,9 @@
 BUILD-021 established the first production connector on top of the
 BUILD-020 Connector Execution Framework. BUILD-023 expanded it with safe
 file-inspection tasks. BUILD-025 added a deterministic repository audit task.
-BUILD-026 adds an autonomous repository engineer task that turns the audit
-into a prioritized engineering queue without writing to GitHub.
+BUILD-026 added an autonomous repository engineer task. BUILD-028 adds a
+frontend audit task so Calyx can inspect the Orchid Continuum frontend before
+proposing repair work.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ class GitHubConnector(ConnectorInterface):
     """Read-only GitHub repository inspection connector."""
 
     default_repo = "jsp1440/orchid-calyx-backend"
+    default_frontend_repo = "jsp1440/orchid-continuum-frontend"
 
     @property
     def name(self) -> str:
@@ -34,6 +36,7 @@ class GitHubConnector(ConnectorInterface):
             "status": "healthy",
             "name": self.name,
             "repo": repo,
+            "frontend_repo": os.environ.get("CALYX_FRONTEND_REPOSITORY", self.default_frontend_repo),
             "token_configured": token_configured,
             "mode": "read_only",
             "supported_tasks": [
@@ -47,6 +50,7 @@ class GitHubConnector(ConnectorInterface):
                 "repo_audit",
                 "repo_engineer",
                 "engineering_queue",
+                "frontend_audit",
             ],
             "timestamp": self._now(),
         }
@@ -79,6 +83,14 @@ class GitHubConnector(ConnectorInterface):
             return self._repo_audit(repo, branch)
         if task in {"repo_engineer", "engineering_queue"}:
             return self._repo_engineer(repo, branch)
+        if task == "frontend_audit":
+            frontend_repo = (
+                kwargs.get("frontend_repo")
+                or kwargs.get("repo")
+                or os.environ.get("CALYX_FRONTEND_REPOSITORY")
+                or self.default_frontend_repo
+            )
+            return self._frontend_audit(frontend_repo, branch)
 
         raise ValueError(f"Unknown GitHub task: {task}")
 
@@ -435,6 +447,142 @@ class GitHubConnector(ConnectorInterface):
             "engineering_task_queue": tasks,
             "recommended_next_task": tasks[0] if tasks else None,
             "audit_inventory": audit.get("inventory", {}),
+            "timestamp": self._now(),
+        }
+
+    def _frontend_audit(self, repo: str, branch: str) -> dict[str, Any]:
+        status = self._repo_status(repo)
+        branch_status = self._branch_status(repo, branch)
+        open_prs = self._list_open_prs(repo, 20)
+        files_payload = self._list_files(repo, branch, 1000)
+        files = files_payload.get("files", [])
+        paths = [item.get("path") for item in files if item.get("path")]
+
+        source_files = [path for path in paths if path.startswith("src/") and path.endswith((".ts", ".tsx", ".js", ".jsx"))]
+        component_files = [path for path in source_files if "/components/" in path or path.startswith("src/components/")]
+        route_files = [path for path in source_files if "route" in path.lower() or "page" in path.lower() or "router" in path.lower()]
+        config_files = [path for path in paths if path in {"package.json", "vite.config.ts", "vite.config.js", "next.config.js", "tsconfig.json", "render.yaml"}]
+
+        priority_names = [
+            "DailyGenusFeature",
+            "GenusOfDay",
+            "genusData",
+            "imageQuality",
+            "backendConfig",
+            "HomeAtlas",
+            "KnowledgeGraph",
+            "Species",
+            "Atlas",
+        ]
+        priority_files = [
+            path for path in paths
+            if any(name.lower() in path.lower() for name in priority_names)
+        ]
+
+        inspected_files = []
+        for path in (config_files + priority_files)[:20]:
+            try:
+                file_info = self._get_file(repo, path, branch)
+                content = file_info.get("content") or ""
+                inspected_files.append(
+                    {
+                        "path": path,
+                        "size": file_info.get("size"),
+                        "sha": file_info.get("sha"),
+                        "line_count": len(content.splitlines()),
+                        "mentions_backend": "backend" in content.lower() or "/api/" in content,
+                        "mentions_genus": "genus" in content.lower(),
+                        "mentions_image_filtering": any(term in content.lower() for term in ["herbarium", "specimen", "imagequality", "quality"]),
+                    }
+                )
+            except Exception as exc:
+                inspected_files.append({"path": path, "error": str(exc)})
+
+        risks: list[str] = []
+        if not source_files:
+            risks.append("No src/ frontend source files were found; repository may not be the active frontend repo or the tree sample is incomplete.")
+        if not priority_files:
+            risks.append("No obvious Genus of the Day, Atlas, backend config, or Knowledge Graph files were found by filename search.")
+        if open_prs.get("count", 0) > 0:
+            risks.append("Open frontend pull requests are present and should be reviewed before repair work begins.")
+        if "package.json" not in paths:
+            risks.append("package.json was not found; frontend build tooling could not be identified from the repo tree.")
+
+        repair_queue = [
+            {
+                "task_id": "FE-REPAIR-001",
+                "title": "Map frontend data flow for Genus of the Day",
+                "priority": 98,
+                "status": "proposed",
+                "mode": "read_only_review_required",
+                "target_files": [path for path in priority_files if "genus" in path.lower()][:10],
+                "acceptance_criteria": [
+                    "Identify the component that renders Genus of the Day.",
+                    "Identify the backend endpoint used for genus data.",
+                    "Identify where image selection/filtering occurs.",
+                ],
+            },
+            {
+                "task_id": "FE-REPAIR-002",
+                "title": "Audit image filtering for herbarium/specimen exclusion",
+                "priority": 94,
+                "status": "proposed",
+                "mode": "read_only_review_required",
+                "target_files": [path for path in priority_files if any(term in path.lower() for term in ["image", "quality", "genus"])][:10],
+                "acceptance_criteria": [
+                    "Find current filtering logic for specimen/herbarium/plate/document images.",
+                    "Confirm trusted backend image URLs are allowed.",
+                    "Prepare a patch plan before code writes are enabled.",
+                ],
+            },
+            {
+                "task_id": "FE-REPAIR-003",
+                "title": "Audit backend API configuration",
+                "priority": 90,
+                "status": "proposed",
+                "mode": "read_only_review_required",
+                "target_files": [path for path in priority_files if "config" in path.lower() or "backend" in path.lower()][:10],
+                "acceptance_criteria": [
+                    "Locate frontend backend base URL configuration.",
+                    "Verify production Render backend URL handling.",
+                    "Identify any placeholder or stale API URLs.",
+                ],
+            },
+            {
+                "task_id": "FE-REPAIR-004",
+                "title": "Audit homepage Atlas and Knowledge Graph wiring",
+                "priority": 86,
+                "status": "proposed",
+                "mode": "read_only_review_required",
+                "target_files": [path for path in priority_files if any(term in path.lower() for term in ["atlas", "graph", "knowledge"])][:10],
+                "acceptance_criteria": [
+                    "Identify homepage graph/atlas components.",
+                    "Identify backend endpoints used by those components.",
+                    "List missing or failing data dependencies.",
+                ],
+            },
+        ]
+
+        return {
+            "build": "BUILD-028",
+            "status": "frontend_audit_complete",
+            "repo": repo,
+            "branch": branch,
+            "repo_status": status,
+            "branch_status": branch_status,
+            "inventory": {
+                "files_sampled": len(paths),
+                "source_file_count": len(source_files),
+                "component_file_count": len(component_files),
+                "route_file_count": len(route_files),
+                "config_files": config_files,
+                "priority_files": priority_files[:50],
+            },
+            "inspected_files": inspected_files,
+            "open_prs": open_prs,
+            "risks": risks,
+            "frontend_repair_queue": repair_queue,
+            "recommended_next_task": repair_queue[0],
             "timestamp": self._now(),
         }
 
