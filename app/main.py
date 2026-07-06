@@ -29,12 +29,28 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 AUTO_LOOP_ENABLED = os.environ.get("OC_RUNNER_AUTOLOOP", "false").lower() == "true"
 AUTO_LOOP_INTERVAL_SECONDS = int(os.environ.get("OC_RUNNER_INTERVAL_SECONDS", "30"))
 ACTIVE_MODE = os.environ.get("OC_RUNNER_ACTIVE_MODE", "true").lower() == "true"
+RUNTIME_DISABLE_FLAGS = (
+    "CALYX_AUTONOMOUS_DISABLED",
+    "OC_RUNNER_DISABLED",
+    "CALYX_RUNTIME_DISABLED",
+)
 
 
 def require_database_url() -> str:
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is required for Calyx runner operations")
     return DATABASE_URL
+
+
+def truthy_env(value: Optional[str]) -> bool:
+    return bool(value and value.strip().lower() in {"1", "true", "yes", "on"})
+
+
+def autonomous_runtime_config_blocker() -> Optional[dict[str, str]]:
+    for key in RUNTIME_DISABLE_FLAGS:
+        if truthy_env(os.environ.get(key)):
+            return {"key": key, "value": os.environ[key]}
+    return None
 
 
 class VerificationRequest(BaseModel):
@@ -59,6 +75,8 @@ def runner_health():
         "interval_seconds": AUTO_LOOP_INTERVAL_SECONDS,
         "active_mode": ACTIVE_MODE,
         "mode": "build_012c_runtime_planner",
+        "autonomous_runtime_blocker": autonomous_runtime_config_blocker(),
+        "runtime_engine": runtime_engine.status(),
     }
 
 
@@ -302,7 +320,12 @@ def execute_all():
 
 @app.get("/api/runner/autonomous-status")
 def autonomous_status():
-    return runtime_engine.status()
+    return {
+        **runtime_engine.status(),
+        "autoloop_enabled": AUTO_LOOP_ENABLED,
+        "active_mode": ACTIVE_MODE,
+        "config_blocker": autonomous_runtime_config_blocker(),
+    }
 
 
 @app.post("/api/runner/autonomous-cycle")
@@ -312,14 +335,34 @@ def autonomous_cycle():
 
 @app.post("/api/runner/autonomous-start")
 def autonomous_start():
+    blocker = autonomous_runtime_config_blocker()
+    if blocker:
+        return {
+            "status": "runtime_disabled_by_config",
+            "config_key": blocker["key"],
+            "message": f"Unset {blocker['key']} or set it to false to enable Calyx autonomous runtime on Render.",
+            "engine": runtime_engine.status(),
+        }
+
+    runtime_engine.set_enabled(True)
     started = runtime_engine.start()
-    return {"status": "started" if started else "already_running_or_disabled", "engine": runtime_engine.status()}
+    engine = runtime_engine.status()
+    return {
+        "status": "started" if started else "already_running",
+        "engine": engine,
+    }
 
 
 @app.post("/api/runner/autonomous-stop")
-def autonomous_stop():
+def autonomous_stop(disable: bool = True):
     stopped = runtime_engine.stop()
-    return {"status": "stopped" if stopped else "still_running", "engine": runtime_engine.status()}
+    if disable:
+        runtime_engine.set_enabled(False)
+    return {
+        "status": "stopped" if stopped else "still_running",
+        "disabled": disable,
+        "engine": runtime_engine.status(),
+    }
 
 
 def utc_now() -> str:
@@ -504,7 +547,7 @@ def heartbeat_once():
 runtime_engine = RuntimeEngine(
     heartbeat=heartbeat_once,
     enqueue_jobs=run_once,
-    execute_jobs=execute_all,
+    execute_jobs=execute_next,
     interval_seconds=AUTO_LOOP_INTERVAL_SECONDS,
     enabled=AUTO_LOOP_ENABLED,
 )
@@ -512,7 +555,9 @@ runtime_engine = RuntimeEngine(
 
 @app.on_event("startup")
 def startup_event():
-    runtime_engine.start()
+    if AUTO_LOOP_ENABLED and not autonomous_runtime_config_blocker():
+        runtime_engine.set_enabled(True)
+        runtime_engine.start()
 
 
 @app.on_event("shutdown")
