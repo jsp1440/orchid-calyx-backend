@@ -1,4 +1,4 @@
-"""FastAPI router for Calyx Runtime v0.1 and BUILD-047 science endpoints."""
+"""FastAPI router for Calyx Runtime v0.1 and BUILD-048 science endpoints."""
 from typing import Any
 
 from fastapi import APIRouter
@@ -11,7 +11,13 @@ from .scheduler import CalyxHeartbeat
 from .science_registry import (
     AUDIT_ENDPOINT_TO_DEPARTMENT,
     audit_result,
+    coverage_gaps,
+    datasets,
+    department_by_id,
     departments,
+    dossier_queue,
+    harvester_status,
+    integration_status,
     mission_definitions,
     seed_missions,
     summary as science_summary,
@@ -84,6 +90,14 @@ def science_departments() -> dict[str, Any]:
     return {"departments": departments()}
 
 
+@science_router.get("/departments/{department_id}")
+def science_department_detail(department_id: str) -> dict[str, Any]:
+    try:
+        return {"department": department_by_id(department_id)}
+    except KeyError:
+        return {"status": "unknown_department", "department_id": department_id}
+
+
 @science_router.get("/missions")
 def science_missions() -> dict[str, Any]:
     return {"missions": mission_definitions()}
@@ -97,6 +111,31 @@ def science_seed_missions() -> dict[str, Any]:
 @science_router.get("/summary")
 def science_summary_endpoint() -> dict[str, Any]:
     return science_summary()
+
+
+@science_router.get("/status")
+def science_status_endpoint() -> dict[str, Any]:
+    return integration_status()
+
+
+@science_router.get("/datasets")
+def science_datasets_endpoint() -> dict[str, Any]:
+    return datasets()
+
+
+@science_router.get("/gaps")
+def science_gaps_endpoint() -> dict[str, Any]:
+    return coverage_gaps()
+
+
+@science_router.get("/harvesters")
+def science_harvesters_endpoint() -> dict[str, Any]:
+    return harvester_status()
+
+
+@science_router.get("/dossiers")
+def science_dossiers_endpoint() -> dict[str, Any]:
+    return dossier_queue()
 
 
 @science_router.post("/audit/{audit_key}")
