@@ -1,4 +1,4 @@
-"""FastAPI router for Calyx Runtime v0.1."""
+"""FastAPI router for Calyx Runtime v0.1 and BUILD-047 science endpoints."""
 from typing import Any
 
 from fastapi import APIRouter
@@ -17,10 +17,9 @@ from .science_registry import (
     summary as science_summary,
 )
 
-router = APIRouter(prefix="/api/runtime", tags=["Calyx Runtime"])
-config_router = APIRouter(prefix="/api/config", tags=["Calyx Config"])
-infrastructure_router = APIRouter(prefix="/api/infrastructure", tags=["Calyx Infrastructure"])
-science_router = APIRouter(prefix="/api/science", tags=["Orchid Continuum Science"])
+# Keep one exported router because app.main imports only `router as runtime_router`.
+# Routes are therefore declared with full API paths here.
+router = APIRouter(tags=["Calyx Runtime"])
 
 
 class ConstitutionalActionRequest(BaseModel):
@@ -32,42 +31,42 @@ class ConstitutionalActionRequest(BaseModel):
     provenance_available: bool = True
 
 
-@router.get("/heartbeat")
+@router.get("/api/runtime/heartbeat")
 def runtime_heartbeat():
     return CalyxHeartbeat().run_once()
 
 
-@router.get("/health")
+@router.get("/api/runtime/health")
 def runtime_health():
     return {"runtime": CalyxHeartbeat().run_once()}
 
 
-@router.get("/constitutional/status")
+@router.get("/api/runtime/constitutional/status")
 def runtime_constitutional_status() -> dict[str, Any]:
     return orchestrator.status()
 
 
-@router.get("/constitutional/policies")
+@router.get("/api/runtime/constitutional/policies")
 def runtime_constitutional_policies() -> dict[str, Any]:
     return orchestrator.policy_registry()
 
 
-@router.get("/constitutional/missions")
+@router.get("/api/runtime/constitutional/missions")
 def runtime_constitutional_missions() -> dict[str, Any]:
     return orchestrator.mission_registry()
 
 
-@router.get("/constitutional/decision-ledger")
+@router.get("/api/runtime/constitutional/decision-ledger")
 def runtime_constitutional_decision_ledger() -> dict[str, Any]:
     return orchestrator.decision_ledger()
 
 
-@router.get("/constitutional/governance-questions")
+@router.get("/api/runtime/constitutional/governance-questions")
 def runtime_constitutional_governance_questions() -> dict[str, Any]:
     return orchestrator.governance_questions()
 
 
-@router.post("/constitutional/evaluate")
+@router.post("/api/runtime/constitutional/evaluate")
 def runtime_constitutional_evaluate(request: ConstitutionalActionRequest) -> dict[str, Any]:
     return orchestrator.evaluate_action(
         mission_id=request.mission_id,
@@ -79,27 +78,27 @@ def runtime_constitutional_evaluate(request: ConstitutionalActionRequest) -> dic
     )
 
 
-@science_router.get("/departments")
+@router.get("/api/science/departments", tags=["Orchid Continuum Science"])
 def science_departments() -> dict[str, Any]:
     return {"departments": departments()}
 
 
-@science_router.get("/missions")
+@router.get("/api/science/missions", tags=["Orchid Continuum Science"])
 def science_missions() -> dict[str, Any]:
     return {"missions": mission_definitions()}
 
 
-@science_router.post("/seed-missions")
+@router.post("/api/science/seed-missions", tags=["Orchid Continuum Science"])
 def science_seed_missions() -> dict[str, Any]:
     return seed_missions()
 
 
-@science_router.get("/summary")
+@router.get("/api/science/summary", tags=["Orchid Continuum Science"])
 def science_summary_endpoint() -> dict[str, Any]:
     return science_summary()
 
 
-@science_router.post("/audit/{audit_key}")
+@router.post("/api/science/audit/{audit_key}", tags=["Orchid Continuum Science"])
 def science_audit(audit_key: str) -> dict[str, Any]:
     department_id = AUDIT_ENDPOINT_TO_DEPARTMENT.get(audit_key)
     if not department_id:
@@ -112,31 +111,31 @@ def science_audit(audit_key: str) -> dict[str, Any]:
     return audit_result(department_id)
 
 
-@config_router.get("/manifest")
+@router.get("/api/config/manifest", tags=["Calyx Config"])
 def config_manifest():
     return BrainConfigLoader().load_manifest()
 
 
-@config_router.get("/runtime-services")
+@router.get("/api/config/runtime-services", tags=["Calyx Config"])
 def config_runtime_services():
     return BrainConfigLoader().load_runtime_services()
 
 
-@config_router.get("/governance-policy")
+@router.get("/api/config/governance-policy", tags=["Calyx Config"])
 def config_governance_policy():
     return BrainConfigLoader().load_governance_policy()
 
 
-@config_router.get("/knowledge-preservation-policy")
+@router.get("/api/config/knowledge-preservation-policy", tags=["Calyx Config"])
 def config_knowledge_preservation_policy():
     return BrainConfigLoader().load_knowledge_preservation_policy()
 
 
-@infrastructure_router.get("/registry")
+@router.get("/api/infrastructure/registry", tags=["Calyx Infrastructure"])
 def infrastructure_registry():
     return InfrastructureRegistryService().registry()
 
 
-@infrastructure_router.get("/health")
+@router.get("/api/infrastructure/health", tags=["Calyx Infrastructure"])
 def infrastructure_health():
     return InfrastructureRegistryService().health()
