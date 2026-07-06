@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from runtime.connector_routes import router as connector_router
+from runtime.orchestrator_router import router as orchestrator_router
 from runtime.router_fastapi import config_router, infrastructure_router
 
 router = APIRouter(tags=["health"])
@@ -23,3 +24,4 @@ def system_status():
 router.include_router(config_router)
 router.include_router(infrastructure_router)
 router.include_router(connector_router)
+router.include_router(orchestrator_router)
