@@ -1,7 +1,12 @@
-"""BUILD-047 science-first mission registry and safe audit payloads.
+"""Science-first mission registry, integration coordinator, and safe audit payloads.
 
-Non-destructive Orchid Continuum scientific operations scaffold. It records audit
-intent and gaps only; it never promotes unsupported biological claims as facts.
+BUILD-047 created the science department scaffold.
+BUILD-048 adds a non-destructive integration coordinator: dataset registry,
+coverage-gap reporting, harvester health summaries, dossier queues, and
+provenance-safe work-item generation.
+
+This module records audit intent and data-readiness gaps only. It never promotes
+unsupported biological claims as facts and does not mutate external systems.
 """
 from __future__ import annotations
 
@@ -13,7 +18,7 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-DEPARTMENTS: list[dict[str, Any]] = [
+DEPARTMENTS: list[tuple[str, str, int, str, list[str]]] = [
     ("taxonomy", "Taxonomy", 100, "weekly_or_on_dataset_update", ["accepted_names", "synonyms", "taxon_resolution_gaps"]),
     ("pollination", "Pollination", 99, "daily_or_on_new_literature", ["pollinator_relationship_gaps", "pollinator_dossier_candidates"]),
     ("mycorrhiza", "Mycorrhiza and fungi", 98, "daily_or_on_new_literature", ["fungal_relationship_gaps", "fungal_dossier_candidates"]),
@@ -53,6 +58,108 @@ AUDIT_ENDPOINT_TO_DEPARTMENT = {
     "harvesters": "harvester_operations",
     "dossiers": "dossiers",
 }
+
+DATASET_REGISTRY: list[dict[str, Any]] = [
+    {
+        "dataset_id": "world_plants_orchids",
+        "display_name": "World Plants orchid taxonomy",
+        "department_id": "taxonomy",
+        "source_type": "external_dataset",
+        "integration_state": "configured_or_expected",
+        "freshness_cadence": "monthly_or_on_release",
+        "primary_entities": ["accepted orchid names", "synonyms", "distribution text", "conservation status text"],
+        "provenance_required": True,
+        "next_safe_action": "audit_taxonomy_source_mapping",
+    },
+    {
+        "dataset_id": "gbif_occurrences",
+        "display_name": "GBIF occurrence records",
+        "department_id": "geography_atlas",
+        "source_type": "external_dataset_or_harvester",
+        "integration_state": "configured_or_expected",
+        "freshness_cadence": "after_occurrence_imports",
+        "primary_entities": ["occurrences", "coordinates", "event dates", "basis of record"],
+        "provenance_required": True,
+        "next_safe_action": "audit_occurrence_elevation_coverage",
+    },
+    {
+        "dataset_id": "inat_observations",
+        "display_name": "iNaturalist observations and living images",
+        "department_id": "images",
+        "source_type": "harvester",
+        "integration_state": "configured_or_expected",
+        "freshness_cadence": "daily",
+        "primary_entities": ["living images", "observations", "phenology signals"],
+        "provenance_required": True,
+        "next_safe_action": "audit_species_image_coverage",
+    },
+    {
+        "dataset_id": "eol_traitbank",
+        "display_name": "EOL TraitBank",
+        "department_id": "traits",
+        "source_type": "external_dataset",
+        "integration_state": "needs_runtime_audit",
+        "freshness_cadence": "weekly_or_on_dataset_update",
+        "primary_entities": ["traits", "glossary terms", "trait sources"],
+        "provenance_required": True,
+        "next_safe_action": "audit_traitbank_coverage",
+    },
+    {
+        "dataset_id": "zenodo_pollination",
+        "display_name": "Zenodo orchid pollination dataset",
+        "department_id": "pollination",
+        "source_type": "external_dataset",
+        "integration_state": "needs_runtime_audit",
+        "freshness_cadence": "monthly_or_on_release",
+        "primary_entities": ["orchid-pollinator interactions", "pollinator guilds", "rewards", "references"],
+        "provenance_required": True,
+        "next_safe_action": "audit_pollinator_coverage",
+    },
+    {
+        "dataset_id": "globi_interactions",
+        "display_name": "GloBI interaction graph",
+        "department_id": "pollination",
+        "source_type": "external_dataset",
+        "integration_state": "needs_runtime_audit",
+        "freshness_cadence": "monthly_or_on_release",
+        "primary_entities": ["species interactions", "interaction evidence", "interaction source citations"],
+        "provenance_required": True,
+        "next_safe_action": "audit_pollinator_sources",
+    },
+    {
+        "dataset_id": "literature_claims",
+        "display_name": "Orchid literature extraction tables",
+        "department_id": "literature",
+        "source_type": "internal_tables",
+        "integration_state": "needs_runtime_audit",
+        "freshness_cadence": "every_few_hours_or_on_new_documents",
+        "primary_entities": ["claims", "citations", "evidence summaries", "review state"],
+        "provenance_required": True,
+        "next_safe_action": "audit_literature_extraction_coverage",
+    },
+    {
+        "dataset_id": "mycorrhiza_relationships",
+        "display_name": "Orchid mycorrhizal relationship data",
+        "department_id": "mycorrhiza",
+        "source_type": "internal_or_external_dataset",
+        "integration_state": "needs_runtime_audit",
+        "freshness_cadence": "daily_or_on_new_literature",
+        "primary_entities": ["orchid-fungus relationships", "fungal taxa", "germination evidence", "citations"],
+        "provenance_required": True,
+        "next_safe_action": "audit_mycorrhiza_coverage",
+    },
+    {
+        "dataset_id": "climate_elevation_layers",
+        "display_name": "Climate and elevation layers",
+        "department_id": "climate",
+        "source_type": "derived_or_external_layers",
+        "integration_state": "needs_runtime_audit",
+        "freshness_cadence": "monthly_or_after_new_occurrences",
+        "primary_entities": ["elevation", "temperature normals", "precipitation", "seasonality"],
+        "provenance_required": True,
+        "next_safe_action": "audit_climate_layer_coverage",
+    },
+]
 
 
 def departments() -> list[dict[str, Any]]:
@@ -96,9 +203,144 @@ def mission_definitions() -> list[dict[str, Any]]:
     return sorted(rows, key=lambda item: item["priority"], reverse=True)
 
 
+def datasets() -> dict[str, Any]:
+    rows = sorted(DATASET_REGISTRY, key=lambda item: department_by_id(item["department_id"])["priority"], reverse=True)
+    return {
+        "status": "ok",
+        "dataset_count": len(rows),
+        "datasets": rows,
+        "safety": {
+            "external_fetches_performed": False,
+            "database_mutations_performed": False,
+            "purpose": "registry_and_readiness_tracking_only",
+        },
+    }
+
+
+def _mission_for_department(department_id: str) -> str:
+    return (MISSION_TYPES.get(department_id) or [f"audit_{department_id}"])[0]
+
+
+def coverage_gaps() -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for department in departments():
+        if department["department_id"] in {"judging", "awards"}:
+            continue
+        rows.append({
+            "gap_id": f"gap_{department['department_id']}",
+            "department_id": department["department_id"],
+            "priority": department["priority"],
+            "gap_type": "data_readiness_unknown",
+            "summary": f"{department['display_name']} needs live schema/table coverage verification before enrichment.",
+            "recommended_mission": _mission_for_department(department["department_id"]),
+            "risk_level": "safe_audit_only",
+            "claim_type": "coverage_gap_audit",
+            "confidence": "audit_only",
+            "review_status": "needs_review",
+            "source": "BUILD-048 scientific integration coordinator",
+            "promoted_claims": False,
+        })
+    return {
+        "status": "ok",
+        "gap_count": len(rows),
+        "gaps": rows,
+        "blocked_actions": ["promote_unreviewed_claim", "external_mutation", "destructive_mutation"],
+    }
+
+
+def integration_status() -> dict[str, Any]:
+    deps = departments()
+    gap_report = coverage_gaps()
+    dataset_report = datasets()
+    return {
+        "status": "ok",
+        "mode": "BUILD-048 scientific integration coordinator",
+        "science_departments_enabled": len([d for d in deps if d["department_id"] not in {"judging", "awards"}]),
+        "dataset_count": dataset_report["dataset_count"],
+        "known_gap_count": gap_report["gap_count"],
+        "highest_priority_work": gap_report["gaps"][:5],
+        "next_recommended_actions": [
+            "Run safe pollinator and mycorrhiza audits.",
+            "Inspect live database schemas for relationship/evidence tables.",
+            "Wire read-only coverage queries after schema verification.",
+            "Keep judging and awards low priority unless explicitly requested.",
+        ],
+        "safety": {
+            "destructive_actions": False,
+            "external_mutations": False,
+            "unsupported_claims_promoted": False,
+            "provenance_required_for_scientific_claims": True,
+        },
+    }
+
+
+def harvester_status() -> dict[str, Any]:
+    known_harvesters = [
+        {
+            "harvester_id": "inat_observations",
+            "department_id": "images",
+            "expected_output": "living orchid observations and images",
+            "status": "needs_live_runtime_audit",
+            "recommended_action": "verify last cursor, inserted record count, failure count, and image quality yield",
+        },
+        {
+            "harvester_id": "gbif_occurrences",
+            "department_id": "geography_atlas",
+            "expected_output": "occurrence records for Atlas and elevation/climate enrichment",
+            "status": "needs_live_runtime_audit",
+            "recommended_action": "verify last import date, new records, duplicate rate, and missing elevation rate",
+        },
+        {
+            "harvester_id": "literature_ingestion",
+            "department_id": "literature",
+            "expected_output": "papers, citations, extracted claims, and review queues",
+            "status": "needs_live_runtime_audit",
+            "recommended_action": "verify pending documents, extraction failures, and uncited claims",
+        },
+    ]
+    return {
+        "status": "ok",
+        "harvester_count": len(known_harvesters),
+        "harvesters": known_harvesters,
+        "recommendations": [
+            "Do not run every harvester continuously without yield checks.",
+            "Prefer cadences based on data-change frequency and recent useful inserts.",
+            "Queue schedule changes as needs_review until live metrics are available.",
+        ],
+        "destructive_actions": False,
+    }
+
+
+def dossier_queue() -> dict[str, Any]:
+    candidates = [
+        {
+            "entity_type": "orchid_species",
+            "queue_name": "species_dossiers",
+            "priority_reason": "front-end species pages need evidence-backed dossiers",
+            "required_sections": ["taxonomy", "images", "occurrences", "habitat", "pollinators", "mycorrhiza", "literature", "conservation"],
+            "status": "candidate_queue_ready",
+        },
+        {
+            "entity_type": "pollinator",
+            "queue_name": "pollinator_dossiers",
+            "priority_reason": "pollinator cards and ecological stories require provenance-first evidence",
+            "required_sections": ["taxonomy", "associated orchids", "life history", "evidence", "conservation relevance", "citations"],
+            "status": "candidate_queue_ready",
+        },
+        {
+            "entity_type": "fungus",
+            "queue_name": "fungal_dossiers",
+            "priority_reason": "mycorrhizal relationships need fungal partner context and review status",
+            "required_sections": ["taxonomy", "associated orchids", "germination evidence", "habitat", "sequence/literature evidence", "citations"],
+            "status": "candidate_queue_ready",
+        },
+    ]
+    return {"status": "ok", "candidate_queue_count": len(candidates), "candidates": candidates, "promoted_claims": False}
+
+
 def audit_result(department_id: str, mission_type: str | None = None) -> dict[str, Any]:
     department = department_by_id(department_id)
-    mission_type = mission_type or (MISSION_TYPES.get(department_id) or [f"audit_{department_id}"])[0]
+    mission_type = mission_type or _mission_for_department(department_id)
     now = utc_now()
     return {
         "status": "completed",
@@ -113,7 +355,7 @@ def audit_result(department_id: str, mission_type: str | None = None) -> dict[st
             "relationship_type": "needs_evidence_review",
             "evidence_status": "missing_or_unverified",
             "confidence": "audit_only",
-            "source": "BUILD-047 internal safe audit scaffold",
+            "source": "BUILD-048 scientific integration coordinator",
             "review_status": "unreviewed",
         }],
         "recommended_next_tasks": [{
@@ -134,6 +376,18 @@ def audit_result(department_id: str, mission_type: str | None = None) -> dict[st
 
 def seed_missions() -> dict[str, Any]:
     missions = mission_definitions()
+    work_items = [
+        {
+            "work_item_id": f"work_{mission['mission_type']}",
+            "mission_type": mission["mission_type"],
+            "department_id": mission["department_id"],
+            "priority": mission["priority"],
+            "status": "recommended",
+            "risk_level": "safe_audit_only",
+            "requires_schema_review_before_mutation": True,
+        }
+        for mission in missions
+    ]
     return {
         "status": "seed_plan_ready",
         "destructive_actions": False,
@@ -141,7 +395,8 @@ def seed_missions() -> dict[str, Any]:
         "created": [],
         "skipped_duplicates": [],
         "recommended_missions": missions,
-        "message": "BUILD-047 exposes the scientific mission plan; persistent queue insertion should be wired after schema review.",
+        "recommended_work_items": work_items,
+        "message": "BUILD-048 prepares scientific work items; persistent queue insertion should be wired after schema review.",
     }
 
 
@@ -150,11 +405,13 @@ def summary() -> dict[str, Any]:
     missions = mission_definitions()
     return {
         "status": "ok",
-        "mode": "BUILD-047 scientific integration scaffold",
+        "mode": "BUILD-048 scientific integration coordinator",
         "department_count": len(deps),
         "mission_type_count": len(missions),
+        "dataset_count": len(DATASET_REGISTRY),
         "top_priorities": deps[:8],
         "low_priority_support": [d for d in deps if d["department_id"] in {"judging", "awards"}],
+        "highest_priority_gaps": coverage_gaps()["gaps"][:5],
         "safety": {
             "destructive_actions": False,
             "external_mutations": False,
