@@ -96,6 +96,12 @@ class RuntimeEngine:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
+    def set_enabled(self, enabled: bool) -> None:
+        """Transition the runtime enabled flag without starting or stopping it."""
+        with self._lock:
+            self.state.enabled = enabled
+            self._record_event("runtime_enabled" if enabled else "runtime_disabled")
+
     def start(self) -> bool:
         """Start the runtime loop if enabled and not already running."""
         if not self.state.enabled:
@@ -104,12 +110,13 @@ class RuntimeEngine:
 
         with self._lock:
             if self._thread and self._thread.is_alive():
+                self.state.running = True
                 self._record_event("runtime_engine_already_running")
                 return False
 
             self._stop_event.clear()
             self.state.running = True
-            self.state.started_at = self.state.started_at or utc_now()
+            self.state.started_at = utc_now()
             self.state.stopped_at = None
             self._thread = threading.Thread(
                 target=self._run_loop,
