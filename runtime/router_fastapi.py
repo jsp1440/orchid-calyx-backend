@@ -8,10 +8,19 @@ from .config_loader import BrainConfigLoader
 from .constitutional_orchestrator import orchestrator
 from .infrastructure import InfrastructureRegistryService
 from .scheduler import CalyxHeartbeat
+from .science_registry import (
+    AUDIT_ENDPOINT_TO_DEPARTMENT,
+    audit_result,
+    departments,
+    mission_definitions,
+    seed_missions,
+    summary as science_summary,
+)
 
 router = APIRouter(prefix="/api/runtime", tags=["Calyx Runtime"])
 config_router = APIRouter(prefix="/api/config", tags=["Calyx Config"])
 infrastructure_router = APIRouter(prefix="/api/infrastructure", tags=["Calyx Infrastructure"])
+science_router = APIRouter(prefix="/api/science", tags=["Orchid Continuum Science"])
 
 
 class ConstitutionalActionRequest(BaseModel):
@@ -68,6 +77,39 @@ def runtime_constitutional_evaluate(request: ConstitutionalActionRequest) -> dic
         reversible=request.reversible,
         provenance_available=request.provenance_available,
     )
+
+
+@science_router.get("/departments")
+def science_departments() -> dict[str, Any]:
+    return {"departments": departments()}
+
+
+@science_router.get("/missions")
+def science_missions() -> dict[str, Any]:
+    return {"missions": mission_definitions()}
+
+
+@science_router.post("/seed-missions")
+def science_seed_missions() -> dict[str, Any]:
+    return seed_missions()
+
+
+@science_router.get("/summary")
+def science_summary_endpoint() -> dict[str, Any]:
+    return science_summary()
+
+
+@science_router.post("/audit/{audit_key}")
+def science_audit(audit_key: str) -> dict[str, Any]:
+    department_id = AUDIT_ENDPOINT_TO_DEPARTMENT.get(audit_key)
+    if not department_id:
+        return {
+            "status": "unknown_audit_key",
+            "audit_key": audit_key,
+            "available_audits": sorted(AUDIT_ENDPOINT_TO_DEPARTMENT),
+            "promoted_claims": False,
+        }
+    return audit_result(department_id)
 
 
 @config_router.get("/manifest")
