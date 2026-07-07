@@ -15,6 +15,7 @@ _ALLOWED_MEDIA_ORIGINS = {
     "https://orchidcontinuum.org",
     "https://www.orchidcontinuum.org",
     "https://beta.orchidcontinuum.org",
+    "https://orchid-continuum-frontend-vof6.onrender.com",
 }
 
 # Server-side rejection of records that do not belong in the public photograph
@@ -22,8 +23,8 @@ _ALLOWED_MEDIA_ORIGINS = {
 BLOCKED_MEDIA_RE = re.compile(
     r"(herbari|specimen|voucher|holotype|isotype|lectotype|sheet|barcode|"
     r"accession|preserved|pressed|exsiccat|illustration|plate|drawing|lineart|"
-    r"\\.pdf(?:[?#]|$)|\\.(?:tif|tiff|djvu|docx?|csv|txt)(?:[?#]|$)|"
-    r"biodiversitylibrary|archive\\.org|botanicus|jstor|recolnat|idigbio)",
+    r"\.pdf(?:[?#]|$)|\.(?:tif|tiff|djvu|docx?|csv|txt)(?:[?#]|$)|"
+    r"biodiversitylibrary|archive\.org|botanicus|jstor|recolnat|idigbio)",
     re.IGNORECASE,
 )
 
