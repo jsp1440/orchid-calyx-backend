@@ -4,12 +4,18 @@ from datetime import datetime, timezone
 import re
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy import text
 
 from app.database import get_engine
 
 router = APIRouter(prefix="/api", tags=["Orchid Widgets"])
+
+_ALLOWED_MEDIA_ORIGINS = {
+    "https://orchidcontinuum.org",
+    "https://www.orchidcontinuum.org",
+    "https://beta.orchidcontinuum.org",
+}
 
 # Server-side rejection of records that do not belong in the public photograph
 # gallery. The frontend receives only media Calyx has already filtered.
@@ -20,6 +26,14 @@ BLOCKED_MEDIA_RE = re.compile(
     r"biodiversitylibrary|archive\\.org|botanicus|jstor|recolnat|idigbio)",
     re.IGNORECASE,
 )
+
+
+def _allow_frontend_origin(request: Request, response: Response) -> None:
+    """Allow the public Orchid Continuum frontend to read this JSON response."""
+    origin = request.headers.get("origin")
+    if origin in _ALLOWED_MEDIA_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
 
 
 def _normalize_genus(value: str) -> str:
@@ -46,6 +60,14 @@ def _record_url(source: str | None, occurrence_key: str | None) -> str | None:
     return None
 
 
+@router.options("/media/genus/{genus}")
+def genus_media_options(genus: str, request: Request, response: Response):
+    _allow_frontend_origin(request, response)
+    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Accept, Content-Type"
+    return Response(status_code=204, headers=dict(response.headers))
+
+
 @router.get("/widgets/genus-of-day")
 def genus_of_day(limit: int = 25):
     """Legacy-compatible endpoint retained for pages outside Featured Genus."""
@@ -65,13 +87,19 @@ def genus_of_day(limit: int = 25):
 
 
 @router.get("/media/genus/{genus}")
-def genus_media(genus: str, limit: int = Query(default=12, ge=1, le=24)):
+def genus_media(
+    genus: str,
+    request: Request,
+    response: Response,
+    limit: int = Query(default=12, ge=1, le=24),
+):
     """Resolve Featured Genus photographs from canonical OC taxonomy/media rows.
 
     The endpoint is read-only. It does not call any external provider API. It
     intentionally excludes iNaturalist-source records for this homepage feature,
     because the legacy iNaturalist hero behavior is what this build replaces.
     """
+    _allow_frontend_origin(request, response)
     accepted_genus = _normalize_genus(genus)
     exclusion_counts = {
         "herbarium_or_specimen": 0,
