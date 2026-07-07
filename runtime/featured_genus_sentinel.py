@@ -9,9 +9,16 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import urlopen
 
+from sqlalchemy import text
+
+from app.database import get_engine
+
 
 REQUIREMENTS_FILE = Path(__file__).with_name("requirements") / "featured_genus_media_policy.json"
 DEFAULT_CALYX_PUBLIC_URL = "https://orchid-calyx-backend.onrender.com"
+CURRENT_ENDPOINT_SOURCE = "public.orchid_images"
+BUILD_208_LEGACY_VIEW = "api.v_frontend_orchid_images"
+BUILD_208_LEGACY_SOURCE = "public.images"
 
 
 @dataclass(frozen=True)
@@ -37,6 +44,102 @@ class FeaturedGenusSentinel:
     @property
     def calyx_public_url(self) -> str:
         return os.environ.get("CALYX_PUBLIC_URL", DEFAULT_CALYX_PUBLIC_URL).rstrip("/")
+
+    def _audit_source_contract(self) -> tuple[list[SentinelFinding], dict[str, Any]]:
+        """Read the live database metadata needed to enforce BUILD-208.
+
+        This deliberately inspects metadata and small counts only. It does not
+        alter views, media records, or taxonomy.
+        """
+        findings: list[SentinelFinding] = []
+        evidence: dict[str, Any] = {
+            "build_208_legacy_view": BUILD_208_LEGACY_VIEW,
+            "build_208_legacy_source": BUILD_208_LEGACY_SOURCE,
+            "current_endpoint_source": CURRENT_ENDPOINT_SOURCE,
+        }
+        try:
+            with get_engine().connect() as conn:
+                view_row = conn.execute(
+                    text(
+                        """
+                        SELECT view_definition
+                        FROM information_schema.views
+                        WHERE table_schema = 'api'
+                          AND table_name = 'v_frontend_orchid_images'
+                        """
+                    )
+                ).mappings().first()
+                v2_row = conn.execute(
+                    text(
+                        """
+                        SELECT view_definition
+                        FROM information_schema.views
+                        WHERE table_schema = 'api'
+                          AND table_name = 'v_frontend_orchid_images_v2'
+                        """
+                    )
+                ).mappings().first()
+                image_counts = conn.execute(
+                    text(
+                        """
+                        SELECT
+                          to_regclass('public.images') IS NOT NULL AS legacy_images_exists,
+                          to_regclass('public.orchid_images') IS NOT NULL AS current_images_exists
+                        """
+                    )
+                ).mappings().one()
+            evidence.update(
+                {
+                    "legacy_view_exists": bool(view_row),
+                    "legacy_view_definition": (view_row or {}).get("view_definition"),
+                    "v2_view_exists": bool(v2_row),
+                    "v2_view_definition": (v2_row or {}).get("view_definition"),
+                    "legacy_images_exists": bool(image_counts["legacy_images_exists"]),
+                    "current_images_exists": bool(image_counts["current_images_exists"]),
+                }
+            )
+        except Exception as exc:
+            findings.append(
+                SentinelFinding(
+                    code="BUILD208_SOURCE_CONTRACT_AUDIT_ERROR",
+                    severity="blocker",
+                    message="Calyx could not inspect the live database source contract required by BUILD-208.",
+                    evidence={**evidence, "error_type": type(exc).__name__, "error": str(exc)},
+                )
+            )
+            return findings, evidence
+
+        if not evidence["legacy_view_exists"]:
+            findings.append(
+                SentinelFinding(
+                    code="BUILD208_LEGACY_VIEW_MISSING",
+                    severity="blocker",
+                    message="The BUILD-208 legacy frontend view is absent, so its contract cannot be compared safely.",
+                    evidence=evidence,
+                )
+            )
+        if CURRENT_ENDPOINT_SOURCE != BUILD_208_LEGACY_SOURCE:
+            findings.append(
+                SentinelFinding(
+                    code="ACTIVE_ENDPOINT_BYPASSES_BUILD208_SOURCE",
+                    severity="blocker",
+                    message=(
+                        "The active Calyx Featured Genus endpoint reads a different raw source than the "
+                        "BUILD-208-audited frontend contract. A replacement requires an explicit reviewed mapping."
+                    ),
+                    evidence=evidence,
+                )
+            )
+        if evidence["v2_view_exists"]:
+            findings.append(
+                SentinelFinding(
+                    code="UNREVIEWED_V2_VIEW_PRESENT",
+                    severity="blocker",
+                    message="A v2 frontend view exists but has not yet been accepted as the approved replacement contract.",
+                    evidence=evidence,
+                )
+            )
+        return findings, evidence
 
     def _fetch_live_media(self, genus: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         url = f"{self.calyx_public_url}/api/media/genus/{quote(genus)}?limit=12"
@@ -147,32 +250,18 @@ class FeaturedGenusSentinel:
     def audit(self) -> dict[str, Any]:
         policy = self.load_policy()
         requirements = policy["requirements"]
+        source_findings, source_contract = self._audit_source_contract()
         endpoint_findings, endpoint_results = self._audit_live_endpoint(policy)
         findings = [
             SentinelFinding(
-                code="BUILD208_SOURCE_CONTRACT_UNVERIFIED",
+                code="LIVE_BROWSER_RENDER_PROBE_PENDING",
                 severity="blocker",
                 message=(
-                    "The approved Featured Genus data contract has not been verified "
-                    "against BUILD-208 before this release decision."
+                    "Calyx requires the companion GitHub browser workflow artifact before it can "
+                    "prove that the deployed homepage visibly renders the endpoint response."
                 ),
                 evidence={
-                    "audit_build": "BUILD-208",
-                    "documented_legacy_view": "api.v_frontend_orchid_images",
-                    "documented_legacy_source": "public.images",
-                    "documented_v2_sql_generated": True,
-                    "documented_v2_sql_executable": False,
-                    "required": "Inspect the current view definition, endpoint parser, and selected rows before recommending a replacement data path.",
-                },
-            ),
-            SentinelFinding(
-                code="LIVE_BROWSER_RENDER_PROBE_MISSING",
-                severity="blocker",
-                message=(
-                    "No browser-render evidence has been attached to this audit, so Calyx "
-                    "cannot prove that the deployed homepage visibly renders the endpoint response."
-                ),
-                evidence={
+                    "workflow": "Featured Genus Render Sentinel",
                     "required_checks": [
                         "hero image visibly loads",
                         "gallery image visibly loads",
@@ -180,18 +269,18 @@ class FeaturedGenusSentinel:
                         "no duplicate URL or duplicate cluster",
                         "frontend response equals endpoint response",
                     ],
-                    "configured": False,
                 },
             ),
             SentinelFinding(
                 code="PROMOTION_GATE_ACTIVE",
                 severity="info",
                 message=(
-                    "Calyx must not recommend merge or deployment for Featured Genus "
-                    "media while a blocker remains open."
+                    "Calyx must not recommend merge or deployment for Featured Genus media "
+                    "while a blocker remains open."
                 ),
                 evidence={"policy": requirements["promotion_policy"]},
             ),
+            *source_findings,
             *endpoint_findings,
         ]
         blockers = [finding for finding in findings if finding.severity == "blocker"]
@@ -202,7 +291,8 @@ class FeaturedGenusSentinel:
             "policy_version": policy["policy_version"],
             "acceptance_genera": policy["acceptance_genera"],
             "requirements": requirements,
+            "source_contract": source_contract,
             "live_endpoint_results": endpoint_results,
             "findings": [finding.__dict__ for finding in findings],
-            "next_command": "Collect source-contract evidence and browser-render evidence, then re-run audit_featured_genus_media.",
+            "next_command": "Resolve every blocker and attach the latest browser workflow artifact before requesting a Featured Genus promotion decision.",
         }
