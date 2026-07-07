@@ -1,4 +1,4 @@
-"""FastAPI router for Calyx Runtime v0.1 and BUILD-048 science endpoints."""
+"""FastAPI router for Calyx Runtime v0.1 and BUILD-049 audit commands."""
 from typing import Any
 
 from fastapi import APIRouter
@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from .config_loader import BrainConfigLoader
 from .constitutional_orchestrator import orchestrator
+from .featured_genus_sentinel import FeaturedGenusSentinel
 from .infrastructure import InfrastructureRegistryService
 from .scheduler import CalyxHeartbeat
 from .science_registry import (
@@ -46,6 +47,18 @@ def runtime_heartbeat():
 @router.get("/health")
 def runtime_health():
     return {"runtime": CalyxHeartbeat().run_once()}
+
+
+@router.get("/featured-genus/audit")
+def audit_featured_genus_media() -> dict[str, Any]:
+    """Run the binding Featured Genus audit gate.
+
+    This audit is intentionally read-only. It returns promotion_allowed=false
+    until the BUILD-208 source contract and a live browser-render probe are
+    evidenced. It is the command Calyx must consult before recommending any
+    Featured Genus media merge or deployment.
+    """
+    return FeaturedGenusSentinel().audit()
 
 
 @router.get("/constitutional/status")
