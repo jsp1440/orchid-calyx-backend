@@ -1,0 +1,35 @@
+{
+  "policy_version": "BUILD-049.1",
+  "policy_name": "Featured Genus Media Release Gate",
+  "source_audits": [
+    {
+      "build": "BUILD-208",
+      "status": "read_only_audit",
+      "finding": "api.v_frontend_orchid_images used public.images; no v2 view was executed by the audit."
+    }
+  ],
+  "requirements": {
+    "audit_before_repair": true,
+    "backend_and_frontend_audit_required": true,
+    "accepted_media_kind": "photograph",
+    "forbidden_media": [
+      "herbarium_sheet",
+      "specimen",
+      "botanical_plate",
+      "illustration",
+      "document_scan",
+      "unverified_external_fallback"
+    ],
+    "duplicate_policy": "No repeated URL or duplicate-consensus cluster may appear in one Featured Genus response.",
+    "provenance_policy": "Every promoted media item must have a documented source and taxon linkage.",
+    "live_render_policy": "A browser-render probe must confirm that the deployed page visibly matches the Calyx endpoint response before promotion.",
+    "promotion_policy": "Calyx may prepare a repair proposal but must return promotion_allowed=false until every required audit passes."
+  },
+  "acceptance_genera": [
+    "Cattleya",
+    "Dracula",
+    "Dendrobium",
+    "Bulbophyllum",
+    "Vanilla"
+  ]
+}
