@@ -1,0 +1,515 @@
+"""Read-only Mission Control telemetry endpoints.
+
+BUILD-039 turns the Calyx backend into the first live telemetry provider for
+Orchid Continuum Mission Control.  These routes are deliberately read-only:
+they expose health, subsystem, harvester, repository/deployment, metrics,
+completeness, recommendation, and governance payloads, but they do not run,
+pause, resume, deploy, mutate credentials, or write production data.
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import datetime, timezone
+from typing import Any, Iterable
+
+import psycopg
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/api/mission-control", tags=["mission-control"])
+
+BUILD_ID = "BUILD-039"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+REPOSITORIES = [
+    {
+        "name": "jsp1440/orchid-continuum-frontend",
+        "default_branch": "main",
+        "deployment_target": "Frontend hosting",
+        "frontend_deploy_needed": False,
+        "backend_deploy_needed": False,
+        "known_blockers": ["Live GitHub/Render telemetry requires backend-owned connector credentials."],
+    },
+    {
+        "name": "jsp1440/orchid-calyx-backend",
+        "default_branch": "main",
+        "deployment_target": "https://orchid-calyx-backend.onrender.com",
+        "frontend_deploy_needed": False,
+        "backend_deploy_needed": True,
+        "known_blockers": ["Redeploy backend after BUILD-039 merge to expose live Mission Control endpoints."],
+    },
+    {
+        "name": "jsp1440/Orchid-Continuum-Brain",
+        "default_branch": "main",
+        "deployment_target": "Brain services",
+        "frontend_deploy_needed": False,
+        "backend_deploy_needed": False,
+        "known_blockers": ["Brain runtime status must be routed through a future telemetry adapter."],
+    },
+]
+
+HARVESTERS = [
+    ("inaturalist", "iNaturalist", "iNaturalist observations/media", "audit_image_species_evidence_coverage"),
+    ("gbif", "GBIF", "GBIF occurrence backbone", "audit_ecological_relationship_graph_gaps"),
+    ("world_plants_hassler", "World Plants / Hassler", "Taxonomic backbone", "audit_frontend_relationship_cards"),
+    ("eol_traitbank", "EOL / TraitBank", "Trait records", "audit_traitbank_trait_coverage"),
+    ("globi", "GloBI", "Interaction records", "audit_missing_pollinator_data"),
+    ("pollinator_datasets", "Pollinator datasets", "Pollination sources", "audit_missing_pollinator_data"),
+    ("mycorrhizal_data", "Mycorrhizal literature/data", "Mycorrhizal sources", "audit_missing_mycorrhizal_data"),
+    ("image_media", "Image/media harvesters", "Image/media services", "audit_image_species_evidence_coverage"),
+    ("literature", "Literature harvesters", "Literature and citation sources", "audit_literature_extraction_coverage"),
+    ("climate_elevation", "Climate/elevation enrichment", "Climate and elevation sources", "audit_conservation_habitat_gaps"),
+    ("conservation_status", "Conservation status enrichment", "Conservation sources", "audit_conservation_habitat_gaps"),
+]
+
+METRIC_CANDIDATES = {
+    "taxonomy": [
+        "oc_taxonomy.taxa",
+        "oc_taxonomy.orchid_taxa",
+        "public.orchid_taxa",
+        "public.orchid_species",
+        "public.taxonomy",
+    ],
+    "occurrences": [
+        "oc_atlas.occurrences",
+        "oc_atlas.map_data",
+        "public.occurrences",
+        "public.orchid_occurrences",
+        "public.map_data",
+    ],
+    "images": [
+        "public.orchid_images_linked_v2",
+        "public.orchid_images",
+        "public.record_media_link",
+        "oc_media.orchid_images",
+    ],
+    "literature": [
+        "oc_literature.documents",
+        "oc_literature.literature_documents",
+        "oc_literature.papers",
+        "public.literature_documents",
+    ],
+    "relationships": [
+        "oc_relationships.relationships",
+        "oc_interactions.relationships",
+        "oc_literature.extracted_relationships",
+        "public.relationships",
+    ],
+    "mycorrhiza": [
+        "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache",
+        "oc_mycorrhiza.relationships",
+    ],
+    "runtime_jobs": ["oc_admin.ocp_execution_jobs"],
+    "runtime_actions": ["oc_admin.ocp_runtime_actions"],
+}
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def db_unavailable_payload() -> dict[str, Any]:
+    return {
+        "database_connected": False,
+        "blockers": ["DATABASE_URL is not configured for this backend runtime."],
+        "generated_at": utc_now(),
+    }
+
+
+def with_connection(callback):
+    if not DATABASE_URL:
+        return db_unavailable_payload()
+    try:
+        with psycopg.connect(DATABASE_URL, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                return callback(cur)
+    except Exception as exc:  # pragma: no cover - exercised in deployed runtime
+        return {
+            "database_connected": False,
+            "blockers": [f"Database telemetry unavailable: {exc}"],
+            "generated_at": utc_now(),
+        }
+
+
+def table_exists(cur, fq_table: str) -> bool:
+    cur.execute("SELECT to_regclass(%s)", (fq_table,))
+    return cur.fetchone()[0] is not None
+
+
+def safe_count(cur, fq_table: str) -> int | None:
+    if not table_exists(cur, fq_table):
+        return None
+    cur.execute(f"SELECT COUNT(*) FROM {fq_table}")
+    return int(cur.fetchone()[0])
+
+
+def first_available_count(cur, candidates: Iterable[str]) -> dict[str, Any]:
+    checked: list[str] = []
+    for table in candidates:
+        checked.append(table)
+        count = safe_count(cur, table)
+        if count is not None:
+            return {"table": table, "count": count, "available": True, "checked": checked}
+    return {"table": None, "count": 0, "available": False, "checked": checked}
+
+
+def metric_snapshot() -> dict[str, Any]:
+    def _read(cur):
+        metrics = {
+            name: first_available_count(cur, candidates)
+            for name, candidates in METRIC_CANDIDATES.items()
+        }
+        return {"database_connected": True, "metrics": metrics, "generated_at": utc_now()}
+
+    return with_connection(_read)
+
+
+def score_from_metric(metric: dict[str, Any], target: int) -> tuple[int, list[str], list[str]]:
+    count = int(metric.get("count") or 0)
+    table = metric.get("table")
+    evidence: list[str] = []
+    blockers: list[str] = []
+    if table:
+        evidence.append(f"{table} reachable with {count:,} row(s).")
+    else:
+        blockers.append("No configured source table was reachable for this metric.")
+    if count <= 0:
+        return 15, evidence, blockers
+    return max(25, min(95, int((count / target) * 100))), evidence, blockers
+
+
+def completeness_rows() -> list[dict[str, Any]]:
+    snapshot = metric_snapshot()
+    metrics = snapshot.get("metrics") or {}
+    specs = [
+        ("atlas", "Atlas", "Science", "occurrences", 100000, "Occurrence/atlas telemetry."),
+        ("species_explorer", "Species Explorer", "Science", "taxonomy", 50000, "Taxonomy backbone telemetry."),
+        ("images_media", "Images / Media", "Media", "images", 500000, "Image/media table telemetry."),
+        ("literature", "Literature System", "Science", "literature", 10000, "Literature extraction telemetry."),
+        ("knowledge_graph", "Knowledge Graph", "Science", "relationships", 100000, "Relationship graph telemetry."),
+        ("mycorrhiza", "Mycorrhizal System", "Science", "mycorrhiza", 1000, "Mycorrhizal endpoint/cache telemetry."),
+        ("runtime_jobs", "Runtime Jobs", "Runtime", "runtime_jobs", 10, "Calyx execution queue telemetry."),
+    ]
+    rows: list[dict[str, Any]] = []
+    for subsystem_id, name, category, metric_name, target, summary in specs:
+        score, evidence, blockers = score_from_metric(metrics.get(metric_name, {}), target)
+        status = "healthy" if score >= 75 else "warning" if score >= 40 else "stub"
+        rows.append(
+            {
+                "id": subsystem_id,
+                "name": name,
+                "category": category,
+                "status": status,
+                "completeness": score,
+                "summary": summary,
+                "evidence": evidence,
+                "blockers": blockers,
+                "lastChecked": utc_now(),
+                "recommended_next_action": "Wire deeper source-specific freshness and provenance checks.",
+                "dataSource": metrics.get(metric_name, {}).get("table") or "not connected",
+            }
+        )
+    return rows
+
+
+def latest_job(cur, job_name: str) -> dict[str, Any] | None:
+    if not table_exists(cur, "oc_admin.ocp_execution_jobs"):
+        return None
+    cur.execute(
+        """
+        SELECT job_name, status, started_at, finished_at, updated_at,
+               retry_count, error_text, details
+        FROM oc_admin.ocp_execution_jobs
+        WHERE job_name = %s
+        ORDER BY COALESCE(updated_at, finished_at, started_at) DESC NULLS LAST, id DESC
+        LIMIT 1
+        """,
+        (job_name,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "job_name": row[0],
+        "status": row[1],
+        "started_at": row[2].isoformat() if row[2] else None,
+        "finished_at": row[3].isoformat() if row[3] else None,
+        "updated_at": row[4].isoformat() if row[4] else None,
+        "retry_count": row[5] or 0,
+        "error_text": row[6],
+        "details": row[7] or {},
+    }
+
+
+def harvester_rows() -> list[dict[str, Any]]:
+    def _read(cur):
+        rows: list[dict[str, Any]] = []
+        for harvester_id, name, source, job_name in HARVESTERS:
+            job = latest_job(cur, job_name)
+            state = "planned"
+            errors: list[str] = []
+            last_run = "not connected"
+            heartbeat_at = None
+            warning_count = 1
+            if job:
+                raw_status = str(job.get("status") or "unknown").lower()
+                state = "running" if raw_status == "running" else "idle" if raw_status in {"completed", "success", "succeeded"} else "error" if raw_status in {"failed", "error"} else "unknown"
+                last_run = job.get("finished_at") or job.get("started_at") or "not recorded"
+                heartbeat_at = job.get("updated_at")
+                errors = [job["error_text"]] if job.get("error_text") else []
+                warning_count = len(errors)
+            rows.append(
+                {
+                    "id": harvester_id,
+                    "name": name,
+                    "source": source,
+                    "enabled": bool(job),
+                    "state": state,
+                    "last_run": last_run,
+                    "heartbeat_at": heartbeat_at,
+                    "checkpoint": job_name,
+                    "rows_processed": 0,
+                    "rows_inserted": 0,
+                    "errors": errors,
+                    "warning_count": warning_count,
+                    "runNow": "requires_owner_authorization",
+                    "pauseResume": "requires_owner_authorization",
+                    "logSummary": "Read-only heartbeat derived from oc_admin.ocp_execution_jobs when available.",
+                }
+            )
+        return rows
+
+    result = with_connection(_read)
+    if isinstance(result, dict) and result.get("database_connected") is False:
+        return [
+            {
+                "id": harvester_id,
+                "name": name,
+                "source": source,
+                "enabled": False,
+                "state": "unknown",
+                "last_run": "database unavailable",
+                "heartbeat_at": None,
+                "checkpoint": job_name,
+                "rows_processed": 0,
+                "rows_inserted": 0,
+                "errors": result.get("blockers", []),
+                "warning_count": 1,
+                "runNow": "requires_owner_authorization",
+                "pauseResume": "requires_owner_authorization",
+                "logSummary": "Database telemetry is unavailable; no write controls enabled.",
+            }
+            for harvester_id, name, source, job_name in HARVESTERS
+        ]
+    return result
+
+
+@router.get("/status")
+def mission_control_status() -> dict[str, Any]:
+    snapshot = metric_snapshot()
+    db_connected = bool(snapshot.get("database_connected"))
+    return {
+        "build": BUILD_ID,
+        "status": "healthy" if db_connected else "warning",
+        "service": "orchid-calyx-backend",
+        "mode": "read_only_live_telemetry",
+        "generated_at": utc_now(),
+        "database_connected": db_connected,
+        "blockers": snapshot.get("blockers", []),
+        "safety": {
+            "read_only": True,
+            "write_controls_enabled": False,
+            "owner_authorization_required": True,
+        },
+    }
+
+
+@router.get("/subsystems")
+def mission_control_subsystems() -> dict[str, Any]:
+    return {"build": BUILD_ID, "subsystems": completeness_rows(), "generated_at": utc_now()}
+
+
+@router.get("/audit")
+def mission_control_audit() -> dict[str, Any]:
+    subsystems = completeness_rows()
+    failing = [row for row in subsystems if row["status"] in {"warning", "error", "stub", "unknown"}]
+    return {
+        "build": BUILD_ID,
+        "status": "healthy" if not failing else "warning",
+        "subsystems": subsystems,
+        "diagnostics": [
+            {
+                "id": row["id"],
+                "status": row["status"],
+                "summary": row["summary"],
+                "blockers": row.get("blockers", []),
+                "evidence": row.get("evidence", []),
+            }
+            for row in subsystems
+        ],
+        "generated_at": utc_now(),
+    }
+
+
+@router.get("/harvesters")
+def mission_control_harvesters() -> dict[str, Any]:
+    return {"build": BUILD_ID, "harvesters": harvester_rows(), "generated_at": utc_now()}
+
+
+@router.get("/repositories")
+def mission_control_repositories() -> dict[str, Any]:
+    repositories = [
+        {
+            **repo,
+            "deploy_status": "warning" if repo["backend_deploy_needed"] else "unknown",
+            "latest_commit": None,
+            "open_pull_requests": None,
+            "last_deploy": None,
+        }
+        for repo in REPOSITORIES
+    ]
+    return {"build": BUILD_ID, "repositories": repositories, "generated_at": utc_now()}
+
+
+@router.get("/builds")
+def mission_control_builds() -> dict[str, Any]:
+    return {
+        "build": BUILD_ID,
+        "builds": [
+            {
+                "id": BUILD_ID.lower(),
+                "title": "Mission Control Backend Live Telemetry API",
+                "status": "implemented_backend_pr",
+                "repository": "jsp1440/orchid-calyx-backend",
+                "safety": "read_only_no_write_controls",
+                "frontend_deploy_needed": False,
+                "backend_deploy_needed": True,
+            }
+        ],
+        "generated_at": utc_now(),
+    }
+
+
+@router.get("/deployments")
+def mission_control_deployments() -> dict[str, Any]:
+    return {
+        "build": BUILD_ID,
+        "deployments": [
+            {
+                "id": "calyx-backend-render",
+                "name": "Calyx backend",
+                "target": "https://orchid-calyx-backend.onrender.com",
+                "status": "warning",
+                "last_deploy": None,
+                "backend_deploy_needed": True,
+                "known_blockers": ["Redeploy backend after BUILD-039 merge."],
+            },
+            {
+                "id": "continuum-frontend",
+                "name": "Orchid Continuum frontend",
+                "target": "Frontend hosting",
+                "status": "unknown",
+                "last_deploy": None,
+                "frontend_deploy_needed": False,
+                "known_blockers": ["Live Render telemetry requires connector credentials."],
+            },
+        ],
+        "generated_at": utc_now(),
+    }
+
+
+@router.get("/metrics")
+def mission_control_metrics() -> dict[str, Any]:
+    snapshot = metric_snapshot()
+    return {"build": BUILD_ID, **snapshot}
+
+
+@router.get("/completeness")
+def mission_control_completeness() -> dict[str, Any]:
+    rows = completeness_rows()
+    return {"build": BUILD_ID, "completeness": rows, "items": rows, "generated_at": utc_now()}
+
+
+@router.get("/recommendations")
+def mission_control_recommendations() -> dict[str, Any]:
+    return {
+        "build": BUILD_ID,
+        "recommendations": [
+            {
+                "id": "backend-deploy-build-039",
+                "title": "Deploy backend telemetry endpoints",
+                "priority": "critical",
+                "rationale": "Mission Control can only leave fallback mode after backend live telemetry endpoints are deployed.",
+                "ownerDecisionNeeded": "Merge BUILD-039, then redeploy orchid-calyx-backend.",
+                "nextBuild": "DEPLOY-BACKEND-BUILD-039",
+            },
+            {
+                "id": "github-render-connectors",
+                "title": "Add backend-owned GitHub and Render telemetry connectors",
+                "priority": "high",
+                "rationale": "Repository and deployment status remain unknown without server-side connector credentials.",
+                "ownerDecisionNeeded": "Approve read-only connector tokens and storage strategy.",
+                "nextBuild": "BUILD-040",
+            },
+            {
+                "id": "source-specific-freshness",
+                "title": "Add source-specific freshness checks",
+                "priority": "medium",
+                "rationale": "Row counts are useful but do not prove data freshness or pipeline health.",
+                "ownerDecisionNeeded": "Prioritize Atlas, Images, Literature, or Harvesters for freshness telemetry.",
+                "nextBuild": "BUILD-041",
+            },
+        ],
+        "generated_at": utc_now(),
+    }
+
+
+@router.get("/governance")
+def mission_control_governance() -> dict[str, Any]:
+    return {
+        "build": BUILD_ID,
+        "status": "warning",
+        "north_star": "The Orchid Continuum exists to cultivate understanding by revealing relationships.",
+        "missions": [
+            {
+                "mission_key": "build-039",
+                "title": "Mission Control Backend Live Telemetry API",
+                "status": "implemented_backend_pr",
+                "next_action": "Merge and redeploy backend, then confirm frontend exits 0/endpoint fallback mode.",
+                "safe_autonomy_level": 1,
+            }
+        ],
+        "policies": [
+            {
+                "policy_key": "read_only_telemetry_first",
+                "title": "Read-only telemetry before operations",
+                "principle": "Mission Control may observe systems before it is allowed to operate them.",
+                "protected": True,
+            },
+            {
+                "policy_key": "owner_authorization_required",
+                "title": "Owner authorization required",
+                "principle": "Run, pause, resume, deploy, credential, and production-write actions require server-side owner authorization.",
+                "protected": True,
+            },
+        ],
+        "decisions": [
+            {
+                "decision_id": "build-039-decision",
+                "action": "Expose safe read-only Mission Control telemetry endpoints in the backend.",
+                "status": "recorded",
+                "risk_level": "low",
+                "rationale": "Read-only observability reduces fallback ambiguity without enabling destructive actions.",
+                "created_at": utc_now(),
+            }
+        ],
+        "questions": [
+            {
+                "question_id": "build-040-scope",
+                "question": "Should the next backend build prioritize GitHub/Render deployment telemetry, source-specific harvester freshness, or owner authorization?",
+                "status": "open",
+                "created_at": utc_now(),
+            }
+        ],
+        "generated_at": utc_now(),
+    }
