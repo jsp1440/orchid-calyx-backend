@@ -1,4 +1,4 @@
-"""BUILD-040 Orchid Continuum Kernel registries.
+"""BUILD-040/041 Orchid Continuum Kernel registries.
 
 The Kernel is intentionally read-only. It exposes a typed, registry-driven
 view of existing Orchid Continuum applications, services, capabilities,
@@ -19,7 +19,7 @@ from .constitutional_orchestrator import orchestrator
 KernelStatus = Literal["active", "planned", "degraded", "blocked", "retired"]
 KernelHealth = Literal["healthy", "attention", "degraded", "critical", "unknown"]
 
-KERNEL_VERSION = "0.1.0"
+KERNEL_VERSION = "0.2.0"
 KERNEL_UPDATED_AT = "2026-07-09T00:00:00+00:00"
 
 
@@ -32,11 +32,16 @@ class TelemetryEvidence(BaseModel):
 class TelemetryState(BaseModel):
     status: KernelStatus
     health: KernelHealth
+    availability: str = "unknown"
+    last_heartbeat: str | None = None
     last_updated: str = KERNEL_UPDATED_AT
     telemetry_source: str
     evidence: list[TelemetryEvidence] = Field(default_factory=list)
     warning: str | None = None
+    warnings: list[str] = Field(default_factory=list)
     recommendation: str | None = None
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    unavailable_reason: str | None = None
 
 
 class RegistryObject(BaseModel):
@@ -51,21 +56,31 @@ class RegistryObject(BaseModel):
     url: str | None = None
     dependencies: list[str] = Field(default_factory=list)
     capabilities: list[str] = Field(default_factory=list)
+    availability: str = "unknown"
+    last_heartbeat: str | None = None
     telemetry_source: str
     last_updated: str = KERNEL_UPDATED_AT
     evidence: list[TelemetryEvidence] = Field(default_factory=list)
     warning: str | None = None
+    warnings: list[str] = Field(default_factory=list)
     recommendation: str | None = None
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    telemetry_unavailable_reason: str | None = None
 
     def telemetry(self) -> TelemetryState:
         return TelemetryState(
             status=self.status,
             health=self.health,
+            availability=self.availability,
+            last_heartbeat=self.last_heartbeat,
             last_updated=self.last_updated,
             telemetry_source=self.telemetry_source,
             evidence=self.evidence,
             warning=self.warning,
+            warnings=self.warnings or ([self.warning] if self.warning else []),
             recommendation=self.recommendation,
+            confidence=self.confidence,
+            unavailable_reason=self.telemetry_unavailable_reason,
         )
 
 
@@ -76,8 +91,7 @@ class ApplicationRegistryEntry(RegistryObject):
 
 
 class ServiceRegistryEntry(RegistryObject):
-    availability: str
-    last_heartbeat: str | None = None
+    pass
 
 
 class CapabilityRegistryEntry(RegistryObject):
@@ -95,6 +109,9 @@ class RateLimit(BaseModel):
 class IntegrationRegistryEntry(RegistryObject):
     authentication_status: Literal["configured", "not_configured", "external", "unknown"]
     rate_limits: list[RateLimit] = Field(default_factory=list)
+    provider: str
+    last_validation: str | None = None
+    credential_reference: str | None = None
 
 
 class BuildRegistryEntry(RegistryObject):
@@ -105,12 +122,16 @@ class BuildRegistryEntry(RegistryObject):
     success_criteria: list[str] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     next_build: str | None = None
+    priority: int = Field(default=50, ge=0, le=100)
+    estimated_complexity: Literal["low", "medium", "high"] = "medium"
 
 
 class ConstitutionRegistryEntry(BaseModel):
     governance_version: str
     policy_count: int
     decision_count: int
+    mission_count: int = 0
+    question_count: int = 0
     constitutional_status: str
     telemetry: TelemetryState
 
@@ -156,6 +177,9 @@ class KernelRegistryService:
                 permissions=["read:kernel", "read:telemetry", "read:builds"],
                 telemetry_source="mission_control_backend_telemetry",
                 evidence=_evidence("BUILD-039", "Mission Control backend telemetry exists and remains the consumer target."),
+                availability="available",
+                last_heartbeat=KERNEL_UPDATED_AT,
+                confidence=0.82,
             ),
             ApplicationRegistryEntry(
                 id="atlas",
@@ -175,7 +199,10 @@ class KernelRegistryService:
                 telemetry_source="kernel_static_registry",
                 evidence=_evidence("BUILD-040", "Atlas is registered for discoverability; runtime health should be wired later."),
                 warning="Runtime Atlas health is not yet probed by the Kernel.",
+                warnings=["Runtime Atlas health is not yet probed by the Kernel."],
                 recommendation="Connect Atlas route and data-layer probes in a future build.",
+                confidence=0.62,
+                telemetry_unavailable_reason="No deployment-aware Atlas route probe is available to the backend Kernel yet.",
             ),
             self._app("species-explorer", "Species Explorer", "/species", "Species search and profile exploration.", ["taxonomy-search", "species-profiles", "media-review"]),
             self._app("knowledge-graph", "Knowledge Graph", "/knowledge-graph", "Relationship graph for orchid taxa, traits, evidence, and citations.", ["graph-search", "relationship-browser", "evidence-review"]),
@@ -198,6 +225,7 @@ class KernelRegistryService:
             self._service("telemetry", "Telemetry", "Operational telemetry collection for Mission Control.", "healthy", "active", ["fastapi"]),
             self._service("image-service", "Image Service", "Image metadata and evidence support service.", "attention", "planned", ["openai", "inaturalist"]),
             self._service("taxonomy-service", "Taxonomy Service", "Taxonomic backbone and species lookup service.", "attention", "active", ["gbif", "world-plants"]),
+            self._service("relationship-engine", "Relationship Engine", "Relationship extraction and graph reasoning service.", "attention", "planned", ["postgres", "traitbank", "eol", "zotero"]),
         ]
 
     def capabilities(self) -> list[CapabilityRegistryEntry]:
@@ -285,7 +313,9 @@ class KernelRegistryService:
                     "Mission Control can consume registry data in a later build",
                 ],
                 blockers=[],
-                next_build="Mission Control registry consumption",
+                next_build="BUILD-041",
+                priority=95,
+                estimated_complexity="medium",
             ),
             BuildRegistryEntry(
                 id="build-039",
@@ -305,23 +335,58 @@ class KernelRegistryService:
                 deployment="backend",
                 success_criteria=["Mission Control telemetry endpoint exists"],
                 next_build="BUILD-040",
+                priority=80,
+                estimated_complexity="medium",
+            ),
+            BuildRegistryEntry(
+                id="build-041",
+                name="BUILD-041 Kernel Activation",
+                description="Activation layer that lets Calyx query, reason over, and recommend next actions from Kernel registries.",
+                version=KERNEL_VERSION,
+                status="active",
+                health="healthy",
+                owner=self.owner,
+                repository=self.backend_repo,
+                dependencies=["build-040", "fastapi", "runtime"],
+                capabilities=["kernel-query-engine", "dependency-graph", "planning", "recommendations", "governance-registry"],
+                telemetry_source="kernel_build_registry",
+                evidence=_evidence("BUILD-041", "Build represented as structured active Kernel task object."),
+                build_number="BUILD-041",
+                branch="feature/build-041-kernel-activation",
+                deployment="backend",
+                success_criteria=[
+                    "Kernel dependency graph is queryable",
+                    "Read-only planner and recommendation endpoints exist",
+                    "Governance is exposed through the Kernel",
+                ],
+                blockers=["Existing RuntimeExecutor test mismatch remains outside BUILD-041 scope."],
+                next_build="Mission Control registry consumption",
+                priority=100,
+                estimated_complexity="high",
             ),
         ]
 
     def constitution(self) -> ConstitutionRegistryEntry:
         status = orchestrator.status()
+        missions = orchestrator.mission_registry().get("missions", [])
+        questions = orchestrator.governance_questions().get("questions", [])
         health: KernelHealth = "healthy" if status.get("status") else "unknown"
         return ConstitutionRegistryEntry(
             governance_version=str(status.get("build", "unknown")),
             policy_count=int(status.get("policy_count", 0)),
             decision_count=int(status.get("decision_count", 0)),
+            mission_count=len(missions),
+            question_count=len(questions),
             constitutional_status=str(status.get("status", "unknown")),
             telemetry=TelemetryState(
                 status="active",
                 health=health,
+                availability="available",
+                last_heartbeat=str(status.get("timestamp", KERNEL_UPDATED_AT)),
                 telemetry_source="runtime.constitutional_orchestrator",
                 evidence=_evidence("BUILD-034", "Constitutional orchestrator supplies governance status."),
                 recommendation="Expose this Kernel governance block to Mission Control after frontend registry consumption work.",
+                confidence=0.9,
             ),
         )
 
@@ -357,6 +422,16 @@ class KernelRegistryService:
             warnings=warnings,
             governance=self.constitution(),
         )
+
+    def governance(self) -> dict[str, Any]:
+        return {
+            "status": orchestrator.status(),
+            "missions": orchestrator.mission_registry().get("missions", []),
+            "policies": orchestrator.policy_registry().get("policies", []),
+            "decisions": orchestrator.decision_ledger().get("decisions", []),
+            "questions": orchestrator.governance_questions().get("questions", []),
+            "constitution": _dump_model(self.constitution()),
+        }
 
     def query_capabilities(self, query: str | None = None, application_id: str | None = None) -> list[CapabilityRegistryEntry]:
         capabilities = self.capabilities()
@@ -399,7 +474,10 @@ class KernelRegistryService:
             telemetry_source="kernel_static_registry",
             evidence=_evidence("BUILD-040", f"{name} registered for platform discovery."),
             warning="Kernel registration is present; live application probe is not wired yet.",
+            warnings=["Kernel registration is present; live application probe is not wired yet."],
             recommendation="Add deployment-aware health probes when Mission Control consumes the registry.",
+            confidence=0.58,
+            telemetry_unavailable_reason="No frontend route probe is available from the backend Kernel in this build.",
         )
 
     def _service(
@@ -426,9 +504,12 @@ class KernelRegistryService:
             telemetry_source="kernel_service_registry",
             evidence=_evidence("BUILD-040", f"{name} registered as backend service infrastructure."),
             warning=warning,
+            warnings=[warning] if warning else [],
             recommendation="Replace static service telemetry with live deployment heartbeat when available.",
             availability="available" if health == "healthy" else "unknown",
             last_heartbeat=KERNEL_UPDATED_AT if health == "healthy" else None,
+            confidence=0.85 if health == "healthy" else 0.45,
+            telemetry_unavailable_reason=None if health == "healthy" else "Live service telemetry source is not configured for this registry object.",
         )
 
     def _integration(
@@ -453,8 +534,16 @@ class KernelRegistryService:
             telemetry_source="kernel_integration_registry",
             evidence=_evidence("BUILD-040", f"{name} integration registered without exposing secrets."),
             warning=None if health == "healthy" else "Authentication and live rate limit telemetry are not probed by the Kernel.",
+            warnings=[] if health == "healthy" else ["Authentication and live rate limit telemetry are not probed by the Kernel."],
             recommendation="Connect provider-specific health checks through approved connector services.",
+            availability="available" if health == "healthy" else "unknown",
+            last_heartbeat=KERNEL_UPDATED_AT if health == "healthy" else None,
+            confidence=0.75 if health == "healthy" else 0.42,
+            telemetry_unavailable_reason=None if health == "healthy" else "Provider validation has not been connected to the Kernel.",
             authentication_status=authentication_status,
+            provider=name,
+            last_validation=KERNEL_UPDATED_AT if health == "healthy" else None,
+            credential_reference=f"vault://orchid-continuum/{integration_id}",
             rate_limits=[
                 RateLimit(window="provider-defined", limit="unknown", source="not_configured_in_kernel")
             ],
