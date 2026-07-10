@@ -54,6 +54,23 @@ def test_authenticated_permissions_and_unauthenticated_write_rejection(monkeypat
     assert allowed.json()["allowedActions"]["submitCommand"]["allowed"] is True
 
 
+def test_persisted_owner_session_can_be_validated(monkeypatch):
+    configure_owner(monkeypatch)
+    api = client()
+    token = owner_token(api)
+    response = api.get("/api/mission-control/owner/session", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "authenticated"
+    assert body["owner"] == "jeff"
+    assert body["auth_type"] == "owner_session"
+    assert body["expires_at"]
+    assert body["allowedActions"]["approveQueueItem"]["allowed"] is True
+    assert body["allowedActions"]["approveQueueItem"]["requiresConfirmation"] is True
+    assert body["allowedActions"]["promoteBrainKnowledge"]["allowed"] is False
+    assert body["allowedActions"]["promoteBrainKnowledge"]["state"] == "not_yet_implemented"
+
+
 def test_source_briefing_persists_and_routes_grants(monkeypatch):
     configure_owner(monkeypatch)
     api = client()

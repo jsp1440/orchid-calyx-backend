@@ -108,10 +108,18 @@ def actor(auth: dict[str, object]) -> str:
 
 
 def allowed_actions(authenticated: bool) -> dict[str, dict[str, Any]]:
-    def action(label: str, *, risk: str = "low", writes: bool = True, high_risk: bool = False) -> dict[str, Any]:
+    def action(
+        label: str,
+        *,
+        risk: str = "low",
+        writes: bool = True,
+        high_risk: bool = False,
+        implemented: bool = True,
+    ) -> dict[str, Any]:
+        allowed = authenticated and implemented
         return {
-            "allowed": authenticated and not high_risk,
-            "state": "owner_authorized_action" if authenticated and not high_risk else "requires_owner_authorization",
+            "allowed": allowed,
+            "state": "owner_authorized_action" if allowed else "not_yet_implemented" if not implemented else "requires_owner_authorization",
             "auth": "owner_session_or_api_key",
             "risk": risk,
             "writesDatabase": writes,
@@ -130,7 +138,12 @@ def allowed_actions(authenticated: bool) -> dict[str, dict[str, Any]]:
         "retryQueueItem": action("Retry eligible failed work."),
         "createResearchRequest": action("Persist a research request for queued analysis."),
         "generatePartnershipPacket": action("Generate and persist a partner packet."),
-        "promoteBrainKnowledge": action("Promote reviewed intelligence into authoritative Brain knowledge.", risk="high", high_risk=True),
+        "promoteBrainKnowledge": action(
+            "Promote reviewed intelligence into authoritative Brain knowledge.",
+            risk="high",
+            high_risk=True,
+            implemented=False,
+        ),
     }
 
 
@@ -277,7 +290,14 @@ def create_session(request: OwnerLoginRequest) -> dict[str, Any]:
 
 @router.get("/session")
 def inspect_session(auth: dict[str, object] = Depends(verify_owner_session)) -> dict[str, Any]:
-    return {"status": "authenticated", "owner": actor(auth), "allowedActions": allowed_actions(True)}
+    return {
+        "status": "authenticated",
+        "owner": actor(auth),
+        "auth_type": auth.get("auth_type"),
+        "issued_at": auth.get("issued_at"),
+        "expires_at": auth.get("expires_at"),
+        "allowedActions": allowed_actions(True),
+    }
 
 
 @router.get("/permissions")
