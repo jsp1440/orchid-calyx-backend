@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request, Response
 
 from app.routers.mission_control import router as mission_control_router
+from app.routers.owner_operations import router as owner_operations_router
 from runtime.connector_routes import router as connector_router
 from runtime.router_fastapi import config_router, infrastructure_router
 
@@ -8,6 +9,8 @@ ALLOWED_MISSION_CONTROL_ORIGINS = {
     "https://orchid-continuum-frontend-vof6.onrender.com",
     "https://orchidcontinuum.org",
     "https://www.orchidcontinuum.org",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
 }
 
 router = APIRouter(tags=["health"])
@@ -24,8 +27,8 @@ def add_mission_control_cors_headers(request: Request, response: Response) -> No
     if origin in ALLOWED_MISSION_CONTROL_ORIGINS:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
-        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key, X-Orchid-Actor"
         response.headers["Access-Control-Max-Age"] = "86400"
 
 
@@ -50,6 +53,7 @@ def system_status():
 
 
 router.include_router(mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(owner_operations_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(config_router)
 router.include_router(infrastructure_router)
 router.include_router(connector_router)
