@@ -1,4 +1,4 @@
-"""FastAPI router for Calyx Runtime v0.1 and BUILD-049 audit commands."""
+"""FastAPI router for Calyx Runtime v0.1, constitutional guardrails, and BUILD-049 audit commands."""
 from typing import Any
 
 from fastapi import APIRouter

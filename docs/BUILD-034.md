@@ -1,4 +1,4 @@
-# BUILD-034 — Constitutional Mission Orchestrator
+# BUILD-034 - Constitutional Mission Orchestrator
 
 ## Objective
 
@@ -14,7 +14,7 @@ This build does **not** grant unsafe production write authority. It creates the 
 
 Provides:
 
-- Autonomy levels 0–4
+- Autonomy levels 0-4
 - Policy registry
 - Mission registry
 - Decision ledger
@@ -32,6 +32,33 @@ Added to `runtime/router_fastapi.py` under `/api/runtime/constitutional/*`:
 - `GET /api/runtime/constitutional/decision-ledger`
 - `GET /api/runtime/constitutional/governance-questions`
 - `POST /api/runtime/constitutional/evaluate`
+
+### Runner API endpoints
+
+BUILD-034 also preserves the runner-oriented constitutional router:
+
+- `runtime/constitutional_router.py`
+
+Exposed endpoints:
+
+- `GET /api/runner/constitutional/status`
+- `GET /api/runner/constitutional/policies`
+- `GET /api/runner/constitutional/missions`
+- `GET /api/runner/constitutional/decision-ledger`
+- `GET /api/runner/constitutional/governance-questions`
+- `POST /api/runner/constitutional/evaluate`
+
+### Main application wiring
+
+- `app/main.py`
+
+Merged behavior:
+
+- Preserves current mainline runner health, BUILD-039 telemetry, BUILD-044+ runtime hooks, science priorities, kernel routes, and autonomous runtime controls.
+- Adds `constitutional_orchestrator` to the runtime support module registry.
+- `run-once` enqueues `optimize_constitutional_orchestrator` alongside core support work.
+- `execute-next` can run `optimize_constitutional_orchestrator`.
+- Includes the runner constitutional router without removing existing routes.
 
 ### Governance schema foundation
 

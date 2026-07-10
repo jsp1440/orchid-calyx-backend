@@ -19,6 +19,7 @@ from app.routers import (
 )
 from runtime.router_fastapi import router as runtime_router
 from runtime.cds_router import router as cds_router
+from runtime.constitutional_router import router as constitutional_router
 from runtime.kernel_router import router as kernel_router
 from runtime.planner_router import router as planner_router
 from runtime.runtime_engine import RuntimeEngine
@@ -108,6 +109,13 @@ SUPPORT_MODULES: list[dict[str, Any]] = [
         "priority": 80,
         "job_name": "optimize_calyx_core",
         "mission": "Check Calyx core health after scientific mission seeding.",
+    },
+    {
+        "module_name": "constitutional_orchestrator",
+        "state": "runtime_support",
+        "priority": 85,
+        "job_name": "optimize_constitutional_orchestrator",
+        "mission": "Check Calyx constitutional guardrail and mission registry readiness.",
     },
     {
         "module_name": "judging",
@@ -291,7 +299,11 @@ def run_once():
                 else:
                     skipped.append(module["job_name"])
 
-            for module in [m for m in SUPPORT_MODULES if m["module_name"] == "calyx_core_health"]:
+            for module in [
+                m
+                for m in SUPPORT_MODULES
+                if m["module_name"] in {"calyx_core_health", "constitutional_orchestrator"}
+            ]:
                 inserted = insert_job_if_missing(
                     cur,
                     job_name=module["job_name"],
@@ -799,6 +811,17 @@ def run_job_logic(job_name: str):
                     "citation": "placeholder required before biological claims are promoted",
                 }
 
+            if job_name == "optimize_constitutional_orchestrator":
+                from runtime.constitutional_orchestrator import orchestrator
+
+                return {
+                    "module": "constitutional_orchestrator",
+                    "status": "completed",
+                    "orchestrator_status": orchestrator.status(),
+                    "message": "Constitutional orchestrator guardrail kernel checked.",
+                    "timestamp": utc_now(),
+                }
+
             if job_name.startswith("job_"):
                 return {
                     "module": "downstream_executor",
@@ -851,6 +874,7 @@ app.include_router(judging.router)
 app.include_router(reference_docs.router)
 app.include_router(runtime_router)
 app.include_router(cds_router)
+app.include_router(constitutional_router)
 app.include_router(kernel_router)
 app.include_router(planner_router)
 
