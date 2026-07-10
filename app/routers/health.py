@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Request, Response
 
+from app.routers.harvesters import router as harvesters_router
 from app.routers.mission_control import router as mission_control_router
 from runtime.connector_routes import router as connector_router
 from runtime.router_fastapi import config_router, infrastructure_router
@@ -50,6 +51,7 @@ def system_status():
 
 
 router.include_router(mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(harvesters_router)
 router.include_router(config_router)
 router.include_router(infrastructure_router)
 router.include_router(connector_router)
