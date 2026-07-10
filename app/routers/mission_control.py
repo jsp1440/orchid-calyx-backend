@@ -194,22 +194,77 @@ def completeness_rows() -> list[dict[str, Any]]:
     for subsystem_id, name, category, metric_name, target, summary in specs:
         score, evidence, blockers = score_from_metric(metrics.get(metric_name, {}), target)
         status = "healthy" if score >= 75 else "warning" if score >= 40 else "stub"
+        blocker_text = "; ".join(blockers) if blockers else None
+        recommendation = "Wire deeper source-specific freshness and provenance checks."
         rows.append(
             {
                 "id": subsystem_id,
+                "display_name": name,
                 "name": name,
+                "health": status,
                 "category": category,
                 "status": status,
+                "completion": score,
                 "completeness": score,
                 "summary": summary,
+                "telemetry_source": metrics.get(metric_name, {}).get("table") or "not connected",
                 "evidence": evidence,
+                "warning_text": blocker_text if status in {"warning", "stub"} else None,
+                "blocker_text": blocker_text,
                 "blockers": blockers,
+                "last_update": utc_now(),
                 "lastChecked": utc_now(),
-                "recommended_next_action": "Wire deeper source-specific freshness and provenance checks.",
+                "recommendation": recommendation,
+                "recommended_next_action": recommendation,
                 "dataSource": metrics.get(metric_name, {}).get("table") or "not connected",
             }
         )
     return rows
+
+
+def runtime_telemetry() -> dict[str, Any]:
+    snapshot = metric_snapshot()
+    metrics = snapshot.get("metrics") or {}
+    runtime_jobs = metrics.get("runtime_jobs", {})
+    runtime_actions = metrics.get("runtime_actions", {})
+    db_connected = bool(snapshot.get("database_connected"))
+    blockers = list(snapshot.get("blockers", []))
+    evidence: list[str] = []
+
+    for label, metric in (("runtime jobs", runtime_jobs), ("runtime actions", runtime_actions)):
+        table = metric.get("table")
+        if table:
+            evidence.append(f"{table} reachable for {label} with {int(metric.get('count') or 0):,} row(s).")
+        else:
+            blockers.append(f"No configured {label} table was reachable.")
+
+    health = "healthy" if db_connected and not blockers else "warning"
+    blocker_text = "; ".join(blockers) if blockers else None
+    return {
+        "id": "calyx_runtime",
+        "display_name": "Calyx Runtime",
+        "health": health,
+        "status": "read_only_observable" if db_connected else "database_unavailable",
+        "completion": 70 if db_connected else 25,
+        "last_update": snapshot.get("generated_at") or utc_now(),
+        "telemetry_source": "oc_admin.ocp_execution_jobs / oc_admin.ocp_runtime_actions",
+        "evidence": evidence,
+        "warning_text": blocker_text if health != "healthy" else None,
+        "blocker_text": blocker_text,
+        "recommendation": "Add source-specific freshness checks and owner-authorized operations in a later build.",
+        "database_connected": db_connected,
+        "metrics": {
+            "runtime_jobs": runtime_jobs,
+            "runtime_actions": runtime_actions,
+        },
+        "safety": {
+            "read_only": True,
+            "write_controls_enabled": False,
+            "deploy_controls_enabled": False,
+            "pause_resume_enabled": False,
+            "owner_authorization_required_for_operations": True,
+        },
+    }
 
 
 def latest_job(cur, job_name: str) -> dict[str, Any] | None:
@@ -324,6 +379,27 @@ def mission_control_status() -> dict[str, Any]:
     }
 
 
+@router.get("/health")
+def mission_control_health() -> dict[str, Any]:
+    status = mission_control_status()
+    health = status["status"]
+    blockers = status.get("blockers", [])
+    blocker_text = "; ".join(blockers) if blockers else None
+    return {
+        **status,
+        "id": "mission_control_backend",
+        "display_name": "Mission Control Backend Telemetry",
+        "health": health,
+        "completion": 80 if status["database_connected"] else 35,
+        "last_update": status["generated_at"],
+        "telemetry_source": "orchid-calyx-backend read-only telemetry router",
+        "evidence": ["Mission Control telemetry router is mounted."] if status["database_connected"] else [],
+        "warning_text": blocker_text if health != "healthy" else None,
+        "blocker_text": blocker_text,
+        "recommendation": "Redeploy the backend after merge, then verify the frontend reads live telemetry.",
+    }
+
+
 @router.get("/subsystems")
 def mission_control_subsystems() -> dict[str, Any]:
     return {"build": BUILD_ID, "subsystems": completeness_rows(), "generated_at": utc_now()}
@@ -354,6 +430,11 @@ def mission_control_audit() -> dict[str, Any]:
 @router.get("/harvesters")
 def mission_control_harvesters() -> dict[str, Any]:
     return {"build": BUILD_ID, "harvesters": harvester_rows(), "generated_at": utc_now()}
+
+
+@router.get("/runtime")
+def mission_control_runtime() -> dict[str, Any]:
+    return {"build": BUILD_ID, "runtime": runtime_telemetry(), "generated_at": utc_now()}
 
 
 @router.get("/repositories")
