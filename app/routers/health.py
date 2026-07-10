@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Request, Response
 
+from app.routers.executive import router as executive_router
 from app.routers.mission_control import router as mission_control_router
 from app.routers.owner_operations import router as owner_operations_router
 from runtime.connector_routes import router as connector_router
@@ -38,6 +39,12 @@ def mission_control_options(full_path: str, request: Request, response: Response
     return {"status": "ok", "path": full_path}
 
 
+@router.options("/api/executive/{full_path:path}")
+def executive_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
 @router.get("/health")
 def health():
     return {"status": "ok"}
@@ -54,6 +61,7 @@ def system_status():
 
 router.include_router(mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(owner_operations_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(executive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(config_router)
 router.include_router(infrastructure_router)
 router.include_router(connector_router)
