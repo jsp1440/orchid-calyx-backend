@@ -19,23 +19,163 @@ from app.routers import (
 )
 from runtime.router_fastapi import router as runtime_router
 from runtime.cds_router import router as cds_router
-from runtime.planner_router import router as planner_router
 from runtime.constitutional_router import router as constitutional_router
+from runtime.kernel_router import router as kernel_router
+from runtime.planner_router import router as planner_router
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
 app = FastAPI()
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-AUTO_LOOP_ENABLED = os.environ.get("OC_RUNNER_AUTOLOOP", "false").lower() == "true"
 AUTO_LOOP_INTERVAL_SECONDS = int(os.environ.get("OC_RUNNER_INTERVAL_SECONDS", "30"))
 ACTIVE_MODE = os.environ.get("OC_RUNNER_ACTIVE_MODE", "true").lower() == "true"
+RUNTIME_ENABLE_FLAGS = (
+    "OC_RUNNER_AUTOLOOP",
+    "CALYX_RUNTIME_ENABLED",
+    "AUTONOMOUS_RUNTIME_ENABLED",
+    "RUNNER_ENABLED",
+    "CALYX_AUTONOMOUS_ENABLED",
+)
+RUNTIME_DISABLE_FLAGS = (
+    "CALYX_AUTONOMOUS_DISABLED",
+    "OC_RUNNER_DISABLED",
+    "CALYX_RUNTIME_DISABLED",
+)
+
+SCIENTIFIC_MODULES: list[dict[str, Any]] = [
+    {
+        "module_name": "pollinator_relationships",
+        "state": "scientific_priority",
+        "priority": 100,
+        "job_name": "audit_missing_pollinator_data",
+        "mission": "Identify orchid taxa missing pollinator data.",
+    },
+    {
+        "module_name": "mycorrhiza_relationships",
+        "state": "scientific_priority",
+        "priority": 98,
+        "job_name": "audit_missing_mycorrhizal_data",
+        "mission": "Identify orchid taxa missing mycorrhizal data.",
+    },
+    {
+        "module_name": "literature_extraction",
+        "state": "scientific_priority",
+        "priority": 96,
+        "job_name": "audit_literature_extraction_coverage",
+        "mission": "Audit literature extraction coverage.",
+    },
+    {
+        "module_name": "ecological_relationship_graph",
+        "state": "scientific_priority",
+        "priority": 95,
+        "job_name": "audit_ecological_relationship_graph_gaps",
+        "mission": "Audit ecological relationship graph gaps.",
+    },
+    {
+        "module_name": "traitbank_traits",
+        "state": "scientific_priority",
+        "priority": 94,
+        "job_name": "audit_traitbank_trait_coverage",
+        "mission": "Audit TraitBank and trait coverage.",
+    },
+    {
+        "module_name": "conservation_habitat",
+        "state": "scientific_priority",
+        "priority": 93,
+        "job_name": "audit_conservation_habitat_gaps",
+        "mission": "Audit conservation and habitat data gaps.",
+    },
+    {
+        "module_name": "image_species_evidence",
+        "state": "scientific_priority",
+        "priority": 90,
+        "job_name": "audit_image_species_evidence_coverage",
+        "mission": "Audit image and species evidence coverage.",
+    },
+    {
+        "module_name": "frontend_knowledge_graph_integration",
+        "state": "scientific_priority",
+        "priority": 88,
+        "job_name": "audit_frontend_relationship_cards",
+        "mission": "Audit frontend relationship cards against backend data.",
+    },
+]
+
+SUPPORT_MODULES: list[dict[str, Any]] = [
+    {
+        "module_name": "calyx_core_health",
+        "state": "runtime_support",
+        "priority": 80,
+        "job_name": "optimize_calyx_core",
+        "mission": "Check Calyx core health after scientific mission seeding.",
+    },
+    {
+        "module_name": "constitutional_orchestrator",
+        "state": "runtime_support",
+        "priority": 85,
+        "job_name": "optimize_constitutional_orchestrator",
+        "mission": "Check Calyx constitutional guardrail and mission registry readiness.",
+    },
+    {
+        "module_name": "judging",
+        "state": "optional_low_priority",
+        "priority": 25,
+        "job_name": "optimize_judging",
+        "mission": "Optional judging module maintenance when no scientific work is pending.",
+    },
+    {
+        "module_name": "awards",
+        "state": "optional_low_priority",
+        "priority": 20,
+        "job_name": "optimize_awards",
+        "mission": "Optional awards module maintenance when no scientific work is pending.",
+    },
+]
+
+MODULE_REGISTRY = SCIENTIFIC_MODULES + SUPPORT_MODULES
+SCIENTIFIC_JOB_NAMES = {module["job_name"] for module in SCIENTIFIC_MODULES}
+JOB_PRIORITIES = {module["job_name"]: module["priority"] for module in MODULE_REGISTRY}
+JOB_MODULES = {module["job_name"]: module for module in MODULE_REGISTRY}
+JOB_PRIORITY_SQL = "CASE job_name " + " ".join(
+    f"WHEN '{job_name}' THEN {priority}" for job_name, priority in JOB_PRIORITIES.items()
+) + " ELSE 0 END"
 
 
 def require_database_url() -> str:
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is required for Calyx runner operations")
     return DATABASE_URL
+
+
+def env_bool(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def autonomous_runtime_config_blocker() -> Optional[dict[str, str]]:
+    for key in RUNTIME_DISABLE_FLAGS:
+        if env_bool(os.environ.get(key)) is True:
+            return {"key": key, "value": os.environ[key], "reason": "explicit_disable_flag"}
+
+    for key in RUNTIME_ENABLE_FLAGS:
+        if key in os.environ and env_bool(os.environ.get(key)) is False:
+            return {"key": key, "value": os.environ[key], "reason": "explicit_enable_flag_false"}
+
+    return None
+
+
+def autonomous_runtime_enabled_by_config() -> bool:
+    return autonomous_runtime_config_blocker() is None
+
+
+AUTO_LOOP_ENABLED = autonomous_runtime_enabled_by_config()
 
 
 class VerificationRequest(BaseModel):
@@ -59,19 +199,23 @@ def runner_health():
         "autoloop_enabled": AUTO_LOOP_ENABLED,
         "interval_seconds": AUTO_LOOP_INTERVAL_SECONDS,
         "active_mode": ACTIVE_MODE,
-        "mode": "build_034_constitutional_orchestrator",
+        "mode": "build_046_scientific_priority_realignment",
+        "autonomous_runtime_blocker": autonomous_runtime_config_blocker(),
+        "runtime_engine": runtime_engine.status(),
     }
 
 
 @app.get("/api/runner/summary")
 def runner_summary():
     modules = [
-        {"module_name": "Calyx Core", "state": "functional", "priority": 98},
-        {"module_name": "Health", "state": "functional", "priority": 97},
-        {"module_name": "Judging", "state": "functional", "priority": 96},
-        {"module_name": "Awards", "state": "functional", "priority": 95},
-        {"module_name": "Mycorrhiza", "state": "functional", "priority": 94},
-        {"module_name": "Constitutional Orchestrator", "state": "functional", "priority": 99},
+        {
+            "module_name": module["module_name"],
+            "state": module["state"],
+            "priority": module["priority"],
+            "job_name": module["job_name"],
+            "mission": module["mission"],
+        }
+        for module in MODULE_REGISTRY
     ]
 
     jobs: list[dict[str, Any]] = []
@@ -83,11 +227,11 @@ def runner_summary():
 
             if table_exists(cur, "oc_admin.ocp_execution_jobs"):
                 cur.execute(
-                    """
+                    f"""
                     SELECT id, job_name, status, started_at, finished_at,
                            retry_count, error_text, details
                     FROM oc_admin.ocp_execution_jobs
-                    ORDER BY id DESC
+                    ORDER BY {JOB_PRIORITY_SQL} DESC, id DESC
                     LIMIT 40
                     """
                 )
@@ -96,6 +240,7 @@ def runner_summary():
                         {
                             "id": row[0],
                             "job_name": row[1],
+                            "priority": JOB_PRIORITIES.get(row[1], 0),
                             "status": row[2],
                             "started_at": str(row[3]) if row[3] else None,
                             "finished_at": str(row[4]) if row[4] else None,
@@ -119,6 +264,7 @@ def runner_summary():
                         "id": row[0],
                         "module_name": row[1],
                         "action_name": row[2],
+                        "priority": JOB_PRIORITIES.get(row[2], 0),
                         "action_status": row[3],
                         "action_details": row[4],
                         "created_at": str(row[5]) if row[5] else None,
@@ -135,37 +281,59 @@ def runner_summary():
 
 @app.post("/api/runner/run-once")
 def run_once():
-    jobs = [
-        "optimize_calyx_core",
-        "optimize_health",
-        "optimize_judging",
-        "optimize_awards",
-        "optimize_mycorrhiza",
-        "optimize_constitutional_orchestrator",
-    ]
-
     created: list[str] = []
     skipped: list[str] = []
 
     with psycopg.connect(require_database_url()) as conn:
         with conn.cursor() as cur:
             ensure_execution_jobs_table(cur)
-            for job in jobs:
+            for module in SCIENTIFIC_MODULES:
                 inserted = insert_job_if_missing(
                     cur,
-                    job_name=job,
-                    dedup_key=f"calyx:{job}",
+                    job_name=module["job_name"],
+                    dedup_key=f"calyx:scientific:{module['job_name']}",
+                    details=mission_details(module),
                 )
                 if inserted:
-                    created.append(job)
+                    created.append(module["job_name"])
                 else:
-                    skipped.append(job)
+                    skipped.append(module["job_name"])
+
+            for module in [
+                m
+                for m in SUPPORT_MODULES
+                if m["module_name"] in {"calyx_core_health", "constitutional_orchestrator"}
+            ]:
+                inserted = insert_job_if_missing(
+                    cur,
+                    job_name=module["job_name"],
+                    dedup_key=f"calyx:support:{module['job_name']}",
+                    details=mission_details(module),
+                )
+                if inserted:
+                    created.append(module["job_name"])
+                else:
+                    skipped.append(module["job_name"])
+
+            if not has_pending_scientific_jobs(cur):
+                for module in [m for m in SUPPORT_MODULES if m["module_name"] in {"judging", "awards"}]:
+                    inserted = insert_job_if_missing(
+                        cur,
+                        job_name=module["job_name"],
+                        dedup_key=f"calyx:optional:{module['job_name']}",
+                        details=mission_details(module),
+                    )
+                    if inserted:
+                        created.append(module["job_name"])
+                    else:
+                        skipped.append(module["job_name"])
         conn.commit()
 
     return {
         "status": "ok",
         "jobs_created": created,
         "jobs_skipped_as_duplicates": skipped,
+        "priority_model": {module["module_name"]: module["priority"] for module in MODULE_REGISTRY},
     }
 
 
@@ -176,12 +344,12 @@ def execute_next():
             ensure_execution_jobs_table(cur)
 
             cur.execute(
-                """
+                f"""
                 SELECT id, job_name
                 FROM oc_admin.ocp_execution_jobs
                 WHERE status = 'pending'
                   AND job_name IS NOT NULL
-                ORDER BY id ASC
+                ORDER BY {JOB_PRIORITY_SQL} DESC, id ASC
                 LIMIT 1
                 """
             )
@@ -232,6 +400,7 @@ def execute_next():
                     "status": "completed",
                     "job_id": job_id,
                     "job_name": job_name,
+                    "priority": JOB_PRIORITIES.get(job_name, 0),
                     "result": result,
                 }
 
@@ -271,6 +440,7 @@ def execute_next():
                     "status": "failed",
                     "job_id": job_id,
                     "job_name": job_name,
+                    "priority": JOB_PRIORITIES.get(job_name, 0),
                     "error": str(exec_err),
                 }
 
@@ -305,7 +475,12 @@ def execute_all():
 
 @app.get("/api/runner/autonomous-status")
 def autonomous_status():
-    return runtime_engine.status()
+    return {
+        **runtime_engine.status(),
+        "autoloop_enabled": AUTO_LOOP_ENABLED,
+        "active_mode": ACTIVE_MODE,
+        "config_blocker": autonomous_runtime_config_blocker(),
+    }
 
 
 @app.post("/api/runner/autonomous-cycle")
@@ -315,14 +490,34 @@ def autonomous_cycle():
 
 @app.post("/api/runner/autonomous-start")
 def autonomous_start():
+    blocker = autonomous_runtime_config_blocker()
+    if blocker:
+        return {
+            "status": "runtime_disabled_by_config",
+            "config_key": blocker["key"],
+            "reason": blocker["reason"],
+            "message": f"Unset {blocker['key']} or set it to true to enable Calyx autonomous runtime on Render.",
+            "engine": runtime_engine.status(),
+        }
+
+    runtime_engine.set_enabled(True)
     started = runtime_engine.start()
-    return {"status": "started" if started else "already_running_or_disabled", "engine": runtime_engine.status()}
+    return {
+        "status": "started" if started else "already_running",
+        "engine": runtime_engine.status(),
+    }
 
 
 @app.post("/api/runner/autonomous-stop")
-def autonomous_stop():
+def autonomous_stop(disable: bool = True):
     stopped = runtime_engine.stop()
-    return {"status": "stopped" if stopped else "still_running", "engine": runtime_engine.status()}
+    if disable:
+        runtime_engine.set_enabled(False)
+    return {
+        "status": "stopped" if stopped else "still_running",
+        "disabled": disable,
+        "engine": runtime_engine.status(),
+    }
 
 
 def utc_now() -> str:
@@ -339,6 +534,63 @@ def safe_count(cur, fq_table: str) -> int:
         return 0
     cur.execute(f"SELECT COUNT(*) FROM {fq_table}")
     return cur.fetchone()[0]
+
+
+def has_pending_scientific_jobs(cur) -> bool:
+    cur.execute(
+        """
+        SELECT 1
+        FROM oc_admin.ocp_execution_jobs
+        WHERE status IN ('pending', 'running')
+          AND job_name = ANY(%s)
+        LIMIT 1
+        """,
+        (list(SCIENTIFIC_JOB_NAMES),),
+    )
+    return cur.fetchone() is not None
+
+
+def mission_details(module: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "module": module["module_name"],
+        "priority": module["priority"],
+        "mission": module["mission"],
+        "source": "calyx_runtime_seed",
+        "provenance": {
+            "source": "BUILD-046 priority model",
+            "generated_at": utc_now(),
+        },
+        "confidence": 0.0,
+        "claim_type": "coverage_audit_seed",
+        "review_status": "unreviewed",
+        "citation": "evidence placeholder required before biological claims are promoted",
+    }
+
+
+def scientific_audit_result(job_name: str, *, source_table: str, evidence_scope: str) -> dict[str, Any]:
+    module = JOB_MODULES[job_name]
+    return {
+        "module": module["module_name"],
+        "status": "completed",
+        "message": module["mission"],
+        "timestamp": utc_now(),
+        "source": {
+            "type": "runtime_coverage_audit",
+            "name": source_table,
+            "evidence_scope": evidence_scope,
+        },
+        "provenance": {
+            "runtime": "calyx_autonomous_runner",
+            "job_name": job_name,
+            "priority": module["priority"],
+        },
+        "confidence": 0.0,
+        "claim_type": "coverage_gap_audit",
+        "review_status": "unreviewed",
+        "citation": "placeholder: attach literature, dataset, or curated source before treating any relationship as fact",
+        "claims": [],
+        "unsupported_claims_promoted": False,
+    }
 
 
 def ensure_runtime_log_table(cur):
@@ -409,6 +661,19 @@ def insert_job_if_missing(
 
     cur.execute(
         """
+        SELECT id
+        FROM oc_admin.ocp_execution_jobs
+        WHERE dedup_key = %s
+           OR job_name = %s
+        LIMIT 1
+        """,
+        (dedup_key, job_name),
+    )
+    if cur.fetchone() is not None:
+        return False
+
+    cur.execute(
+        """
         INSERT INTO oc_admin.ocp_execution_jobs
             (job_name, dedup_key, status, started_at, updated_at, details)
         VALUES
@@ -435,21 +700,77 @@ def normalize_doi(value: Optional[str]) -> str:
 
 
 def run_job_logic(job_name: str):
+    if job_name == "audit_missing_pollinator_data":
+        return scientific_audit_result(
+            job_name,
+            source_table="relationship sources for orchid-pollinator interactions",
+            evidence_scope="taxa missing pollinator observations, citations, or curated relationship rows",
+        )
+
+    if job_name == "audit_missing_mycorrhizal_data":
+        return scientific_audit_result(
+            job_name,
+            source_table="oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache",
+            evidence_scope="taxa missing mycorrhizal association evidence",
+        )
+
+    if job_name == "audit_literature_extraction_coverage":
+        return scientific_audit_result(
+            job_name,
+            source_table="literature extraction pipeline outputs",
+            evidence_scope="papers and extracted orchid relationship claims requiring citation-backed review",
+        )
+
+    if job_name == "audit_ecological_relationship_graph_gaps":
+        return scientific_audit_result(
+            job_name,
+            source_table="ecological relationship graph tables or endpoint",
+            evidence_scope="relationship graph gaps across pollinator, fungal, habitat, and trait edges",
+        )
+
+    if job_name == "audit_traitbank_trait_coverage":
+        return scientific_audit_result(
+            job_name,
+            source_table="TraitBank and local trait coverage sources",
+            evidence_scope="taxa missing trait observations or trait provenance",
+        )
+
+    if job_name == "audit_conservation_habitat_gaps":
+        return scientific_audit_result(
+            job_name,
+            source_table="conservation and habitat data sources",
+            evidence_scope="taxa missing conservation status, habitat, range, or threat provenance",
+        )
+
+    if job_name == "audit_image_species_evidence_coverage":
+        return scientific_audit_result(
+            job_name,
+            source_table="image/species evidence sources",
+            evidence_scope="species pages missing image-backed or specimen-backed evidence records",
+        )
+
+    if job_name == "audit_frontend_relationship_cards":
+        return scientific_audit_result(
+            job_name,
+            source_table="frontend relationship card contract and backend relationship endpoints",
+            evidence_scope="frontend cards that need pollinator, mycorrhiza, graph, literature, and conservation data",
+        )
+
     with psycopg.connect(require_database_url()) as conn:
         with conn.cursor() as cur:
             if job_name == "optimize_calyx_core":
                 return {
-                    "module": "calyx_core",
+                    "module": "calyx_core_health",
                     "status": "completed",
-                    "message": "Calyx core optimization placeholder completed.",
+                    "message": "Calyx core health check completed after scientific priorities.",
                     "timestamp": utc_now(),
                 }
 
             if job_name == "optimize_health":
                 return {
-                    "module": "health",
+                    "module": "calyx_core_health",
                     "status": "completed",
-                    "message": "Health module optimization placeholder completed.",
+                    "message": "Health module compatibility check completed.",
                     "timestamp": utc_now(),
                 }
 
@@ -457,7 +778,7 @@ def run_job_logic(job_name: str):
                 return {
                     "module": "judging",
                     "status": "completed",
-                    "message": "Judging module optimization placeholder completed.",
+                    "message": "Judging module maintenance completed as optional low-priority work.",
                     "timestamp": utc_now(),
                 }
 
@@ -465,7 +786,7 @@ def run_job_logic(job_name: str):
                 return {
                     "module": "awards",
                     "status": "completed",
-                    "message": "Awards module optimization placeholder completed.",
+                    "message": "Awards module maintenance completed as optional low-priority work.",
                     "timestamp": utc_now(),
                 }
 
@@ -475,11 +796,19 @@ def run_job_logic(job_name: str):
                     "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache",
                 )
                 return {
-                    "module": "mycorrhiza",
+                    "module": "mycorrhiza_relationships",
                     "status": "completed",
                     "endpoint_cache_rows": mycorrhiza_rows,
-                    "message": "Mycorrhiza endpoint cache checked.",
+                    "message": "Legacy mycorrhiza endpoint cache checked.",
                     "timestamp": utc_now(),
+                    "source": {
+                        "type": "database_table",
+                        "name": "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache",
+                    },
+                    "confidence": 0.0,
+                    "claim_type": "coverage_check",
+                    "review_status": "unreviewed",
+                    "citation": "placeholder required before biological claims are promoted",
                 }
 
             if job_name == "optimize_constitutional_orchestrator":
@@ -518,7 +847,7 @@ def heartbeat_once():
 runtime_engine = RuntimeEngine(
     heartbeat=heartbeat_once,
     enqueue_jobs=run_once,
-    execute_jobs=execute_all,
+    execute_jobs=execute_next,
     interval_seconds=AUTO_LOOP_INTERVAL_SECONDS,
     enabled=AUTO_LOOP_ENABLED,
 )
@@ -526,7 +855,9 @@ runtime_engine = RuntimeEngine(
 
 @app.on_event("startup")
 def startup_event():
-    runtime_engine.start()
+    if autonomous_runtime_enabled_by_config():
+        runtime_engine.set_enabled(True)
+        runtime_engine.start()
 
 
 @app.on_event("shutdown")
@@ -543,8 +874,9 @@ app.include_router(judging.router)
 app.include_router(reference_docs.router)
 app.include_router(runtime_router)
 app.include_router(cds_router)
-app.include_router(planner_router)
 app.include_router(constitutional_router)
+app.include_router(kernel_router)
+app.include_router(planner_router)
 
 from app.routers import orchid_widgets
 

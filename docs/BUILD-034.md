@@ -1,4 +1,4 @@
-# BUILD-034 — Constitutional Mission Orchestrator
+# BUILD-034 - Constitutional Mission Orchestrator
 
 ## Objective
 
@@ -14,7 +14,7 @@ This build does **not** grant unsafe production write authority. It creates the 
 
 Provides:
 
-- Autonomy levels 0–4
+- Autonomy levels 0-4
 - Policy registry
 - Mission registry
 - Decision ledger
@@ -24,7 +24,7 @@ Provides:
 
 ### Runtime API endpoints
 
-The orchestrator is exposed through runtime endpoints:
+Added to `runtime/router_fastapi.py` under `/api/runtime/constitutional/*`:
 
 - `GET /api/runtime/constitutional/status`
 - `GET /api/runtime/constitutional/policies`
@@ -35,7 +35,7 @@ The orchestrator is exposed through runtime endpoints:
 
 ### Runner API endpoints
 
-BUILD-034 also adds a dedicated runner-oriented router:
+BUILD-034 also preserves the runner-oriented constitutional router:
 
 - `runtime/constitutional_router.py`
 
@@ -52,13 +52,13 @@ Exposed endpoints:
 
 - `app/main.py`
 
-Updates:
+Merged behavior:
 
-- Runner mode reports `build_034_constitutional_orchestrator`.
-- Runner summary includes `Constitutional Orchestrator`.
-- `run-once` enqueues `optimize_constitutional_orchestrator`.
+- Preserves current mainline runner health, BUILD-039 telemetry, BUILD-044+ runtime hooks, science priorities, kernel routes, and autonomous runtime controls.
+- Adds `constitutional_orchestrator` to the runtime support module registry.
+- `run-once` enqueues `optimize_constitutional_orchestrator` alongside core support work.
 - `execute-next` can run `optimize_constitutional_orchestrator`.
-- The constitutional router is included in FastAPI startup.
+- Includes the runner constitutional router without removing existing routes.
 
 ### Governance schema foundation
 
@@ -71,6 +71,12 @@ Creates:
 - `oc_governance.decision_ledger`
 - `oc_governance.governance_questions`
 - `oc_governance.checkpoints`
+
+### Additional kernel artifact
+
+- `runtime/constitutional_kernel.py`
+
+Preserves a dataclass-based policy evaluator artifact for future consolidation with the runtime orchestrator.
 
 ## Autonomy levels
 

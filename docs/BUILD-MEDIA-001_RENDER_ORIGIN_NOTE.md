@@ -1,0 +1,1 @@
+The deployed frontend currently uses https://orchid-continuum-frontend-vof6.onrender.com. This Render origin must be permitted by the Featured Genus media endpoint alongside orchidcontinuum.org.

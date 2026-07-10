@@ -1,4 +1,4 @@
-"""FastAPI router for Calyx Runtime v0.1."""
+"""FastAPI router for Calyx Runtime v0.1, constitutional guardrails, and BUILD-049 audit commands."""
 from typing import Any
 
 from fastapi import APIRouter
@@ -6,12 +6,28 @@ from pydantic import BaseModel, Field
 
 from .config_loader import BrainConfigLoader
 from .constitutional_orchestrator import orchestrator
+from .featured_genus_sentinel import FeaturedGenusSentinel
 from .infrastructure import InfrastructureRegistryService
 from .scheduler import CalyxHeartbeat
+from .science_registry import (
+    AUDIT_ENDPOINT_TO_DEPARTMENT,
+    audit_result,
+    coverage_gaps,
+    datasets,
+    department_by_id,
+    departments,
+    dossier_queue,
+    harvester_status,
+    integration_status,
+    mission_definitions,
+    seed_missions,
+    summary as science_summary,
+)
 
 router = APIRouter(prefix="/api/runtime", tags=["Calyx Runtime"])
 config_router = APIRouter(prefix="/api/config", tags=["Calyx Config"])
 infrastructure_router = APIRouter(prefix="/api/infrastructure", tags=["Calyx Infrastructure"])
+science_router = APIRouter(prefix="/api/science", tags=["Orchid Continuum Science"])
 
 
 class ConstitutionalActionRequest(BaseModel):
@@ -31,6 +47,18 @@ def runtime_heartbeat():
 @router.get("/health")
 def runtime_health():
     return {"runtime": CalyxHeartbeat().run_once()}
+
+
+@router.get("/featured-genus/audit")
+def audit_featured_genus_media() -> dict[str, Any]:
+    """Run the binding Featured Genus audit gate.
+
+    This audit is intentionally read-only. It returns promotion_allowed=false
+    until the BUILD-208 source contract and a live browser-render probe are
+    evidenced. It is the command Calyx must consult before recommending any
+    Featured Genus media merge or deployment.
+    """
+    return FeaturedGenusSentinel().audit()
 
 
 @router.get("/constitutional/status")
@@ -70,6 +98,72 @@ def runtime_constitutional_evaluate(request: ConstitutionalActionRequest) -> dic
     )
 
 
+@science_router.get("/departments")
+def science_departments() -> dict[str, Any]:
+    return {"departments": departments()}
+
+
+@science_router.get("/departments/{department_id}")
+def science_department_detail(department_id: str) -> dict[str, Any]:
+    try:
+        return {"department": department_by_id(department_id)}
+    except KeyError:
+        return {"status": "unknown_department", "department_id": department_id}
+
+
+@science_router.get("/missions")
+def science_missions() -> dict[str, Any]:
+    return {"missions": mission_definitions()}
+
+
+@science_router.post("/seed-missions")
+def science_seed_missions() -> dict[str, Any]:
+    return seed_missions()
+
+
+@science_router.get("/summary")
+def science_summary_endpoint() -> dict[str, Any]:
+    return science_summary()
+
+
+@science_router.get("/status")
+def science_status_endpoint() -> dict[str, Any]:
+    return integration_status()
+
+
+@science_router.get("/datasets")
+def science_datasets_endpoint() -> dict[str, Any]:
+    return datasets()
+
+
+@science_router.get("/gaps")
+def science_gaps_endpoint() -> dict[str, Any]:
+    return coverage_gaps()
+
+
+@science_router.get("/harvesters")
+def science_harvesters_endpoint() -> dict[str, Any]:
+    return harvester_status()
+
+
+@science_router.get("/dossiers")
+def science_dossiers_endpoint() -> dict[str, Any]:
+    return dossier_queue()
+
+
+@science_router.post("/audit/{audit_key}")
+def science_audit(audit_key: str) -> dict[str, Any]:
+    department_id = AUDIT_ENDPOINT_TO_DEPARTMENT.get(audit_key)
+    if not department_id:
+        return {
+            "status": "unknown_audit_key",
+            "audit_key": audit_key,
+            "available_audits": sorted(AUDIT_ENDPOINT_TO_DEPARTMENT),
+            "promoted_claims": False,
+        }
+    return audit_result(department_id)
+
+
 @config_router.get("/manifest")
 def config_manifest():
     return BrainConfigLoader().load_manifest()
@@ -98,3 +192,6 @@ def infrastructure_registry():
 @infrastructure_router.get("/health")
 def infrastructure_health():
     return InfrastructureRegistryService().health()
+
+
+router.include_router(science_router)
