@@ -1,6 +1,11 @@
 import os
+import hmac
+import hashlib
+import secrets
+import time
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from typing import Optional
-from fastapi import Header, HTTPException, Security
+from fastapi import Header, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -10,6 +15,14 @@ def get_api_key():
     return os.getenv("CALYX_API_KEY")
 
 
+def get_owner_access_code() -> str | None:
+    return os.getenv("CALYX_OWNER_ACCESS_CODE")
+
+
+def get_owner_session_secret() -> str | None:
+    return os.getenv("CALYX_OWNER_SESSION_SECRET")
+
+
 async def verify_api_key(api_key: str = Security(api_key_header)):
     expected_key = get_api_key()
     if not expected_key:
@@ -17,6 +30,80 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
     if api_key != expected_key:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return api_key
+
+
+def _b64(data: bytes) -> str:
+    return urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _unb64(data: str) -> bytes:
+    return urlsafe_b64decode(data + "=" * (-len(data) % 4))
+
+
+def create_owner_session_token(owner: str, *, ttl_seconds: int = 3600) -> dict[str, object]:
+    secret = get_owner_session_secret()
+    if not secret:
+        raise HTTPException(status_code=503, detail="Owner session signing is not configured")
+    now = int(time.time())
+    expires_at = now + ttl_seconds
+    nonce = secrets.token_urlsafe(12)
+    payload = f"{owner}|{now}|{expires_at}|{nonce}"
+    signature = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    token = f"{_b64(payload.encode('utf-8'))}.{signature}"
+    return {"token": token, "expires_at": expires_at, "owner": owner}
+
+
+def verify_owner_access_code(access_code: str, owner: str = "owner") -> dict[str, object]:
+    expected = get_owner_access_code()
+    if not expected:
+        raise HTTPException(status_code=503, detail="Owner access is not configured")
+    if not hmac.compare_digest(access_code, expected):
+        raise HTTPException(status_code=401, detail="Invalid owner access code")
+    return create_owner_session_token(owner)
+
+
+def _decode_owner_token(token: str) -> dict[str, object]:
+    secret = get_owner_session_secret()
+    if not secret:
+        raise HTTPException(status_code=503, detail="Owner session signing is not configured")
+    try:
+        payload_b64, signature = token.split(".", 1)
+        payload = _unb64(payload_b64).decode("utf-8")
+        expected_signature = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected_signature):
+            raise ValueError("signature")
+        owner, issued_at, expires_at, nonce = payload.split("|", 3)
+        if int(expires_at) < int(time.time()):
+            raise HTTPException(status_code=401, detail="Owner session expired")
+        return {
+            "actor": owner,
+            "auth_type": "owner_session",
+            "issued_at": int(issued_at),
+            "expires_at": int(expires_at),
+            "nonce": nonce,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Invalid owner session") from exc
+
+
+async def verify_owner_session(request: Request) -> dict[str, object]:
+    authorization = request.headers.get("authorization") or ""
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="Owner session bearer token is required")
+    return _decode_owner_token(token)
+
+
+async def verify_owner_or_api_key(request: Request, api_key: str = Security(api_key_header)) -> dict[str, object]:
+    expected_key = get_api_key()
+    if expected_key and api_key and hmac.compare_digest(api_key, expected_key):
+        return {"actor": "backend_api_key", "auth_type": "api_key"}
+    authorization = request.headers.get("authorization") or ""
+    if authorization:
+        return await verify_owner_session(request)
+    raise HTTPException(status_code=401, detail="Owner session or API key is required")
 
 
 def require_admin(x_orchid_admin_key: Optional[str] = Header(default=None, alias="X-Orchid-Admin-Key")) -> None:

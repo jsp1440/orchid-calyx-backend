@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from app.security import verify_api_key
+from app.security import verify_owner_or_api_key
 from runtime.harvester_control import control_plane
 
 router = APIRouter(prefix="/api/harvesters", tags=["harvesters"])
@@ -51,72 +51,76 @@ def inspect_run_history(harvester_id: str) -> dict[str, Any]:
         raise not_found(exc) from exc
 
 
-@router.post("/{harvester_id}/run-once", dependencies=[Depends(verify_api_key)])
-def run_once(harvester_id: str, owner: str = Depends(actor)) -> dict[str, Any]:
+def verified_actor(auth: dict[str, object] = Depends(verify_owner_or_api_key), header_actor: str = Depends(actor)) -> str:
+    return str(auth.get("actor") or header_actor)
+
+
+@router.post("/{harvester_id}/run-once")
+def run_once(harvester_id: str, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
         return control_plane.run_once(harvester_id, owner)
     except KeyError as exc:
         raise not_found(exc) from exc
 
 
-@router.post("/{harvester_id}/pause", dependencies=[Depends(verify_api_key)])
-def pause(harvester_id: str, owner: str = Depends(actor)) -> dict[str, Any]:
+@router.post("/{harvester_id}/pause")
+def pause(harvester_id: str, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
         return control_plane.pause(harvester_id, owner)
     except KeyError as exc:
         raise not_found(exc) from exc
 
 
-@router.post("/{harvester_id}/resume", dependencies=[Depends(verify_api_key)])
-def resume(harvester_id: str, owner: str = Depends(actor)) -> dict[str, Any]:
+@router.post("/{harvester_id}/resume")
+def resume(harvester_id: str, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
         return control_plane.resume(harvester_id, owner)
     except KeyError as exc:
         raise not_found(exc) from exc
 
 
-@router.post("/{harvester_id}/retire", dependencies=[Depends(verify_api_key)])
-def retire(harvester_id: str, owner: str = Depends(actor)) -> dict[str, Any]:
+@router.post("/{harvester_id}/retire")
+def retire(harvester_id: str, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
         return control_plane.retire(harvester_id, owner)
     except KeyError as exc:
         raise not_found(exc) from exc
 
 
-@router.post("/{harvester_id}/restore", dependencies=[Depends(verify_api_key)])
-def restore(harvester_id: str, owner: str = Depends(actor)) -> dict[str, Any]:
+@router.post("/{harvester_id}/restore")
+def restore(harvester_id: str, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
         return control_plane.restore(harvester_id, owner)
     except KeyError as exc:
         raise not_found(exc) from exc
 
 
-@router.post("/{harvester_id}/target-proposals", dependencies=[Depends(verify_api_key)])
-def propose_target_change(harvester_id: str, request: TargetProposalRequest) -> dict[str, Any]:
+@router.post("/{harvester_id}/target-proposals")
+def propose_target_change(harvester_id: str, request: TargetProposalRequest, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
         return control_plane.propose_target_change(harvester_id, request.proposed_assignment, request.rationale)
     except KeyError as exc:
         raise not_found(exc) from exc
 
 
-@router.post("/{harvester_id}/target-proposals/{proposal_id}/approve", dependencies=[Depends(verify_api_key)])
-def approve_target_change(harvester_id: str, proposal_id: str, owner: str = Depends(actor)) -> dict[str, Any]:
+@router.post("/{harvester_id}/target-proposals/{proposal_id}/approve")
+def approve_target_change(harvester_id: str, proposal_id: str, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
         return control_plane.approve_proposal(harvester_id, proposal_id, owner)
     except KeyError as exc:
         raise not_found(exc) from exc
 
 
-@router.post("/{harvester_id}/target-proposals/{proposal_id}/reject", dependencies=[Depends(verify_api_key)])
-def reject_target_change(harvester_id: str, proposal_id: str, owner: str = Depends(actor)) -> dict[str, Any]:
+@router.post("/{harvester_id}/target-proposals/{proposal_id}/reject")
+def reject_target_change(harvester_id: str, proposal_id: str, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
         return control_plane.reject_proposal(harvester_id, proposal_id, owner)
     except KeyError as exc:
         raise not_found(exc) from exc
 
 
-@router.patch("/{harvester_id}/schedule", dependencies=[Depends(verify_api_key)])
-def update_schedule(harvester_id: str, request: ScheduleRequest, owner: str = Depends(actor)) -> dict[str, Any]:
+@router.patch("/{harvester_id}/schedule")
+def update_schedule(harvester_id: str, request: ScheduleRequest, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
         return control_plane.update_schedule(harvester_id, request.schedule, owner)
     except KeyError as exc:
@@ -131,8 +135,8 @@ def inspect_current_recommendation(harvester_id: str) -> dict[str, Any]:
         raise not_found(exc) from exc
 
 
-@router.post("/{harvester_id}/reassess", dependencies=[Depends(verify_api_key)])
-def request_reassessment(harvester_id: str) -> dict[str, Any]:
+@router.post("/{harvester_id}/reassess")
+def request_reassessment(harvester_id: str, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
         return control_plane.reassess(harvester_id)
     except KeyError as exc:
