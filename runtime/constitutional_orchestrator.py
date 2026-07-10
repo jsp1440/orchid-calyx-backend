@@ -178,7 +178,8 @@ class ConstitutionalMissionOrchestrator:
             blockers.append("rollback_required")
         if any(policy.requires_provenance for policy in applicable) and not provenance_available:
             blockers.append("provenance_required")
-        if requested_autonomy_level >= int(AutonomyLevel.OWNER_APPROVAL_REQUIRED):
+        high_risk_policy_applies = any(policy.policy_id == "owner_approval_for_high_risk" for policy in applicable)
+        if high_risk_policy_applies or requested_autonomy_level >= int(AutonomyLevel.OWNER_APPROVAL_REQUIRED):
             blockers.append("owner_approval_required")
         if not evidence and requested_autonomy_level > int(AutonomyLevel.OBSERVE):
             blockers.append("evidence_required")
@@ -195,7 +196,7 @@ class ConstitutionalMissionOrchestrator:
                 requested_autonomy_level=requested_autonomy_level,
                 approved_autonomy_level=min(approved_level, int(AutonomyLevel.PROPOSE)),
                 status="review_required",
-                risk_level="medium" if "owner_approval_required" not in blockers else "high",
+                risk_level="high" if high_risk_policy_applies or "owner_approval_required" in blockers else "medium",
                 confidence=0.55,
                 constitutional_policies=[policy.policy_id for policy in applicable],
                 rationale="Action requires human review or additional evidence before execution.",
@@ -222,7 +223,30 @@ class ConstitutionalMissionOrchestrator:
     def _policies_for_action(self, action: str) -> list[ConstitutionalPolicy]:
         lower = action.lower()
         policies = [self.policies["preserve_provenance"], self.policies["prefer_reversible_changes"]]
-        if any(term in lower for term in ["deploy", "schema", "delete", "secret", "auth", "security"]):
+        if any(
+            term in lower
+            for term in [
+                "deploy",
+                "deployment",
+                "schema",
+                "delete",
+                "destructive",
+                "secret",
+                "credential",
+                "auth",
+                "security",
+                "external_send",
+                "external send",
+                "cross_repository",
+                "cross-repository",
+                "harvester_control:update_schedule",
+                "harvester_control:propose_target_change",
+                "harvester_control:approve_target_change",
+                "harvester_control:reject_target_change",
+                "harvester_control:retire",
+                "harvester_control:restore",
+            ]
+        ):
             policies.append(self.policies["owner_approval_for_high_risk"])
         if any(term in lower for term in ["literature", "relationship", "pollinator", "mycorrhiza", "matrix"]):
             policies.append(self.policies["distinguish_evidence_from_inference"])

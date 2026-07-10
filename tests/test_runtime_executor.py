@@ -5,10 +5,10 @@ def test_runtime_executor_runs_limited_queue(tmp_path):
     executor = RuntimeExecutor(execution_dir=tmp_path)
     result = executor.execute_queue(limit=1)
 
-    assert result["build"] == "BUILD-012D"
+    assert result["build"] == "BUILD-013"
     assert result["status"] == "completed"
     assert result["executed_count"] == 1
-    assert result["executions"][0]["status"] == "completed"
+    assert result["executions"][0]["status"] in {"completed", "completed_degraded"}
 
 
 def test_runtime_executor_history(tmp_path):

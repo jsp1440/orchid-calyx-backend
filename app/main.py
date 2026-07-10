@@ -13,13 +13,16 @@ from app.routers import (
     calyx_core,
     entries,
     feedback,
+    harvesters,
     health,
     judging,
     reference_docs,
 )
 from runtime.router_fastapi import router as runtime_router
 from runtime.cds_router import router as cds_router
+from runtime.constitutional_router import router as constitutional_router
 from runtime.kernel_router import router as kernel_router
+from runtime.orchestrator_router import router as orchestrator_router
 from runtime.planner_router import router as planner_router
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
@@ -108,6 +111,13 @@ SUPPORT_MODULES: list[dict[str, Any]] = [
         "priority": 80,
         "job_name": "optimize_calyx_core",
         "mission": "Check Calyx core health after scientific mission seeding.",
+    },
+    {
+        "module_name": "constitutional_orchestrator",
+        "state": "runtime_support",
+        "priority": 85,
+        "job_name": "optimize_constitutional_orchestrator",
+        "mission": "Check Calyx constitutional guardrail and mission registry readiness.",
     },
     {
         "module_name": "judging",
@@ -291,7 +301,11 @@ def run_once():
                 else:
                     skipped.append(module["job_name"])
 
-            for module in [m for m in SUPPORT_MODULES if m["module_name"] == "calyx_core_health"]:
+            for module in [
+                m
+                for m in SUPPORT_MODULES
+                if m["module_name"] in {"calyx_core_health", "constitutional_orchestrator"}
+            ]:
                 inserted = insert_job_if_missing(
                     cur,
                     job_name=module["job_name"],
@@ -506,6 +520,29 @@ def autonomous_stop(disable: bool = True):
         "disabled": disable,
         "engine": runtime_engine.status(),
     }
+
+
+@app.post("/api/runner/start")
+def runner_start():
+    return autonomous_start()
+
+
+@app.post("/api/runner/stop")
+def runner_stop(disable: bool = True):
+    return autonomous_stop(disable=disable)
+
+
+@app.post("/api/runner/restart")
+def runner_restart():
+    stopped = runtime_engine.stop()
+    runtime_engine.set_enabled(True)
+    started = runtime_engine.start()
+    return {"status": "restarted" if started else "restart_attempted", "stopped": stopped, "started": started, "engine": runtime_engine.status()}
+
+
+@app.post("/api/runner/seed-missions")
+def seed_runner_missions():
+    return run_once()
 
 
 def utc_now() -> str:
@@ -799,6 +836,17 @@ def run_job_logic(job_name: str):
                     "citation": "placeholder required before biological claims are promoted",
                 }
 
+            if job_name == "optimize_constitutional_orchestrator":
+                from runtime.constitutional_orchestrator import orchestrator
+
+                return {
+                    "module": "constitutional_orchestrator",
+                    "status": "completed",
+                    "orchestrator_status": orchestrator.status(),
+                    "message": "Constitutional orchestrator guardrail kernel checked.",
+                    "timestamp": utc_now(),
+                }
+
             if job_name.startswith("job_"):
                 return {
                     "module": "downstream_executor",
@@ -847,11 +895,14 @@ app.include_router(calyx_core.router)
 app.include_router(awards.router)
 app.include_router(entries.router)
 app.include_router(feedback.router)
+app.include_router(harvesters.router)
 app.include_router(judging.router)
 app.include_router(reference_docs.router)
 app.include_router(runtime_router)
 app.include_router(cds_router)
+app.include_router(constitutional_router)
 app.include_router(kernel_router)
+app.include_router(orchestrator_router)
 app.include_router(planner_router)
 
 from app.routers import orchid_widgets
