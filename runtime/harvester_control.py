@@ -26,6 +26,32 @@ LOW_RISK_ACTIONS = {"run_once", "pause", "resume", "reassess"}
 HIGH_RISK_ACTIONS = {"retire", "restore", "update_schedule", "approve_target_change", "reject_target_change"}
 
 
+def authorized_action_contract(action: str, reason: str, *, risk: str) -> dict[str, Any]:
+    return {
+        "action": action,
+        "allowed": False,
+        "state": "requires_owner_authorization",
+        "auth": "api_key_required",
+        "risk": risk,
+        "reason": reason,
+    }
+
+
+def harvester_allowed_actions() -> dict[str, dict[str, Any]]:
+    return {
+        "runOnce": authorized_action_contract("run_once", "Queues a harvester run and writes run history.", risk="low"),
+        "pause": authorized_action_contract("pause", "Changes harvester operational state.", risk="low"),
+        "resume": authorized_action_contract("resume", "Changes harvester operational state.", risk="low"),
+        "retire": authorized_action_contract("retire", "Removes a source from active harvesting until restored.", risk="high"),
+        "restore": authorized_action_contract("restore", "Returns a retired source to active harvesting.", risk="high"),
+        "changeTarget": authorized_action_contract("propose_target_change", "Creates a reviewed source-target change proposal.", risk="high"),
+        "changeSchedule": authorized_action_contract("update_schedule", "Changes harvester frequency.", risk="high"),
+        "approve": authorized_action_contract("approve_target_change", "Approves a target change proposal.", risk="high"),
+        "reject": authorized_action_contract("reject_target_change", "Rejects a target change proposal.", risk="high"),
+        "reassess": authorized_action_contract("reassess", "Refreshes recommendation state from available telemetry.", risk="low"),
+    }
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -354,6 +380,7 @@ class HarvesterControlPlane:
         data["checkpoint"] = harvester.checkpoint_cursor or "unknown"
         data["runNow"] = "requires_owner_authorization"
         data["pauseResume"] = "requires_owner_authorization"
+        data["allowedActions"] = harvester_allowed_actions()
         data["logSummary"] = harvester.recommendation_rationale
         data["target"] = asdict(harvester.target)
         return data

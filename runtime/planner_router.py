@@ -6,8 +6,9 @@ BUILD-019: Maintains backward compatibility with connector scaffold endpoints at
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.security import verify_api_key
 from .autonomous_discovery import AutonomousDiscoveryEngine
 from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
@@ -22,6 +23,7 @@ from .runtime_planner import RuntimePlanner
 
 
 router = APIRouter(prefix="/api/runner", tags=["Calyx Runtime Planner"])
+WRITE_AUTH = [Depends(verify_api_key)]
 
 # Include BUILD-020 connector execution framework routes
 # These are at /api/connectors (not /api/runner/connectors)
@@ -103,7 +105,7 @@ def runner_queue():
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.post("/rebuild-plan")
+@router.post("/rebuild-plan", dependencies=WRITE_AUTH)
 def runner_rebuild_plan():
     try:
         clear_cds_cache()
@@ -117,12 +119,12 @@ def runner_rebuild_plan():
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.post("/execute")
+@router.post("/execute", dependencies=WRITE_AUTH)
 def execute_queue(limit: int | None = Query(default=None, ge=1, le=100)):
     return executor().execute_queue(limit=limit)
 
 
-@router.post("/execute/{module_id}")
+@router.post("/execute/{module_id}", dependencies=WRITE_AUTH)
 def execute_module(module_id: str):
     result = executor().execute_module(module_id)
     if result.get("status") == "not_found_or_not_selectable":
@@ -153,7 +155,7 @@ def execution_events(limit: int = Query(default=100, ge=1, le=500)):
     return executor().events(limit=limit)
 
 
-@router.post("/retry/{execution_id}")
+@router.post("/retry/{execution_id}", dependencies=WRITE_AUTH)
 def retry_execution(execution_id: str):
     result = executor().retry(execution_id)
     if result.get("status") == "not_found":
@@ -161,7 +163,7 @@ def retry_execution(execution_id: str):
     return result
 
 
-@router.post("/cancel/{execution_id}")
+@router.post("/cancel/{execution_id}", dependencies=WRITE_AUTH)
 def cancel_execution(execution_id: str):
     result = executor().cancel(execution_id)
     if result.get("status") == "not_found":
@@ -210,7 +212,7 @@ def get_autonomous_discovery():
     return discovery_engine().cached_or_discover()
 
 
-@router.post("/discover")
+@router.post("/discover", dependencies=WRITE_AUTH)
 def run_autonomous_discovery():
     return discovery_engine().discover(write_cache=True)
 
@@ -246,12 +248,12 @@ def discovery_dashboard():
     return {"build": "BUILD-014", "dashboard": payload.get("summary", {}), "recommendations": payload.get("recommendations", [])[:5]}
 
 
-@router.post("/rebuild")
+@router.post("/rebuild", dependencies=WRITE_AUTH)
 def rebuild_discovery():
     return discovery_engine().discover(write_cache=True)
 
 
-@router.post("/discovery-snapshots/capture")
+@router.post("/discovery-snapshots/capture", dependencies=WRITE_AUTH)
 def capture_discovery_snapshot():
     return snapshot_store().capture()
 
@@ -286,7 +288,7 @@ def knowledge_gaps():
     return gap_engine().gaps()
 
 
-@router.post("/knowledge-gaps/discover")
+@router.post("/knowledge-gaps/discover", dependencies=WRITE_AUTH)
 def discover_knowledge_gaps():
     return gap_engine().discover(write_cache=True)
 
@@ -316,7 +318,7 @@ def knowledge_gap_dashboard():
     return gap_engine().dashboard()
 
 
-@router.post("/knowledge-diagnostics/discover")
+@router.post("/knowledge-diagnostics/discover", dependencies=WRITE_AUTH)
 def discover_knowledge_diagnostics():
     return diagnostic_engine().diagnose(write_cache=True)
 
@@ -351,7 +353,7 @@ def get_connector_plans():
     return connector_planner().latest()
 
 
-@router.post("/connector-plans/generate")
+@router.post("/connector-plans/generate", dependencies=WRITE_AUTH)
 def generate_connector_plans():
     return connector_planner().generate(write_cache=True)
 
@@ -371,12 +373,12 @@ def connector_plan_dashboard():
     return connector_planner().dashboard()
 
 
-@router.post("/connector-scaffolds/build")
+@router.post("/connector-scaffolds/build", dependencies=WRITE_AUTH)
 def build_connector_scaffolds(limit: int | None = Query(default=None, ge=1, le=50)):
     return connector_runtime().build_queue(limit=limit, write_cache=True)
 
 
-@router.post("/connector-scaffolds/build/{plan_id}")
+@router.post("/connector-scaffolds/build/{plan_id}", dependencies=WRITE_AUTH)
 def build_connector_scaffold(plan_id: str):
     result = connector_runtime().build_plan(plan_id, write_cache=True)
     if result.get("status") == "not_found":

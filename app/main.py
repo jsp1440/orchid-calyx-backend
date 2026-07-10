@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from typing import Optional, Any
 import os
@@ -18,6 +18,8 @@ from app.routers import (
     judging,
     reference_docs,
 )
+from app.security import verify_api_key
+from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
 from runtime.router_fastapi import router as runtime_router
 from runtime.cds_router import router as cds_router
 from runtime.constitutional_router import router as constitutional_router
@@ -174,10 +176,52 @@ def autonomous_runtime_config_blocker() -> Optional[dict[str, str]]:
 
 
 def autonomous_runtime_enabled_by_config() -> bool:
-    return autonomous_runtime_config_blocker() is None
+    if autonomous_runtime_config_blocker() is not None:
+        return False
+
+    return any(env_bool(os.environ.get(key)) is True for key in RUNTIME_ENABLE_FLAGS)
 
 
 AUTO_LOOP_ENABLED = autonomous_runtime_enabled_by_config()
+
+
+def auth_required_action(reason: str, *, risk: str = "medium") -> dict[str, Any]:
+    return {
+        "allowed": False,
+        "state": "requires_owner_authorization",
+        "auth": "api_key_required",
+        "risk": risk,
+        "reason": reason,
+    }
+
+
+def runner_allowed_actions() -> dict[str, dict[str, Any]]:
+    return {
+        "runOnce": auth_required_action("Seeds runtime jobs and writes queue state.", risk="medium"),
+        "seedMissions": auth_required_action("Seeds runtime mission jobs and writes queue state.", risk="medium"),
+        "executeNext": auth_required_action("Executes one pending job and writes execution state.", risk="medium"),
+        "executeAll": auth_required_action("Executes the full pending queue and may perform many writes.", risk="high"),
+        "autonomousCycle": auth_required_action("Runs one autonomous worker cycle.", risk="medium"),
+        "startRuntime": auth_required_action("Starts the autonomous runtime worker.", risk="high"),
+        "stopRuntime": auth_required_action("Stops or disables the autonomous runtime worker.", risk="high"),
+        "restartRuntime": auth_required_action("Restarts the autonomous runtime worker.", risk="high"),
+    }
+
+
+def evaluate_runtime_action(
+    action: str,
+    *,
+    requested_autonomy_level: int = int(AutonomyLevel.SAFE_OPERATIONS),
+    evidence: list[str] | None = None,
+) -> dict[str, Any]:
+    return constitutional_orchestrator.evaluate_action(
+        mission_id="engineering",
+        action=f"runtime:{action}",
+        requested_autonomy_level=requested_autonomy_level,
+        evidence=evidence or [f"route=/api/runner/{action}"],
+        reversible=True,
+        provenance_available=True,
+    )
 
 
 class VerificationRequest(BaseModel):
@@ -204,6 +248,7 @@ def runner_health():
         "mode": "build_046_scientific_priority_realignment",
         "autonomous_runtime_blocker": autonomous_runtime_config_blocker(),
         "runtime_engine": runtime_engine.status(),
+        "allowedActions": runner_allowed_actions(),
     }
 
 
@@ -278,11 +323,13 @@ def runner_summary():
         "jobs": jobs,
         "runtime_actions": runtime_actions,
         "runtime_engine": runtime_engine.status(),
+        "allowedActions": runner_allowed_actions(),
     }
 
 
-@app.post("/api/runner/run-once")
+@app.post("/api/runner/run-once", dependencies=[Depends(verify_api_key)])
 def run_once():
+    decision = evaluate_runtime_action("run_once", evidence=["authenticated API request", "deduplicated job seed"])
     created: list[str] = []
     skipped: list[str] = []
 
@@ -333,14 +380,17 @@ def run_once():
 
     return {
         "status": "ok",
+        "decision": decision["decision"],
         "jobs_created": created,
         "jobs_skipped_as_duplicates": skipped,
         "priority_model": {module["module_name"]: module["priority"] for module in MODULE_REGISTRY},
+        "allowedActions": runner_allowed_actions(),
     }
 
 
-@app.post("/api/runner/execute-next")
+@app.post("/api/runner/execute-next", dependencies=[Depends(verify_api_key)])
 def execute_next():
+    decision = evaluate_runtime_action("execute_next", evidence=["authenticated API request", "single-job execution"])
     with psycopg.connect(require_database_url()) as conn:
         with conn.cursor() as cur:
             ensure_execution_jobs_table(cur)
@@ -358,7 +408,7 @@ def execute_next():
             row = cur.fetchone()
 
             if not row:
-                return {"status": "no_jobs"}
+                return {"status": "no_jobs", "decision": decision["decision"], "allowedActions": runner_allowed_actions()}
 
             job_id, job_name = row
 
@@ -400,10 +450,12 @@ def execute_next():
 
                 return {
                     "status": "completed",
+                    "decision": decision["decision"],
                     "job_id": job_id,
                     "job_name": job_name,
                     "priority": JOB_PRIORITIES.get(job_name, 0),
                     "result": result,
+                    "allowedActions": runner_allowed_actions(),
                 }
 
             except Exception as exec_err:
@@ -440,15 +492,25 @@ def execute_next():
 
                 return {
                     "status": "failed",
+                    "decision": decision["decision"],
                     "job_id": job_id,
                     "job_name": job_name,
                     "priority": JOB_PRIORITIES.get(job_name, 0),
                     "error": str(exec_err),
+                    "allowedActions": runner_allowed_actions(),
                 }
 
 
-@app.post("/api/runner/execute-all")
+@app.post("/api/runner/execute-all", dependencies=[Depends(verify_api_key)])
 def execute_all():
+    decision = evaluate_runtime_action(
+        "execute_all",
+        requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED),
+        evidence=["authenticated API request", "bulk queue execution requested"],
+    )
+    if decision["decision"]["status"] == "review_required":
+        return {"status": "review_required", "decision": decision["decision"], "allowedActions": runner_allowed_actions()}
+
     completed = 0
     failed = 0
 
@@ -457,7 +519,7 @@ def execute_all():
         status = result.get("status")
 
         if status == "no_jobs":
-            return {"status": "queue_empty", "completed": completed, "failed": failed}
+            return {"status": "queue_empty", "decision": decision["decision"], "completed": completed, "failed": failed, "allowedActions": runner_allowed_actions()}
 
         if status == "completed":
             completed += 1
@@ -469,9 +531,11 @@ def execute_all():
 
         return {
             "status": "stopped",
+            "decision": decision["decision"],
             "last_result": result,
             "completed": completed,
             "failed": failed,
+            "allowedActions": runner_allowed_actions(),
         }
 
 
@@ -482,16 +546,26 @@ def autonomous_status():
         "autoloop_enabled": AUTO_LOOP_ENABLED,
         "active_mode": ACTIVE_MODE,
         "config_blocker": autonomous_runtime_config_blocker(),
+        "allowedActions": runner_allowed_actions(),
     }
 
 
-@app.post("/api/runner/autonomous-cycle")
+@app.post("/api/runner/autonomous-cycle", dependencies=[Depends(verify_api_key)])
 def autonomous_cycle():
-    return runtime_engine.run_cycle()
+    decision = evaluate_runtime_action("autonomous_cycle", evidence=["authenticated API request", "single runtime cycle"])
+    return {**runtime_engine.run_cycle(), "decision": decision["decision"], "allowedActions": runner_allowed_actions()}
 
 
-@app.post("/api/runner/autonomous-start")
+@app.post("/api/runner/autonomous-start", dependencies=[Depends(verify_api_key)])
 def autonomous_start():
+    decision = evaluate_runtime_action(
+        "start",
+        requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED),
+        evidence=["authenticated API request", "runtime start requested"],
+    )
+    if decision["decision"]["status"] == "review_required":
+        return {"status": "review_required", "decision": decision["decision"], "engine": runtime_engine.status(), "allowedActions": runner_allowed_actions()}
+
     blocker = autonomous_runtime_config_blocker()
     if blocker:
         return {
@@ -500,6 +574,8 @@ def autonomous_start():
             "reason": blocker["reason"],
             "message": f"Unset {blocker['key']} or set it to true to enable Calyx autonomous runtime on Render.",
             "engine": runtime_engine.status(),
+            "decision": decision["decision"],
+            "allowedActions": runner_allowed_actions(),
         }
 
     runtime_engine.set_enabled(True)
@@ -507,11 +583,18 @@ def autonomous_start():
     return {
         "status": "started" if started else "already_running",
         "engine": runtime_engine.status(),
+        "decision": decision["decision"],
+        "allowedActions": runner_allowed_actions(),
     }
 
 
-@app.post("/api/runner/autonomous-stop")
+@app.post("/api/runner/autonomous-stop", dependencies=[Depends(verify_api_key)])
 def autonomous_stop(disable: bool = True):
+    decision = evaluate_runtime_action(
+        "stop",
+        requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED),
+        evidence=["authenticated API request", "runtime stop requested"],
+    )
     stopped = runtime_engine.stop()
     if disable:
         runtime_engine.set_enabled(False)
@@ -519,28 +602,38 @@ def autonomous_stop(disable: bool = True):
         "status": "stopped" if stopped else "still_running",
         "disabled": disable,
         "engine": runtime_engine.status(),
+        "decision": decision["decision"],
+        "allowedActions": runner_allowed_actions(),
     }
 
 
-@app.post("/api/runner/start")
+@app.post("/api/runner/start", dependencies=[Depends(verify_api_key)])
 def runner_start():
     return autonomous_start()
 
 
-@app.post("/api/runner/stop")
+@app.post("/api/runner/stop", dependencies=[Depends(verify_api_key)])
 def runner_stop(disable: bool = True):
     return autonomous_stop(disable=disable)
 
 
-@app.post("/api/runner/restart")
+@app.post("/api/runner/restart", dependencies=[Depends(verify_api_key)])
 def runner_restart():
+    decision = evaluate_runtime_action(
+        "restart",
+        requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED),
+        evidence=["authenticated API request", "runtime restart requested"],
+    )
+    if decision["decision"]["status"] == "review_required":
+        return {"status": "review_required", "decision": decision["decision"], "engine": runtime_engine.status(), "allowedActions": runner_allowed_actions()}
+
     stopped = runtime_engine.stop()
     runtime_engine.set_enabled(True)
     started = runtime_engine.start()
-    return {"status": "restarted" if started else "restart_attempted", "stopped": stopped, "started": started, "engine": runtime_engine.status()}
+    return {"status": "restarted" if started else "restart_attempted", "stopped": stopped, "started": started, "engine": runtime_engine.status(), "decision": decision["decision"], "allowedActions": runner_allowed_actions()}
 
 
-@app.post("/api/runner/seed-missions")
+@app.post("/api/runner/seed-missions", dependencies=[Depends(verify_api_key)])
 def seed_runner_missions():
     return run_once()
 

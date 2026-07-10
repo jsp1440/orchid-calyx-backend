@@ -9,7 +9,7 @@
 | #33 BUILD-049 | Harvester registry, run history, target proposals, adaptive routing, owner-gated actions | #18 evaluator, #19 audit vocabulary | `app/routers/health.py`, governance concepts | Mount `/api/harvesters/*` once from `app/main.py`. Keep API-key authorization. Harvester high-risk operations call the constitutional evaluator and return decision records. |
 | Frontend #39 | Accessible Mission Control and read-only harvester control display | Backend #33 and integration branch | Mission Control response model | No backend authority is granted by browser unlock. Controls remain disabled unless backend fields explicitly allow an action. |
 
-Required merge order: integration PR first supersedes backend PRs #18, #19, and #33 after review. Frontend PR #39 follows backend deployment.
+Required merge order: integration PR #34 first supersedes backend PRs #18, #19, and #33 after review. Frontend PR #39 follows backend deployment.
 
 ## Canonical Architecture
 
@@ -17,9 +17,10 @@ Required merge order: integration PR first supersedes backend PRs #18, #19, and 
 - Autonomy levels and owner approval gates: `AutonomyLevel` plus policy-driven evaluation; high-risk policy membership forces review even when a caller requests a lower autonomy level.
 - Mission registry, decision ledger, and governance questions: constitutional orchestrator singleton.
 - Durable task queue, runtime enabled state, agent/module registry, observations, and run logs: `runtime.autonomous_orchestrator.CalyxAutonomousOrchestrator` under `/api/orchestrator/*`.
-- Worker lifecycle and runtime metrics: single `runtime.runtime_engine.RuntimeEngine`.
+- Worker lifecycle and runtime metrics: single `runtime.runtime_engine.RuntimeEngine`. The worker does not auto-start by default; startup requires an explicit true enable flag and still respects disable flags.
 - Harvester registry, run history, and target proposals: `runtime.harvester_control.control_plane`.
-- API-key authorization: `app.security.verify_api_key` for state-changing harvester routes.
+- API-key authorization: `app.security.verify_api_key` for every state-changing route under `/api/runner/*`, `/api/runtime/*` constitutional evaluation, `/api/orchestrator/*`, and `/api/harvesters/*`.
+- Allowed-action contract: read models expose disabled `allowedActions` records with `allowed=false`, `state=requires_owner_authorization`, `auth=api_key_required`, risk, and reason.
 - Mission Control telemetry: `app.routers.mission_control` behind scoped read-only CORS in `app.routers.health`.
 
 Compatibility aliases retained:
@@ -33,14 +34,17 @@ Compatibility aliases retained:
 2. Apply `migrations/BUILD-034-constitutional-orchestrator.sql` if it has not already been applied.
 3. Apply `migrations/BUILD-044-calyx-autonomous-orchestrator.sql`.
 4. Apply `migrations/BUILD-049-harvester-command-center.sql`.
+5. Run `migrations/BUILD-034-044-049-smoke-test.sql` with `psql`.
 
 The BUILD-044 and BUILD-049 migrations use `CREATE ... IF NOT EXISTS`, `ALTER ... ADD COLUMN IF NOT EXISTS`, and `CREATE INDEX IF NOT EXISTS` patterns where possible. They are wrapped in explicit transactions. Rollback is limited: after data is written to `oc_admin.calyx_*` or harvester tables, rollback should be a restore-from-backup or a reviewed data migration, not an automatic destructive down migration.
 
 Required environment variables:
 
 - `DATABASE_URL`
-- `CALYX_API_KEY` or the backend API-key variable accepted by `app.security.verify_api_key`
+- `CALYX_API_KEY`
 - Optional: `OC_RUNNER_INTERVAL_SECONDS`, `OC_RUNNER_AUTOLOOP`, `CALYX_RUNTIME_ENABLED`, `AUTONOMOUS_RUNTIME_ENABLED`, `RUNNER_ENABLED`, `CALYX_AUTONOMOUS_ENABLED`, and matching disable flags.
+
+Runtime enablement is fail-stopped: if all enable flags are absent, `AUTO_LOOP_ENABLED=false` and startup imports/health checks do not start a worker. An explicit true enable flag is required, and any true disable flag wins.
 
 ## Route And Authorization Inventory
 
@@ -56,16 +60,18 @@ Read-only constitutional:
 State-changing constitutional:
 
 - `POST /api/runner/constitutional/evaluate` and `POST /api/runtime/constitutional/evaluate`.
-- Authentication: currently none; it records a decision and governance question but does not mutate production state outside the in-process ledger.
+- Authentication: `Depends(verify_api_key)`.
 - Policy evaluation: always uses the canonical constitutional evaluator.
+- Unauthorized response: 401 when `CALYX_API_KEY` is absent, missing from the request, or invalid.
 
 Runtime and orchestrator:
 
 - Read: `GET /api/runner/health`, `/api/runner/summary`, `/api/runner/autonomous-status`, `/api/orchestrator/health`, `/api/orchestrator/agents`, `/api/orchestrator/tasks`, `/api/orchestrator/observations`, `/api/orchestrator/runs`.
-- State-changing: `POST /api/runner/start`, `/stop`, `/restart`, `/run-once`, `/execute-next`, `/execute-all`, `/seed-missions`, `/api/orchestrator/seed`, `/api/orchestrator/tasks`, `/api/orchestrator/tasks/{task_id}/approve`, `/api/orchestrator/run-once`.
-- Authentication: existing runner/orchestrator routes are backend-internal operational routes and should be protected at deployment/network/API-gateway level before public exposure.
-- Policy/approval: BUILD-044 gates risky task types and payloads as `needs_review`; high-risk constitutional terms are aligned with the same vocabulary.
-- Unauthorized response: deployment-level auth should reject before route execution; harvester API-key routes return 401.
+- State-changing: `POST /api/runner/start`, `/stop`, `/restart`, `/autonomous-start`, `/autonomous-stop`, `/autonomous-cycle`, `/run-once`, `/execute-next`, `/execute-all`, `/seed-missions`, planner/executor/discovery POSTs under `/api/runner/*`, `/api/orchestrator/seed`, `/api/orchestrator/tasks`, `/api/orchestrator/tasks/{task_id}/approve`, `/api/orchestrator/run-once`.
+- Authentication: `Depends(verify_api_key)` on each route.
+- Policy/approval: route handlers record constitutional decisions. Runtime start/restart/bulk execute and orchestrator approval/run-once are high-risk terms and return `review_required` before mutation.
+- Unauthorized response: 401 when `CALYX_API_KEY` is absent, missing from the request, or invalid.
+- Read models: `/api/runner/health`, `/api/runner/summary`, `/api/runner/autonomous-status`, and orchestrator read responses include `allowedActions`.
 
 Harvesters:
 
@@ -75,6 +81,7 @@ Harvesters:
 - Policy/approval: target changes, schedule changes, retirement, restoration, and proposal decisions call constitutional evaluation and are review-gated when high-risk policy applies.
 - Expected unauthorized response: 401 when API key is required and absent/invalid.
 - Expected authorized response: JSON status plus harvester/proposal/run payload and, where applicable, decision record.
+- Read models: harvester payloads include `allowedActions` for `runOnce`, `pause`, `resume`, `retire`, `restore`, `changeTarget`, `changeSchedule`, `approve`, `reject`, and `reassess`; all are disabled until the backend receives authenticated mutation requests.
 
 Mission Control:
 
@@ -87,13 +94,28 @@ After deploy:
 
 1. `GET /health`
 2. `GET /api/runner/constitutional/status`
-3. `POST /api/runner/constitutional/evaluate` with `action=delete production records`, `requested_autonomy_level=1`; expect `review_required`, `risk_level=high`.
-4. `GET /api/orchestrator/health`
-5. `POST /api/orchestrator/seed`; expect seeded agents/tasks or a clear `DATABASE_URL` configuration error.
-6. `GET /api/harvesters`; ensure no secrets are present.
-7. Unauthenticated `POST /api/harvesters/gbif/pause`; expect 401 when API key auth is configured.
-8. Authenticated harvester `pause`, `resume`, `run-once`; expect audit-shaped JSON and no credential disclosure.
-9. `GET /api/mission-control/harvesters`; frontend should render read-only safely.
+3. Unauthenticated `POST /api/runner/constitutional/evaluate`; expect 401.
+4. Authenticated `POST /api/runner/constitutional/evaluate` with `action=delete production records`, `requested_autonomy_level=1`; expect `review_required`, `risk_level=high`.
+5. `GET /api/orchestrator/health`; verify `allowedActions` is present and disabled.
+6. Unauthenticated `POST /api/orchestrator/seed`; expect 401.
+7. Authenticated `POST /api/orchestrator/seed`; expect seeded agents/tasks or a clear `DATABASE_URL` configuration error.
+8. `GET /api/harvesters`; ensure `allowedActions` is present and no secrets are present.
+9. Unauthenticated `POST /api/harvesters/gbif/pause`; expect 401.
+10. Authenticated harvester `pause`, `resume`, `run-once`; expect audit-shaped JSON and no credential disclosure.
+11. `GET /api/runner/autonomous-status`; expect stopped worker unless explicit runtime enablement was configured.
+12. `GET /api/mission-control/harvesters`; frontend should render read-only safely.
+
+## Deployment Checklist
+
+1. Confirm `DATABASE_URL` points to the intended production database and take a backup.
+2. Set `CALYX_API_KEY` in the backend runtime environment before exposing state-changing routes.
+3. Leave all runtime enable flags unset for first deploy unless owner approval explicitly authorizes autonomous start.
+4. Apply BUILD-034, BUILD-044, and BUILD-049 migrations in order.
+5. Run `migrations/BUILD-034-044-049-smoke-test.sql`.
+6. Deploy the backend branch and confirm startup logs show no autonomous worker start unless explicitly enabled.
+7. Run the HTTP smoke tests above.
+8. Deploy frontend PR #39 only after backend smoke tests pass and verify browser controls remain disabled unless backend `allowedActions` contract changes.
+9. Do not merge superseded backend PRs #18, #19, or #33 after this integration PR lands.
 
 ## Superseded PRs
 
