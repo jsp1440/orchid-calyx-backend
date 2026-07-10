@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.security import verify_api_key
 from .autonomous_discovery import AutonomousDiscoveryEngine
 
 
 router = APIRouter(prefix="/api/runner", tags=["Calyx Autonomous Discovery"])
+WRITE_AUTH = [Depends(verify_api_key)]
 
 
 def engine() -> AutonomousDiscoveryEngine:
@@ -19,7 +21,7 @@ def get_discovery():
     return engine().cached_or_discover()
 
 
-@router.post("/discover")
+@router.post("/discover", dependencies=WRITE_AUTH)
 def run_discovery():
     return engine().discover(write_cache=True)
 
@@ -55,6 +57,6 @@ def discovery_dashboard():
     return {"build": "BUILD-014", "dashboard": payload.get("summary", {}), "recommendations": payload.get("recommendations", [])[:5]}
 
 
-@router.post("/rebuild")
+@router.post("/rebuild", dependencies=WRITE_AUTH)
 def rebuild_discovery():
     return engine().discover(write_cache=True)

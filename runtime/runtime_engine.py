@@ -1,19 +1,8 @@
-"""Autonomous runtime engine for Calyx.
-
-BUILD-012A turns the existing request/response runner into a small
-background service that can keep Calyx alive without requiring a human to
-press `/api/runner/execute-next`.
-
-The engine is intentionally dependency-injected: FastAPI owns the concrete
-runner functions, while this module owns lifecycle, timing, status, and
-single-instance safety. That keeps this file reusable and avoids importing
-`app.main` back into the runtime package.
-"""
+"""Autonomous runtime engine for Calyx."""
 
 from __future__ import annotations
 
 import threading
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
@@ -28,8 +17,6 @@ def utc_now() -> str:
 
 @dataclass
 class RuntimeEngineState:
-    """Serializable runtime engine state for API/dashboard use."""
-
     enabled: bool
     running: bool = False
     interval_seconds: int = 30
@@ -43,6 +30,9 @@ class RuntimeEngineState:
     last_execute_status: Optional[str] = None
     last_execute_completed: Optional[int] = None
     last_execute_failed: Optional[int] = None
+    completed_count: int = 0
+    failed_count: int = 0
+    queue_depth: Optional[int] = None
     last_error: Optional[str] = None
     events: list[dict[str, Any]] = field(default_factory=list)
 
@@ -61,20 +51,16 @@ class RuntimeEngineState:
             "last_execute_status": self.last_execute_status,
             "last_execute_completed": self.last_execute_completed,
             "last_execute_failed": self.last_execute_failed,
+            "completed_count": self.completed_count,
+            "failed_count": self.failed_count,
+            "queue_depth": self.queue_depth,
             "last_error": self.last_error,
             "events": self.events[-20:],
         }
 
 
 class RuntimeEngine:
-    """Background loop that runs heartbeat + queue execution.
-
-    The engine is deliberately conservative:
-    - start() is idempotent
-    - stop() is graceful
-    - every cycle catches and records errors
-    - only one thread is created per process
-    """
+    """Background loop that runs heartbeat, mission seeding, and work execution."""
 
     def __init__(
         self,
@@ -97,13 +83,11 @@ class RuntimeEngine:
         self._thread: Optional[threading.Thread] = None
 
     def set_enabled(self, enabled: bool) -> None:
-        """Transition the runtime enabled flag without starting or stopping it."""
         with self._lock:
             self.state.enabled = enabled
             self._record_event("runtime_enabled" if enabled else "runtime_disabled")
 
     def start(self) -> bool:
-        """Start the runtime loop if enabled and not already running."""
         if not self.state.enabled:
             self._record_event("runtime_engine_disabled")
             return False
@@ -128,7 +112,6 @@ class RuntimeEngine:
             return True
 
     def stop(self, timeout_seconds: float = 5.0) -> bool:
-        """Request graceful shutdown."""
         self._stop_event.set()
         thread = self._thread
         if thread and thread.is_alive():
@@ -141,20 +124,16 @@ class RuntimeEngine:
                 self._record_event("runtime_engine_stopped")
             return not self.state.running
 
-    def run_cycle(self) -> dict[str, Any]:
-        """Run exactly one autonomous cycle.
+    def restart(self) -> dict[str, Any]:
+        stopped = self.stop()
+        started = self.start()
+        return {"stopped": stopped, "started": started, "engine": self.status()}
 
-        This is useful both for the background thread and for deterministic
-        testing/API inspection.
-        """
+    def run_cycle(self) -> dict[str, Any]:
         started = utc_now()
         with self._lock:
             self.state.last_cycle_started_at = started
             self.state.last_error = None
-
-        heartbeat_result: Any = None
-        enqueue_result: Any = None
-        execute_result: Any = None
 
         try:
             heartbeat_result = self.heartbeat()
@@ -168,8 +147,16 @@ class RuntimeEngine:
                 self.state.last_enqueue_status = self._status_from(enqueue_result)
                 self.state.last_execute_status = self._status_from(execute_result)
                 if isinstance(execute_result, dict):
-                    self.state.last_execute_completed = execute_result.get("completed")
-                    self.state.last_execute_failed = execute_result.get("failed")
+                    completed = int(execute_result.get("completed") or (1 if execute_result.get("status") == "completed" else 0))
+                    failed = int(execute_result.get("failed") or (1 if execute_result.get("status") == "failed" else 0))
+                    self.state.last_execute_completed = completed
+                    self.state.last_execute_failed = failed
+                    self.state.completed_count += completed
+                    self.state.failed_count += failed
+                    if execute_result.get("queue_depth") is not None:
+                        self.state.queue_depth = execute_result.get("queue_depth")
+                if isinstance(enqueue_result, dict) and enqueue_result.get("queue_depth") is not None:
+                    self.state.queue_depth = enqueue_result.get("queue_depth")
                 self._record_event(
                     "runtime_cycle_completed",
                     {
@@ -178,6 +165,7 @@ class RuntimeEngine:
                         "execute_status": self.state.last_execute_status,
                         "completed": self.state.last_execute_completed,
                         "failed": self.state.last_execute_failed,
+                        "queue_depth": self.state.queue_depth,
                     },
                 )
 
@@ -192,6 +180,7 @@ class RuntimeEngine:
         except Exception as exc:  # pragma: no cover - defensive runtime guard
             with self._lock:
                 self.state.cycle_count += 1
+                self.state.failed_count += 1
                 self.state.last_cycle_finished_at = utc_now()
                 self.state.last_error = str(exc)
                 self._record_event("runtime_cycle_failed", {"error": str(exc)})

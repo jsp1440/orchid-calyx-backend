@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from app.security import verify_api_key
 from .constitutional_orchestrator import orchestrator
 
 router = APIRouter(prefix="/api/runner/constitutional", tags=["Calyx Constitutional Orchestrator"])
@@ -46,7 +47,7 @@ def constitutional_governance_questions() -> dict[str, Any]:
     return orchestrator.governance_questions()
 
 
-@router.post("/evaluate")
+@router.post("/evaluate", dependencies=[Depends(verify_api_key)])
 def evaluate_constitutional_action(request: ActionEvaluationRequest) -> dict[str, Any]:
     return orchestrator.evaluate_action(
         mission_id=request.mission_id,
