@@ -89,6 +89,12 @@ def test_state_aggregation_includes_required_systems(monkeypatch):
     assert state["priorities"]
     assert state["recommendations"]
     assert state["briefing"]["executive_summary"]
+    assert state["completion_model"]["weights"]["functional_backend"] == 0.30
+    assert state["activation_matrix"]
+    knowledge_graph = next(item for item in state["subsystems"] if item["id"] == "knowledge_graph")
+    assert "data_coverage" in knowledge_graph
+    assert "source_record_counts" in knowledge_graph
+    assert "telemetry_freshness" in knowledge_graph
 
 
 def test_change_detector_reports_regressions_and_new_blockers():
@@ -113,6 +119,6 @@ def test_executive_api_endpoints_are_read_only(monkeypatch):
     ]:
         response = api.get(endpoint)
         assert response.status_code == 200
-        assert response.json()["build"] == "BUILD-052"
+        assert response.json()["build"] == "BUILD-054"
         assert api.post(endpoint).status_code in {404, 405}
 
