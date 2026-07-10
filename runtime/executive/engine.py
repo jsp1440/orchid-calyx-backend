@@ -9,7 +9,7 @@ from runtime.executive.reasoning import attach_reasoning
 from runtime.executive.recommendations import generate_recommendations
 from runtime.executive.scorer import ordered_priorities
 from runtime.executive.summarizer import executive_briefing, executive_summary
-from runtime.executive.telemetry import collect_subsystems
+from runtime.executive.telemetry import activation_matrix, collect_subsystems, completion_model
 
 _PREVIOUS_STATE: dict[str, Any] | None = None
 
@@ -44,9 +44,11 @@ def build_executive_state(update_cache: bool = True) -> dict[str, Any]:
     subsystems = [item.as_dict() for item in collect_subsystems()]
     priorities = attach_reasoning(ordered_priorities(subsystems, reverse))
     current = {
-        "build": "BUILD-052",
+        "build": "BUILD-054",
         "generated_at": utc_now(),
         "subsystems": subsystems,
+        "completion_model": completion_model(),
+        "activation_matrix": activation_matrix(subsystems),
         "dependencies": {"graph": graph, "reverse": reverse},
         "priorities": priorities,
         "recommendations": generate_recommendations(priorities, subsystems),
