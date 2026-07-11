@@ -7,13 +7,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.security import verify_api_key
+from app.security import verify_owner_or_api_key
 from .autonomous_orchestrator import CalyxAutonomousOrchestrator, OrchestratorConfigError
 from .constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
 
 
 router = APIRouter(prefix="/api/orchestrator", tags=["Calyx Autonomous Orchestrator"])
-AUTH_REQUIRED = [Depends(verify_api_key)]
+AUTH_REQUIRED = [Depends(verify_owner_or_api_key)]
 
 
 class CreateTaskRequest(BaseModel):
@@ -36,7 +36,7 @@ def action_contract() -> dict[str, dict[str, Any]]:
         return {
             "allowed": False,
             "state": "requires_owner_authorization",
-            "auth": "api_key_required",
+            "auth": "owner_session_or_api_key_required",
             "risk": risk,
             "reason": reason,
         }
