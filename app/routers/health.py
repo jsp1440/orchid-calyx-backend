@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, Request, Response
 
 from app.routers.executive import router as executive_router
@@ -13,6 +14,8 @@ ALLOWED_MISSION_CONTROL_ORIGINS = {
     "http://localhost:5174",
     "http://127.0.0.1:5174",
 }
+def allowed_mission_control_origins() -> set[str]:
+    return ALLOWED_MISSION_CONTROL_ORIGINS | {item.strip().rstrip("/") for item in os.getenv("CORS_ALLOW_ORIGIN", "").split(",") if item.strip() and item.strip() != "*"}
 
 router = APIRouter(tags=["health"])
 
@@ -25,10 +28,11 @@ def add_mission_control_cors_headers(request: Request, response: Response) -> No
     browser origins and does not enable credentials or write operations.
     """
     origin = request.headers.get("origin")
-    if origin in ALLOWED_MISSION_CONTROL_ORIGINS:
+    if origin and origin.rstrip("/") in allowed_mission_control_origins():
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, OPTIONS"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key, X-Orchid-Actor"
         response.headers["Access-Control-Max-Age"] = "86400"
 
