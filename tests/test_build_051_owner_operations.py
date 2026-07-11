@@ -138,7 +138,7 @@ def test_harvester_owner_session_allows_safe_mutation(monkeypatch):
     configure_owner(monkeypatch)
     api = client()
     token = owner_token(api)
-    unauthorized = api.post("/api/harvesters/gbif/pause")
+    unauthorized = client().post("/api/harvesters/gbif/pause")
     assert unauthorized.status_code == 401
     authorized = api.post("/api/harvesters/gbif/pause", headers={"Authorization": f"Bearer {token}"})
     assert authorized.status_code == 200

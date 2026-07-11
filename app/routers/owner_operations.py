@@ -17,10 +17,10 @@ from uuid import uuid4
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
-from app.security import verify_owner_access_code, verify_owner_or_api_key, verify_owner_session
+from app.security import OWNER_SESSION_COOKIE, REVOKED_OWNER_NONCES, owner_cookie_samesite, owner_cookie_secure, owner_session_ttl_seconds, verify_owner_access_code, verify_owner_or_api_key, verify_owner_session
 from app.routers.mission_control import completeness_rows, harvester_rows, metric_snapshot
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
 
@@ -128,6 +128,16 @@ def allowed_actions(authenticated: bool) -> dict[str, dict[str, Any]]:
         }
 
     return {
+        "runtime": action("Inspect and operate implemented runtime controls."),
+        "runtimeStart": action("Start the autonomous runtime.", risk="high", high_risk=True),
+        "runtimeStop": action("Stop the autonomous runtime.", risk="high", high_risk=True),
+        "runtimeRestart": action("Restart the autonomous runtime.", risk="high", high_risk=True),
+        "autonomousCycle": action("Run one autonomous cycle."),
+        "harvesters": action("Run implemented harvester actions."),
+        "queueActions": action("Transition eligible operations queue items.", risk="high", high_risk=True),
+        "recommendations": action("Review recommendations; approval is not implemented.", implemented=False),
+        "audits": action("Generate and persist live operational audits."),
+        "governance": action("Read governance evidence; mutation is not implemented.", writes=False, implemented=False),
         "saveBriefing": action("Preserve a source briefing and parsed provisional intelligence records."),
         "importLocalRecords": action("Import owner-approved browser records with deduplication."),
         "editIntelligence": action("Update owner review, assignment, notes, or verification state."),
@@ -278,26 +288,43 @@ def insert_json_table(table: str, record: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/session")
-def create_session(request: OwnerLoginRequest) -> dict[str, Any]:
+def create_session(request: OwnerLoginRequest, response: Response) -> dict[str, Any]:
     session = verify_owner_access_code(request.access_code, request.owner)
+    response.set_cookie(OWNER_SESSION_COOKIE, str(session["token"]), max_age=owner_session_ttl_seconds(), expires=owner_session_ttl_seconds(), httponly=True, secure=owner_cookie_secure(), samesite=owner_cookie_samesite(), path="/api/")
     return {
+        "authenticated": True,
         "status": "authenticated",
-        **session,
+        "owner": session["owner"], "expires_at": session["expires_at"], "token": "cookie",
         "allowedActions": allowed_actions(True),
-        "secretDisclosure": "No API key or privileged backend secret is returned.",
+        "credential_transport": "httponly_cookie",
     }
 
 
 @router.get("/session")
-def inspect_session(auth: dict[str, object] = Depends(verify_owner_session)) -> dict[str, Any]:
+async def inspect_session(request: Request) -> dict[str, Any]:
+    try: auth = await verify_owner_session(request)
+    except HTTPException as exc:
+        reasons = {"Owner session expired": "expired", "Owner session ended": "signed_out", "Invalid owner session": "invalid_session"}
+        return {"authenticated": False, "status": "unauthenticated", "expires_at": None, "allowedActions": allowed_actions(False), "reason": reasons.get(str(exc.detail), "missing_session"), "credential_transport": "httponly_cookie"}
     return {
+        "authenticated": True,
         "status": "authenticated",
         "owner": actor(auth),
         "auth_type": auth.get("auth_type"),
         "issued_at": auth.get("issued_at"),
         "expires_at": auth.get("expires_at"),
         "allowedActions": allowed_actions(True),
+        "reason": None, "credential_transport": "httponly_cookie",
     }
+
+@router.delete("/session")
+async def delete_session(request: Request, response: Response) -> dict[str, Any]:
+    try:
+        auth = await verify_owner_session(request)
+        if auth.get("nonce"): REVOKED_OWNER_NONCES.add(str(auth["nonce"]))
+    except HTTPException: pass
+    response.delete_cookie(OWNER_SESSION_COOKIE, path="/api/", secure=owner_cookie_secure(), httponly=True, samesite=owner_cookie_samesite())
+    return {"authenticated": False, "status": "signed_out", "reason": "owner_signed_out"}
 
 
 @router.get("/permissions")

@@ -18,7 +18,8 @@ from app.routers import (
     judging,
     reference_docs,
 )
-from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, verify_owner_or_api_key
+from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, owner_cookie_secure, verify_owner_or_api_key
+from app.routers.health import allowed_mission_control_origins
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
 from runtime.router_fastapi import router as runtime_router
 from runtime.cds_router import router as cds_router
@@ -307,6 +308,9 @@ def runtime_configuration():
         "api_key_configured": bool(get_api_key()),
         "owner_access_code_configured": bool(get_owner_access_code()),
         "owner_session_secret_configured": bool(get_owner_session_secret()),
+        "cookie_secure": owner_cookie_secure(),
+        "allowed_origin_configured": bool(allowed_mission_control_origins()),
+        "owner_auth_ready": bool(get_owner_access_code() and get_owner_session_secret() and allowed_mission_control_origins()),
         "database_configured": configured("DATABASE_URL"),
         "runtime_enabled": autonomous_runtime_enabled_by_config(),
         "autoloop_enabled": autonomous_runtime_enabled_by_config(),
