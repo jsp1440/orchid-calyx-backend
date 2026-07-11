@@ -27,7 +27,7 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
     expected_key = get_api_key()
     if not expected_key:
         raise HTTPException(status_code=401, detail="API key authentication is not configured")
-    if api_key != expected_key:
+    if not api_key or not hmac.compare_digest(api_key, expected_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return api_key
 
@@ -98,8 +98,12 @@ async def verify_owner_session(request: Request) -> dict[str, object]:
 
 async def verify_owner_or_api_key(request: Request, api_key: str = Security(api_key_header)) -> dict[str, object]:
     expected_key = get_api_key()
-    if expected_key and api_key and hmac.compare_digest(api_key, expected_key):
-        return {"actor": "backend_api_key", "auth_type": "api_key"}
+    if api_key:
+        if not expected_key:
+            raise HTTPException(status_code=401, detail="API key authentication is not configured")
+        if hmac.compare_digest(api_key, expected_key):
+            return {"actor": "backend_api_key", "auth_type": "api_key"}
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
     authorization = request.headers.get("authorization") or ""
     if authorization:
         return await verify_owner_session(request)

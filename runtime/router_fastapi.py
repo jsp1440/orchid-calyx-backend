@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from app.security import verify_api_key
+from app.security import verify_owner_or_api_key
 from .config_loader import BrainConfigLoader
 from .constitutional_orchestrator import orchestrator
 from .featured_genus_sentinel import FeaturedGenusSentinel
@@ -87,7 +87,7 @@ def runtime_constitutional_governance_questions() -> dict[str, Any]:
     return orchestrator.governance_questions()
 
 
-@router.post("/constitutional/evaluate", dependencies=[Depends(verify_api_key)])
+@router.post("/constitutional/evaluate", dependencies=[Depends(verify_owner_or_api_key)])
 def runtime_constitutional_evaluate(request: ConstitutionalActionRequest) -> dict[str, Any]:
     return orchestrator.evaluate_action(
         mission_id=request.mission_id,

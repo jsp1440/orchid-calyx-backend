@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.security import verify_api_key
+from app.security import verify_owner_or_api_key
 from .autonomous_discovery import AutonomousDiscoveryEngine
 from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
@@ -23,7 +23,7 @@ from .runtime_planner import RuntimePlanner
 
 
 router = APIRouter(prefix="/api/runner", tags=["Calyx Runtime Planner"])
-WRITE_AUTH = [Depends(verify_api_key)]
+WRITE_AUTH = [Depends(verify_owner_or_api_key)]
 
 # Include BUILD-020 connector execution framework routes
 # These are at /api/connectors (not /api/runner/connectors)

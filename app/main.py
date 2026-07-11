@@ -18,7 +18,7 @@ from app.routers import (
     judging,
     reference_docs,
 )
-from app.security import verify_api_key
+from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, verify_owner_or_api_key
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
 from runtime.router_fastapi import router as runtime_router
 from runtime.cds_router import router as cds_router
@@ -32,9 +32,10 @@ from runtime.scheduler import CalyxHeartbeat
 app = FastAPI()
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-AUTO_LOOP_INTERVAL_SECONDS = int(os.environ.get("OC_RUNNER_INTERVAL_SECONDS", "30"))
+RUNTIME_INTERVAL_FLAGS = ("CALYX_RUNTIME_INTERVAL_SECONDS", "OC_RUNNER_INTERVAL_SECONDS")
 ACTIVE_MODE = os.environ.get("OC_RUNNER_ACTIVE_MODE", "true").lower() == "true"
 RUNTIME_ENABLE_FLAGS = (
+    "CALYX_AUTOLOOP_ENABLED",
     "OC_RUNNER_AUTOLOOP",
     "CALYX_RUNTIME_ENABLED",
     "AUTONOMOUS_RUNTIME_ENABLED",
@@ -163,14 +164,30 @@ def env_bool(value: Optional[str]) -> Optional[bool]:
     return None
 
 
+def configured(name: str) -> bool:
+    return bool(os.environ.get(name, "").strip())
+
+
+def runtime_interval_seconds_from_env() -> int:
+    for key in RUNTIME_INTERVAL_FLAGS:
+        value = os.environ.get(key)
+        if value is None:
+            continue
+        try:
+            return max(5, int(value))
+        except ValueError:
+            return 30
+    return 30
+
+
 def autonomous_runtime_config_blocker() -> Optional[dict[str, str]]:
     for key in RUNTIME_DISABLE_FLAGS:
         if env_bool(os.environ.get(key)) is True:
-            return {"key": key, "value": os.environ[key], "reason": "explicit_disable_flag"}
+            return {"key": key, "reason": "explicit_disable_flag"}
 
     for key in RUNTIME_ENABLE_FLAGS:
         if key in os.environ and env_bool(os.environ.get(key)) is False:
-            return {"key": key, "value": os.environ[key], "reason": "explicit_enable_flag_false"}
+            return {"key": key, "reason": "explicit_enable_flag_false"}
 
     return None
 
@@ -183,13 +200,15 @@ def autonomous_runtime_enabled_by_config() -> bool:
 
 
 AUTO_LOOP_ENABLED = autonomous_runtime_enabled_by_config()
+AUTO_LOOP_INTERVAL_SECONDS = runtime_interval_seconds_from_env()
+RUNTIME_WRITE_AUTH = [Depends(verify_owner_or_api_key)]
 
 
 def auth_required_action(reason: str, *, risk: str = "medium") -> dict[str, Any]:
     return {
         "allowed": False,
         "state": "requires_owner_authorization",
-        "auth": "api_key_required",
+        "auth": "owner_session_or_api_key_required",
         "risk": risk,
         "reason": reason,
     }
@@ -240,15 +259,62 @@ def verify(request: VerificationRequest):
 
 @app.get("/api/runner/health")
 def runner_health():
+    config = runtime_configuration()
     return {
         "status": "runner alive",
-        "autoloop_enabled": AUTO_LOOP_ENABLED,
-        "interval_seconds": AUTO_LOOP_INTERVAL_SECONDS,
+        "runtime_configured": not config["blockers"],
+        "runtime_enabled": runtime_engine.status()["enabled"],
+        "runtime_running": runtime_engine.status()["running"],
+        "thread_alive": runtime_engine.status()["thread_alive"],
+        "autoloop_enabled": config["autoloop_enabled"],
+        "interval_seconds": config["interval_seconds"],
         "active_mode": ACTIVE_MODE,
         "mode": "build_046_scientific_priority_realignment",
+        "runtime_mode": config["worker_mode"],
         "autonomous_runtime_blocker": autonomous_runtime_config_blocker(),
+        "configuration": config,
         "runtime_engine": runtime_engine.status(),
         "allowedActions": runner_allowed_actions(),
+    }
+
+
+@app.get("/api/runtime/configuration")
+def runtime_configuration():
+    blocker = autonomous_runtime_config_blocker()
+    blockers: list[str] = []
+    deployment_actions: list[str] = []
+    if not get_api_key():
+        blockers.append("CALYX_API_KEY is missing; backend API-key runtime controls are disabled.")
+        deployment_actions.append("Set CALYX_API_KEY in Render with a high-entropy secret.")
+    if not get_owner_access_code():
+        blockers.append("CALYX_OWNER_ACCESS_CODE is missing; browser owner login is disabled.")
+        deployment_actions.append("Set CALYX_OWNER_ACCESS_CODE in Render.")
+    if not get_owner_session_secret():
+        blockers.append("CALYX_OWNER_SESSION_SECRET is missing; owner session signing is disabled.")
+        deployment_actions.append("Set CALYX_OWNER_SESSION_SECRET in Render with a high-entropy secret.")
+    if not configured("DATABASE_URL"):
+        blockers.append("DATABASE_URL is missing; durable queue execution is disabled.")
+        deployment_actions.append("Set DATABASE_URL and apply required runtime migrations before production activation.")
+    if blocker:
+        blockers.append(f"{blocker['key']} disables the runtime by policy: {blocker['reason']}.")
+        deployment_actions.append(f"Update {blocker['key']} or remove it to allow runtime activation.")
+
+    interval = runtime_interval_seconds_from_env()
+    if interval == 30 and any(os.environ.get(key) and not str(os.environ.get(key)).isdigit() for key in RUNTIME_INTERVAL_FLAGS):
+        blockers.append("Runtime interval is invalid format; using safe 30 second default.")
+
+    return {
+        "api_key_configured": bool(get_api_key()),
+        "owner_access_code_configured": bool(get_owner_access_code()),
+        "owner_session_secret_configured": bool(get_owner_session_secret()),
+        "database_configured": configured("DATABASE_URL"),
+        "runtime_enabled": autonomous_runtime_enabled_by_config(),
+        "autoloop_enabled": autonomous_runtime_enabled_by_config(),
+        "interval_seconds": interval,
+        "hosting_mode": "render" if os.environ.get("RENDER") else "generic_asgi",
+        "worker_mode": "in_process_single_worker_per_web_process",
+        "blockers": blockers,
+        "deployment_actions_required": deployment_actions,
     }
 
 
@@ -327,7 +393,7 @@ def runner_summary():
     }
 
 
-@app.post("/api/runner/run-once", dependencies=[Depends(verify_api_key)])
+@app.post("/api/runner/run-once", dependencies=RUNTIME_WRITE_AUTH)
 def run_once():
     decision = evaluate_runtime_action("run_once", evidence=["authenticated API request", "deduplicated job seed"])
     created: list[str] = []
@@ -388,7 +454,7 @@ def run_once():
     }
 
 
-@app.post("/api/runner/execute-next", dependencies=[Depends(verify_api_key)])
+@app.post("/api/runner/execute-next", dependencies=RUNTIME_WRITE_AUTH)
 def execute_next():
     decision = evaluate_runtime_action("execute_next", evidence=["authenticated API request", "single-job execution"])
     with psycopg.connect(require_database_url()) as conn:
@@ -403,6 +469,7 @@ def execute_next():
                   AND job_name IS NOT NULL
                 ORDER BY {JOB_PRIORITY_SQL} DESC, id ASC
                 LIMIT 1
+                FOR UPDATE SKIP LOCKED
                 """
             )
             row = cur.fetchone()
@@ -501,7 +568,7 @@ def execute_next():
                 }
 
 
-@app.post("/api/runner/execute-all", dependencies=[Depends(verify_api_key)])
+@app.post("/api/runner/execute-all", dependencies=RUNTIME_WRITE_AUTH)
 def execute_all():
     decision = evaluate_runtime_action(
         "execute_all",
@@ -541,22 +608,26 @@ def execute_all():
 
 @app.get("/api/runner/autonomous-status")
 def autonomous_status():
+    config = runtime_configuration()
     return {
         **runtime_engine.status(),
-        "autoloop_enabled": AUTO_LOOP_ENABLED,
+        "runtime_configured": not config["blockers"],
+        "autoloop_enabled": config["autoloop_enabled"],
         "active_mode": ACTIVE_MODE,
+        "runtime_mode": config["worker_mode"],
         "config_blocker": autonomous_runtime_config_blocker(),
+        "configuration": config,
         "allowedActions": runner_allowed_actions(),
     }
 
 
-@app.post("/api/runner/autonomous-cycle", dependencies=[Depends(verify_api_key)])
+@app.post("/api/runner/autonomous-cycle", dependencies=RUNTIME_WRITE_AUTH)
 def autonomous_cycle():
     decision = evaluate_runtime_action("autonomous_cycle", evidence=["authenticated API request", "single runtime cycle"])
     return {**runtime_engine.run_cycle(), "decision": decision["decision"], "allowedActions": runner_allowed_actions()}
 
 
-@app.post("/api/runner/autonomous-start", dependencies=[Depends(verify_api_key)])
+@app.post("/api/runner/autonomous-start", dependencies=RUNTIME_WRITE_AUTH)
 def autonomous_start():
     decision = evaluate_runtime_action(
         "start",
@@ -588,7 +659,7 @@ def autonomous_start():
     }
 
 
-@app.post("/api/runner/autonomous-stop", dependencies=[Depends(verify_api_key)])
+@app.post("/api/runner/autonomous-stop", dependencies=RUNTIME_WRITE_AUTH)
 def autonomous_stop(disable: bool = True):
     decision = evaluate_runtime_action(
         "stop",
@@ -607,17 +678,17 @@ def autonomous_stop(disable: bool = True):
     }
 
 
-@app.post("/api/runner/start", dependencies=[Depends(verify_api_key)])
+@app.post("/api/runner/start", dependencies=RUNTIME_WRITE_AUTH)
 def runner_start():
     return autonomous_start()
 
 
-@app.post("/api/runner/stop", dependencies=[Depends(verify_api_key)])
+@app.post("/api/runner/stop", dependencies=RUNTIME_WRITE_AUTH)
 def runner_stop(disable: bool = True):
     return autonomous_stop(disable=disable)
 
 
-@app.post("/api/runner/restart", dependencies=[Depends(verify_api_key)])
+@app.post("/api/runner/restart", dependencies=RUNTIME_WRITE_AUTH)
 def runner_restart():
     decision = evaluate_runtime_action(
         "restart",
@@ -633,7 +704,7 @@ def runner_restart():
     return {"status": "restarted" if started else "restart_attempted", "stopped": stopped, "started": started, "engine": runtime_engine.status(), "decision": decision["decision"], "allowedActions": runner_allowed_actions()}
 
 
-@app.post("/api/runner/seed-missions", dependencies=[Depends(verify_api_key)])
+@app.post("/api/runner/seed-missions", dependencies=RUNTIME_WRITE_AUTH)
 def seed_runner_missions():
     return run_once()
 

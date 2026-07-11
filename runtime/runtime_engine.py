@@ -30,6 +30,8 @@ class RuntimeEngineState:
     last_execute_status: Optional[str] = None
     last_execute_completed: Optional[int] = None
     last_execute_failed: Optional[int] = None
+    last_completed_job: Optional[str] = None
+    last_failed_job: Optional[str] = None
     completed_count: int = 0
     failed_count: int = 0
     queue_depth: Optional[int] = None
@@ -51,10 +53,13 @@ class RuntimeEngineState:
             "last_execute_status": self.last_execute_status,
             "last_execute_completed": self.last_execute_completed,
             "last_execute_failed": self.last_execute_failed,
+            "last_completed_job": self.last_completed_job,
+            "last_failed_job": self.last_failed_job,
             "completed_count": self.completed_count,
             "failed_count": self.failed_count,
             "queue_depth": self.queue_depth,
             "last_error": self.last_error,
+            "current_blocker": self.last_error,
             "events": self.events[-20:],
         }
 
@@ -153,6 +158,10 @@ class RuntimeEngine:
                     self.state.last_execute_failed = failed
                     self.state.completed_count += completed
                     self.state.failed_count += failed
+                    if completed:
+                        self.state.last_completed_job = str(execute_result.get("job_name") or execute_result.get("module") or "runtime_job")
+                    if failed:
+                        self.state.last_failed_job = str(execute_result.get("job_name") or execute_result.get("module") or "runtime_job")
                     if execute_result.get("queue_depth") is not None:
                         self.state.queue_depth = execute_result.get("queue_depth")
                 if isinstance(enqueue_result, dict) and enqueue_result.get("queue_depth") is not None:
