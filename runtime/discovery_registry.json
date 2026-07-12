@@ -1635,6 +1635,58 @@
     {
       "category": "API",
       "dependencies": [
+        "__future__",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "pydantic",
+        "typing",
+        "uuid"
+      ],
+      "description": "EnqueueRequest provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "EnqueueRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "pydantic",
+        "typing",
+        "uuid"
+      ],
+      "description": "EnqueueRequest provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "EnqueueRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
         "app.deps",
         "app.models",
         "app.schemas",
@@ -1720,6 +1772,7 @@
     {
       "category": "API",
       "dependencies": [
+        "app.routers.calyx_queue",
         "app.routers.executive",
         "app.routers.mission_control",
         "app.routers.owner_operations",
@@ -1896,8 +1949,10 @@
         "__future__",
         "app.routers.mission_control",
         "app.security",
+        "base64",
         "datetime",
         "fastapi",
+        "io",
         "json",
         "os",
         "psycopg",
@@ -1906,8 +1961,10 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "struct",
         "typing",
-        "uuid"
+        "uuid",
+        "zipfile"
       ],
       "description": "OwnerLoginRequest provides: Execute runtime work",
       "health": "healthy",
@@ -1926,8 +1983,10 @@
         "__future__",
         "app.routers.mission_control",
         "app.security",
+        "base64",
         "datetime",
         "fastapi",
+        "io",
         "json",
         "os",
         "psycopg",
@@ -1936,8 +1995,10 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "struct",
         "typing",
-        "uuid"
+        "uuid",
+        "zipfile"
       ],
       "description": "OwnerLoginRequest provides: Expose API endpoints",
       "health": "healthy",
@@ -1956,8 +2017,10 @@
         "__future__",
         "app.routers.mission_control",
         "app.security",
+        "base64",
         "datetime",
         "fastapi",
+        "io",
         "json",
         "os",
         "psycopg",
@@ -1966,8 +2029,10 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "struct",
         "typing",
-        "uuid"
+        "uuid",
+        "zipfile"
       ],
       "description": "OwnerLoginRequest provides: Inspect Brain state",
       "health": "healthy",
@@ -2155,11 +2220,31 @@
         "Plan runtime work"
       ],
       "provider": "ShowCreate"
+    },
+    {
+      "category": "Execution",
+      "dependencies": [
+        "app.database",
+        "app.routers.owner_operations",
+        "json",
+        "logging",
+        "runtime.harvester_control",
+        "sqlalchemy",
+        "time"
+      ],
+      "description": "Worker provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "Worker"
     }
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 156,
+    "edge_count": 160,
     "edges": [
       {
         "from": "GovernanceService",
@@ -2692,6 +2777,16 @@
         "type": "import"
       },
       {
+        "from": "Security",
+        "to": "EnqueueRequest",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "EnqueueRequest",
+        "type": "import"
+      },
+      {
         "from": "Deps",
         "to": "Entries",
         "type": "import"
@@ -2807,12 +2902,22 @@
         "type": "import"
       },
       {
+        "from": "BrainIntegrationWorker",
+        "to": "OwnerLoginRequest",
+        "type": "import"
+      },
+      {
         "from": "KnowledgeGapDiagnosticsEngine",
         "to": "OwnerLoginRequest",
         "type": "import"
       },
       {
         "from": "CDSRegistryError",
+        "to": "OwnerLoginRequest",
+        "type": "import"
+      },
+      {
+        "from": "InfrastructureRegistryService",
         "to": "OwnerLoginRequest",
         "type": "import"
       },
@@ -3008,6 +3113,10 @@
         "module": "ScheduleRequest"
       },
       {
+        "dependency": "app.routers.calyx_queue",
+        "module": "Health"
+      },
+      {
         "dependency": "app.routers.owner_operations",
         "module": "Health"
       },
@@ -3066,9 +3175,17 @@
       {
         "dependency": "app.schemas",
         "module": "Volunteers"
+      },
+      {
+        "dependency": "app.routers.owner_operations",
+        "module": "Worker"
+      },
+      {
+        "dependency": "runtime.harvester_control",
+        "module": "Worker"
       }
     ],
-    "node_count": 92,
+    "node_count": 93,
     "nodes": [
       {
         "category": "Runtime",
@@ -3570,6 +3687,13 @@
       {
         "category": "API",
         "health": "healthy",
+        "name": "EnqueueRequest",
+        "path": "app/routers/calyx_queue.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
         "name": "Entries",
         "path": "app/routers/entries.py",
         "type": "api_router"
@@ -3709,7 +3833,7 @@
       },
       {
         "category": "Execution",
-        "health": "available",
+        "health": "healthy",
         "name": "Worker",
         "path": "app/worker.py",
         "type": "python_module"
@@ -4990,6 +5114,8 @@
         "resume",
         "retire",
         "restore",
+        "cancel_run",
+        "reschedule",
         "update_schedule",
         "propose_target_change",
         "approve_proposal",
@@ -4999,9 +5125,7 @@
         "recommend",
         "serialize_harvester",
         "_transition",
-        "_evaluate",
-        "_require_harvester",
-        "_require_proposal"
+        "_evaluate"
       ],
       "module_type": "python_module",
       "name": "ScientificTarget",
@@ -6142,6 +6266,71 @@
     },
     {
       "capabilities": [
+        "Execute runtime work",
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [
+        "EnqueueRequest",
+        "QueueTransition"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "pydantic",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "utc_now",
+        "actor",
+        "_db_url",
+        "_db_execute",
+        "_list_queue",
+        "_get_job",
+        "_insert_job",
+        "_update_job",
+        "_queue_summary",
+        "list_queue",
+        "enqueue_job",
+        "get_job",
+        "cancel_job",
+        "retry_job",
+        "pause_job",
+        "resume_job",
+        "queue_telemetry",
+        "_fetch",
+        "_insert",
+        "_get",
+        "_do",
+        "_do",
+        "_do",
+        "_do",
+        "_fetch"
+      ],
+      "module_type": "api_router",
+      "name": "EnqueueRequest",
+      "path": "app/routers/calyx_queue.py",
+      "routers": [
+        "GET ",
+        "POST ",
+        "GET /{job_id}",
+        "POST /{job_id}/cancel",
+        "POST /{job_id}/retry",
+        "POST /{job_id}/pause",
+        "POST /{job_id}/resume",
+        "GET /telemetry/summary"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
         "Expose API endpoints"
       ],
       "category": "API",
@@ -6268,6 +6457,8 @@
         "resume",
         "retire",
         "restore",
+        "cancel",
+        "reschedule",
         "propose_target_change",
         "approve_target_change",
         "reject_target_change",
@@ -6287,6 +6478,8 @@
         "POST /{harvester_id}/resume",
         "POST /{harvester_id}/retire",
         "POST /{harvester_id}/restore",
+        "POST /{harvester_id}/cancel",
+        "POST /{harvester_id}/reschedule",
         "POST /{harvester_id}/target-proposals",
         "POST /{harvester_id}/target-proposals/{proposal_id}/approve",
         "POST /{harvester_id}/target-proposals/{proposal_id}/reject",
@@ -6303,6 +6496,7 @@
       "category": "API",
       "classes": [],
       "dependencies": [
+        "app.routers.calyx_queue",
         "app.routers.executive",
         "app.routers.mission_control",
         "app.routers.owner_operations",
@@ -6319,6 +6513,7 @@
         "mission_control_options",
         "executive_options",
         "scientific_intelligence_options",
+        "calyx_queue_options",
         "health",
         "system_status"
       ],
@@ -6603,8 +6798,10 @@
         "__future__",
         "app.routers.mission_control",
         "app.security",
+        "base64",
         "datetime",
         "fastapi",
+        "io",
         "json",
         "os",
         "psycopg",
@@ -6613,8 +6810,10 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "struct",
         "typing",
-        "uuid"
+        "uuid",
+        "zipfile"
       ],
       "functions": [
         "utc_now",
@@ -6635,13 +6834,13 @@
         "patch_intelligence",
         "live_audit_payload",
         "audit_markdown",
+        "_audit_sections",
+        "audit_pdf",
+        "audit_docx",
+        "_build_audit_content",
         "generate_audit",
         "list_audits",
-        "parse_command",
-        "submit_command",
-        "command_history",
-        "operations_queue",
-        "transition_queue_item"
+        "parse_command"
       ],
       "module_type": "api_router",
       "name": "OwnerLoginRequest",
@@ -7034,12 +7233,17 @@
       "status": "available"
     },
     {
-      "capabilities": [],
+      "capabilities": [
+        "Execute runtime work"
+      ],
       "category": "Execution",
       "classes": [],
       "dependencies": [
         "app.database",
+        "app.routers.owner_operations",
+        "json",
         "logging",
+        "runtime.harvester_control",
         "sqlalchemy",
         "time"
       ],
@@ -7047,19 +7251,22 @@
         "fetch_next_job",
         "mark_job_running",
         "mark_job_done",
+        "mark_job_failed",
+        "execute_harvester_job",
+        "execute_job",
         "main"
       ],
       "module_type": "python_module",
       "name": "Worker",
       "path": "app/worker.py",
       "routers": [],
-      "status": "available"
+      "status": "healthy"
     }
   ],
   "recommendations": [
     {
       "priority": "MEDIUM",
-      "reason": "31 internal dependency hints were not matched to modules.",
+      "reason": "34 internal dependency hints were not matched to modules.",
       "recommendation": "Normalize internal dependency declarations",
       "source": "dependency_graph"
     },
@@ -7079,12 +7286,12 @@
   "status": "discovered",
   "summary": {
     "brain_connected": true,
-    "capabilities": 99,
+    "capabilities": 102,
     "degraded": 1,
-    "graph_edges": 156,
-    "graph_nodes": 92,
-    "healthy": 69,
-    "modules": 92,
+    "graph_edges": 160,
+    "graph_nodes": 93,
+    "healthy": 71,
+    "modules": 93,
     "recommendations": 3
   }
 }

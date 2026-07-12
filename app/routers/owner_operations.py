@@ -74,7 +74,7 @@ class IntelligencePatchRequest(BaseModel):
 
 class AuditRequest(BaseModel):
     audit_type: str = Field(default="overall", min_length=1)
-    output_format: str = Field(default="markdown", pattern="^(json|markdown)$")
+    output_format: str = Field(default="markdown", pattern="^(json|markdown|pdf|docx)$")
 
 
 class CommandRequest(BaseModel):
@@ -498,21 +498,192 @@ def audit_markdown(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _audit_sections(payload: dict[str, Any]) -> list[tuple[str, list[str]]]:
+    """Return structured (heading, lines) sections shared across binary formats."""
+    title = payload["audit_type"].replace("_", " ").title() + " Audit"
+    meta = [f"Generated: {payload['generated_at']}", f"Confidence: {payload['confidence']}"]
+    counts = [f"{k}: {v}" for k, v in payload["record_counts"].items()]
+    missing = list(payload["missing_relationships"])
+    strengths = list(payload["strengths"])
+    weaknesses = list(payload["weaknesses"])
+    actions = list(payload["recommended_next_actions"])
+    return [
+        (title, meta),
+        ("Record Counts", counts),
+        ("Missing Relationships", missing),
+        ("Strengths", strengths),
+        ("Weaknesses", weaknesses),
+        ("Recommended Next Actions", actions),
+    ]
+
+
+def audit_pdf(payload: dict[str, Any]) -> bytes:
+    """Generate a minimal valid PDF from audit payload using pure Python."""
+    import io
+    import struct
+
+    md = audit_markdown(payload)
+    title = payload["audit_type"].replace("_", " ").title() + " Audit"
+
+    def _pdf_string(s: str) -> bytes:
+        safe = s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)").replace("\r", "")
+        return safe.encode("latin-1", errors="replace")
+
+    buf = io.BytesIO()
+
+    def w(data: bytes | str) -> int:
+        if isinstance(data, str):
+            data = data.encode()
+        pos = buf.tell()
+        buf.write(data)
+        return pos
+
+    offsets: list[int] = []
+
+    # Header
+    w(b"%PDF-1.4\n")
+
+    # Object 1: Catalog
+    offsets.append(buf.tell())
+    w("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+
+    # Object 2: Pages
+    offsets.append(buf.tell())
+    w("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+
+    # Object 3: Font
+    offsets.append(buf.tell())
+    w("3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n")
+
+    # Wrap markdown into PDF-safe lines
+    raw_lines = md.split("\n")
+    pdf_lines: list[bytes] = []
+    for line in raw_lines:
+        text_bytes = _pdf_string(line[:110])
+        pdf_lines.append(b"BT /F1 10 Tf 40 " + str(750 - len(pdf_lines) * 13).encode() + b" Td (" + text_bytes + b") Tj ET")
+
+    stream_body = b"\n".join(pdf_lines)
+    stream_len = len(stream_body)
+
+    # Object 4: Content stream
+    offsets.append(buf.tell())
+    w(f"4 0 obj\n<< /Length {stream_len} >>\nstream\n")
+    w(stream_body)
+    w("\nendstream\nendobj\n")
+
+    # Object 5: Page
+    offsets.append(buf.tell())
+    w("5 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+      "/Contents 4 0 R /Resources << /Font << /F1 3 0 R >> >> >>\nendobj\n")
+
+    xref_pos = buf.tell()
+    w(f"xref\n0 6\n0000000000 65535 f \n")
+    for off in offsets:
+        w(f"{off:010d} 00000 n \n")
+
+    w(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n")
+
+    return buf.getvalue()
+
+
+def audit_docx(payload: dict[str, Any]) -> bytes:
+    """Generate a minimal valid DOCX from audit payload using Python's zipfile."""
+    import io
+    import zipfile
+
+    sections = _audit_sections(payload)
+
+    def _xml_escape(s: str) -> str:
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+    paras: list[str] = []
+    for idx, (heading, items) in enumerate(sections):
+        style = "Heading1" if idx == 0 else "Heading2"
+        paras.append(
+            f'<w:p><w:pPr><w:pStyle w:val="{style}"/></w:pPr>'
+            f'<w:r><w:t>{_xml_escape(heading)}</w:t></w:r></w:p>'
+        )
+        for item in items:
+            paras.append(
+                f'<w:p><w:r><w:t xml:space="preserve">• {_xml_escape(item)}</w:t></w:r></w:p>'
+            )
+
+    document_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" '
+        'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        "<w:body>" + "".join(paras) + "</w:body></w:document>"
+    )
+
+    rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+        "</Relationships>"
+    )
+
+    content_types_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        "</Types>"
+    )
+
+    word_rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'
+    )
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types_xml)
+        zf.writestr("_rels/.rels", rels_xml)
+        zf.writestr("word/document.xml", document_xml)
+        zf.writestr("word/_rels/document.xml.rels", word_rels_xml)
+
+    return buf.getvalue()
+
+
+def _build_audit_content(output_format: str, payload: dict[str, Any]):
+    """Return (content, is_binary) for the given output format."""
+    if output_format == "json":
+        return payload, False
+    if output_format == "markdown":
+        return audit_markdown(payload), False
+    if output_format == "pdf":
+        return audit_pdf(payload), True
+    if output_format == "docx":
+        return audit_docx(payload), True
+    return audit_markdown(payload), False
+
+
 @router.post("/audits")
 def generate_audit(request: AuditRequest, auth: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict[str, Any]:
     payload = live_audit_payload(request.audit_type)
-    content = payload if request.output_format == "json" else audit_markdown(payload)
+    content, is_binary = _build_audit_content(request.output_format, payload)
+
+    if is_binary:
+        import base64
+        content_field = base64.b64encode(content).decode()
+        encoding = "base64"
+    else:
+        content_field = content
+        encoding = "none"
+
     record = {
         "id": payload["audit_id"],
         "audit_type": request.audit_type,
         "output_format": request.output_format,
-        "content": content,
+        "content": content_field,
+        "content_encoding": encoding,
         "payload": payload,
         "created_by": actor(auth),
         "created_at": utc_now(),
     }
     insert_json_table("generated_audits", record)
-    log_action(auth, "audit:generate", "generated_audit", record["id"], {"audit_type": request.audit_type})
+    log_action(auth, "audit:generate", "generated_audit", record["id"], {"audit_type": request.audit_type, "output_format": request.output_format})
     return {"status": "generated", "audit": record, "allowedActions": allowed_actions(True)}
 
 
