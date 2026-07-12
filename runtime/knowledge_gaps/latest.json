@@ -1,0 +1,255 @@
+{
+  "build": "BUILD-016",
+  "domain_coverage": {
+    "Conservation": {
+      "coverage_score": 0,
+      "keywords": [
+        "conservation",
+        "iucn",
+        "threat",
+        "habitat",
+        "climate"
+      ],
+      "matched_items": [],
+      "status": "gap"
+    },
+    "Governance": {
+      "coverage_score": 20,
+      "keywords": [
+        "governance",
+        "review",
+        "audit",
+        "provenance",
+        "claim"
+      ],
+      "matched_items": [
+        "GovernanceService"
+      ],
+      "status": "thin"
+    },
+    "Images": {
+      "coverage_score": 0,
+      "keywords": [
+        "image",
+        "media",
+        "photo",
+        "vision"
+      ],
+      "matched_items": [],
+      "status": "gap"
+    },
+    "Literature": {
+      "coverage_score": 20,
+      "keywords": [
+        "literature",
+        "citation",
+        "reference",
+        "paper",
+        "doc"
+      ],
+      "matched_items": [
+        "ReferenceDocs"
+      ],
+      "status": "thin"
+    },
+    "Mycorrhiza": {
+      "coverage_score": 0,
+      "keywords": [
+        "mycorrhiza",
+        "fungal",
+        "fungus"
+      ],
+      "matched_items": [],
+      "status": "gap"
+    },
+    "Occurrences": {
+      "coverage_score": 0,
+      "keywords": [
+        "occurrence",
+        "atlas",
+        "gbif",
+        "inat",
+        "location",
+        "geo"
+      ],
+      "matched_items": [],
+      "status": "gap"
+    },
+    "Pollination": {
+      "coverage_score": 0,
+      "keywords": [
+        "pollination",
+        "pollinator",
+        "interaction",
+        "ecology"
+      ],
+      "matched_items": [],
+      "status": "gap"
+    },
+    "Taxonomy": {
+      "coverage_score": 0,
+      "keywords": [
+        "taxonomy",
+        "taxon",
+        "species",
+        "genus",
+        "synonym",
+        "name"
+      ],
+      "matched_items": [],
+      "status": "gap"
+    },
+    "Traits": {
+      "coverage_score": 0,
+      "keywords": [
+        "trait",
+        "morphology",
+        "phenology",
+        "flower",
+        "life"
+      ],
+      "matched_items": [],
+      "status": "gap"
+    }
+  },
+  "gaps": [
+    {
+      "domain": "Taxonomy",
+      "evidence": [
+        "Matched runtime items: 0"
+      ],
+      "gap_id": "KG-TAXONOMY-001",
+      "priority": "CRITICAL",
+      "proposed_action": "Add or connect taxonomy data sources, validators, and review-ready outputs.",
+      "severity_score": 100,
+      "source": "BUILD-016",
+      "title": "Taxonomy coverage is gap"
+    },
+    {
+      "domain": "Images",
+      "evidence": [
+        "Matched runtime items: 0"
+      ],
+      "gap_id": "KG-IMAGES-001",
+      "priority": "CRITICAL",
+      "proposed_action": "Add or connect images data sources, validators, and review-ready outputs.",
+      "severity_score": 100,
+      "source": "BUILD-016",
+      "title": "Images coverage is gap"
+    },
+    {
+      "domain": "Occurrences",
+      "evidence": [
+        "Matched runtime items: 0"
+      ],
+      "gap_id": "KG-OCCURRENCES-001",
+      "priority": "CRITICAL",
+      "proposed_action": "Add or connect occurrences data sources, validators, and review-ready outputs.",
+      "severity_score": 100,
+      "source": "BUILD-016",
+      "title": "Occurrences coverage is gap"
+    },
+    {
+      "domain": "Pollination",
+      "evidence": [
+        "Matched runtime items: 0"
+      ],
+      "gap_id": "KG-POLLINATION-001",
+      "priority": "CRITICAL",
+      "proposed_action": "Add or connect pollination data sources, validators, and review-ready outputs.",
+      "severity_score": 100,
+      "source": "BUILD-016",
+      "title": "Pollination coverage is gap"
+    },
+    {
+      "domain": "Mycorrhiza",
+      "evidence": [
+        "Matched runtime items: 0"
+      ],
+      "gap_id": "KG-MYCORRHIZA-001",
+      "priority": "CRITICAL",
+      "proposed_action": "Add or connect mycorrhiza data sources, validators, and review-ready outputs.",
+      "severity_score": 100,
+      "source": "BUILD-016",
+      "title": "Mycorrhiza coverage is gap"
+    },
+    {
+      "domain": "Conservation",
+      "evidence": [
+        "Matched runtime items: 0"
+      ],
+      "gap_id": "KG-CONSERVATION-001",
+      "priority": "CRITICAL",
+      "proposed_action": "Add or connect conservation data sources, validators, and review-ready outputs.",
+      "severity_score": 100,
+      "source": "BUILD-016",
+      "title": "Conservation coverage is gap"
+    },
+    {
+      "domain": "Traits",
+      "evidence": [
+        "Matched runtime items: 0"
+      ],
+      "gap_id": "KG-TRAITS-001",
+      "priority": "CRITICAL",
+      "proposed_action": "Add or connect traits data sources, validators, and review-ready outputs.",
+      "severity_score": 100,
+      "source": "BUILD-016",
+      "title": "Traits coverage is gap"
+    },
+    {
+      "domain": "Literature",
+      "evidence": [
+        "Matched runtime items: 1"
+      ],
+      "gap_id": "KG-LITERATURE-001",
+      "priority": "HIGH",
+      "proposed_action": "Add or connect literature data sources, validators, and review-ready outputs.",
+      "severity_score": 80,
+      "source": "BUILD-016",
+      "title": "Literature coverage is thin"
+    },
+    {
+      "domain": "Governance",
+      "evidence": [
+        "Matched runtime items: 1"
+      ],
+      "gap_id": "KG-GOVERNANCE-001",
+      "priority": "HIGH",
+      "proposed_action": "Add or connect governance data sources, validators, and review-ready outputs.",
+      "severity_score": 80,
+      "source": "BUILD-016",
+      "title": "Governance coverage is thin"
+    },
+    {
+      "domain": "Governance",
+      "evidence": [
+        "3 active runtime recommendation(s) found."
+      ],
+      "gap_id": "KG-RUNTIME-RECOMMENDATIONS-001",
+      "priority": "HIGH",
+      "proposed_action": "Convert runtime recommendations into ranked implementation tasks.",
+      "severity_score": 75,
+      "source": "BUILD-016",
+      "title": "Runtime recommendations need triage"
+    }
+  ],
+  "generated_at": "2026-07-12T07:23:53.016619+00:00",
+  "source_snapshot_id": "DSM-20260712072353008811-57c7a72b",
+  "status": "knowledge_gaps_discovered",
+  "summary": {
+    "critical": 7,
+    "domains": 9,
+    "gaps": 10,
+    "high": 3,
+    "source_capabilities": 98,
+    "source_modules": 84
+  },
+  "top_actions": [
+    "Add or connect taxonomy data sources, validators, and review-ready outputs.",
+    "Add or connect images data sources, validators, and review-ready outputs.",
+    "Add or connect occurrences data sources, validators, and review-ready outputs.",
+    "Add or connect pollination data sources, validators, and review-ready outputs.",
+    "Add or connect mycorrhiza data sources, validators, and review-ready outputs."
+  ]
+}

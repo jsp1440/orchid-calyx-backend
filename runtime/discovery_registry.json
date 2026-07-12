@@ -1,0 +1,6638 @@
+{
+  "build": "BUILD-014",
+  "capabilities": [
+    {
+      "category": "Planning",
+      "dependencies": [
+        "__future__",
+        "ast",
+        "dataclasses",
+        "json",
+        "pathlib",
+        "runtime_planner",
+        "typing"
+      ],
+      "description": "AutonomousDiscoveryEngine provides: Analyze dependencies",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Analyze dependencies",
+      "outputs": [
+        "Analyze dependencies"
+      ],
+      "provider": "AutonomousDiscoveryEngine"
+    },
+    {
+      "category": "Planning",
+      "dependencies": [
+        "__future__",
+        "ast",
+        "dataclasses",
+        "json",
+        "pathlib",
+        "runtime_planner",
+        "typing"
+      ],
+      "description": "AutonomousDiscoveryEngine provides: Discover runtime capabilities",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Discover runtime capabilities",
+      "outputs": [
+        "Discover runtime capabilities"
+      ],
+      "provider": "AutonomousDiscoveryEngine"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "typing"
+      ],
+      "description": "DefaultTaskExecutor provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "DefaultTaskExecutor"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "typing"
+      ],
+      "description": "DefaultTaskExecutor provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "DefaultTaskExecutor"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "os",
+        "psycopg",
+        "psycopg.types.json",
+        "typing"
+      ],
+      "description": "AutonomousRunner provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "AutonomousRunner"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "os",
+        "psycopg",
+        "psycopg.types.json",
+        "typing"
+      ],
+      "description": "AutonomousRunner provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "AutonomousRunner"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "models",
+        "typing"
+      ],
+      "description": "BottleneckService provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "BottleneckService"
+    },
+    {
+      "category": "Brain",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "knowledge_gap_discovery",
+        "os",
+        "psycopg",
+        "typing"
+      ],
+      "description": "BrainTableMatch provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "BrainTableMatch"
+    },
+    {
+      "category": "Brain",
+      "dependencies": [
+        "__future__",
+        "os",
+        "pathlib",
+        "psycopg",
+        "runtime_planner",
+        "typing"
+      ],
+      "description": "BrainIntegrationWorker provides: Analyze dependencies",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Analyze dependencies",
+      "outputs": [
+        "Analyze dependencies"
+      ],
+      "provider": "BrainIntegrationWorker"
+    },
+    {
+      "category": "Brain",
+      "dependencies": [
+        "__future__",
+        "os",
+        "pathlib",
+        "psycopg",
+        "runtime_planner",
+        "typing"
+      ],
+      "description": "BrainIntegrationWorker provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "BrainIntegrationWorker"
+    },
+    {
+      "category": "Brain",
+      "dependencies": [
+        "__future__",
+        "os",
+        "pathlib",
+        "psycopg",
+        "runtime_planner",
+        "typing"
+      ],
+      "description": "BrainIntegrationWorker provides: Harvest engineering memory",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Harvest engineering memory",
+      "outputs": [
+        "Harvest engineering memory"
+      ],
+      "provider": "BrainIntegrationWorker"
+    },
+    {
+      "category": "Brain",
+      "dependencies": [
+        "__future__",
+        "os",
+        "pathlib",
+        "psycopg",
+        "runtime_planner",
+        "typing"
+      ],
+      "description": "BrainIntegrationWorker provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "BrainIntegrationWorker"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "brain_integration",
+        "fastapi",
+        "runtime_planner"
+      ],
+      "description": "BrainRouter provides: Analyze dependencies",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL",
+        "HTTP request"
+      ],
+      "name": "Analyze dependencies",
+      "outputs": [
+        "Analyze dependencies"
+      ],
+      "provider": "BrainRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "brain_integration",
+        "fastapi",
+        "runtime_planner"
+      ],
+      "description": "BrainRouter provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL",
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "BrainRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "brain_integration",
+        "fastapi",
+        "runtime_planner"
+      ],
+      "description": "BrainRouter provides: Harvest engineering memory",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL",
+        "HTTP request"
+      ],
+      "name": "Harvest engineering memory",
+      "outputs": [
+        "Harvest engineering memory"
+      ],
+      "provider": "BrainRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "brain_integration",
+        "fastapi",
+        "runtime_planner"
+      ],
+      "description": "BrainRouter provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL",
+        "HTTP request"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "BrainRouter"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "collections",
+        "csv",
+        "functools",
+        "json",
+        "pathlib",
+        "typing"
+      ],
+      "description": "CDSRegistryError provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "CDSRegistryError"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "cds_loader",
+        "fastapi"
+      ],
+      "description": "CdsRouter provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "CdsRouter"
+    },
+    {
+      "category": "Brain",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "json",
+        "os",
+        "typing",
+        "urllib.request"
+      ],
+      "description": "BrainConfigError provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "BrainConfigError"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "connector_planner",
+        "dataclasses",
+        "datetime",
+        "json",
+        "pathlib",
+        "re",
+        "typing",
+        "uuid"
+      ],
+      "description": "ConnectorExecutionEngine provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "ConnectorExecutionEngine"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "connector_planner",
+        "dataclasses",
+        "datetime",
+        "json",
+        "pathlib",
+        "re",
+        "typing",
+        "uuid"
+      ],
+      "description": "ConnectorExecutionEngine provides: Plan runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Plan runtime work",
+      "outputs": [
+        "Plan runtime work"
+      ],
+      "provider": "ConnectorExecutionEngine"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "abc",
+        "typing"
+      ],
+      "description": "ConnectorInterface provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "ConnectorInterface"
+    },
+    {
+      "category": "Brain",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "json",
+        "knowledge_gap_diagnostics",
+        "pathlib",
+        "typing"
+      ],
+      "description": "BrainConnectorPlanner provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "BrainConnectorPlanner"
+    },
+    {
+      "category": "Brain",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "json",
+        "knowledge_gap_diagnostics",
+        "pathlib",
+        "typing"
+      ],
+      "description": "BrainConnectorPlanner provides: Plan runtime work",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Plan runtime work",
+      "outputs": [
+        "Plan runtime work"
+      ],
+      "provider": "BrainConnectorPlanner"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "connector_interface",
+        "datetime",
+        "importlib",
+        "inspect",
+        "logging",
+        "pathlib",
+        "time",
+        "typing"
+      ],
+      "description": "ConnectorRegistry provides: Discover runtime capabilities",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Discover runtime capabilities",
+      "outputs": [
+        "Discover runtime capabilities"
+      ],
+      "provider": "ConnectorRegistry"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "connector_interface",
+        "datetime",
+        "importlib",
+        "inspect",
+        "logging",
+        "pathlib",
+        "time",
+        "typing"
+      ],
+      "description": "ConnectorRegistry provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "ConnectorRegistry"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "connector_registry",
+        "fastapi",
+        "json",
+        "logging",
+        "typing"
+      ],
+      "description": "ConnectorRoutes provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "ConnectorRoutes"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "connector_registry",
+        "fastapi",
+        "json",
+        "logging",
+        "typing"
+      ],
+      "description": "ConnectorRoutes provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "ConnectorRoutes"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "connector_planner",
+        "dataclasses",
+        "datetime",
+        "json",
+        "pathlib",
+        "re",
+        "typing",
+        "uuid"
+      ],
+      "description": "ConnectorScaffold provides: Plan runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Plan runtime work",
+      "outputs": [
+        "Plan runtime work"
+      ],
+      "provider": "ConnectorScaffold"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "base64",
+        "connector_interface",
+        "datetime",
+        "json",
+        "os",
+        "typing",
+        "urllib.error",
+        "urllib.parse",
+        "urllib.request"
+      ],
+      "description": "GitHubConnector provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "GitHubConnector"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "connector_interface",
+        "datetime",
+        "typing"
+      ],
+      "description": "HealthConnector provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "HealthConnector"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "enum",
+        "typing",
+        "uuid"
+      ],
+      "description": "AutonomyLevel provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "AutonomyLevel"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "enum",
+        "typing",
+        "uuid"
+      ],
+      "description": "AutonomyLevel provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "AutonomyLevel"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "constitutional_orchestrator",
+        "fastapi",
+        "pydantic",
+        "typing"
+      ],
+      "description": "ActionEvaluationRequest provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "ActionEvaluationRequest"
+    },
+    {
+      "category": "Planning",
+      "dependencies": [
+        "__future__",
+        "autonomous_discovery",
+        "dataclasses",
+        "datetime",
+        "json",
+        "pathlib",
+        "typing",
+        "uuid"
+      ],
+      "description": "DiscoverySnapshotSummary provides: Discover runtime capabilities",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Discover runtime capabilities",
+      "outputs": [
+        "Discover runtime capabilities"
+      ],
+      "provider": "DiscoverySnapshotSummary"
+    },
+    {
+      "category": "Planning",
+      "dependencies": [
+        "__future__",
+        "autonomous_discovery",
+        "dataclasses",
+        "datetime",
+        "json",
+        "pathlib",
+        "typing",
+        "uuid"
+      ],
+      "description": "DiscoverySnapshotSummary provides: Harvest engineering memory",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Harvest engineering memory",
+      "outputs": [
+        "Harvest engineering memory"
+      ],
+      "provider": "DiscoverySnapshotSummary"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "autonomous_discovery",
+        "fastapi"
+      ],
+      "description": "DiscoveryRouter provides: Discover runtime capabilities",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Discover runtime capabilities",
+      "outputs": [
+        "Discover runtime capabilities"
+      ],
+      "provider": "DiscoveryRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "autonomous_discovery",
+        "fastapi"
+      ],
+      "description": "DiscoveryRouter provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "DiscoveryRouter"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__"
+      ],
+      "description": "Dependencies provides: Analyze dependencies",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Analyze dependencies",
+      "outputs": [
+        "Analyze dependencies"
+      ],
+      "provider": "Dependencies"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "typing"
+      ],
+      "description": "ExecutiveSubsystem provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "ExecutiveSubsystem"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "fastapi",
+        "runtime_executor"
+      ],
+      "description": "ExecutorRouter provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "ExecutorRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "fastapi",
+        "runtime_executor"
+      ],
+      "description": "ExecutorRouter provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "ExecutorRouter"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "app.database",
+        "dataclasses",
+        "json",
+        "os",
+        "pathlib",
+        "sqlalchemy",
+        "typing",
+        "urllib.error",
+        "urllib.parse",
+        "urllib.request"
+      ],
+      "description": "SentinelFinding provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "SentinelFinding"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "typing"
+      ],
+      "description": "FrontendRepairTask provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "FrontendRepairTask"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__"
+      ],
+      "description": "GoalPlannerService provides: Plan runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Plan runtime work",
+      "outputs": [
+        "Plan runtime work"
+      ],
+      "provider": "GoalPlannerService"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "models"
+      ],
+      "description": "GovernanceService provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "GovernanceService"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "copy",
+        "dataclasses",
+        "datetime",
+        "runtime.constitutional_orchestrator",
+        "typing",
+        "uuid"
+      ],
+      "description": "ScientificTarget provides: Plan runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Plan runtime work",
+      "outputs": [
+        "Plan runtime work"
+      ],
+      "provider": "ScientificTarget"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "models",
+        "os",
+        "typing",
+        "urllib.request"
+      ],
+      "description": "HealthMonitorService provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "HealthMonitorService"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "config_loader",
+        "time",
+        "typing",
+        "urllib.request"
+      ],
+      "description": "InfrastructureRegistryService provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "InfrastructureRegistryService"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "constitutional_orchestrator",
+        "datetime",
+        "pydantic",
+        "typing"
+      ],
+      "description": "KernelRegistryService provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "KernelRegistryService"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "fastapi",
+        "kernel_registry",
+        "typing"
+      ],
+      "description": "KernelRouter provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "KernelRouter"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "json",
+        "knowledge_gap_discovery",
+        "os",
+        "pathlib",
+        "psycopg",
+        "typing"
+      ],
+      "description": "KnowledgeGapDiagnosticsEngine provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "KnowledgeGapDiagnosticsEngine"
+    },
+    {
+      "category": "Planning",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "discovery_memory",
+        "json",
+        "pathlib",
+        "typing"
+      ],
+      "description": "KnowledgeGapDiscoveryEngine provides: Discover runtime capabilities",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Discover runtime capabilities",
+      "outputs": [
+        "Discover runtime capabilities"
+      ],
+      "provider": "KnowledgeGapDiscoveryEngine"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "json",
+        "pathlib",
+        "typing"
+      ],
+      "description": "RuntimeMemoryWriter provides: Harvest engineering memory",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Harvest engineering memory",
+      "outputs": [
+        "Harvest engineering memory"
+      ],
+      "provider": "RuntimeMemoryWriter"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "models"
+      ],
+      "description": "MissionReporterService provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "MissionReporterService"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "typing"
+      ],
+      "description": "HealthCheckResult provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "HealthCheckResult"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "autonomous_discovery",
+        "brain_integration",
+        "cds_loader",
+        "connector_planner",
+        "connector_routes",
+        "connector_runtime",
+        "discovery_memory",
+        "fastapi",
+        "knowledge_gap_diagnostics",
+        "knowledge_gap_discovery",
+        "runtime_executor",
+        "runtime_planner"
+      ],
+      "description": "PlannerRouter provides: Analyze dependencies",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Analyze dependencies",
+      "outputs": [
+        "Analyze dependencies"
+      ],
+      "provider": "PlannerRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "autonomous_discovery",
+        "brain_integration",
+        "cds_loader",
+        "connector_planner",
+        "connector_routes",
+        "connector_runtime",
+        "discovery_memory",
+        "fastapi",
+        "knowledge_gap_diagnostics",
+        "knowledge_gap_discovery",
+        "runtime_executor",
+        "runtime_planner"
+      ],
+      "description": "PlannerRouter provides: Discover runtime capabilities",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Discover runtime capabilities",
+      "outputs": [
+        "Discover runtime capabilities"
+      ],
+      "provider": "PlannerRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "autonomous_discovery",
+        "brain_integration",
+        "cds_loader",
+        "connector_planner",
+        "connector_routes",
+        "connector_runtime",
+        "discovery_memory",
+        "fastapi",
+        "knowledge_gap_diagnostics",
+        "knowledge_gap_discovery",
+        "runtime_executor",
+        "runtime_planner"
+      ],
+      "description": "PlannerRouter provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "PlannerRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "autonomous_discovery",
+        "brain_integration",
+        "cds_loader",
+        "connector_planner",
+        "connector_routes",
+        "connector_runtime",
+        "discovery_memory",
+        "fastapi",
+        "knowledge_gap_diagnostics",
+        "knowledge_gap_discovery",
+        "runtime_executor",
+        "runtime_planner"
+      ],
+      "description": "PlannerRouter provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "PlannerRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "autonomous_discovery",
+        "brain_integration",
+        "cds_loader",
+        "connector_planner",
+        "connector_routes",
+        "connector_runtime",
+        "discovery_memory",
+        "fastapi",
+        "knowledge_gap_diagnostics",
+        "knowledge_gap_discovery",
+        "runtime_executor",
+        "runtime_planner"
+      ],
+      "description": "PlannerRouter provides: Harvest engineering memory",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Harvest engineering memory",
+      "outputs": [
+        "Harvest engineering memory"
+      ],
+      "provider": "PlannerRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "autonomous_discovery",
+        "brain_integration",
+        "cds_loader",
+        "connector_planner",
+        "connector_routes",
+        "connector_runtime",
+        "discovery_memory",
+        "fastapi",
+        "knowledge_gap_diagnostics",
+        "knowledge_gap_discovery",
+        "runtime_executor",
+        "runtime_planner"
+      ],
+      "description": "PlannerRouter provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL",
+        "HTTP request"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "PlannerRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "autonomous_discovery",
+        "brain_integration",
+        "cds_loader",
+        "connector_planner",
+        "connector_routes",
+        "connector_runtime",
+        "discovery_memory",
+        "fastapi",
+        "knowledge_gap_diagnostics",
+        "knowledge_gap_discovery",
+        "runtime_executor",
+        "runtime_planner"
+      ],
+      "description": "PlannerRouter provides: Plan runtime work",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Plan runtime work",
+      "outputs": [
+        "Plan runtime work"
+      ],
+      "provider": "PlannerRouter"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.security",
+        "config_loader",
+        "constitutional_orchestrator",
+        "fastapi",
+        "featured_genus_sentinel",
+        "infrastructure",
+        "pydantic",
+        "scheduler",
+        "science_registry",
+        "typing"
+      ],
+      "description": "ConstitutionalActionRequest provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "ConstitutionalActionRequest"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "threading",
+        "typing"
+      ],
+      "description": "RuntimeEngine provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "RuntimeEngine"
+    },
+    {
+      "category": "Execution",
+      "dependencies": [
+        "__future__",
+        "brain_integration",
+        "dataclasses",
+        "datetime",
+        "json",
+        "pathlib",
+        "runtime_planner",
+        "typing",
+        "uuid"
+      ],
+      "description": "RuntimeWorker provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "RuntimeWorker"
+    },
+    {
+      "category": "Planning",
+      "dependencies": [
+        "__future__",
+        "cds_loader",
+        "dataclasses",
+        "typing"
+      ],
+      "description": "RuntimePlanner provides: Analyze dependencies",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Analyze dependencies",
+      "outputs": [
+        "Analyze dependencies"
+      ],
+      "provider": "RuntimePlanner"
+    },
+    {
+      "category": "Planning",
+      "dependencies": [
+        "__future__",
+        "cds_loader",
+        "dataclasses",
+        "typing"
+      ],
+      "description": "RuntimePlanner provides: Discover runtime capabilities",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Discover runtime capabilities",
+      "outputs": [
+        "Discover runtime capabilities"
+      ],
+      "provider": "RuntimePlanner"
+    },
+    {
+      "category": "Planning",
+      "dependencies": [
+        "__future__",
+        "cds_loader",
+        "dataclasses",
+        "typing"
+      ],
+      "description": "RuntimePlanner provides: Plan runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Plan runtime work",
+      "outputs": [
+        "Plan runtime work"
+      ],
+      "provider": "RuntimePlanner"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "bottlenecks",
+        "dataclasses",
+        "goals",
+        "governance",
+        "health",
+        "infrastructure",
+        "json",
+        "memory",
+        "mission"
+      ],
+      "description": "CalyxHeartbeat provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "CalyxHeartbeat"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "os",
+        "sqlalchemy",
+        "sqlalchemy.orm"
+      ],
+      "description": "Database provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "Database"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.routers",
+        "app.routers.health",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "psycopg.types.json",
+        "pydantic",
+        "re",
+        "runtime.cds_router",
+        "runtime.constitutional_orchestrator",
+        "runtime.constitutional_router",
+        "runtime.kernel_router",
+        "runtime.orchestrator_router",
+        "runtime.planner_router",
+        "runtime.router_fastapi",
+        "runtime.runtime_engine",
+        "runtime.scheduler",
+        "typing"
+      ],
+      "description": "VerificationRequest provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "VerificationRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.routers",
+        "app.routers.health",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "psycopg.types.json",
+        "pydantic",
+        "re",
+        "runtime.cds_router",
+        "runtime.constitutional_orchestrator",
+        "runtime.constitutional_router",
+        "runtime.kernel_router",
+        "runtime.orchestrator_router",
+        "runtime.planner_router",
+        "runtime.router_fastapi",
+        "runtime.runtime_engine",
+        "runtime.scheduler",
+        "typing"
+      ],
+      "description": "VerificationRequest provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "VerificationRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.routers",
+        "app.routers.health",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "psycopg.types.json",
+        "pydantic",
+        "re",
+        "runtime.cds_router",
+        "runtime.constitutional_orchestrator",
+        "runtime.constitutional_router",
+        "runtime.kernel_router",
+        "runtime.orchestrator_router",
+        "runtime.planner_router",
+        "runtime.router_fastapi",
+        "runtime.runtime_engine",
+        "runtime.scheduler",
+        "typing"
+      ],
+      "description": "VerificationRequest provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL",
+        "HTTP request"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "VerificationRequest"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "app.database",
+        "datetime",
+        "sqlalchemy",
+        "uuid"
+      ],
+      "description": "Organization provides: Plan runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Plan runtime work",
+      "outputs": [
+        "Plan runtime work"
+      ],
+      "provider": "Organization"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "fastapi",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "description": "Awards provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "Awards"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "fastapi",
+        "fastapi.responses",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "description": "CalyxCore provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "CalyxCore"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "fastapi",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "description": "Entries provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "Entries"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "fastapi",
+        "runtime.executive.engine",
+        "typing"
+      ],
+      "description": "Executive provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "Executive"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "fastapi",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "description": "Feedback provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "Feedback"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "fastapi",
+        "pydantic",
+        "runtime.harvester_control",
+        "typing"
+      ],
+      "description": "ScheduleRequest provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "ScheduleRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.routers.executive",
+        "app.routers.mission_control",
+        "app.routers.owner_operations",
+        "app.routers.owner_session_token",
+        "fastapi",
+        "os",
+        "runtime.connector_routes",
+        "runtime.router_fastapi"
+      ],
+      "description": "Health provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "Health"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "hashlib",
+        "json",
+        "sqlalchemy",
+        "sqlalchemy.exc",
+        "sqlalchemy.orm",
+        "typing",
+        "uuid"
+      ],
+      "description": "Judging provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "Judging"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "hashlib",
+        "json",
+        "sqlalchemy",
+        "sqlalchemy.exc",
+        "sqlalchemy.orm",
+        "typing",
+        "uuid"
+      ],
+      "description": "Judging provides: Plan runtime work",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Plan runtime work",
+      "outputs": [
+        "Plan runtime work"
+      ],
+      "provider": "Judging"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "typing"
+      ],
+      "description": "MissionControl provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "MissionControl"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "psycopg.types.json",
+        "pydantic",
+        "re",
+        "threading",
+        "time",
+        "typing"
+      ],
+      "description": "VerificationRequest provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "VerificationRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "psycopg.types.json",
+        "pydantic",
+        "re",
+        "threading",
+        "time",
+        "typing"
+      ],
+      "description": "VerificationRequest provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "VerificationRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.database",
+        "datetime",
+        "fastapi",
+        "re",
+        "sqlalchemy",
+        "typing"
+      ],
+      "description": "OrchidWidgets provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "OrchidWidgets"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.routers.mission_control",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "json",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "pydantic",
+        "re",
+        "runtime.constitutional_orchestrator",
+        "typing",
+        "uuid"
+      ],
+      "description": "OwnerLoginRequest provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "OwnerLoginRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.routers.mission_control",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "json",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "pydantic",
+        "re",
+        "runtime.constitutional_orchestrator",
+        "typing",
+        "uuid"
+      ],
+      "description": "OwnerLoginRequest provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "OwnerLoginRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.routers.mission_control",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "json",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "pydantic",
+        "re",
+        "runtime.constitutional_orchestrator",
+        "typing",
+        "uuid"
+      ],
+      "description": "OwnerLoginRequest provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL",
+        "HTTP request"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "OwnerLoginRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.routers.owner_operations",
+        "app.security",
+        "fastapi",
+        "pydantic",
+        "typing"
+      ],
+      "description": "OwnerTokenLoginRequest provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "OwnerTokenLoginRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.storage",
+        "fastapi",
+        "fastapi.responses",
+        "os",
+        "sqlalchemy",
+        "sqlalchemy.orm"
+      ],
+      "description": "ReferenceDocs provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "ReferenceDocs"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "fastapi",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "description": "Shows provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "Shows"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "fastapi",
+        "typing"
+      ],
+      "description": "Tiles provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "Tiles"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "csv",
+        "datetime",
+        "fastapi",
+        "io",
+        "openpyxl",
+        "openpyxl.styles",
+        "sqlalchemy",
+        "sqlalchemy.exc",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "description": "VolunteerOps provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "VolunteerOps"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "fastapi",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "description": "Volunteers provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "Volunteers"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "datetime",
+        "pydantic",
+        "typing"
+      ],
+      "description": "ShowCreate provides: Plan runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Plan runtime work",
+      "outputs": [
+        "Plan runtime work"
+      ],
+      "provider": "ShowCreate"
+    }
+  ],
+  "graph": {
+    "cycles": [],
+    "edge_count": 127,
+    "edges": [
+      {
+        "from": "GovernanceService",
+        "to": "Init",
+        "type": "import"
+      },
+      {
+        "from": "HealthConnector",
+        "to": "Init",
+        "type": "import"
+      },
+      {
+        "from": "MissionReporterService",
+        "to": "Init",
+        "type": "import"
+      },
+      {
+        "from": "ScheduleRequest",
+        "to": "Init",
+        "type": "import"
+      },
+      {
+        "from": "InfrastructureRegistryService",
+        "to": "AutonomousDiscoveryEngine",
+        "type": "import"
+      },
+      {
+        "from": "RuntimePlanner",
+        "to": "AutonomousDiscoveryEngine",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "DefaultTaskExecutor",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "AutonomousRunner",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiscoveryEngine",
+        "to": "BrainTableMatch",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "BrainTableMatch",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "BrainIntegrationWorker",
+        "type": "import"
+      },
+      {
+        "from": "RuntimePlanner",
+        "to": "BrainIntegrationWorker",
+        "type": "import"
+      },
+      {
+        "from": "BrainIntegrationWorker",
+        "to": "BrainRouter",
+        "type": "import"
+      },
+      {
+        "from": "RuntimePlanner",
+        "to": "BrainRouter",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "BrainConfigError",
+        "type": "import"
+      },
+      {
+        "from": "ActionEvaluationRequest",
+        "to": "BrainConfigError",
+        "type": "import"
+      },
+      {
+        "from": "BrainConnectorPlanner",
+        "to": "ConnectorExecutionEngine",
+        "type": "import"
+      },
+      {
+        "from": "CDSRegistryError",
+        "to": "ConnectorExecutionEngine",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "BrainConnectorPlanner",
+        "type": "import"
+      },
+      {
+        "from": "ConnectorInterface",
+        "to": "ConnectorRegistry",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "ConnectorRegistry",
+        "type": "import"
+      },
+      {
+        "from": "ConnectorRegistry",
+        "to": "ConnectorRoutes",
+        "type": "import"
+      },
+      {
+        "from": "BrainConnectorPlanner",
+        "to": "ConnectorScaffold",
+        "type": "import"
+      },
+      {
+        "from": "CDSRegistryError",
+        "to": "ConnectorScaffold",
+        "type": "import"
+      },
+      {
+        "from": "ConnectorInterface",
+        "to": "GitHubConnector",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "GitHubConnector",
+        "type": "import"
+      },
+      {
+        "from": "CDSRegistryError",
+        "to": "GitHubConnector",
+        "type": "import"
+      },
+      {
+        "from": "ActionEvaluationRequest",
+        "to": "GitHubConnector",
+        "type": "import"
+      },
+      {
+        "from": "ConnectorInterface",
+        "to": "HealthConnector",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "ActionEvaluationRequest",
+        "type": "import"
+      },
+      {
+        "from": "AutonomousDiscoveryEngine",
+        "to": "DiscoverySnapshotSummary",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "DiscoveryRouter",
+        "type": "import"
+      },
+      {
+        "from": "AutonomousDiscoveryEngine",
+        "to": "DiscoveryRouter",
+        "type": "import"
+      },
+      {
+        "from": "Dependencies",
+        "to": "Engine",
+        "type": "import"
+      },
+      {
+        "from": "Executive",
+        "to": "Engine",
+        "type": "import"
+      },
+      {
+        "from": "Reasoning",
+        "to": "Engine",
+        "type": "import"
+      },
+      {
+        "from": "Recommendations",
+        "to": "Engine",
+        "type": "import"
+      },
+      {
+        "from": "Scorer",
+        "to": "Engine",
+        "type": "import"
+      },
+      {
+        "from": "Summarizer",
+        "to": "Engine",
+        "type": "import"
+      },
+      {
+        "from": "Telemetry",
+        "to": "Engine",
+        "type": "import"
+      },
+      {
+        "from": "MissionControl",
+        "to": "Telemetry",
+        "type": "import"
+      },
+      {
+        "from": "Dependencies",
+        "to": "Telemetry",
+        "type": "import"
+      },
+      {
+        "from": "Executive",
+        "to": "Telemetry",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "ExecutorRouter",
+        "type": "import"
+      },
+      {
+        "from": "Database",
+        "to": "SentinelFinding",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "SentinelFinding",
+        "type": "import"
+      },
+      {
+        "from": "CDSRegistryError",
+        "to": "SentinelFinding",
+        "type": "import"
+      },
+      {
+        "from": "ActionEvaluationRequest",
+        "to": "SentinelFinding",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "HealthMonitorService",
+        "type": "import"
+      },
+      {
+        "from": "ActionEvaluationRequest",
+        "to": "HealthMonitorService",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "InfrastructureRegistryService",
+        "type": "import"
+      },
+      {
+        "from": "ActionEvaluationRequest",
+        "to": "InfrastructureRegistryService",
+        "type": "import"
+      },
+      {
+        "from": "KernelRegistryService",
+        "to": "KernelRouter",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiscoveryEngine",
+        "to": "KnowledgeGapDiagnosticsEngine",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "PlannerRouter",
+        "type": "import"
+      },
+      {
+        "from": "AutonomousDiscoveryEngine",
+        "to": "PlannerRouter",
+        "type": "import"
+      },
+      {
+        "from": "BrainIntegrationWorker",
+        "to": "PlannerRouter",
+        "type": "import"
+      },
+      {
+        "from": "BrainConnectorPlanner",
+        "to": "PlannerRouter",
+        "type": "import"
+      },
+      {
+        "from": "ConnectorRoutes",
+        "to": "PlannerRouter",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "PlannerRouter",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiscoveryEngine",
+        "to": "PlannerRouter",
+        "type": "import"
+      },
+      {
+        "from": "RuntimePlanner",
+        "to": "PlannerRouter",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "ConstitutionalActionRequest",
+        "type": "import"
+      },
+      {
+        "from": "InfrastructureRegistryService",
+        "to": "ConstitutionalActionRequest",
+        "type": "import"
+      },
+      {
+        "from": "ScheduleRequest",
+        "to": "ConstitutionalActionRequest",
+        "type": "import"
+      },
+      {
+        "from": "ScienceRegistry",
+        "to": "ConstitutionalActionRequest",
+        "type": "import"
+      },
+      {
+        "from": "BrainIntegrationWorker",
+        "to": "RuntimeWorker",
+        "type": "import"
+      },
+      {
+        "from": "RuntimePlanner",
+        "to": "RuntimeWorker",
+        "type": "import"
+      },
+      {
+        "from": "BottleneckService",
+        "to": "CalyxHeartbeat",
+        "type": "import"
+      },
+      {
+        "from": "GovernanceService",
+        "to": "CalyxHeartbeat",
+        "type": "import"
+      },
+      {
+        "from": "HealthConnector",
+        "to": "CalyxHeartbeat",
+        "type": "import"
+      },
+      {
+        "from": "InfrastructureRegistryService",
+        "to": "CalyxHeartbeat",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "CalyxHeartbeat",
+        "type": "import"
+      },
+      {
+        "from": "MissionReporterService",
+        "to": "CalyxHeartbeat",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "Database",
+        "type": "import"
+      },
+      {
+        "from": "Database",
+        "to": "Deps",
+        "type": "import"
+      },
+      {
+        "from": "HealthConnector",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "CDSRegistryError",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "CdsRouter",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "KernelRouter",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "orchestrator_router",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "PlannerRouter",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "Engine",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "ScheduleRequest",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "Database",
+        "to": "Organization",
+        "type": "import"
+      },
+      {
+        "from": "Deps",
+        "to": "Awards",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "Awards",
+        "type": "import"
+      },
+      {
+        "from": "Deps",
+        "to": "CalyxCore",
+        "type": "import"
+      },
+      {
+        "from": "Deps",
+        "to": "Entries",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "Entries",
+        "type": "import"
+      },
+      {
+        "from": "AutonomousDiscoveryEngine",
+        "to": "Executive",
+        "type": "import"
+      },
+      {
+        "from": "Deps",
+        "to": "Feedback",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "ScheduleRequest",
+        "type": "import"
+      },
+      {
+        "from": "ExecutiveSubsystem",
+        "to": "Health",
+        "type": "import"
+      },
+      {
+        "from": "MissionControl",
+        "to": "Health",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "Health",
+        "type": "import"
+      },
+      {
+        "from": "ConnectorRoutes",
+        "to": "Health",
+        "type": "import"
+      },
+      {
+        "from": "Deps",
+        "to": "Judging",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "Judging",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "MissionControl",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "CDSRegistryError",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
+        "from": "Database",
+        "to": "OrchidWidgets",
+        "type": "import"
+      },
+      {
+        "from": "CDSRegistryError",
+        "to": "OrchidWidgets",
+        "type": "import"
+      },
+      {
+        "from": "MissionControl",
+        "to": "OwnerLoginRequest",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "OwnerLoginRequest",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "OwnerLoginRequest",
+        "type": "import"
+      },
+      {
+        "from": "CDSRegistryError",
+        "to": "OwnerLoginRequest",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "OwnerTokenLoginRequest",
+        "type": "import"
+      },
+      {
+        "from": "Deps",
+        "to": "ReferenceDocs",
+        "type": "import"
+      },
+      {
+        "from": "Storage",
+        "to": "ReferenceDocs",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "ReferenceDocs",
+        "type": "import"
+      },
+      {
+        "from": "Deps",
+        "to": "Shows",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "Shows",
+        "type": "import"
+      },
+      {
+        "from": "Deps",
+        "to": "VolunteerOps",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "VolunteerOps",
+        "type": "import"
+      },
+      {
+        "from": "BrainIntegrationWorker",
+        "to": "VolunteerOps",
+        "type": "import"
+      },
+      {
+        "from": "Deps",
+        "to": "Volunteers",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "Volunteers",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "Security",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "Security",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "Storage",
+        "type": "import"
+      },
+      {
+        "from": "Database",
+        "to": "Worker",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "Worker",
+        "type": "import"
+      }
+    ],
+    "missing_dependencies": [
+      {
+        "dependency": "runtime_executor",
+        "module": "ExecutorRouter"
+      },
+      {
+        "dependency": "runtime.constitutional_orchestrator",
+        "module": "ScientificTarget"
+      },
+      {
+        "dependency": "runtime_executor",
+        "module": "PlannerRouter"
+      },
+      {
+        "dependency": "app.routers",
+        "module": "VerificationRequest"
+      },
+      {
+        "dependency": "runtime.constitutional_orchestrator",
+        "module": "VerificationRequest"
+      },
+      {
+        "dependency": "runtime.constitutional_router",
+        "module": "VerificationRequest"
+      },
+      {
+        "dependency": "runtime.router_fastapi",
+        "module": "VerificationRequest"
+      },
+      {
+        "dependency": "app.models",
+        "module": "Awards"
+      },
+      {
+        "dependency": "app.schemas",
+        "module": "Awards"
+      },
+      {
+        "dependency": "app.models",
+        "module": "CalyxCore"
+      },
+      {
+        "dependency": "app.schemas",
+        "module": "CalyxCore"
+      },
+      {
+        "dependency": "app.models",
+        "module": "Entries"
+      },
+      {
+        "dependency": "app.schemas",
+        "module": "Entries"
+      },
+      {
+        "dependency": "app.models",
+        "module": "Feedback"
+      },
+      {
+        "dependency": "app.schemas",
+        "module": "Feedback"
+      },
+      {
+        "dependency": "runtime.harvester_control",
+        "module": "ScheduleRequest"
+      },
+      {
+        "dependency": "app.routers.owner_operations",
+        "module": "Health"
+      },
+      {
+        "dependency": "app.routers.owner_session_token",
+        "module": "Health"
+      },
+      {
+        "dependency": "runtime.router_fastapi",
+        "module": "Health"
+      },
+      {
+        "dependency": "app.models",
+        "module": "Judging"
+      },
+      {
+        "dependency": "app.schemas",
+        "module": "Judging"
+      },
+      {
+        "dependency": "runtime.constitutional_orchestrator",
+        "module": "OwnerLoginRequest"
+      },
+      {
+        "dependency": "app.routers.owner_operations",
+        "module": "OwnerTokenLoginRequest"
+      },
+      {
+        "dependency": "app.models",
+        "module": "ReferenceDocs"
+      },
+      {
+        "dependency": "app.schemas",
+        "module": "ReferenceDocs"
+      },
+      {
+        "dependency": "app.models",
+        "module": "Shows"
+      },
+      {
+        "dependency": "app.schemas",
+        "module": "Shows"
+      },
+      {
+        "dependency": "app.models",
+        "module": "VolunteerOps"
+      },
+      {
+        "dependency": "app.schemas",
+        "module": "VolunteerOps"
+      },
+      {
+        "dependency": "app.models",
+        "module": "Volunteers"
+      },
+      {
+        "dependency": "app.schemas",
+        "module": "Volunteers"
+      }
+    ],
+    "node_count": 84,
+    "nodes": [
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Init",
+        "path": "runtime/__init__.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Planning",
+        "health": "healthy",
+        "name": "AutonomousDiscoveryEngine",
+        "path": "runtime/autonomous_discovery.py",
+        "type": "engine"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "DefaultTaskExecutor",
+        "path": "runtime/autonomous_orchestrator.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "AutonomousRunner",
+        "path": "runtime/autonomous_runner.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "BottleneckService",
+        "path": "runtime/bottlenecks.py",
+        "type": "service"
+      },
+      {
+        "category": "Brain",
+        "health": "healthy",
+        "name": "BrainTableMatch",
+        "path": "runtime/brain_gap_diagnostics.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Brain",
+        "health": "healthy",
+        "name": "BrainIntegrationWorker",
+        "path": "runtime/brain_integration.py",
+        "type": "worker"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "BrainRouter",
+        "path": "runtime/brain_router.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "CDSRegistryError",
+        "path": "runtime/cds_loader.py",
+        "type": "python_module"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "CdsRouter",
+        "path": "runtime/cds_router.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Brain",
+        "health": "healthy",
+        "name": "BrainConfigError",
+        "path": "runtime/config_loader.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ConnectorExecutionEngine",
+        "path": "runtime/connector_execution.py",
+        "type": "engine"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ConnectorInterface",
+        "path": "runtime/connector_interface.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Brain",
+        "health": "healthy",
+        "name": "BrainConnectorPlanner",
+        "path": "runtime/connector_planner.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ConnectorRegistry",
+        "path": "runtime/connector_registry.py",
+        "type": "python_module"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "ConnectorRoutes",
+        "path": "runtime/connector_routes.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ConnectorScaffold",
+        "path": "runtime/connector_runtime.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Init",
+        "path": "runtime/connectors/__init__.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "GitHubConnector",
+        "path": "runtime/connectors/github_connector.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "HealthConnector",
+        "path": "runtime/connectors/health_connector.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "AutonomyLevel",
+        "path": "runtime/constitutional_kernel.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "AutonomyLevel",
+        "path": "runtime/constitutional_orchestrator.py",
+        "type": "python_module"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "ActionEvaluationRequest",
+        "path": "runtime/constitutional_router.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Planning",
+        "health": "healthy",
+        "name": "DiscoverySnapshotSummary",
+        "path": "runtime/discovery_memory.py",
+        "type": "python_module"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "DiscoveryRouter",
+        "path": "runtime/discovery_router.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Init",
+        "path": "runtime/executive/__init__.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "Dependencies",
+        "path": "runtime/executive/dependencies.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Engine",
+        "path": "runtime/executive/engine.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ExecutiveSubsystem",
+        "path": "runtime/executive/executive_state.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Reasoning",
+        "path": "runtime/executive/reasoning.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Recommendations",
+        "path": "runtime/executive/recommendations.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Scorer",
+        "path": "runtime/executive/scorer.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Summarizer",
+        "path": "runtime/executive/summarizer.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Telemetry",
+        "path": "runtime/executive/telemetry.py",
+        "type": "python_module"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "ExecutorRouter",
+        "path": "runtime/executor_router.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "SentinelFinding",
+        "path": "runtime/featured_genus_sentinel.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "FrontendRepairTask",
+        "path": "runtime/frontend_workbench.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "GoalPlannerService",
+        "path": "runtime/goals.py",
+        "type": "service"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "GovernanceService",
+        "path": "runtime/governance.py",
+        "type": "service"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ScientificTarget",
+        "path": "runtime/harvester_control.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "HealthMonitorService",
+        "path": "runtime/health.py",
+        "type": "service"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "InfrastructureRegistryService",
+        "path": "runtime/infrastructure.py",
+        "type": "service"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "KernelRegistryService",
+        "path": "runtime/kernel_registry.py",
+        "type": "service"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "KernelRouter",
+        "path": "runtime/kernel_router.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "KnowledgeGapDiagnosticsEngine",
+        "path": "runtime/knowledge_gap_diagnostics.py",
+        "type": "engine"
+      },
+      {
+        "category": "Planning",
+        "health": "healthy",
+        "name": "KnowledgeGapDiscoveryEngine",
+        "path": "runtime/knowledge_gap_discovery.py",
+        "type": "engine"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "RuntimeMemoryWriter",
+        "path": "runtime/memory.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "MissionReporterService",
+        "path": "runtime/mission.py",
+        "type": "service"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "HealthCheckResult",
+        "path": "runtime/models.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Unknown",
+        "health": "available",
+        "name": "orchestrator_router",
+        "path": "runtime/orchestrator_router.py",
+        "type": "python_module"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "PlannerRouter",
+        "path": "runtime/planner_router.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "ConstitutionalActionRequest",
+        "path": "runtime/router_fastapi.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "RuntimeEngine",
+        "path": "runtime/runtime_engine.py",
+        "type": "engine"
+      },
+      {
+        "category": "Execution",
+        "health": "healthy",
+        "name": "RuntimeWorker",
+        "path": "runtime/runtime_executor.py",
+        "type": "worker"
+      },
+      {
+        "category": "Planning",
+        "health": "healthy",
+        "name": "RuntimePlanner",
+        "path": "runtime/runtime_planner.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "CalyxHeartbeat",
+        "path": "runtime/scheduler.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "ScienceRegistry",
+        "path": "runtime/science_registry.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "Database",
+        "path": "app/database.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Deps",
+        "path": "app/deps.py",
+        "type": "python_module"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "VerificationRequest",
+        "path": "app/main.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "Organization",
+        "path": "app/models.py",
+        "type": "python_module"
+      },
+      {
+        "category": "API",
+        "health": "available",
+        "name": "Init",
+        "path": "app/routers/__init__.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "Awards",
+        "path": "app/routers/awards.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "CalyxCore",
+        "path": "app/routers/calyx_core.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "Entries",
+        "path": "app/routers/entries.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "Executive",
+        "path": "app/routers/executive.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "Feedback",
+        "path": "app/routers/feedback.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "ScheduleRequest",
+        "path": "app/routers/harvesters.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "Health",
+        "path": "app/routers/health.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "Judging",
+        "path": "app/routers/judging.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "MissionControl",
+        "path": "app/routers/mission_control.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "VerificationRequest",
+        "path": "app/routers/mycorrhiza.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "OrchidWidgets",
+        "path": "app/routers/orchid_widgets.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "OwnerLoginRequest",
+        "path": "app/routers/owner_operations.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "OwnerTokenLoginRequest",
+        "path": "app/routers/owner_session_token.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "ReferenceDocs",
+        "path": "app/routers/reference_docs.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "Shows",
+        "path": "app/routers/shows.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "Tiles",
+        "path": "app/routers/tiles.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "VolunteerOps",
+        "path": "app/routers/volunteer_ops.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "Volunteers",
+        "path": "app/routers/volunteers.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ShowCreate",
+        "path": "app/schemas.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Security",
+        "path": "app/security.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Storage",
+        "path": "app/storage.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Execution",
+        "health": "available",
+        "name": "Worker",
+        "path": "app/worker.py",
+        "type": "python_module"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "governance",
+        "health",
+        "mission",
+        "scheduler"
+      ],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "Init",
+      "path": "runtime/__init__.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Analyze dependencies",
+        "Discover runtime capabilities"
+      ],
+      "category": "Planning",
+      "classes": [
+        "DiscoveredModule",
+        "Capability",
+        "Recommendation",
+        "AutonomousDiscoveryEngine"
+      ],
+      "dependencies": [
+        "__future__",
+        "ast",
+        "dataclasses",
+        "json",
+        "pathlib",
+        "runtime_planner",
+        "typing"
+      ],
+      "functions": [
+        "__init__",
+        "discover",
+        "cached_or_discover",
+        "modules",
+        "capabilities",
+        "graph",
+        "recommendations",
+        "schedule",
+        "_discover_python_modules",
+        "_inspect_python_file",
+        "_imports",
+        "_routes",
+        "_route_from_decorator",
+        "_module_info",
+        "_friendly_name",
+        "_category_for_path",
+        "_module_type",
+        "_infer_capabilities",
+        "_capabilities_from_modules",
+        "_dependency_graph",
+        "_recommendations",
+        "_summary"
+      ],
+      "module_type": "engine",
+      "name": "AutonomousDiscoveryEngine",
+      "path": "runtime/autonomous_discovery.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work",
+        "Inspect Brain state"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "OrchestratorConfigError",
+        "ExecutionResult",
+        "DefaultTaskExecutor",
+        "CalyxAutonomousOrchestrator"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "typing"
+      ],
+      "functions": [
+        "utc_now",
+        "_json",
+        "execute",
+        "evaluate",
+        "risky_action",
+        "__init__",
+        "require_database_url",
+        "connect",
+        "ensure_schema",
+        "seed_defaults",
+        "runtime_enabled",
+        "set_runtime_enabled",
+        "_seed_agents",
+        "_seed_tasks",
+        "list_agents",
+        "list_tasks",
+        "create_task",
+        "approve_task",
+        "run_once",
+        "_select_next_task",
+        "_agent_for_task",
+        "_finish_task",
+        "log_observation",
+        "observations",
+        "runs"
+      ],
+      "module_type": "python_module",
+      "name": "DefaultTaskExecutor",
+      "path": "runtime/autonomous_orchestrator.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work",
+        "Inspect Brain state"
+      ],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "os",
+        "psycopg",
+        "psycopg.types.json",
+        "typing"
+      ],
+      "functions": [
+        "utc_now",
+        "ensure_database_url",
+        "table_exists",
+        "safe_count",
+        "ensure_execution_jobs_table",
+        "insert_job_if_missing",
+        "enqueue_default_jobs",
+        "run_job_logic",
+        "execute_next_job",
+        "execute_all_pending_jobs"
+      ],
+      "module_type": "python_module",
+      "name": "AutonomousRunner",
+      "path": "runtime/autonomous_runner.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "BottleneckService"
+      ],
+      "dependencies": [
+        "__future__",
+        "models",
+        "typing"
+      ],
+      "functions": [
+        "detect"
+      ],
+      "module_type": "service",
+      "name": "BottleneckService",
+      "path": "runtime/bottlenecks.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Inspect Brain state"
+      ],
+      "category": "Brain",
+      "classes": [
+        "BrainTableMatch",
+        "BrainGapDiagnostics"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "knowledge_gap_discovery",
+        "os",
+        "psycopg",
+        "typing"
+      ],
+      "functions": [
+        "__init__",
+        "status",
+        "diagnose",
+        "domains",
+        "gaps",
+        "queue",
+        "dashboard",
+        "_payload_gaps",
+        "_load_tables",
+        "_match_domain_tables",
+        "_coverage_from_tables",
+        "_enrich_gaps",
+        "_recommendations",
+        "_degraded"
+      ],
+      "module_type": "python_module",
+      "name": "BrainTableMatch",
+      "path": "runtime/brain_gap_diagnostics.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Analyze dependencies",
+        "Execute runtime work",
+        "Harvest engineering memory",
+        "Inspect Brain state"
+      ],
+      "category": "Brain",
+      "classes": [
+        "BrainIntegrationWorker"
+      ],
+      "dependencies": [
+        "__future__",
+        "os",
+        "pathlib",
+        "psycopg",
+        "runtime_planner",
+        "typing"
+      ],
+      "functions": [
+        "__init__",
+        "execute",
+        "database_inspector",
+        "engineering_memory_harvester",
+        "dependency_intelligence",
+        "cognitive_audit",
+        "generic_worker",
+        "_degraded"
+      ],
+      "module_type": "worker",
+      "name": "BrainIntegrationWorker",
+      "path": "runtime/brain_integration.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Analyze dependencies",
+        "Expose API endpoints",
+        "Harvest engineering memory",
+        "Inspect Brain state"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "brain_integration",
+        "fastapi",
+        "runtime_planner"
+      ],
+      "functions": [
+        "queue_item",
+        "database_queue_item",
+        "brain_summary",
+        "brain_status",
+        "brain_schemas",
+        "brain_tables",
+        "brain_health",
+        "engineering_memory_status",
+        "dependency_intelligence_status",
+        "cognitive_audit_status",
+        "brain_audit",
+        "brain_recommendations",
+        "brain_refresh"
+      ],
+      "module_type": "api_router",
+      "name": "BrainRouter",
+      "path": "runtime/brain_router.py",
+      "routers": [
+        "GET /summary",
+        "GET /status",
+        "GET /schemas",
+        "GET /tables",
+        "GET /health",
+        "GET /engineering-memory",
+        "GET /dependency-intelligence",
+        "GET /cognitive-audit",
+        "GET /audit",
+        "GET /recommendations",
+        "POST /refresh"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "CDSRegistryError",
+        "CDSRegistryLoader"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections",
+        "csv",
+        "functools",
+        "json",
+        "pathlib",
+        "typing"
+      ],
+      "functions": [
+        "get_cds_loader",
+        "clear_cds_cache",
+        "__init__",
+        "modules",
+        "module",
+        "priorities",
+        "dashboard",
+        "summary",
+        "_load_json",
+        "_normalize_module",
+        "_split_csvish",
+        "_runtime_state"
+      ],
+      "module_type": "python_module",
+      "name": "CDSRegistryError",
+      "path": "runtime/cds_loader.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "cds_loader",
+        "fastapi"
+      ],
+      "functions": [
+        "cds_summary",
+        "cds_modules",
+        "cds_module",
+        "cds_dashboard",
+        "cds_priorities",
+        "cds_reload"
+      ],
+      "module_type": "api_router",
+      "name": "CdsRouter",
+      "path": "runtime/cds_router.py",
+      "routers": [
+        "GET /summary",
+        "GET /modules",
+        "GET /modules/{module_id}",
+        "GET /dashboard",
+        "GET /priorities",
+        "POST /reload"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Inspect Brain state"
+      ],
+      "category": "Brain",
+      "classes": [
+        "BrainConfigError",
+        "BrainConfigSource",
+        "BrainConfigLoader"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "json",
+        "os",
+        "typing",
+        "urllib.request"
+      ],
+      "functions": [
+        "from_env",
+        "__init__",
+        "_contents_url",
+        "load_json",
+        "load_manifest",
+        "load_runtime_services",
+        "load_infrastructure_registry",
+        "load_governance_policy",
+        "load_knowledge_preservation_policy"
+      ],
+      "module_type": "python_module",
+      "name": "BrainConfigError",
+      "path": "runtime/config_loader.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work",
+        "Plan runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ConnectorScaffold",
+        "ConnectorExecution",
+        "ConnectorExecutionEngine"
+      ],
+      "dependencies": [
+        "__future__",
+        "connector_planner",
+        "dataclasses",
+        "datetime",
+        "json",
+        "pathlib",
+        "re",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "__init__",
+        "execute_plan",
+        "execute_queue",
+        "latest",
+        "list_executions",
+        "get_execution",
+        "queue",
+        "dashboard",
+        "_find_plan",
+        "_execution_for_plan",
+        "_scaffold_for_plan",
+        "_payload",
+        "_persist",
+        "_slug"
+      ],
+      "module_type": "engine",
+      "name": "ConnectorExecutionEngine",
+      "path": "runtime/connector_execution.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ConnectorInterface"
+      ],
+      "dependencies": [
+        "__future__",
+        "abc",
+        "typing"
+      ],
+      "functions": [
+        "name",
+        "health",
+        "execute"
+      ],
+      "module_type": "python_module",
+      "name": "ConnectorInterface",
+      "path": "runtime/connector_interface.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Inspect Brain state",
+        "Plan runtime work"
+      ],
+      "category": "Brain",
+      "classes": [
+        "ConnectorPlan",
+        "BrainConnectorPlanner"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "json",
+        "knowledge_gap_diagnostics",
+        "pathlib",
+        "typing"
+      ],
+      "functions": [
+        "__init__",
+        "generate",
+        "latest",
+        "domains",
+        "queue",
+        "dashboard",
+        "_connector_gaps",
+        "_plan_for_gap",
+        "_group_by_domain"
+      ],
+      "module_type": "python_module",
+      "name": "BrainConnectorPlanner",
+      "path": "runtime/connector_planner.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Discover runtime capabilities",
+        "Execute runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ConnectorRegistry"
+      ],
+      "dependencies": [
+        "__future__",
+        "connector_interface",
+        "datetime",
+        "importlib",
+        "inspect",
+        "logging",
+        "pathlib",
+        "time",
+        "typing"
+      ],
+      "functions": [
+        "__init__",
+        "discover",
+        "_load_connector_from_file",
+        "get_connector",
+        "list_connectors",
+        "execute",
+        "health"
+      ],
+      "module_type": "python_module",
+      "name": "ConnectorRegistry",
+      "path": "runtime/connector_registry.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work",
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "connector_registry",
+        "fastapi",
+        "json",
+        "logging",
+        "typing"
+      ],
+      "functions": [
+        "get_registry",
+        "parse_kwargs",
+        "connector_task_payload",
+        "list_connectors",
+        "connector_health",
+        "connector_tasks",
+        "connector_tasks_for",
+        "execute_task"
+      ],
+      "module_type": "api_router",
+      "name": "ConnectorRoutes",
+      "path": "runtime/connector_routes.py",
+      "routers": [
+        "GET ",
+        "GET /health",
+        "GET /tasks",
+        "GET /tasks/{connector}",
+        "POST /execute"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Plan runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ConnectorScaffold",
+        "ConnectorRun",
+        "ConnectorRuntimeBuilder"
+      ],
+      "dependencies": [
+        "__future__",
+        "connector_planner",
+        "dataclasses",
+        "datetime",
+        "json",
+        "pathlib",
+        "re",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "__init__",
+        "build_plan",
+        "build_queue",
+        "latest",
+        "runs",
+        "get_run",
+        "queue",
+        "dashboard",
+        "_find_plan",
+        "_run_for_plan",
+        "_payload",
+        "_persist",
+        "_slug"
+      ],
+      "module_type": "python_module",
+      "name": "ConnectorScaffold",
+      "path": "runtime/connector_runtime.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "Init",
+      "path": "runtime/connectors/__init__.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "GitHubConnector"
+      ],
+      "dependencies": [
+        "__future__",
+        "base64",
+        "connector_interface",
+        "datetime",
+        "json",
+        "os",
+        "typing",
+        "urllib.error",
+        "urllib.parse",
+        "urllib.request"
+      ],
+      "functions": [
+        "name",
+        "health",
+        "execute",
+        "_repo_status",
+        "_list_open_prs",
+        "_list_recent_commits",
+        "_branch_status",
+        "_repo_tree",
+        "_list_files",
+        "_get_file",
+        "_repo_audit",
+        "_repo_engineer",
+        "_frontend_audit",
+        "_request",
+        "_token",
+        "_now",
+        "add_task"
+      ],
+      "module_type": "python_module",
+      "name": "GitHubConnector",
+      "path": "runtime/connectors/github_connector.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "HealthConnector"
+      ],
+      "dependencies": [
+        "__future__",
+        "connector_interface",
+        "datetime",
+        "typing"
+      ],
+      "functions": [
+        "name",
+        "health",
+        "execute"
+      ],
+      "module_type": "python_module",
+      "name": "HealthConnector",
+      "path": "runtime/connectors/health_connector.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "AutonomyLevel",
+        "RiskLevel",
+        "ConstitutionalPolicy",
+        "MissionProposal",
+        "DecisionRecord",
+        "GovernanceQuestion",
+        "ConstitutionalKernel"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "enum",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "__init__",
+        "_default_policies",
+        "evaluate",
+        "mission_registry",
+        "_risk_for",
+        "_autonomy_for",
+        "_policies_for",
+        "_governance_questions_for",
+        "_confidence_for",
+        "_rationale_for",
+        "_next_action_for",
+        "_checkpoint_for",
+        "_now"
+      ],
+      "module_type": "python_module",
+      "name": "AutonomyLevel",
+      "path": "runtime/constitutional_kernel.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "AutonomyLevel",
+        "ConstitutionalPolicy",
+        "MissionDefinition",
+        "DecisionRecord",
+        "GovernanceQuestion",
+        "ConstitutionalMissionOrchestrator"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "enum",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "__init__",
+        "status",
+        "mission_registry",
+        "policy_registry",
+        "decision_ledger",
+        "governance_questions",
+        "evaluate_action",
+        "_policies_for_action",
+        "_record_decision",
+        "_open_question",
+        "_checkpoint_id",
+        "_default_policies",
+        "_default_missions"
+      ],
+      "module_type": "python_module",
+      "name": "AutonomyLevel",
+      "path": "runtime/constitutional_orchestrator.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [
+        "ActionEvaluationRequest"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "constitutional_orchestrator",
+        "fastapi",
+        "pydantic",
+        "typing"
+      ],
+      "functions": [
+        "constitutional_status",
+        "constitutional_policies",
+        "constitutional_missions",
+        "constitutional_decision_ledger",
+        "constitutional_governance_questions",
+        "evaluate_constitutional_action"
+      ],
+      "module_type": "api_router",
+      "name": "ActionEvaluationRequest",
+      "path": "runtime/constitutional_router.py",
+      "routers": [
+        "GET /status",
+        "GET /policies",
+        "GET /missions",
+        "GET /decision-ledger",
+        "GET /governance-questions",
+        "POST /evaluate"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Discover runtime capabilities",
+        "Harvest engineering memory"
+      ],
+      "category": "Planning",
+      "classes": [
+        "DiscoverySnapshotSummary",
+        "DiscoveryDiff",
+        "DiscoveryMemoryStore"
+      ],
+      "dependencies": [
+        "__future__",
+        "autonomous_discovery",
+        "dataclasses",
+        "datetime",
+        "json",
+        "pathlib",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "utc_now",
+        "__init__",
+        "capture",
+        "list_snapshots",
+        "latest",
+        "diff_latest",
+        "health",
+        "timeline",
+        "_snapshot_paths",
+        "_read_json",
+        "_summary_from_record",
+        "_diff",
+        "_memory_recommendations"
+      ],
+      "module_type": "python_module",
+      "name": "DiscoverySnapshotSummary",
+      "path": "runtime/discovery_memory.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Discover runtime capabilities",
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "autonomous_discovery",
+        "fastapi"
+      ],
+      "functions": [
+        "engine",
+        "get_discovery",
+        "run_discovery",
+        "discovered_modules",
+        "discovered_capabilities",
+        "discovered_graph",
+        "discovered_recommendations",
+        "discovered_schedule",
+        "discovery_dashboard",
+        "rebuild_discovery"
+      ],
+      "module_type": "api_router",
+      "name": "DiscoveryRouter",
+      "path": "runtime/discovery_router.py",
+      "routers": [
+        "GET /discover",
+        "POST /discover",
+        "GET /modules",
+        "GET /capabilities",
+        "GET /graph",
+        "GET /recommendations",
+        "GET /schedule",
+        "GET /discovery-dashboard",
+        "POST /rebuild"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "Init",
+      "path": "runtime/executive/__init__.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Analyze dependencies"
+      ],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__"
+      ],
+      "functions": [
+        "dependency_graph",
+        "reverse_dependencies"
+      ],
+      "module_type": "python_module",
+      "name": "Dependencies",
+      "path": "runtime/executive/dependencies.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "copy",
+        "runtime.executive.dependencies",
+        "runtime.executive.executive_state",
+        "runtime.executive.reasoning",
+        "runtime.executive.recommendations",
+        "runtime.executive.scorer",
+        "runtime.executive.summarizer",
+        "runtime.executive.telemetry",
+        "typing"
+      ],
+      "functions": [
+        "detect_changes",
+        "build_executive_state",
+        "reset_previous_state"
+      ],
+      "module_type": "python_module",
+      "name": "Engine",
+      "path": "runtime/executive/engine.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ExecutiveSubsystem"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "typing"
+      ],
+      "functions": [
+        "utc_now",
+        "as_dict"
+      ],
+      "module_type": "python_module",
+      "name": "ExecutiveSubsystem",
+      "path": "runtime/executive/executive_state.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "typing"
+      ],
+      "functions": [
+        "explain_priority",
+        "attach_reasoning"
+      ],
+      "module_type": "python_module",
+      "name": "Reasoning",
+      "path": "runtime/executive/reasoning.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "typing"
+      ],
+      "functions": [
+        "recommendation_for_priority",
+        "generate_recommendations"
+      ],
+      "module_type": "python_module",
+      "name": "Recommendations",
+      "path": "runtime/executive/recommendations.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "typing"
+      ],
+      "functions": [
+        "score_priority",
+        "ordered_priorities"
+      ],
+      "module_type": "python_module",
+      "name": "Scorer",
+      "path": "runtime/executive/scorer.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "typing"
+      ],
+      "functions": [
+        "executive_summary",
+        "executive_briefing"
+      ],
+      "module_type": "python_module",
+      "name": "Summarizer",
+      "path": "runtime/executive/summarizer.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.routers.mission_control",
+        "runtime.executive.dependencies",
+        "runtime.executive.executive_state",
+        "typing"
+      ],
+      "functions": [
+        "completion_model",
+        "_status_from_completion",
+        "_confidence",
+        "_from_completeness_rows",
+        "_metric_count",
+        "_coverage_from_metric",
+        "_freshness",
+        "_score_completion",
+        "_source_counts",
+        "_activation_status",
+        "collect_subsystems",
+        "source_recommendations",
+        "activation_matrix"
+      ],
+      "module_type": "python_module",
+      "name": "Telemetry",
+      "path": "runtime/executive/telemetry.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work",
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "fastapi",
+        "runtime_executor"
+      ],
+      "functions": [
+        "executor",
+        "execute_queue",
+        "execute_module",
+        "list_executions",
+        "get_execution",
+        "execution_history",
+        "execution_events",
+        "retry_execution",
+        "cancel_execution"
+      ],
+      "module_type": "api_router",
+      "name": "ExecutorRouter",
+      "path": "runtime/executor_router.py",
+      "routers": [
+        "POST /execute",
+        "POST /execute/{module_id}",
+        "GET /executions",
+        "GET /executions/{execution_id}",
+        "GET /history",
+        "GET /events",
+        "POST /retry/{execution_id}",
+        "POST /cancel/{execution_id}"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "SentinelFinding",
+        "FeaturedGenusSentinel"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.database",
+        "dataclasses",
+        "json",
+        "os",
+        "pathlib",
+        "sqlalchemy",
+        "typing",
+        "urllib.error",
+        "urllib.parse",
+        "urllib.request"
+      ],
+      "functions": [
+        "load_policy",
+        "calyx_public_url",
+        "_audit_source_contract",
+        "_fetch_live_media",
+        "_audit_live_endpoint",
+        "audit"
+      ],
+      "module_type": "python_module",
+      "name": "SentinelFinding",
+      "path": "runtime/featured_genus_sentinel.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "FrontendRepairTask",
+        "FrontendWorkbench"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "typing"
+      ],
+      "functions": [
+        "queue_from_audit",
+        "files_matching"
+      ],
+      "module_type": "python_module",
+      "name": "FrontendRepairTask",
+      "path": "runtime/frontend_workbench.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Plan runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "GoalPlannerService"
+      ],
+      "dependencies": [
+        "__future__"
+      ],
+      "functions": [
+        "plan"
+      ],
+      "module_type": "service",
+      "name": "GoalPlannerService",
+      "path": "runtime/goals.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "GovernanceService"
+      ],
+      "dependencies": [
+        "__future__",
+        "models"
+      ],
+      "functions": [
+        "review_action"
+      ],
+      "module_type": "service",
+      "name": "GovernanceService",
+      "path": "runtime/governance.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Plan runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ScientificTarget",
+        "Harvester",
+        "HarvesterRun",
+        "TargetProposal",
+        "HarvesterControlPlane"
+      ],
+      "dependencies": [
+        "__future__",
+        "copy",
+        "dataclasses",
+        "datetime",
+        "runtime.constitutional_orchestrator",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "authorized_action_contract",
+        "harvester_allowed_actions",
+        "utc_now",
+        "__init__",
+        "_seed_registry",
+        "list_harvesters",
+        "get_harvester",
+        "get_runs",
+        "run_once",
+        "pause",
+        "resume",
+        "retire",
+        "restore",
+        "update_schedule",
+        "propose_target_change",
+        "approve_proposal",
+        "reject_proposal",
+        "reassess",
+        "recommendation",
+        "recommend",
+        "serialize_harvester",
+        "_transition",
+        "_evaluate",
+        "_require_harvester",
+        "_require_proposal"
+      ],
+      "module_type": "python_module",
+      "name": "ScientificTarget",
+      "path": "runtime/harvester_control.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "HealthMonitorService"
+      ],
+      "dependencies": [
+        "__future__",
+        "models",
+        "os",
+        "typing",
+        "urllib.request"
+      ],
+      "functions": [
+        "__init__",
+        "_check_url",
+        "run"
+      ],
+      "module_type": "service",
+      "name": "HealthMonitorService",
+      "path": "runtime/health.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "InfrastructureRegistryService"
+      ],
+      "dependencies": [
+        "__future__",
+        "config_loader",
+        "time",
+        "typing",
+        "urllib.request"
+      ],
+      "functions": [
+        "__init__",
+        "registry",
+        "_check_service",
+        "health"
+      ],
+      "module_type": "service",
+      "name": "InfrastructureRegistryService",
+      "path": "runtime/infrastructure.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "TelemetryEvidence",
+        "TelemetryState",
+        "RegistryObject",
+        "ApplicationRegistryEntry",
+        "ServiceRegistryEntry",
+        "CapabilityRegistryEntry",
+        "RateLimit",
+        "IntegrationRegistryEntry",
+        "BuildRegistryEntry",
+        "ConstitutionRegistryEntry",
+        "KernelHealthSummary",
+        "KernelRegistryService"
+      ],
+      "dependencies": [
+        "__future__",
+        "constitutional_orchestrator",
+        "datetime",
+        "pydantic",
+        "typing"
+      ],
+      "functions": [
+        "_evidence",
+        "as_payload",
+        "_dump_model",
+        "telemetry",
+        "applications",
+        "services",
+        "capabilities",
+        "integrations",
+        "builds",
+        "constitution",
+        "health",
+        "query_capabilities",
+        "_app",
+        "_service",
+        "_integration"
+      ],
+      "module_type": "service",
+      "name": "KernelRegistryService",
+      "path": "runtime/kernel_registry.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "fastapi",
+        "kernel_registry",
+        "typing"
+      ],
+      "functions": [
+        "service",
+        "kernel_applications",
+        "kernel_services",
+        "kernel_capabilities",
+        "kernel_integrations",
+        "kernel_builds",
+        "kernel_health"
+      ],
+      "module_type": "api_router",
+      "name": "KernelRouter",
+      "path": "runtime/kernel_router.py",
+      "routers": [
+        "GET /applications",
+        "GET /services",
+        "GET /capabilities",
+        "GET /integrations",
+        "GET /builds",
+        "GET /health"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Inspect Brain state"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "DomainDiagnostic",
+        "KnowledgeGapDiagnosticsEngine"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "json",
+        "knowledge_gap_discovery",
+        "os",
+        "pathlib",
+        "psycopg",
+        "typing"
+      ],
+      "functions": [
+        "__init__",
+        "diagnose",
+        "latest",
+        "domains",
+        "gaps",
+        "queue",
+        "dashboard",
+        "_brain_inventory",
+        "_normalize_inventory",
+        "_domain_diagnostics",
+        "_brain_matches",
+        "_ranked_gaps"
+      ],
+      "module_type": "engine",
+      "name": "KnowledgeGapDiagnosticsEngine",
+      "path": "runtime/knowledge_gap_diagnostics.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Discover runtime capabilities"
+      ],
+      "category": "Planning",
+      "classes": [
+        "KnowledgeGap",
+        "KnowledgeGapDiscoveryEngine"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "discovery_memory",
+        "json",
+        "pathlib",
+        "typing"
+      ],
+      "functions": [
+        "__init__",
+        "discover",
+        "latest",
+        "gaps",
+        "domains",
+        "priorities",
+        "research_queue",
+        "dashboard",
+        "_domain_coverage",
+        "_gaps_from_coverage"
+      ],
+      "module_type": "engine",
+      "name": "KnowledgeGapDiscoveryEngine",
+      "path": "runtime/knowledge_gap_discovery.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Harvest engineering memory"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "RuntimeMemoryWriter"
+      ],
+      "dependencies": [
+        "__future__",
+        "json",
+        "pathlib",
+        "typing"
+      ],
+      "functions": [
+        "__init__",
+        "write_event"
+      ],
+      "module_type": "python_module",
+      "name": "RuntimeMemoryWriter",
+      "path": "runtime/memory.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "MissionReporterService"
+      ],
+      "dependencies": [
+        "__future__",
+        "models"
+      ],
+      "functions": [
+        "build_report"
+      ],
+      "module_type": "service",
+      "name": "MissionReporterService",
+      "path": "runtime/mission.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "HealthCheckResult",
+        "GovernanceReview",
+        "MissionReport"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "typing"
+      ],
+      "functions": [
+        "utc_now"
+      ],
+      "module_type": "python_module",
+      "name": "HealthCheckResult",
+      "path": "runtime/models.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Unknown",
+      "classes": [],
+      "dependencies": [],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "orchestrator_router",
+      "path": "runtime/orchestrator_router.py",
+      "routers": [],
+      "status": "degraded"
+    },
+    {
+      "capabilities": [
+        "Analyze dependencies",
+        "Discover runtime capabilities",
+        "Execute runtime work",
+        "Expose API endpoints",
+        "Harvest engineering memory",
+        "Inspect Brain state",
+        "Plan runtime work"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "autonomous_discovery",
+        "brain_integration",
+        "cds_loader",
+        "connector_planner",
+        "connector_routes",
+        "connector_runtime",
+        "discovery_memory",
+        "fastapi",
+        "knowledge_gap_diagnostics",
+        "knowledge_gap_discovery",
+        "runtime_executor",
+        "runtime_planner"
+      ],
+      "functions": [
+        "planner",
+        "executor",
+        "discovery_engine",
+        "snapshot_store",
+        "gap_engine",
+        "diagnostic_engine",
+        "connector_planner",
+        "connector_runtime",
+        "brain_worker",
+        "runner_discovery",
+        "runner_dependencies",
+        "runner_plan",
+        "runner_queue",
+        "runner_rebuild_plan",
+        "execute_queue",
+        "execute_module",
+        "list_executions",
+        "get_execution",
+        "execution_history",
+        "execution_events",
+        "retry_execution",
+        "cancel_execution",
+        "brain_summary",
+        "brain_status",
+        "engineering_memory_status"
+      ],
+      "module_type": "api_router",
+      "name": "PlannerRouter",
+      "path": "runtime/planner_router.py",
+      "routers": [
+        "GET /discovery",
+        "GET /dependencies",
+        "GET /plan",
+        "GET /queue",
+        "POST /rebuild-plan",
+        "POST /execute",
+        "POST /execute/{module_id}",
+        "GET /executions",
+        "GET /executions/{execution_id}",
+        "GET /history",
+        "GET /events",
+        "POST /retry/{execution_id}",
+        "POST /cancel/{execution_id}",
+        "GET /brain-summary",
+        "GET /brain-status",
+        "GET /engineering-memory",
+        "GET /dependency-intelligence",
+        "GET /cognitive-audit",
+        "GET /discover",
+        "POST /discover",
+        "GET /modules",
+        "GET /capabilities",
+        "GET /graph",
+        "GET /recommendations",
+        "GET /schedule",
+        "GET /discovery-dashboard",
+        "POST /rebuild",
+        "POST /discovery-snapshots/capture",
+        "GET /discovery-snapshots/latest",
+        "GET /discovery-snapshots",
+        "GET /discovery-snapshots/diff",
+        "GET /discovery-snapshots/timeline",
+        "GET /discovery-snapshots/health",
+        "GET /knowledge-gaps",
+        "POST /knowledge-gaps/discover",
+        "GET /knowledge-gaps/latest",
+        "GET /knowledge-gaps/domains",
+        "GET /knowledge-gaps/priorities",
+        "GET /knowledge-gaps/queue",
+        "GET /knowledge-gaps/dashboard",
+        "POST /knowledge-diagnostics/discover",
+        "GET /knowledge-diagnostics/latest",
+        "GET /knowledge-diagnostics/domains",
+        "GET /knowledge-diagnostics/gaps",
+        "GET /knowledge-diagnostics/queue",
+        "GET /knowledge-diagnostics/dashboard",
+        "GET /connector-plans",
+        "POST /connector-plans/generate",
+        "GET /connector-plans/domains",
+        "GET /connector-plans/queue",
+        "GET /connector-plans/dashboard",
+        "POST /connector-scaffolds/build",
+        "POST /connector-scaffolds/build/{plan_id}",
+        "GET /connector-scaffolds",
+        "GET /connector-scaffolds/runs",
+        "GET /connector-scaffolds/runs/{run_id}",
+        "GET /connector-scaffolds/queue",
+        "GET /connector-scaffolds/dashboard",
+        "GET /connectors/{slug}",
+        "GET /connectors/{slug}/dashboard"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [
+        "ConstitutionalActionRequest"
+      ],
+      "dependencies": [
+        "app.security",
+        "config_loader",
+        "constitutional_orchestrator",
+        "fastapi",
+        "featured_genus_sentinel",
+        "infrastructure",
+        "pydantic",
+        "scheduler",
+        "science_registry",
+        "typing"
+      ],
+      "functions": [
+        "runtime_heartbeat",
+        "runtime_health",
+        "audit_featured_genus_media",
+        "runtime_constitutional_status",
+        "runtime_constitutional_policies",
+        "runtime_constitutional_missions",
+        "runtime_constitutional_decision_ledger",
+        "runtime_constitutional_governance_questions",
+        "runtime_constitutional_evaluate",
+        "science_departments",
+        "science_department_detail",
+        "science_missions",
+        "science_seed_missions",
+        "science_summary_endpoint",
+        "science_status_endpoint",
+        "science_datasets_endpoint",
+        "science_gaps_endpoint",
+        "science_harvesters_endpoint",
+        "science_dossiers_endpoint",
+        "science_audit",
+        "config_manifest",
+        "config_runtime_services",
+        "config_governance_policy",
+        "config_knowledge_preservation_policy",
+        "infrastructure_registry"
+      ],
+      "module_type": "api_router",
+      "name": "ConstitutionalActionRequest",
+      "path": "runtime/router_fastapi.py",
+      "routers": [
+        "GET /heartbeat",
+        "GET /health",
+        "GET /featured-genus/audit",
+        "GET /constitutional/status",
+        "GET /constitutional/policies",
+        "GET /constitutional/missions",
+        "GET /constitutional/decision-ledger",
+        "GET /constitutional/governance-questions",
+        "POST /constitutional/evaluate",
+        "GET /departments",
+        "GET /departments/{department_id}",
+        "GET /missions",
+        "POST /seed-missions",
+        "GET /summary",
+        "GET /status",
+        "GET /datasets",
+        "GET /gaps",
+        "GET /harvesters",
+        "GET /dossiers",
+        "POST /audit/{audit_key}",
+        "GET /manifest",
+        "GET /runtime-services",
+        "GET /governance-policy",
+        "GET /knowledge-preservation-policy",
+        "GET /registry",
+        "GET /health"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "RuntimeEngineState",
+        "RuntimeEngine"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "threading",
+        "typing"
+      ],
+      "functions": [
+        "utc_now",
+        "to_dict",
+        "__init__",
+        "set_enabled",
+        "start",
+        "stop",
+        "restart",
+        "run_cycle",
+        "status",
+        "_run_loop",
+        "_status_from",
+        "_record_event"
+      ],
+      "module_type": "engine",
+      "name": "RuntimeEngine",
+      "path": "runtime/runtime_engine.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work"
+      ],
+      "category": "Execution",
+      "classes": [
+        "ExecutionEvent",
+        "ExecutionRecord",
+        "RuntimeWorker",
+        "RuntimeExecutor"
+      ],
+      "dependencies": [
+        "__future__",
+        "brain_integration",
+        "dataclasses",
+        "datetime",
+        "json",
+        "pathlib",
+        "runtime_planner",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "utc_now",
+        "add_event",
+        "__init__",
+        "execute",
+        "__init__",
+        "execute_queue",
+        "execute_module",
+        "execute_item",
+        "list_executions",
+        "get_execution",
+        "history",
+        "events",
+        "cancel",
+        "retry",
+        "_new_execution_id",
+        "_write_record",
+        "_write_dict",
+        "_read_json"
+      ],
+      "module_type": "worker",
+      "name": "RuntimeWorker",
+      "path": "runtime/runtime_executor.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Analyze dependencies",
+        "Discover runtime capabilities",
+        "Plan runtime work"
+      ],
+      "category": "Planning",
+      "classes": [
+        "PlannerFinding",
+        "RuntimePlanner"
+      ],
+      "dependencies": [
+        "__future__",
+        "cds_loader",
+        "dataclasses",
+        "typing"
+      ],
+      "functions": [
+        "to_dict",
+        "__init__",
+        "discovery",
+        "dependency_graph",
+        "plan",
+        "queue",
+        "_validate_modules",
+        "_module_summary",
+        "_score_module",
+        "_is_selectable",
+        "_skip_reason",
+        "_dependency_to_module_id"
+      ],
+      "module_type": "python_module",
+      "name": "RuntimePlanner",
+      "path": "runtime/runtime_planner.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "CalyxHeartbeat"
+      ],
+      "dependencies": [
+        "__future__",
+        "bottlenecks",
+        "dataclasses",
+        "goals",
+        "governance",
+        "health",
+        "infrastructure",
+        "json",
+        "memory",
+        "mission"
+      ],
+      "functions": [
+        "__init__",
+        "run_once"
+      ],
+      "module_type": "python_module",
+      "name": "CalyxHeartbeat",
+      "path": "runtime/scheduler.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "typing"
+      ],
+      "functions": [
+        "utc_now",
+        "departments",
+        "department_by_id",
+        "mission_definitions",
+        "datasets",
+        "_mission_for_department",
+        "coverage_gaps",
+        "integration_status",
+        "harvester_status",
+        "dossier_queue",
+        "audit_result",
+        "seed_missions",
+        "summary"
+      ],
+      "module_type": "python_module",
+      "name": "ScienceRegistry",
+      "path": "runtime/science_registry.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Inspect Brain state"
+      ],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "os",
+        "sqlalchemy",
+        "sqlalchemy.orm"
+      ],
+      "functions": [
+        "get_database_url",
+        "get_engine",
+        "get_session_local",
+        "get_db"
+      ],
+      "module_type": "python_module",
+      "name": "Database",
+      "path": "app/database.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "app.database"
+      ],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "Deps",
+      "path": "app/deps.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work",
+        "Expose API endpoints",
+        "Inspect Brain state"
+      ],
+      "category": "API",
+      "classes": [
+        "VerificationRequest"
+      ],
+      "dependencies": [
+        "app.routers",
+        "app.routers.health",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "psycopg.types.json",
+        "pydantic",
+        "re",
+        "runtime.cds_router",
+        "runtime.constitutional_orchestrator",
+        "runtime.constitutional_router",
+        "runtime.kernel_router",
+        "runtime.orchestrator_router",
+        "runtime.planner_router",
+        "runtime.router_fastapi",
+        "runtime.runtime_engine",
+        "runtime.scheduler",
+        "typing"
+      ],
+      "functions": [
+        "require_database_url",
+        "env_bool",
+        "configured",
+        "runtime_interval_seconds_from_env",
+        "autonomous_runtime_config_blocker",
+        "autonomous_runtime_enabled_by_config",
+        "auth_required_action",
+        "runner_allowed_actions",
+        "evaluate_runtime_action",
+        "read_root",
+        "verify",
+        "runner_health",
+        "runtime_configuration",
+        "runner_summary",
+        "run_once",
+        "execute_next",
+        "execute_all",
+        "autonomous_status",
+        "autonomous_cycle",
+        "autonomous_start",
+        "autonomous_stop",
+        "runner_start",
+        "runner_stop",
+        "runner_restart",
+        "seed_runner_missions"
+      ],
+      "module_type": "api_router",
+      "name": "VerificationRequest",
+      "path": "app/main.py",
+      "routers": [
+        "GET /",
+        "POST /verify",
+        "GET /api/runner/health",
+        "GET /api/runtime/configuration",
+        "GET /api/runner/summary",
+        "POST /api/runner/run-once",
+        "POST /api/runner/execute-next",
+        "POST /api/runner/execute-all",
+        "GET /api/runner/autonomous-status",
+        "POST /api/runner/autonomous-cycle",
+        "POST /api/runner/autonomous-start",
+        "POST /api/runner/autonomous-stop",
+        "POST /api/runner/start",
+        "POST /api/runner/stop",
+        "POST /api/runner/restart",
+        "POST /api/runner/seed-missions"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Plan runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "Organization",
+        "Show",
+        "Entry",
+        "VolunteerTask",
+        "Award",
+        "Contact",
+        "MessageTemplate",
+        "MessageLog",
+        "Event",
+        "File",
+        "IntegrationConnection",
+        "SystemReferenceDocument",
+        "VolunteerRole",
+        "VolunteerShift",
+        "Volunteer",
+        "VolunteerAssignment",
+        "Feedback",
+        "JudgingEvent",
+        "PlantCategory",
+        "JudgingAward",
+        "JudgingCriterion",
+        "Exhibitor",
+        "Plant",
+        "Judge",
+        "Score"
+      ],
+      "dependencies": [
+        "app.database",
+        "datetime",
+        "sqlalchemy",
+        "uuid"
+      ],
+      "functions": [
+        "generate_uuid"
+      ],
+      "module_type": "python_module",
+      "name": "Organization",
+      "path": "app/models.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "API",
+      "classes": [],
+      "dependencies": [],
+      "functions": [],
+      "module_type": "api_router",
+      "name": "Init",
+      "path": "app/routers/__init__.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "fastapi",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "functions": [
+        "create_award",
+        "list_awards",
+        "get_award",
+        "update_award",
+        "delete_award"
+      ],
+      "module_type": "api_router",
+      "name": "Awards",
+      "path": "app/routers/awards.py",
+      "routers": [
+        "POST /awards",
+        "GET /awards",
+        "GET /awards/{award_id}",
+        "PATCH /awards/{award_id}",
+        "DELETE /awards/{award_id}"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "fastapi",
+        "fastapi.responses",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "functions": [
+        "list_organizations",
+        "create_organization",
+        "list_org_shows",
+        "create_org_show",
+        "list_show_contacts",
+        "create_show_contact",
+        "list_show_templates",
+        "create_show_template",
+        "render_template",
+        "list_show_events",
+        "create_show_event",
+        "export_events_ics",
+        "list_show_files",
+        "create_show_file",
+        "list_show_integrations",
+        "create_show_integration"
+      ],
+      "module_type": "api_router",
+      "name": "CalyxCore",
+      "path": "app/routers/calyx_core.py",
+      "routers": [
+        "GET /organizations",
+        "POST /organizations",
+        "GET /organizations/{org_id}/shows",
+        "POST /organizations/{org_id}/shows",
+        "GET /shows/{show_id}/contacts",
+        "POST /shows/{show_id}/contacts",
+        "GET /shows/{show_id}/templates",
+        "POST /shows/{show_id}/templates",
+        "POST /shows/{show_id}/templates/{template_id}/render",
+        "GET /shows/{show_id}/events",
+        "POST /shows/{show_id}/events",
+        "GET /shows/{show_id}/events/ics",
+        "GET /shows/{show_id}/files",
+        "POST /shows/{show_id}/files",
+        "GET /shows/{show_id}/integrations",
+        "POST /shows/{show_id}/integrations"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "fastapi",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "functions": [
+        "create_entry",
+        "list_entries",
+        "get_entry",
+        "update_entry",
+        "delete_entry"
+      ],
+      "module_type": "api_router",
+      "name": "Entries",
+      "path": "app/routers/entries.py",
+      "routers": [
+        "POST /entries",
+        "GET /entries",
+        "GET /entries/{entry_id}",
+        "PATCH /entries/{entry_id}",
+        "DELETE /entries/{entry_id}"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "fastapi",
+        "runtime.executive.engine",
+        "typing"
+      ],
+      "functions": [
+        "state",
+        "executive_state",
+        "executive_summary",
+        "executive_priorities",
+        "executive_recommendations",
+        "executive_changes",
+        "executive_dependencies",
+        "executive_briefing"
+      ],
+      "module_type": "api_router",
+      "name": "Executive",
+      "path": "app/routers/executive.py",
+      "routers": [
+        "GET /state",
+        "GET /summary",
+        "GET /priorities",
+        "GET /recommendations",
+        "GET /changes",
+        "GET /dependencies",
+        "GET /briefing"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "fastapi",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "functions": [
+        "submit_feedback",
+        "list_feedback"
+      ],
+      "module_type": "api_router",
+      "name": "Feedback",
+      "path": "app/routers/feedback.py",
+      "routers": [
+        "POST /feedback",
+        "GET /feedback"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [
+        "ScheduleRequest",
+        "TargetProposalRequest"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "fastapi",
+        "pydantic",
+        "runtime.harvester_control",
+        "typing"
+      ],
+      "functions": [
+        "actor",
+        "not_found",
+        "list_harvesters",
+        "inspect_harvester",
+        "inspect_run_history",
+        "verified_actor",
+        "run_once",
+        "pause",
+        "resume",
+        "retire",
+        "restore",
+        "propose_target_change",
+        "approve_target_change",
+        "reject_target_change",
+        "update_schedule",
+        "inspect_current_recommendation",
+        "request_reassessment"
+      ],
+      "module_type": "api_router",
+      "name": "ScheduleRequest",
+      "path": "app/routers/harvesters.py",
+      "routers": [
+        "GET ",
+        "GET /{harvester_id}",
+        "GET /{harvester_id}/runs",
+        "POST /{harvester_id}/run-once",
+        "POST /{harvester_id}/pause",
+        "POST /{harvester_id}/resume",
+        "POST /{harvester_id}/retire",
+        "POST /{harvester_id}/restore",
+        "POST /{harvester_id}/target-proposals",
+        "POST /{harvester_id}/target-proposals/{proposal_id}/approve",
+        "POST /{harvester_id}/target-proposals/{proposal_id}/reject",
+        "PATCH /{harvester_id}/schedule",
+        "GET /{harvester_id}/recommendation",
+        "POST /{harvester_id}/reassess"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "app.routers.executive",
+        "app.routers.mission_control",
+        "app.routers.owner_operations",
+        "app.routers.owner_session_token",
+        "fastapi",
+        "os",
+        "runtime.connector_routes",
+        "runtime.router_fastapi"
+      ],
+      "functions": [
+        "allowed_mission_control_origins",
+        "add_mission_control_cors_headers",
+        "mission_control_options",
+        "executive_options",
+        "health",
+        "system_status"
+      ],
+      "module_type": "api_router",
+      "name": "Health",
+      "path": "app/routers/health.py",
+      "routers": [
+        "GET /health",
+        "GET /system/status"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints",
+        "Plan runtime work"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "hashlib",
+        "json",
+        "sqlalchemy",
+        "sqlalchemy.exc",
+        "sqlalchemy.orm",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "_parse_points_breakdown",
+        "_score_to_out",
+        "_generate_qr_code",
+        "create_judging_event",
+        "list_judging_events",
+        "get_judging_event",
+        "update_judging_event",
+        "publish_judging_event",
+        "close_judging_event",
+        "create_category",
+        "list_categories",
+        "list_awards",
+        "get_award",
+        "create_criterion",
+        "list_criteria",
+        "create_exhibitor",
+        "list_exhibitors",
+        "get_exhibitor",
+        "create_plant",
+        "list_plants",
+        "get_plant",
+        "submit_scores",
+        "get_plant_scores",
+        "get_event_results",
+        "create_judge"
+      ],
+      "module_type": "api_router",
+      "name": "Judging",
+      "path": "app/routers/judging.py",
+      "routers": [
+        "POST /shows/{show_id}/judging/events",
+        "GET /shows/{show_id}/judging/events",
+        "GET /judging/events/{event_id}",
+        "PATCH /judging/events/{event_id}",
+        "POST /judging/events/{event_id}/publish",
+        "POST /judging/events/{event_id}/close",
+        "POST /judging/events/{event_id}/categories",
+        "GET /judging/events/{event_id}/categories",
+        "GET /judging/awards",
+        "GET /judging/awards/{award_id}",
+        "POST /judging/awards/{award_id}/criteria",
+        "GET /judging/awards/{award_id}/criteria",
+        "POST /exhibitors",
+        "GET /exhibitors",
+        "GET /exhibitors/{exhibitor_id}",
+        "POST /judging/events/{event_id}/plants",
+        "GET /judging/events/{event_id}/plants",
+        "GET /judging/plants/{plant_id}",
+        "POST /judging/plants/{plant_id}/scores/{judge_id}",
+        "GET /judging/plants/{plant_id}/scores",
+        "GET /judging/events/{event_id}/results",
+        "POST /judges",
+        "GET /judges",
+        "POST /score-submissions",
+        "GET /entries/{entry_id}/scores",
+        "GET /shows/{show_id}/leaderboard",
+        "GET /judging/criteria",
+        "POST /judging/evaluate",
+        "POST /judging/submit",
+        "POST /judging/events/{event_id}/assignments",
+        "GET /judging/events/{event_id}/assignments",
+        "POST /admin/judging_events/{event_id}/generate_scorecards",
+        "GET /judge/me",
+        "GET /judge/events",
+        "GET /judge/events/{judging_event_id}/scorecards",
+        "GET /judge/scorecards/{scorecard_id}",
+        "PUT /judge/scorecards/{scorecard_id}",
+        "POST /judge/scorecards/{scorecard_id}/submit",
+        "GET /judge/scorecards/{scorecard_id}/audit"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "typing"
+      ],
+      "functions": [
+        "utc_now",
+        "db_unavailable_payload",
+        "with_connection",
+        "table_exists",
+        "safe_count",
+        "first_available_count",
+        "metric_snapshot",
+        "score_from_metric",
+        "completeness_rows",
+        "runtime_telemetry",
+        "latest_job",
+        "harvester_rows",
+        "mission_control_status",
+        "mission_control_health",
+        "mission_control_subsystems",
+        "mission_control_audit",
+        "mission_control_harvesters",
+        "mission_control_runtime",
+        "mission_control_repositories",
+        "mission_control_builds",
+        "mission_control_deployments",
+        "mission_control_metrics",
+        "mission_control_completeness",
+        "mission_control_recommendations",
+        "mission_control_governance"
+      ],
+      "module_type": "api_router",
+      "name": "MissionControl",
+      "path": "app/routers/mission_control.py",
+      "routers": [
+        "GET /status",
+        "GET /health",
+        "GET /subsystems",
+        "GET /audit",
+        "GET /harvesters",
+        "GET /runtime",
+        "GET /repositories",
+        "GET /builds",
+        "GET /deployments",
+        "GET /metrics",
+        "GET /completeness",
+        "GET /recommendations",
+        "GET /governance"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work",
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [
+        "VerificationRequest"
+      ],
+      "dependencies": [
+        "datetime",
+        "fastapi",
+        "os",
+        "psycopg",
+        "psycopg.types.json",
+        "pydantic",
+        "re",
+        "threading",
+        "time",
+        "typing"
+      ],
+      "functions": [
+        "read_root",
+        "verify",
+        "runner_health",
+        "runner_summary",
+        "run_once",
+        "execute_next",
+        "execute_all",
+        "utc_now",
+        "table_exists",
+        "safe_count",
+        "ensure_runtime_log_table",
+        "insert_job_if_missing",
+        "downstream_job_for_action",
+        "maybe_spawn_downstream_job",
+        "log_action",
+        "normalize_title",
+        "normalize_doi",
+        "get_table_columns",
+        "pick_first",
+        "fetch_rows",
+        "execute_citation_engine",
+        "run_job_logic",
+        "autoloop_forever",
+        "startup_event"
+      ],
+      "module_type": "api_router",
+      "name": "VerificationRequest",
+      "path": "app/routers/mycorrhiza.py",
+      "routers": [
+        "GET /",
+        "POST /verify",
+        "GET /api/runner/health",
+        "GET /api/runner/summary",
+        "POST /api/runner/run-once",
+        "POST /api/runner/execute-next",
+        "POST /api/runner/execute-all"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.database",
+        "datetime",
+        "fastapi",
+        "re",
+        "sqlalchemy",
+        "typing"
+      ],
+      "functions": [
+        "_allow_frontend_origin",
+        "_normalize_genus",
+        "_safe_url",
+        "_record_url",
+        "genus_media_options",
+        "genus_of_day",
+        "genus_media"
+      ],
+      "module_type": "api_router",
+      "name": "OrchidWidgets",
+      "path": "app/routers/orchid_widgets.py",
+      "routers": [
+        "GET /widgets/genus-of-day",
+        "GET /media/genus/{genus}"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work",
+        "Expose API endpoints",
+        "Inspect Brain state"
+      ],
+      "category": "API",
+      "classes": [
+        "OwnerLoginRequest",
+        "SourceBriefingRequest",
+        "LocalIntelligenceImportRequest",
+        "IntelligencePatchRequest",
+        "AuditRequest",
+        "CommandRequest",
+        "QueueTransitionRequest",
+        "ResearchRequestIn",
+        "PartnershipPacketRequest"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.routers.mission_control",
+        "app.security",
+        "datetime",
+        "fastapi",
+        "json",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "pydantic",
+        "re",
+        "runtime.constitutional_orchestrator",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "utc_now",
+        "database_url",
+        "actor",
+        "allowed_actions",
+        "db_execute",
+        "log_action",
+        "parse_briefing_items",
+        "row_list",
+        "insert_json_table",
+        "create_session",
+        "permissions",
+        "save_source_briefing",
+        "list_source_briefings",
+        "import_local_records",
+        "list_intelligence",
+        "patch_intelligence",
+        "live_audit_payload",
+        "audit_markdown",
+        "generate_audit",
+        "list_audits",
+        "parse_command",
+        "submit_command",
+        "command_history",
+        "operations_queue",
+        "transition_queue_item"
+      ],
+      "module_type": "api_router",
+      "name": "OwnerLoginRequest",
+      "path": "app/routers/owner_operations.py",
+      "routers": [
+        "POST /session",
+        "GET /permissions",
+        "POST /source-briefings",
+        "GET /source-briefings",
+        "POST /intelligence/import-local",
+        "GET /intelligence",
+        "PATCH /intelligence/{item_id}",
+        "POST /audits",
+        "GET /audits",
+        "POST /commands",
+        "GET /commands",
+        "GET /operations-queue",
+        "POST /operations-queue/{item_id}/{transition}",
+        "POST /research-requests",
+        "GET /research-requests",
+        "POST /partnership-packets",
+        "GET /partnership-packets"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [
+        "OwnerTokenLoginRequest"
+      ],
+      "dependencies": [
+        "app.routers.owner_operations",
+        "app.security",
+        "fastapi",
+        "pydantic",
+        "typing"
+      ],
+      "functions": [
+        "create_token_session"
+      ],
+      "module_type": "api_router",
+      "name": "OwnerTokenLoginRequest",
+      "path": "app/routers/owner_session_token.py",
+      "routers": [
+        "POST /session-token"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.storage",
+        "fastapi",
+        "fastapi.responses",
+        "os",
+        "sqlalchemy",
+        "sqlalchemy.orm"
+      ],
+      "functions": [
+        "require_admin",
+        "list_reference_docs",
+        "get_reference_doc",
+        "download_reference_doc",
+        "upload_reference_doc",
+        "update_reference_doc"
+      ],
+      "module_type": "api_router",
+      "name": "ReferenceDocs",
+      "path": "app/routers/reference_docs.py",
+      "routers": [
+        "GET /reference-docs",
+        "GET /reference-docs/{doc_id}",
+        "GET /reference-docs/{doc_id}/download",
+        "POST /admin/reference-docs",
+        "PATCH /admin/reference-docs/{doc_id}"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "fastapi",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "functions": [
+        "create_show",
+        "list_shows",
+        "get_show",
+        "update_show",
+        "delete_show"
+      ],
+      "module_type": "api_router",
+      "name": "Shows",
+      "path": "app/routers/shows.py",
+      "routers": [
+        "POST /shows",
+        "GET /shows",
+        "GET /shows/{show_id}",
+        "PATCH /shows/{show_id}",
+        "DELETE /shows/{show_id}"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "fastapi",
+        "typing"
+      ],
+      "functions": [
+        "get_tile_registry"
+      ],
+      "module_type": "api_router",
+      "name": "Tiles",
+      "path": "app/routers/tiles.py",
+      "routers": [
+        "GET /tiles/registry"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "csv",
+        "datetime",
+        "fastapi",
+        "io",
+        "openpyxl",
+        "openpyxl.styles",
+        "sqlalchemy",
+        "sqlalchemy.exc",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "functions": [
+        "_require_show",
+        "create_role",
+        "list_roles",
+        "create_shift",
+        "list_shifts",
+        "update_shift",
+        "delete_shift",
+        "create_volunteer",
+        "list_volunteers",
+        "update_volunteer",
+        "create_assignment",
+        "list_assignments",
+        "update_assignment_status",
+        "move_assignment",
+        "delete_assignment",
+        "check_in",
+        "export_xlsx",
+        "_parse_bool",
+        "_parse_xlsx",
+        "_parse_csv",
+        "printable_schedule"
+      ],
+      "module_type": "api_router",
+      "name": "VolunteerOps",
+      "path": "app/routers/volunteer_ops.py",
+      "routers": [
+        "POST /roles",
+        "GET /roles",
+        "POST /shifts",
+        "GET /shifts",
+        "PATCH /shifts/{shift_id}",
+        "DELETE /shifts/{shift_id}",
+        "POST /volunteers",
+        "GET /volunteers",
+        "PATCH /volunteers/{volunteer_id}",
+        "POST /assignments",
+        "GET /assignments",
+        "PATCH /assignments/{assignment_id}/status",
+        "PATCH /assignments/{assignment_id}/move",
+        "DELETE /assignments/{assignment_id}",
+        "POST /check-in",
+        "GET /export.xlsx",
+        "GET /printable"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "app.deps",
+        "app.models",
+        "app.schemas",
+        "app.security",
+        "fastapi",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "functions": [
+        "create_task",
+        "list_tasks",
+        "get_task",
+        "update_task",
+        "delete_task"
+      ],
+      "module_type": "api_router",
+      "name": "Volunteers",
+      "path": "app/routers/volunteers.py",
+      "routers": [
+        "POST /volunteer-tasks",
+        "GET /volunteer-tasks",
+        "GET /volunteer-tasks/{task_id}",
+        "PATCH /volunteer-tasks/{task_id}",
+        "DELETE /volunteer-tasks/{task_id}"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Plan runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ShowCreate",
+        "ShowUpdate",
+        "ShowOut",
+        "EntryCreate",
+        "EntryUpdate",
+        "EntryOut",
+        "VolunteerTaskCreate",
+        "VolunteerTaskUpdate",
+        "VolunteerTaskOut",
+        "AwardCreate",
+        "AwardUpdate",
+        "AwardOut",
+        "OrganizationCreate",
+        "OrganizationOut",
+        "ContactCreate",
+        "ContactOut",
+        "MessageTemplateCreate",
+        "MessageTemplateOut",
+        "TemplateRenderRequest",
+        "TemplateRenderResponse",
+        "EventCreate",
+        "EventOut",
+        "FileCreate",
+        "FileOut",
+        "IntegrationCreate"
+      ],
+      "dependencies": [
+        "datetime",
+        "pydantic",
+        "typing"
+      ],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "ShowCreate",
+      "path": "app/schemas.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "base64",
+        "fastapi",
+        "fastapi.security",
+        "hashlib",
+        "hmac",
+        "os",
+        "secrets",
+        "time",
+        "typing"
+      ],
+      "functions": [
+        "get_api_key",
+        "get_owner_access_code",
+        "get_owner_session_secret",
+        "owner_session_ttl_seconds",
+        "owner_cookie_secure",
+        "owner_cookie_samesite",
+        "_b64",
+        "_unb64",
+        "create_owner_session_token",
+        "verify_owner_access_code",
+        "_decode_owner_token",
+        "require_admin",
+        "require_judge"
+      ],
+      "module_type": "python_module",
+      "name": "Security",
+      "path": "app/security.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "hashlib",
+        "os",
+        "pathlib"
+      ],
+      "functions": [
+        "ensure_storage_dir",
+        "compute_sha256",
+        "save_file",
+        "read_file",
+        "file_exists"
+      ],
+      "module_type": "python_module",
+      "name": "Storage",
+      "path": "app/storage.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Execution",
+      "classes": [],
+      "dependencies": [
+        "app.database",
+        "logging",
+        "sqlalchemy",
+        "time"
+      ],
+      "functions": [
+        "fetch_next_job",
+        "mark_job_running",
+        "mark_job_done",
+        "main"
+      ],
+      "module_type": "python_module",
+      "name": "Worker",
+      "path": "app/worker.py",
+      "routers": [],
+      "status": "available"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": "MEDIUM",
+      "reason": "31 internal dependency hints were not matched to modules.",
+      "recommendation": "Normalize internal dependency declarations",
+      "source": "dependency_graph"
+    },
+    {
+      "priority": "HIGH",
+      "reason": "4 planner-selected modules are ready to run.",
+      "recommendation": "Execute planner queue",
+      "source": "runtime_planner"
+    },
+    {
+      "priority": "LOW",
+      "reason": "BUILD-014 writes a file-backed cache; BUILD-015 should persist discovery snapshots.",
+      "recommendation": "Persist discovery results into Brain memory",
+      "source": "brain_sync"
+    }
+  ],
+  "status": "discovered",
+  "summary": {
+    "brain_connected": true,
+    "capabilities": 98,
+    "degraded": 1,
+    "graph_edges": 127,
+    "graph_nodes": 84,
+    "healthy": 68,
+    "modules": 84,
+    "recommendations": 3
+  }
+}
