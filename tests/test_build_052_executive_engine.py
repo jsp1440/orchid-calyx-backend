@@ -119,6 +119,6 @@ def test_executive_api_endpoints_are_read_only(monkeypatch):
     ]:
         response = api.get(endpoint)
         assert response.status_code == 200
-        assert response.json()["build"] == "BUILD-054"
+        assert response.json()["build"] == "BUILD-064"
         assert api.post(endpoint).status_code in {404, 405}
 

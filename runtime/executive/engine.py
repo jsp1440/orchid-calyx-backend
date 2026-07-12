@@ -44,7 +44,7 @@ def build_executive_state(update_cache: bool = True) -> dict[str, Any]:
     subsystems = [item.as_dict() for item in collect_subsystems()]
     priorities = attach_reasoning(ordered_priorities(subsystems, reverse))
     current = {
-        "build": "BUILD-054",
+        "build": "BUILD-064",
         "generated_at": utc_now(),
         "subsystems": subsystems,
         "completion_model": completion_model(),
