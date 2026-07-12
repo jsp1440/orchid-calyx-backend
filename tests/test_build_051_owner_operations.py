@@ -67,8 +67,8 @@ def test_persisted_owner_session_can_be_validated(monkeypatch):
     assert body["expires_at"]
     assert body["allowedActions"]["approveQueueItem"]["allowed"] is True
     assert body["allowedActions"]["approveQueueItem"]["requiresConfirmation"] is True
-    assert body["allowedActions"]["promoteBrainKnowledge"]["allowed"] is False
-    assert body["allowedActions"]["promoteBrainKnowledge"]["state"] == "not_yet_implemented"
+    assert body["allowedActions"]["promoteBrainKnowledge"]["allowed"] is True
+    assert body["allowedActions"]["promoteBrainKnowledge"]["state"] == "owner_authorized_action"
 
 
 def test_source_briefing_persists_and_routes_grants(monkeypatch):

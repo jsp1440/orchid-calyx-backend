@@ -20,7 +20,7 @@ KernelStatus = Literal["active", "planned", "degraded", "blocked", "retired"]
 KernelHealth = Literal["healthy", "attention", "degraded", "critical", "unknown"]
 
 KERNEL_VERSION = "0.1.0"
-KERNEL_UPDATED_AT = "2026-07-09T00:00:00+00:00"
+KERNEL_UPDATED_AT = "2026-07-12T00:00:00+00:00"
 
 
 class TelemetryEvidence(BaseModel):
@@ -262,6 +262,36 @@ class KernelRegistryService:
 
     def builds(self) -> list[BuildRegistryEntry]:
         return [
+            BuildRegistryEntry(
+                id="build-064",
+                name="BUILD-064 Production Operations Activation",
+                description="Activates recommendations, governance, and brain knowledge promotion. Adds persistent session revocation.",
+                version=KERNEL_VERSION,
+                status="active",
+                health="healthy",
+                owner=self.owner,
+                repository=self.backend_repo,
+                dependencies=["fastapi", "runtime", "build-063"],
+                capabilities=[
+                    "recommendations-review",
+                    "governance-review",
+                    "promote-brain-knowledge",
+                    "persistent-session-revocation",
+                ],
+                telemetry_source="docs/BUILD-064.md",
+                evidence=_evidence("BUILD-064", "Production operations layer activated; three previously scaffolded actions are now implemented."),
+                build_number="BUILD-064",
+                branch="feature/build-064-production-operations-activation",
+                deployment="backend",
+                success_criteria=[
+                    "recommendations and governance actions marked implemented",
+                    "POST /intelligence/{id}/promote endpoint operational",
+                    "Session nonce revocations persist to DB on logout",
+                    "All 236+ tests pass",
+                ],
+                blockers=[],
+                next_build="BUILD-065",
+            ),
             BuildRegistryEntry(
                 id="build-040",
                 name="BUILD-040 Orchid Continuum Kernel",
