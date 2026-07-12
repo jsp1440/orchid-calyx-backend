@@ -19,6 +19,18 @@ from runtime.scientific_intelligence.utils import to_int, to_float, utc_now
 
 
 def _status(available: bool, count: int, threshold: int = 1) -> str:
+    """Derive a human-readable status string from availability and record count.
+
+    Args:
+        available: Whether the subsystem's source table was reachable.
+        count: Total record count from the source table.
+        threshold: Minimum count required to be considered 'live' (default: 1).
+
+    Returns:
+        'unavailable' if the source table is unreachable,
+        'live'        if count >= threshold (records exist and are accessible),
+        'empty'       if the table is reachable but contains no records.
+    """
     if not available:
         return "unavailable"
     if count >= threshold:

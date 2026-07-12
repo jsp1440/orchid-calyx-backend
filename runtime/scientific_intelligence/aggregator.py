@@ -36,6 +36,15 @@ AGGREGATE_CACHE_KEY = "scientific_intelligence_aggregate"
 AGGREGATE_CACHE_TTL = 60  # seconds
 
 
+def _clamp_pct(value: float | int, max_val: int = 100) -> int:
+    """Clamp *value* to the range [0, max_val] and return as int.
+
+    Used throughout research_readiness to normalize raw database counts into
+    0–100 percentage scores suitable for display in Mission Control.
+    """
+    return min(max_val, max(0, int(value)))
+
+
 # ---------------------------------------------------------------------------
 # Section builders
 # ---------------------------------------------------------------------------
@@ -159,26 +168,19 @@ def research_readiness(adapters: dict[str, dict[str, Any]], intelligence: dict[s
     vision = adapters.get("vision", {})
     kg = adapters.get("knowledge_graph", {})
 
-    atlas_growth = min(100, to_int(atlas.get("occurrences")) // 1000)
-    lit_ingestion = min(100, to_int(lit.get("documents")) // 100)
-    pollinator_coverage = min(100, int(to_float(pollinators.get("coverage_pct"))))
-    mycorrhiza_coverage = min(100, int(to_float(mycorrhiza.get("coverage_pct"))))
-    image_quality = min(100, int(to_float(vision.get("quality_score"))))
     kg_relationships = to_int(kg.get("relationships"))
-    relationship_completeness = min(100, kg_relationships // 1000)
     entities = to_int(kg.get("entities"))
-    taxonomic_completeness = min(100, entities // 100)
-    evidence_confidence = min(100, int((to_int(lit.get("extracted_relationships")) / max(kg_relationships, 1)) * 100)) if kg_relationships > 0 else 0
+    extracted = to_int(lit.get("extracted_relationships"))
 
     metrics = {
-        "atlas_growth": atlas_growth,
-        "literature_ingestion": lit_ingestion,
-        "pollinator_coverage": pollinator_coverage,
-        "mycorrhiza_coverage": mycorrhiza_coverage,
-        "image_quality": image_quality,
-        "taxonomic_completeness": taxonomic_completeness,
-        "relationship_completeness": relationship_completeness,
-        "evidence_confidence": evidence_confidence,
+        "atlas_growth": _clamp_pct(to_int(atlas.get("occurrences")) // 1000),
+        "literature_ingestion": _clamp_pct(to_int(lit.get("documents")) // 100),
+        "pollinator_coverage": _clamp_pct(to_float(pollinators.get("coverage_pct"))),
+        "mycorrhiza_coverage": _clamp_pct(to_float(mycorrhiza.get("coverage_pct"))),
+        "image_quality": _clamp_pct(to_float(vision.get("quality_score"))),
+        "taxonomic_completeness": _clamp_pct(entities // 100),
+        "relationship_completeness": _clamp_pct(kg_relationships // 1000),
+        "evidence_confidence": _clamp_pct((extracted / max(kg_relationships, 1)) * 100) if kg_relationships > 0 else 0,
     }
     overall = round(sum(metrics.values()) / len(metrics), 1)
     return {

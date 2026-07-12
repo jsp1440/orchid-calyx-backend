@@ -5721,6 +5721,7 @@
         "_table_exists",
         "_safe_count",
         "_first_count",
+        "_coverage_pct",
         "_fetch_knowledge_graph",
         "knowledge_graph_adapter",
         "_fetch_atlas",
@@ -5755,6 +5756,7 @@
         "typing"
       ],
       "functions": [
+        "_clamp_pct",
         "_executive_summary",
         "_subsystem_health",
         "_scientific_priorities",

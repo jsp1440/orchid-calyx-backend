@@ -23,6 +23,36 @@ from typing import Any
 
 from runtime.scientific_intelligence.utils import to_int, to_float
 
+# ---------------------------------------------------------------------------
+# Domain thresholds used in gap and opportunity calculations.
+# These represent scientifically-grounded targets for the Orchid Continuum.
+# ---------------------------------------------------------------------------
+
+# Expected number of extracted relationships per literature document.
+# Based on average information density in botanical/ecological literature.
+EXPECTED_RELATIONSHIPS_PER_DOCUMENT: int = 5
+
+# Target occurrence records per accepted taxon for dense geographic coverage.
+TARGET_OCCURRENCES_PER_TAXON: int = 10
+
+# Minimum entity count to support a Knowledge Graph data-paper publication.
+MIN_ENTITIES_FOR_KG_DATA_PAPER: int = 500
+
+# Minimum relationship count to support a Knowledge Graph data-paper.
+MIN_RELATIONSHIPS_FOR_KG_DATA_PAPER: int = 1000
+
+# Minimum occurrence count to support a biogeographic range analysis.
+MIN_OCCURRENCES_FOR_RANGE_PAPER: int = 10_000
+
+# Minimum extracted relationship count to support a literature review paper.
+MIN_EXTRACTED_FOR_LIT_REVIEW: int = 500
+
+# Minimum relationship count in the KG to unlock a network-ecology grant.
+MIN_RELATIONSHIPS_FOR_NETWORK_GRANT: int = 1_000
+
+# Minimum literature document count to unlock a synthesis grant.
+MIN_DOCUMENTS_FOR_SYNTHESIS_GRANT: int = 100
+
 
 # ---------------------------------------------------------------------------
 # Phase 3 — Individual derivation functions
@@ -55,7 +85,7 @@ def highest_scientific_priority(adapters: dict[str, dict[str, Any]]) -> dict[str
     if lit.get("available"):
         docs = to_int(lit.get("documents"))
         extracted = to_int(lit.get("extracted_relationships"))
-        ratio = 1 - (extracted / max(docs * 5, 1)) if docs > 0 else 1.0
+        ratio = 1 - (extracted / max(docs * EXPECTED_RELATIONSHIPS_PER_DOCUMENT, 1)) if docs > 0 else 1.0
         scores.append(("literature", max(0.0, ratio), "Literature extraction gap"))
 
     if not scores:
@@ -81,12 +111,12 @@ def largest_knowledge_gap(adapters: dict[str, dict[str, Any]]) -> dict[str, Any]
     if atlas.get("available"):
         occurrences = to_int(atlas.get("occurrences"))
         taxa = to_int(atlas.get("taxa_covered"))
-        gaps.append(("atlas", max(0, taxa * 10 - occurrences), "Occurrence records below target density"))
+        gaps.append(("atlas", max(0, taxa * TARGET_OCCURRENCES_PER_TAXON - occurrences), "Occurrence records below target density"))
 
     if lit.get("available"):
         documents = to_int(lit.get("documents"))
         extracted = to_int(lit.get("extracted_relationships"))
-        gaps.append(("literature", max(0, documents * 5 - extracted), "Unextracted literature relationships"))
+        gaps.append(("literature", max(0, documents * EXPECTED_RELATIONSHIPS_PER_DOCUMENT - extracted), "Unextracted literature relationships"))
 
     if not gaps:
         return {"subsystem_id": "knowledge_graph", "gap_size": 0, "description": "No live data available to measure gaps."}
@@ -224,20 +254,20 @@ def grant_opportunities(adapters: dict[str, dict[str, Any]]) -> list[dict[str, A
 
     opportunities = []
 
-    if to_int(kg.get("relationships")) >= 1000:
+    if to_int(kg.get("relationships")) >= MIN_RELATIONSHIPS_FOR_NETWORK_GRANT:
         opportunities.append({
             "id": "kg-network-grant",
             "title": "Orchid Ecological Network Mapping Grant",
             "reason": "Knowledge Graph contains sufficient relationships to support a network-ecology grant application.",
-            "readiness": "ready" if to_int(kg.get("relationships")) >= 10000 else "emerging",
+            "readiness": "ready" if to_int(kg.get("relationships")) >= MIN_RELATIONSHIPS_FOR_NETWORK_GRANT * 10 else "emerging",
         })
 
-    if to_int(lit.get("documents")) >= 100:
+    if to_int(lit.get("documents")) >= MIN_DOCUMENTS_FOR_SYNTHESIS_GRANT:
         opportunities.append({
             "id": "lit-synthesis-grant",
             "title": "Literature Synthesis and Meta-Analysis Grant",
             "reason": "Literature corpus is large enough to support a systematic review grant.",
-            "readiness": "ready" if to_int(lit.get("documents")) >= 1000 else "emerging",
+            "readiness": "ready" if to_int(lit.get("documents")) >= MIN_DOCUMENTS_FOR_SYNTHESIS_GRANT * 10 else "emerging",
         })
 
     if opportunities_count > 0 and not opportunities:
@@ -256,7 +286,7 @@ def publication_opportunities(adapters: dict[str, dict[str, Any]]) -> list[dict[
     publications = []
 
     kg = adapters.get("knowledge_graph", {})
-    if to_int(kg.get("entities")) >= 500 and to_int(kg.get("relationships")) >= 1000:
+    if to_int(kg.get("entities")) >= MIN_ENTITIES_FOR_KG_DATA_PAPER and to_int(kg.get("relationships")) >= MIN_RELATIONSHIPS_FOR_KG_DATA_PAPER:
         publications.append({
             "id": "kg-data-paper",
             "title": "Orchid Continuum Knowledge Graph — Data Paper",
@@ -264,7 +294,7 @@ def publication_opportunities(adapters: dict[str, dict[str, Any]]) -> list[dict[
         })
 
     atlas = adapters.get("atlas", {})
-    if to_int(atlas.get("occurrences")) >= 10000:
+    if to_int(atlas.get("occurrences")) >= MIN_OCCURRENCES_FOR_RANGE_PAPER:
         publications.append({
             "id": "atlas-range-paper",
             "title": "Orchid Range Map — Biogeographic Analysis",
@@ -272,7 +302,7 @@ def publication_opportunities(adapters: dict[str, dict[str, Any]]) -> list[dict[
         })
 
     lit = adapters.get("literature", {})
-    if to_int(lit.get("extracted_relationships")) >= 500:
+    if to_int(lit.get("extracted_relationships")) >= MIN_EXTRACTED_FOR_LIT_REVIEW:
         publications.append({
             "id": "lit-review-paper",
             "title": "Orchid–Pollinator Interaction Literature Review",

@@ -92,6 +92,17 @@ def _first_count(cur: Any, candidates: Iterable[str]) -> tuple[str | None, int]:
     return None, 0
 
 
+def _coverage_pct(numerator: int, denominator: int) -> float:
+    """Calculate coverage percentage as a 0.0–100.0 float.
+
+    Returns 0.0 when *denominator* is zero to avoid division-by-zero errors.
+    The result is capped at 100.0 in case source counts produce a ratio > 1.
+    """
+    if denominator <= 0:
+        return 0.0
+    return min(100.0, round(numerator / denominator * 100, 1))
+
+
 # ---------------------------------------------------------------------------
 # Knowledge Graph adapter
 # ---------------------------------------------------------------------------
@@ -177,7 +188,7 @@ def _fetch_atlas(cur: Any) -> dict[str, Any]:
     if tax_table:
         provenance["taxonomy_table"] = tax_table
     taxa_covered = taxa if tax_table else 0
-    coord_pct = min(100.0, round(occurrences / max(taxa_covered, 1) * 100, 1)) if available and taxa_covered > 0 else 0.0
+    coord_pct = _coverage_pct(occurrences, taxa_covered) if available else 0.0
     return normalize("atlas", {
         "available": available,
         "occurrences": occurrences,
@@ -266,7 +277,7 @@ def _fetch_pollinators(cur: Any) -> dict[str, Any]:
     if rel_table:
         provenance["relationship_table"] = rel_table
     taxa_covered = min(relationships, taxa) if available and taxa > 0 else 0
-    coverage_pct = round(taxa_covered / max(taxa, 1) * 100, 1) if taxa > 0 and available else 0.0
+    coverage_pct = _coverage_pct(taxa_covered, taxa) if available else 0.0
     return normalize("pollinators", {
         "available": available,
         "relationships": relationships,
@@ -306,7 +317,7 @@ def _fetch_mycorrhiza(cur: Any) -> dict[str, Any]:
     if myco_table:
         provenance["mycorrhiza_table"] = myco_table
     taxa_covered = min(records, taxa) if available and taxa > 0 else 0
-    coverage_pct = round(taxa_covered / max(taxa, 1) * 100, 1) if taxa > 0 and available else 0.0
+    coverage_pct = _coverage_pct(taxa_covered, taxa) if available else 0.0
     return normalize("mycorrhiza", {
         "available": available,
         "records": records,
@@ -348,7 +359,7 @@ def _fetch_vision(cur: Any) -> dict[str, Any]:
     if img_table:
         provenance["image_table"] = img_table
     taxa_with_images = min(images, taxa) if available and taxa > 0 else 0
-    quality_score = min(100.0, round(images / max(taxa, 1) * 20, 1)) if available and taxa > 0 else 0.0
+    quality_score = min(100.0, _coverage_pct(images, max(taxa, 1)) * 0.2) if available else 0.0
     return normalize("vision", {
         "available": available,
         "images": images,
