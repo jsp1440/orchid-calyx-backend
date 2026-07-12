@@ -17,7 +17,6 @@ Sections produced:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from runtime.scientific_intelligence.adapters import fetch_all_adapters
@@ -30,28 +29,11 @@ from runtime.scientific_intelligence.intelligence import (
     publication_opportunities,
     research_risks,
 )
+from runtime.scientific_intelligence.utils import to_int, to_float, utc_now
 
 BUILD_ID = "BUILD-062"
 AGGREGATE_CACHE_KEY = "scientific_intelligence_aggregate"
 AGGREGATE_CACHE_TTL = 60  # seconds
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +75,7 @@ def _subsystem_health(adapters: dict[str, dict[str, Any]]) -> list[dict[str, Any
             "name": payload.get("name", key),
             "available": payload.get("available", False),
             "status": payload.get("status", "unavailable"),
-            "generated_at": payload.get("generated_at", _utc_now()),
+            "generated_at": payload.get("generated_at", utc_now()),
         })
     return rows
 
@@ -168,7 +150,7 @@ def _data_freshness(adapters: dict[str, dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _research_readiness(adapters: dict[str, dict[str, Any]], intelligence: dict[str, Any]) -> dict[str, Any]:
+def research_readiness(adapters: dict[str, dict[str, Any]], intelligence: dict[str, Any]) -> dict[str, Any]:
     """Phase 5 — research intelligence metrics."""
     atlas = adapters.get("atlas", {})
     lit = adapters.get("literature", {})
@@ -177,16 +159,16 @@ def _research_readiness(adapters: dict[str, dict[str, Any]], intelligence: dict[
     vision = adapters.get("vision", {})
     kg = adapters.get("knowledge_graph", {})
 
-    atlas_growth = min(100, _int(atlas.get("occurrences")) // 1000)
-    lit_ingestion = min(100, _int(lit.get("documents")) // 100)
-    pollinator_coverage = min(100, int(_float(pollinators.get("coverage_pct"))))
-    mycorrhiza_coverage = min(100, int(_float(mycorrhiza.get("coverage_pct"))))
-    image_quality = min(100, int(_float(vision.get("quality_score"))))
-    kg_relationships = _int(kg.get("relationships"))
+    atlas_growth = min(100, to_int(atlas.get("occurrences")) // 1000)
+    lit_ingestion = min(100, to_int(lit.get("documents")) // 100)
+    pollinator_coverage = min(100, int(to_float(pollinators.get("coverage_pct"))))
+    mycorrhiza_coverage = min(100, int(to_float(mycorrhiza.get("coverage_pct"))))
+    image_quality = min(100, int(to_float(vision.get("quality_score"))))
+    kg_relationships = to_int(kg.get("relationships"))
     relationship_completeness = min(100, kg_relationships // 1000)
-    entities = _int(kg.get("entities"))
+    entities = to_int(kg.get("entities"))
     taxonomic_completeness = min(100, entities // 100)
-    evidence_confidence = min(100, int((_int(lit.get("extracted_relationships")) / max(kg_relationships, 1)) * 100)) if kg_relationships > 0 else 0
+    evidence_confidence = min(100, int((to_int(lit.get("extracted_relationships")) / max(kg_relationships, 1)) * 100)) if kg_relationships > 0 else 0
 
     metrics = {
         "atlas_growth": atlas_growth,
@@ -206,7 +188,7 @@ def _research_readiness(adapters: dict[str, dict[str, Any]], intelligence: dict[
     }
 
 
-def _knowledge_graph_status(adapters: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def knowledge_graph_status(adapters: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Phase 4 — real Knowledge Graph statistics."""
     kg = adapters.get("knowledge_graph", {})
     return {
@@ -294,7 +276,7 @@ def build_daily_brief(
 
     return {
         "title": "Orchid Continuum Scientific Intelligence — Executive Daily Brief",
-        "generated_at": _utc_now(),
+        "generated_at": utc_now(),
         "todays_highest_priorities": priorities,
         "research_accomplishments": [{"summary": c.get("summary", "")} for c in completed[:5]],
         "problems_requiring_attention": all_problems,
@@ -325,7 +307,7 @@ def build_scientific_intelligence_payload(use_cache: bool = True) -> dict[str, A
         if cached is not None:
             return cached
 
-    generated_at = _utc_now()
+    generated_at = utc_now()
     adapters = fetch_all_adapters()
     intelligence = derive_mission_control_intelligence(adapters)
 
@@ -337,8 +319,8 @@ def build_scientific_intelligence_payload(use_cache: bool = True) -> dict[str, A
         "scientific_priorities": _scientific_priorities(intelligence),
         "scientific_opportunities": _scientific_opportunities(intelligence),
         "data_freshness": _data_freshness(adapters),
-        "research_readiness": _research_readiness(adapters, intelligence),
-        "knowledge_graph_status": _knowledge_graph_status(adapters),
+        "research_readiness": research_readiness(adapters, intelligence),
+        "knowledge_graph_status": knowledge_graph_status(adapters),
         "scientific_activity_timeline": _activity_timeline(adapters, generated_at),
         "intelligence": intelligence,
         "daily_brief": build_daily_brief(adapters, intelligence),

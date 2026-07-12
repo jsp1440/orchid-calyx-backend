@@ -14,20 +14,17 @@ Adapters are intentionally read-only and never write to the database.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
 from typing import Any, Callable, Iterable
 
 import psycopg
+from psycopg import sql as psycopg_sql
 
 from runtime.scientific_intelligence.cache import get_cached, set_cached
 from runtime.scientific_intelligence.normalizer import normalize
+from runtime.scientific_intelligence.utils import utc_now
 
 DATABASE_URL: str | None = os.environ.get("DATABASE_URL")
 ADAPTER_CACHE_TTL: int = 60  # seconds
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _fallback(subsystem_id: str, reason: str) -> dict[str, Any]:
@@ -35,7 +32,7 @@ def _fallback(subsystem_id: str, reason: str) -> dict[str, Any]:
     return normalize(subsystem_id, {
         "available": False,
         "provenance": {"source": "fallback", "reason": reason},
-        "generated_at": _utc_now(),
+        "generated_at": utc_now(),
     })
 
 
@@ -61,9 +58,28 @@ def _table_exists(cur: Any, fq_table: str) -> bool:
 
 
 def _safe_count(cur: Any, fq_table: str) -> int | None:
+    """Return row count for *fq_table* or None if the table does not exist.
+
+    Table identity is composed using psycopg.sql.Identifier so that the table
+    name is never interpolated directly into the query string.  The table name
+    comes exclusively from the hardcoded candidate lists in this module, so
+    there is no external input, but using the safe composition API is good
+    practice and prevents accidental issues if the list is extended.
+    """
     if not _table_exists(cur, fq_table):
         return None
-    cur.execute(f"SELECT COUNT(*) FROM {fq_table}")
+    # Split "schema.table" into its parts for safe identifier composition.
+    parts = fq_table.split(".", 1)
+    if len(parts) == 2:
+        query = psycopg_sql.SQL("SELECT COUNT(*) FROM {}.{}").format(
+            psycopg_sql.Identifier(parts[0]),
+            psycopg_sql.Identifier(parts[1]),
+        )
+    else:
+        query = psycopg_sql.SQL("SELECT COUNT(*) FROM {}").format(
+            psycopg_sql.Identifier(parts[0]),
+        )
+    cur.execute(query)
     return int(cur.fetchone()[0])
 
 
@@ -115,9 +131,9 @@ def _fetch_knowledge_graph(cur: Any) -> dict[str, Any]:
         "disconnected_nodes": 0,
         "validation_pct": 0.0,
         "growth_rate": 0.0,
-        "last_sync": _utc_now() if available else "unavailable",
+        "last_sync": utc_now() if available else "unavailable",
         "provenance": provenance,
-        "generated_at": _utc_now(),
+        "generated_at": utc_now(),
     })
 
 
@@ -167,9 +183,9 @@ def _fetch_atlas(cur: Any) -> dict[str, Any]:
         "occurrences": occurrences,
         "taxa_covered": taxa_covered,
         "coordinate_coverage_pct": coord_pct,
-        "last_import": _utc_now() if available else "unavailable",
+        "last_import": utc_now() if available else "unavailable",
         "provenance": provenance,
-        "generated_at": _utc_now(),
+        "generated_at": utc_now(),
     })
 
 
@@ -214,9 +230,9 @@ def _fetch_literature(cur: Any) -> dict[str, Any]:
         "documents": documents,
         "extracted_relationships": extracted,
         "ingestion_rate": 0.0,
-        "last_ingestion": _utc_now() if available else "unavailable",
+        "last_ingestion": utc_now() if available else "unavailable",
         "provenance": provenance,
-        "generated_at": _utc_now(),
+        "generated_at": utc_now(),
     })
 
 
@@ -256,9 +272,9 @@ def _fetch_pollinators(cur: Any) -> dict[str, Any]:
         "relationships": relationships,
         "taxa_covered": taxa_covered,
         "coverage_pct": coverage_pct,
-        "last_harvest": _utc_now() if available else "unavailable",
+        "last_harvest": utc_now() if available else "unavailable",
         "provenance": provenance,
-        "generated_at": _utc_now(),
+        "generated_at": utc_now(),
     })
 
 
@@ -296,9 +312,9 @@ def _fetch_mycorrhiza(cur: Any) -> dict[str, Any]:
         "records": records,
         "taxa_covered": taxa_covered,
         "coverage_pct": coverage_pct,
-        "last_harvest": _utc_now() if available else "unavailable",
+        "last_harvest": utc_now() if available else "unavailable",
         "provenance": provenance,
-        "generated_at": _utc_now(),
+        "generated_at": utc_now(),
     })
 
 
@@ -338,9 +354,9 @@ def _fetch_vision(cur: Any) -> dict[str, Any]:
         "images": images,
         "taxa_with_images": taxa_with_images,
         "quality_score": quality_score,
-        "last_harvest": _utc_now() if available else "unavailable",
+        "last_harvest": utc_now() if available else "unavailable",
         "provenance": provenance,
-        "generated_at": _utc_now(),
+        "generated_at": utc_now(),
     })
 
 
@@ -400,7 +416,7 @@ def grant_office_adapter(
             "kg_relationships": kg_relationships,
             "lit_documents": lit_documents,
         },
-        "generated_at": _utc_now(),
+        "generated_at": utc_now(),
     })
     set_cached("grant_office", result)
     return result

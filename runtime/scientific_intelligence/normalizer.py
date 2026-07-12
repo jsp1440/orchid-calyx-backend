@@ -13,26 +13,9 @@ Normalization contract:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
+from runtime.scientific_intelligence.utils import to_int, to_float, utc_now
 
 
 def _status(available: bool, count: int, threshold: int = 1) -> str:
@@ -44,11 +27,11 @@ def _status(available: bool, count: int, threshold: int = 1) -> str:
 
 
 def normalize_knowledge_graph(raw: dict[str, Any]) -> dict[str, Any]:
-    entities = _int(raw.get("entities"))
-    relationships = _int(raw.get("relationships"))
-    disconnected = _int(raw.get("disconnected_nodes"))
-    validation_pct = _float(raw.get("validation_pct"), 0.0)
-    growth_rate = _float(raw.get("growth_rate"), 0.0)
+    entities = to_int(raw.get("entities"))
+    relationships = to_int(raw.get("relationships"))
+    disconnected = to_int(raw.get("disconnected_nodes"))
+    validation_pct = to_float(raw.get("validation_pct"), 0.0)
+    growth_rate = to_float(raw.get("growth_rate"), 0.0)
     available = bool(raw.get("available"))
     return {
         "subsystem_id": "knowledge_graph",
@@ -67,8 +50,8 @@ def normalize_knowledge_graph(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_atlas(raw: dict[str, Any]) -> dict[str, Any]:
-    occurrences = _int(raw.get("occurrences"))
-    taxa_covered = _int(raw.get("taxa_covered"))
+    occurrences = to_int(raw.get("occurrences"))
+    taxa_covered = to_int(raw.get("taxa_covered"))
     available = bool(raw.get("available"))
     return {
         "subsystem_id": "atlas",
@@ -77,7 +60,7 @@ def normalize_atlas(raw: dict[str, Any]) -> dict[str, Any]:
         "status": _status(available, occurrences),
         "occurrences": occurrences,
         "taxa_covered": taxa_covered,
-        "coordinate_coverage_pct": _float(raw.get("coordinate_coverage_pct")),
+        "coordinate_coverage_pct": to_float(raw.get("coordinate_coverage_pct")),
         "last_import": raw.get("last_import", "unavailable"),
         "provenance": raw.get("provenance", {}),
         "generated_at": raw.get("generated_at", utc_now()),
@@ -85,8 +68,8 @@ def normalize_atlas(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_literature(raw: dict[str, Any]) -> dict[str, Any]:
-    documents = _int(raw.get("documents"))
-    extracted_relationships = _int(raw.get("extracted_relationships"))
+    documents = to_int(raw.get("documents"))
+    extracted_relationships = to_int(raw.get("extracted_relationships"))
     available = bool(raw.get("available"))
     return {
         "subsystem_id": "literature",
@@ -95,7 +78,7 @@ def normalize_literature(raw: dict[str, Any]) -> dict[str, Any]:
         "status": _status(available, documents),
         "documents": documents,
         "extracted_relationships": extracted_relationships,
-        "ingestion_rate": _float(raw.get("ingestion_rate")),
+        "ingestion_rate": to_float(raw.get("ingestion_rate")),
         "last_ingestion": raw.get("last_ingestion", "unavailable"),
         "provenance": raw.get("provenance", {}),
         "generated_at": raw.get("generated_at", utc_now()),
@@ -103,8 +86,8 @@ def normalize_literature(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_pollinators(raw: dict[str, Any]) -> dict[str, Any]:
-    relationships = _int(raw.get("relationships"))
-    taxa_covered = _int(raw.get("taxa_covered"))
+    relationships = to_int(raw.get("relationships"))
+    taxa_covered = to_int(raw.get("taxa_covered"))
     available = bool(raw.get("available"))
     return {
         "subsystem_id": "pollinators",
@@ -113,7 +96,7 @@ def normalize_pollinators(raw: dict[str, Any]) -> dict[str, Any]:
         "status": _status(available, relationships),
         "relationships": relationships,
         "taxa_covered": taxa_covered,
-        "coverage_pct": _float(raw.get("coverage_pct")),
+        "coverage_pct": to_float(raw.get("coverage_pct")),
         "last_harvest": raw.get("last_harvest", "unavailable"),
         "provenance": raw.get("provenance", {}),
         "generated_at": raw.get("generated_at", utc_now()),
@@ -121,8 +104,8 @@ def normalize_pollinators(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_mycorrhiza(raw: dict[str, Any]) -> dict[str, Any]:
-    records = _int(raw.get("records"))
-    taxa_covered = _int(raw.get("taxa_covered"))
+    records = to_int(raw.get("records"))
+    taxa_covered = to_int(raw.get("taxa_covered"))
     available = bool(raw.get("available"))
     return {
         "subsystem_id": "mycorrhiza",
@@ -131,7 +114,7 @@ def normalize_mycorrhiza(raw: dict[str, Any]) -> dict[str, Any]:
         "status": _status(available, records),
         "records": records,
         "taxa_covered": taxa_covered,
-        "coverage_pct": _float(raw.get("coverage_pct")),
+        "coverage_pct": to_float(raw.get("coverage_pct")),
         "last_harvest": raw.get("last_harvest", "unavailable"),
         "provenance": raw.get("provenance", {}),
         "generated_at": raw.get("generated_at", utc_now()),
@@ -139,8 +122,8 @@ def normalize_mycorrhiza(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_vision(raw: dict[str, Any]) -> dict[str, Any]:
-    images = _int(raw.get("images"))
-    taxa_with_images = _int(raw.get("taxa_with_images"))
+    images = to_int(raw.get("images"))
+    taxa_with_images = to_int(raw.get("taxa_with_images"))
     available = bool(raw.get("available"))
     return {
         "subsystem_id": "vision",
@@ -149,7 +132,7 @@ def normalize_vision(raw: dict[str, Any]) -> dict[str, Any]:
         "status": _status(available, images),
         "images": images,
         "taxa_with_images": taxa_with_images,
-        "quality_score": _float(raw.get("quality_score")),
+        "quality_score": to_float(raw.get("quality_score")),
         "last_harvest": raw.get("last_harvest", "unavailable"),
         "provenance": raw.get("provenance", {}),
         "generated_at": raw.get("generated_at", utc_now()),
@@ -157,8 +140,8 @@ def normalize_vision(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_grant_office(raw: dict[str, Any]) -> dict[str, Any]:
-    opportunities = _int(raw.get("opportunities"))
-    active_grants = _int(raw.get("active_grants"))
+    opportunities = to_int(raw.get("opportunities"))
+    active_grants = to_int(raw.get("active_grants"))
     available = bool(raw.get("available"))
     return {
         "subsystem_id": "grant_office",
@@ -168,7 +151,7 @@ def normalize_grant_office(raw: dict[str, Any]) -> dict[str, Any]:
         "opportunities": opportunities,
         "active_grants": active_grants,
         "nearest_deadline": raw.get("nearest_deadline", "unavailable"),
-        "recommended_publications": _int(raw.get("recommended_publications")),
+        "recommended_publications": to_int(raw.get("recommended_publications")),
         "provenance": raw.get("provenance", {}),
         "generated_at": raw.get("generated_at", utc_now()),
     }

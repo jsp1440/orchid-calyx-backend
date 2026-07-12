@@ -21,19 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-
-def _int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
+from runtime.scientific_intelligence.utils import to_int, to_float
 
 
 # ---------------------------------------------------------------------------
@@ -48,25 +36,25 @@ def highest_scientific_priority(adapters: dict[str, dict[str, Any]]) -> dict[str
 
     kg = adapters.get("knowledge_graph", {})
     if kg.get("available"):
-        entities = _int(kg.get("entities"))
-        relationships = _int(kg.get("relationships"))
+        entities = to_int(kg.get("entities"))
+        relationships = to_int(kg.get("relationships"))
         gap = max(0, entities - relationships) if entities > 0 else 10000
         scores.append(("knowledge_graph", gap / max(entities, 1) if entities > 0 else 1.0, "Knowledge Graph relationship gap"))
 
     pollinators = adapters.get("pollinators", {})
     if pollinators.get("available"):
-        coverage = _float(pollinators.get("coverage_pct"))
+        coverage = to_float(pollinators.get("coverage_pct"))
         scores.append(("pollinators", (100 - coverage) / 100, "Pollinator coverage gap"))
 
     mycorrhiza = adapters.get("mycorrhiza", {})
     if mycorrhiza.get("available"):
-        coverage = _float(mycorrhiza.get("coverage_pct"))
+        coverage = to_float(mycorrhiza.get("coverage_pct"))
         scores.append(("mycorrhiza", (100 - coverage) / 100, "Mycorrhizal coverage gap"))
 
     lit = adapters.get("literature", {})
     if lit.get("available"):
-        docs = _int(lit.get("documents"))
-        extracted = _int(lit.get("extracted_relationships"))
+        docs = to_int(lit.get("documents"))
+        extracted = to_int(lit.get("extracted_relationships"))
         ratio = 1 - (extracted / max(docs * 5, 1)) if docs > 0 else 1.0
         scores.append(("literature", max(0.0, ratio), "Literature extraction gap"))
 
@@ -86,18 +74,18 @@ def largest_knowledge_gap(adapters: dict[str, dict[str, Any]]) -> dict[str, Any]
     gaps: list[tuple[str, int, str]] = []
 
     if kg.get("available"):
-        entities = _int(kg.get("entities"))
-        relationships = _int(kg.get("relationships"))
+        entities = to_int(kg.get("entities"))
+        relationships = to_int(kg.get("relationships"))
         gaps.append(("knowledge_graph", max(0, entities - relationships), "Missing entity-to-relationship links"))
 
     if atlas.get("available"):
-        occurrences = _int(atlas.get("occurrences"))
-        taxa = _int(atlas.get("taxa_covered"))
+        occurrences = to_int(atlas.get("occurrences"))
+        taxa = to_int(atlas.get("taxa_covered"))
         gaps.append(("atlas", max(0, taxa * 10 - occurrences), "Occurrence records below target density"))
 
     if lit.get("available"):
-        documents = _int(lit.get("documents"))
-        extracted = _int(lit.get("extracted_relationships"))
+        documents = to_int(lit.get("documents"))
+        extracted = to_int(lit.get("extracted_relationships"))
         gaps.append(("literature", max(0, documents * 5 - extracted), "Unextracted literature relationships"))
 
     if not gaps:
@@ -114,12 +102,12 @@ def most_active_subsystem(adapters: dict[str, dict[str, Any]]) -> dict[str, Any]
         if not payload.get("available"):
             continue
         count = max(
-            _int(payload.get("entities")),
-            _int(payload.get("relationships")),
-            _int(payload.get("occurrences")),
-            _int(payload.get("documents")),
-            _int(payload.get("records")),
-            _int(payload.get("images")),
+            to_int(payload.get("entities")),
+            to_int(payload.get("relationships")),
+            to_int(payload.get("occurrences")),
+            to_int(payload.get("documents")),
+            to_int(payload.get("records")),
+            to_int(payload.get("images")),
         )
         activity.append((key, count))
 
@@ -166,7 +154,7 @@ def data_collection_bottlenecks(adapters: dict[str, dict[str, Any]]) -> list[dic
                 "reason": f"{payload.get('name', key)} source table is reachable but contains no records.",
             })
             continue
-        coverage = _float(payload.get("coverage_pct") or payload.get("coordinate_coverage_pct"))
+        coverage = to_float(payload.get("coverage_pct") or payload.get("coordinate_coverage_pct"))
         if 0 < coverage < 10:
             bottlenecks.append({
                 "subsystem_id": key,
@@ -230,26 +218,26 @@ def recommended_owner(
 def grant_opportunities(adapters: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """Derive actionable grant opportunities from current data maturity."""
     grant = adapters.get("grant_office", {})
-    opportunities_count = _int(grant.get("opportunities"))
+    opportunities_count = to_int(grant.get("opportunities"))
     kg = adapters.get("knowledge_graph", {})
     lit = adapters.get("literature", {})
 
     opportunities = []
 
-    if _int(kg.get("relationships")) >= 1000:
+    if to_int(kg.get("relationships")) >= 1000:
         opportunities.append({
             "id": "kg-network-grant",
             "title": "Orchid Ecological Network Mapping Grant",
             "reason": "Knowledge Graph contains sufficient relationships to support a network-ecology grant application.",
-            "readiness": "ready" if _int(kg.get("relationships")) >= 10000 else "emerging",
+            "readiness": "ready" if to_int(kg.get("relationships")) >= 10000 else "emerging",
         })
 
-    if _int(lit.get("documents")) >= 100:
+    if to_int(lit.get("documents")) >= 100:
         opportunities.append({
             "id": "lit-synthesis-grant",
             "title": "Literature Synthesis and Meta-Analysis Grant",
             "reason": "Literature corpus is large enough to support a systematic review grant.",
-            "readiness": "ready" if _int(lit.get("documents")) >= 1000 else "emerging",
+            "readiness": "ready" if to_int(lit.get("documents")) >= 1000 else "emerging",
         })
 
     if opportunities_count > 0 and not opportunities:
@@ -268,7 +256,7 @@ def publication_opportunities(adapters: dict[str, dict[str, Any]]) -> list[dict[
     publications = []
 
     kg = adapters.get("knowledge_graph", {})
-    if _int(kg.get("entities")) >= 500 and _int(kg.get("relationships")) >= 1000:
+    if to_int(kg.get("entities")) >= 500 and to_int(kg.get("relationships")) >= 1000:
         publications.append({
             "id": "kg-data-paper",
             "title": "Orchid Continuum Knowledge Graph — Data Paper",
@@ -276,15 +264,15 @@ def publication_opportunities(adapters: dict[str, dict[str, Any]]) -> list[dict[
         })
 
     atlas = adapters.get("atlas", {})
-    if _int(atlas.get("occurrences")) >= 10000:
+    if to_int(atlas.get("occurrences")) >= 10000:
         publications.append({
             "id": "atlas-range-paper",
             "title": "Orchid Range Map — Biogeographic Analysis",
-            "reason": f"Atlas contains {_int(atlas.get('occurrences')):,} occurrences sufficient for a range analysis paper.",
+            "reason": f"Atlas contains {to_int(atlas.get('occurrences')):,} occurrences sufficient for a range analysis paper.",
         })
 
     lit = adapters.get("literature", {})
-    if _int(lit.get("extracted_relationships")) >= 500:
+    if to_int(lit.get("extracted_relationships")) >= 500:
         publications.append({
             "id": "lit-review-paper",
             "title": "Orchid–Pollinator Interaction Literature Review",
@@ -301,7 +289,7 @@ def research_risks(adapters: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     kg = adapters.get("knowledge_graph", {})
     if not kg.get("available"):
         risks.append({"id": "kg-unavailable", "severity": "high", "description": "Knowledge Graph is unavailable; this blocks downstream analyses."})
-    elif _int(kg.get("relationships")) == 0:
+    elif to_int(kg.get("relationships")) == 0:
         risks.append({"id": "kg-empty", "severity": "high", "description": "Knowledge Graph has no relationships; ecological networks cannot be analysed."})
 
     pollinators = adapters.get("pollinators", {})

@@ -2029,12 +2029,12 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "datetime",
         "fastapi",
         "runtime.scientific_intelligence.adapters",
         "runtime.scientific_intelligence.aggregator",
         "runtime.scientific_intelligence.cache",
         "runtime.scientific_intelligence.intelligence",
+        "runtime.scientific_intelligence.utils",
         "typing"
       ],
       "description": "ScientificIntelligence provides: Expose API endpoints",
@@ -2159,7 +2159,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 151,
+    "edge_count": 156,
     "edges": [
       {
         "from": "GovernanceService",
@@ -2557,6 +2557,11 @@
         "type": "import"
       },
       {
+        "from": "Utils",
+        "to": "Adapters",
+        "type": "import"
+      },
+      {
         "from": "Adapters",
         "to": "Aggregator",
         "type": "import"
@@ -2572,8 +2577,23 @@
         "type": "import"
       },
       {
+        "from": "Utils",
+        "to": "Aggregator",
+        "type": "import"
+      },
+      {
         "from": "RuntimeMemoryWriter",
         "to": "Cache",
+        "type": "import"
+      },
+      {
+        "from": "Utils",
+        "to": "Intelligence",
+        "type": "import"
+      },
+      {
+        "from": "Utils",
+        "to": "Normalizer",
         "type": "import"
       },
       {
@@ -2842,6 +2862,11 @@
         "type": "import"
       },
       {
+        "from": "Utils",
+        "to": "ScientificIntelligence",
+        "type": "import"
+      },
+      {
         "from": "Deps",
         "to": "Shows",
         "type": "import"
@@ -3043,7 +3068,7 @@
         "module": "Volunteers"
       }
     ],
-    "node_count": 91,
+    "node_count": 92,
     "nodes": [
       {
         "category": "Runtime",
@@ -3484,6 +3509,13 @@
         "health": "available",
         "name": "Normalizer",
         "path": "runtime/scientific_intelligence/normalizer.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Utils",
+        "path": "runtime/scientific_intelligence/utils.py",
         "type": "python_module"
       },
       {
@@ -5676,15 +5708,14 @@
       "classes": [],
       "dependencies": [
         "__future__",
-        "datetime",
         "os",
         "psycopg",
         "runtime.scientific_intelligence.cache",
         "runtime.scientific_intelligence.normalizer",
+        "runtime.scientific_intelligence.utils",
         "typing"
       ],
       "functions": [
-        "_utc_now",
         "_fallback",
         "_with_db",
         "_table_exists",
@@ -5717,23 +5748,20 @@
       "classes": [],
       "dependencies": [
         "__future__",
-        "datetime",
         "runtime.scientific_intelligence.adapters",
         "runtime.scientific_intelligence.cache",
         "runtime.scientific_intelligence.intelligence",
+        "runtime.scientific_intelligence.utils",
         "typing"
       ],
       "functions": [
-        "_utc_now",
-        "_int",
-        "_float",
         "_executive_summary",
         "_subsystem_health",
         "_scientific_priorities",
         "_scientific_opportunities",
         "_data_freshness",
-        "_research_readiness",
-        "_knowledge_graph_status",
+        "research_readiness",
+        "knowledge_graph_status",
         "_activity_timeline",
         "build_daily_brief",
         "build_scientific_intelligence_payload"
@@ -5772,11 +5800,10 @@
       "classes": [],
       "dependencies": [
         "__future__",
+        "runtime.scientific_intelligence.utils",
         "typing"
       ],
       "functions": [
-        "_int",
-        "_float",
         "highest_scientific_priority",
         "largest_knowledge_gap",
         "most_active_subsystem",
@@ -5801,13 +5828,10 @@
       "classes": [],
       "dependencies": [
         "__future__",
-        "datetime",
+        "runtime.scientific_intelligence.utils",
         "typing"
       ],
       "functions": [
-        "utc_now",
-        "_int",
-        "_float",
         "_status",
         "normalize_knowledge_graph",
         "normalize_atlas",
@@ -5821,6 +5845,26 @@
       "module_type": "python_module",
       "name": "Normalizer",
       "path": "runtime/scientific_intelligence/normalizer.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "typing"
+      ],
+      "functions": [
+        "utc_now",
+        "to_int",
+        "to_float"
+      ],
+      "module_type": "python_module",
+      "name": "Utils",
+      "path": "runtime/scientific_intelligence/utils.py",
       "routers": [],
       "status": "available"
     },
@@ -6692,16 +6736,15 @@
       "classes": [],
       "dependencies": [
         "__future__",
-        "datetime",
         "fastapi",
         "runtime.scientific_intelligence.adapters",
         "runtime.scientific_intelligence.aggregator",
         "runtime.scientific_intelligence.cache",
         "runtime.scientific_intelligence.intelligence",
+        "runtime.scientific_intelligence.utils",
         "typing"
       ],
       "functions": [
-        "_utc_now",
         "scientific_intelligence",
         "scientific_intelligence_adapters",
         "scientific_intelligence_knowledge_graph",
@@ -7036,10 +7079,10 @@
     "brain_connected": true,
     "capabilities": 99,
     "degraded": 1,
-    "graph_edges": 151,
-    "graph_nodes": 91,
+    "graph_edges": 156,
+    "graph_nodes": 92,
     "healthy": 69,
-    "modules": 91,
+    "modules": 92,
     "recommendations": 3
   }
 }

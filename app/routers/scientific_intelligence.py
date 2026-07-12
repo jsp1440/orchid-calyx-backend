@@ -15,7 +15,6 @@ and does not mutate any scientific data.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter
@@ -25,17 +24,14 @@ from runtime.scientific_intelligence.aggregator import (
     BUILD_ID,
     build_daily_brief,
     build_scientific_intelligence_payload,
-    _knowledge_graph_status,
-    _research_readiness,
+    knowledge_graph_status,
+    research_readiness,
 )
 from runtime.scientific_intelligence.cache import cache_stats, invalidate_all
 from runtime.scientific_intelligence.intelligence import derive_mission_control_intelligence
+from runtime.scientific_intelligence.utils import utc_now
 
 router = APIRouter(prefix="/api/scientific-intelligence", tags=["scientific-intelligence"])
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 @router.get("")
@@ -50,7 +46,7 @@ def scientific_intelligence_adapters() -> dict[str, Any]:
     adapters = fetch_all_adapters()
     return {
         "build": BUILD_ID,
-        "generated_at": _utc_now(),
+        "generated_at": utc_now(),
         "adapters": adapters,
         "available_count": sum(1 for a in adapters.values() if a.get("available")),
         "total_count": len(adapters),
@@ -63,8 +59,8 @@ def scientific_intelligence_knowledge_graph() -> dict[str, Any]:
     adapters = fetch_all_adapters()
     return {
         "build": BUILD_ID,
-        "generated_at": _utc_now(),
-        "knowledge_graph": _knowledge_graph_status(adapters),
+        "generated_at": utc_now(),
+        "knowledge_graph": knowledge_graph_status(adapters),
     }
 
 
@@ -75,8 +71,8 @@ def scientific_intelligence_research_readiness() -> dict[str, Any]:
     intelligence = derive_mission_control_intelligence(adapters)
     return {
         "build": BUILD_ID,
-        "generated_at": _utc_now(),
-        "research_readiness": _research_readiness(adapters, intelligence),
+        "generated_at": utc_now(),
+        "research_readiness": research_readiness(adapters, intelligence),
     }
 
 
@@ -96,7 +92,7 @@ def scientific_intelligence_derived() -> dict[str, Any]:
     intelligence = derive_mission_control_intelligence(adapters)
     return {
         "build": BUILD_ID,
-        "generated_at": _utc_now(),
+        "generated_at": utc_now(),
         "intelligence": intelligence,
     }
 
@@ -111,4 +107,4 @@ def scientific_intelligence_cache_status() -> dict[str, Any]:
 def scientific_intelligence_cache_invalidate() -> dict[str, Any]:
     """Invalidate all scientific intelligence caches (safe, non-destructive)."""
     invalidate_all()
-    return {"build": BUILD_ID, "status": "cache_invalidated", "generated_at": _utc_now()}
+    return {"build": BUILD_ID, "status": "cache_invalidated", "generated_at": utc_now()}
