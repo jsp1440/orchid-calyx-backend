@@ -1724,6 +1724,7 @@
         "app.routers.mission_control",
         "app.routers.owner_operations",
         "app.routers.owner_session_token",
+        "app.routers.scientific_intelligence",
         "fastapi",
         "os",
         "runtime.connector_routes",
@@ -2027,6 +2028,29 @@
     {
       "category": "API",
       "dependencies": [
+        "__future__",
+        "datetime",
+        "fastapi",
+        "runtime.scientific_intelligence.adapters",
+        "runtime.scientific_intelligence.aggregator",
+        "runtime.scientific_intelligence.cache",
+        "runtime.scientific_intelligence.intelligence",
+        "typing"
+      ],
+      "description": "ScientificIntelligence provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "ScientificIntelligence"
+    },
+    {
+      "category": "API",
+      "dependencies": [
         "app.deps",
         "app.models",
         "app.schemas",
@@ -2135,7 +2159,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 127,
+    "edge_count": 151,
     "edges": [
       {
         "from": "GovernanceService",
@@ -2508,7 +2532,57 @@
         "type": "import"
       },
       {
+        "from": "Aggregator",
+        "to": "Init",
+        "type": "import"
+      },
+      {
+        "from": "Cache",
+        "to": "Init",
+        "type": "import"
+      },
+      {
         "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "Adapters",
+        "type": "import"
+      },
+      {
+        "from": "Cache",
+        "to": "Adapters",
+        "type": "import"
+      },
+      {
+        "from": "Normalizer",
+        "to": "Adapters",
+        "type": "import"
+      },
+      {
+        "from": "Adapters",
+        "to": "Aggregator",
+        "type": "import"
+      },
+      {
+        "from": "Cache",
+        "to": "Aggregator",
+        "type": "import"
+      },
+      {
+        "from": "Intelligence",
+        "to": "Aggregator",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "Cache",
+        "type": "import"
+      },
+      {
+        "from": "KnowledgeGapDiagnosticsEngine",
+        "to": "Database",
+        "type": "import"
+      },
+      {
+        "from": "Normalizer",
         "to": "Database",
         "type": "import"
       },
@@ -2583,7 +2657,17 @@
         "type": "import"
       },
       {
+        "from": "Normalizer",
+        "to": "Awards",
+        "type": "import"
+      },
+      {
         "from": "Deps",
+        "to": "CalyxCore",
+        "type": "import"
+      },
+      {
+        "from": "Normalizer",
         "to": "CalyxCore",
         "type": "import"
       },
@@ -2598,12 +2682,22 @@
         "type": "import"
       },
       {
+        "from": "Normalizer",
+        "to": "Entries",
+        "type": "import"
+      },
+      {
         "from": "AutonomousDiscoveryEngine",
         "to": "Executive",
         "type": "import"
       },
       {
         "from": "Deps",
+        "to": "Feedback",
+        "type": "import"
+      },
+      {
+        "from": "Normalizer",
         "to": "Feedback",
         "type": "import"
       },
@@ -2619,6 +2713,11 @@
       },
       {
         "from": "MissionControl",
+        "to": "Health",
+        "type": "import"
+      },
+      {
+        "from": "Intelligence",
         "to": "Health",
         "type": "import"
       },
@@ -2639,6 +2738,11 @@
       },
       {
         "from": "Security",
+        "to": "Judging",
+        "type": "import"
+      },
+      {
+        "from": "Normalizer",
         "to": "Judging",
         "type": "import"
       },
@@ -2713,12 +2817,42 @@
         "type": "import"
       },
       {
+        "from": "Normalizer",
+        "to": "ReferenceDocs",
+        "type": "import"
+      },
+      {
+        "from": "Adapters",
+        "to": "ScientificIntelligence",
+        "type": "import"
+      },
+      {
+        "from": "Aggregator",
+        "to": "ScientificIntelligence",
+        "type": "import"
+      },
+      {
+        "from": "Cache",
+        "to": "ScientificIntelligence",
+        "type": "import"
+      },
+      {
+        "from": "Intelligence",
+        "to": "ScientificIntelligence",
+        "type": "import"
+      },
+      {
         "from": "Deps",
         "to": "Shows",
         "type": "import"
       },
       {
         "from": "Security",
+        "to": "Shows",
+        "type": "import"
+      },
+      {
+        "from": "Normalizer",
         "to": "Shows",
         "type": "import"
       },
@@ -2738,12 +2872,22 @@
         "type": "import"
       },
       {
+        "from": "Normalizer",
+        "to": "VolunteerOps",
+        "type": "import"
+      },
+      {
         "from": "Deps",
         "to": "Volunteers",
         "type": "import"
       },
       {
         "from": "Security",
+        "to": "Volunteers",
+        "type": "import"
+      },
+      {
+        "from": "Normalizer",
         "to": "Volunteers",
         "type": "import"
       },
@@ -2899,7 +3043,7 @@
         "module": "Volunteers"
       }
     ],
-    "node_count": 84,
+    "node_count": 91,
     "nodes": [
       {
         "category": "Runtime",
@@ -3302,6 +3446,48 @@
       },
       {
         "category": "Runtime",
+        "health": "available",
+        "name": "Init",
+        "path": "runtime/scientific_intelligence/__init__.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Adapters",
+        "path": "runtime/scientific_intelligence/adapters.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Aggregator",
+        "path": "runtime/scientific_intelligence/aggregator.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Cache",
+        "path": "runtime/scientific_intelligence/cache.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Intelligence",
+        "path": "runtime/scientific_intelligence/intelligence.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Normalizer",
+        "path": "runtime/scientific_intelligence/normalizer.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
         "health": "healthy",
         "name": "Database",
         "path": "app/database.py",
@@ -3431,6 +3617,13 @@
         "health": "healthy",
         "name": "ReferenceDocs",
         "path": "app/routers/reference_docs.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "ScientificIntelligence",
+        "path": "app/routers/scientific_intelligence.py",
         "type": "api_router"
       },
       {
@@ -5462,6 +5655,176 @@
       "status": "available"
     },
     {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "runtime.scientific_intelligence.aggregator",
+        "runtime.scientific_intelligence.cache"
+      ],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "Init",
+      "path": "runtime/scientific_intelligence/__init__.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "os",
+        "psycopg",
+        "runtime.scientific_intelligence.cache",
+        "runtime.scientific_intelligence.normalizer",
+        "typing"
+      ],
+      "functions": [
+        "_utc_now",
+        "_fallback",
+        "_with_db",
+        "_table_exists",
+        "_safe_count",
+        "_first_count",
+        "_fetch_knowledge_graph",
+        "knowledge_graph_adapter",
+        "_fetch_atlas",
+        "atlas_adapter",
+        "_fetch_literature",
+        "literature_adapter",
+        "_fetch_pollinators",
+        "pollinators_adapter",
+        "_fetch_mycorrhiza",
+        "mycorrhiza_adapter",
+        "_fetch_vision",
+        "vision_adapter",
+        "grant_office_adapter",
+        "fetch_all_adapters"
+      ],
+      "module_type": "python_module",
+      "name": "Adapters",
+      "path": "runtime/scientific_intelligence/adapters.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "runtime.scientific_intelligence.adapters",
+        "runtime.scientific_intelligence.cache",
+        "runtime.scientific_intelligence.intelligence",
+        "typing"
+      ],
+      "functions": [
+        "_utc_now",
+        "_int",
+        "_float",
+        "_executive_summary",
+        "_subsystem_health",
+        "_scientific_priorities",
+        "_scientific_opportunities",
+        "_data_freshness",
+        "_research_readiness",
+        "_knowledge_graph_status",
+        "_activity_timeline",
+        "build_daily_brief",
+        "build_scientific_intelligence_payload"
+      ],
+      "module_type": "python_module",
+      "name": "Aggregator",
+      "path": "runtime/scientific_intelligence/aggregator.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "time",
+        "typing"
+      ],
+      "functions": [
+        "get_cached",
+        "set_cached",
+        "invalidate",
+        "invalidate_all",
+        "cache_stats"
+      ],
+      "module_type": "python_module",
+      "name": "Cache",
+      "path": "runtime/scientific_intelligence/cache.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "typing"
+      ],
+      "functions": [
+        "_int",
+        "_float",
+        "highest_scientific_priority",
+        "largest_knowledge_gap",
+        "most_active_subsystem",
+        "recently_completed_work",
+        "data_collection_bottlenecks",
+        "suggested_next_action",
+        "recommended_owner",
+        "grant_opportunities",
+        "publication_opportunities",
+        "research_risks",
+        "derive_mission_control_intelligence"
+      ],
+      "module_type": "python_module",
+      "name": "Intelligence",
+      "path": "runtime/scientific_intelligence/intelligence.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "typing"
+      ],
+      "functions": [
+        "utc_now",
+        "_int",
+        "_float",
+        "_status",
+        "normalize_knowledge_graph",
+        "normalize_atlas",
+        "normalize_literature",
+        "normalize_pollinators",
+        "normalize_mycorrhiza",
+        "normalize_vision",
+        "normalize_grant_office",
+        "normalize"
+      ],
+      "module_type": "python_module",
+      "name": "Normalizer",
+      "path": "runtime/scientific_intelligence/normalizer.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
       "capabilities": [
         "Inspect Brain state"
       ],
@@ -5898,6 +6261,7 @@
         "app.routers.mission_control",
         "app.routers.owner_operations",
         "app.routers.owner_session_token",
+        "app.routers.scientific_intelligence",
         "fastapi",
         "os",
         "runtime.connector_routes",
@@ -5908,6 +6272,7 @@
         "add_mission_control_cors_headers",
         "mission_control_options",
         "executive_options",
+        "scientific_intelligence_options",
         "health",
         "system_status"
       ],
@@ -6326,6 +6691,48 @@
       "category": "API",
       "classes": [],
       "dependencies": [
+        "__future__",
+        "datetime",
+        "fastapi",
+        "runtime.scientific_intelligence.adapters",
+        "runtime.scientific_intelligence.aggregator",
+        "runtime.scientific_intelligence.cache",
+        "runtime.scientific_intelligence.intelligence",
+        "typing"
+      ],
+      "functions": [
+        "_utc_now",
+        "scientific_intelligence",
+        "scientific_intelligence_adapters",
+        "scientific_intelligence_knowledge_graph",
+        "scientific_intelligence_research_readiness",
+        "scientific_intelligence_daily_brief",
+        "scientific_intelligence_derived",
+        "scientific_intelligence_cache_status",
+        "scientific_intelligence_cache_invalidate"
+      ],
+      "module_type": "api_router",
+      "name": "ScientificIntelligence",
+      "path": "app/routers/scientific_intelligence.py",
+      "routers": [
+        "GET ",
+        "GET /adapters",
+        "GET /knowledge-graph",
+        "GET /research-readiness",
+        "GET /daily-brief",
+        "GET /intelligence",
+        "GET /cache",
+        "DELETE /cache"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
         "app.deps",
         "app.models",
         "app.schemas",
@@ -6627,12 +7034,12 @@
   "status": "discovered",
   "summary": {
     "brain_connected": true,
-    "capabilities": 98,
+    "capabilities": 99,
     "degraded": 1,
-    "graph_edges": 127,
-    "graph_nodes": 84,
-    "healthy": 68,
-    "modules": 84,
+    "graph_edges": 151,
+    "graph_nodes": 91,
+    "healthy": 69,
+    "modules": 91,
     "recommendations": 3
   }
 }
