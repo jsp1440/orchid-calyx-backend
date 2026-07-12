@@ -180,10 +180,15 @@ def db_execute(callback):
 
 
 def _db_execute_silent(callback) -> None:
-    """Run a DB callback, silently absorbing errors (used for best-effort persistence)."""
+    """Run a DB callback against a live connection, silently absorbing errors.
+
+    Only calls the callback when DATABASE_URL is configured and a connection
+    can be established.  The callback receives a live cursor; it must not check
+    for ``None``.  Used for best-effort persistence where failures must never
+    propagate (e.g., session revocation logging).
+    """
     url = database_url()
     if not url:
-        callback(None)
         return
     try:
         with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
@@ -203,8 +208,6 @@ def persist_revoked_nonce(nonce: str) -> None:
     REVOKED_OWNER_NONCES.add(nonce)
 
     def _write(cur):
-        if cur is None:
-            return
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS oc_admin.build064_session_revocations (

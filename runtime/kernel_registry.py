@@ -20,6 +20,7 @@ KernelStatus = Literal["active", "planned", "degraded", "blocked", "retired"]
 KernelHealth = Literal["healthy", "attention", "degraded", "critical", "unknown"]
 
 KERNEL_VERSION = "0.1.0"
+# Build date marker — time component is midnight UTC by convention (date only).
 KERNEL_UPDATED_AT = "2026-07-12T00:00:00+00:00"
 
 
