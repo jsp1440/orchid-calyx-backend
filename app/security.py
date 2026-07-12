@@ -71,7 +71,9 @@ def verify_owner_access_code(access_code: str, owner: str = "owner") -> dict[str
     expected = get_owner_access_code()
     if not expected:
         raise HTTPException(status_code=503, detail="Owner access is not configured")
-    if not hmac.compare_digest(access_code, expected):
+    # compare_digest only supports ASCII strings. Comparing UTF-8 bytes keeps the
+    # constant-time comparison while safely handling pasted Unicode characters.
+    if not hmac.compare_digest(access_code.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=401, detail="Invalid owner access code")
     return create_owner_session_token(owner)
 
