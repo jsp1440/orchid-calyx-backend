@@ -61,14 +61,13 @@ def test_mission_control_builds_is_current():
 
 def test_mission_control_deployments_no_stale_build039_blocker():
     """Deployments must not reference the obsolete 'Redeploy backend after BUILD-039 merge' blocker."""
+    _STALE_BLOCKER = "Redeploy backend after BUILD-039 merge."
     data = mission_control_deployments()
     assert data["build"] == "BUILD-064"
     all_blockers: list[str] = []
     for dep in data["deployments"]:
         all_blockers.extend(dep.get("known_blockers", []))
-    stale = [b for b in all_blockers if "BUILD-039" in b and "after BUILD-039 merge." == b.strip().split(".")[-2].strip() + "."]
-    # The exact stale message must not appear
-    assert "Redeploy backend after BUILD-039 merge." not in all_blockers, (
+    assert _STALE_BLOCKER not in all_blockers, (
         "Stale BUILD-039 deployment blocker found; must be replaced with current BUILD-064 context."
     )
 
@@ -234,7 +233,11 @@ def test_executive_session_public_sections_are_operational(monkeypatch):
     api = _client()
     body = api.get("/api/mission-control/owner/executive-session").json()
     public = [s for s in body["mission_control"]["sections"] if not s["auth_required"]]
-    assert len(public) >= 6, "At least 6 public sections must be accessible without authentication."
+    # executive_summary, subsystem_health, harvesters, runtime, recommendations, governance, build_history = 7 public
+    _MIN_PUBLIC_SECTIONS = 6
+    assert len(public) >= _MIN_PUBLIC_SECTIONS, (
+        f"At least {_MIN_PUBLIC_SECTIONS} public sections must be accessible without authentication."
+    )
     for section in public:
         assert section["status"] == "operational", (
             f"Public section '{section['id']}' must always be 'operational', got '{section['status']}'"
@@ -270,12 +273,13 @@ def test_promote_brain_knowledge_endpoint_is_mounted():
         "/api/mission-control/owner/intelligence/FAKE-001/promote",
         json={"confirm": True},
     )
-    # 401 (unauth) or 404 (item not found) are acceptable; 405 is not (method not allowed means endpoint missing)
+    # 401 (unauth) is expected without a session; 405 means the endpoint is missing entirely
     assert response.status_code != 405, (
         "promoteBrainKnowledge endpoint is missing or wrong method; BUILD-064 activation incomplete."
     )
-    assert response.status_code != 404 or response.json().get("detail", "").startswith("not found") or True, (
-        "Expected 401 or 404 from intelligence promote, not 405."
+    # The endpoint must either require auth (401) or reject an unknown item (404/422)
+    assert response.status_code in {401, 404, 422}, (
+        f"Expected 401/404/422 from unauthenticated promote call, got {response.status_code}."
     )
 
 
