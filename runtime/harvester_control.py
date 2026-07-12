@@ -235,6 +235,35 @@ class HarvesterControlPlane:
     def restore(self, harvester_id: str, actor: str) -> dict[str, Any]:
         return {"status": "active", "harvester": self.serialize_harvester(self._transition(harvester_id, "active", actor, "restore", risk="high"))}
 
+    def cancel_run(self, harvester_id: str, actor: str) -> dict[str, Any]:
+        """Cancel the most recent queued or running job run for a harvester."""
+        self._require_harvester(harvester_id)
+        decision = self._evaluate("cancel_run", "low", evidence=[f"actor={actor}", f"harvester={harvester_id}"])
+        run_list = self.runs.get(harvester_id, [])
+        cancelled = None
+        for run in run_list:
+            if run.status in {"queued", "running"}:
+                run.status = "cancelled"
+                run.ended_at = utc_now()
+                run.provenance["cancelled_by"] = actor
+                run.provenance["cancel_decision"] = decision["decision"]["decision_id"]
+                cancelled = run
+                break
+        harvester = self._require_harvester(harvester_id)
+        return {
+            "status": "cancelled" if cancelled else "no_active_run",
+            "run": asdict(cancelled) if cancelled else None,
+            "harvester": self.serialize_harvester(harvester),
+            "decision": decision["decision"],
+        }
+
+    def reschedule(self, harvester_id: str, schedule: str, actor: str) -> dict[str, Any]:
+        """Reschedule a harvester — alias for update_schedule with reschedule semantics."""
+        result = self.update_schedule(harvester_id, schedule, actor)
+        if result.get("status") == "updated":
+            result["status"] = "rescheduled"
+        return result
+
     def update_schedule(self, harvester_id: str, schedule: str, actor: str) -> dict[str, Any]:
         decision = self._evaluate("update_schedule", "high", evidence=[f"schedule={schedule}"])
         harvester = self._require_harvester(harvester_id)

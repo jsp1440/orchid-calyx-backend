@@ -95,6 +95,22 @@ def restore(harvester_id: str, owner: str = Depends(verified_actor)) -> dict[str
         raise not_found(exc) from exc
 
 
+@router.post("/{harvester_id}/cancel")
+def cancel(harvester_id: str, owner: str = Depends(verified_actor)) -> dict[str, Any]:
+    try:
+        return control_plane.cancel_run(harvester_id, owner)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@router.post("/{harvester_id}/reschedule")
+def reschedule(harvester_id: str, request: ScheduleRequest, owner: str = Depends(verified_actor)) -> dict[str, Any]:
+    try:
+        return control_plane.reschedule(harvester_id, request.schedule, owner)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
 @router.post("/{harvester_id}/target-proposals")
 def propose_target_change(harvester_id: str, request: TargetProposalRequest, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
