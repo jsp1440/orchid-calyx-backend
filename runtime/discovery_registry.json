@@ -1861,6 +1861,7 @@
         "fastapi",
         "os",
         "psycopg",
+        "runtime.executive.dependencies",
         "typing"
       ],
       "description": "MissionControl provides: Expose API endpoints",
@@ -1964,6 +1965,7 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "runtime.executive.dependencies",
         "subprocess",
         "time",
         "typing",
@@ -1999,6 +2001,7 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "runtime.executive.dependencies",
         "subprocess",
         "time",
         "typing",
@@ -2034,6 +2037,7 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "runtime.executive.dependencies",
         "subprocess",
         "time",
         "typing",
@@ -2250,7 +2254,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 160,
+    "edge_count": 162,
     "edges": [
       {
         "from": "GovernanceService",
@@ -2873,6 +2877,11 @@
         "type": "import"
       },
       {
+        "from": "Dependencies",
+        "to": "MissionControl",
+        "type": "import"
+      },
+      {
         "from": "KnowledgeGapDiagnosticsEngine",
         "to": "VerificationRequest",
         "type": "import"
@@ -2919,6 +2928,11 @@
       },
       {
         "from": "CDSRegistryError",
+        "to": "OwnerLoginRequest",
+        "type": "import"
+      },
+      {
+        "from": "Dependencies",
         "to": "OwnerLoginRequest",
         "type": "import"
       },
@@ -6646,6 +6660,7 @@
         "fastapi",
         "os",
         "psycopg",
+        "runtime.executive.dependencies",
         "typing"
       ],
       "functions": [
@@ -6691,7 +6706,10 @@
         "GET /metrics",
         "GET /completeness",
         "GET /recommendations",
-        "GET /governance"
+        "GET /governance",
+        "GET /executive-flow",
+        "GET /relationships",
+        "GET /readiness"
       ],
       "status": "healthy"
     },
@@ -6824,6 +6842,7 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "runtime.executive.dependencies",
         "subprocess",
         "time",
         "typing",
@@ -6880,7 +6899,11 @@
         "GET /partnership-packets",
         "GET /recommendations",
         "GET /governance",
-        "POST /intelligence/{item_id}/promote"
+        "POST /intelligence/{item_id}/promote",
+        "GET /decisions",
+        "GET /priorities",
+        "GET /calyx-narrative",
+        "GET /eos-state"
       ],
       "status": "healthy"
     },
@@ -7306,7 +7329,7 @@
     "brain_connected": true,
     "capabilities": 102,
     "degraded": 1,
-    "graph_edges": 160,
+    "graph_edges": 162,
     "graph_nodes": 93,
     "healthy": 71,
     "modules": 93,
