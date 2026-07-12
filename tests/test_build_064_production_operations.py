@@ -349,13 +349,13 @@ def test_delete_session_revokes_nonce_persistently(monkeypatch):
 
 def test_mission_control_build_id_is_064():
     from app.routers.mission_control import BUILD_ID
-    assert BUILD_ID == "BUILD-064"
+    assert BUILD_ID == "BUILD-065"
 
 
 def test_mission_control_status_reflects_064():
     from app.routers.mission_control import mission_control_status
     status = mission_control_status()
-    assert status["build"] == "BUILD-064"
+    assert status["build"] == "BUILD-065"
 
 
 # ─── executive-session backend metadata ──────────────────────────────────────
@@ -367,8 +367,8 @@ def test_executive_session_backend_build_is_064(monkeypatch):
     resp = client.get("/api/mission-control/owner/executive-session")
     assert resp.status_code == 200
     backend = resp.json()["backend"]
-    assert backend["version"] == "BUILD-064"
-    assert backend["build"] == "BUILD-064"
+    assert backend["version"] == "BUILD-065"
+    assert backend["build"] == "BUILD-065"
 
 
 # ─── Kernel registry includes BUILD-064 ──────────────────────────────────────

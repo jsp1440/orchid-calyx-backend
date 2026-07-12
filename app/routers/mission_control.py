@@ -18,7 +18,7 @@ from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/mission-control", tags=["mission-control"])
 
-BUILD_ID = "BUILD-064"
+BUILD_ID = "BUILD-065"
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 REPOSITORIES = [
@@ -752,5 +752,356 @@ def mission_control_governance() -> dict[str, Any]:
                 "created_at": utc_now(),
             },
         ],
+        "generated_at": utc_now(),
+    }
+
+
+# ─── BUILD-065: Executive Operating System Integration ────────────────────────
+
+_EXECUTIVE_FLOW_STEPS = [
+    {
+        "step": 1,
+        "section": "daily_brief",
+        "title": "Daily Brief",
+        "api_endpoint": "/api/mission-control/owner/executive-session",
+        "description": "Authenticated session state, owner permissions, and platform readiness at a glance.",
+        "orientation": {
+            "what_is_this": "A live status snapshot of the Orchid Continuum platform assembled for the owner.",
+            "why_it_matters": "Establishes context before any decisions are made and confirms system health.",
+            "what_can_i_do_here": "Review authenticated status, active alerts, and current session permissions.",
+            "what_is_calyx_doing": "Aggregating platform telemetry and preparing the executive briefing.",
+            "what_decision_do_i_need_to_make": "Decide whether to proceed with normal operations or investigate a flagged alert.",
+            "expected_outputs": "Authenticated session, system health summary, and recommended next step.",
+            "dependencies": ["backend", "authentication", "mission_control"],
+        },
+    },
+    {
+        "step": 2,
+        "section": "platform_status",
+        "title": "Platform Status",
+        "api_endpoint": "/api/mission-control/status",
+        "description": "Database connectivity, backend health, and service availability.",
+        "orientation": {
+            "what_is_this": "Real-time platform health across backend, database, and deployed services.",
+            "why_it_matters": "All executive decisions and Calyx operations depend on a stable platform foundation.",
+            "what_can_i_do_here": "Identify service degradations and confirm readiness for authorized operations.",
+            "what_is_calyx_doing": "Polling database connectivity and service heartbeats.",
+            "what_decision_do_i_need_to_make": "Approve a deployment, investigate a service warning, or defer operations.",
+            "expected_outputs": "Platform health status, blocker list, and database connectivity confirmation.",
+            "dependencies": ["database", "backend"],
+        },
+    },
+    {
+        "step": 3,
+        "section": "critical_alerts",
+        "title": "Critical Alerts",
+        "api_endpoint": "/api/mission-control/health",
+        "description": "Subsystems in warning or blocked state that require owner attention.",
+        "orientation": {
+            "what_is_this": "Filtered view of the highest-severity issues across all subsystems.",
+            "why_it_matters": "Unaddressed alerts block scientific progress and can cascade across dependent subsystems.",
+            "what_can_i_do_here": "Triage alerts by severity and assign corrective actions.",
+            "what_is_calyx_doing": "Monitoring subsystem health and escalating persistent blockers.",
+            "what_decision_do_i_need_to_make": "Which alerts need immediate owner action versus monitoring.",
+            "expected_outputs": "Ordered alert list with impact and recommended actions.",
+            "dependencies": ["health", "completeness", "mission_control"],
+        },
+    },
+    {
+        "step": 4,
+        "section": "calyx_activity",
+        "title": "Current Calyx Activity",
+        "api_endpoint": "/api/mission-control/runtime",
+        "description": "Active Calyx jobs, harvester states, and autonomous pipeline progress.",
+        "orientation": {
+            "what_is_this": "Live view of what Calyx is executing, planning, or waiting on right now.",
+            "why_it_matters": "Understanding Calyx's current posture prevents conflicting owner actions.",
+            "what_can_i_do_here": "Monitor job progress, review waiting harvester queues, and authorize pending operations.",
+            "what_is_calyx_doing": "Running or pausing harvesters, executing scheduled jobs, and queuing owner-pending tasks.",
+            "what_decision_do_i_need_to_make": "Authorize, pause, or reschedule pending Calyx operations.",
+            "expected_outputs": "Runtime job summary, harvester states, and pending authorization queue.",
+            "dependencies": ["runtime_jobs", "harvesters", "governance"],
+        },
+    },
+    {
+        "step": 5,
+        "section": "owner_decisions",
+        "title": "Owner Decisions Waiting",
+        "api_endpoint": "/api/mission-control/owner/decisions",
+        "description": "Categorized decision items requiring owner action, approval, or review.",
+        "orientation": {
+            "what_is_this": "Every item that cannot proceed without a direct owner decision.",
+            "why_it_matters": "Unresolved decisions block the entire pipeline; this section eliminates ambiguity.",
+            "what_can_i_do_here": "Approve, defer, or delegate decisions across subsystems and operations.",
+            "what_is_calyx_doing": "Surfacing blocked work items and preparing decision context for the owner.",
+            "what_decision_do_i_need_to_make": "Which items to approve, defer, or escalate to external partners.",
+            "expected_outputs": "Categorized decision queue with impact, effort, and dependency context.",
+            "dependencies": ["governance", "harvesters", "recommendations", "completeness"],
+        },
+    },
+    {
+        "step": 6,
+        "section": "recommended_next_build",
+        "title": "Recommended Next Build",
+        "api_endpoint": "/api/mission-control/owner/priorities",
+        "description": "Unified global priority queue ranking all subsystem recommendations.",
+        "orientation": {
+            "what_is_this": "A single ranked list of what to build next, derived from all subsystem analysis.",
+            "why_it_matters": "Replaces scattered recommendations with one authoritative owner action plan.",
+            "what_can_i_do_here": "Review, approve, or modify the top-priority build recommendation.",
+            "what_is_calyx_doing": "Scoring subsystems, computing dependencies, and proposing the highest-leverage next build.",
+            "what_decision_do_i_need_to_make": "Approve the top recommended build or adjust the priority order.",
+            "expected_outputs": "Ranked priority queue with suggested BUILD numbers, impact, and effort estimates.",
+            "dependencies": ["executive_state", "dependency_graph", "recommendations"],
+        },
+    },
+    {
+        "step": 7,
+        "section": "subsystem_deep_dive",
+        "title": "Subsystem Deep Dive",
+        "api_endpoint": "/api/mission-control/subsystems",
+        "description": "Per-subsystem health, completion, relationships, and readiness dimensions.",
+        "orientation": {
+            "what_is_this": "Detailed telemetry and multi-dimensional readiness for every Orchid Continuum subsystem.",
+            "why_it_matters": "Deep subsystem context surfaces hidden leverage points and unblocks systematic progress.",
+            "what_can_i_do_here": "Inspect individual subsystem health, review dependencies, and identify the highest-leverage improvements.",
+            "what_is_calyx_doing": "Collecting telemetry, computing completeness scores, and mapping subsystem relationships.",
+            "what_decision_do_i_need_to_make": "Which subsystem to prioritize for the next build cycle.",
+            "expected_outputs": "Per-subsystem health cards, readiness dimensions, and relationship graph.",
+            "dependencies": ["completeness", "health", "relationships"],
+        },
+    },
+    {
+        "step": 8,
+        "section": "research_workspace",
+        "title": "Research Workspace",
+        "api_endpoint": "/api/mission-control/owner/research-requests",
+        "description": "Active research requests, scientific intelligence, and literature pipeline.",
+        "orientation": {
+            "what_is_this": "The owner-facing workspace for managing scientific research requests and intelligence.",
+            "why_it_matters": "Research drives grant applications, publications, and evidence-based system improvements.",
+            "what_can_i_do_here": "Submit research requests, review parsed intelligence, and promote verified items to Brain knowledge.",
+            "what_is_calyx_doing": "Parsing source briefings, extracting intelligence items, and queuing research tasks.",
+            "what_decision_do_i_need_to_make": "Which intelligence items to promote, which research requests to prioritize.",
+            "expected_outputs": "Research queue, intelligence review panel, and Brain knowledge pipeline status.",
+            "dependencies": ["knowledge_graph", "literature", "grant_office"],
+        },
+    },
+    {
+        "step": 9,
+        "section": "governance_audit",
+        "title": "Governance / Audit",
+        "api_endpoint": "/api/mission-control/owner/governance",
+        "description": "Constitutional policies, decisions, audit trail, and mission compliance.",
+        "orientation": {
+            "what_is_this": "The governance layer ensuring every Calyx action aligns with Orchid Continuum Constitutional policies.",
+            "why_it_matters": "Owner-authorized governance prevents unauthorized writes and maintains mission integrity.",
+            "what_can_i_do_here": "Review policy compliance, inspect the decision ledger, and generate operational audits.",
+            "what_is_calyx_doing": "Enforcing constitutional autonomy limits and logging every privileged action.",
+            "what_decision_do_i_need_to_make": "Whether governance policies require updates based on the current operational phase.",
+            "expected_outputs": "Policy compliance summary, decision history, and full operational audit.",
+            "dependencies": ["governance", "constitutional_policies", "build_history"],
+        },
+    },
+]
+
+
+def _subsystem_display_names() -> dict[str, str]:
+    """Map subsystem IDs to display names for relationship rendering."""
+    return {
+        "mission_control": "Mission Control",
+        "atlas": "Atlas",
+        "species_explorer": "Species Explorer",
+        "knowledge_graph": "Knowledge Graph",
+        "literature": "Literature",
+        "pollinators": "Pollinators",
+        "mycorrhiza": "Mycorrhiza",
+        "vision_lab": "Vision Lab",
+        "grant_office": "Grant Office",
+        "partnership_generator": "Partnership Generator",
+        "harvesters": "Harvesters",
+        "runtime_jobs": "Runtime Jobs",
+        "governance": "Governance",
+        "build_history": "Build History",
+        "recommendations": "Recommendations",
+        "health": "Health",
+        "completeness": "Completeness",
+        "integrations": "Integrations",
+    }
+
+
+def _leverage_note(subsystem_id: str, depends_on: list[str], depended_on_by: list[str]) -> str:
+    names = _subsystem_display_names()
+    name = names.get(subsystem_id, subsystem_id.replace("_", " ").title())
+    if depended_on_by:
+        dependents = [names.get(d, d.replace("_", " ").title()) for d in depended_on_by[:4]]
+        return f"Improving {name} directly improves {', '.join(dependents)}."
+    if depends_on:
+        upstream = [names.get(d, d.replace("_", " ").title()) for d in depends_on[:3]]
+        return f"{name} requires {', '.join(upstream)} to be operational."
+    return f"{name} is a standalone component."
+
+
+@router.get("/executive-flow")
+def mission_control_executive_flow() -> dict[str, Any]:
+    """Return the Executive Operating System workflow map.
+
+    BUILD-065: Provides a structured workflow that connects all Mission Control
+    sections into a continuous executive operating experience.  Each step
+    includes orientation blocks answering: What is this? Why it matters?
+    What can I do here? What is Calyx doing? What decision do I need to make?
+    """
+    return {
+        "build": BUILD_ID,
+        "eos_version": BUILD_ID,
+        "eos_title": "Orchid Continuum Executive Operating System",
+        "eos_description": (
+            "Mission Control integrated workflow connecting all subsystems into one coherent Executive "
+            "Operating System.  Every section answers: What is happening? What needs my attention? "
+            "What decisions are waiting? What should happen next?"
+        ),
+        "workflow_steps": _EXECUTIVE_FLOW_STEPS,
+        "total_steps": len(_EXECUTIVE_FLOW_STEPS),
+        "generated_at": utc_now(),
+    }
+
+
+@router.get("/relationships")
+def mission_control_relationships() -> dict[str, Any]:
+    """Return generalized subsystem relationship display.
+
+    BUILD-065: Surfaces dependency and reverse-dependency relationships for
+    all subsystems so the owner can understand leverage effects across the
+    platform.  Replaces the prior Atlas-only dependency display.
+    """
+    from runtime.executive.dependencies import dependency_graph, reverse_dependencies
+
+    graph = dependency_graph()
+    reverse = reverse_dependencies(graph)
+    names = _subsystem_display_names()
+
+    relationships = []
+    for subsystem_id, depends_on in graph.items():
+        depended_on_by = reverse.get(subsystem_id, [])
+        display = names.get(subsystem_id, subsystem_id.replace("_", " ").title())
+        dep_names = [names.get(d, d.replace("_", " ").title()) for d in depends_on]
+        rev_names = [names.get(d, d.replace("_", " ").title()) for d in depended_on_by]
+        relationships.append(
+            {
+                "subsystem_id": subsystem_id,
+                "display_name": display,
+                "depends_on_ids": depends_on,
+                "depends_on_names": dep_names,
+                "depended_on_by_ids": depended_on_by,
+                "depended_on_by_names": rev_names,
+                "leverage_note": _leverage_note(subsystem_id, depends_on, depended_on_by),
+                "dependency_count": len(depends_on),
+                "dependent_count": len(depended_on_by),
+            }
+        )
+
+    # Sort by most downstream leverage (most things depend on it)
+    relationships.sort(key=lambda r: r["dependent_count"], reverse=True)
+
+    return {
+        "build": BUILD_ID,
+        "description": "Subsystem dependency relationships showing leverage effects across the platform.",
+        "relationships": relationships,
+        "total_subsystems": len(relationships),
+        "generated_at": utc_now(),
+    }
+
+
+def _compute_readiness_dimensions(row: dict[str, Any]) -> dict[str, int]:
+    """Derive multi-dimensional readiness scores from a completeness row."""
+    completion = int(row.get("completion") or row.get("completeness") or 0)
+    status = str(row.get("status") or row.get("health") or "stub")
+    blockers = row.get("blockers") or []
+    category = str(row.get("category") or "")
+    has_blockers = bool(blockers)
+    db_penalty = 20 if "not connected" in str(row.get("telemetry_source") or "") else 0
+
+    # Scientific readiness: data coverage and evidence quality
+    sci = max(10, completion - db_penalty) if category in {"Science", "Ecology", "Media", "Relationships"} else max(10, completion // 2 - db_penalty)
+
+    # Integration readiness: backend connectivity and API health
+    integration = max(10, completion - db_penalty - (10 if has_blockers else 0))
+
+    # Automation readiness: pipeline automation capability
+    automation = max(10, completion - (15 if has_blockers else 0) - db_penalty)
+
+    # Evidence readiness: verified citations, data lineage, provenance
+    evidence = max(10, (completion - 10 - db_penalty) if status not in {"stub", "planned"} else max(10, completion // 3))
+
+    # Publication readiness: sufficient evidence for external output
+    publication = max(5, sci - 20 - (10 if has_blockers else 0))
+
+    # Grant readiness: completeness for competitive grant applications
+    grant = max(5, (completion - 25 - db_penalty) if status not in {"stub", "planned"} else 5)
+
+    # Operational readiness: runtime stability and deployment readiness
+    operational = max(10, completion - (15 if has_blockers else 0) - db_penalty)
+
+    # Overall executive readiness: weighted composite
+    overall = max(5, int(
+        sci * 0.20
+        + integration * 0.20
+        + automation * 0.15
+        + evidence * 0.20
+        + publication * 0.10
+        + grant * 0.05
+        + operational * 0.10
+    ))
+
+    return {
+        "scientific_readiness": min(100, sci),
+        "integration_readiness": min(100, integration),
+        "automation_readiness": min(100, automation),
+        "evidence_readiness": min(100, evidence),
+        "publication_readiness": min(100, publication),
+        "grant_readiness": min(100, grant),
+        "operational_readiness": min(100, operational),
+        "overall_executive_readiness": min(100, overall),
+    }
+
+
+@router.get("/readiness")
+def mission_control_readiness() -> dict[str, Any]:
+    """Return multi-dimensional readiness model for all subsystems.
+
+    BUILD-065: Replaces isolated completion percentages with connected readiness
+    dimensions: scientific, integration, automation, evidence, publication,
+    grant, operational, and overall executive readiness.
+    """
+    rows = completeness_rows()
+    readiness_items = []
+    for row in rows:
+        dims = _compute_readiness_dimensions(row)
+        readiness_items.append(
+            {
+                "id": row["id"],
+                "display_name": row["display_name"],
+                "category": row.get("category"),
+                "status": row.get("status"),
+                **dims,
+            }
+        )
+
+    readiness_dimensions = [
+        "scientific_readiness",
+        "integration_readiness",
+        "automation_readiness",
+        "evidence_readiness",
+        "publication_readiness",
+        "grant_readiness",
+        "operational_readiness",
+        "overall_executive_readiness",
+    ]
+
+    return {
+        "build": BUILD_ID,
+        "readiness_dimensions": readiness_dimensions,
+        "description": "Multi-dimensional readiness replacing isolated completion percentages.",
+        "subsystems": readiness_items,
         "generated_at": utc_now(),
     }

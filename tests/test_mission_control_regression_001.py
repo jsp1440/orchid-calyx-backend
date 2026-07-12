@@ -43,13 +43,13 @@ def _client() -> TestClient:
 def test_mission_control_builds_is_current():
     """Builds endpoint must reflect the current deployment state, not stale BUILD-039 data."""
     data = mission_control_builds()
-    assert data["build"] == "BUILD-064"
+    assert data["build"] == "BUILD-065"
     build_ids = [b["id"] for b in data["builds"]]
-    # Must include build-039 (original) and build-064 (current)
+    # Must include build-039 (original) and the current build
     assert "build-039" in build_ids
-    assert "build-064" in build_ids
+    assert data["build"].lower() in build_ids
     # Current build must be marked deployed, not as an open PR
-    current = next(b for b in data["builds"] if b["id"] == "build-064")
+    current = next(b for b in data["builds"] if b["id"] == data["build"].lower())
     assert current["status"] == "deployed"
     assert current["backend_deploy_needed"] is False
     # Must NOT contain the old stale "implemented_backend_pr" status
@@ -63,7 +63,7 @@ def test_mission_control_deployments_no_stale_build039_blocker():
     """Deployments must not reference the obsolete 'Redeploy backend after BUILD-039 merge' blocker."""
     _STALE_BLOCKER = "Redeploy backend after BUILD-039 merge."
     data = mission_control_deployments()
-    assert data["build"] == "BUILD-064"
+    assert data["build"] == "BUILD-065"
     all_blockers: list[str] = []
     for dep in data["deployments"]:
         all_blockers.extend(dep.get("known_blockers", []))
@@ -78,7 +78,7 @@ def test_mission_control_deployments_no_stale_build039_blocker():
 def test_recommendations_are_not_stale_build039():
     """Recommendations must not reference BUILD-039 as a current action item."""
     data = mission_control_recommendations()
-    assert data["build"] == "BUILD-064"
+    assert data["build"] == "BUILD-065"
     recs = data["recommendations"]
     assert len(recs) >= 1, "At least one recommendation must be present."
     ids = [r["id"] for r in recs]
@@ -110,7 +110,7 @@ def test_recommendations_have_required_fields():
 def test_governance_includes_build064_mission():
     """Governance missions must include build-064 to reflect current deployed state."""
     data = mission_control_governance()
-    assert data["build"] == "BUILD-064"
+    assert data["build"] == "BUILD-065"
     mission_keys = [m["mission_key"] for m in data["missions"]]
     assert "build-064" in mission_keys, (
         "Governance must include a build-064 mission entry reflecting production operations activation."
