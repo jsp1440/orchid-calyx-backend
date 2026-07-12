@@ -1,4 +1,4 @@
-"""BUILD-051 / BUILD-064 authenticated Owner Operations Console API.
+"""BUILD-051 / BUILD-065 authenticated Owner Operations Console API.
 
 These endpoints are the server-side control plane for Mission Control. Browser
 unlock is intentionally separate: privileged writes require a signed owner
@@ -10,6 +10,13 @@ BUILD-064 additions:
 - Owner governance endpoint (GET /governance)
 - Brain knowledge promotion endpoint (POST /intelligence/{item_id}/promote)
 - Updated allowed_actions: recommendations and governance marked as implemented
+
+BUILD-065 additions:
+- Owner Decision Layer (GET /decisions)
+- Unified Global Priority Queue (GET /priorities)
+- Calyx Operational Narrative (GET /calyx-narrative)
+- Complete EOS State endpoint (GET /eos-state)
+- Updated allowed_actions: eos-related capabilities marked as implemented
 """
 
 from __future__ import annotations
@@ -162,6 +169,10 @@ def allowed_actions(authenticated: bool) -> dict[str, dict[str, Any]]:
             risk="high",
             high_risk=True,
         ),
+        "decisionReview": action("Review and triage categorized owner decisions from the EOS decision layer.", writes=False),
+        "priorityReview": action("Review the unified global priority queue and approve the next build.", writes=False),
+        "calyxNarrative": action("Read the Calyx operational narrative explaining current posture and recommendations.", writes=False),
+        "eosState": action("Load the complete Executive Operating System state in a single request.", writes=False),
     }
 
 
@@ -504,8 +515,8 @@ async def executive_session(request: Request) -> dict[str, Any]:
             "ttl_remaining_seconds": ttl_remaining,
         },
         "backend": {
-            "version": "BUILD-064",
-            "build": "BUILD-064",
+            "version": "BUILD-065",
+            "build": "BUILD-065",
             "repository_revision": _repo_revision(),
             "runtime_available": True,
             "runtime_enabled": _runtime_env_enabled(),
@@ -1229,6 +1240,449 @@ def promote_brain_knowledge(
         "build": "BUILD-064",
         "status": "promoted",
         "item": promoted,
+        "allowedActions": allowed_actions(True),
+        "generated_at": utc_now(),
+    }
+
+
+# ─── BUILD-065: Executive Operating System Integration ───────────────────────
+
+
+def _build_decision_items() -> list[dict[str, Any]]:
+    """Derive owner decision items from live telemetry.
+
+    Returns a flat list of decision items, each tagged with a category so the
+    front-end (or the decisions endpoint) can group them.  Items are sourced
+    from completeness telemetry, harvester state, governance, and recommendations
+    — no additional data sources are needed.
+    """
+    from app.routers.mission_control import (
+        completeness_rows,
+        harvester_rows,
+        mission_control_governance,
+        mission_control_recommendations,
+    )
+
+    items: list[dict[str, Any]] = []
+
+    # Harvesters waiting for authorization
+    for harvester in harvester_rows():
+        if harvester.get("state") in {"unknown", "planned"} or not harvester.get("enabled"):
+            items.append(
+                {
+                    "id": f"DEC-HARV-{harvester['id'].upper()}",
+                    "category": "waiting_for_approval",
+                    "title": f"Authorize harvester: {harvester['name']}",
+                    "subsystem": "harvesters",
+                    "why_it_matters": f"{harvester['name']} is not running; its data source ({harvester['source']}) is not being harvested.",
+                    "impact_if_ignored": "Data from this source will remain stale; dependent subsystems lose coverage.",
+                    "recommended_action": f"Review and authorize {harvester['name']} harvester via the owner-authenticated harvester control panel.",
+                    "estimated_effort": "small",
+                    "dependencies": ["runtime_jobs", "governance"],
+                }
+            )
+
+    # Subsystems with blockers requiring owner review
+    for row in completeness_rows():
+        blockers = row.get("blockers") or []
+        if blockers:
+            category = "requires_scientific_review" if row.get("category") in {"Science", "Ecology"} else "waiting_for_owner"
+            items.append(
+                {
+                    "id": f"DEC-SUB-{row['id'].upper()}",
+                    "category": category,
+                    "title": f"Resolve blockers: {row['display_name']}",
+                    "subsystem": row["id"],
+                    "why_it_matters": f"{row['display_name']} has {len(blockers)} active blocker(s) reducing platform completeness.",
+                    "impact_if_ignored": f"Dependent subsystems will be limited by {row['display_name']} quality; completeness score stays below target.",
+                    "recommended_action": row.get("recommendation") or "Review blockers and approve the corrective build scope.",
+                    "estimated_effort": "medium",
+                    "dependencies": [],
+                    "blockers": blockers[:3],
+                }
+            )
+
+    # Governance open questions
+    governance = mission_control_governance()
+    for question in governance.get("questions", []):
+        if question.get("status") == "open":
+            items.append(
+                {
+                    "id": f"DEC-GOV-{question['question_id'].upper()}",
+                    "category": "waiting_for_owner",
+                    "title": "Answer open governance question",
+                    "subsystem": "governance",
+                    "why_it_matters": "Open governance questions can block or mis-scope upcoming builds.",
+                    "impact_if_ignored": "Calyx may proceed with assumptions that diverge from owner intent.",
+                    "recommended_action": f"Answer: {question['question']}",
+                    "estimated_effort": "small",
+                    "dependencies": ["governance", "build_history"],
+                }
+            )
+
+    # Recommendations requiring owner decision
+    for rec in mission_control_recommendations().get("recommendations", []):
+        if rec.get("priority") in {"critical", "high"}:
+            items.append(
+                {
+                    "id": f"DEC-REC-{rec['id'].upper()}",
+                    "category": "waiting_for_approval",
+                    "title": rec.get("title", "Review recommendation"),
+                    "subsystem": "recommendations",
+                    "why_it_matters": rec.get("rationale", "High-priority recommendation pending owner decision."),
+                    "impact_if_ignored": "Platform progress on this track will stall until a decision is made.",
+                    "recommended_action": rec.get("ownerDecisionNeeded") or "Review and approve the recommended action.",
+                    "estimated_effort": "small",
+                    "dependencies": [],
+                    "suggested_build": rec.get("nextBuild"),
+                }
+            )
+
+    return items
+
+
+def _group_decisions(items: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    categories = [
+        "waiting_for_approval",
+        "waiting_for_owner",
+        "requires_external_partner",
+        "requires_authentication",
+        "requires_budget",
+        "requires_scientific_review",
+        "requires_manual_validation",
+    ]
+    grouped: dict[str, list[dict[str, Any]]] = {cat: [] for cat in categories}
+    for item in items:
+        cat = item.get("category", "waiting_for_owner")
+        if cat in grouped:
+            grouped[cat].append(item)
+        else:
+            grouped["waiting_for_owner"].append(item)
+    return grouped
+
+
+@router.get("/decisions")
+def owner_decisions(auth: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict[str, Any]:
+    """Return the Owner Decision Layer — categorized decisions waiting for action.
+
+    BUILD-065: Every item that cannot proceed without an explicit owner decision
+    is surfaced here.  Each item explains why it matters, the impact if ignored,
+    the recommended action, estimated effort, and its dependencies.
+    """
+    items = _build_decision_items()
+    grouped = _group_decisions(items)
+    critical = [i for i in items if i.get("estimated_effort") == "small" and i.get("category") == "waiting_for_approval"]
+
+    return {
+        "build": "BUILD-065",
+        "owner": actor(auth),
+        "decision_categories": grouped,
+        "total_decisions": len(items),
+        "critical_decisions": critical[:5],
+        "orientation": {
+            "what_is_this": "Every item that cannot proceed without a direct owner decision.",
+            "why_it_matters": "Unresolved decisions block the pipeline; this section eliminates ambiguity.",
+            "what_can_i_do_here": "Approve, defer, or delegate decisions across subsystems and operations.",
+            "what_is_calyx_doing": "Surfacing blocked work and preparing decision context for the owner.",
+        },
+        "allowedActions": allowed_actions(True),
+        "generated_at": utc_now(),
+    }
+
+
+def _build_priority_queue() -> list[dict[str, Any]]:
+    """Build a unified ranked priority queue from all available recommendation sources."""
+    from app.routers.mission_control import completeness_rows, mission_control_recommendations
+    from runtime.executive.dependencies import dependency_graph, reverse_dependencies
+
+    graph = dependency_graph()
+    reverse = reverse_dependencies(graph)
+
+    priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    queue: list[dict[str, Any]] = []
+    rank = 1
+
+    # Layer 1: existing mission-control recommendations (already prioritised)
+    for rec in mission_control_recommendations().get("recommendations", []):
+        priority = rec.get("priority", "medium")
+        queue.append(
+            {
+                "rank": rank,
+                "priority": priority,
+                "subsystem": rec.get("id", ""),
+                "title": rec.get("title", ""),
+                "scientific_impact": "Improves data coverage and research readiness.",
+                "technical_impact": rec.get("rationale", ""),
+                "dependencies": [],
+                "estimated_completion": "1 build cycle",
+                "suggested_build": rec.get("nextBuild") or f"BUILD-{rank + 65:03d}",
+                "owner_decision_needed": rec.get("ownerDecisionNeeded"),
+                "source": "mission_control_recommendations",
+            }
+        )
+        rank += 1
+
+    # Layer 2: completeness rows with significant blockers
+    for row in completeness_rows():
+        completion = int(row.get("completion") or 0)
+        blockers = row.get("blockers") or []
+        if not blockers and completion >= 75:
+            continue
+        if completion < 40 and blockers:
+            priority = "high"
+        elif completion < 60:
+            priority = "medium"
+        else:
+            priority = "low"
+        deps_on = graph.get(row["id"], [])
+        downstream = reverse.get(row["id"], [])
+        queue.append(
+            {
+                "rank": rank,
+                "priority": priority,
+                "subsystem": row["id"],
+                "title": f"Advance {row['display_name']} to target completeness",
+                "scientific_impact": f"Raises {row['display_name']} from {completion}% toward scientific readiness threshold.",
+                "technical_impact": row.get("recommendation") or "Wire deeper source telemetry and owner-authorized action paths.",
+                "dependencies": deps_on[:5],
+                "estimated_completion": "1–2 build cycles",
+                "suggested_build": f"BUILD-{rank + 65:03d}",
+                "downstream_leverage": downstream[:4],
+                "source": "completeness_telemetry",
+            }
+        )
+        rank += 1
+
+    # Sort by priority tier then by original rank
+    queue.sort(key=lambda x: (priority_order.get(x["priority"], 99), x["rank"]))
+    for i, item in enumerate(queue, start=1):
+        item["rank"] = i
+
+    return queue
+
+
+@router.get("/priorities")
+def owner_priorities(auth: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict[str, Any]:
+    """Return the unified Global Priority Queue across all subsystems.
+
+    BUILD-065: Replaces scattered recommendations with a single ranked queue
+    categorised as Critical / High / Medium / Low.  Each entry identifies the
+    subsystem, scientific impact, technical impact, dependencies, estimated
+    completion, and suggested BUILD number.
+    """
+    queue = _build_priority_queue()
+    by_tier: dict[str, list[dict[str, Any]]] = {"critical": [], "high": [], "medium": [], "low": []}
+    for item in queue:
+        tier = item.get("priority", "low")
+        if tier in by_tier:
+            by_tier[tier].append(item)
+
+    return {
+        "build": "BUILD-065",
+        "owner": actor(auth),
+        "priorities": by_tier,
+        "ranked_queue": queue,
+        "total_items": len(queue),
+        "orientation": {
+            "what_is_this": "A single ranked list of what to build or resolve next, derived from all subsystem analysis.",
+            "why_it_matters": "Replaces scattered recommendations with one authoritative owner action plan.",
+            "what_can_i_do_here": "Review, approve, or modify the top-priority build recommendation.",
+            "what_is_calyx_doing": "Scoring subsystems, computing dependencies, and proposing the highest-leverage next build.",
+        },
+        "allowedActions": allowed_actions(True),
+        "generated_at": utc_now(),
+    }
+
+
+def _build_calyx_narrative() -> dict[str, Any]:
+    """Produce the Calyx operational narrative from live telemetry."""
+    from app.routers.mission_control import (
+        completeness_rows,
+        harvester_rows,
+        mission_control_recommendations,
+        runtime_telemetry,
+    )
+
+    rows = completeness_rows()
+    harvesters = harvester_rows()
+    runtime = runtime_telemetry()
+    recs = mission_control_recommendations().get("recommendations", [])
+
+    # What I'm doing
+    running = [h for h in harvesters if h.get("state") == "running"]
+    idle_enabled = [h for h in harvesters if h.get("state") == "idle" and h.get("enabled")]
+    doing = (
+        f"Running {len(running)} active harvester(s): {', '.join(h['name'] for h in running[:3])}."
+        if running
+        else "Monitoring platform health and collecting telemetry across all subsystems."
+    )
+
+    # Why I'm doing it
+    blocked = [r for r in rows if r.get("status") in {"warning", "stub"}]
+    why = (
+        f"Addressing {len(blocked)} subsystem(s) with below-target completeness to advance the platform toward publication and grant readiness."
+        if blocked
+        else "Sustaining operational continuity and preparing evidence for the next owner decision cycle."
+    )
+
+    # What I discovered
+    discovered = []
+    for row in rows:
+        if row.get("evidence"):
+            discovered.extend(row["evidence"][:1])
+    if runtime.get("evidence"):
+        discovered.extend(runtime["evidence"][:1])
+    discovered = discovered[:5]
+
+    # What I'm waiting for
+    waiting_for = []
+    for h in harvesters:
+        if not h.get("enabled") and h.get("state") in {"unknown", "planned"}:
+            waiting_for.append(f"Owner authorization to activate {h['name']} harvester.")
+    for row in rows:
+        blockers = row.get("blockers") or []
+        if blockers:
+            waiting_for.append(f"{row['display_name']}: {blockers[0]}")
+    waiting_for = waiting_for[:5]
+
+    # What I recommend next
+    top_rec = recs[0] if recs else None
+    recommend_next = (
+        {
+            "title": top_rec["title"],
+            "rationale": top_rec.get("rationale"),
+            "suggested_build": top_rec.get("nextBuild"),
+            "owner_decision_needed": top_rec.get("ownerDecisionNeeded"),
+        }
+        if top_rec
+        else {"title": "Await owner direction", "rationale": "No priority signal available.", "suggested_build": None}
+    )
+
+    # What decision I need from you
+    critical_recs = [r for r in recs if r.get("priority") == "critical"]
+    need_from_owner = (
+        {
+            "decision": critical_recs[0].get("ownerDecisionNeeded"),
+            "title": critical_recs[0].get("title"),
+            "urgency": "critical",
+        }
+        if critical_recs
+        else {
+            "decision": "Review the top-ranked priority in the Global Priority Queue and approve the next build scope.",
+            "title": "Approve next build",
+            "urgency": "high",
+        }
+    )
+
+    return {
+        "what_i_am_doing": doing,
+        "why_i_am_doing_it": why,
+        "what_i_discovered": discovered if discovered else ["No new discoveries in current telemetry cycle."],
+        "what_i_am_waiting_for": waiting_for if waiting_for else ["No pending owner actions identified."],
+        "what_i_recommend_next": recommend_next,
+        "what_decision_i_need_from_you": need_from_owner,
+    }
+
+
+@router.get("/calyx-narrative")
+def owner_calyx_narrative(auth: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict[str, Any]:
+    """Return the Calyx Operational Narrative.
+
+    BUILD-065: Calyx presents itself as an executive operations officer,
+    continuously explaining: what it is doing, why, what it discovered,
+    what it is waiting for, what it recommends next, and what decision
+    it needs from the owner.
+    """
+    narrative = _build_calyx_narrative()
+    return {
+        "build": "BUILD-065",
+        "owner": actor(auth),
+        "narrative": narrative,
+        "orientation": {
+            "what_is_this": "Calyx operational intelligence briefing in first-person executive officer voice.",
+            "why_it_matters": "Transforms passive dashboards into an active advisory relationship with clear accountability.",
+            "what_can_i_do_here": "Read Calyx's current posture and respond to the embedded decision request.",
+            "what_is_calyx_doing": "Synthesising all telemetry into a coherent operational narrative.",
+        },
+        "allowedActions": allowed_actions(True),
+        "generated_at": utc_now(),
+    }
+
+
+@router.get("/eos-state")
+def owner_eos_state(auth: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict[str, Any]:
+    """Return the complete Executive Operating System state.
+
+    BUILD-065: A single endpoint that combines the executive workflow map,
+    platform health, owner decision layer, global priority queue, subsystem
+    relationships, multi-dimensional readiness, and Calyx narrative.  Designed
+    for front-end EOS initialisation — one round-trip to load the full state.
+    """
+    from app.routers.mission_control import (
+        completeness_rows,
+        mission_control_executive_flow,
+        mission_control_governance,
+        mission_control_health,
+        mission_control_readiness,
+        mission_control_relationships,
+        mission_control_status,
+    )
+
+    status = mission_control_status()
+    health = mission_control_health()
+    rows = completeness_rows()
+
+    blocked_subsystems = [r for r in rows if r.get("status") in {"warning", "stub", "error"}]
+    critical_alerts = [
+        {
+            "subsystem": r["id"],
+            "display_name": r["display_name"],
+            "status": r["status"],
+            "blocker": (r.get("blockers") or [None])[0],
+            "recommendation": r.get("recommendation"),
+        }
+        for r in blocked_subsystems[:5]
+    ]
+
+    governance = mission_control_governance()
+
+    decisions = _build_decision_items()
+    grouped_decisions = _group_decisions(decisions)
+    priorities = _build_priority_queue()
+    narrative = _build_calyx_narrative()
+    executive_flow = mission_control_executive_flow()
+    relationships = mission_control_relationships()
+    readiness = mission_control_readiness()
+
+    return {
+        "build": "BUILD-065",
+        "eos_version": "BUILD-065",
+        "owner": actor(auth),
+        "executive_flow": executive_flow,
+        "platform_status": {
+            "status": status.get("status"),
+            "database_connected": status.get("database_connected"),
+            "blockers": status.get("blockers", []),
+        },
+        "critical_alerts": critical_alerts,
+        "calyx_activity": {
+            "harvesters_active": sum(1 for r in rows if r.get("status") == "healthy"),
+            "subsystems_healthy": sum(1 for r in rows if r.get("status") == "healthy"),
+            "subsystems_blocked": len(blocked_subsystems),
+        },
+        "owner_decisions": {
+            "total_decisions": len(decisions),
+            "decision_categories": grouped_decisions,
+        },
+        "recommended_next_build": priorities[0] if priorities else None,
+        "subsystem_relationships": relationships.get("relationships", []),
+        "readiness": readiness.get("subsystems", []),
+        "calyx_narrative": narrative,
+        "governance_summary": {
+            "north_star": governance.get("north_star"),
+            "open_questions": [q for q in governance.get("questions", []) if q.get("status") == "open"],
+            "policy_count": len(governance.get("policies", [])),
+        },
         "allowedActions": allowed_actions(True),
         "generated_at": utc_now(),
     }

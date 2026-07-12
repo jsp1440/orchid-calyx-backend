@@ -27,7 +27,7 @@ def test_mission_control_health_is_read_only_telemetry():
     data = mission_control_health()
     assert data["safety"]["read_only"] is True
     assert data["safety"]["write_controls_enabled"] is False
-    assert data["build"] == "BUILD-064"
+    assert data["build"] == "BUILD-065"
     assert data["id"] == "mission_control_backend"
     assert data["telemetry_source"] == "orchid-calyx-backend read-only telemetry router"
 
