@@ -59,6 +59,18 @@ def calyx_queue_options(full_path: str, request: Request, response: Response):
     return {"status": "ok", "path": full_path}
 
 
+@router.options("/api/runner/{full_path:path}")
+def runner_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
+@router.options("/api/harvesters/{full_path:path}")
+def harvesters_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
 @router.get("/health")
 def health():
     return {"status": "ok"}

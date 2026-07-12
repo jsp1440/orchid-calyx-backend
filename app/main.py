@@ -19,7 +19,7 @@ from app.routers import (
     reference_docs,
 )
 from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, owner_cookie_secure, verify_owner_or_api_key
-from app.routers.health import allowed_mission_control_origins
+from app.routers.health import add_mission_control_cors_headers, allowed_mission_control_origins
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
 from runtime.router_fastapi import router as runtime_router
 from runtime.cds_router import router as cds_router
@@ -202,7 +202,8 @@ def autonomous_runtime_enabled_by_config() -> bool:
 
 AUTO_LOOP_ENABLED = autonomous_runtime_enabled_by_config()
 AUTO_LOOP_INTERVAL_SECONDS = runtime_interval_seconds_from_env()
-RUNTIME_WRITE_AUTH = [Depends(verify_owner_or_api_key)]
+RUNTIME_WRITE_AUTH = [Depends(verify_owner_or_api_key), Depends(add_mission_control_cors_headers)]
+RUNTIME_CORS = [Depends(add_mission_control_cors_headers)]
 
 
 def auth_required_action(reason: str, *, risk: str = "medium") -> dict[str, Any]:
@@ -258,7 +259,7 @@ def verify(request: VerificationRequest):
     return {"received": True, "source_context": request.source_context}
 
 
-@app.get("/api/runner/health")
+@app.get("/api/runner/health", dependencies=RUNTIME_CORS)
 def runner_health():
     config = runtime_configuration()
     return {
@@ -610,7 +611,7 @@ def execute_all():
         }
 
 
-@app.get("/api/runner/autonomous-status")
+@app.get("/api/runner/autonomous-status", dependencies=RUNTIME_CORS)
 def autonomous_status():
     config = runtime_configuration()
     return {
@@ -1063,7 +1064,7 @@ app.include_router(calyx_core.router)
 app.include_router(awards.router)
 app.include_router(entries.router)
 app.include_router(feedback.router)
-app.include_router(harvesters.router)
+app.include_router(harvesters.router, dependencies=[Depends(add_mission_control_cors_headers)])
 app.include_router(judging.router)
 app.include_router(reference_docs.router)
 app.include_router(runtime_router)

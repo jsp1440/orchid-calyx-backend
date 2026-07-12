@@ -1961,6 +1961,8 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "subprocess",
+        "time",
         "typing",
         "uuid",
         "zipfile"
@@ -1994,6 +1996,8 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "subprocess",
+        "time",
         "typing",
         "uuid",
         "zipfile"
@@ -2027,6 +2031,8 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "subprocess",
+        "time",
         "typing",
         "uuid",
         "zipfile"
@@ -2241,7 +2247,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 159,
+    "edge_count": 160,
     "edges": [
       {
         "from": "GovernanceService",
@@ -2910,6 +2916,11 @@
       },
       {
         "from": "CDSRegistryError",
+        "to": "OwnerLoginRequest",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
         "to": "OwnerLoginRequest",
         "type": "import"
       },
@@ -6506,6 +6517,8 @@
         "executive_options",
         "scientific_intelligence_options",
         "calyx_queue_options",
+        "runner_options",
+        "harvesters_options",
         "health",
         "system_status"
       ],
@@ -6802,6 +6815,8 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
+        "subprocess",
+        "time",
         "typing",
         "uuid",
         "zipfile"
@@ -6818,6 +6833,8 @@
         "insert_json_table",
         "create_session",
         "permissions",
+        "_repo_revision",
+        "_runtime_env_enabled",
         "save_source_briefing",
         "list_source_briefings",
         "import_local_records",
@@ -6829,9 +6846,7 @@
         "audit_pdf",
         "audit_docx",
         "_build_audit_content",
-        "generate_audit",
-        "list_audits",
-        "parse_command"
+        "generate_audit"
       ],
       "module_type": "api_router",
       "name": "OwnerLoginRequest",
@@ -7279,7 +7294,7 @@
     "brain_connected": true,
     "capabilities": 102,
     "degraded": 1,
-    "graph_edges": 159,
+    "graph_edges": 160,
     "graph_nodes": 93,
     "healthy": 71,
     "modules": 93,

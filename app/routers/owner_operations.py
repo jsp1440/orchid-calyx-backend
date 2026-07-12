@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
+import time
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -20,7 +22,7 @@ from psycopg.types.json import Jsonb
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
-from app.security import OWNER_SESSION_COOKIE, REVOKED_OWNER_NONCES, owner_cookie_samesite, owner_cookie_secure, owner_session_ttl_seconds, verify_owner_access_code, verify_owner_or_api_key, verify_owner_session
+from app.security import OWNER_SESSION_COOKIE, REVOKED_OWNER_NONCES, create_owner_session_token, owner_cookie_samesite, owner_cookie_secure, owner_session_ttl_seconds, verify_owner_access_code, verify_owner_or_api_key, verify_owner_session
 from app.routers.mission_control import completeness_rows, harvester_rows, metric_snapshot
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
 
@@ -330,6 +332,141 @@ async def delete_session(request: Request, response: Response) -> dict[str, Any]
 @router.get("/permissions")
 def permissions(auth: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict[str, Any]:
     return {"owner": actor(auth), "allowedActions": allowed_actions(True), "generated_at": utc_now()}
+
+
+def _repo_revision() -> str:
+    """Return the short git HEAD revision, or 'unknown' if unavailable."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL, timeout=2
+        ).decode().strip()
+    except Exception:
+        return "unknown"
+
+
+def _runtime_env_enabled() -> bool:
+    """Check whether the runtime autoloop is enabled by environment config.
+
+    Mirrors the logic in main.py without creating a circular import.
+    """
+    disable_flags = ("CALYX_AUTONOMOUS_DISABLED", "OC_RUNNER_DISABLED", "CALYX_RUNTIME_DISABLED")
+    enable_flags = (
+        "CALYX_AUTOLOOP_ENABLED", "OC_RUNNER_AUTOLOOP", "CALYX_RUNTIME_ENABLED",
+        "AUTONOMOUS_RUNTIME_ENABLED", "RUNNER_ENABLED", "CALYX_AUTONOMOUS_ENABLED",
+    )
+
+    def env_bool(v: str | None) -> bool | None:
+        if v is None:
+            return None
+        return v.strip().lower() in {"1", "true", "yes", "on"} or (
+            None if v.strip().lower() in {"0", "false", "no", "off"} else None
+        )
+
+    for key in disable_flags:
+        if os.environ.get(key, "").strip().lower() in {"1", "true", "yes", "on"}:
+            return False
+    for key in enable_flags:
+        val = os.environ.get(key)
+        if val is not None:
+            return val.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
+@router.get("/executive-session")
+async def executive_session(request: Request) -> dict[str, Any]:
+    """Return the complete authenticated owner session state for Mission Control.
+
+    This endpoint is auth-aware: it always returns HTTP 200 with structured
+    payload indicating whether the owner is authenticated and what permissions
+    are available. Mission Control uses this response to transition from
+    read-only informational mode to operational mode.
+
+    Fields included:
+    - authenticated / status / reason — session state
+    - allowedActions / permissions — full permission model
+    - session_info — expiration and refresh metadata
+    - backend — version, build, repo revision, runtime availability
+    """
+    now = int(time.time())
+    auth: dict[str, object] | None = None
+    auth_reason: str | None = None
+
+    try:
+        auth = await verify_owner_session(request)
+    except HTTPException as exc:
+        _reason_map = {
+            "Owner session expired": "expired",
+            "Owner session ended": "signed_out",
+            "Invalid owner session": "invalid_session",
+        }
+        auth_reason = _reason_map.get(str(exc.detail), "missing_session")
+
+    authenticated = auth is not None
+    actions = allowed_actions(authenticated)
+
+    ttl_remaining: int | None = None
+    if authenticated and auth and auth.get("expires_at"):
+        ttl_remaining = max(0, int(auth["expires_at"]) - now)  # type: ignore[arg-type]
+
+    permissions_list = [k for k, v in actions.items() if v.get("allowed")]
+
+    return {
+        "authenticated": authenticated,
+        "status": "authenticated" if authenticated else "unauthenticated",
+        "owner": actor(auth) if authenticated else None,
+        "auth_type": auth.get("auth_type") if auth else None,
+        "issued_at": auth.get("issued_at") if auth else None,
+        "expires_at": auth.get("expires_at") if auth else None,
+        "reason": auth_reason,
+        "credential_transport": "httponly_cookie_or_bearer",
+        "allowedActions": actions,
+        "permissions": permissions_list,
+        "session_info": {
+            "refresh_available": authenticated,
+            "refresh_endpoint": "/api/mission-control/owner/session/refresh",
+            "ttl_remaining_seconds": ttl_remaining,
+        },
+        "backend": {
+            "version": "BUILD-063",
+            "build": "BUILD-063",
+            "repository_revision": _repo_revision(),
+            "runtime_available": True,
+            "runtime_enabled": _runtime_env_enabled(),
+        },
+        "generated_at": utc_now(),
+    }
+
+
+@router.post("/session/refresh")
+async def refresh_session(request: Request, response: Response) -> dict[str, Any]:
+    """Extend a valid owner session without requiring re-authentication.
+
+    Validates the current session cookie or bearer token and issues a fresh
+    signed session with a new TTL.  Returns 401 if the current session is
+    expired, revoked, or missing.
+    """
+    auth = await verify_owner_session(request)  # raises 401 on failure
+    owner_name = str(auth.get("actor") or "owner")
+    session = create_owner_session_token(owner_name)
+    response.set_cookie(
+        OWNER_SESSION_COOKIE,
+        str(session["token"]),
+        max_age=owner_session_ttl_seconds(),
+        expires=owner_session_ttl_seconds(),
+        httponly=True,
+        secure=owner_cookie_secure(),
+        samesite=owner_cookie_samesite(),
+        path="/api/",
+    )
+    return {
+        "authenticated": True,
+        "status": "refreshed",
+        "owner": session["owner"],
+        "expires_at": session["expires_at"],
+        "token": "cookie",
+        "allowedActions": allowed_actions(True),
+        "credential_transport": "httponly_cookie",
+    }
 
 
 @router.post("/source-briefings")
