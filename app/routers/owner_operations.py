@@ -338,10 +338,14 @@ def _repo_revision() -> str:
     """Return the short git HEAD revision, or 'unknown' if unavailable."""
     try:
         return subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL, timeout=2
+            ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL, timeout=5
         ).decode().strip()
     except Exception:
         return "unknown"
+
+
+_TRUTHY = {"1", "true", "yes", "on"}
+_FALSY = {"0", "false", "no", "off"}
 
 
 def _runtime_env_enabled() -> bool:
@@ -355,20 +359,13 @@ def _runtime_env_enabled() -> bool:
         "AUTONOMOUS_RUNTIME_ENABLED", "RUNNER_ENABLED", "CALYX_AUTONOMOUS_ENABLED",
     )
 
-    def env_bool(v: str | None) -> bool | None:
-        if v is None:
-            return None
-        return v.strip().lower() in {"1", "true", "yes", "on"} or (
-            None if v.strip().lower() in {"0", "false", "no", "off"} else None
-        )
-
     for key in disable_flags:
-        if os.environ.get(key, "").strip().lower() in {"1", "true", "yes", "on"}:
+        if os.environ.get(key, "").strip().lower() in _TRUTHY:
             return False
     for key in enable_flags:
         val = os.environ.get(key)
         if val is not None:
-            return val.strip().lower() in {"1", "true", "yes", "on"}
+            return val.strip().lower() in _TRUTHY
     return False
 
 
@@ -446,7 +443,11 @@ async def refresh_session(request: Request, response: Response) -> dict[str, Any
     expired, revoked, or missing.
     """
     auth = await verify_owner_session(request)  # raises 401 on failure
-    owner_name = str(auth.get("actor") or "owner")
+    # Normalize owner name to alphanumeric + underscore to prevent cookie injection.
+    # The actor value was already verified by HMAC signature; this provides
+    # defence-in-depth against any unexpected characters in the payload.
+    raw_actor = str(auth.get("actor") or "owner")
+    owner_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", raw_actor)[:64] or "owner"
     session = create_owner_session_token(owner_name)
     response.set_cookie(
         OWNER_SESSION_COOKIE,
