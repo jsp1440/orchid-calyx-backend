@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from app.routers.executive import router as executive_router
 from app.routers.mission_control import router as mission_control_router
 from app.routers.owner_operations import router as owner_operations_router
+from app.routers.owner_session_token import router as owner_session_token_router
 from runtime.connector_routes import router as connector_router
 from runtime.router_fastapi import config_router, infrastructure_router
 
@@ -21,12 +22,7 @@ router = APIRouter(tags=["health"])
 
 
 def add_mission_control_cors_headers(request: Request, response: Response) -> None:
-    """Attach safe browser CORS headers for read-only Mission Control telemetry.
-
-    This is scoped to /api/mission-control/* while preserving the backend's
-    existing runtime safety posture. It permits only known Orchid Continuum
-    browser origins and does not enable credentials or write operations.
-    """
+    """Attach safe browser CORS headers for Mission Control telemetry and owner operations."""
     origin = request.headers.get("origin")
     if origin and origin.rstrip("/") in allowed_mission_control_origins():
         response.headers["Access-Control-Allow-Origin"] = origin
@@ -65,6 +61,7 @@ def system_status():
 
 router.include_router(mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(owner_operations_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(owner_session_token_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(executive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(config_router)
 router.include_router(infrastructure_router)
