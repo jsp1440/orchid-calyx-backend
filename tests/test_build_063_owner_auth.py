@@ -143,10 +143,12 @@ def test_executive_session_authenticated_session_info(monkeypatch):
     assert body["session_info"]["ttl_remaining_seconds"] > 0
 
 
+_BEARER_SCHEME = "Bearer"
+
+
 def _bearer_header(token: str) -> str:
-    """Build an Authorization header value for ****** authentication."""
-    scheme = "Bearer"
-    return f"{scheme} {token}"
+    """Build an Authorization header value for bearer authentication."""
+    return f"{_BEARER_SCHEME} {token}"
 
 
 def test_executive_session_bearer_token(monkeypatch):
