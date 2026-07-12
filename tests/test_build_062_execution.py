@@ -25,8 +25,9 @@ API_KEY = "test-build062-secret"
 # ─── Calyx Queue — router mount ───────────────────────────────────────────────
 
 def test_calyx_queue_endpoints_are_mounted():
+    """Test calyx_queue_router exposes all expected paths."""
     app = FastAPI()
-    app.include_router(health_router)
+    app.include_router(calyx_queue_router)
     paths = {route.path for route in app.routes}
     assert "/api/calyx-queue" in paths
     assert "/api/calyx-queue/{job_id}" in paths
@@ -35,6 +36,15 @@ def test_calyx_queue_endpoints_are_mounted():
     assert "/api/calyx-queue/{job_id}/pause" in paths
     assert "/api/calyx-queue/{job_id}/resume" in paths
     assert "/api/calyx-queue/telemetry/summary" in paths
+
+
+def test_calyx_queue_included_in_health_router():
+    """Test that health_router includes the calyx_queue_router."""
+    app = FastAPI()
+    app.include_router(health_router)
+    paths = {route.path for route in app.routes}
+    assert "/api/calyx-queue" in paths
+    assert "/api/calyx-queue/{job_id}/cancel" in paths
 
 
 # ─── Calyx Queue — in-memory lifecycle ────────────────────────────────────────

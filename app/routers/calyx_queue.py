@@ -84,12 +84,17 @@ def _db_execute(callback):
         raise HTTPException(status_code=503, detail=f"Calyx Queue database unavailable: {exc}") from exc
 
 
+def _sort_key(item: dict[str, Any]) -> tuple[int, str]:
+    """Priority-descending, then queued_at-ascending sort key for queue items."""
+    return (-(item.get("priority") or 50), item.get("queued_at") or "")
+
+
 def _list_queue(cur, status_filter: str | None = None) -> list[dict[str, Any]]:
     if cur is None:
         items = _QUEUE
         if status_filter:
             items = [i for i in items if i.get("status") == status_filter]
-        return sorted(items, key=lambda i: (-(i.get("priority") or 50), i.get("queued_at") or ""))
+        return sorted(items, key=_sort_key)
     try:
         if status_filter:
             cur.execute(
@@ -106,7 +111,7 @@ def _list_queue(cur, status_filter: str | None = None) -> list[dict[str, Any]]:
         items = _QUEUE
         if status_filter:
             items = [i for i in items if i.get("status") == status_filter]
-        return sorted(items, key=lambda i: (-(i.get("priority") or 50), i.get("queued_at") or ""))
+        return sorted(items, key=_sort_key)
 
 
 def _get_job(cur, job_id: str) -> dict[str, Any] | None:

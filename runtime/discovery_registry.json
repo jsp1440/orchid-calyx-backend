@@ -1961,7 +1961,6 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
-        "struct",
         "typing",
         "uuid",
         "zipfile"
@@ -1995,7 +1994,6 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
-        "struct",
         "typing",
         "uuid",
         "zipfile"
@@ -2029,7 +2027,6 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
-        "struct",
         "typing",
         "uuid",
         "zipfile"
@@ -2244,7 +2241,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 160,
+    "edge_count": 159,
     "edges": [
       {
         "from": "GovernanceService",
@@ -2913,11 +2910,6 @@
       },
       {
         "from": "CDSRegistryError",
-        "to": "OwnerLoginRequest",
-        "type": "import"
-      },
-      {
-        "from": "InfrastructureRegistryService",
         "to": "OwnerLoginRequest",
         "type": "import"
       },
@@ -6292,6 +6284,7 @@
         "actor",
         "_db_url",
         "_db_execute",
+        "_sort_key",
         "_list_queue",
         "_get_job",
         "_insert_job",
@@ -6311,8 +6304,7 @@
         "_do",
         "_do",
         "_do",
-        "_do",
-        "_fetch"
+        "_do"
       ],
       "module_type": "api_router",
       "name": "EnqueueRequest",
@@ -6810,7 +6802,6 @@
         "pydantic",
         "re",
         "runtime.constitutional_orchestrator",
-        "struct",
         "typing",
         "uuid",
         "zipfile"
@@ -7288,7 +7279,7 @@
     "brain_connected": true,
     "capabilities": 102,
     "degraded": 1,
-    "graph_edges": 160,
+    "graph_edges": 159,
     "graph_nodes": 93,
     "healthy": 71,
     "modules": 93,

@@ -520,10 +520,15 @@ def _audit_sections(payload: dict[str, Any]) -> list[tuple[str, list[str]]]:
 def audit_pdf(payload: dict[str, Any]) -> bytes:
     """Generate a minimal valid PDF from audit payload using pure Python."""
     import io
-    import struct
+
+    # PDF layout constants
+    _PDF_FONT_SIZE = 10
+    _PDF_TOP_Y = 750        # Y-coordinate of first text line (points from bottom)
+    _PDF_LINE_HEIGHT = 13   # Vertical spacing per line in points
+    _PDF_MAX_LINE_CHARS = 110  # Maximum characters per line before truncation
+    _PDF_MARGIN_X = 40      # Left margin in points
 
     md = audit_markdown(payload)
-    title = payload["audit_type"].replace("_", " ").title() + " Audit"
 
     def _pdf_string(s: str) -> bytes:
         safe = s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)").replace("\r", "")
@@ -559,8 +564,13 @@ def audit_pdf(payload: dict[str, Any]) -> bytes:
     raw_lines = md.split("\n")
     pdf_lines: list[bytes] = []
     for line in raw_lines:
-        text_bytes = _pdf_string(line[:110])
-        pdf_lines.append(b"BT /F1 10 Tf 40 " + str(750 - len(pdf_lines) * 13).encode() + b" Td (" + text_bytes + b") Tj ET")
+        text_bytes = _pdf_string(line[:_PDF_MAX_LINE_CHARS])
+        y = _PDF_TOP_Y - len(pdf_lines) * _PDF_LINE_HEIGHT
+        pdf_lines.append(
+            b"BT /F1 " + str(_PDF_FONT_SIZE).encode() + b" Tf "
+            + str(_PDF_MARGIN_X).encode() + b" " + str(y).encode()
+            + b" Td (" + text_bytes + b") Tj ET"
+        )
 
     stream_body = b"\n".join(pdf_lines)
     stream_len = len(stream_body)
