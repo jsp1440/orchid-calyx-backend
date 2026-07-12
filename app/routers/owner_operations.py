@@ -1,8 +1,15 @@
-"""BUILD-051 authenticated Owner Operations Console API.
+"""BUILD-051 / BUILD-064 authenticated Owner Operations Console API.
 
 These endpoints are the server-side control plane for Mission Control. Browser
 unlock is intentionally separate: privileged writes require a signed owner
 session or backend API key and are logged.
+
+BUILD-064 additions:
+- Persistent session revocation (DB-backed nonce table with in-memory fallback)
+- Owner recommendations endpoint (GET /recommendations)
+- Owner governance endpoint (GET /governance)
+- Brain knowledge promotion endpoint (POST /intelligence/{item_id}/promote)
+- Updated allowed_actions: recommendations and governance marked as implemented
 """
 
 from __future__ import annotations
@@ -137,9 +144,9 @@ def allowed_actions(authenticated: bool) -> dict[str, dict[str, Any]]:
         "autonomousCycle": action("Run one autonomous cycle."),
         "harvesters": action("Run implemented harvester actions."),
         "queueActions": action("Transition eligible operations queue items.", risk="high", high_risk=True),
-        "recommendations": action("Review recommendations; approval is not implemented.", implemented=False),
+        "recommendations": action("Review live recommendations from Mission Control telemetry.", writes=False),
         "audits": action("Generate and persist live operational audits."),
-        "governance": action("Read governance evidence; mutation is not implemented.", writes=False, implemented=False),
+        "governance": action("Read governance evidence; structural mutations require future build.", writes=False),
         "saveBriefing": action("Preserve a source briefing and parsed provisional intelligence records."),
         "importLocalRecords": action("Import owner-approved browser records with deduplication."),
         "editIntelligence": action("Update owner review, assignment, notes, or verification state."),
@@ -154,7 +161,6 @@ def allowed_actions(authenticated: bool) -> dict[str, dict[str, Any]]:
             "Promote reviewed intelligence into authoritative Brain knowledge.",
             risk="high",
             high_risk=True,
-            implemented=False,
         ),
     }
 
@@ -171,6 +177,79 @@ def db_execute(callback):
             return result
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"BUILD-051 database operation unavailable: {exc}") from exc
+
+
+def _db_execute_silent(callback) -> None:
+    """Run a DB callback against a live connection, silently absorbing errors.
+
+    Only calls the callback when DATABASE_URL is configured and a connection
+    can be established.  The callback receives a live cursor; it must not check
+    for ``None``.  Used for best-effort persistence where failures must never
+    propagate (e.g., session revocation logging).
+    """
+    url = database_url()
+    if not url:
+        return
+    try:
+        with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                callback(cur)
+            conn.commit()
+    except Exception:
+        pass
+
+
+def persist_revoked_nonce(nonce: str) -> None:
+    """Persist a revoked session nonce to the DB for cross-restart durability.
+
+    Always updates the in-memory set.  DB write is best-effort: failures are
+    silently absorbed so logout always succeeds even without a database.
+    """
+    REVOKED_OWNER_NONCES.add(nonce)
+
+    def _write(cur):
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS oc_admin.build064_session_revocations (
+                nonce TEXT PRIMARY KEY,
+                revoked_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """,
+        )
+        cur.execute(
+            "INSERT INTO oc_admin.build064_session_revocations (nonce, revoked_at) VALUES (%s, NOW()) ON CONFLICT DO NOTHING",
+            (nonce,),
+        )
+
+    _db_execute_silent(_write)
+
+
+def load_revoked_nonces() -> int:
+    """Load all persisted revoked nonces from the DB into the in-memory set.
+
+    Called on startup when DATABASE_URL is available.  Returns the count of
+    nonces loaded.  Silently returns 0 if the table does not exist yet or if
+    the database is unavailable.
+    """
+    url = database_url()
+    if not url:
+        return 0
+    try:
+        with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT nonce FROM oc_admin.build064_session_revocations
+                    WHERE revoked_at > NOW() - INTERVAL '7 days'
+                    """
+                )
+                rows = cur.fetchall()
+                for row in rows:
+                    REVOKED_OWNER_NONCES.add(row["nonce"])
+                return len(rows)
+    except Exception:
+        return 0
+
 
 
 def log_action(auth: dict[str, object], action_name: str, entity_type: str, entity_id: str, detail: dict[str, Any]) -> None:
@@ -323,7 +402,8 @@ async def inspect_session(request: Request) -> dict[str, Any]:
 async def delete_session(request: Request, response: Response) -> dict[str, Any]:
     try:
         auth = await verify_owner_session(request)
-        if auth.get("nonce"): REVOKED_OWNER_NONCES.add(str(auth["nonce"]))
+        if auth.get("nonce"):
+            persist_revoked_nonce(str(auth["nonce"]))
     except HTTPException: pass
     response.delete_cookie(OWNER_SESSION_COOKIE, path="/api/", secure=owner_cookie_secure(), httponly=True, samesite=owner_cookie_samesite())
     return {"authenticated": False, "status": "signed_out", "reason": "owner_signed_out"}
@@ -424,8 +504,8 @@ async def executive_session(request: Request) -> dict[str, Any]:
             "ttl_remaining_seconds": ttl_remaining,
         },
         "backend": {
-            "version": "BUILD-063",
-            "build": "BUILD-063",
+            "version": "BUILD-064",
+            "build": "BUILD-064",
             "repository_revision": _repo_revision(),
             "runtime_available": True,
             "runtime_enabled": _runtime_env_enabled(),
@@ -1013,3 +1093,142 @@ def create_partnership_packet(request: PartnershipPacketRequest, auth: dict[str,
 @router.get("/partnership-packets")
 def list_partnership_packets(auth: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict[str, Any]:
     return {"partnership_packets": row_list("partnership_packets"), "owner": actor(auth)}
+
+
+# ─── BUILD-064: Recommendations, Governance, Brain Knowledge Promotion ────────
+
+
+@router.get("/recommendations")
+def owner_recommendations(auth: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict[str, Any]:
+    """Return live Mission Control recommendations with owner context.
+
+    BUILD-064: activates the previously scaffolded recommendations capability.
+    Wraps the read-only telemetry recommendations with owner identity and
+    allowedActions so Mission Control can render an authenticated review panel.
+    """
+    from app.routers.mission_control import mission_control_recommendations
+    telemetry = mission_control_recommendations()
+    return {
+        "build": "BUILD-064",
+        "owner": actor(auth),
+        "recommendations": telemetry.get("recommendations", []),
+        "allowedActions": allowed_actions(True),
+        "review_status": "owner_review_enabled",
+        "note": "Recommendations are read-only telemetry.  Approval actions will be added in a future build.",
+        "generated_at": utc_now(),
+    }
+
+
+@router.get("/governance")
+def owner_governance(auth: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict[str, Any]:
+    """Return live governance state with owner context.
+
+    BUILD-064: activates the previously scaffolded governance capability.
+    Governance mutations (policy changes, decision overrides) remain reserved
+    for a future build; this endpoint enables authenticated read access.
+    """
+    from app.routers.mission_control import mission_control_governance
+    telemetry = mission_control_governance()
+    return {
+        "build": "BUILD-064",
+        "owner": actor(auth),
+        "governance": {
+            "north_star": telemetry.get("north_star"),
+            "missions": telemetry.get("missions", []),
+            "policies": telemetry.get("policies", []),
+            "decisions": telemetry.get("decisions", []),
+            "questions": telemetry.get("questions", []),
+        },
+        "allowedActions": allowed_actions(True),
+        "mutation_status": "read_only",
+        "note": "Governance mutations require a future build.  Read access is now owner-authenticated.",
+        "generated_at": utc_now(),
+    }
+
+
+class PromoteBrainKnowledgeRequest(BaseModel):
+    notes: str | None = None
+    confirm: bool = Field(default=False, description="Must be true to promote the item.")
+
+
+@router.post("/intelligence/{item_id}/promote")
+def promote_brain_knowledge(
+    item_id: str,
+    request: PromoteBrainKnowledgeRequest,
+    auth: dict[str, object] = Depends(verify_owner_or_api_key),
+) -> dict[str, Any]:
+    """Promote a reviewed intelligence item into authoritative Brain knowledge.
+
+    BUILD-064: activates the previously scaffolded promoteBrainKnowledge
+    capability.  Requires explicit confirmation (`confirm: true`).  The item's
+    `verification_state` is updated from 'provisional' or 'reviewed' to
+    'promoted', and the promotion is written to the privileged action log.
+
+    The promoted record is returned along with allowedActions so the Mission
+    Control UI can re-render the permission panel without a separate round-trip.
+    """
+    if not request.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Promotion requires explicit confirmation. Set 'confirm: true' to proceed.",
+        )
+
+    def _promote(cur):
+        if cur is None:
+            for item in MEMORY["intelligence_items"]:
+                if item["id"] == item_id:
+                    if item.get("verification_state") not in {"provisional", "reviewed", "owner_reviewed"}:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"Item {item_id} cannot be promoted: current state is '{item.get('verification_state')}'.",
+                        )
+                    item["verification_state"] = "promoted"
+                    item["promoted_by"] = actor(auth)
+                    item["promoted_at"] = utc_now()
+                    if request.notes:
+                        item["notes"] = (item.get("notes") or "") + f"\n[BUILD-064 promotion] {request.notes}"
+                    item["updated_at"] = utc_now()
+                    return item
+            raise HTTPException(status_code=404, detail=f"Intelligence item '{item_id}' not found.")
+
+        cur.execute(
+            "SELECT payload FROM oc_admin.build051_intelligence_items WHERE id = %s",
+            (item_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Intelligence item '{item_id}' not found.")
+        item = dict(row["payload"])
+        current_state = item.get("verification_state", "")
+        if current_state not in {"provisional", "reviewed", "owner_reviewed"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Item {item_id} cannot be promoted: current state is '{current_state}'.",
+            )
+        item["verification_state"] = "promoted"
+        item["promoted_by"] = actor(auth)
+        item["promoted_at"] = utc_now()
+        if request.notes:
+            item["notes"] = (item.get("notes") or "") + f"\n[BUILD-064 promotion] {request.notes}"
+        item["updated_at"] = utc_now()
+        cur.execute(
+            "UPDATE oc_admin.build051_intelligence_items SET payload = %s, updated_at = NOW() WHERE id = %s",
+            (Jsonb(item), item_id),
+        )
+        return item
+
+    promoted = db_execute(_promote)
+    log_action(
+        auth,
+        "intelligence:promote_brain_knowledge",
+        "intelligence_items",
+        item_id,
+        {"notes": request.notes, "promoted_verification_state": "promoted"},
+    )
+    return {
+        "build": "BUILD-064",
+        "status": "promoted",
+        "item": promoted,
+        "allowedActions": allowed_actions(True),
+        "generated_at": utc_now(),
+    }

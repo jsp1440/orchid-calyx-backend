@@ -1468,6 +1468,7 @@
       "dependencies": [
         "app.routers",
         "app.routers.health",
+        "app.routers.owner_operations",
         "app.security",
         "datetime",
         "fastapi",
@@ -1503,6 +1504,7 @@
       "dependencies": [
         "app.routers",
         "app.routers.health",
+        "app.routers.owner_operations",
         "app.security",
         "datetime",
         "fastapi",
@@ -1538,6 +1540,7 @@
       "dependencies": [
         "app.routers",
         "app.routers.health",
+        "app.routers.owner_operations",
         "app.security",
         "datetime",
         "fastapi",
@@ -3065,6 +3068,10 @@
       },
       {
         "dependency": "app.routers",
+        "module": "VerificationRequest"
+      },
+      {
+        "dependency": "app.routers.owner_operations",
         "module": "VerificationRequest"
       },
       {
@@ -6047,6 +6054,7 @@
       "dependencies": [
         "app.routers",
         "app.routers.health",
+        "app.routers.owner_operations",
         "app.security",
         "datetime",
         "fastapi",
@@ -6797,7 +6805,8 @@
         "CommandRequest",
         "QueueTransitionRequest",
         "ResearchRequestIn",
-        "PartnershipPacketRequest"
+        "PartnershipPacketRequest",
+        "PromoteBrainKnowledgeRequest"
       ],
       "dependencies": [
         "__future__",
@@ -6827,6 +6836,9 @@
         "actor",
         "allowed_actions",
         "db_execute",
+        "_db_execute_silent",
+        "persist_revoked_nonce",
+        "load_revoked_nonces",
         "log_action",
         "parse_briefing_items",
         "row_list",
@@ -6843,10 +6855,7 @@
         "live_audit_payload",
         "audit_markdown",
         "_audit_sections",
-        "audit_pdf",
-        "audit_docx",
-        "_build_audit_content",
-        "generate_audit"
+        "audit_pdf"
       ],
       "module_type": "api_router",
       "name": "OwnerLoginRequest",
@@ -6868,7 +6877,10 @@
         "POST /research-requests",
         "GET /research-requests",
         "POST /partnership-packets",
-        "GET /partnership-packets"
+        "GET /partnership-packets",
+        "GET /recommendations",
+        "GET /governance",
+        "POST /intelligence/{item_id}/promote"
       ],
       "status": "healthy"
     },
@@ -7272,7 +7284,7 @@
   "recommendations": [
     {
       "priority": "MEDIUM",
-      "reason": "34 internal dependency hints were not matched to modules.",
+      "reason": "35 internal dependency hints were not matched to modules.",
       "recommendation": "Normalize internal dependency declarations",
       "source": "dependency_graph"
     },

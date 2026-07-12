@@ -1052,6 +1052,12 @@ def startup_event():
     if autonomous_runtime_enabled_by_config():
         runtime_engine.set_enabled(True)
         runtime_engine.start()
+    # BUILD-064: reload persisted revoked session nonces so logout survives restarts.
+    try:
+        from app.routers.owner_operations import load_revoked_nonces
+        load_revoked_nonces()
+    except Exception:
+        pass
 
 
 @app.on_event("shutdown")
