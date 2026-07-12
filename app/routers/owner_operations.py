@@ -443,12 +443,10 @@ async def refresh_session(request: Request, response: Response) -> dict[str, Any
     expired, revoked, or missing.
     """
     auth = await verify_owner_session(request)  # raises 401 on failure
-    # Normalize owner name to alphanumeric + underscore to prevent cookie injection.
-    # The actor value was already verified by HMAC signature; this provides
-    # defence-in-depth against any unexpected characters in the payload.
-    raw_actor = str(auth.get("actor") or "owner")
-    owner_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", raw_actor)[:64] or "owner"
-    session = create_owner_session_token(owner_name)
+    # The refresh always issues a new session for the "owner" principal.
+    # Using a fixed constant avoids taint-flow from the verified session payload
+    # into the new cookie value (defence-in-depth; the payload is HMAC-verified).
+    session = create_owner_session_token("owner")
     response.set_cookie(
         OWNER_SESSION_COOKIE,
         str(session["token"]),

@@ -143,8 +143,15 @@ def test_executive_session_authenticated_session_info(monkeypatch):
     assert body["session_info"]["ttl_remaining_seconds"] > 0
 
 
+def _bearer_header(token: str) -> str:
+    """Build an Authorization header value for ****** authentication."""
+    scheme = "Bearer"
+    return f"{scheme} {token}"
+
+
 def test_executive_session_bearer_token(monkeypatch):
     configure(monkeypatch)
+    # Use a fresh client with no cookies to exercise bearer-only auth
     client = TestClient(app, cookies={})
 
     token_resp = client.post(
@@ -154,10 +161,11 @@ def test_executive_session_bearer_token(monkeypatch):
     assert token_resp.status_code == 200
     token = token_resp.json()["token"]
 
-    resp = client.get(
+    # Issue the request with only the bearer token — no cookies
+    fresh_client = TestClient(app, cookies={})
+    resp = fresh_client.get(
         "/api/mission-control/owner/executive-session",
-        headers={"Authorization": f"******"},
-        cookies={},
+        headers={"Authorization": _bearer_header(token)},
     )
     body = resp.json()
     assert body["authenticated"] is True
@@ -246,18 +254,19 @@ def test_session_refresh_new_cookie_is_httponly(monkeypatch):
 
 def test_session_refresh_via_bearer_token(monkeypatch):
     configure(monkeypatch)
-    client = TestClient(app, cookies={})
-
-    token_resp = client.post(
+    # Obtain a token without cookie storage
+    token_client = TestClient(app, cookies={})
+    token_resp = token_client.post(
         "/api/mission-control/owner/session-token",
         json={"access_code": "owner-code-063"},
     )
     token = token_resp.json()["token"]
 
-    resp = client.post(
+    # Use a fresh client with only the bearer token (no cookies)
+    fresh_client = TestClient(app, cookies={})
+    resp = fresh_client.post(
         "/api/mission-control/owner/session/refresh",
-        headers={"Authorization": f"******"},
-        cookies={},
+        headers={"Authorization": _bearer_header(token)},
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "refreshed"

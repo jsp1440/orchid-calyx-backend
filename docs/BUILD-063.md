@@ -38,7 +38,9 @@ live backend control plane for runtime, queue, harvester, and audit operations.
 
 The `/api/mission-control/owner/session-token` endpoint returns the signed
 session token in the response body. Clients that cannot receive HttpOnly
-cross-site cookies may store the token and send it as `Authorization: ****** on subsequent requests. `verify_owner_session` accepts both transports.
+cross-site cookies may store the token and send it as
+`Authorization: ****** on subsequent requests.
+`verify_owner_session` accepts both transports.
 
 ### Session token format
 
@@ -77,7 +79,7 @@ the browser succeed.
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | `GET` | `/api/mission-control/owner/executive-session` | None (auth-aware) | Comprehensive owner session state for Mission Control restore flow |
-| `POST` | `/api/mission-control/owner/session/refresh` | Owner session or ****** Extend a valid session without re-login |
+| `POST` | `/api/mission-control/owner/session/refresh` | Owner session or ****** | Extend a valid session without re-login |
 
 ### Existing endpoints verified / enhanced
 
