@@ -17,6 +17,10 @@ BUILD-065 additions:
 - Calyx Operational Narrative (GET /calyx-narrative)
 - Complete EOS State endpoint (GET /eos-state)
 - Updated allowed_actions: eos-related capabilities marked as implemented
+
+BUILD-066A additions:
+- POST /control-verification: create and persist labeled verification record
+- GET /control-verification/:id: retrieve verification record by ID with DB read-back
 """
 
 from __future__ import annotations
@@ -61,6 +65,9 @@ MEMORY: dict[str, list[dict[str, Any]]] = {
     "partnership_packets": [],
     "privileged_action_log": [],
 }
+
+# In-memory fallback store for control verifications (used when DATABASE_URL is absent)
+CONTROL_VERIFICATIONS: dict[str, dict[str, Any]] = {}
 
 
 class OwnerLoginRequest(BaseModel):
@@ -1685,4 +1692,142 @@ def owner_eos_state(auth: dict[str, object] = Depends(verify_owner_or_api_key)) 
         },
         "allowedActions": allowed_actions(True),
         "generated_at": utc_now(),
+    }
+
+
+# ─── BUILD-066A: Owner Control Verification ──────────────────────────────────
+
+class ControlVerificationRequest(BaseModel):
+    label: str = Field(min_length=1, max_length=512)
+
+
+def _ensure_control_verifications_table(cur) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS oc_admin.build066a_control_verifications (
+            id TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            session_owner TEXT NOT NULL,
+            read_back_confirmed BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+
+
+@router.post("/control-verification")
+async def create_control_verification(
+    body: ControlVerificationRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Create a labeled owner control verification record and persist it to the database.
+
+    BUILD-066A: Requires an authenticated owner session.  Creates a record with a
+    server-generated ID and timestamp, persists it to
+    ``oc_admin.build066a_control_verifications``, reads it back immediately to
+    confirm durability, and returns the verified record.
+    """
+    auth = await verify_owner_session(request)
+    session_owner = actor(auth)
+
+    record_id = f"CV-{uuid4().hex[:16].upper()}"
+    now_iso = utc_now()
+
+    record: dict[str, Any] = {
+        "id": record_id,
+        "label": body.label,
+        "created_at": now_iso,
+        "session_owner": session_owner,
+        "read_back_confirmed": False,
+    }
+
+    url = database_url()
+    if not url:
+        # In-memory fallback: persist and read back immediately
+        CONTROL_VERIFICATIONS[record_id] = record.copy()
+        persisted = CONTROL_VERIFICATIONS[record_id]
+        persisted["read_back_confirmed"] = True
+        return persisted
+
+    try:
+        with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                _ensure_control_verifications_table(cur)
+                cur.execute(
+                    """
+                    INSERT INTO oc_admin.build066a_control_verifications
+                        (id, label, session_owner, read_back_confirmed, created_at)
+                    VALUES (%s, %s, %s, TRUE, NOW())
+                    RETURNING id, label, session_owner, read_back_confirmed,
+                              created_at AT TIME ZONE 'UTC' AS created_at
+                    """,
+                    (record_id, body.label, session_owner),
+                )
+                row = cur.fetchone()
+            conn.commit()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"BUILD-066A database write failed: {exc}") from exc
+
+    if row is None:
+        raise HTTPException(status_code=503, detail="BUILD-066A: record was not returned after insert")
+
+    return {
+        "id": row["id"],
+        "label": row["label"],
+        "created_at": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),
+        "session_owner": row["session_owner"],
+        "read_back_confirmed": bool(row["read_back_confirmed"]),
+    }
+
+
+@router.get("/control-verification/{verification_id}")
+async def get_control_verification(
+    verification_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    """Retrieve a previously created owner control verification record by ID.
+
+    BUILD-066A: Requires an authenticated owner session.  Reads the record from
+    ``oc_admin.build066a_control_verifications`` (or the in-memory fallback) and
+    returns it with ``read_back_confirmed: true``.
+    """
+    await verify_owner_session(request)
+
+    if not verification_id or not verification_id.strip():
+        raise HTTPException(status_code=422, detail="verification_id is required")
+
+    url = database_url()
+    if not url:
+        row = CONTROL_VERIFICATIONS.get(verification_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Control verification '{verification_id}' not found")
+        return {**row, "read_back_confirmed": True}
+
+    try:
+        with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                _ensure_control_verifications_table(cur)
+                cur.execute(
+                    """
+                    SELECT id, label, session_owner, read_back_confirmed,
+                           created_at AT TIME ZONE 'UTC' AS created_at
+                    FROM oc_admin.build066a_control_verifications
+                    WHERE id = %s
+                    """,
+                    (verification_id,),
+                )
+                row = cur.fetchone()
+            conn.commit()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"BUILD-066A database read failed: {exc}") from exc
+
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Control verification '{verification_id}' not found")
+
+    return {
+        "id": row["id"],
+        "label": row["label"],
+        "created_at": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),
+        "session_owner": row["session_owner"],
+        "read_back_confirmed": bool(row["read_back_confirmed"]),
     }

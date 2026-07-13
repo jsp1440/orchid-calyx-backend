@@ -31,7 +31,7 @@ def add_mission_control_cors_headers(request: Request, response: Response) -> No
         response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key, X-Orchid-Actor"
+        response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key, X-Orchid-Actor"
         response.headers["Access-Control-Max-Age"] = "86400"
 
 
