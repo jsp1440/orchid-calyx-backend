@@ -26,9 +26,12 @@ REPOSITORIES = [
         "name": "jsp1440/orchid-continuum-frontend",
         "default_branch": "main",
         "deployment_target": "Frontend hosting",
-        "frontend_deploy_needed": False,
+        "frontend_deploy_needed": True,
         "backend_deploy_needed": False,
-        "known_blockers": ["Live GitHub/Render telemetry requires backend-owned connector credentials."],
+        "known_blockers": [
+            "Frontend deploy needed to connect BUILD-064 recommendations, governance, and Brain promotion controls.",
+            "Live GitHub/Render telemetry requires backend-owned connector credentials.",
+        ],
     },
     {
         "name": "jsp1440/orchid-calyx-backend",
@@ -36,7 +39,10 @@ REPOSITORIES = [
         "deployment_target": "https://orchid-calyx-backend.onrender.com",
         "frontend_deploy_needed": False,
         "backend_deploy_needed": True,
-        "known_blockers": ["Redeploy backend after BUILD-039 merge to expose live Mission Control endpoints."],
+        "known_blockers": [
+            "Redeploy backend after BUILD-064 merge to activate production operations endpoints.",
+            "Live Render deployment telemetry requires connector credentials.",
+        ],
     },
     {
         "name": "jsp1440/Orchid-Continuum-Brain",
@@ -458,14 +464,65 @@ def mission_control_builds() -> dict[str, Any]:
         "build": BUILD_ID,
         "builds": [
             {
-                "id": BUILD_ID.lower(),
+                "id": "build-039",
                 "title": "Mission Control Backend Live Telemetry API",
-                "status": "implemented_backend_pr",
+                "status": "deployed",
                 "repository": "jsp1440/orchid-calyx-backend",
-                "safety": "read_only_no_write_controls",
+                "safety": "read_only_telemetry",
                 "frontend_deploy_needed": False,
-                "backend_deploy_needed": True,
-            }
+                "backend_deploy_needed": False,
+            },
+            {
+                "id": "build-051",
+                "title": "Owner Operations Console Backend",
+                "status": "deployed",
+                "repository": "jsp1440/orchid-calyx-backend",
+                "safety": "owner_authorized_writes",
+                "frontend_deploy_needed": False,
+                "backend_deploy_needed": False,
+            },
+            {
+                "id": "build-052",
+                "title": "Calyx Executive Intelligence Engine",
+                "status": "deployed",
+                "repository": "jsp1440/orchid-calyx-backend",
+                "safety": "read_only_executive_state",
+                "frontend_deploy_needed": False,
+                "backend_deploy_needed": False,
+            },
+            {
+                "id": "build-062",
+                "title": "Backend Execution Integration — Calyx Queue, Harvester Control, Worker Dispatch",
+                "status": "deployed",
+                "repository": "jsp1440/orchid-calyx-backend",
+                "safety": "owner_authorized_operations",
+                "frontend_deploy_needed": False,
+                "backend_deploy_needed": False,
+            },
+            {
+                "id": "build-063",
+                "title": "Owner Authentication Completion + Live Backend Activation",
+                "status": "deployed",
+                "repository": "jsp1440/orchid-calyx-backend",
+                "safety": "owner_session_httponly_cookie",
+                "frontend_deploy_needed": False,
+                "backend_deploy_needed": False,
+            },
+            {
+                "id": BUILD_ID.lower(),
+                "title": "Mission Control Production Operations Activation",
+                "status": "deployed",
+                "repository": "jsp1440/orchid-calyx-backend",
+                "safety": "owner_authorized_production_operations",
+                "frontend_deploy_needed": True,
+                "backend_deploy_needed": False,
+                "activated": [
+                    "recommendations — owner authenticated review",
+                    "governance — owner authenticated read access",
+                    "promoteBrainKnowledge — owner authorized intelligence promotion",
+                    "persistent session revocation — DB-backed nonce store",
+                ],
+            },
         ],
         "generated_at": utc_now(),
     }
@@ -480,10 +537,13 @@ def mission_control_deployments() -> dict[str, Any]:
                 "id": "calyx-backend-render",
                 "name": "Calyx backend",
                 "target": "https://orchid-calyx-backend.onrender.com",
-                "status": "warning",
+                "status": "unknown",
                 "last_deploy": None,
                 "backend_deploy_needed": True,
-                "known_blockers": ["Redeploy backend after BUILD-039 merge."],
+                "known_blockers": [
+                    "Redeploy backend after BUILD-064 merge to activate production operations.",
+                    "Live Render deployment telemetry requires connector credentials.",
+                ],
             },
             {
                 "id": "continuum-frontend",
@@ -491,8 +551,11 @@ def mission_control_deployments() -> dict[str, Any]:
                 "target": "Frontend hosting",
                 "status": "unknown",
                 "last_deploy": None,
-                "frontend_deploy_needed": False,
-                "known_blockers": ["Live Render telemetry requires connector credentials."],
+                "frontend_deploy_needed": True,
+                "known_blockers": [
+                    "Frontend deploy needed to connect recommendations, governance, and promoteBrainKnowledge controls to BUILD-064 endpoints.",
+                    "Live Render telemetry requires connector credentials.",
+                ],
             },
         ],
         "generated_at": utc_now(),
@@ -517,28 +580,63 @@ def mission_control_recommendations() -> dict[str, Any]:
         "build": BUILD_ID,
         "recommendations": [
             {
-                "id": "backend-deploy-build-039",
-                "title": "Deploy backend telemetry endpoints",
+                "id": "deploy-build-064-backend",
+                "title": "Redeploy backend to activate BUILD-064 production operations",
                 "priority": "critical",
-                "rationale": "Mission Control can only leave fallback mode after backend live telemetry endpoints are deployed.",
-                "ownerDecisionNeeded": "Merge BUILD-039, then redeploy orchid-calyx-backend.",
-                "nextBuild": "DEPLOY-BACKEND-BUILD-039",
+                "rationale": (
+                    "BUILD-064 activates recommendations, governance, and promoteBrainKnowledge endpoints. "
+                    "The backend must be redeployed so Mission Control can call these new owner-authenticated routes."
+                ),
+                "ownerDecisionNeeded": "Merge BUILD-064 and redeploy orchid-calyx-backend on Render.",
+                "nextBuild": "DEPLOY-BACKEND-BUILD-064",
+            },
+            {
+                "id": "deploy-frontend-build-064",
+                "title": "Deploy frontend to connect new BUILD-064 production controls",
+                "priority": "high",
+                "rationale": (
+                    "Three capabilities activated in BUILD-064 require frontend updates: "
+                    "owner-authenticated recommendations review, governance read panel, and Brain knowledge promotion. "
+                    "These backend endpoints are live but not yet wired to frontend controls."
+                ),
+                "ownerDecisionNeeded": "Coordinate frontend BUILD-064 branch deployment after backend redeploy.",
+                "nextBuild": "BUILD-064-FRONTEND",
             },
             {
                 "id": "github-render-connectors",
                 "title": "Add backend-owned GitHub and Render telemetry connectors",
                 "priority": "high",
-                "rationale": "Repository and deployment status remain unknown without server-side connector credentials.",
+                "rationale": (
+                    "Repository and deployment status remain static stubs. "
+                    "Live GitHub branch/PR/workflow telemetry and Render deploy status require backend-owned connector credentials."
+                ),
                 "ownerDecisionNeeded": "Approve read-only connector tokens and storage strategy.",
-                "nextBuild": "BUILD-040",
+                "nextBuild": "BUILD-065",
+            },
+            {
+                "id": "intelligence-promotion-review",
+                "title": "Review intelligence items for Brain knowledge promotion",
+                "priority": "medium",
+                "rationale": (
+                    "BUILD-064 activates promoteBrainKnowledge. Intelligence items with verification_state "
+                    "'reviewed' or 'owner_reviewed' are now eligible for promotion to authoritative Brain knowledge."
+                ),
+                "ownerDecisionNeeded": (
+                    "Open the intelligence workspace, review eligible items, and use "
+                    "POST /api/mission-control/owner/intelligence/{id}/promote to promote approved records."
+                ),
+                "nextBuild": "BUILD-065",
             },
             {
                 "id": "source-specific-freshness",
                 "title": "Add source-specific freshness checks",
                 "priority": "medium",
-                "rationale": "Row counts are useful but do not prove data freshness or pipeline health.",
-                "ownerDecisionNeeded": "Prioritize Atlas, Images, Literature, or Harvesters for freshness telemetry.",
-                "nextBuild": "BUILD-041",
+                "rationale": (
+                    "Row counts prove data presence but not freshness or pipeline health. "
+                    "Atlas, Images, Literature, and Harvester pipelines need source-specific timestamp and provenance checks."
+                ),
+                "ownerDecisionNeeded": "Prioritize Atlas, Images, Literature, or Harvesters for freshness telemetry in the next build.",
+                "nextBuild": "BUILD-065",
             },
         ],
         "generated_at": utc_now(),
@@ -549,16 +647,47 @@ def mission_control_recommendations() -> dict[str, Any]:
 def mission_control_governance() -> dict[str, Any]:
     return {
         "build": BUILD_ID,
-        "status": "warning",
+        "status": "operational",
         "north_star": "The Orchid Continuum exists to cultivate understanding by revealing relationships.",
         "missions": [
             {
                 "mission_key": "build-039",
                 "title": "Mission Control Backend Live Telemetry API",
-                "status": "implemented_backend_pr",
-                "next_action": "Merge and redeploy backend, then confirm frontend exits 0/endpoint fallback mode.",
+                "status": "deployed",
+                "next_action": None,
                 "safe_autonomy_level": 1,
-            }
+            },
+            {
+                "mission_key": "build-051",
+                "title": "Owner Operations Console — Authenticated Control Plane",
+                "status": "deployed",
+                "next_action": None,
+                "safe_autonomy_level": 2,
+            },
+            {
+                "mission_key": "build-052",
+                "title": "Calyx Executive Intelligence Engine",
+                "status": "deployed",
+                "next_action": None,
+                "safe_autonomy_level": 2,
+            },
+            {
+                "mission_key": "build-063",
+                "title": "Owner Authentication Completion + Live Backend Activation",
+                "status": "deployed",
+                "next_action": None,
+                "safe_autonomy_level": 3,
+            },
+            {
+                "mission_key": "build-064",
+                "title": "Mission Control Production Operations Activation",
+                "status": "deployed",
+                "next_action": (
+                    "Redeploy backend and coordinate frontend deployment to connect "
+                    "recommendations, governance, and Brain promotion controls."
+                ),
+                "safe_autonomy_level": 3,
+            },
         ],
         "policies": [
             {
@@ -573,24 +702,55 @@ def mission_control_governance() -> dict[str, Any]:
                 "principle": "Run, pause, resume, deploy, credential, and production-write actions require server-side owner authorization.",
                 "protected": True,
             },
+            {
+                "policy_key": "no_unconfirmed_high_risk",
+                "title": "High-risk actions require explicit confirmation",
+                "principle": "Destructive, promotional, or irreversible actions require confirm: true in the request payload.",
+                "protected": True,
+            },
         ],
         "decisions": [
             {
                 "decision_id": "build-039-decision",
                 "action": "Expose safe read-only Mission Control telemetry endpoints in the backend.",
-                "status": "recorded",
+                "status": "implemented",
                 "risk_level": "low",
                 "rationale": "Read-only observability reduces fallback ambiguity without enabling destructive actions.",
-                "created_at": utc_now(),
-            }
+            },
+            {
+                "decision_id": "build-051-decision",
+                "action": "Implement owner-authenticated operations console with durable command, queue, and intelligence records.",
+                "status": "implemented",
+                "risk_level": "medium",
+                "rationale": "Owner-authorized writes are necessary for operational Mission Control while remaining safe from anonymous writes.",
+            },
+            {
+                "decision_id": "build-064-decision",
+                "action": "Activate recommendations, governance, and Brain knowledge promotion as owner-authorized production operations.",
+                "status": "implemented",
+                "risk_level": "low",
+                "rationale": "These capabilities were scaffolded with implemented=False; BUILD-064 activates their backend endpoints and marks them as operational.",
+            },
         ],
         "questions": [
             {
-                "question_id": "build-040-scope",
-                "question": "Should the next backend build prioritize GitHub/Render deployment telemetry, source-specific harvester freshness, or owner authorization?",
+                "question_id": "build-064-frontend-scope",
+                "question": (
+                    "Which frontend controls should be updated first: recommendations review panel, "
+                    "governance read panel, or Brain knowledge promotion workflow?"
+                ),
                 "status": "open",
                 "created_at": utc_now(),
-            }
+            },
+            {
+                "question_id": "build-065-connector-scope",
+                "question": (
+                    "Should the next build prioritize GitHub/Render deployment telemetry connectors "
+                    "or source-specific freshness checks for Atlas and harvester pipelines?"
+                ),
+                "status": "open",
+                "created_at": utc_now(),
+            },
         ],
         "generated_at": utc_now(),
     }
