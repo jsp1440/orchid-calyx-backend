@@ -96,6 +96,7 @@ METRIC_CANDIDATES = {
         "public.literature_documents",
     ],
     "relationships": [
+        "oc_graph.kg_edges",
         "oc_relationships.relationships",
         "oc_interactions.relationships",
         "oc_literature.extracted_relationships",

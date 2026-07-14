@@ -108,6 +108,7 @@ def _coverage_pct(numerator: int, denominator: int) -> float:
 # ---------------------------------------------------------------------------
 
 _KG_ENTITY_CANDIDATES = [
+    "oc_graph.kg_nodes",
     "oc_graph.nodes",
     "oc_graph.entities",
     "oc_graph.taxa",
@@ -116,6 +117,7 @@ _KG_ENTITY_CANDIDATES = [
 ]
 
 _KG_RELATIONSHIP_CANDIDATES = [
+    "oc_graph.kg_edges",
     "oc_graph.edges",
     "oc_graph.relationships",
     "oc_relationships.relationships",
