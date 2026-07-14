@@ -117,7 +117,7 @@ def science_missions() -> dict[str, Any]:
     return {"missions": mission_definitions()}
 
 
-@science_router.post("/seed-missions")
+@science_router.post("/seed-missions", dependencies=[Depends(verify_owner_or_api_key)])
 def science_seed_missions() -> dict[str, Any]:
     return seed_missions()
 
@@ -152,7 +152,7 @@ def science_dossiers_endpoint() -> dict[str, Any]:
     return dossier_queue()
 
 
-@science_router.post("/audit/{audit_key}")
+@science_router.post("/audit/{audit_key}", dependencies=[Depends(verify_owner_or_api_key)])
 def science_audit(audit_key: str) -> dict[str, Any]:
     department_id = AUDIT_ENDPOINT_TO_DEPARTMENT.get(audit_key)
     if not department_id:
