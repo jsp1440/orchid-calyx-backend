@@ -1,4 +1,5 @@
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, Any
 import os
@@ -31,6 +32,39 @@ from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
 app = FastAPI()
+
+
+@app.exception_handler(HTTPException)
+async def cors_aware_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """HTTP exception handler that includes CORS headers for allowed Mission Control origins.
+
+    FastAPI's default exception handler creates a fresh response when an HTTPException
+    is raised, discarding any headers set by route dependencies (such as the
+    ``add_mission_control_cors_headers`` dependency on the owner/session endpoints).
+    Without CORS headers on error responses (e.g. 401, 503), browsers block the
+    response entirely and JavaScript sees a network error (Safari: "Load failed",
+    Chrome: "Failed to fetch") instead of the HTTP status code.  This handler
+    restores CORS headers on every HTTPException for allowed origins, so the
+    frontend can distinguish an expired or invalid session from a network failure.
+    """
+    from app.routers.health import allowed_mission_control_origins
+
+    origin = request.headers.get("origin", "")
+    headers: dict[str, str] = {}
+    if origin and origin.rstrip("/") in allowed_mission_control_origins():
+        headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
+    if exc.headers:
+        headers.update(exc.headers)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=headers,
+    )
+
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 RUNTIME_INTERVAL_FLAGS = ("CALYX_RUNTIME_INTERVAL_SECONDS", "OC_RUNNER_INTERVAL_SECONDS")
