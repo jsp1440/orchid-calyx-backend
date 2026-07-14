@@ -32,6 +32,39 @@ from runtime.scheduler import CalyxHeartbeat
 
 app = FastAPI()
 
+
+@app.middleware("http")
+async def mission_control_cors_on_all_responses(request, call_next):
+    """Ensure Mission Control CORS headers reach the browser on EVERY response.
+
+    The per-route ``add_mission_control_cors_headers`` dependency attaches CORS
+    headers only to successful responses. When a handler or dependency raises
+    ``HTTPException`` (401 expired/invalid owner session, 503 unconfigured) or
+    FastAPI returns a 422 validation error, the exception handler builds a fresh
+    response WITHOUT those headers. Browsers then block the response entirely,
+    and the frontend sees a network-level failure ("Load failed") instead of a
+    readable 401 — breaking owner-session restore in Mission Control.
+
+    This middleware mirrors the exact header set and origin allow-list used by
+    ``add_mission_control_cors_headers`` and only fills headers in when the
+    route did not already set them. Origins outside the allow-list receive no
+    CORS headers, unchanged from before.
+    """
+    response = await call_next(request)
+    origin = request.headers.get("origin")
+    if (
+        origin
+        and origin.rstrip("/") in allowed_mission_control_origins()
+        and "access-control-allow-origin" not in response.headers
+    ):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key, X-Orchid-Actor"
+        response.headers["Access-Control-Max-Age"] = "86400"
+    return response
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 RUNTIME_INTERVAL_FLAGS = ("CALYX_RUNTIME_INTERVAL_SECONDS", "OC_RUNNER_INTERVAL_SECONDS")
 ACTIVE_MODE = os.environ.get("OC_RUNNER_ACTIVE_MODE", "true").lower() == "true"
