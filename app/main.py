@@ -58,7 +58,12 @@ async def mission_control_cors_on_all_responses(request, call_next):
         and "access-control-allow-origin" not in response.headers
     ):
         response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Vary"] = "Origin"
+        existing_vary = response.headers.get("Vary")
+          if existing_vary:
+              if "origin" not in existing_vary.lower():
+                  response.headers["Vary"] = f"{existing_vary}, Origin"
+          else:
+              response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key, X-Orchid-Actor"
