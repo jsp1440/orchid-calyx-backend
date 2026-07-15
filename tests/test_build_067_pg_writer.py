@@ -277,3 +277,75 @@ def test_resume_after_interrupted_publish(schema):
     repo2.commit(); repo2.close()
     assert r.nodes_written == 1 and r.edges_written == 1
     assert _count(schema, "kg_nodes") == 2 and _count(schema, "kg_edges") == 1
+
+
+# --- BUILD-068 regression tests (production-fidelity writer bugs) ------------
+
+@_needs_db
+def test_edge_null_evidence_class_defaults_to_normalized(schema):
+    """Prod kg_edges.evidence_class is NOT NULL. Adapters that omit it produce
+    Edge.evidence_class=None; the writer must substitute 'normalized' (the
+    graph-wide convention) rather than raising a NOT NULL violation."""
+    taxon_id = _seed_taxon(schema)
+    repo = WritablePostgresGraphRepository(DSN, schema=schema)
+    trait = repo.upsert_node(Node(kg_node_id=0, node_type="trait", canonical_key="trait:ev",
+                                  display_label="c", source_table="oc.traits", source_pk="ev",
+                                  evidence_class="observed"))
+    e = repo.upsert_edge(Edge(kg_edge_id=0, edge_type="has_trait", from_node_id=taxon_id,
+                              to_node_id=trait.kg_node_id, source_table="oc.traits",
+                              source_pk="ev", evidence_class=None))  # adapter omitted it
+    repo.commit(); repo.close()
+    assert e.evidence_class == "normalized"
+    import psycopg
+    with psycopg.connect(DSN, autocommit=True) as c, c.cursor() as cur:
+        cur.execute(f"SELECT evidence_class FROM {schema}.kg_edges WHERE kg_edge_id=%s",
+                    (e.kg_edge_id,))
+        assert cur.fetchone()[0] == "normalized"
+
+
+@_needs_db
+def test_node_edge_decimal_and_datetime_payload_serializable(schema):
+    """Payloads sourced from Postgres carry Decimal/date values. The writer must
+    JSON-serialize them into jsonb (Decimal->number, temporal->ISO) rather than
+    raising 'Object of type Decimal is not JSON serializable'."""
+    from datetime import date
+    from decimal import Decimal
+    taxon_id = _seed_taxon(schema)
+    repo = WritablePostgresGraphRepository(DSN, schema=schema)
+    node = repo.upsert_node(Node(
+        kg_node_id=0, node_type="literature", canonical_key="lit:d1",
+        display_label="ref", source_table="oc.lit", source_pk="d1",
+        evidence_class="observed",
+        payload={"year": Decimal("2021"), "score": Decimal("3.14"), "pub": date(2021, 5, 1)}))
+    repo.upsert_edge(Edge(kg_edge_id=0, edge_type="cited_in", from_node_id=taxon_id,
+                          to_node_id=node.kg_node_id, source_table="oc.lit", source_pk="d1",
+                          evidence_class="observed", payload={"n": Decimal("7")}))
+    repo.commit(); repo.close()
+    import psycopg
+    with psycopg.connect(DSN, autocommit=True) as c, c.cursor() as cur:
+        cur.execute(f"SELECT payload_json FROM {schema}.kg_nodes WHERE canonical_key='lit:d1'")
+        p = cur.fetchone()[0]
+    assert p["year"] == 2021 and abs(p["score"] - 3.14) < 1e-9 and p["pub"] == "2021-05-01"
+
+
+@_needs_db
+def test_large_batch_dedup_and_idempotent_rerun(schema):
+    """Exercises the in-memory taxonomy/edge caches on a many-row publish:
+    first run inserts all, a second identical run inflates nothing and resolves
+    every edge to its existing id."""
+    _seed_taxon(schema)
+    adapter = _trait_adapter()
+    rows = [{"source_pk": f"t{i}", "taxon_pk": "10", "trait_name": f"trait_{i}"}
+            for i in range(150)]
+    repo = WritablePostgresGraphRepository(DSN, schema=schema, commit_every=50)
+    r1 = publish_domain(repo, adapter, rows)
+    repo.commit(); repo.close()
+    assert r1.nodes_written == 150 and r1.edges_written == 150
+    assert _count(schema, "kg_nodes") == 151 and _count(schema, "kg_edges") == 150
+
+    repo2 = WritablePostgresGraphRepository(DSN, schema=schema)
+    r2 = publish_domain(repo2, adapter, rows)
+    repo2.commit(); repo2.close()
+    assert r2.nodes_written == 0 and r2.edges_written == 0
+    assert r2.skipped_existing_nodes == 150 and r2.skipped_existing_edges == 150
+    assert _count(schema, "kg_nodes") == 151 and _count(schema, "kg_edges") == 150

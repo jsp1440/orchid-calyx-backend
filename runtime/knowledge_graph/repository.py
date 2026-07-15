@@ -15,9 +15,26 @@ read methods.
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Iterable, Protocol
 
 from .models import Edge, Node
+
+
+def _json_default(o: Any):
+    """JSON encoder fallback for payloads sourced from Postgres.
+
+    ``kg_nodes.payload_json`` / ``kg_edges.payload_json`` are jsonb.  Source
+    rows may carry ``Decimal`` (numeric columns) and ``date``/``datetime``
+    values that ``json.dumps`` cannot serialize by default.  Decimals become
+    JSON numbers (int when integral, else float); temporals become ISO strings.
+    """
+    if isinstance(o, Decimal):
+        return int(o) if o == o.to_integral_value() else float(o)
+    if isinstance(o, (datetime, date)):
+        return o.isoformat()
+    raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
 
 _NODE_COLUMNS = (
     "kg_node_id, node_type, canonical_key, display_label, source_table, "
@@ -341,7 +358,10 @@ class WritablePostgresGraphRepository(PostgresGraphRepository):
         self._commit_every = commit_every
         self._conn: Any = None
         self._edge_count: int | None = None
+        self._edge_ids: dict | None = None  # identity (edge_type,from,to,source_table) -> kg_edge_id
         self._ops_since_commit = 0
+        self._key_cache: dict = {}  # canonical_key -> Node|None (write-through)
+        self._cache_complete = False  # True once all active node keys preloaded
         self._node_insert_sql = (
             f"INSERT INTO {self._schema}.kg_nodes "
             "(node_type, canonical_key, display_label, source_table, source_pk, "
@@ -374,6 +394,14 @@ class WritablePostgresGraphRepository(PostgresGraphRepository):
             "  AND source_table IS NOT DISTINCT FROM %s AND is_active "
             "ORDER BY kg_edge_id LIMIT 1"
         )
+        self._edge_plain_insert_sql = (
+            f"INSERT INTO {self._schema}.kg_edges "
+            "(edge_type, from_node_id, to_node_id, source_table, source_pk, "
+            " evidence_class, confidence_score, confidence_label, rule_name, "
+            " payload_json, is_active, build_run_id, updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,TRUE,%s,now()) "
+            "RETURNING kg_edge_id"
+        )
 
     # ---- connection / transaction management ----
     def _wconn(self):
@@ -392,6 +420,9 @@ class WritablePostgresGraphRepository(PostgresGraphRepository):
             self._conn.rollback()
         self._ops_since_commit = 0
         self._edge_count = None  # cached count is invalid after a rollback
+        self._edge_ids = None
+        self._key_cache.clear()
+        self._cache_complete = False
 
     def close(self) -> None:
         if self._conn is not None and not getattr(self._conn, "closed", False):
@@ -417,58 +448,112 @@ class WritablePostgresGraphRepository(PostgresGraphRepository):
             self.commit()
 
     # ---- writes (idempotent, keyed on canonical identity) ----
+    @staticmethod
+    def _node_content_equal(a: Node, b: Node) -> bool:
+        return (
+            a.node_type == b.node_type
+            and a.display_label == b.display_label
+            and a.source_table == b.source_table
+            and str(a.source_pk) == str(b.source_pk)
+            and a.evidence_class == b.evidence_class
+            and a.confidence_score == b.confidence_score
+            and a.confidence_label == b.confidence_label
+            and (a.payload or {}) == (b.payload or {})
+        )
+
     def upsert_node(self, node: Node) -> Node:
+        # Idempotent fast path: if the canonical_key already exists with IDENTICAL
+        # content (complete cache), re-publishing it is a true no-op, keeping RESUME
+        # and idempotency reruns in-memory instead of one DB round-trip per row.
+        # If content differs, fall through to ON CONFLICT DO UPDATE (content refresh
+        # while preserving created_at), preserving the BUILD-067 update contract.
+        if not self._cache_complete and self._has_open_conn():
+            self._preload_keys()
+        cached = self._key_cache.get(node.canonical_key)
+        if cached is not None and self._node_content_equal(cached, node):
+            return cached
         conn = self._wconn()
         with conn.cursor() as cur:
             cur.execute(self._node_insert_sql, (
                 node.node_type, node.canonical_key, node.display_label,
                 node.source_table, node.source_pk, node.evidence_class,
                 node.confidence_score, node.confidence_label,
-                json.dumps(node.payload or {}), self._build_run_id,
+                json.dumps(node.payload or {}, default=_json_default), self._build_run_id,
             ))
             new_id = cur.fetchone()[0]
         self._maybe_autocommit()
-        return Node(
+        stored = Node(
             kg_node_id=new_id, node_type=node.node_type,
             canonical_key=node.canonical_key, display_label=node.display_label,
             source_table=node.source_table, source_pk=node.source_pk,
             evidence_class=node.evidence_class, confidence_score=node.confidence_score,
             confidence_label=node.confidence_label, payload=node.payload,
         )
+        self._key_cache[node.canonical_key] = stored  # write-through
+        return stored
+
+    def _ensure_edge_ids(self) -> None:
+        """Load active edge logical identities into memory once.
+
+        The publisher deduplicates by ``(edge_type, from_node_id, to_node_id,
+        source_table)``.  ``kg_edges`` carries no unique index (schema frozen),
+        so an in-memory identity set replaces a per-edge ``WHERE NOT EXISTS``
+        table scan.  Single-writer transaction: no other session mutates the
+        graph during the run, so the set stays authoritative; duplicates would
+        still be caught by ``duplicate_relationships`` in final validation.
+        """
+        if self._edge_ids is not None:
+            return
+        conn = self._wconn()
+        ids: dict = {}
+        n = 0
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT edge_type, from_node_id, to_node_id, source_table, kg_edge_id "
+                f"FROM {self._schema}.kg_edges WHERE is_active ORDER BY kg_edge_id"
+            )
+            for r in cur:
+                n += 1
+                key = (r[0], r[1], r[2], r[3])
+                if key not in ids:  # keep lowest id per identity (matches prior ORDER BY LIMIT 1)
+                    ids[key] = r[4]
+        self._edge_ids = ids
+        if self._edge_count is None:
+            self._edge_count = n
 
     def upsert_edge(self, edge: Edge) -> Edge:
-        conn = self._wconn()
-        with conn.cursor() as cur:
-            cur.execute(self._edge_insert_sql, (
-                edge.edge_type, edge.from_node_id, edge.to_node_id, edge.source_table,
-                edge.source_pk, edge.evidence_class, edge.confidence_score,
-                edge.confidence_label, edge.rule_name, json.dumps(edge.payload or {}),
-                self._build_run_id,
-                edge.edge_type, edge.from_node_id, edge.to_node_id, edge.source_table,
-            ))
-            row = cur.fetchone()
-        if row is not None:
-            if self._edge_count is not None:
-                self._edge_count += 1
-            self._maybe_autocommit()
+        ev = edge.evidence_class or "normalized"  # kg_edges.evidence_class is NOT NULL; 'normalized' is the graph-wide convention
+        self._ensure_edge_ids()
+        identity = (edge.edge_type, edge.from_node_id, edge.to_node_id, edge.source_table)
+        if identity in self._edge_ids:
+            # idempotent no-op; publisher detects the skip via unchanged len(all_edges()).
+            # Return the EXISTING edge id (BUILD-067 dedup contract).
             return Edge(
-                kg_edge_id=row[0], edge_type=edge.edge_type,
+                kg_edge_id=self._edge_ids[identity], edge_type=edge.edge_type,
                 from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
                 source_table=edge.source_table, source_pk=edge.source_pk,
-                evidence_class=edge.evidence_class, confidence_score=edge.confidence_score,
+                evidence_class=ev, confidence_score=edge.confidence_score,
                 confidence_label=edge.confidence_label, rule_name=edge.rule_name,
                 payload=edge.payload,
             )
+        conn = self._wconn()
         with conn.cursor() as cur:
-            cur.execute(self._edge_id_sql, (
+            cur.execute(self._edge_plain_insert_sql, (
                 edge.edge_type, edge.from_node_id, edge.to_node_id, edge.source_table,
+                edge.source_pk, ev, edge.confidence_score,
+                edge.confidence_label, edge.rule_name, json.dumps(edge.payload or {}, default=_json_default),
+                self._build_run_id,
             ))
-            existing = cur.fetchone()
+            new_id = cur.fetchone()[0]
+        self._edge_ids[identity] = new_id
+        if self._edge_count is not None:
+            self._edge_count += 1
+        self._maybe_autocommit()
         return Edge(
-            kg_edge_id=(existing[0] if existing else 0), edge_type=edge.edge_type,
+            kg_edge_id=new_id, edge_type=edge.edge_type,
             from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
             source_table=edge.source_table, source_pk=edge.source_pk,
-            evidence_class=edge.evidence_class, confidence_score=edge.confidence_score,
+            evidence_class=ev, confidence_score=edge.confidence_score,
             confidence_label=edge.confidence_label, rule_name=edge.rule_name,
             payload=edge.payload,
         )
@@ -486,13 +571,38 @@ class WritablePostgresGraphRepository(PostgresGraphRepository):
             row = cur.fetchone()
             return self._row_to_node(row) if row else None
 
+    def _preload_keys(self) -> None:
+        """Load every active node keyed by canonical_key once.
+
+        After preload a cache miss authoritatively means the node does not
+        exist, so the frozen publisher's per-record ``get_node_by_key`` calls
+        (taxon resolution + new-node existence checks) become in-memory O(1)
+        instead of one DB round-trip each.  Write-through in ``upsert_node``
+        keeps the cache complete as new domain nodes are created.
+        """
+        conn = self._wconn()
+        with conn.cursor() as cur:
+            cur.execute(self._node_sql("TRUE"))
+            for row in cur.fetchall():
+                n = self._row_to_node(row)
+                self._key_cache[n.canonical_key] = n
+        self._cache_complete = True
+
     def get_node_by_key(self, canonical_key: str) -> Node | None:
+        if not self._cache_complete and self._has_open_conn():
+            self._preload_keys()
+        if canonical_key in self._key_cache:
+            return self._key_cache[canonical_key]
+        if self._cache_complete:
+            return None  # complete cache: a miss means the node does not exist
         if not self._has_open_conn():
             return super().get_node_by_key(canonical_key)
         with self._conn.cursor() as cur:
             cur.execute(self._node_sql("canonical_key = %s"), (canonical_key,))
             row = cur.fetchone()
-            return self._row_to_node(row) if row else None
+        result = self._row_to_node(row) if row else None
+        self._key_cache[canonical_key] = result
+        return result
 
     def all_nodes(self) -> list[Node]:
         if not self._has_open_conn():
