@@ -7,6 +7,22 @@ exposed here.
 """
 
 from .adapters import DOMAIN_ADAPTERS, adapters_by_domain
+from .canonical_taxonomy import (
+    ACTIVATED_DOMAINS,
+    AUTHORITY_SOURCES,
+    CANONICAL_AUTHORITY,
+    CANONICAL_AUTHORITY_LABEL,
+    WITHHELD_DOMAINS,
+    AuthorityMapping,
+    CanonicalRegistry,
+    CanonicalTaxon,
+    WorldPlantsRelease,
+    build_canonical_registry,
+    classify_crosswalk,
+    classify_mapping,
+    detect_conflicts,
+    select_canonical_release,
+)
 from .checkpoint import (
     Checkpoint,
     InMemoryCheckpointStore,
@@ -61,4 +77,9 @@ __all__ = [
     "blocked_domains", "assert_safe_sql", "UnsafeSQLError",
     "Checkpoint", "InMemoryCheckpointStore", "JsonFileCheckpointStore",
     "BuildOrchestrator", "ExecutionMode", "DomainOutcome", "validate_graph",
+    "CANONICAL_AUTHORITY", "CANONICAL_AUTHORITY_LABEL", "AUTHORITY_SOURCES",
+    "ACTIVATED_DOMAINS", "WITHHELD_DOMAINS", "WorldPlantsRelease",
+    "AuthorityMapping", "CanonicalTaxon", "CanonicalRegistry",
+    "build_canonical_registry", "select_canonical_release",
+    "classify_mapping", "classify_crosswalk", "detect_conflicts",
 ]

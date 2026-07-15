@@ -55,8 +55,13 @@ from .validation import validate_graph
 class ExecutionMode(str, Enum):
     AUDIT = "audit"
     DRY_RUN = "dry_run"
+    LIMITED_POPULATION = "limited_population"
     PUBLISH = "publish"
     RESUME = "resume"
+
+
+#: Modes that project into a staging graph and never write to production.
+_STAGING_MODES = (ExecutionMode.DRY_RUN, ExecutionMode.LIMITED_POPULATION)
 
 
 DEFAULT_BATCH_SIZE = 500
@@ -105,6 +110,7 @@ class BuildOrchestrator:
         adapters: tuple[DomainAdapter, ...] = DOMAIN_ADAPTERS,
         batch_size: int = DEFAULT_BATCH_SIZE,
         authorized_to_publish: bool = False,
+        activated_domains: frozenset[str] | None = None,
     ) -> None:
         self._repo = repo
         self._source = source
@@ -112,6 +118,11 @@ class BuildOrchestrator:
         self._adapters = adapters
         self._batch_size = max(1, int(batch_size))
         self._authorized = bool(authorized_to_publish)
+        # Controlled activation allowlist (Part 5). When set, only these domains
+        # run under LIMITED_POPULATION; withheld domains are reported as skipped.
+        self._activated = (
+            frozenset(activated_domains) if activated_domains is not None else None
+        )
 
     # ---- public entrypoint ----
     def run(self, mode: ExecutionMode) -> dict[str, Any]:
@@ -139,6 +150,16 @@ class BuildOrchestrator:
                 outcomes.append(DomainOutcome(
                     domain=adapter.domain, status=STATUS_SKIPPED,
                     warnings=["skipped: already completed in checkpoint store"],
+                ))
+                continue
+            if (
+                mode == ExecutionMode.LIMITED_POPULATION
+                and self._activated is not None
+                and adapter.domain not in self._activated
+            ):
+                outcomes.append(DomainOutcome(
+                    domain=adapter.domain, status=STATUS_SKIPPED,
+                    warnings=["withheld: not in controlled activation allowlist"],
                 ))
                 continue
             outcomes.append(self._run_domain(adapter, target, mode))
@@ -171,7 +192,8 @@ class BuildOrchestrator:
     def _target_repo(self, mode: ExecutionMode) -> GraphRepository:
         if mode in (ExecutionMode.PUBLISH, ExecutionMode.RESUME):
             return self._repo  # writable production repository
-        # DRY_RUN: staging graph seeded read-only from the source repository.
+        # DRY_RUN / LIMITED_POPULATION: staging graph seeded read-only from the
+        # source repository. Neither mode ever writes to the production graph.
         staging = InMemoryGraphRepository()
         self._seed_taxonomy(staging)
         return staging
@@ -270,6 +292,10 @@ class BuildOrchestrator:
             "estimated_new_edges": totals["edges_written"],
             "basis": "actual" if wrote else "projected_from_" + mode.value,
         }
+        activation = {
+            "activated_domains": sorted(self._activated) if self._activated else None,
+            "applies": mode == ExecutionMode.LIMITED_POPULATION,
+        }
 
         return {
             "build": {
@@ -284,6 +310,7 @@ class BuildOrchestrator:
             "totals": totals,
             "cross_domain_validation": cross,
             "estimated_graph_growth": growth,
+            "activation": activation,
             "checkpoints": [c.to_dict() for c in self._checkpoints.all()],
             "warnings": warnings,
             "errors": errors,

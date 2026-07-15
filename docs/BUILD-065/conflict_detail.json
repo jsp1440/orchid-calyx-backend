@@ -1,0 +1,5707 @@
+{
+  "counts": {
+    "duplicate_accepted_taxa": 0,
+    "unresolved_synonym_chains": 376,
+    "authority_disagreements": 323
+  },
+  "detail": {
+    "duplicate_accepted_taxa": [],
+    "unresolved_synonym_chains": [
+      {
+        "synonym": "Cypripedium victoria-regina",
+        "points_to": "Paphiopedilum victoria-regina",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Paphiopedilum kalinae",
+        "points_to": "Paphiopedilum victoria-regina",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cordula chamberlainiana",
+        "points_to": "Paphiopedilum victoria-regina",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis tenella",
+        "points_to": "Disa tenella",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis tenuifolia",
+        "points_to": "Disa tenella",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Satyrium tenellum",
+        "points_to": "Disa tenella",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cynorkis braunii",
+        "points_to": "Cynorkis buchwaldiana",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys explanata",
+        "points_to": "Ophrys bertoloniiformis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys cretensis",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys herae",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys ustulata",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys aegilica",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys ciliciana",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys doerfleri",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys eretriae",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys gortynia",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys albanica",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys grammica",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys knossia",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys hansreinhardii",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys hebes",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys hittitica",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys janrenzii",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys leucophthalma",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys monolithia",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys montenegrina",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys negadensis",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys osmaniaca",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys paphlagonica",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys chaonica",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys posteria",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys prespaensis",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys hystera",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys tremoris",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys willingii",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys zagrica",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys caucasica",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys cyclocheila",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys taurica",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys mouterdeana",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys palaestinae",
+        "points_to": "Ophrys mammosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Helleborine cordigera",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Lonchitis cordigera",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias ovalis",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapiastrum cordigerum",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias atlantica",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias cossyrensis",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias cretica",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias gentilii",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias lorenziana",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias lucana",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias occidentalis",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias maria",
+        "points_to": "Serapias cordigera",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Helleborine leucoglottis",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Helleborine lingua",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis lingua",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias brevibracteata",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias excavata",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias glabra",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias hirsuta",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias oxyglottis",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias pallidiflora",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapiastrum lingua",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias oranensis",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias tunetana",
+        "points_to": "Serapias lingua",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias elongata",
+        "points_to": "Serapias parviflora",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias longipetala",
+        "points_to": "Serapias parviflora",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapiastrum parviflorum",
+        "points_to": "Serapias parviflora",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias ausoniae",
+        "points_to": "Serapias parviflora",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias mascaensis",
+        "points_to": "Serapias parviflora",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Anacamptis picta",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Helleborine athensis",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Herorchis x",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Herorchis morio",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis athensis",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis crenulata",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis intermedia",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis officinalis",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Serapias athensis",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Anacamptis caucasica",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Herorchis albanica",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Herorchis picta",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis albanica",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis graeca",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis picta",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis skorpili",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Herorchis caucasica",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis aschersonii",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Anacamptis syriaca",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Herorchis syriaca",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis syriaca",
+        "points_to": "Anacamptis morio",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Androrchis mascula",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis cochleata",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis compressiflora",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis masculolatifolia",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis monsignatica",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis obtusa",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis obtusiflora",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis parreissii",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis rectiflorus",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis stabiana",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis verna",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis vernalis",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis wanjkovii",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Androrchis ichnusae",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis ichnusae",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis olivetorum",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Androrchis lapalmensis",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis lapalmensis",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Androrchis longicalcarata",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Androrchis maghrebiana",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Androrchis pinetorum",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis pinetorum",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Androrchis scopulorum",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis scopulorum",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Androrchis ovalis",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis glaucophylla",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis ovalis",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis signifera",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Androrchis tenera",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis tenera",
+        "points_to": "Orchis mascula",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis cinerea",
+        "points_to": "Orchis militaris",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis galeata",
+        "points_to": "Orchis militaris",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis mimusops",
+        "points_to": "Orchis militaris",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis nervata",
+        "points_to": "Orchis militaris",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis rivini",
+        "points_to": "Orchis militaris",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Strateuma militaris",
+        "points_to": "Orchis militaris",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Zoophora atropurpurea",
+        "points_to": "Orchis militaris",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Zoophora rubella",
+        "points_to": "Orchis militaris",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis raddeana",
+        "points_to": "Orchis militaris",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis stevenii",
+        "points_to": "Orchis militaris",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Androrchis patens",
+        "points_to": "Orchis patens",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Barlia patens",
+        "points_to": "Orchis patens",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Androrchis brevicornis",
+        "points_to": "Orchis patens",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis brevicornis",
+        "points_to": "Orchis patens",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis panormitana",
+        "points_to": "Orchis patens",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis brachiata",
+        "points_to": "Orchis purpurea",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis fuscata",
+        "points_to": "Orchis purpurea",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis fuscescens",
+        "points_to": "Orchis purpurea",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis maxima",
+        "points_to": "Orchis purpurea",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis moravica",
+        "points_to": "Orchis purpurea",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Strateuma grandis",
+        "points_to": "Orchis purpurea",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis lokiana",
+        "points_to": "Orchis purpurea",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis aserica",
+        "points_to": "Orchis purpurea",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis caucasica",
+        "points_to": "Orchis purpurea",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis cercopitheca",
+        "points_to": "Orchis simia",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis columnae",
+        "points_to": "Orchis simia",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis linearis",
+        "points_to": "Orchis simia",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis smithii",
+        "points_to": "Orchis simia",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis zoophora",
+        "points_to": "Orchis simia",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis taubertiana",
+        "points_to": "Orchis simia",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Habenaria mandarinorum",
+        "points_to": "Platanthera mandarinorum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Platanthera delavayi",
+        "points_to": "Platanthera mandarinorum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Platanthera minax",
+        "points_to": "Platanthera mandarinorum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Platanthera winkleriana",
+        "points_to": "Platanthera mandarinorum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Platanthera platycorys",
+        "points_to": "Platanthera mandarinorum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Platanthera reinii",
+        "points_to": "Platanthera mandarinorum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Habenaria pachyglossa",
+        "points_to": "Platanthera mandarinorum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis incarnata",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza comosa",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza intermedia",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza strictifolia",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis altaica",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis comosa",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis condensa",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis lanceata",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis macra",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis matodes",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis mixta",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis palmata",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis richardii",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis strictifolia",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis tharandina",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza baumgartneriana",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza cungsii",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza haematodes",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis cruenta",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis extensa",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis haematodes",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza jugicrucis",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza gemmana",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza lobelii",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza coccinea",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis cruenta",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza cruenta",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis cruentiformis",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza ochroleuca",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis traunsteineri",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza pulchella",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis praetermissa",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis purpurella",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza serotina",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis serotina",
+        "points_to": "Dactylorhiza incarnata",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis latifolia",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza fistulosa",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis divaricata",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis fistulata",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis fistulosa",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis tingitana",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis alpestris",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza alpestris",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis alpestris",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis impudica",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis latifolius",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza parvimajalis",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis baltica",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis longifolia",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis traunsteineri",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza baltica",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza longifolia",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza vironii",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis baltica",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis longifolia",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza brennensis",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza elatior",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza osiliensis",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza praetermissa",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza ruthei",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis elatior",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza kalopissii",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza macedonica",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhizia kalopissii",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza pythagorae",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis ruthei",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis ruthei",
+        "points_to": "Dactylorhiza majalis",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis praetermissa",
+        "points_to": "Dactylorhiza praetermissa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza integrata",
+        "points_to": "Dactylorhiza praetermissa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis integrata",
+        "points_to": "Dactylorhiza praetermissa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis pardalina",
+        "points_to": "Dactylorhiza praetermissa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza schoenophila",
+        "points_to": "Dactylorhiza praetermissa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis gracilis",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza devillersiorum",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza vosagiaca",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza bohemica",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza irenica",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza rhaetica",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis curvifolia",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis pseudocordigera",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorchis russowii",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza curvifolia",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza pseudocordigera",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza russowii",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis curvifolia",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis pseudocordigera",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis recurva",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis russowii",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dactylorhiza turfosa",
+        "points_to": "Dactylorhiza traunsteineri",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Habenaria nigra",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella brachystachya",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella hybrida",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella megastachya",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis nigra",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Satyrium nigrum",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Sieberia nigra",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia austriaca",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella austriaca",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia carpatica",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella carpatica",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella gallica",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella rhellicani",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella iberica",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia lithopolitanica",
+        "points_to": "Nigritella nigra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia rhellicani",
+        "points_to": "Nigritella rhellicani",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia cenisia",
+        "points_to": "Nigritella rhellicani",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella cenisia",
+        "points_to": "Nigritella rhellicani",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia gabasiana",
+        "points_to": "Nigritella rhellicani",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella gabasiana",
+        "points_to": "Nigritella rhellicani",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia miniata",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia rubra",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella miniata",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Orchis miniata",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia minor",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella minor",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia buschmanniae",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella buschmanniae",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia dolomitensis",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella dolomitensis",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia archiducis-joannis",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella archiducis-joannis",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia hygrophila",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella hygrophila",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gymnadenia stiriaca",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Nigritella stiriaca",
+        "points_to": "Nigritella rubra",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Microtis viridis",
+        "points_to": "Microtis media",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Microtis densiflora",
+        "points_to": "Microtis media",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Chelonanthera speciosa",
+        "points_to": "Coelogyne speciosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Chromatotriccum fulgidum",
+        "points_to": "Dendrobium fulgidum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dendrobium xanthellum",
+        "points_to": "Dendrobium fulgidum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Pedilonum fulgidum",
+        "points_to": "Dendrobium fulgidum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Chromatotriccum maritimum",
+        "points_to": "Dendrobium fulgidum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dendrobium maritimum",
+        "points_to": "Dendrobium fulgidum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Callista purpurea",
+        "points_to": "Dendrobium purpureum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Callista reinwardtii",
+        "points_to": "Dendrobium purpureum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dendrobium moseleyi",
+        "points_to": "Dendrobium purpureum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dendrobium praeustum",
+        "points_to": "Dendrobium purpureum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dendrobium reinwardtii",
+        "points_to": "Dendrobium purpureum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dendrobium scabripes",
+        "points_to": "Dendrobium purpureum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dendrobium viridiroseum",
+        "points_to": "Dendrobium purpureum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Pedilonum purpureum",
+        "points_to": "Dendrobium purpureum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Pedilonum reinwardtii",
+        "points_to": "Dendrobium purpureum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dendrobium talaudense",
+        "points_to": "Dendrobium purpureum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Pedilonum talaudense",
+        "points_to": "Dendrobium purpureum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Bulbophyllum effusum",
+        "points_to": "Bulbophyllum fractiflexum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Bulbophyllum fractiflexoides",
+        "points_to": "Bulbophyllum fractiflexum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Bulbophyllum genybrachium",
+        "points_to": "Bulbophyllum fractiflexum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Bulbophyllum lamprobulbon",
+        "points_to": "Bulbophyllum fractiflexum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Bulbophyllum linearipetalum",
+        "points_to": "Bulbophyllum fractiflexum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Pelma fractiflexum",
+        "points_to": "Bulbophyllum fractiflexum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Bulbophyllum henshallii",
+        "points_to": "Bulbophyllum lobbii",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Phyllorkis lobbii",
+        "points_to": "Bulbophyllum lobbii",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Sarcobodium lobbii",
+        "points_to": "Bulbophyllum lobbii",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Sarcopodium lobbii",
+        "points_to": "Bulbophyllum lobbii",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Sestochilos uniflorum",
+        "points_to": "Bulbophyllum lobbii",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Bulbophyllum sumatranum",
+        "points_to": "Bulbophyllum lobbii",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Bulbophyllum bataanense",
+        "points_to": "Bulbophyllum lobbii",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Bulbophyllum siamense",
+        "points_to": "Bulbophyllum lobbii",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium bituberculatum",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium nervosum",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Diteilis elata",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Diteilis nepalensis",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Diteilis nervosa",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Dituilis nepalensis",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Empusa nervosa",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Epidendrum nervosum",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Iebine nervosa",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Leptorkis bituberculata",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Leptorkis dalzellii",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Leptorkis eggersii",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Leptorkis elata",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Leptorkis macrocarpa",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Leptorkis nervosa",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Leptorkis odontostoma",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Leptorkis olivacea",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liparis bambusifolia",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liparis cornicaulis",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liparis dalzellii",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liparis eggersii",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liparis inundata",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liparis livida",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liparis macrocarpa",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liparis odontostoma",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liparis violaceonervosa",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Malaxis lancifolia",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Malaxis nervosa",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Ophrys nervosa",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Sturmia bituberculata",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Sturmia elata",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Sturmia nervosa",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liparis breviscapa",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liparis khasiana",
+        "points_to": "Liparis nervosa",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cleisostoma undulatum",
+        "points_to": "Pomatocalpa undulatum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Gastrochilus undulatus",
+        "points_to": "Pomatocalpa undulatum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cleisostoma acuminatum",
+        "points_to": "Pomatocalpa undulatum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cleisostoma brachybotryum",
+        "points_to": "Pomatocalpa undulatum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Pomatocalpa acuminatum",
+        "points_to": "Pomatocalpa undulatum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Pomatocalpa brachybotryum",
+        "points_to": "Pomatocalpa undulatum",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium albomarginatum",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium arrogans",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium estriatum",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium gonzalesii",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium gyokuchin",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium koran",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium micans",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium misericors",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium niveomarginatum",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium prompovenium",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium rubrigemmum",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium shimaran",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium xiphiifolium",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium yakibaran",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Cymbidium yongfuense",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Epidendrum ensifolium",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Epidendrum sinense",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Jensoa ensata",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Limodorum ensatum",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      },
+      {
+        "synonym": "Liuguishania taiwanensis",
+        "points_to": "Cymbidium ensifolium",
+        "target_status": "synonym"
+      }
+    ],
+    "authority_disagreements": [
+      {
+        "canonical_name": "Ophrys ferrum-equinum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793090",
+          "2793100",
+          "6314932",
+          "6314934",
+          "9571463",
+          "9629276"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys mammosa var",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793363",
+          "2793483",
+          "2793500",
+          "2793526",
+          "2793539",
+          "2793548",
+          "9419623",
+          "9579257"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10678005",
+          "10683859",
+          "10689793",
+          "10691326",
+          "10692404",
+          "10709476",
+          "10711169",
+          "10711461",
+          "10714537",
+          "10721310",
+          "10728778",
+          "10729142",
+          "10730377",
+          "10751055",
+          "10757117",
+          "10760853",
+          "10766896",
+          "10772602",
+          "10773207",
+          "10792437",
+          "10799897",
+          "10811842",
+          "10833761",
+          "10833934",
+          "10847465",
+          "10865164",
+          "10866809",
+          "10872948",
+          "10882829",
+          "10885102",
+          "10894707",
+          "10915755",
+          "10921031",
+          "10933127",
+          "10937889",
+          "10938909",
+          "10950059",
+          "10954955",
+          "10960356",
+          "10968438",
+          "10977368",
+          "10980477",
+          "10985854",
+          "10986334",
+          "10987852",
+          "10999051",
+          "11002511",
+          "11006797",
+          "11026014",
+          "11039071",
+          "11042401",
+          "11055126",
+          "11055398",
+          "11070207",
+          "11081266",
+          "11088683",
+          "11097013",
+          "11103182",
+          "11109101",
+          "11538127",
+          "11998286",
+          "12011296",
+          "12011343",
+          "12118571",
+          "12122202",
+          "12135091",
+          "12283853",
+          "12293300",
+          "12313465",
+          "12333186",
+          "12353791",
+          "2792579",
+          "2792580",
+          "2792581",
+          "2792628",
+          "2792629",
+          "2792634",
+          "2792636",
+          "2792637",
+          "2792638",
+          "2792639",
+          "2792640",
+          "2792641",
+          "2792642",
+          "2792648",
+          "2792659",
+          "2792660",
+          "2792661",
+          "2792664",
+          "2792688",
+          "2792703",
+          "2792718",
+          "2792721",
+          "2792722",
+          "2792724",
+          "2792725",
+          "2792733",
+          "2792734",
+          "2792736",
+          "2792745",
+          "2792746",
+          "2792756",
+          "2792760",
+          "2792765",
+          "2792776",
+          "2792787",
+          "2792788",
+          "2792789",
+          "2792791",
+          "2792832",
+          "2792950",
+          "2792956",
+          "2792959",
+          "2792964",
+          "2792965",
+          "2792966",
+          "2792973",
+          "2792974",
+          "2792976",
+          "2792980",
+          "2792981",
+          "2792984",
+          "2792985",
+          "2792989",
+          "2792991",
+          "2792992",
+          "2792993",
+          "2792995",
+          "2792996",
+          "2792997",
+          "2793056",
+          "2793078",
+          "2793079",
+          "2793084",
+          "2793085",
+          "2793087",
+          "2793088",
+          "2793089",
+          "2793115",
+          "2793116",
+          "2793119",
+          "2793123",
+          "2793125",
+          "2793155",
+          "2793206",
+          "2793218",
+          "2793235",
+          "2793302",
+          "2793326",
+          "2793327",
+          "2793330",
+          "2793344",
+          "2793455",
+          "2793479",
+          "2793560",
+          "2793565",
+          "2793592",
+          "2793616",
+          "2793618",
+          "2793620",
+          "2793622",
+          "2793624",
+          "2793625",
+          "2793627",
+          "2793629",
+          "2793630",
+          "2793706",
+          "2793783",
+          "2793784",
+          "2793785",
+          "2793786",
+          "2793787",
+          "2793788",
+          "2793818",
+          "2793819",
+          "2793831",
+          "2793832",
+          "2793833",
+          "2793835",
+          "2793836",
+          "2793837",
+          "2793838",
+          "2793840",
+          "2793842",
+          "2793843",
+          "2793848",
+          "2793849",
+          "2793850",
+          "2793851",
+          "2793852",
+          "2793853",
+          "2793854",
+          "2793855",
+          "2793856",
+          "2793863",
+          "2793871",
+          "2793873",
+          "2793874",
+          "2793875",
+          "2793876",
+          "2793879",
+          "2793880",
+          "2793881",
+          "2793883",
+          "2793884",
+          "2793885",
+          "2793888",
+          "2793889",
+          "2793890",
+          "2793891",
+          "2793892",
+          "2793893",
+          "3652575",
+          "3652788",
+          "3652967",
+          "3653047",
+          "3653058",
+          "3653260",
+          "3653276",
+          "3653604",
+          "3655052",
+          "3655055",
+          "3655059",
+          "3655068",
+          "3655073",
+          "3655086",
+          "3655087",
+          "3655088",
+          "3655094",
+          "3655098",
+          "3655102",
+          "3655108",
+          "3655126",
+          "3655127",
+          "3655130",
+          "3655135",
+          "3655137",
+          "3655141",
+          "3655194",
+          "3655197",
+          "3655198",
+          "3655206",
+          "3655208",
+          "3655210",
+          "3655211",
+          "3655215",
+          "3655237",
+          "3655238",
+          "3655246",
+          "3655250",
+          "3655251",
+          "3655257",
+          "3655258",
+          "3655260",
+          "3655261",
+          "3655267",
+          "3655270",
+          "3655273",
+          "3655274",
+          "3655277",
+          "3655280",
+          "3655282",
+          "3655295",
+          "3655303",
+          "3655321",
+          "3655323",
+          "3655327",
+          "3655330",
+          "3655331",
+          "3655333",
+          "3655335",
+          "3655336",
+          "3655350",
+          "3655358",
+          "3655362",
+          "3655368",
+          "3655370",
+          "3655372",
+          "3655374",
+          "3655380",
+          "3655381",
+          "3655383",
+          "3655390",
+          "3655393",
+          "3655400",
+          "3655408",
+          "3655415",
+          "3655421",
+          "3655424",
+          "3655449",
+          "3655452",
+          "3655459",
+          "3655507",
+          "3655534",
+          "3655552",
+          "3655555",
+          "3655560",
+          "3655566",
+          "3655568",
+          "3655582",
+          "3655596",
+          "3655597",
+          "3655598",
+          "3655599",
+          "3655605",
+          "3655609",
+          "3655614",
+          "3655624",
+          "3655641",
+          "3655659",
+          "3655661",
+          "3655696",
+          "3655723",
+          "3655728",
+          "3655729",
+          "3655734",
+          "3655747",
+          "3655748",
+          "3655750",
+          "3655825",
+          "3655829",
+          "3655830",
+          "3655834",
+          "3655835",
+          "3655853",
+          "3655862",
+          "3655879",
+          "3655881",
+          "3655887",
+          "3655891",
+          "3655893",
+          "3655905",
+          "3655907",
+          "3655908",
+          "3655912",
+          "3655926",
+          "3655930",
+          "3655933",
+          "3655953",
+          "3655994",
+          "3655999",
+          "3656013",
+          "3656015",
+          "3656025",
+          "3656031",
+          "3656039",
+          "3656055",
+          "3656066",
+          "3656077",
+          "3656078",
+          "3656084",
+          "3656095",
+          "3656097",
+          "3656111",
+          "3656113",
+          "3656118",
+          "3656119",
+          "3656120",
+          "3656123",
+          "3656126",
+          "3656136",
+          "3656138",
+          "3656165",
+          "3656174",
+          "3656175",
+          "3656182",
+          "3656186",
+          "3656187",
+          "3656189",
+          "3656191",
+          "3656200",
+          "3656207",
+          "3656220",
+          "3656244",
+          "3656277",
+          "3656296",
+          "3656297",
+          "3656302",
+          "3656307",
+          "3656311",
+          "3656322",
+          "3656343",
+          "6314955",
+          "6315018",
+          "7320990",
+          "7353807",
+          "7368004",
+          "7454031",
+          "7464513",
+          "7557940",
+          "7658847",
+          "7800031",
+          "7821090",
+          "7849736",
+          "7913997",
+          "7956869",
+          "8062183",
+          "8114719",
+          "8206462",
+          "8216380",
+          "8267803",
+          "8295523",
+          "8360876",
+          "9277053",
+          "9354197",
+          "9357825",
+          "9378353",
+          "9386702",
+          "9473155",
+          "9485489",
+          "9607771",
+          "9613456"
+        ]
+      },
+      {
+        "canonical_name": "Orchis x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10840790",
+          "10908856",
+          "11042727",
+          "11128092",
+          "2809928",
+          "2849313",
+          "2849314",
+          "2849322",
+          "2849323",
+          "2849327",
+          "2849353",
+          "2849358",
+          "2849361",
+          "2849365",
+          "2849368",
+          "2849376",
+          "2849378",
+          "2849381",
+          "2849382",
+          "2849386",
+          "2849389",
+          "2849390",
+          "2849391",
+          "2849458",
+          "2849511",
+          "2849544",
+          "2849548",
+          "2849552",
+          "2849557",
+          "2849566",
+          "2849569",
+          "2849579",
+          "2849583",
+          "2849613",
+          "2849639",
+          "2849654",
+          "2849655",
+          "2849656",
+          "3654139",
+          "3654237",
+          "3654676",
+          "3654849",
+          "6314538",
+          "7320406",
+          "7320976",
+          "7320979",
+          "7432959",
+          "7444147",
+          "7940292",
+          "7988371",
+          "9009740"
+        ]
+      },
+      {
+        "canonical_name": "Serapias x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10674881",
+          "10690786",
+          "10763767",
+          "10840609",
+          "10857904",
+          "10860222",
+          "10897816",
+          "10900583",
+          "10994722",
+          "11084722",
+          "11090869",
+          "5314778",
+          "5314808",
+          "5314810",
+          "5314811",
+          "5314813",
+          "5314833",
+          "5314847",
+          "5314848",
+          "5314867",
+          "5314869",
+          "5314870",
+          "5314871",
+          "5314877",
+          "5314881",
+          "5314887",
+          "5314888",
+          "5314890",
+          "5314896",
+          "5541689",
+          "5541754",
+          "5541763",
+          "5541817",
+          "5541827",
+          "7320401",
+          "7912241",
+          "8365254",
+          "8945666",
+          "9246131"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza maculata ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "12242952",
+          "2810361",
+          "2810387",
+          "2810394",
+          "2810397",
+          "2810398",
+          "2810401",
+          "2810405",
+          "6314816",
+          "7227967",
+          "8179794",
+          "8229872"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza saccifera ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810857",
+          "7227970"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10741363",
+          "10843422",
+          "10983504",
+          "10992375",
+          "12049137",
+          "12109951",
+          "12179887",
+          "12225429",
+          "12225647",
+          "12245673",
+          "12252229",
+          "2809736",
+          "2809737",
+          "2809739",
+          "2809741",
+          "2809746",
+          "2809819",
+          "2809835",
+          "2809838",
+          "2809839",
+          "2809844",
+          "2809846",
+          "2809848",
+          "2809850",
+          "2809852",
+          "2809871",
+          "2809984",
+          "2809985",
+          "2810017",
+          "2810028",
+          "2810034",
+          "2810037",
+          "2810053",
+          "2810054",
+          "2810057",
+          "2810061",
+          "2810062",
+          "2810064",
+          "2810065",
+          "2810127",
+          "2810128",
+          "2810133",
+          "2810136",
+          "2810140",
+          "2810142",
+          "2810232",
+          "2810283",
+          "2810342",
+          "2810359",
+          "2810467",
+          "2810474",
+          "2810475",
+          "2810476",
+          "2810477",
+          "2810478",
+          "2810657",
+          "2810661",
+          "2810663",
+          "2810672",
+          "2810743",
+          "2810746",
+          "2810749",
+          "2810757",
+          "2810768",
+          "2810790",
+          "2810797",
+          "2810798",
+          "2810805",
+          "2810827",
+          "2810866",
+          "2810868",
+          "2810870",
+          "2810872",
+          "2810878",
+          "2810879",
+          "2810880",
+          "2810889",
+          "2810891",
+          "2810892",
+          "2810895",
+          "2810897",
+          "2810899",
+          "2810900",
+          "2810913",
+          "2810916",
+          "2811003",
+          "2811004",
+          "2811012",
+          "2811015",
+          "2811018",
+          "2811019",
+          "3649346",
+          "3649446",
+          "3649461",
+          "3652128",
+          "6426307",
+          "7320412",
+          "7321049",
+          "7321050",
+          "7321053",
+          "7321057",
+          "7431604",
+          "7708150",
+          "8044638",
+          "8065671",
+          "8208448",
+          "8286906",
+          "8380200",
+          "9276024"
+        ]
+      },
+      {
+        "canonical_name": "Gymnigritella x",
+        "authority": "GBIF",
+        "external_ids": [
+          "12269517",
+          "12272428",
+          "12285717",
+          "12339128",
+          "12360921",
+          "2840409",
+          "2840441",
+          "2840489",
+          "2840550",
+          "2840554",
+          "2840562",
+          "2840583",
+          "3654857",
+          "3654860",
+          "5950790",
+          "7320725",
+          "7604579",
+          "9289134",
+          "9627331"
+        ]
+      },
+      {
+        "canonical_name": "Cryptostylis acutata",
+        "authority": "GBIF",
+        "external_ids": [
+          "2806948",
+          "2806950"
+        ]
+      },
+      {
+        "canonical_name": "Eriochilus collinus ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "9398258",
+          "9561739"
+        ]
+      },
+      {
+        "canonical_name": "Goodyera x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10876014",
+          "12202253",
+          "12247330"
+        ]
+      },
+      {
+        "canonical_name": "Vanda x",
+        "authority": "GBIF",
+        "external_ids": [
+          "12256250",
+          "12266812",
+          "12273638",
+          "2783123",
+          "3652666"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria calvilabris",
+        "authority": "GBIF",
+        "external_ids": [
+          "2828784",
+          "2828785"
+        ]
+      },
+      {
+        "canonical_name": "Tylostigma filiforme ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2850928",
+          "2850929"
+        ]
+      },
+      {
+        "canonical_name": "Neobolusia stolzii",
+        "authority": "GBIF",
+        "external_ids": [
+          "2820784",
+          "2820785",
+          "2820786"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria pubidactyla ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2830025",
+          "8394803"
+        ]
+      },
+      {
+        "canonical_name": "Neuwiedia zollingeri",
+        "authority": "GBIF",
+        "external_ids": [
+          "2837230",
+          "2837237",
+          "7704299"
+        ]
+      },
+      {
+        "canonical_name": "Lecanorchis japonica",
+        "authority": "GBIF",
+        "external_ids": [
+          "12355075",
+          "2838525",
+          "2838526",
+          "2838531"
+        ]
+      },
+      {
+        "canonical_name": "Lecanorchis multiflora",
+        "authority": "GBIF",
+        "external_ids": [
+          "10960499",
+          "10985758",
+          "2838521",
+          "2838538"
+        ]
+      },
+      {
+        "canonical_name": "Lecanorchis thalassica",
+        "authority": "GBIF",
+        "external_ids": [
+          "10813473",
+          "2838518"
+        ]
+      },
+      {
+        "canonical_name": "Vanilla chamissonis",
+        "authority": "GBIF",
+        "external_ids": [
+          "12380837",
+          "2803319"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys heldreichii",
+        "authority": "GBIF",
+        "external_ids": [
+          "2792893",
+          "2792894",
+          "6426029"
+        ]
+      },
+      {
+        "canonical_name": "Vanilla pompona ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "6316067",
+          "6316068",
+          "7227732"
+        ]
+      },
+      {
+        "canonical_name": "Cypripedium macranthos",
+        "authority": "GBIF",
+        "external_ids": [
+          "2820423",
+          "9604409"
+        ]
+      },
+      {
+        "canonical_name": "Cypripedium parviflorum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2820475",
+          "2820480",
+          "2820507",
+          "6315808"
+        ]
+      },
+      {
+        "canonical_name": "Cypripedium tibeticum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2820349",
+          "5951769"
+        ]
+      },
+      {
+        "canonical_name": "Cypripedium x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10847850",
+          "2820348",
+          "2820376",
+          "2820395",
+          "2820405",
+          "2820418",
+          "2820515",
+          "2820531",
+          "4270076",
+          "4270077"
+        ]
+      },
+      {
+        "canonical_name": "Phragmipedium besseae",
+        "authority": "GBIF",
+        "external_ids": [
+          "2814289",
+          "2814291"
+        ]
+      },
+      {
+        "canonical_name": "Phragmipedium hirtzii",
+        "authority": "GBIF",
+        "external_ids": [
+          "11032386",
+          "2814307"
+        ]
+      },
+      {
+        "canonical_name": "Phragmipedium humboldtii",
+        "authority": "GBIF",
+        "external_ids": [
+          "10939629",
+          "2814425"
+        ]
+      },
+      {
+        "canonical_name": "Phragmipedium schlimii",
+        "authority": "GBIF",
+        "external_ids": [
+          "10792040",
+          "2814274"
+        ]
+      },
+      {
+        "canonical_name": "Phragmipedium x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10762610",
+          "10800453",
+          "10833402",
+          "2814273",
+          "2814295",
+          "2814385",
+          "7410773",
+          "7516269",
+          "7527510",
+          "7707788",
+          "8022685",
+          "8080582",
+          "8098216",
+          "9241849"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum barbigerum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825615",
+          "2825620",
+          "3653324",
+          "9635843"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum bullenianum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825498",
+          "2825500",
+          "2825505"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum callosum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825207",
+          "2825223"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum concolor",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825331",
+          "8113807"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum godefroyae",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825294",
+          "7709048"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum gratrixianum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825154",
+          "6314344",
+          "8293757",
+          "9362555"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum hirsutissimum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825226",
+          "7754508"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum hookerae",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825415",
+          "7789377"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum lowii",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825644",
+          "2825645",
+          "2825648"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum malipoense",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825273",
+          "2825279"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum mastersianum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825425",
+          "2825426"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum philippinense",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825516",
+          "8519270"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum primulinum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825463",
+          "2825468"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum robinsonianum",
+        "authority": "GBIF",
+        "external_ids": [
+          "10918172",
+          "8205675"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum sangii",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825633",
+          "2825634"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum stonei ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825536",
+          "3653086"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum superbiens",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825167",
+          "6314447"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum tonsum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825397",
+          "2825401"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum victoria-regina ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825453",
+          "2825456"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum victoria-regina var",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825453",
+          "2825454",
+          "2825459"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum villosum",
+        "authority": "GBIF",
+        "external_ids": [
+          "10690247",
+          "2825586",
+          "2825601",
+          "5950448"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum violascens",
+        "authority": "GBIF",
+        "external_ids": [
+          "2825630",
+          "2825669",
+          "2825670"
+        ]
+      },
+      {
+        "canonical_name": "Paphiopedilum x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10692086",
+          "10862935",
+          "10863377",
+          "12136478",
+          "12264793",
+          "12311845",
+          "2825153",
+          "2825256",
+          "2825272",
+          "2825285",
+          "2825349",
+          "2825357",
+          "2825374",
+          "2825381",
+          "2825383",
+          "2825394",
+          "2825447",
+          "2825450",
+          "2825452",
+          "2825608",
+          "2825610",
+          "2825614",
+          "2825622",
+          "2825654",
+          "2825658",
+          "3653204",
+          "3653315",
+          "5950442",
+          "5950443",
+          "5950444",
+          "5950446",
+          "7734402",
+          "9243870",
+          "9261872",
+          "9394872",
+          "9438282",
+          "9534703",
+          "9587909"
+        ]
+      },
+      {
+        "canonical_name": "Brownleea galpinii ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783364",
+          "7069610"
+        ]
+      },
+      {
+        "canonical_name": "Disperis anthoceras",
+        "authority": "GBIF",
+        "external_ids": [
+          "2805038",
+          "2805039",
+          "2805042"
+        ]
+      },
+      {
+        "canonical_name": "Disperis aphylla",
+        "authority": "GBIF",
+        "external_ids": [
+          "2805091",
+          "6315638"
+        ]
+      },
+      {
+        "canonical_name": "Disperis bolusiana ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2805029",
+          "7227716"
+        ]
+      },
+      {
+        "canonical_name": "Disperis capensis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2805137",
+          "2805138"
+        ]
+      },
+      {
+        "canonical_name": "Disperis circumflexa ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2805113",
+          "2805119"
+        ]
+      },
+      {
+        "canonical_name": "Disperis discifera",
+        "authority": "GBIF",
+        "external_ids": [
+          "2805068",
+          "2805070"
+        ]
+      },
+      {
+        "canonical_name": "Disperis katangensis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2805100",
+          "2805102"
+        ]
+      },
+      {
+        "canonical_name": "Disperis oppositifolia",
+        "authority": "GBIF",
+        "external_ids": [
+          "2805058",
+          "2805062"
+        ]
+      },
+      {
+        "canonical_name": "Disperis purpurata ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2805134",
+          "2805135"
+        ]
+      },
+      {
+        "canonical_name": "Disa aconitoides ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783617",
+          "2783621",
+          "7227956"
+        ]
+      },
+      {
+        "canonical_name": "Disa cephalotes ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2784091",
+          "7069619"
+        ]
+      },
+      {
+        "canonical_name": "Disa erubescens ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783873",
+          "7069620"
+        ]
+      },
+      {
+        "canonical_name": "Disa fragrans ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783898",
+          "7069623"
+        ]
+      },
+      {
+        "canonical_name": "Disa harveyana ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2784003",
+          "7069624"
+        ]
+      },
+      {
+        "canonical_name": "Disa lugens",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783971",
+          "2783972"
+        ]
+      },
+      {
+        "canonical_name": "Disa obliqua ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783841",
+          "7069626"
+        ]
+      },
+      {
+        "canonical_name": "Disa obtusa ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783786",
+          "2783790",
+          "7227955"
+        ]
+      },
+      {
+        "canonical_name": "Disa oreophila ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783703",
+          "2783704"
+        ]
+      },
+      {
+        "canonical_name": "Disa patula",
+        "authority": "GBIF",
+        "external_ids": [
+          "2784085",
+          "2784086"
+        ]
+      },
+      {
+        "canonical_name": "Disa spathulata ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783950",
+          "2783954"
+        ]
+      },
+      {
+        "canonical_name": "Disa tenella ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783763",
+          "2783766"
+        ]
+      },
+      {
+        "canonical_name": "Disa welwitschii ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783773",
+          "7227959"
+        ]
+      },
+      {
+        "canonical_name": "Disa x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783708",
+          "2783714",
+          "2783905",
+          "2784029"
+        ]
+      },
+      {
+        "canonical_name": "Satyrium amoenum",
+        "authority": "GBIF",
+        "external_ids": [
+          "5307276",
+          "8321964"
+        ]
+      },
+      {
+        "canonical_name": "Satyrium cristatum",
+        "authority": "GBIF",
+        "external_ids": [
+          "5307477",
+          "5307480"
+        ]
+      },
+      {
+        "canonical_name": "Satyrium hallackii ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5307343",
+          "5307344",
+          "7227870"
+        ]
+      },
+      {
+        "canonical_name": "Satyrium longicauda",
+        "authority": "GBIF",
+        "external_ids": [
+          "5307416",
+          "5307419"
+        ]
+      },
+      {
+        "canonical_name": "Satyrium neglectum ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5307431",
+          "7227869"
+        ]
+      },
+      {
+        "canonical_name": "Satyrium nepalense",
+        "authority": "GBIF",
+        "external_ids": [
+          "5307445",
+          "5307453"
+        ]
+      },
+      {
+        "canonical_name": "Satyrium stenopetalum ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5307355",
+          "5307356"
+        ]
+      },
+      {
+        "canonical_name": "Satyrium x",
+        "authority": "GBIF",
+        "external_ids": [
+          "5307358",
+          "5307443"
+        ]
+      },
+      {
+        "canonical_name": "Satyrium yunnanense ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "7357212",
+          "8155645"
+        ]
+      },
+      {
+        "canonical_name": "Benthamia exilis",
+        "authority": "GBIF",
+        "external_ids": [
+          "5313170",
+          "5313172"
+        ]
+      },
+      {
+        "canonical_name": "Stenoglottis fimbriata",
+        "authority": "GBIF",
+        "external_ids": [
+          "11402110",
+          "2791182"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria antennifera",
+        "authority": "GBIF",
+        "external_ids": [
+          "2801277",
+          "7398462"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria dentata",
+        "authority": "GBIF",
+        "external_ids": [
+          "2828859",
+          "2828868"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria glaucophylla",
+        "authority": "GBIF",
+        "external_ids": [
+          "2828341",
+          "2828343"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria leucosantha",
+        "authority": "GBIF",
+        "external_ids": [
+          "2828652",
+          "2829874",
+          "2829875"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria leucotricha",
+        "authority": "GBIF",
+        "external_ids": [
+          "2829795",
+          "2829797"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria malacophylla",
+        "authority": "GBIF",
+        "external_ids": [
+          "2829496",
+          "2829501",
+          "5315940"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria marquisensis ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "6316026",
+          "7227700"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria myodes ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2829074",
+          "2829076"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria nyikana ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2829954",
+          "7227704"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria pilosa",
+        "authority": "GBIF",
+        "external_ids": [
+          "2829041",
+          "2829044"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria plantaginea",
+        "authority": "GBIF",
+        "external_ids": [
+          "10927284",
+          "2828886"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria praestans",
+        "authority": "GBIF",
+        "external_ids": [
+          "2829987",
+          "2829992"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria repens",
+        "authority": "GBIF",
+        "external_ids": [
+          "2830046",
+          "2830048",
+          "2830063"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria rhodocheila ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2829841",
+          "2829844"
+        ]
+      },
+      {
+        "canonical_name": "Habenaria stylites ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2829629",
+          "2829630",
+          "2829636"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis anacamptoides",
+        "authority": "GBIF",
+        "external_ids": [
+          "2781491",
+          "2781498"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis buchwaldiana ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2781373",
+          "7069837"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis fastigiata",
+        "authority": "GBIF",
+        "external_ids": [
+          "2781680",
+          "2781684"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis flexuosa",
+        "authority": "GBIF",
+        "external_ids": [
+          "2781673",
+          "2781677"
+        ]
+      },
+      {
+        "canonical_name": "Pleurothallis x",
+        "authority": "GBIF",
+        "external_ids": [
+          "12209507",
+          "12232621",
+          "12258328"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis hologlossa",
+        "authority": "GBIF",
+        "external_ids": [
+          "2781501",
+          "2781503",
+          "7968086"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis jumelleana",
+        "authority": "GBIF",
+        "external_ids": [
+          "2781532",
+          "2781534"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis kassneriana ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2781439",
+          "2781441"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis laeta",
+        "authority": "GBIF",
+        "external_ids": [
+          "2781719",
+          "2781720"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis lilacina ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2781554",
+          "2781556"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis lilacina var",
+        "authority": "GBIF",
+        "external_ids": [
+          "2781550",
+          "2781560",
+          "8014556",
+          "8318043"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis tenuicalcar ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2781470",
+          "3650973",
+          "7069840"
+        ]
+      },
+      {
+        "canonical_name": "Cynorkis x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10683422",
+          "2781399"
+        ]
+      },
+      {
+        "canonical_name": "Brachycorythis conica ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2805750",
+          "2805753",
+          "7069702"
+        ]
+      },
+      {
+        "canonical_name": "Brachycorythis pleistophylla",
+        "authority": "GBIF",
+        "external_ids": [
+          "2805735",
+          "2805736"
+        ]
+      },
+      {
+        "canonical_name": "Schizochilus cecilii ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5307928",
+          "5307931",
+          "7227754"
+        ]
+      },
+      {
+        "canonical_name": "Orchinea x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10710813",
+          "10760642",
+          "10955486",
+          "11015629",
+          "11096524",
+          "3654932",
+          "3654934",
+          "9460836",
+          "9535026"
+        ]
+      },
+      {
+        "canonical_name": "Neotinea x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2812452",
+          "2812455"
+        ]
+      },
+      {
+        "canonical_name": "Neotinacamptis x",
+        "authority": "GBIF",
+        "external_ids": [
+          "7462973",
+          "7609168",
+          "8242774"
+        ]
+      },
+      {
+        "canonical_name": "Steveniella satyrioides",
+        "authority": "GBIF",
+        "external_ids": [
+          "11377807",
+          "8367439",
+          "8899823"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys apifera",
+        "authority": "GBIF",
+        "external_ids": [
+          "10901030",
+          "10903369",
+          "11004681",
+          "2792998",
+          "2793000",
+          "2793007",
+          "2793014",
+          "2793028",
+          "2793042",
+          "2793044",
+          "6314885",
+          "6314887",
+          "6314890",
+          "6314892",
+          "6314896",
+          "6314897",
+          "6314901",
+          "6314903",
+          "6314904",
+          "7816454",
+          "7937019",
+          "9252084",
+          "9262347",
+          "9305707",
+          "9618997"
+        ]
+      },
+      {
+        "canonical_name": "Himantoglossum calcaratum ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "10871428",
+          "12222508"
+        ]
+      },
+      {
+        "canonical_name": "Himantoglossum caprinum ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5324939",
+          "7561747"
+        ]
+      },
+      {
+        "canonical_name": "Himantoglossum hircinum",
+        "authority": "GBIF",
+        "external_ids": [
+          "5324951",
+          "9531521"
+        ]
+      },
+      {
+        "canonical_name": "Himantoglossum x",
+        "authority": "GBIF",
+        "external_ids": [
+          "12189640",
+          "5324930",
+          "5324932"
+        ]
+      },
+      {
+        "canonical_name": "Orchimantoglossum x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2816105",
+          "2816107",
+          "5950792"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys amanensis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793504",
+          "2793514",
+          "2793536"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys andria",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793634",
+          "6314869"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys arachnitiformis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2792669",
+          "2792670",
+          "2792675",
+          "2792690",
+          "2792693",
+          "2792709",
+          "2793352",
+          "2793362",
+          "2793424",
+          "6315010"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys araneola",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793447",
+          "2793449",
+          "2793452",
+          "2793459",
+          "9087404"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys aveyronensis ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "10965627",
+          "7680283"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys bertoloniiformis ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2792758",
+          "9383670"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys bombyliflora",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793699",
+          "9331286",
+          "9556373"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys bornmuelleri",
+        "authority": "GBIF",
+        "external_ids": [
+          "12280791",
+          "2793640",
+          "2793646",
+          "2793649"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys candica var",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793686",
+          "2793750"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys cornuta",
+        "authority": "GBIF",
+        "external_ids": [
+          "12362805",
+          "2792916",
+          "8297583"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys fusca",
+        "authority": "GBIF",
+        "external_ids": [
+          "2792986",
+          "2793158",
+          "2793159",
+          "2793175",
+          "2793179",
+          "2793181",
+          "2793187",
+          "2793200",
+          "2793262",
+          "2793268",
+          "2793269",
+          "2793275",
+          "2793277",
+          "2793286",
+          "2793288",
+          "2793290",
+          "2793292",
+          "2793293",
+          "2793296",
+          "2793297",
+          "2793298",
+          "2793304",
+          "2793311",
+          "2793313",
+          "2793315",
+          "2793316",
+          "2793317",
+          "2793325",
+          "2793857",
+          "2793859",
+          "2793860",
+          "2793861",
+          "3655768",
+          "3655786",
+          "5950926",
+          "6314926",
+          "9485561"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys crabronifera",
+        "authority": "GBIF",
+        "external_ids": [
+          "2792813",
+          "9250426"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys episcopalis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793771",
+          "5317615"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys exaltata",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793359",
+          "2793426"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys holosericea",
+        "authority": "GBIF",
+        "external_ids": [
+          "12181594",
+          "12190392",
+          "12287516",
+          "12329261",
+          "12330484",
+          "12337438",
+          "12348883",
+          "12352106",
+          "2793730",
+          "7884558"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys oxyrrhynchos",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793781",
+          "8215379"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys incubacea",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793588",
+          "3655642",
+          "5317486",
+          "9366108"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys insectifera",
+        "authority": "GBIF",
+        "external_ids": [
+          "10798079",
+          "10938511",
+          "2792588"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys phryganae",
+        "authority": "GBIF",
+        "external_ids": [
+          "10930582",
+          "11009759",
+          "11103123",
+          "11110022",
+          "2793211",
+          "5316472"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys iricolor",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793168",
+          "2793299"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys lesbis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2792799",
+          "9479270"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys lutea",
+        "authority": "GBIF",
+        "external_ids": [
+          "3655466",
+          "9226313"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys mammosa ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793525",
+          "2793533"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys murbeckii",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793869",
+          "7885020"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys passionis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793348",
+          "8059994"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys reinholdii",
+        "authority": "GBIF",
+        "external_ids": [
+          "2792645",
+          "2792651"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys scolopax",
+        "authority": "GBIF",
+        "external_ids": [
+          "2792827",
+          "2792848",
+          "2792871",
+          "2792880",
+          "6314997",
+          "7570505"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys sicula",
+        "authority": "GBIF",
+        "external_ids": [
+          "10917675",
+          "10966145",
+          "10974015",
+          "10983503",
+          "11036146",
+          "11064088",
+          "2793227",
+          "9408260"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys tenthredinifera",
+        "authority": "GBIF",
+        "external_ids": [
+          "10701725",
+          "10705243",
+          "10743064",
+          "10746694",
+          "10772384",
+          "10810140",
+          "10813721",
+          "10851648",
+          "10880785",
+          "10955365",
+          "12270431",
+          "12289885",
+          "12303222",
+          "2793126",
+          "3655114",
+          "6314946",
+          "8180582",
+          "8329708"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys speculum",
+        "authority": "GBIF",
+        "external_ids": [
+          "10727241",
+          "2792665",
+          "2792840"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys sphegodes",
+        "authority": "GBIF",
+        "external_ids": [
+          "10680867",
+          "2793334",
+          "2793372",
+          "2793394",
+          "6314971"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys transhyrcana",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793494",
+          "2793540",
+          "2793549"
+        ]
+      },
+      {
+        "canonical_name": "Ophrys umbilicata",
+        "authority": "GBIF",
+        "external_ids": [
+          "12271388",
+          "12301042",
+          "12323731",
+          "12357688",
+          "12380621",
+          "2793794",
+          "2793796",
+          "2793814"
+        ]
+      },
+      {
+        "canonical_name": "Serapias cordigera ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5314725",
+          "5314727",
+          "5314728",
+          "5314735",
+          "5314741",
+          "5314743",
+          "7069715",
+          "9309164"
+        ]
+      },
+      {
+        "canonical_name": "Serapias lingua ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "6314577",
+          "6314580",
+          "7227681",
+          "9298896"
+        ]
+      },
+      {
+        "canonical_name": "Serapias neglecta ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5314748",
+          "5314753",
+          "7561726"
+        ]
+      },
+      {
+        "canonical_name": "Serapias nurrica",
+        "authority": "GBIF",
+        "external_ids": [
+          "5314882",
+          "5314885"
+        ]
+      },
+      {
+        "canonical_name": "Serapias olbia",
+        "authority": "GBIF",
+        "external_ids": [
+          "5314863",
+          "9487391"
+        ]
+      },
+      {
+        "canonical_name": "Serapias orientalis ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5314752",
+          "5314780",
+          "5314782",
+          "5314790",
+          "5314792",
+          "5314796",
+          "5314800",
+          "7227682"
+        ]
+      },
+      {
+        "canonical_name": "Serapias orientalis var",
+        "authority": "GBIF",
+        "external_ids": [
+          "5314779",
+          "5951754",
+          "6314594"
+        ]
+      },
+      {
+        "canonical_name": "Serapias parviflora ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5314849",
+          "5314862"
+        ]
+      },
+      {
+        "canonical_name": "Serapias strictiflora",
+        "authority": "GBIF",
+        "external_ids": [
+          "5314820",
+          "5314834"
+        ]
+      },
+      {
+        "canonical_name": "Serapias vomeracea",
+        "authority": "GBIF",
+        "external_ids": [
+          "5314764",
+          "5314770",
+          "9254022",
+          "9283097"
+        ]
+      },
+      {
+        "canonical_name": "Serapicamptis x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10737548",
+          "10773050",
+          "10819239",
+          "2813923",
+          "2813924",
+          "2813928",
+          "2813930",
+          "2813933",
+          "2813936",
+          "2813938",
+          "2813942",
+          "2813945",
+          "2813947",
+          "2813953",
+          "2813955",
+          "2813956",
+          "2813959",
+          "2813962",
+          "2813964",
+          "2813966",
+          "2813968",
+          "2813969",
+          "2813975",
+          "2813980",
+          "2813983",
+          "2813985",
+          "3649784",
+          "3649792",
+          "3649801",
+          "7896888",
+          "8000297",
+          "9554501"
+        ]
+      },
+      {
+        "canonical_name": "Anacamptis morio ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "12180663",
+          "12361376",
+          "2808584",
+          "2808615",
+          "2808622",
+          "2808624",
+          "7227816"
+        ]
+      },
+      {
+        "canonical_name": "Anacamptis laxiflora ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2808435",
+          "2808445",
+          "2844263",
+          "9461341"
+        ]
+      },
+      {
+        "canonical_name": "Pseudorhiza x",
+        "authority": "GBIF",
+        "external_ids": [
+          "5306520",
+          "5306525",
+          "5306526",
+          "5306528",
+          "5306529",
+          "7799557"
+        ]
+      },
+      {
+        "canonical_name": "Anacamptis palustris ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2808412",
+          "2808419",
+          "7227817"
+        ]
+      },
+      {
+        "canonical_name": "Anacamptis x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10680305",
+          "10680540",
+          "10924882",
+          "11029628",
+          "12151646",
+          "2808314",
+          "2808316",
+          "2808322",
+          "2808325",
+          "2808379",
+          "2808381",
+          "2808382",
+          "2808386",
+          "2808388",
+          "2808458",
+          "2808459",
+          "2808507",
+          "2808516",
+          "2808517",
+          "2808519",
+          "2808522",
+          "2808534",
+          "2808536",
+          "2808544",
+          "2808549",
+          "2808552",
+          "2808555",
+          "2808563",
+          "2808638",
+          "2808691",
+          "2808693",
+          "2808701",
+          "3655643",
+          "7320183",
+          "7320186",
+          "7320189",
+          "7381217",
+          "7725689",
+          "7838520",
+          "7953909",
+          "7959133",
+          "8194329",
+          "8345143",
+          "8422803",
+          "8929487"
+        ]
+      },
+      {
+        "canonical_name": "Anacamptis papilionacea ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "12188351",
+          "2808648",
+          "2808658",
+          "6314673"
+        ]
+      },
+      {
+        "canonical_name": "Anacamptis papilionacea var",
+        "authority": "GBIF",
+        "external_ids": [
+          "10993200",
+          "11004460",
+          "12280532",
+          "12301279",
+          "12323494",
+          "2808665",
+          "2808673",
+          "2808677",
+          "6314684"
+        ]
+      },
+      {
+        "canonical_name": "Anacamptis pyramidalis",
+        "authority": "GBIF",
+        "external_ids": [
+          "12354314",
+          "2808330",
+          "2808340",
+          "2808346",
+          "6314659",
+          "7408624",
+          "7978485",
+          "8230260",
+          "8378866",
+          "9069975",
+          "9630426"
+        ]
+      },
+      {
+        "canonical_name": "Anacamptorchis x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10883890",
+          "3655578",
+          "7351446",
+          "7472628",
+          "7504776",
+          "7684389",
+          "7849376",
+          "7963597",
+          "8010008",
+          "8085674",
+          "8370601"
+        ]
+      },
+      {
+        "canonical_name": "Orchis anatolica ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2849412",
+          "6314523"
+        ]
+      },
+      {
+        "canonical_name": "Orchis mascula ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2849429",
+          "2849478",
+          "2849487",
+          "2849491",
+          "2849506",
+          "6314530",
+          "6314532",
+          "6314533",
+          "7227901"
+        ]
+      },
+      {
+        "canonical_name": "Orchis patens ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2849406",
+          "7069725"
+        ]
+      },
+      {
+        "canonical_name": "Orchis militaris ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "10867451",
+          "2809968",
+          "7227900"
+        ]
+      },
+      {
+        "canonical_name": "Orchis punctulata",
+        "authority": "GBIF",
+        "external_ids": [
+          "2849615",
+          "2849620",
+          "8285730"
+        ]
+      },
+      {
+        "canonical_name": "Orchis purpurea ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2849513",
+          "2849518"
+        ]
+      },
+      {
+        "canonical_name": "Orchis spitzelii ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2849587",
+          "2849598",
+          "2849608",
+          "6314516",
+          "9798685"
+        ]
+      },
+      {
+        "canonical_name": "Orchis simia ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "3654190",
+          "5950622"
+        ]
+      },
+      {
+        "canonical_name": "Orchis spitzelii var",
+        "authority": "GBIF",
+        "external_ids": [
+          "11382235",
+          "2849596",
+          "9632998"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera klossii",
+        "authority": "GBIF",
+        "external_ids": [
+          "10789829",
+          "10834182",
+          "12208431"
+        ]
+      },
+      {
+        "canonical_name": "Orchidactylorhiza x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2837055",
+          "9261085",
+          "9494837",
+          "9538122",
+          "9616223"
+        ]
+      },
+      {
+        "canonical_name": "Pseudorchis albida ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5306899",
+          "7227954"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera angustata",
+        "authority": "GBIF",
+        "external_ids": [
+          "2798392",
+          "6316125"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera bifolia ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "6316118",
+          "7227747",
+          "9266450"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera blephariglottis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2798212",
+          "2798213"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera dilatata",
+        "authority": "GBIF",
+        "external_ids": [
+          "2797036",
+          "2797046",
+          "2797058"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera elegans ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2797015",
+          "7069730"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera flava",
+        "authority": "GBIF",
+        "external_ids": [
+          "2798014",
+          "2798024"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera x",
+        "authority": "GBIF",
+        "external_ids": [
+          "12220216",
+          "12357228",
+          "2797876",
+          "2797957",
+          "2797977",
+          "2797997",
+          "2797999",
+          "2798012",
+          "2798086",
+          "2798087",
+          "2798144",
+          "2798158",
+          "2798365",
+          "2798368",
+          "2798413",
+          "2798493",
+          "2798510",
+          "3649916",
+          "3650003",
+          "3650006",
+          "3650026",
+          "6316113",
+          "7377884",
+          "7641105",
+          "7714288",
+          "8152829",
+          "8254414",
+          "8566343"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera kuenkelei",
+        "authority": "GBIF",
+        "external_ids": [
+          "2798282",
+          "8154429"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera mandarinorum ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2798471",
+          "7227752"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera orbiculata",
+        "authority": "GBIF",
+        "external_ids": [
+          "2797877",
+          "2797879"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera takedae ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2798406",
+          "7227746"
+        ]
+      },
+      {
+        "canonical_name": "Platanthera tipuloides",
+        "authority": "GBIF",
+        "external_ids": [
+          "2798184",
+          "9018858"
+        ]
+      },
+      {
+        "canonical_name": "Dactylanthera x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2837192",
+          "2837193",
+          "2837197",
+          "2837199"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza cordigera ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810973",
+          "2810987",
+          "2810990",
+          "6314749",
+          "7227972"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza baumanniana ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810356",
+          "2810358"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza elata",
+        "authority": "GBIF",
+        "external_ids": [
+          "2809772",
+          "2809778",
+          "2809796",
+          "2810121",
+          "6314719",
+          "7386468",
+          "7861697",
+          "9498178",
+          "9608265"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza euxina",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810828",
+          "2810837"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza fuchsii ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810678",
+          "2810683",
+          "2810691",
+          "2810697",
+          "7227960"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza fuchsii var",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810724",
+          "3649470",
+          "6314770"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza incarnata ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "11528694",
+          "11847124",
+          "2809877",
+          "2809878",
+          "2809890",
+          "2809905",
+          "2809913",
+          "7227969"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza incarnata var",
+        "authority": "GBIF",
+        "external_ids": [
+          "10229636",
+          "10914611",
+          "2809900",
+          "2809915",
+          "2809978",
+          "2810789",
+          "7888738",
+          "7922336",
+          "9238920",
+          "9297434"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza kerryensis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810229",
+          "6314729"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza maculata var",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810429",
+          "2810456",
+          "8179794",
+          "9523926"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza magna ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810335",
+          "9572904",
+          "9598479"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza majalis ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "10863737",
+          "10868670",
+          "10939543",
+          "10949790",
+          "12322063",
+          "2810177",
+          "2810814",
+          "8312867"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza majalis var",
+        "authority": "GBIF",
+        "external_ids": [
+          "2809826",
+          "2810155",
+          "2810193"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza osmanica",
+        "authority": "GBIF",
+        "external_ids": [
+          "2809857",
+          "7981471"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza praetermissa ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "7227965",
+          "8390450"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza praetermissa var",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810272",
+          "6314805",
+          "6314809"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza purpurella",
+        "authority": "GBIF",
+        "external_ids": [
+          "10771724",
+          "2810246",
+          "2810255",
+          "2810257",
+          "9380013",
+          "9534253"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza romana ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810483",
+          "2810522",
+          "6314777",
+          "7227961",
+          "8303228"
+        ]
+      },
+      {
+        "canonical_name": "Microtis media ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5312226",
+          "7227799"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza sphagnicola",
+        "authority": "GBIF",
+        "external_ids": [
+          "10962279",
+          "11105811",
+          "2846042"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza traunsteineri ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810535",
+          "2810620",
+          "7227968",
+          "7577177",
+          "7918218",
+          "9335666"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza traunsteinerioides",
+        "authority": "GBIF",
+        "external_ids": [
+          "2810593",
+          "2845911",
+          "7580374",
+          "7785979"
+        ]
+      },
+      {
+        "canonical_name": "Dactylorhiza urvilleana ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2809995",
+          "2810002",
+          "2810014",
+          "2810848"
+        ]
+      },
+      {
+        "canonical_name": "Gymnadenia odoratissima",
+        "authority": "GBIF",
+        "external_ids": [
+          "2840474",
+          "2840477"
+        ]
+      },
+      {
+        "canonical_name": "Gymnadenia conopsea",
+        "authority": "GBIF",
+        "external_ids": [
+          "12291049",
+          "12347458",
+          "2840518",
+          "6315463",
+          "7845022",
+          "9545139"
+        ]
+      },
+      {
+        "canonical_name": "Nigritella corneliana",
+        "authority": "GBIF",
+        "external_ids": [
+          "7684341",
+          "8418456"
+        ]
+      },
+      {
+        "canonical_name": "Nigritella rubra ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "10882422",
+          "5323901",
+          "5323942",
+          "5323946",
+          "5323948",
+          "8030301"
+        ]
+      },
+      {
+        "canonical_name": "Nigritella nigra ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5323907",
+          "5323937",
+          "5323938",
+          "5323940",
+          "8213444"
+        ]
+      },
+      {
+        "canonical_name": "Nigritella rhellicani ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5323905",
+          "5323924",
+          "7963586",
+          "9570303"
+        ]
+      },
+      {
+        "canonical_name": "Nigritella x",
+        "authority": "GBIF",
+        "external_ids": [
+          "12312391",
+          "12369109",
+          "12374396",
+          "5323930",
+          "5541721",
+          "5950758",
+          "5950766",
+          "7721321",
+          "9321361",
+          "9376058"
+        ]
+      },
+      {
+        "canonical_name": "Dactylitella x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10824603",
+          "2817738",
+          "2847988",
+          "3652222"
+        ]
+      },
+      {
+        "canonical_name": "Dactylodenia x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10675061",
+          "2817713",
+          "2817717",
+          "2817718",
+          "2817719",
+          "2817722",
+          "2817727",
+          "2817739",
+          "2817740",
+          "2817742",
+          "2817746",
+          "2817767",
+          "2817768",
+          "2817769",
+          "2817774",
+          "2817777",
+          "2840544",
+          "3649557",
+          "6315508",
+          "7856604",
+          "8378227",
+          "8381606"
+        ]
+      },
+      {
+        "canonical_name": "Dactylocamptis x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2793957",
+          "2793958",
+          "7359379",
+          "7441869",
+          "7512979",
+          "7641577",
+          "7664606",
+          "7703237",
+          "7737916",
+          "7749382",
+          "7822771",
+          "7955138",
+          "8141368",
+          "9433711",
+          "9496943",
+          "9553797"
+        ]
+      },
+      {
+        "canonical_name": "Orchigymnadenia x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2803612",
+          "3654957"
+        ]
+      },
+      {
+        "canonical_name": "Gymnanacamptis x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2820959",
+          "7635163",
+          "7708273"
+        ]
+      },
+      {
+        "canonical_name": "Pseudadenia x",
+        "authority": "GBIF",
+        "external_ids": [
+          "12219819",
+          "2795548",
+          "2795556"
+        ]
+      },
+      {
+        "canonical_name": "Gymplatanthera x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2820086",
+          "2820088"
+        ]
+      },
+      {
+        "canonical_name": "Pseuditella x",
+        "authority": "GBIF",
+        "external_ids": [
+          "12374169",
+          "3654050",
+          "3654053",
+          "3654055"
+        ]
+      },
+      {
+        "canonical_name": "Hemipilia x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10724751",
+          "8049322"
+        ]
+      },
+      {
+        "canonical_name": "Microchilus curviflorus",
+        "authority": "GBIF",
+        "external_ids": [
+          "5315120",
+          "5315121"
+        ]
+      },
+      {
+        "canonical_name": "Arthrochilus huntianus ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2816720",
+          "2816724"
+        ]
+      },
+      {
+        "canonical_name": "Corybas",
+        "authority": "GBIF",
+        "external_ids": [
+          "2790016",
+          "6"
+        ]
+      },
+      {
+        "canonical_name": "Corybas x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10788447",
+          "5307683"
+        ]
+      },
+      {
+        "canonical_name": "Diuris behrii ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "10677699",
+          "10853223"
+        ]
+      },
+      {
+        "canonical_name": "Diuris emarginata",
+        "authority": "GBIF",
+        "external_ids": [
+          "5321718",
+          "5321719"
+        ]
+      },
+      {
+        "canonical_name": "Diuris x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10693942",
+          "5321692",
+          "5321693",
+          "5321808",
+          "7901616"
+        ]
+      },
+      {
+        "canonical_name": "Eriochilus dilatatus ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2791981",
+          "2791982",
+          "2791983",
+          "2791987",
+          "2791988",
+          "7227697"
+        ]
+      },
+      {
+        "canonical_name": "Eriochilus scaber ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2791968",
+          "7069850"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia applanata ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841926",
+          "7227659"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia attingens ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841451",
+          "7227655",
+          "9294888"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia bicalliata ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841362",
+          "7069691"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia bryceana ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841109",
+          "7227653"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia caerulea",
+        "authority": "GBIF",
+        "external_ids": [
+          "2836251",
+          "2836253"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia caesarea ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841556",
+          "2841563",
+          "7227663"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia longicauda ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2842061",
+          "2842063",
+          "2842066",
+          "2842069",
+          "2842071",
+          "2842073",
+          "2842076",
+          "2842078",
+          "2842080",
+          "2842085",
+          "7227660",
+          "9298900",
+          "9469757",
+          "9488982"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia denticulata ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "9338156",
+          "9429310",
+          "9529718"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia exilis ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841333",
+          "7069695"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia flava ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841190",
+          "2841192",
+          "7227662"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia hirta ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841176",
+          "7069693"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia transitoria ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "10698453",
+          "10749969"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia leptochila ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2842009",
+          "7227657"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia nana ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841397",
+          "7227658"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia pendens ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841837",
+          "7069694"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia pholcoidea ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841717",
+          "7069692"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia remota ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841437",
+          "7227661"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia reptans ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841634",
+          "7069696"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia uliginosa ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "2841808",
+          "2841814",
+          "7227654"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia vulgaris",
+        "authority": "GBIF",
+        "external_ids": [
+          "12240974",
+          "2841287"
+        ]
+      },
+      {
+        "canonical_name": "Caladenia x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2786163",
+          "2841173",
+          "2841228",
+          "2841260",
+          "2841261",
+          "2841325",
+          "2841343",
+          "2841394",
+          "2841491",
+          "2841543",
+          "2841601",
+          "2841643",
+          "2841657",
+          "2841822",
+          "2841911",
+          "2841955",
+          "2841964",
+          "2841977",
+          "2842055",
+          "9392567"
+        ]
+      },
+      {
+        "canonical_name": "Thelymitra grandiflora ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "9268738",
+          "9577747"
+        ]
+      },
+      {
+        "canonical_name": "Thelymitra media",
+        "authority": "GBIF",
+        "external_ids": [
+          "2814100",
+          "2814101"
+        ]
+      },
+      {
+        "canonical_name": "Thelymitra x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2813996",
+          "2814008",
+          "2814012",
+          "2814050",
+          "2814074",
+          "2814124"
+        ]
+      },
+      {
+        "canonical_name": "Pterostylis conferta ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "10835789",
+          "10855167"
+        ]
+      },
+      {
+        "canonical_name": "Pterostylis littoralis",
+        "authority": "GBIF",
+        "external_ids": [
+          "10988251",
+          "2847367"
+        ]
+      },
+      {
+        "canonical_name": "Pterostylis x",
+        "authority": "GBIF",
+        "external_ids": [
+          "10798051",
+          "2847548",
+          "2847574",
+          "2847630",
+          "2847639",
+          "2847668"
+        ]
+      },
+      {
+        "canonical_name": "Microchilus erythrodoides ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "5542216",
+          "7227874"
+        ]
+      },
+      {
+        "canonical_name": "Microchilus puyoensis",
+        "authority": "GBIF",
+        "external_ids": [
+          "5315154",
+          "5315156",
+          "5315157"
+        ]
+      },
+      {
+        "canonical_name": "Erythrodes chinensis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2820645",
+          "9509870"
+        ]
+      },
+      {
+        "canonical_name": "Goodyera hachijoensis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2840780",
+          "2840781",
+          "9588136"
+        ]
+      },
+      {
+        "canonical_name": "Goodyera foliosa",
+        "authority": "GBIF",
+        "external_ids": [
+          "2840670",
+          "2840828",
+          "8010037"
+        ]
+      },
+      {
+        "canonical_name": "Goodyera rubicunda",
+        "authority": "GBIF",
+        "external_ids": [
+          "2840887",
+          "2840896",
+          "9444401"
+        ]
+      },
+      {
+        "canonical_name": "Goodyera similis",
+        "authority": "GBIF",
+        "external_ids": [
+          "12371735",
+          "2840622"
+        ]
+      },
+      {
+        "canonical_name": "Goodyera stenopetala ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "7472903",
+          "8032804"
+        ]
+      },
+      {
+        "canonical_name": "Goodyera viridiflora",
+        "authority": "GBIF",
+        "external_ids": [
+          "12249342",
+          "7504817"
+        ]
+      },
+      {
+        "canonical_name": "Cystorchis saccosepala",
+        "authority": "GBIF",
+        "external_ids": [
+          "2795572",
+          "2795573"
+        ]
+      },
+      {
+        "canonical_name": "Cheirostylis chinensis",
+        "authority": "GBIF",
+        "external_ids": [
+          "12357171",
+          "2814894"
+        ]
+      },
+      {
+        "canonical_name": "Cheirostylis divina",
+        "authority": "GBIF",
+        "external_ids": [
+          "2814865",
+          "2814867"
+        ]
+      },
+      {
+        "canonical_name": "Cheirostylis liukiuensis",
+        "authority": "GBIF",
+        "external_ids": [
+          "12291424",
+          "2814849",
+          "9449939"
+        ]
+      },
+      {
+        "canonical_name": "Cheirostylis pusilla",
+        "authority": "GBIF",
+        "external_ids": [
+          "10822630",
+          "2814907"
+        ]
+      },
+      {
+        "canonical_name": "Cheirostylis tortilacinia",
+        "authority": "GBIF",
+        "external_ids": [
+          "12211978",
+          "12248391",
+          "2814876"
+        ]
+      },
+      {
+        "canonical_name": "Rhomboda alticola",
+        "authority": "GBIF",
+        "external_ids": [
+          "2812929",
+          "2812931"
+        ]
+      },
+      {
+        "canonical_name": "Vrydagzynea buruensis",
+        "authority": "GBIF",
+        "external_ids": [
+          "2788159",
+          "2788160"
+        ]
+      },
+      {
+        "canonical_name": "Vrydagzynea pauciflora",
+        "authority": "GBIF",
+        "external_ids": [
+          "2788125",
+          "2788126"
+        ]
+      },
+      {
+        "canonical_name": "Odontochilus brevistylis ssp",
+        "authority": "GBIF",
+        "external_ids": [
+          "9360570",
+          "9433155"
+        ]
+      },
+      {
+        "canonical_name": "Discyphus scopulariae",
+        "authority": "GBIF",
+        "external_ids": [
+          "2820739",
+          "2820744"
+        ]
+      },
+      {
+        "canonical_name": "Baskervilla auriculata",
+        "authority": "GBIF",
+        "external_ids": [
+          "2850449",
+          "2850450"
+        ]
+      },
+      {
+        "canonical_name": "Pterichis elliptica",
+        "authority": "GBIF",
+        "external_ids": [
+          "12179226",
+          "9410728"
+        ]
+      },
+      {
+        "canonical_name": "Pterichis galeata",
+        "authority": "GBIF",
+        "external_ids": [
+          "2850748",
+          "2850751"
+        ]
+      },
+      {
+        "canonical_name": "Pterichis habenarioides",
+        "authority": "GBIF",
+        "external_ids": [
+          "2850738",
+          "8798780"
+        ]
+      },
+      {
+        "canonical_name": "Pterichis multiflora",
+        "authority": "GBIF",
+        "external_ids": [
+          "12220662",
+          "2850730"
+        ]
+      },
+      {
+        "canonical_name": "Stenorrhynchos speciosum",
+        "authority": "GBIF",
+        "external_ids": [
+          "11084665",
+          "2785234"
+        ]
+      },
+      {
+        "canonical_name": "Cyclopogon chloroleucus",
+        "authority": "GBIF",
+        "external_ids": [
+          "2783583",
+          "8114349"
+        ]
+      },
+      {
+        "canonical_name": "Cyclopogon hennisianus",
+        "authority": "GBIF",
+        "external_ids": [
+          "2807672",
+          "7869790"
+        ]
+      },
+      {
+        "canonical_name": "Bulbophyllum cercanthum",
+        "authority": "GBIF",
+        "external_ids": [
+          "11068191",
+          "5951081"
+        ]
+      },
+      {
+        "canonical_name": "Bulbophyllum papuliferum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2844863",
+          "5322426"
+        ]
+      },
+      {
+        "canonical_name": "Oncidium x",
+        "authority": "GBIF",
+        "external_ids": [
+          "5543304",
+          "7418116"
+        ]
+      },
+      {
+        "canonical_name": "Barkeria skinneri",
+        "authority": "GBIF",
+        "external_ids": [
+          "5313994",
+          "7982004"
+        ]
+      },
+      {
+        "canonical_name": "Encyclia perplexa",
+        "authority": "GBIF",
+        "external_ids": [
+          "2827306",
+          "7572494"
+        ]
+      },
+      {
+        "canonical_name": "Cattleya x",
+        "authority": "GBIF",
+        "external_ids": [
+          "2800850",
+          "2800889",
+          "2811982",
+          "3655916",
+          "7515676",
+          "7713593",
+          "7859755",
+          "9636769"
+        ]
+      },
+      {
+        "canonical_name": "Masdevallia cracens",
+        "authority": "GBIF",
+        "external_ids": [
+          "11012838",
+          "9452140"
+        ]
+      },
+      {
+        "canonical_name": "Platycoryne latipetala",
+        "authority": "GBIF",
+        "external_ids": [
+          "2798613",
+          "2798615"
+        ]
+      },
+      {
+        "canonical_name": "Platycoryne protearum",
+        "authority": "GBIF",
+        "external_ids": [
+          "2798630",
+          "2798631"
+        ]
+      },
+      {
+        "canonical_name": "Neofinetia falcata",
+        "authority": "GBIF",
+        "external_ids": [
+          "10848012",
+          "2836604"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,537 @@
+{
+  "build": {
+    "mode": "limited_population",
+    "wrote_to_production": false,
+    "publish_authorized": false,
+    "batch_size": 500,
+    "duration_seconds": 32.5429
+  },
+  "preflight": {
+    "mode": "limited_population",
+    "batch_size": 500,
+    "publish_authorized": false,
+    "domain_order": [
+      "occurrences",
+      "traits",
+      "pollinators",
+      "mycorrhiza",
+      "conservation",
+      "climate",
+      "literature",
+      "media"
+    ],
+    "source_availability": {
+      "occurrences": 26,
+      "traits": 2807,
+      "pollinators": 23,
+      "mycorrhiza": 626,
+      "conservation": 2,
+      "climate": 19263,
+      "literature": 29,
+      "media": 51
+    },
+    "warnings": []
+  },
+  "per_domain": [
+    {
+      "domain": "occurrences",
+      "status": "completed",
+      "rows_processed": 26,
+      "available_rows": 26,
+      "nodes_written": 26,
+      "edges_written": 26,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 1,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 34499,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 34545,
+          "edge_count": 26,
+          "orphan_nodes": 34499,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 34499,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          }
+        },
+        "total_problems": 34499,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    },
+    {
+      "domain": "traits",
+      "status": "completed",
+      "rows_processed": 2807,
+      "available_rows": 2807,
+      "nodes_written": 2807,
+      "edges_written": 2807,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 6,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 32203,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 37352,
+          "edge_count": 2833,
+          "orphan_nodes": 32203,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 32203,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          },
+          "traits": {
+            "nodes": 2807,
+            "edges": 2807
+          }
+        },
+        "total_problems": 32203,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    },
+    {
+      "domain": "pollinators",
+      "status": "completed",
+      "rows_processed": 23,
+      "available_rows": 23,
+      "nodes_written": 23,
+      "edges_written": 23,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 1,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 32199,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 37375,
+          "edge_count": 2856,
+          "orphan_nodes": 32199,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 32199,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          },
+          "traits": {
+            "nodes": 2807,
+            "edges": 2807
+          },
+          "pollinators": {
+            "nodes": 23,
+            "edges": 23
+          }
+        },
+        "total_problems": 32199,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    },
+    {
+      "domain": "mycorrhiza",
+      "status": "skipped",
+      "rows_processed": 0,
+      "available_rows": null,
+      "nodes_written": 0,
+      "edges_written": 0,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 0,
+      "validation": {},
+      "warnings": [
+        "withheld: not in controlled activation allowlist"
+      ],
+      "error": null
+    },
+    {
+      "domain": "conservation",
+      "status": "skipped",
+      "rows_processed": 0,
+      "available_rows": null,
+      "nodes_written": 0,
+      "edges_written": 0,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 0,
+      "validation": {},
+      "warnings": [
+        "withheld: not in controlled activation allowlist"
+      ],
+      "error": null
+    },
+    {
+      "domain": "climate",
+      "status": "skipped",
+      "rows_processed": 0,
+      "available_rows": null,
+      "nodes_written": 0,
+      "edges_written": 0,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 0,
+      "validation": {},
+      "warnings": [
+        "withheld: not in controlled activation allowlist"
+      ],
+      "error": null
+    },
+    {
+      "domain": "literature",
+      "status": "skipped",
+      "rows_processed": 0,
+      "available_rows": null,
+      "nodes_written": 0,
+      "edges_written": 0,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 0,
+      "validation": {},
+      "warnings": [
+        "withheld: not in controlled activation allowlist"
+      ],
+      "error": null
+    },
+    {
+      "domain": "media",
+      "status": "completed",
+      "rows_processed": 51,
+      "available_rows": 51,
+      "nodes_written": 51,
+      "edges_written": 51,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 1,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 32199,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 37426,
+          "edge_count": 2907,
+          "orphan_nodes": 32199,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 32199,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          },
+          "traits": {
+            "nodes": 2807,
+            "edges": 2807
+          },
+          "pollinators": {
+            "nodes": 23,
+            "edges": 23
+          },
+          "media": {
+            "nodes": 51,
+            "edges": 51
+          }
+        },
+        "total_problems": 32199,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    }
+  ],
+  "totals": {
+    "nodes_written": 2907,
+    "edges_written": 2907,
+    "skipped_existing_nodes": 0,
+    "skipped_existing_edges": 0,
+    "rows_processed": 2907,
+    "invalid": 0
+  },
+  "cross_domain_validation": {
+    "identifier_integrity": {
+      "invalid_canonical_keys": 0,
+      "examples": []
+    },
+    "duplicate_relationships": {
+      "duplicate_edges": 0
+    },
+    "orphan_nodes": 32199,
+    "orphan_edges": 0,
+    "vocabulary_compliance": {
+      "invalid_node_types": [],
+      "invalid_edge_types": [],
+      "compliant": true
+    },
+    "provenance_completeness": {
+      "nodes_missing_provenance": 0,
+      "edges_missing_provenance": 0
+    },
+    "quality": {
+      "node_count": 37426,
+      "edge_count": 2907,
+      "orphan_nodes": 32199,
+      "dangling_edges": 0,
+      "duplicate_canonical_nodes": 0,
+      "missing_provenance": 0,
+      "invalid_node_types": [],
+      "invalid_edge_types": [],
+      "total_issues": 32199,
+      "healthy": false
+    },
+    "cross_domain_consistency": {
+      "mismatched_endpoint_edges": 0,
+      "examples": []
+    },
+    "domain_breakdown": {
+      "taxonomy": {
+        "nodes": 34519,
+        "edges": 0
+      },
+      "occurrences": {
+        "nodes": 26,
+        "edges": 26
+      },
+      "traits": {
+        "nodes": 2807,
+        "edges": 2807
+      },
+      "pollinators": {
+        "nodes": 23,
+        "edges": 23
+      },
+      "media": {
+        "nodes": 51,
+        "edges": 51
+      }
+    },
+    "total_problems": 32199,
+    "healthy": false
+  },
+  "estimated_graph_growth": {
+    "estimated_new_nodes": 2907,
+    "estimated_new_edges": 2907,
+    "basis": "projected_from_limited_population"
+  },
+  "activation": {
+    "activated_domains": [
+      "media",
+      "occurrences",
+      "pollinators",
+      "traits"
+    ],
+    "applies": true
+  },
+  "checkpoints": [
+    {
+      "domain": "occurrences",
+      "status": "completed",
+      "rows_processed": 26,
+      "stats": {
+        "nodes_written": 26,
+        "edges_written": 26,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 1
+      },
+      "validation": {
+        "total_problems": 34499
+      },
+      "updated_at": 1784099364.2040823
+    },
+    {
+      "domain": "traits",
+      "status": "completed",
+      "rows_processed": 2807,
+      "stats": {
+        "nodes_written": 2807,
+        "edges_written": 2807,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 6
+      },
+      "validation": {
+        "total_problems": 32203
+      },
+      "updated_at": 1784099372.4205337
+    },
+    {
+      "domain": "pollinators",
+      "status": "completed",
+      "rows_processed": 23,
+      "stats": {
+        "nodes_written": 23,
+        "edges_written": 23,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 1
+      },
+      "validation": {
+        "total_problems": 32199
+      },
+      "updated_at": 1784099373.298825
+    },
+    {
+      "domain": "media",
+      "status": "completed",
+      "rows_processed": 51,
+      "stats": {
+        "nodes_written": 51,
+        "edges_written": 51,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 1
+      },
+      "validation": {
+        "total_problems": 32199
+      },
+      "updated_at": 1784099373.938383
+    }
+  ],
+  "warnings": [
+    "mycorrhiza: withheld: not in controlled activation allowlist",
+    "conservation: withheld: not in controlled activation allowlist",
+    "climate: withheld: not in controlled activation allowlist",
+    "literature: withheld: not in controlled activation allowlist"
+  ],
+  "errors": [],
+  "healthy": false
+}
