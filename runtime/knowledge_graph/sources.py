@@ -67,18 +67,38 @@ class PostgresSourceProvider:
     review/override exactly what is read before any live run.
     """
 
-    def __init__(self, dsn: str, queries: dict[str, str]):
+    def __init__(self, dsn: str, queries: dict[str, str], *, validate: bool = True):
+        from .source_registry import assert_safe_sql
+
         self._dsn = dsn
         self._queries = dict(queries)
+        if validate:
+            for domain, sql in self._queries.items():
+                assert_safe_sql(sql)
+
+    @classmethod
+    def from_registry(cls, dsn: str) -> "PostgresSourceProvider":
+        """Build a provider from the config-driven source-query registry.
+
+        This is the only supported way to run against production: the registry
+        is the single place per-domain read-only SQL lives.
+        """
+        from .source_registry import enabled_queries
+
+        return cls(dsn, enabled_queries())
 
     def _connect(self):
         import psycopg  # lazy import so tests never require a driver/DB
         return psycopg.connect(self._dsn, connect_timeout=5)
 
     def _base_query(self, domain: str) -> str:
+        from .source_registry import assert_safe_sql
+
         if domain not in self._queries:
             raise KeyError(f"no read-only source query registered for domain {domain!r}")
-        return self._queries[domain].rstrip().rstrip(";")
+        sql = self._queries[domain]
+        assert_safe_sql(sql)
+        return sql.rstrip().rstrip(";")
 
     def count(self, domain: str) -> int:
         sql = f"SELECT count(*) FROM ({self._base_query(domain)}) AS _src"

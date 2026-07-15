@@ -92,59 +92,63 @@ def _make_adapter(
 
 IMAGES_ADAPTER = _make_adapter(
     domain="media", node_type="image", edge_type="has_image",
-    source_table="oc_core.media_assets",
-    label_fields=("title", "caption", "filename"),
-    payload_fields=("url", "mime_type", "width", "height", "phenotype_tags"),
+    source_table="oc_api.species_media_gallery_v1",
+    label_fields=("caption", "scientific_name"),
+    payload_fields=("media_url", "thumbnail_url", "media_type", "license",
+                    "rights_holder", "source_name"),
 )
 
 OCCURRENCES_ADAPTER = _make_adapter(
     domain="occurrences", node_type="occurrence", edge_type="occurs_at",
     source_table="oc_atlas.occurrences",
-    label_fields=("locality", "site_name"),
-    payload_fields=("latitude", "longitude", "event_date", "recorded_by", "dataset"),
+    label_fields=("locality", "scientific_name"),
+    payload_fields=("latitude", "longitude", "elevation", "country",
+                    "event_date", "basis_of_record", "source_name"),
 )
 
 TRAITS_ADAPTER = _make_adapter(
     domain="traits", node_type="trait", edge_type="has_trait",
-    source_table="oc_traits.traits",
-    label_fields=("trait_name", "trait_label"),
-    payload_fields=("trait_value", "unit", "method", "trait_key"),
+    source_table="oc_views.trait_resolved_v4",
+    label_fields=("trait_name",),
+    payload_fields=("trait_value", "support_count"),
 )
 
 POLLINATORS_ADAPTER = _make_adapter(
     domain="pollinators", node_type="pollinator", edge_type="associated_with_pollinator",
-    source_table="oc_pollination.interactions",
-    label_fields=("pollinator_name", "interactor_name"),
-    payload_fields=("interaction_type", "source_dataset"),
+    source_table="oc_interactions.orchid_interaction_edges",
+    label_fields=("partner_taxon_name",),
+    payload_fields=("interaction_type", "interaction_group", "evidence_citation"),
 )
 
 MYCORRHIZA_ADAPTER = _make_adapter(
     domain="mycorrhiza", node_type="fungus", edge_type="associated_with_mycorrhiza",
-    source_table="oc_mycorrhiza.associations",
-    label_fields=("fungus_name", "fungal_taxon"),
-    payload_fields=("association_type", "source_dataset"),
+    source_table="oc_mycorrhiza.orchid_fungal_associations",
+    label_fields=("fungal_name",),
+    payload_fields=("association_type", "life_stage", "citation", "doi"),
 )
 
 CONSERVATION_ADAPTER = _make_adapter(
     domain="conservation", node_type="conservation_assessment",
     edge_type="has_conservation_assessment",
     source_table="oc_conservation.conservation_records",
-    label_fields=("status_label", "category"),
-    payload_fields=("status_code", "assessment_year", "authority", "criteria"),
+    label_fields=("iucn_category", "scientific_name"),
+    payload_fields=("cites_appendix", "population_trend", "assessment_year",
+                    "region", "source_name"),
 )
 
 CLIMATE_ADAPTER = _make_adapter(
     domain="climate", node_type="climate", edge_type="experiences_climate",
-    source_table="oc_env.climate_summaries",
-    label_fields=("climate_label", "koppen_class"),
-    payload_fields=("temp_mean_c", "precip_mm", "elevation_m", "source_layer"),
+    source_table="oc_env_intel.species_environment_profile",
+    label_fields=("environmental_readiness_label", "scientific_name"),
+    payload_fields=("climate_proxy_zones", "avg_elevation_m", "min_elevation_m",
+                    "max_elevation_m"),
 )
 
 LITERATURE_ADAPTER = _make_adapter(
     domain="literature", node_type="publication", edge_type="documented_by",
-    source_table="oc_citations.literature_nodes",
-    label_fields=("citation", "title"),
-    payload_fields=("doi", "year", "authors", "journal"),
+    source_table="oc_graph.taxon_literature_edges",
+    label_fields=("title",),
+    payload_fields=("doi", "year", "edge_strength"),
 )
 
 

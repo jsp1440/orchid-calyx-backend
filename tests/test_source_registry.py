@@ -1,0 +1,251 @@
+"""BUILD-062 tests: config-driven source-query registry, SQL safety, taxon
+mapping and connected-adapter output shape.
+
+No test opens a database connection. The registry's SQL text is validated
+structurally (read-only safety) and adapter behaviour is exercised against the
+in-memory provider using rows shaped exactly like the registered projections.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from runtime.knowledge_graph import (
+    BuildOrchestrator,
+    ExecutionMode,
+    InMemoryCheckpointStore,
+    InMemoryGraphRepository,
+    InMemorySourceProvider,
+    Node,
+    PostgresSourceProvider,
+    adapters_by_domain,
+    canonical_key,
+)
+from runtime.knowledge_graph.source_registry import (
+    CONTRACT_REQUIRED,
+    SOURCE_QUERIES,
+    UnsafeSQLError,
+    assert_safe_sql,
+    blocked_domains,
+    enabled_queries,
+    registry_by_domain,
+)
+
+
+DOMAINS = {"occurrences", "traits", "pollinators", "mycorrhiza",
+           "conservation", "climate", "literature", "media"}
+
+
+# ---- registry coverage & contract ----
+
+def test_registry_covers_every_adapter_domain():
+    assert set(registry_by_domain()) == set(adapters_by_domain()) == DOMAINS
+
+
+def test_every_query_declares_the_contract_columns():
+    for q in SOURCE_QUERIES:
+        for col in CONTRACT_REQUIRED:
+            assert col in q.required_columns, f"{q.domain} missing {col}"
+
+
+def test_enabled_queries_emit_contract_aliases_in_sql():
+    for domain, sql in enabled_queries().items():
+        low = sql.lower()
+        assert "as source_pk" in low, f"{domain} lacks source_pk alias"
+        assert "as taxon_pk" in low, f"{domain} lacks taxon_pk alias"
+
+
+def test_every_enabled_query_filters_to_the_taxon_backbone():
+    for domain, sql in enabled_queries().items():
+        assert "oc_graph.kg_nodes" in sql, f"{domain} does not resolve to kg backbone"
+
+
+def test_taxon_mapping_methods_are_known():
+    for q in SOURCE_QUERIES:
+        assert q.taxon_mapping in {"direct", "resolved_view", "name_join"}
+
+
+def test_registry_to_dict_is_serialisable():
+    for q in SOURCE_QUERIES:
+        d = q.to_dict()
+        assert d["domain"] == q.domain
+        assert isinstance(d["expected_tables"], list)
+
+
+# ---- blocked-domain handling ----
+
+def test_blocked_domains_are_excluded_from_enabled_queries(monkeypatch):
+    # No domain is blocked in the shipped registry (all real sources located).
+    assert blocked_domains() == {}
+    # But the mechanism must work: a disabled entry is excluded.
+    from runtime.knowledge_graph import source_registry as reg
+
+    original = reg.SOURCE_QUERIES
+    blocked = reg.SourceQuery(
+        domain="occurrences", query_id="x", sql=None,
+        required_columns=CONTRACT_REQUIRED, enabled=False,
+        blocked_reason="SOURCE MISSING",
+    )
+    monkeypatch.setattr(reg, "SOURCE_QUERIES", (blocked,) + original[1:])
+    assert "occurrences" not in reg.enabled_queries()
+    assert reg.blocked_domains()["occurrences"] == "SOURCE MISSING"
+
+
+# ---- SQL safety ----
+
+@pytest.mark.parametrize("bad", [
+    "insert into t values (1)",
+    "update t set x=1",
+    "delete from t",
+    "drop table t",
+    "truncate t",
+    "alter table t add column c int",
+    "grant select on t to public",
+    "create table t (id int)",
+    "select 1; drop table t",
+    "select 1; select 2",
+    "copy t to '/tmp/x'",
+    "merge into t using s on (1=1)",
+    "",
+    "   ",
+])
+def test_unsafe_sql_is_rejected(bad):
+    with pytest.raises(UnsafeSQLError):
+        assert_safe_sql(bad)
+
+
+@pytest.mark.parametrize("good", [
+    "select 1",
+    "SELECT a, b FROM oc_atlas.occurrences WHERE x IS NOT NULL",
+    "with c as (select 1 as n) select n from c",
+    "select 1 -- trailing comment\n",
+    "select 1;",
+])
+def test_safe_select_is_accepted(good):
+    assert_safe_sql(good)  # must not raise
+
+
+def test_every_registered_query_is_safe():
+    for q in SOURCE_QUERIES:
+        if q.sql:
+            assert_safe_sql(q.sql)
+
+
+def test_provider_rejects_unsafe_sql_on_construction():
+    with pytest.raises(UnsafeSQLError):
+        PostgresSourceProvider("postgresql://ignored", {"x": "delete from t"})
+
+
+def test_provider_from_registry_builds_without_db():
+    # Constructing must not open a connection; it only validates SQL.
+    provider = PostgresSourceProvider.from_registry("postgresql://ignored")
+    assert set(provider._queries) == DOMAINS  # noqa: SLF001 - white-box check
+
+
+# ---- taxon mapping & adapter output shape (in-memory rows) ----
+
+def _backbone():
+    return InMemoryGraphRepository([
+        Node(1, "taxon", canonical_key("taxon", 1001), "Cattleya labiata",
+             "public.taxonomy_species", "1001", "curated", 1.0, "high"),
+        Node(2, "taxon", canonical_key("taxon", 2001), "Dracula vampira",
+             "public.taxonomy_species", "2001", "curated", 1.0, "high"),
+    ])
+
+
+def test_direct_mapped_occurrence_row_projects_node_and_edge():
+    adapter = adapters_by_domain()["occurrences"]
+    nodes, edges = adapter.produce([
+        {"source_pk": 7, "taxon_pk": 1001, "locality": "Bahia",
+         "latitude": -12.0, "longitude": -38.0, "source_name": "GBIF"},
+    ])
+    assert len(nodes) == 1 and len(edges) == 1
+    assert nodes[0].node_type == "occurrence"
+    assert nodes[0].source_table == "oc_atlas.occurrences"
+    assert nodes[0].payload["latitude"] == -12.0
+    assert edges[0].edge_type == "occurs_at"
+    assert edges[0].from_key == canonical_key("taxon", 1001)
+    assert edges[0].to_key == canonical_key("occurrence", 7)
+    assert edges[0].rule_name == "occurrences_build"
+
+
+def test_name_join_pollinator_row_carries_provenance_and_quality():
+    adapter = adapters_by_domain()["pollinators"]
+    nodes, edges = adapter.produce([
+        {"source_pk": 3, "taxon_pk": 1001, "partner_taxon_name": "Euglossa",
+         "interaction_type": "pollinates", "evidence_class": "globi",
+         "confidence_score": 0.8, "evidence_citation": "Doe 2020"},
+    ])
+    assert nodes[0].display_label == "Euglossa"
+    assert nodes[0].evidence_class == "globi"
+    assert nodes[0].confidence_score == 0.8
+    assert edges[0].source_table == "oc_interactions.orchid_interaction_edges"
+
+
+def test_rows_missing_taxon_pk_are_skipped():
+    adapter = adapters_by_domain()["traits"]
+    nodes, edges = adapter.produce([
+        {"source_pk": "a", "trait_name": "flower_color"},  # no taxon_pk
+        {"source_pk": "b", "taxon_pk": 2001, "trait_name": "habit"},
+    ])
+    assert len(nodes) == 1 and len(edges) == 1
+    assert edges[0].to_key == canonical_key("trait", "b")
+
+
+def test_adapter_never_emits_a_taxon_node():
+    for adapter in adapters_by_domain().values():
+        nodes, _ = adapter.produce([{"source_pk": 1, "taxon_pk": 1001}])
+        assert all(n.node_type != "taxon" for n in nodes)
+
+
+# ---- zero-write guarantees with registry-shaped rows ----
+
+def _shaped_source():
+    return InMemorySourceProvider({
+        "occurrences": [{"source_pk": 7, "taxon_pk": 1001, "locality": "Bahia"}],
+        "traits": [{"source_pk": "t1", "taxon_pk": 1001, "trait_name": "habit",
+                    "trait_value": "epiphyte", "confidence_score": 0.9}],
+        "pollinators": [{"source_pk": 3, "taxon_pk": 2001,
+                         "partner_taxon_name": "Euglossa"}],
+        "mycorrhiza": [{"source_pk": 40, "taxon_pk": 2001, "fungal_name": "Tulasnella"}],
+        "conservation": [{"source_pk": 9, "taxon_pk": 1001, "iucn_category": "EN"}],
+        "climate": [{"source_pk": 1001, "taxon_pk": 1001,
+                     "environmental_readiness_label": "ready"}],
+        "literature": [{"source_pk": 5, "taxon_pk": 2001, "title": "A paper"}],
+        "media": [{"source_pk": "m1", "taxon_pk": 1001, "caption": "flower"}],
+    })
+
+
+def test_audit_reads_availability_without_writing():
+    repo = _backbone()
+    report = BuildOrchestrator(repo, _shaped_source()).run(ExecutionMode.AUDIT)
+    assert report["build"]["wrote_to_production"] is False
+    assert report["preflight"]["source_availability"]["occurrences"] == 1
+    assert repo.all_edges() == []  # nothing written to the source repo
+
+
+def test_dry_run_projects_edges_into_staging_only():
+    repo = _backbone()
+    report = BuildOrchestrator(
+        repo, _shaped_source(), checkpoint_store=InMemoryCheckpointStore()
+    ).run(ExecutionMode.DRY_RUN)
+    assert report["build"]["wrote_to_production"] is False
+    assert report["totals"]["edges_written"] == 8
+    assert repo.all_edges() == []  # production repo untouched
+
+
+def test_publish_authorization_remains_disabled_by_default():
+    repo = _backbone()
+    report = BuildOrchestrator(repo, _shaped_source()).run(ExecutionMode.PUBLISH)
+    assert report["build"]["wrote_to_production"] is False
+    assert report["build"]["publish_authorized"] is False
+    assert repo.all_edges() == []
+
+
+def test_vocabulary_is_compliant_for_every_registry_domain():
+    repo = _backbone()
+    report = BuildOrchestrator(
+        repo, _shaped_source(), checkpoint_store=InMemoryCheckpointStore()
+    ).run(ExecutionMode.DRY_RUN)
+    vocab = report["cross_domain_validation"]["vocabulary_compliance"]
+    assert vocab["compliant"] is True

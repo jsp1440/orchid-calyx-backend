@@ -32,6 +32,15 @@ from .repository import (
     InMemoryGraphRepository,
     PostgresGraphRepository,
 )
+from .source_registry import (
+    SOURCE_QUERIES,
+    SourceQuery,
+    UnsafeSQLError,
+    assert_safe_sql,
+    blocked_domains,
+    enabled_queries,
+    registry_by_domain,
+)
 from .sources import (
     InMemorySourceProvider,
     PostgresSourceProvider,
@@ -48,6 +57,8 @@ __all__ = [
     "ALL_DOMAINS", "NODE_TYPE_DOMAIN", "EDGE_TYPE_DOMAIN",
     "DOMAIN_ADAPTERS", "adapters_by_domain",
     "SourceProvider", "InMemorySourceProvider", "PostgresSourceProvider",
+    "SourceQuery", "SOURCE_QUERIES", "registry_by_domain", "enabled_queries",
+    "blocked_domains", "assert_safe_sql", "UnsafeSQLError",
     "Checkpoint", "InMemoryCheckpointStore", "JsonFileCheckpointStore",
     "BuildOrchestrator", "ExecutionMode", "DomainOutcome", "validate_graph",
 ]
