@@ -16,6 +16,32 @@
    flags recorded.
 
 ## Transaction, checkpoint & resume model
+
+### BUILD-068A single-writer and input-integrity guards
+
+Every `publish` and `idempotency` invocation first acquires a schema-scoped,
+session-level PostgreSQL advisory lock. A second publisher fails immediately
+with `knowledge-graph publication already in progress`; the lock survives
+per-batch and per-domain commits and is released in `finally`/connection close
+on both success and failure.
+
+BUILD-068A also validates `source_pk` and `taxon_pk` before adapter execution.
+Rejected rows are counted by domain and identifier, retained in checkpoints and
+result metrics, and passed into final validation. Any rejected row increments
+`total_problems`, so `healthy` cannot be true when an authorized source row was
+discarded for a missing required identifier.
+
+BUILD-068B restores completed checkpoint metrics into resumed domain outcomes,
+including source-row totals, missing-identifier row/field counts, bounded
+examples, publication statistics, and prior validation data. Completed domains
+remain skipped, but their rejection metrics still participate in aggregate
+reporting and final health.
+
+BUILD-068B also makes the repository lock context transaction-error safe. An
+exception rolls back the current uncommitted publication transaction before
+unlocking, so a PostgreSQL-aborted transaction cannot prevent
+`pg_advisory_unlock`. Cleanup never commits work and never replaces the original
+publication exception; connection close remains the final release fallback.
 A single all-or-nothing transaction across all domains is **not achievable** in
 this environment: the population is ~5,900 row-by-row inserts over a
 high-latency write path, which exceeds one interactive execution window, and

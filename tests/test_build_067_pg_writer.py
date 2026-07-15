@@ -16,6 +16,7 @@ import pytest
 from runtime.knowledge_graph import (
     Edge,
     Node,
+    PublicationLockError,
     WritablePostgresGraphRepository,
     validate_graph,
 )
@@ -96,6 +97,92 @@ def _count(schema: str, table: str) -> int:
     with psycopg.connect(DSN, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(f"SELECT count(*) FROM {schema}.{table} WHERE is_active")
         return cur.fetchone()[0]
+
+
+@_needs_db
+def test_second_concurrent_publisher_fails_fast_and_lock_releases(schema):
+    first = WritablePostgresGraphRepository(DSN, schema=schema)
+    second = WritablePostgresGraphRepository(DSN, schema=schema)
+    try:
+        first.acquire_publication_lock()
+        first.commit()  # session lock must survive transaction boundaries
+        with pytest.raises(PublicationLockError, match="publication already in progress"):
+            second.acquire_publication_lock()
+
+        first.release_publication_lock()
+        second.acquire_publication_lock()
+        second.release_publication_lock()
+    finally:
+        first.close()
+        second.close()
+
+
+@_needs_db
+def test_publication_lock_releases_after_exception(schema):
+    failed = WritablePostgresGraphRepository(DSN, schema=schema)
+    contender = WritablePostgresGraphRepository(DSN, schema=schema)
+    try:
+        with pytest.raises(RuntimeError, match="synthetic publication failure"):
+            with failed.publication_lock():
+                raise RuntimeError("synthetic publication failure")
+        contender.acquire_publication_lock()
+        contender.release_publication_lock()
+    finally:
+        failed.close()
+        contender.close()
+
+
+@_needs_db
+def test_publication_lock_releases_after_successful_context_exit(schema):
+    first = WritablePostgresGraphRepository(DSN, schema=schema)
+    contender = WritablePostgresGraphRepository(DSN, schema=schema)
+    try:
+        with first.publication_lock():
+            first.commit()
+            with pytest.raises(PublicationLockError):
+                contender.acquire_publication_lock()
+        contender.acquire_publication_lock()
+        contender.release_publication_lock()
+    finally:
+        first.close()
+        contender.close()
+
+
+@_needs_db
+def test_publication_lock_releases_after_postgres_transaction_error(schema):
+    import psycopg
+    from psycopg.pq import TransactionStatus
+
+    first = WritablePostgresGraphRepository(DSN, schema=schema)
+    contender = WritablePostgresGraphRepository(DSN, schema=schema)
+    try:
+        with pytest.raises(psycopg.errors.DivisionByZero):
+            with first.publication_lock():
+                try:
+                    with first._wconn().cursor() as cur:
+                        cur.execute("SELECT 1/0")
+                except psycopg.errors.DivisionByZero:
+                    assert first._wconn().info.transaction_status == TransactionStatus.INERROR
+                    raise
+        contender.acquire_publication_lock()
+        contender.release_publication_lock()
+    finally:
+        first.close()
+        contender.close()
+
+
+@_needs_db
+def test_connection_close_is_final_publication_lock_release(schema):
+    first = WritablePostgresGraphRepository(DSN, schema=schema)
+    contender = WritablePostgresGraphRepository(DSN, schema=schema)
+    try:
+        first.acquire_publication_lock()
+        first.close()
+        contender.acquire_publication_lock()
+        contender.release_publication_lock()
+    finally:
+        first.close()
+        contender.close()
 
 
 @_needs_db

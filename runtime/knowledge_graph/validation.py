@@ -90,8 +90,16 @@ def _domain_breakdown(nodes: list[Node], edges: list[Edge]) -> dict[str, dict[st
     return {k: v for k, v in out.items() if k != "unknown"}
 
 
-def validate_graph(repo: GraphRepository) -> dict[str, Any]:
-    """Run every automatic validation check against a repository."""
+def validate_graph(
+    repo: GraphRepository,
+    publication_metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run every automatic validation check against a repository and its input.
+
+    ``publication_metrics`` carries source-row rejections that cannot be
+    inferred from the graph after a row has been rejected.  Any missing
+    required identifier is a validation problem and prevents a healthy result.
+    """
     nodes = repo.all_nodes()
     edges = repo.all_edges()
 
@@ -101,6 +109,18 @@ def validate_graph(repo: GraphRepository) -> dict[str, Any]:
     vocabulary = _vocabulary_compliance(nodes, edges)
     provenance = _provenance_completeness(nodes, edges)
     cross_domain = _cross_domain_consistency(nodes, edges)
+    publication_input = {
+        "source_rows": int((publication_metrics or {}).get("source_rows", 0)),
+        "missing_identifier_rows": int(
+            (publication_metrics or {}).get("missing_identifier_rows", 0)
+        ),
+        "missing_identifier_counts": dict(
+            (publication_metrics or {}).get("missing_identifier_counts", {})
+        ),
+        "missing_identifier_examples": list(
+            (publication_metrics or {}).get("missing_identifier_examples", [])
+        )[:10],
+    }
 
     problems = (
         quality["orphan_nodes"]
@@ -112,6 +132,7 @@ def validate_graph(repo: GraphRepository) -> dict[str, Any]:
         + provenance["nodes_missing_provenance"]
         + provenance["edges_missing_provenance"]
         + cross_domain["mismatched_endpoint_edges"]
+        + publication_input["missing_identifier_rows"]
     )
 
     return {
@@ -123,6 +144,7 @@ def validate_graph(repo: GraphRepository) -> dict[str, Any]:
         "provenance_completeness": provenance,
         "quality": quality,
         "cross_domain_consistency": cross_domain,
+        "publication_input_integrity": publication_input,
         "domain_breakdown": _domain_breakdown(nodes, edges),
         "total_problems": problems,
         "healthy": problems == 0,

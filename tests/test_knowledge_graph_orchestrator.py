@@ -95,14 +95,155 @@ def test_adapter_produces_domain_node_and_edge_but_never_taxon():
     assert edges[0].to_key == "trait:20"
 
 
-def test_adapter_skips_rows_missing_keys():
+def test_publisher_counts_rows_missing_required_identifiers_and_validation_fails():
     adapter = adapters_by_domain()["occurrences"]
-    nodes, edges = adapter.produce([
+    repo = taxonomy_repo()
+    result = publish_domain(repo, adapter, [
         {"source_pk": 1},                       # no taxon_pk
         {"taxon_pk": 1001},                     # no source_pk
         {"source_pk": 2, "taxon_pk": 1001},     # valid
     ])
-    assert len(nodes) == 1 and len(edges) == 1
+    assert result.source_rows == 3
+    assert result.missing_identifier_rows == 2
+    assert result.missing_identifier_counts == {"source_pk": 1, "taxon_pk": 1}
+    assert len(result.invalid) == 2
+    assert result.nodes_written == 1 and result.edges_written == 1
+
+    validation = validate_graph(repo, publication_metrics={
+        "source_rows": result.source_rows,
+        "missing_identifier_rows": result.missing_identifier_rows,
+        "missing_identifier_counts": result.missing_identifier_counts,
+        "missing_identifier_examples": result.missing_identifier_examples,
+    })
+    assert validation["healthy"] is False
+    assert validation["publication_input_integrity"]["missing_identifier_rows"] == 2
+
+
+def test_orchestrator_reports_missing_identifiers_in_metrics_and_health():
+    adapter = adapters_by_domain()["traits"]
+    source = InMemorySourceProvider({
+        "traits": [
+            {"source_pk": 20, "taxon_pk": 1001, "trait_name": "leaf"},
+            {"source_pk": 21, "taxon_pk": None, "trait_name": "flower"},
+        ]
+    })
+    report = BuildOrchestrator(
+        taxonomy_repo(), source, adapters=(adapter,), authorized_to_publish=True,
+    ).run(ExecutionMode.PUBLISH)
+
+    assert report["totals"]["missing_identifier_rows"] == 1
+    assert report["totals"]["missing_identifier_counts"] == {"taxon_pk": 1}
+    assert report["per_domain"][0]["missing_identifier_rows"] == 1
+    assert report["cross_domain_validation"]["healthy"] is False
+    assert report["healthy"] is False
+
+
+def test_resume_restores_checkpointed_rejection_and_unhealthy_status():
+    store = InMemoryCheckpointStore()
+    store.save(Checkpoint(
+        domain="traits", status=STATUS_COMPLETED, rows_processed=1,
+        stats={
+            "source_rows": 1,
+            "invalid": 1,
+            "missing_identifier_rows": 1,
+            "missing_identifier_counts": {"taxon_pk": 1},
+            "missing_identifier_examples": [
+                {"domain": "traits", "row_index": 0, "missing": ["taxon_pk"]}
+            ],
+        },
+    ))
+    report = BuildOrchestrator(
+        InMemoryGraphRepository(), InMemorySourceProvider(),
+        checkpoint_store=store, adapters=(adapters_by_domain()["traits"],),
+        authorized_to_publish=True,
+    ).run(ExecutionMode.RESUME)
+
+    assert report["per_domain"][0]["status"] == STATUS_SKIPPED
+    assert report["per_domain"][0]["source_rows"] == 1
+    assert report["totals"]["missing_identifier_rows"] == 1
+    assert report["cross_domain_validation"]["healthy"] is False
+    assert report["healthy"] is False
+
+
+def test_resume_restores_multiple_missing_identifier_counts_once_per_row():
+    store = InMemoryCheckpointStore()
+    examples = [
+        {"domain": "traits", "row_index": 0, "missing": ["source_pk"]},
+        {"domain": "traits", "row_index": 1, "missing": ["taxon_pk"]},
+        {"domain": "traits", "row_index": 2, "missing": ["source_pk", "taxon_pk"]},
+    ]
+    store.save(Checkpoint(
+        domain="traits", status=STATUS_COMPLETED, rows_processed=3,
+        stats={
+            "source_rows": 3,
+            "invalid": 3,
+            "missing_identifier_rows": 3,
+            "missing_identifier_counts": {"source_pk": 2, "taxon_pk": 2},
+            "missing_identifier_examples": examples,
+        },
+    ))
+    report = BuildOrchestrator(
+        InMemoryGraphRepository(), InMemorySourceProvider(),
+        checkpoint_store=store, adapters=(adapters_by_domain()["traits"],),
+        authorized_to_publish=True,
+    ).run(ExecutionMode.RESUME)
+
+    assert report["totals"]["source_rows"] == 3
+    assert report["totals"]["missing_identifier_rows"] == 3
+    assert report["totals"]["missing_identifier_counts"] == {
+        "source_pk": 2, "taxon_pk": 2,
+    }
+    assert report["per_domain"][0]["missing_identifier_examples"] == examples
+
+
+def test_resume_clean_checkpoint_remains_healthy():
+    store = InMemoryCheckpointStore()
+    store.save(Checkpoint(
+        domain="traits", status=STATUS_COMPLETED, rows_processed=2,
+        stats={"source_rows": 2, "missing_identifier_rows": 0},
+    ))
+    report = BuildOrchestrator(
+        InMemoryGraphRepository(), InMemorySourceProvider(),
+        checkpoint_store=store, adapters=(adapters_by_domain()["traits"],),
+        authorized_to_publish=True,
+    ).run(ExecutionMode.RESUME)
+
+    assert report["totals"]["source_rows"] == 2
+    assert report["totals"]["missing_identifier_rows"] == 0
+    assert report["cross_domain_validation"]["healthy"] is True
+    assert report["healthy"] is True
+
+
+def test_resume_mixes_checkpointed_and_current_domain_metrics():
+    store = InMemoryCheckpointStore()
+    store.save(Checkpoint(
+        domain="traits", status=STATUS_COMPLETED, rows_processed=3,
+        stats={
+            "source_rows": 3,
+            "invalid": 3,
+            "missing_identifier_rows": 3,
+            "missing_identifier_counts": {"source_pk": 2, "taxon_pk": 2},
+        },
+    ))
+    source = InMemorySourceProvider({
+        "occurrences": [
+            {"source_pk": 10, "taxon_pk": 1001, "locality": "Bahia"},
+        ],
+    })
+    repo = InMemoryGraphRepository([_taxon(1, "Cattleya labiata", 1001)])
+    report = BuildOrchestrator(
+        repo, source, checkpoint_store=store,
+        adapters=(adapters_by_domain()["traits"], adapters_by_domain()["occurrences"]),
+        authorized_to_publish=True,
+    ).run(ExecutionMode.RESUME)
+
+    assert [d["status"] for d in report["per_domain"]] == [STATUS_SKIPPED, STATUS_COMPLETED]
+    assert report["totals"]["source_rows"] == 4
+    assert report["totals"]["missing_identifier_rows"] == 3
+    assert report["totals"]["nodes_written"] == 1
+    assert report["totals"]["edges_written"] == 1
+    assert report["cross_domain_validation"]["healthy"] is False
+    assert report["healthy"] is False
 
 
 def test_adapter_dedupes_repeated_domain_node():

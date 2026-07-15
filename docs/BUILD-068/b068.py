@@ -36,6 +36,21 @@ def counts():
         cur.execute(f"SELECT count(*) FROM {SCHEMA}.kg_edges WHERE is_active"); e=cur.fetchone()[0]
     return n,e
 
+def input_metrics(checkpoints):
+    metrics={"source_rows":0,"missing_identifier_rows":0,
+             "missing_identifier_counts":{},"missing_identifier_examples":[]}
+    for checkpoint in checkpoints:
+        metrics["source_rows"]+=checkpoint.rows_processed
+        stats=checkpoint.stats or {}
+        metrics["missing_identifier_rows"]+=stats.get("missing_identifier_rows",0)
+        for key,count in stats.get("missing_identifier_counts",{}).items():
+            metrics["missing_identifier_counts"][key]=metrics["missing_identifier_counts"].get(key,0)+count
+        remaining=10-len(metrics["missing_identifier_examples"])
+        if remaining>0:
+            metrics["missing_identifier_examples"].extend(
+                stats.get("missing_identifier_examples",[])[:remaining])
+    return metrics
+
 def run_domains(repo, src, ckpt, completed, deadline, bsize=500):
     """Process each not-yet-completed domain fully, then COMMIT + checkpoint.
     On failure: rollback the current (uncommitted) domain and stop.
@@ -48,6 +63,8 @@ def run_domains(repo, src, ckpt, completed, deadline, bsize=500):
             log(f"  budget reached before '{d}' -> stopping; RESUME REQUIRED"); break
         o={"domain":d,"status":"completed","nodes_written":0,"edges_written":0,
            "skipped_existing_nodes":0,"skipped_existing_edges":0,"invalid":0,
+           "missing_identifier_rows":0,"missing_identifier_counts":{},
+           "missing_identifier_examples":[],
            "rows_processed":0,"available_rows":0,"batches":0,"committed":False,"error":None}
         try:
             o["available_rows"]=src.count(d); off=0
@@ -58,7 +75,13 @@ def run_domains(repo, src, ckpt, completed, deadline, bsize=500):
                 o["nodes_written"]+=r.nodes_written; o["edges_written"]+=r.edges_written
                 o["skipped_existing_nodes"]+=r.skipped_existing_nodes
                 o["skipped_existing_edges"]+=r.skipped_existing_edges
-                o["invalid"]+=len(r.invalid); o["rows_processed"]+=len(rows); o["batches"]+=1
+                o["invalid"]+=len(r.invalid)
+                o["missing_identifier_rows"]+=r.missing_identifier_rows
+                for key,count in r.missing_identifier_counts.items():
+                    o["missing_identifier_counts"][key]=o["missing_identifier_counts"].get(key,0)+count
+                remaining=10-len(o["missing_identifier_examples"])
+                if remaining>0: o["missing_identifier_examples"].extend(r.missing_identifier_examples[:remaining])
+                o["rows_processed"]+=len(rows); o["batches"]+=1
                 off+=len(rows)
                 if len(rows)<bsize: break
             repo.commit(); o["committed"]=True     # complete-domain commit
@@ -66,14 +89,19 @@ def run_domains(repo, src, ckpt, completed, deadline, bsize=500):
             o["status"]="failed"; o["error"]=str(ex); o["trace"]=traceback.format_exc()
             repo.rollback()
         ckpt.save(Checkpoint(domain=d,status=o["status"],rows_processed=o["rows_processed"],
-            stats={k:o[k] for k in ("nodes_written","edges_written","skipped_existing_nodes","skipped_existing_edges","invalid","batches","committed")},
+            stats={**{k:o[k] for k in ("nodes_written","edges_written","skipped_existing_nodes","skipped_existing_edges","invalid","missing_identifier_rows","missing_identifier_counts","missing_identifier_examples","batches","committed")},
+                   "source_rows":o["rows_processed"]},
             validation={}))
         per.append(o)
-        log(f"  {d}: rows={o['rows_processed']} +nodes={o['nodes_written']} +edges={o['edges_written']} skipEdge={o['skipped_existing_edges']} invalid={o['invalid']} committed={o['committed']} status={o['status']}")
+        log(f"  {d}: rows={o['rows_processed']} +nodes={o['nodes_written']} +edges={o['edges_written']} skipEdge={o['skipped_existing_edges']} invalid={o['invalid']} missingIds={o['missing_identifier_rows']} committed={o['committed']} status={o['status']}")
         if o["status"]=="failed": break
     return per
 
+lock_repo=None
 try:
+  if PHASE in ("publish","idempotency"):
+    lock_repo=WritablePostgresGraphRepository(DSN,schema=SCHEMA)
+    lock_repo.acquire_publication_lock()
   if PHASE=="publish":
     R=load(); R.setdefault("started_at",datetime.now(timezone.utc).isoformat())
     src=PostgresSourceProvider.from_registry(DSN)
@@ -133,7 +161,13 @@ try:
   elif PHASE=="validate":
     R=load()
     repo=PostgresGraphRepository(DSN,schema=SCHEMA)  # read-only, committed graph
-    v=validate_graph(repo)
+    checkpoints=(R.get("phases",{}).get("publish",{}).get("checkpoints",[]))
+    # Rehydrate the minimal checkpoint interface expected by input_metrics.
+    checkpoints=[Checkpoint(domain=c["domain"],status=c["status"],
+      rows_processed=c.get("rows_processed",0),stats=c.get("stats",{}),
+      validation=c.get("validation",{})) for c in checkpoints]
+    publication_metrics=input_metrics(checkpoints)
+    v=validate_graph(repo,publication_metrics=publication_metrics)
     after_n,after_e=counts()
     R["phases"]["final_validation"]={
       "after_nodes":after_n,"after_edges":after_e,
@@ -145,6 +179,7 @@ try:
       "provenance_completeness":v["provenance_completeness"],
       "vocabulary_compliant":v["vocabulary_compliance"]["compliant"],
       "cross_domain_consistency":v["cross_domain_consistency"],
+      "publication_input_integrity":v["publication_input_integrity"],
       "domain_breakdown":v["domain_breakdown"]}
     save(R)
     log(f"validate healthy={v['healthy']} problems={v['total_problems']} orphans(n/e)={v['orphan_nodes']}/{v['orphan_edges']} dup={v['duplicate_relationships']}")
@@ -187,9 +222,13 @@ try:
       "duration_sec":round(dur,1),"no_inflation":(ia_n==ib_n and ia_e==ib_e),
       "per_domain_nodes_written":{o["domain"]:o.get("nodes_written",0) for o in per},
       "per_domain_edges_written":{o["domain"]:o.get("edges_written",0) for o in per},
-      "per_domain_edges_skipped_existing":{o["domain"]:o.get("skipped_existing_edges",0) for o in per}}
+      "per_domain_edges_skipped_existing":{o["domain"]:o.get("skipped_existing_edges",0) for o in per},
+      "per_domain_missing_identifier_rows":{o["domain"]:o.get("missing_identifier_rows",0) for o in per}}
     save(R)
     log(f"idempotency delta n={ia_n-ib_n} e={ia_e-ib_e} no_inflation={ia_n==ib_n and ia_e==ib_e}")
 except Exception as e:
     R=load(); R.setdefault("errors",[]).append({"phase":PHASE,"error":str(e),"trace":traceback.format_exc()}); save(R)
     log("EXCEPTION "+str(e)); raise
+finally:
+    if lock_repo is not None:
+        lock_repo.close()

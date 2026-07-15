@@ -60,6 +60,7 @@ class DomainAdapter:
     domain: str
     source_table: str
     produce: Callable[[Iterable[dict[str, Any]]], tuple[list[NodeSpec], list[EdgeSpec]]]
+    required_identifiers: tuple[str, ...] = ()
 
 
 @dataclass
@@ -69,6 +70,10 @@ class PublishResult:
     edges_written: int = 0
     skipped_existing_nodes: int = 0
     skipped_existing_edges: int = 0
+    source_rows: int = 0
+    missing_identifier_rows: int = 0
+    missing_identifier_counts: dict[str, int] = field(default_factory=dict)
+    missing_identifier_examples: list[dict[str, Any]] = field(default_factory=list)
     invalid: list[str] = field(default_factory=list)
 
 
@@ -147,5 +152,39 @@ def publish_domain(
     rows: Iterable[dict[str, Any]],
 ) -> PublishResult:
     """Publish one domain's rows into the graph, idempotently."""
-    nodes, edges = adapter.produce(rows)
-    return _Writer(repo).publish(nodes, edges, adapter.domain)
+    source_rows = list(rows)
+    valid_rows: list[dict[str, Any]] = []
+    missing_counts = {key: 0 for key in adapter.required_identifiers}
+    missing_examples: list[dict[str, Any]] = []
+    invalid: list[str] = []
+
+    for index, row in enumerate(source_rows):
+        missing = [
+            key for key in adapter.required_identifiers
+            if row.get(key) is None or row.get(key) == ""
+        ]
+        if not missing:
+            valid_rows.append(row)
+            continue
+        for key in missing:
+            missing_counts[key] += 1
+        invalid.append(
+            f"missing_required_identifier:row={index}:fields={','.join(missing)}"
+        )
+        if len(missing_examples) < 10:
+            missing_examples.append({
+                "domain": adapter.domain,
+                "row_index": index,
+                "missing": missing,
+            })
+
+    nodes, edges = adapter.produce(valid_rows)
+    result = _Writer(repo).publish(nodes, edges, adapter.domain)
+    result.source_rows = len(source_rows)
+    result.missing_identifier_rows = len(source_rows) - len(valid_rows)
+    result.missing_identifier_counts = {
+        key: count for key, count in missing_counts.items() if count
+    }
+    result.missing_identifier_examples = missing_examples
+    result.invalid = invalid + result.invalid
+    return result

@@ -48,6 +48,7 @@ def publish_to_production(
     )
     mode = ExecutionMode.RESUME if resume else ExecutionMode.PUBLISH
     try:
+        repo.acquire_publication_lock()
         report = orch.run(mode)
         any_failed = any(
             d.get("status") == STATUS_FAILED for d in report.get("per_domain", [])

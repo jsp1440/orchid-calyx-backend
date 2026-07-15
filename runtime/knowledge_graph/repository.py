@@ -15,11 +15,25 @@ read methods.
 from __future__ import annotations
 
 import json
+import hashlib
+from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Iterable, Protocol
 
 from .models import Edge, Node
+
+
+class PublicationLockError(RuntimeError):
+    """Raised when another knowledge-graph publisher already owns the run lock."""
+
+
+def _publication_lock_key(schema: str) -> int:
+    """Return a stable signed bigint key for PostgreSQL advisory locking."""
+    digest = hashlib.sha256(
+        f"orchid-continuum:knowledge-graph-publication:{schema}".encode("utf-8")
+    ).digest()
+    return int.from_bytes(digest[:8], byteorder="big", signed=True)
 
 
 def _json_default(o: Any):
@@ -335,8 +349,10 @@ class WritablePostgresGraphRepository(PostgresGraphRepository):
       touched on update, preserving provenance timestamps; identity is never
       redesigned.
     * **Edges** — ``kg_edges`` has no unique constraint (and we must not add
-      one), so idempotency uses ``INSERT ... WHERE NOT EXISTS`` on the existing
-      logical identity ``(edge_type, from_node_id, to_node_id, source_table)``.
+      one), so idempotency uses an in-memory set of the existing logical
+      identities ``(edge_type, from_node_id, to_node_id, source_table)``.  A
+      schema-scoped PostgreSQL advisory lock makes that cache safe by enforcing
+      exactly one publication run at a time.
 
     Transactions:  a single persistent connection with autocommit disabled.  By
     default the *entire run* commits once (via :meth:`commit`/context-manager
@@ -362,6 +378,8 @@ class WritablePostgresGraphRepository(PostgresGraphRepository):
         self._ops_since_commit = 0
         self._key_cache: dict = {}  # canonical_key -> Node|None (write-through)
         self._cache_complete = False  # True once all active node keys preloaded
+        self._publication_lock_held = False
+        self._publication_lock_id = _publication_lock_key(schema)
         self._node_insert_sql = (
             f"INSERT INTO {self._schema}.kg_nodes "
             "(node_type, canonical_key, display_label, source_table, source_pk, "
@@ -424,9 +442,77 @@ class WritablePostgresGraphRepository(PostgresGraphRepository):
         self._key_cache.clear()
         self._cache_complete = False
 
+    def acquire_publication_lock(self) -> None:
+        """Acquire the database-backed, schema-scoped publisher lock or fail fast.
+
+        This is a session-level advisory lock so incremental transaction commits
+        do not release it.  The same connection owns graph writes and the lock.
+        """
+        if self._publication_lock_held:
+            return
+        conn = self._wconn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (self._publication_lock_id,))
+            acquired = bool(cur.fetchone()[0])
+        if not acquired:
+            raise PublicationLockError(
+                "knowledge-graph publication already in progress; "
+                f"could not acquire the single-writer lock for schema {self._schema!r}"
+            )
+        self._publication_lock_held = True
+
+    def release_publication_lock(self) -> None:
+        """Release this session's publisher lock, if held."""
+        if not self._publication_lock_held:
+            return
+        if self._conn is not None and not getattr(self._conn, "closed", False):
+            with self._conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (self._publication_lock_id,))
+                released = bool(cur.fetchone()[0])
+            if not released:
+                raise RuntimeError("database did not release the knowledge-graph publication lock")
+        self._publication_lock_held = False
+
+    @contextmanager
+    def publication_lock(self):
+        """Hold the single-writer lock for one complete publication attempt."""
+        self.acquire_publication_lock()
+        try:
+            yield self
+        except BaseException:
+            # A PostgreSQL error leaves the transaction aborted, in which state
+            # pg_advisory_unlock cannot execute.  This context owns the
+            # publication attempt, so roll back (never commit) before unlock.
+            # Cleanup failures must not replace the original publication error.
+            try:
+                self.rollback()
+                self.release_publication_lock()
+            except BaseException:
+                self.close()
+            raise
+        else:
+            self.release_publication_lock()
+
     def close(self) -> None:
         if self._conn is not None and not getattr(self._conn, "closed", False):
-            self._conn.close()
+            try:
+                try:
+                    self.release_publication_lock()
+                except BaseException:
+                    # An aborted transaction cannot run the unlock query.
+                    # Rollback is safe during close and never commits work.
+                    try:
+                        self._conn.rollback()
+                        self.release_publication_lock()
+                    except BaseException:
+                        # Session close below is PostgreSQL's final lock-release
+                        # guarantee.  Do not leak a cleanup exception to callers.
+                        pass
+            finally:
+                # PostgreSQL also releases session advisory locks on close,
+                # including when an aborted transaction prevents explicit unlock.
+                self._conn.close()
+                self._publication_lock_held = False
         self._conn = None
 
     def __enter__(self) -> "WritablePostgresGraphRepository":

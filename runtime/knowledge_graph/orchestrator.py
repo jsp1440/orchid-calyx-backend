@@ -77,6 +77,9 @@ class DomainOutcome:
     skipped_existing_nodes: int = 0
     skipped_existing_edges: int = 0
     invalid: int = 0
+    missing_identifier_rows: int = 0
+    missing_identifier_counts: dict[str, int] = field(default_factory=dict)
+    missing_identifier_examples: list[dict[str, Any]] = field(default_factory=list)
     batches: int = 0
     available_rows: int | None = None
     validation: dict[str, Any] = field(default_factory=dict)
@@ -88,12 +91,16 @@ class DomainOutcome:
             "domain": self.domain,
             "status": self.status,
             "rows_processed": self.rows_processed,
+            "source_rows": self.rows_processed,
             "available_rows": self.available_rows,
             "nodes_written": self.nodes_written,
             "edges_written": self.edges_written,
             "skipped_existing_nodes": self.skipped_existing_nodes,
             "skipped_existing_edges": self.skipped_existing_edges,
             "invalid": self.invalid,
+            "missing_identifier_rows": self.missing_identifier_rows,
+            "missing_identifier_counts": self.missing_identifier_counts,
+            "missing_identifier_examples": self.missing_identifier_examples,
             "batches": self.batches,
             "validation": self.validation,
             "warnings": self.warnings,
@@ -150,10 +157,7 @@ class BuildOrchestrator:
         outcomes: list[DomainOutcome] = []
         for adapter in self._adapters:
             if resume and adapter.domain in completed:
-                outcomes.append(DomainOutcome(
-                    domain=adapter.domain, status=STATUS_SKIPPED,
-                    warnings=["skipped: already completed in checkpoint store"],
-                ))
+                outcomes.append(self._resume_outcome(adapter.domain))
                 continue
             if (
                 mode == ExecutionMode.LIMITED_POPULATION
@@ -167,7 +171,16 @@ class BuildOrchestrator:
                 continue
             outcomes.append(self._run_domain(adapter, target, mode))
 
-        cross = validate_graph(target)
+        cross = validate_graph(target, publication_metrics={
+            "source_rows": sum(o.rows_processed for o in outcomes),
+            "missing_identifier_rows": sum(o.missing_identifier_rows for o in outcomes),
+            "missing_identifier_counts": self._merge_identifier_counts(outcomes),
+            "missing_identifier_examples": [
+                example
+                for outcome in outcomes
+                for example in outcome.missing_identifier_examples
+            ][:10],
+        })
         self.last_target_repo = target
         return self._finalize(mode, preflight, outcomes, cross, started)
 
@@ -235,7 +248,12 @@ class BuildOrchestrator:
                 offset += len(rows)
                 if len(rows) < self._batch_size:
                     break
-            outcome.validation = validate_graph(target)
+            outcome.validation = validate_graph(target, publication_metrics={
+                "source_rows": outcome.rows_processed,
+                "missing_identifier_rows": outcome.missing_identifier_rows,
+                "missing_identifier_counts": outcome.missing_identifier_counts,
+                "missing_identifier_examples": outcome.missing_identifier_examples,
+            })
         except Exception as exc:  # noqa: BLE001 - captured per domain for resume
             outcome.status = STATUS_FAILED
             outcome.error = str(exc)
@@ -250,12 +268,41 @@ class BuildOrchestrator:
                 "skipped_existing_nodes": outcome.skipped_existing_nodes,
                 "skipped_existing_edges": outcome.skipped_existing_edges,
                 "invalid": outcome.invalid,
+                "source_rows": outcome.rows_processed,
+                "missing_identifier_rows": outcome.missing_identifier_rows,
+                "missing_identifier_counts": outcome.missing_identifier_counts,
+                "missing_identifier_examples": outcome.missing_identifier_examples,
                 "batches": outcome.batches,
             },
             validation={"total_problems": outcome.validation.get("total_problems")}
             if outcome.validation else {},
         ))
         return outcome
+
+    def _resume_outcome(self, domain: str) -> DomainOutcome:
+        """Restore completed-domain metrics without republishing its source rows."""
+        checkpoint = self._checkpoints.load(domain)
+        if checkpoint is None:
+            raise RuntimeError(f"completed checkpoint for {domain!r} could not be loaded")
+        stats = checkpoint.stats or {}
+        return DomainOutcome(
+            domain=domain,
+            status=STATUS_SKIPPED,
+            rows_processed=int(stats.get("source_rows", checkpoint.rows_processed)),
+            nodes_written=int(stats.get("nodes_written", 0)),
+            edges_written=int(stats.get("edges_written", 0)),
+            skipped_existing_nodes=int(stats.get("skipped_existing_nodes", 0)),
+            skipped_existing_edges=int(stats.get("skipped_existing_edges", 0)),
+            invalid=int(stats.get("invalid", 0)),
+            missing_identifier_rows=int(stats.get("missing_identifier_rows", 0)),
+            missing_identifier_counts=dict(stats.get("missing_identifier_counts", {})),
+            missing_identifier_examples=list(
+                stats.get("missing_identifier_examples", [])
+            )[:10],
+            batches=int(stats.get("batches", 0)),
+            validation=dict(checkpoint.validation or {}),
+            warnings=["skipped: restored completed checkpoint metrics"],
+        )
 
     @staticmethod
     def _accumulate(outcome: DomainOutcome, result: PublishResult, batch_rows: int) -> None:
@@ -265,12 +312,30 @@ class BuildOrchestrator:
         outcome.skipped_existing_nodes += result.skipped_existing_nodes
         outcome.skipped_existing_edges += result.skipped_existing_edges
         outcome.invalid += len(result.invalid)
+        outcome.missing_identifier_rows += result.missing_identifier_rows
+        for key, count in result.missing_identifier_counts.items():
+            outcome.missing_identifier_counts[key] = (
+                outcome.missing_identifier_counts.get(key, 0) + count
+            )
+        remaining = 10 - len(outcome.missing_identifier_examples)
+        if remaining > 0:
+            outcome.missing_identifier_examples.extend(
+                result.missing_identifier_examples[:remaining]
+            )
         outcome.batches += 1
         if result.invalid:
             outcome.warnings.append(
                 f"{len(result.invalid)} invalid spec(s) in a batch (e.g. "
                 + ", ".join(sorted(set(result.invalid))[:3]) + ")"
             )
+
+    @staticmethod
+    def _merge_identifier_counts(outcomes: list[DomainOutcome]) -> dict[str, int]:
+        merged: dict[str, int] = {}
+        for outcome in outcomes:
+            for key, count in outcome.missing_identifier_counts.items():
+                merged[key] = merged.get(key, 0) + count
+        return merged
 
     # ---- reporting ----
     def _finalize(
@@ -288,7 +353,10 @@ class BuildOrchestrator:
             "skipped_existing_nodes": sum(o.skipped_existing_nodes for o in outcomes),
             "skipped_existing_edges": sum(o.skipped_existing_edges for o in outcomes),
             "rows_processed": sum(o.rows_processed for o in outcomes),
+            "source_rows": sum(o.rows_processed for o in outcomes),
             "invalid": sum(o.invalid for o in outcomes),
+            "missing_identifier_rows": sum(o.missing_identifier_rows for o in outcomes),
+            "missing_identifier_counts": self._merge_identifier_counts(outcomes),
         }
         warnings = list(preflight.get("warnings", []))
         errors = [f"{o.domain}: {o.error}" for o in outcomes if o.error]

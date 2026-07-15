@@ -70,17 +70,22 @@ def domain_coverage_report(
         available = o.get("available_rows")
         if available is None:
             available = avail.get(d)
-        connected = o.get("rows_processed", 0)
+        source_rows = o.get("rows_processed", 0)
+        missing_identifiers = o.get("missing_identifier_rows", 0)
+        connected = max(0, source_rows - missing_identifiers)
         domains.append({
             "domain": d,
             "status": o.get("status"),
             "source_available": available,
             "records_connected": connected,
+            "source_rows_processed": source_rows,
             "nodes_published": o.get("nodes_written", 0),
             "edges_published": o.get("edges_written", 0),
             "skipped_existing_nodes": o.get("skipped_existing_nodes", 0),
             "skipped_existing_edges": o.get("skipped_existing_edges", 0),
             "invalid_rejected": o.get("invalid", 0),
+            "missing_identifier_rows": missing_identifiers,
+            "missing_identifier_counts": o.get("missing_identifier_counts", {}),
             "connectivity_strategy": getattr(rq, "taxon_mapping", None),
             "enabled": getattr(rq, "enabled", None),
             "blocked_reason": getattr(rq, "blocked_reason", None),
@@ -95,6 +100,7 @@ def domain_coverage_report(
         "nodes_published": sum(x["nodes_published"] for x in domains),
         "edges_published": sum(x["edges_published"] for x in domains),
         "invalid_rejected": sum(x["invalid_rejected"] for x in domains),
+        "missing_identifier_rows": sum(x["missing_identifier_rows"] for x in domains),
     }
     return {"per_domain": domains, "totals": totals}
 

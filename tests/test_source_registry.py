@@ -182,14 +182,13 @@ def test_name_join_pollinator_row_carries_provenance_and_quality():
     assert edges[0].source_table == "oc_interactions.orchid_interaction_edges"
 
 
-def test_rows_missing_taxon_pk_are_skipped():
+def test_adapter_refuses_unvalidated_rows_missing_taxon_pk():
     adapter = adapters_by_domain()["traits"]
-    nodes, edges = adapter.produce([
-        {"source_pk": "a", "trait_name": "flower_color"},  # no taxon_pk
-        {"source_pk": "b", "taxon_pk": 2001, "trait_name": "habit"},
-    ])
-    assert len(nodes) == 1 and len(edges) == 1
-    assert edges[0].to_key == canonical_key("trait", "b")
+    with pytest.raises(ValueError, match="without source_pk/taxon_pk"):
+        adapter.produce([
+            {"source_pk": "a", "trait_name": "flower_color"},  # no taxon_pk
+            {"source_pk": "b", "taxon_pk": 2001, "trait_name": "habit"},
+        ])
 
 
 def test_adapter_never_emits_a_taxon_node():

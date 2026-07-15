@@ -47,8 +47,9 @@ def _make_adapter(
     """Build a standard taxon->domain-object adapter.
 
     Rows must provide ``source_pk`` (domain object id) and ``taxon_pk`` (the
-    taxon to attach to).  Rows missing either are skipped (they surface as
-    ``edge_missing_endpoint``/absent nodes and are reported by validation).
+    taxon to attach to).  The publisher validates and accounts for these
+    identifiers before calling this producer, so rejected rows are visible in
+    build metrics and make publication validation unhealthy.
     """
 
     def produce(rows: Iterable[dict[str, Any]]) -> tuple[list[NodeSpec], list[EdgeSpec]]:
@@ -59,7 +60,10 @@ def _make_adapter(
             source_pk = row.get("source_pk")
             taxon_pk = row.get("taxon_pk")
             if source_pk is None or taxon_pk is None:
-                continue
+                raise ValueError(
+                    f"{domain} adapter received a row without source_pk/taxon_pk; "
+                    "rows must be validated by publish_domain"
+                )
             key = canonical_key(node_type, source_pk)
             if key not in seen_nodes:
                 seen_nodes.add(key)
@@ -87,7 +91,12 @@ def _make_adapter(
             ))
         return nodes, edges
 
-    return DomainAdapter(domain=domain, source_table=source_table, produce=produce)
+    return DomainAdapter(
+        domain=domain,
+        source_table=source_table,
+        produce=produce,
+        required_identifiers=("source_pk", "taxon_pk"),
+    )
 
 
 IMAGES_ADAPTER = _make_adapter(
