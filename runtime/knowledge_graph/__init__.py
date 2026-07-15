@@ -43,6 +43,11 @@ from .publisher import (
     publish_domain,
 )
 from .quality import quality_report
+from .reporting import (
+    domain_coverage_report,
+    graph_completeness_report,
+    review_queues,
+)
 from .repository import (
     GraphRepository,
     InMemoryGraphRepository,
@@ -82,4 +87,5 @@ __all__ = [
     "AuthorityMapping", "CanonicalTaxon", "CanonicalRegistry",
     "build_canonical_registry", "select_canonical_release",
     "classify_mapping", "classify_crosswalk", "detect_conflicts",
+    "domain_coverage_report", "graph_completeness_report", "review_queues",
 ]

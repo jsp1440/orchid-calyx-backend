@@ -123,6 +123,9 @@ class BuildOrchestrator:
         self._activated = (
             frozenset(activated_domains) if activated_domains is not None else None
         )
+        # Populated after a staging/publish run so reporting can introspect the
+        # exact graph that was produced (BUILD-066). None until run() executes.
+        self.last_target_repo: GraphRepository | None = None
 
     # ---- public entrypoint ----
     def run(self, mode: ExecutionMode) -> dict[str, Any]:
@@ -165,6 +168,7 @@ class BuildOrchestrator:
             outcomes.append(self._run_domain(adapter, target, mode))
 
         cross = validate_graph(target)
+        self.last_target_repo = target
         return self._finalize(mode, preflight, outcomes, cross, started)
 
     # ---- pipeline stages ----
@@ -205,9 +209,14 @@ class BuildOrchestrator:
         Domain edges attach to ``taxon``/``genus`` nodes, which must already
         exist for the publisher to resolve endpoints.
         """
-        for node in self._repo.all_nodes():
-            if node.node_type in ("taxon", "genus"):
+        fetch = getattr(self._repo, "taxonomy_nodes", None)
+        if callable(fetch):
+            for node in fetch():
                 staging.upsert_node(node)
+        else:
+            for node in self._repo.all_nodes():
+                if node.node_type in ("taxon", "genus"):
+                    staging.upsert_node(node)
 
     def _run_domain(
         self, adapter: DomainAdapter, target: GraphRepository, mode: ExecutionMode

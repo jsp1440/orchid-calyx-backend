@@ -64,16 +64,23 @@ class InMemoryGraphRepository:
         self._edges: list[Edge] = list(edges or [])
         self._next_node_id = (max(self._nodes) + 1) if self._nodes else 1
         self._next_edge_id = (max((e.kg_edge_id for e in self._edges), default=0) + 1)
+        # O(1) lookup indexes (identity is stable, so these stay valid across
+        # idempotent upserts). Without them, bulk population is O(n^2).
+        self._key_index: dict[str, int] = {
+            n.canonical_key: n.kg_node_id for n in self._nodes.values()
+        }
+        self._edge_index: set[tuple[Any, Any, Any, Any]] = {
+            (e.edge_type, e.from_node_id, e.to_node_id, e.source_table)
+            for e in self._edges
+        }
 
     # ---- read ----
     def get_node(self, node_id: int) -> Node | None:
         return self._nodes.get(node_id)
 
     def get_node_by_key(self, canonical_key: str) -> Node | None:
-        for n in self._nodes.values():
-            if n.canonical_key == canonical_key:
-                return n
-        return None
+        node_id = self._key_index.get(canonical_key)
+        return self._nodes.get(node_id) if node_id is not None else None
 
     def find_genus_node(self, genus_name: str) -> Node | None:
         target = genus_name.strip().lower()
@@ -132,18 +139,16 @@ class InMemoryGraphRepository:
             payload=node.payload,
         )
         self._nodes[new.kg_node_id] = new
+        self._key_index[new.canonical_key] = new.kg_node_id
         self._next_node_id += 1
         return new
 
     def upsert_edge(self, edge: Edge) -> Edge:
-        for e in self._edges:
-            if (
-                e.edge_type == edge.edge_type
-                and e.from_node_id == edge.from_node_id
-                and e.to_node_id == edge.to_node_id
-                and e.source_table == edge.source_table
-            ):
-                return e
+        dedup = (edge.edge_type, edge.from_node_id, edge.to_node_id, edge.source_table)
+        if dedup in self._edge_index:
+            for e in self._edges:
+                if (e.edge_type, e.from_node_id, e.to_node_id, e.source_table) == dedup:
+                    return e
         new = Edge(
             kg_edge_id=self._next_edge_id,
             edge_type=edge.edge_type,
@@ -158,6 +163,7 @@ class InMemoryGraphRepository:
             payload=edge.payload,
         )
         self._edges.append(new)
+        self._edge_index.add(dedup)
         self._next_edge_id += 1
         return new
 
@@ -254,3 +260,11 @@ class PostgresGraphRepository:
                 f"SELECT {_EDGE_COLUMNS} FROM {self._schema}.kg_edges WHERE is_active"
             )
             return [self._row_to_edge(r) for r in cur.fetchall()]
+
+    def taxonomy_nodes(self) -> list[Node]:
+        """Only ``taxon``/``genus`` nodes — the backbone needed to seed a staging
+        graph.  Avoids streaming the entire production graph via ``all_nodes``.
+        """
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(self._node_sql("node_type IN ('taxon','genus')"))
+            return [self._row_to_node(r) for r in cur.fetchall()]
