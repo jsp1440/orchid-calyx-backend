@@ -52,6 +52,7 @@ from .repository import (
     GraphRepository,
     InMemoryGraphRepository,
     PostgresGraphRepository,
+    WritablePostgresGraphRepository,
 )
 from .source_registry import (
     SOURCE_QUERIES,
@@ -73,7 +74,8 @@ from .vocabulary import ALL_DOMAINS, EDGE_TYPE_DOMAIN, NODE_TYPE_DOMAIN
 
 __all__ = [
     "Node", "Edge", "GraphRepository", "InMemoryGraphRepository",
-    "PostgresGraphRepository", "traverse", "quality_report", "canonical_key",
+    "PostgresGraphRepository", "WritablePostgresGraphRepository",
+    "traverse", "quality_report", "canonical_key",
     "NodeSpec", "EdgeSpec", "DomainAdapter", "PublishResult", "publish_domain",
     "ALL_DOMAINS", "NODE_TYPE_DOMAIN", "EDGE_TYPE_DOMAIN",
     "DOMAIN_ADAPTERS", "adapters_by_domain",

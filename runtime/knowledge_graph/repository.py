@@ -268,3 +268,254 @@ class PostgresGraphRepository:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(self._node_sql("node_type IN ('taxon','genus')"))
             return [self._row_to_node(r) for r in cur.fetchall()]
+
+
+class _LazyEdgeView:
+    """A read-only sequence of edges whose ``len()`` is an O(1) cached count.
+
+    The frozen publisher measures ``len(repo.all_edges())`` before and after
+    every :meth:`upsert_edge` to decide whether a row was written.  Streaming
+    the whole ``kg_edges`` table twice per edge would be O(n^2); instead the
+    writable repository maintains a live active-edge counter and hands the
+    publisher this view.  Iteration (used only by validation/quality/reporting,
+    once per domain) lazily loads the real rows on demand.
+    """
+
+    __slots__ = ("_count", "_loader", "_cache")
+
+    def __init__(self, count: int, loader: "Callable[[], list[Edge]]"):
+        self._count = count
+        self._loader = loader
+        self._cache: list[Edge] | None = None
+
+    def _rows(self) -> list[Edge]:
+        if self._cache is None:
+            self._cache = self._loader()
+        return self._cache
+
+    def __len__(self) -> int:
+        return self._count
+
+    def __iter__(self):
+        return iter(self._rows())
+
+    def __getitem__(self, index):
+        return self._rows()[index]
+
+
+class WritablePostgresGraphRepository(PostgresGraphRepository):
+    """Production-writable graph store satisfying the same upsert contract as
+    :class:`InMemoryGraphRepository`.
+
+    The frozen publisher/orchestrator write to this repository or to the
+    in-memory one interchangeably — it exposes ``upsert_node``/``upsert_edge``/
+    ``get_node_by_key`` with identical semantics.
+
+    Persistence:
+
+    * **Nodes** — ``INSERT ... ON CONFLICT (node_type, canonical_key) DO UPDATE``
+      against the existing ``kg_nodes_unique`` index.  ``created_at`` is never
+      touched on update, preserving provenance timestamps; identity is never
+      redesigned.
+    * **Edges** — ``kg_edges`` has no unique constraint (and we must not add
+      one), so idempotency uses ``INSERT ... WHERE NOT EXISTS`` on the existing
+      logical identity ``(edge_type, from_node_id, to_node_id, source_table)``.
+
+    Transactions:  a single persistent connection with autocommit disabled.  By
+    default the *entire run* commits once (via :meth:`commit`/context-manager
+    exit) or rolls back as a unit — no partial batches are ever committed.  An
+    optional ``commit_every`` enables incremental commits for very large runs;
+    idempotent writes make a subsequent RESUME converge to identical contents.
+    """
+
+    def __init__(
+        self,
+        dsn: str,
+        schema: str = "oc_graph",
+        *,
+        build_run_id: int | None = None,
+        commit_every: int | None = None,
+    ):
+        super().__init__(dsn, schema)
+        self._build_run_id = build_run_id
+        self._commit_every = commit_every
+        self._conn: Any = None
+        self._edge_count: int | None = None
+        self._ops_since_commit = 0
+        self._node_insert_sql = (
+            f"INSERT INTO {self._schema}.kg_nodes "
+            "(node_type, canonical_key, display_label, source_table, source_pk, "
+            " evidence_class, confidence_score, confidence_label, payload_json, "
+            " is_active, build_run_id, updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,TRUE,%s,now()) "
+            "ON CONFLICT (node_type, canonical_key) DO UPDATE SET "
+            " display_label=EXCLUDED.display_label, source_table=EXCLUDED.source_table, "
+            " source_pk=EXCLUDED.source_pk, evidence_class=EXCLUDED.evidence_class, "
+            " confidence_score=EXCLUDED.confidence_score, "
+            " confidence_label=EXCLUDED.confidence_label, "
+            " payload_json=EXCLUDED.payload_json, is_active=TRUE, "
+            " build_run_id=EXCLUDED.build_run_id, updated_at=now() "
+            "RETURNING kg_node_id"
+        )
+        self._edge_insert_sql = (
+            f"INSERT INTO {self._schema}.kg_edges "
+            "(edge_type, from_node_id, to_node_id, source_table, source_pk, "
+            " evidence_class, confidence_score, confidence_label, rule_name, "
+            " payload_json, is_active, build_run_id, updated_at) "
+            "SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,TRUE,%s,now() "
+            f"WHERE NOT EXISTS (SELECT 1 FROM {self._schema}.kg_edges "
+            " WHERE edge_type=%s AND from_node_id=%s AND to_node_id=%s "
+            "   AND source_table IS NOT DISTINCT FROM %s AND is_active) "
+            "RETURNING kg_edge_id"
+        )
+        self._edge_id_sql = (
+            f"SELECT kg_edge_id FROM {self._schema}.kg_edges "
+            "WHERE edge_type=%s AND from_node_id=%s AND to_node_id=%s "
+            "  AND source_table IS NOT DISTINCT FROM %s AND is_active "
+            "ORDER BY kg_edge_id LIMIT 1"
+        )
+
+    # ---- connection / transaction management ----
+    def _wconn(self):
+        if self._conn is None or getattr(self._conn, "closed", False):
+            import psycopg  # lazy: tests without a DB never import a driver
+            self._conn = psycopg.connect(self._dsn, connect_timeout=10, autocommit=False)
+        return self._conn
+
+    def commit(self) -> None:
+        if self._conn is not None and not getattr(self._conn, "closed", False):
+            self._conn.commit()
+        self._ops_since_commit = 0
+
+    def rollback(self) -> None:
+        if self._conn is not None and not getattr(self._conn, "closed", False):
+            self._conn.rollback()
+        self._ops_since_commit = 0
+        self._edge_count = None  # cached count is invalid after a rollback
+
+    def close(self) -> None:
+        if self._conn is not None and not getattr(self._conn, "closed", False):
+            self._conn.close()
+        self._conn = None
+
+    def __enter__(self) -> "WritablePostgresGraphRepository":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        try:
+            if exc_type is None:
+                self.commit()
+            else:
+                self.rollback()
+        finally:
+            self.close()
+        return False
+
+    def _maybe_autocommit(self) -> None:
+        self._ops_since_commit += 1
+        if self._commit_every and self._ops_since_commit >= self._commit_every:
+            self.commit()
+
+    # ---- writes (idempotent, keyed on canonical identity) ----
+    def upsert_node(self, node: Node) -> Node:
+        conn = self._wconn()
+        with conn.cursor() as cur:
+            cur.execute(self._node_insert_sql, (
+                node.node_type, node.canonical_key, node.display_label,
+                node.source_table, node.source_pk, node.evidence_class,
+                node.confidence_score, node.confidence_label,
+                json.dumps(node.payload or {}), self._build_run_id,
+            ))
+            new_id = cur.fetchone()[0]
+        self._maybe_autocommit()
+        return Node(
+            kg_node_id=new_id, node_type=node.node_type,
+            canonical_key=node.canonical_key, display_label=node.display_label,
+            source_table=node.source_table, source_pk=node.source_pk,
+            evidence_class=node.evidence_class, confidence_score=node.confidence_score,
+            confidence_label=node.confidence_label, payload=node.payload,
+        )
+
+    def upsert_edge(self, edge: Edge) -> Edge:
+        conn = self._wconn()
+        with conn.cursor() as cur:
+            cur.execute(self._edge_insert_sql, (
+                edge.edge_type, edge.from_node_id, edge.to_node_id, edge.source_table,
+                edge.source_pk, edge.evidence_class, edge.confidence_score,
+                edge.confidence_label, edge.rule_name, json.dumps(edge.payload or {}),
+                self._build_run_id,
+                edge.edge_type, edge.from_node_id, edge.to_node_id, edge.source_table,
+            ))
+            row = cur.fetchone()
+        if row is not None:
+            if self._edge_count is not None:
+                self._edge_count += 1
+            self._maybe_autocommit()
+            return Edge(
+                kg_edge_id=row[0], edge_type=edge.edge_type,
+                from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+                source_table=edge.source_table, source_pk=edge.source_pk,
+                evidence_class=edge.evidence_class, confidence_score=edge.confidence_score,
+                confidence_label=edge.confidence_label, rule_name=edge.rule_name,
+                payload=edge.payload,
+            )
+        with conn.cursor() as cur:
+            cur.execute(self._edge_id_sql, (
+                edge.edge_type, edge.from_node_id, edge.to_node_id, edge.source_table,
+            ))
+            existing = cur.fetchone()
+        return Edge(
+            kg_edge_id=(existing[0] if existing else 0), edge_type=edge.edge_type,
+            from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+            source_table=edge.source_table, source_pk=edge.source_pk,
+            evidence_class=edge.evidence_class, confidence_score=edge.confidence_score,
+            confidence_label=edge.confidence_label, rule_name=edge.rule_name,
+            payload=edge.payload,
+        )
+
+    # ---- reads (use the open write transaction so validation sees pending
+    #      writes; fall back to the parent's short-lived reads when idle) ----
+    def _has_open_conn(self) -> bool:
+        return self._conn is not None and not getattr(self._conn, "closed", False)
+
+    def get_node(self, node_id: int) -> Node | None:
+        if not self._has_open_conn():
+            return super().get_node(node_id)
+        with self._conn.cursor() as cur:
+            cur.execute(self._node_sql("kg_node_id = %s"), (node_id,))
+            row = cur.fetchone()
+            return self._row_to_node(row) if row else None
+
+    def get_node_by_key(self, canonical_key: str) -> Node | None:
+        if not self._has_open_conn():
+            return super().get_node_by_key(canonical_key)
+        with self._conn.cursor() as cur:
+            cur.execute(self._node_sql("canonical_key = %s"), (canonical_key,))
+            row = cur.fetchone()
+            return self._row_to_node(row) if row else None
+
+    def all_nodes(self) -> list[Node]:
+        if not self._has_open_conn():
+            return super().all_nodes()
+        with self._conn.cursor() as cur:
+            cur.execute(self._node_sql("TRUE"))
+            return [self._row_to_node(r) for r in cur.fetchall()]
+
+    def all_edges(self):
+        if not self._has_open_conn():
+            return super().all_edges()
+        if self._edge_count is None:
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT count(*) FROM {self._schema}.kg_edges WHERE is_active"
+                )
+                self._edge_count = cur.fetchone()[0]
+
+        def _loader() -> list[Edge]:
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {_EDGE_COLUMNS} FROM {self._schema}.kg_edges WHERE is_active"
+                )
+                return [self._row_to_edge(r) for r in cur.fetchall()]
+
+        return _LazyEdgeView(self._edge_count, _loader)
