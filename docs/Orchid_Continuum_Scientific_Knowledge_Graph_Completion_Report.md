@@ -168,3 +168,59 @@ The new router is import-clean and requires no new dependencies (uses existing `
 
 ### Recommended next build
 Publish the **media** domain first (adapter already proven in tests; `oc_core.media_assets` + `oc_core.record_media_link` are the canonical source), then **occurrences** and **literature**, each as an idempotent build run writing `image`/`occurrence`/`publication` nodes and their edges — after which the Featured Genus and Atlas can traverse real multi-domain graph data.
+
+---
+
+## 12. BUILD-060 — Unified Build Orchestrator + domain adapters
+
+This section extends the report with the BUILD-060 delivery, which reuses (does
+not redesign) every module above.
+
+### 12.1 What was added
+- **Build Orchestrator** (`runtime/knowledge_graph/orchestrator.py`): a single
+  `BuildOrchestrator` driving `preflight → 8 domains → cross-domain validation →
+  final report`, with `ExecutionMode` ∈ {AUDIT, DRY_RUN, PUBLISH, RESUME}.
+- **Domain adapters** (`runtime/knowledge_graph/adapters.py`): occurrences,
+  traits, pollinators, mycorrhiza, conservation, climate, literature, and
+  images/phenotype — all produced by one shared factory that emits a domain node
+  plus a taxon→object edge, and **never** a taxon node.
+- **Source providers** (`sources.py`): `InMemorySourceProvider` (tests/dry-run)
+  and a read-only `PostgresSourceProvider` (operator-reviewed SELECTs only).
+- **Checkpointing** (`checkpoint.py`): per-domain `Checkpoint` with in-memory and
+  atomic JSON-file stores; drives Resume.
+- **Automatic validation** (`validation.py`): identifiers, duplicate
+  relationships, orphan nodes/edges, vocabulary compliance, provenance
+  completeness, quality scores, cross-domain consistency.
+
+### 12.2 Safety posture (unchanged constraints honored)
+- AUDIT and DRY_RUN perform **no** production writes. DRY_RUN uses an in-memory
+  staging graph seeded read-only with taxonomy nodes so edge resolution is
+  realistic without touching prod.
+- PUBLISH is **disabled unless** `authorized_to_publish=True` and a writable
+  repository is supplied — neither ships in this PR.
+- Publishing is idempotent and batched; RESUME continues from the last completed
+  checkpoint.
+- No migrations executed; no destructive operations.
+
+### 12.3 Reports produced
+Each run returns: build metadata (mode, wrote_to_production, batch_size,
+duration), preflight source availability, per-domain statistics (nodes/edges
+created, records skipped, invalid, batches), cross-domain validation summary,
+estimated production graph growth, warnings, and errors.
+
+### 12.4 Tests
+- Existing traversal suite: **17 tests, still passing**.
+- New `tests/test_knowledge_graph_orchestrator.py`: **17 tests** covering
+  adapters, publisher idempotency, audit, dry-run, publish gating, batching,
+  checkpointing, resume, JSON checkpoint round-trip, and validation.
+- **34/34 KG tests pass**; the full suite (406 tests) collects cleanly. No test
+  opens a database connection.
+
+### 12.5 Operator guide
+See `docs/BUILD-060-knowledge-graph-orchestrator-operator-guide.md` for audit,
+dry-run, publish, and resume instructions.
+
+### 12.6 Owner decisions still required
+Publishing non-taxonomy domains requires (a) a writable graph repository and
+(b) explicit `authorized_to_publish=True`, plus operator-reviewed read-only
+source queries per domain. These are deliberate owner actions outside this PR.
