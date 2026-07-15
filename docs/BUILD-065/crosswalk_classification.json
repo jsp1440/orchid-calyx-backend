@@ -1,0 +1,12 @@
+{
+  "total": 10409,
+  "by_class": {
+    "exact_id": 0,
+    "authority_supported_synonym": 0,
+    "accepted_name_mapping": 10409,
+    "historical_mapping": 0,
+    "manual_review_required": 0
+  },
+  "auto_publishable": 10409,
+  "requires_review": 0
+}

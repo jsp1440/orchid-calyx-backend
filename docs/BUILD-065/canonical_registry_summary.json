@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "canonical_authority": "World Plants (Dr. Michael Hassler)",
+    "canonical_release": {
+      "snapshot_id": "f8638e1d-3481-4662-b0f2-d98d610c001a",
+      "source_system": "world_plants",
+      "version_label": "2026-02",
+      "file_sha256": "51f3640346c15f8e66b9973c95bdea94efaa96f622e763ad6dff58e6a3a8c0fd",
+      "row_count": null,
+      "acquired_at": "2026-02-26T01:12:25.502808+00:00",
+      "status": "canonical",
+      "notes": null
+    },
+    "total_taxa": 73661,
+    "accepted_taxa": 31727,
+    "synonyms": 41934,
+    "hybrids": 127,
+    "authority_mappings": 46782,
+    "authority_mappings_by_source": {
+      "GBIF": 46012,
+      "POWO": 770
+    }
+  },
+  "releases": [
+    {
+      "snapshot_id": "b58df840-42d9-4434-8efd-0df1a5aa78fb",
+      "source_system": "world_plants",
+      "version_label": "Hassler_2026-02",
+      "file_sha256": "51f3640346c15f8e66b9973c95bdea94efaa96f622e763ad6dff58e6a3a8c0fd",
+      "row_count": null,
+      "acquired_at": "2026-02-24T22:30:22.312844+00:00",
+      "status": "superseded",
+      "notes": "World Plants February 2026 snapshot from Dr. Hassler"
+    },
+    {
+      "snapshot_id": "f8638e1d-3481-4662-b0f2-d98d610c001a",
+      "source_system": "world_plants",
+      "version_label": "2026-02",
+      "file_sha256": "51f3640346c15f8e66b9973c95bdea94efaa96f622e763ad6dff58e6a3a8c0fd",
+      "row_count": null,
+      "acquired_at": "2026-02-26T01:12:25.502808+00:00",
+      "status": "canonical",
+      "notes": null
+    }
+  ]
+}

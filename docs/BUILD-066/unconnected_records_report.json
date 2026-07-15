@@ -1,0 +1,93 @@
+{
+  "note": "'source_records_expected' is the full candidate population in the domain's real source table(s); 'records_connected_edges' is what the registry projection connects to the canonical backbone. Every gap is documented, never discarded.",
+  "per_domain": [
+    {
+      "domain": "occurrences",
+      "connectivity_strategy": "direct",
+      "readiness": "READY WITH OPERATOR REVIEW",
+      "confidence": "high",
+      "source_records_expected": 580000,
+      "records_connected_edges": 26,
+      "records_unconnected_or_orphaned": 579974,
+      "crosswalk_required": false,
+      "documented_reason": "oc_atlas.occurrences holds only 26 curated rows (all 26 map cleanly to the backbone; not a restrictive-SQL artifact). Bulk occurrence data lives in public.orchid_occurrence (580,612 rows) and public.oc_occurrences (114,517), but those link via ambiguous id columns (accepted_taxon_id resolves only ~504 backbone taxa; oc_occurrences.species_id resolves 0). Repointing is NOT done here because the alt-source taxon linkage is unverified. Decide source before controlled population."
+    },
+    {
+      "domain": "traits",
+      "connectivity_strategy": "resolved_view",
+      "readiness": "READY WITH OPERATOR REVIEW",
+      "confidence": "medium",
+      "source_records_expected": 33791,
+      "records_connected_edges": 2807,
+      "records_unconnected_or_orphaned": 30984,
+      "crosswalk_required": false,
+      "documented_reason": "Resolved-view id join (no name matching). Covers ~43% of backbone taxa; remainder simply lack resolved trait consensus rows."
+    },
+    {
+      "domain": "pollinators",
+      "connectivity_strategy": "name_join",
+      "readiness": "READY WITH OPERATOR REVIEW",
+      "confidence": "high",
+      "source_records_expected": 23,
+      "records_connected_edges": 23,
+      "records_unconnected_or_orphaned": 0,
+      "crosswalk_required": true,
+      "documented_reason": "Tiny but clean: 23 rows / 4 distinct names, all 4 resolve to the backbone, zero collisions, zero orphans. taxon_crosswalk covers all 4 orchid_taxonomy_ids, enabling an id-anchored path."
+    },
+    {
+      "domain": "mycorrhiza",
+      "connectivity_strategy": "name_join",
+      "readiness": "PARTIALLY READY",
+      "confidence": "medium",
+      "source_records_expected": 462,
+      "records_connected_edges": 626,
+      "records_unconnected_or_orphaned": 0,
+      "crosswalk_required": true,
+      "documented_reason": "462 source rows / 218 distinct names; only 122 names resolve to the backbone; 96 names are orphans; 32 names collide with >1 backbone node, inflating 462 rows to 626 edges (fan-out). Backbone itself has 466 duplicate display_labels driving the collisions. Needs a confidence-scored crosswalk or operator review before population."
+    },
+    {
+      "domain": "conservation",
+      "connectivity_strategy": "direct",
+      "readiness": "PARTIALLY READY",
+      "confidence": "high",
+      "source_records_expected": 2,
+      "records_connected_edges": 2,
+      "records_unconnected_or_orphaned": 0,
+      "crosswalk_required": false,
+      "documented_reason": "Genuinely sparse in production: conservation_records=2, and the curated CITES tables (cites_listings, v_cites_current_orchids) are empty (0). orchid_taxonomy.iucn_red_list_category is entirely null. This is a real source-availability gap, not a wrong-table issue. No authoritative conservation dataset is populated yet."
+    },
+    {
+      "domain": "climate",
+      "connectivity_strategy": "direct",
+      "readiness": "BLOCKED",
+      "confidence": "low",
+      "source_records_expected": 0,
+      "records_connected_edges": 19263,
+      "records_unconnected_or_orphaned": 0,
+      "crosswalk_required": false,
+      "documented_reason": "species_environment_profile is an OCCURRENCE-DERIVED environmental summary (elevation bounds, lat/long bbox, country counts, qualitative climate_proxy_zones) -- NOT modelled bioclim. The true-climate table public.species_climate_profile_monthly (tmin/tmax/precip percentiles) exists but is EMPTY (0 rows), as are climate_normals_monthly_point, culture_engine_species_monthly_climate and oacs_origin_climate_profiles. No real climate data is populated in production. Do not present the proxy as climate. BLOCKED until a real climate source is populated."
+    },
+    {
+      "domain": "literature",
+      "connectivity_strategy": "name_join",
+      "readiness": "PARTIALLY READY",
+      "confidence": "medium",
+      "source_records_expected": 35,
+      "records_connected_edges": 29,
+      "records_unconnected_or_orphaned": 6,
+      "crosswalk_required": true,
+      "documented_reason": "35 source rows / 20 distinct names; 15 resolve, 5 orphan, 0 collision; unmatched rows drop to 29 edges. taxon_literature_edges carries no taxon identifier, so a crosswalk cannot be applied until the upstream extractor emits an id."
+    },
+    {
+      "domain": "media",
+      "connectivity_strategy": "direct",
+      "readiness": "READY",
+      "confidence": "high",
+      "source_records_expected": 51,
+      "records_connected_edges": 51,
+      "records_unconnected_or_orphaned": 0,
+      "crosswalk_required": false,
+      "documented_reason": "Direct id join via the authoritative gallery view; clean."
+    }
+  ]
+}

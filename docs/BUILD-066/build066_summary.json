@@ -1,0 +1,146 @@
+{
+  "mode": "dry_run",
+  "wrote_to_production": false,
+  "duration_s": 42.2,
+  "totals": {
+    "nodes_written": 22492,
+    "edges_written": 22827,
+    "skipped_existing_nodes": 0,
+    "skipped_existing_edges": 0,
+    "rows_processed": 22827,
+    "invalid": 0
+  },
+  "cross_domain_healthy": false,
+  "orphan_edges": 0,
+  "orphan_nodes": 14481,
+  "completeness_aggregate": {
+    "total_canonical_taxa": 33786,
+    "taxa_with_at_least_one_domain": 20038,
+    "taxa_fully_unconnected": 13748,
+    "domain_universe": [
+      "climate",
+      "conservation",
+      "literature",
+      "media",
+      "mycorrhiza",
+      "occurrences",
+      "pollinators",
+      "traits"
+    ],
+    "taxa_connected_per_domain": {
+      "climate": 19263,
+      "conservation": 2,
+      "literature": 15,
+      "media": 20,
+      "mycorrhiza": 306,
+      "occurrences": 20,
+      "pollinators": 4,
+      "traits": 2296
+    },
+    "domain_coverage_pct": {
+      "climate": 57.0147,
+      "conservation": 0.0059,
+      "literature": 0.0444,
+      "media": 0.0592,
+      "mycorrhiza": 0.9057,
+      "occurrences": 0.0592,
+      "pollinators": 0.0118,
+      "traits": 6.7957
+    },
+    "connected_domain_histogram": {
+      "0": 13748,
+      "1": 18252,
+      "2": 1684,
+      "3": 102
+    },
+    "overall_completion_pct": 59.3086
+  },
+  "coverage_totals": {
+    "domains": 8,
+    "records_connected": 22827,
+    "nodes_published": 22492,
+    "edges_published": 22827,
+    "invalid_rejected": 0
+  },
+  "review_queue_summary": {
+    "duplicate_accepted_taxa": 0,
+    "unresolved_synonym_chains": 376,
+    "authority_disagreements": 323,
+    "domain_connectivity": 0,
+    "total_items": 699
+  },
+  "unconnected": [
+    {
+      "domain": "occurrences",
+      "source_available": 26,
+      "records_connected": 26,
+      "records_unconnected": 0,
+      "connectivity_strategy": "direct",
+      "readiness": "READY WITH OPERATOR REVIEW",
+      "reason": "oc_atlas.occurrences holds only 26 curated rows (all 26 map cleanly to the backbone; not a restrictive-SQL artifact). Bulk occurrence data lives in public.orchid_occurrence (580,612 rows) and public.oc_occurrences (114,517), but those link via ambiguous id columns (accepted_taxon_id resolves only ~504 backbone taxa; oc_occurrences.species_id resolves 0). Repointing is NOT done here because the alt-source taxon linkage is unverified. Decide source before controlled population."
+    },
+    {
+      "domain": "traits",
+      "source_available": 2807,
+      "records_connected": 2807,
+      "records_unconnected": 0,
+      "connectivity_strategy": "resolved_view",
+      "readiness": "READY WITH OPERATOR REVIEW",
+      "reason": "Resolved-view id join (no name matching). Covers ~43% of backbone taxa; remainder simply lack resolved trait consensus rows."
+    },
+    {
+      "domain": "pollinators",
+      "source_available": 23,
+      "records_connected": 23,
+      "records_unconnected": 0,
+      "connectivity_strategy": "name_join",
+      "readiness": "READY WITH OPERATOR REVIEW",
+      "reason": "Tiny but clean: 23 rows / 4 distinct names, all 4 resolve to the backbone, zero collisions, zero orphans. taxon_crosswalk covers all 4 orchid_taxonomy_ids, enabling an id-anchored path."
+    },
+    {
+      "domain": "mycorrhiza",
+      "source_available": 626,
+      "records_connected": 626,
+      "records_unconnected": 0,
+      "connectivity_strategy": "name_join",
+      "readiness": "PARTIALLY READY",
+      "reason": "462 source rows / 218 distinct names; only 122 names resolve to the backbone; 96 names are orphans; 32 names collide with >1 backbone node, inflating 462 rows to 626 edges (fan-out). Backbone itself has 466 duplicate display_labels driving the collisions. Needs a confidence-scored crosswalk or operator review before population."
+    },
+    {
+      "domain": "conservation",
+      "source_available": 2,
+      "records_connected": 2,
+      "records_unconnected": 0,
+      "connectivity_strategy": "direct",
+      "readiness": "PARTIALLY READY",
+      "reason": "Genuinely sparse in production: conservation_records=2, and the curated CITES tables (cites_listings, v_cites_current_orchids) are empty (0). orchid_taxonomy.iucn_red_list_category is entirely null. This is a real source-availability gap, not a wrong-table issue. No authoritative conservation dataset is populated yet."
+    },
+    {
+      "domain": "climate",
+      "source_available": 19263,
+      "records_connected": 19263,
+      "records_unconnected": 0,
+      "connectivity_strategy": "direct",
+      "readiness": "BLOCKED",
+      "reason": "species_environment_profile is an OCCURRENCE-DERIVED environmental summary (elevation bounds, lat/long bbox, country counts, qualitative climate_proxy_zones) -- NOT modelled bioclim. The true-climate table public.species_climate_profile_monthly (tmin/tmax/precip percentiles) exists but is EMPTY (0 rows), as are climate_normals_monthly_point, culture_engine_species_monthly_climate and oacs_origin_climate_profiles. No real climate data is populated in production. Do not present the proxy as climate. BLOCKED until a real climate source is populated."
+    },
+    {
+      "domain": "literature",
+      "source_available": 29,
+      "records_connected": 29,
+      "records_unconnected": 0,
+      "connectivity_strategy": "name_join",
+      "readiness": "PARTIALLY READY",
+      "reason": "35 source rows / 20 distinct names; 15 resolve, 5 orphan, 0 collision; unmatched rows drop to 29 edges. taxon_literature_edges carries no taxon identifier, so a crosswalk cannot be applied until the upstream extractor emits an id."
+    },
+    {
+      "domain": "media",
+      "source_available": 51,
+      "records_connected": 51,
+      "records_unconnected": 0,
+      "connectivity_strategy": "direct",
+      "readiness": "READY",
+      "reason": "Direct id join via the authoritative gallery view; clean."
+    }
+  ]
+}

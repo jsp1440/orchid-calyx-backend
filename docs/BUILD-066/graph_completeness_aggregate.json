@@ -1,0 +1,44 @@
+{
+  "aggregate": {
+    "total_canonical_taxa": 33786,
+    "taxa_with_at_least_one_domain": 20038,
+    "taxa_fully_unconnected": 13748,
+    "domain_universe": [
+      "climate",
+      "conservation",
+      "literature",
+      "media",
+      "mycorrhiza",
+      "occurrences",
+      "pollinators",
+      "traits"
+    ],
+    "taxa_connected_per_domain": {
+      "climate": 19263,
+      "conservation": 2,
+      "literature": 15,
+      "media": 20,
+      "mycorrhiza": 306,
+      "occurrences": 20,
+      "pollinators": 4,
+      "traits": 2296
+    },
+    "domain_coverage_pct": {
+      "climate": 57.0147,
+      "conservation": 0.0059,
+      "literature": 0.0444,
+      "media": 0.0592,
+      "mycorrhiza": 0.9057,
+      "occurrences": 0.0592,
+      "pollinators": 0.0118,
+      "traits": 6.7957
+    },
+    "connected_domain_histogram": {
+      "0": 13748,
+      "1": 18252,
+      "2": 1684,
+      "3": 102
+    },
+    "overall_completion_pct": 59.3086
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "crosswalk_generated": "2026-07-15",
+  "orchid_taxonomy_to_backbone": {
+    "total_pairs": 10409,
+    "distinct_source_ids": 9778,
+    "distinct_destination_ids": 10390,
+    "source_ids_with_fanout_gt1": 271,
+    "destination_ids_with_fanin_gt1": 19
+  },
+  "taxon_crosswalk_raw": {
+    "rows": 10070,
+    "distinct_orchid_taxonomy_id": 10054,
+    "exact_match": 10070
+  },
+  "external_id_coverage": {
+    "gbif_taxon_external_ids": 48175,
+    "backbone_powo_authority_links": 2837
+  }
+}

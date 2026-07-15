@@ -1,0 +1,884 @@
+{
+  "build": {
+    "mode": "dry_run",
+    "wrote_to_production": false,
+    "publish_authorized": false,
+    "batch_size": 500,
+    "duration_seconds": 108.461
+  },
+  "preflight": {
+    "mode": "dry_run",
+    "batch_size": 500,
+    "publish_authorized": false,
+    "domain_order": [
+      "occurrences",
+      "traits",
+      "pollinators",
+      "mycorrhiza",
+      "conservation",
+      "climate",
+      "literature",
+      "media"
+    ],
+    "source_availability": {
+      "occurrences": 26,
+      "traits": 2807,
+      "pollinators": 23,
+      "mycorrhiza": 626,
+      "conservation": 2,
+      "climate": 19263,
+      "literature": 29,
+      "media": 51
+    },
+    "warnings": []
+  },
+  "per_domain": [
+    {
+      "domain": "occurrences",
+      "status": "completed",
+      "rows_processed": 26,
+      "available_rows": 26,
+      "nodes_written": 26,
+      "edges_written": 26,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 1,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 34499,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 34545,
+          "edge_count": 26,
+          "orphan_nodes": 34499,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 34499,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          }
+        },
+        "total_problems": 34499,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    },
+    {
+      "domain": "traits",
+      "status": "completed",
+      "rows_processed": 2807,
+      "available_rows": 2807,
+      "nodes_written": 2807,
+      "edges_written": 2807,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 6,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 32203,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 37352,
+          "edge_count": 2833,
+          "orphan_nodes": 32203,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 32203,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          },
+          "traits": {
+            "nodes": 2807,
+            "edges": 2807
+          }
+        },
+        "total_problems": 32203,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    },
+    {
+      "domain": "pollinators",
+      "status": "completed",
+      "rows_processed": 23,
+      "available_rows": 23,
+      "nodes_written": 23,
+      "edges_written": 23,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 1,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 32199,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 37375,
+          "edge_count": 2856,
+          "orphan_nodes": 32199,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 32199,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          },
+          "traits": {
+            "nodes": 2807,
+            "edges": 2807
+          },
+          "pollinators": {
+            "nodes": 23,
+            "edges": 23
+          }
+        },
+        "total_problems": 32199,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    },
+    {
+      "domain": "mycorrhiza",
+      "status": "completed",
+      "rows_processed": 626,
+      "available_rows": 626,
+      "nodes_written": 291,
+      "edges_written": 626,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 2,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 32024,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 37666,
+          "edge_count": 3482,
+          "orphan_nodes": 32024,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 32024,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          },
+          "traits": {
+            "nodes": 2807,
+            "edges": 2807
+          },
+          "pollinators": {
+            "nodes": 23,
+            "edges": 23
+          },
+          "mycorrhiza": {
+            "nodes": 291,
+            "edges": 626
+          }
+        },
+        "total_problems": 32024,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    },
+    {
+      "domain": "conservation",
+      "status": "completed",
+      "rows_processed": 2,
+      "available_rows": 2,
+      "nodes_written": 2,
+      "edges_written": 2,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 1,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 32024,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 37668,
+          "edge_count": 3484,
+          "orphan_nodes": 32024,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 32024,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          },
+          "traits": {
+            "nodes": 2807,
+            "edges": 2807
+          },
+          "pollinators": {
+            "nodes": 23,
+            "edges": 23
+          },
+          "mycorrhiza": {
+            "nodes": 291,
+            "edges": 626
+          },
+          "conservation": {
+            "nodes": 2,
+            "edges": 2
+          }
+        },
+        "total_problems": 32024,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    },
+    {
+      "domain": "climate",
+      "status": "completed",
+      "rows_processed": 19263,
+      "available_rows": 19263,
+      "nodes_written": 19263,
+      "edges_written": 19263,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 39,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 14483,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 56931,
+          "edge_count": 22747,
+          "orphan_nodes": 14483,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 14483,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          },
+          "traits": {
+            "nodes": 2807,
+            "edges": 2807
+          },
+          "pollinators": {
+            "nodes": 23,
+            "edges": 23
+          },
+          "mycorrhiza": {
+            "nodes": 291,
+            "edges": 626
+          },
+          "conservation": {
+            "nodes": 2,
+            "edges": 2
+          },
+          "climate": {
+            "nodes": 19263,
+            "edges": 19263
+          }
+        },
+        "total_problems": 14483,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    },
+    {
+      "domain": "literature",
+      "status": "completed",
+      "rows_processed": 29,
+      "available_rows": 29,
+      "nodes_written": 29,
+      "edges_written": 29,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 1,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 14481,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 56960,
+          "edge_count": 22776,
+          "orphan_nodes": 14481,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 14481,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          },
+          "traits": {
+            "nodes": 2807,
+            "edges": 2807
+          },
+          "pollinators": {
+            "nodes": 23,
+            "edges": 23
+          },
+          "mycorrhiza": {
+            "nodes": 291,
+            "edges": 626
+          },
+          "conservation": {
+            "nodes": 2,
+            "edges": 2
+          },
+          "climate": {
+            "nodes": 19263,
+            "edges": 19263
+          },
+          "literature": {
+            "nodes": 29,
+            "edges": 29
+          }
+        },
+        "total_problems": 14481,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    },
+    {
+      "domain": "media",
+      "status": "completed",
+      "rows_processed": 51,
+      "available_rows": 51,
+      "nodes_written": 51,
+      "edges_written": 51,
+      "skipped_existing_nodes": 0,
+      "skipped_existing_edges": 0,
+      "invalid": 0,
+      "batches": 1,
+      "validation": {
+        "identifier_integrity": {
+          "invalid_canonical_keys": 0,
+          "examples": []
+        },
+        "duplicate_relationships": {
+          "duplicate_edges": 0
+        },
+        "orphan_nodes": 14481,
+        "orphan_edges": 0,
+        "vocabulary_compliance": {
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "compliant": true
+        },
+        "provenance_completeness": {
+          "nodes_missing_provenance": 0,
+          "edges_missing_provenance": 0
+        },
+        "quality": {
+          "node_count": 57011,
+          "edge_count": 22827,
+          "orphan_nodes": 14481,
+          "dangling_edges": 0,
+          "duplicate_canonical_nodes": 0,
+          "missing_provenance": 0,
+          "invalid_node_types": [],
+          "invalid_edge_types": [],
+          "total_issues": 14481,
+          "healthy": false
+        },
+        "cross_domain_consistency": {
+          "mismatched_endpoint_edges": 0,
+          "examples": []
+        },
+        "domain_breakdown": {
+          "taxonomy": {
+            "nodes": 34519,
+            "edges": 0
+          },
+          "occurrences": {
+            "nodes": 26,
+            "edges": 26
+          },
+          "traits": {
+            "nodes": 2807,
+            "edges": 2807
+          },
+          "pollinators": {
+            "nodes": 23,
+            "edges": 23
+          },
+          "mycorrhiza": {
+            "nodes": 291,
+            "edges": 626
+          },
+          "conservation": {
+            "nodes": 2,
+            "edges": 2
+          },
+          "climate": {
+            "nodes": 19263,
+            "edges": 19263
+          },
+          "literature": {
+            "nodes": 29,
+            "edges": 29
+          },
+          "media": {
+            "nodes": 51,
+            "edges": 51
+          }
+        },
+        "total_problems": 14481,
+        "healthy": false
+      },
+      "warnings": [],
+      "error": null
+    }
+  ],
+  "totals": {
+    "nodes_written": 22492,
+    "edges_written": 22827,
+    "skipped_existing_nodes": 0,
+    "skipped_existing_edges": 0,
+    "rows_processed": 22827,
+    "invalid": 0
+  },
+  "cross_domain_validation": {
+    "identifier_integrity": {
+      "invalid_canonical_keys": 0,
+      "examples": []
+    },
+    "duplicate_relationships": {
+      "duplicate_edges": 0
+    },
+    "orphan_nodes": 14481,
+    "orphan_edges": 0,
+    "vocabulary_compliance": {
+      "invalid_node_types": [],
+      "invalid_edge_types": [],
+      "compliant": true
+    },
+    "provenance_completeness": {
+      "nodes_missing_provenance": 0,
+      "edges_missing_provenance": 0
+    },
+    "quality": {
+      "node_count": 57011,
+      "edge_count": 22827,
+      "orphan_nodes": 14481,
+      "dangling_edges": 0,
+      "duplicate_canonical_nodes": 0,
+      "missing_provenance": 0,
+      "invalid_node_types": [],
+      "invalid_edge_types": [],
+      "total_issues": 14481,
+      "healthy": false
+    },
+    "cross_domain_consistency": {
+      "mismatched_endpoint_edges": 0,
+      "examples": []
+    },
+    "domain_breakdown": {
+      "taxonomy": {
+        "nodes": 34519,
+        "edges": 0
+      },
+      "occurrences": {
+        "nodes": 26,
+        "edges": 26
+      },
+      "traits": {
+        "nodes": 2807,
+        "edges": 2807
+      },
+      "pollinators": {
+        "nodes": 23,
+        "edges": 23
+      },
+      "mycorrhiza": {
+        "nodes": 291,
+        "edges": 626
+      },
+      "conservation": {
+        "nodes": 2,
+        "edges": 2
+      },
+      "climate": {
+        "nodes": 19263,
+        "edges": 19263
+      },
+      "literature": {
+        "nodes": 29,
+        "edges": 29
+      },
+      "media": {
+        "nodes": 51,
+        "edges": 51
+      }
+    },
+    "total_problems": 14481,
+    "healthy": false
+  },
+  "estimated_graph_growth": {
+    "estimated_new_nodes": 22492,
+    "estimated_new_edges": 22827,
+    "basis": "projected_from_dry_run"
+  },
+  "activation": {
+    "activated_domains": [
+      "media",
+      "occurrences",
+      "pollinators",
+      "traits"
+    ],
+    "applies": false
+  },
+  "checkpoints": [
+    {
+      "domain": "occurrences",
+      "status": "completed",
+      "rows_processed": 26,
+      "stats": {
+        "nodes_written": 26,
+        "edges_written": 26,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 1
+      },
+      "validation": {
+        "total_problems": 34499
+      },
+      "updated_at": 1784099090.7035425
+    },
+    {
+      "domain": "traits",
+      "status": "completed",
+      "rows_processed": 2807,
+      "stats": {
+        "nodes_written": 2807,
+        "edges_written": 2807,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 6
+      },
+      "validation": {
+        "total_problems": 32203
+      },
+      "updated_at": 1784099098.7793508
+    },
+    {
+      "domain": "pollinators",
+      "status": "completed",
+      "rows_processed": 23,
+      "stats": {
+        "nodes_written": 23,
+        "edges_written": 23,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 1
+      },
+      "validation": {
+        "total_problems": 32199
+      },
+      "updated_at": 1784099099.5979393
+    },
+    {
+      "domain": "mycorrhiza",
+      "status": "completed",
+      "rows_processed": 626,
+      "stats": {
+        "nodes_written": 291,
+        "edges_written": 626,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 2
+      },
+      "validation": {
+        "total_problems": 32024
+      },
+      "updated_at": 1784099108.3200393
+    },
+    {
+      "domain": "conservation",
+      "status": "completed",
+      "rows_processed": 2,
+      "stats": {
+        "nodes_written": 2,
+        "edges_written": 2,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 1
+      },
+      "validation": {
+        "total_problems": 32024
+      },
+      "updated_at": 1784099108.8562675
+    },
+    {
+      "domain": "climate",
+      "status": "completed",
+      "rows_processed": 19263,
+      "stats": {
+        "nodes_written": 19263,
+        "edges_written": 19263,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 39
+      },
+      "validation": {
+        "total_problems": 14483
+      },
+      "updated_at": 1784099179.9142034
+    },
+    {
+      "domain": "literature",
+      "status": "completed",
+      "rows_processed": 29,
+      "stats": {
+        "nodes_written": 29,
+        "edges_written": 29,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 1
+      },
+      "validation": {
+        "total_problems": 14481
+      },
+      "updated_at": 1784099180.8844726
+    },
+    {
+      "domain": "media",
+      "status": "completed",
+      "rows_processed": 51,
+      "stats": {
+        "nodes_written": 51,
+        "edges_written": 51,
+        "skipped_existing_nodes": 0,
+        "skipped_existing_edges": 0,
+        "invalid": 0,
+        "batches": 1
+      },
+      "validation": {
+        "total_problems": 14481
+      },
+      "updated_at": 1784099181.6466353
+    }
+  ],
+  "warnings": [],
+  "errors": [],
+  "healthy": false
+}
