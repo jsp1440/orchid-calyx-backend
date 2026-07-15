@@ -1,0 +1,36 @@
+{
+  "pollinators": {
+    "source_rows": 23,
+    "distinct_names": 4,
+    "names_matched_backbone": 4,
+    "orphan_names": 0,
+    "colliding_names_gt1_node": 0,
+    "edges_after_join_fanout": 23,
+    "match_rate": 1.0,
+    "orphan_rate": 0.0,
+    "collision_rate": 0.0
+  },
+  "mycorrhiza": {
+    "source_rows": 462,
+    "distinct_names": 218,
+    "names_matched_backbone": 122,
+    "orphan_names": 96,
+    "colliding_names_gt1_node": 32,
+    "edges_after_join_fanout": 626,
+    "match_rate": 0.56,
+    "orphan_rate": 0.44,
+    "collision_rate": 0.262
+  },
+  "literature": {
+    "source_rows": 35,
+    "distinct_names": 20,
+    "names_matched_backbone": 15,
+    "orphan_names": 5,
+    "colliding_names_gt1_node": 0,
+    "edges_after_join_fanout": 29,
+    "match_rate": 0.75,
+    "orphan_rate": 0.25,
+    "collision_rate": 0.0
+  },
+  "backbone_duplicate_display_labels": 466
+}

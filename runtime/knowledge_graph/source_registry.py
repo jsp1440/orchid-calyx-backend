@@ -32,7 +32,7 @@ Taxon mapping methods
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _replace
 from typing import Any
 
 
@@ -50,6 +50,7 @@ class SourceQuery:
     enabled: bool = True
     blocked_reason: str | None = None
     notes: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -65,6 +66,7 @@ class SourceQuery:
             "quality_columns": list(self.quality_columns),
             "has_sql": bool(self.sql),
             "notes": self.notes,
+            "metadata": dict(self.metadata),
         }
 
 
@@ -360,6 +362,161 @@ SOURCE_QUERIES: tuple[SourceQuery, ...] = (
     _CLIMATE,
     _LITERATURE,
     _MEDIA,
+)
+
+
+# --- BUILD-064 registry metadata --------------------------------------------
+# Evidence-based connection quality captured during the BUILD-064 read-only
+# investigation (see docs/BUILD-064-*). Verification date reflects the live
+# production audit run. Counts are ACTUAL rows projected into the graph today;
+# "expected" is the plausible production ceiling given the source landscape.
+_BUILD064_META: dict[str, dict[str, Any]] = {
+    "occurrences": {
+        "status": "READY WITH OPERATOR REVIEW",
+        "identifier_strategy": "direct taxon_id (oc_atlas.occurrences.taxon_id -> backbone)",
+        "join_strategy": "direct_id",
+        "crosswalk_required": False,
+        "confidence": "high",
+        "expected_record_count": 580000,
+        "actual_record_count": 26,
+        "last_verification": "2026-07-15",
+        "operator_notes": (
+            "oc_atlas.occurrences holds only 26 curated rows (all 26 map cleanly "
+            "to the backbone; not a restrictive-SQL artifact). Bulk occurrence "
+            "data lives in public.orchid_occurrence (580,612 rows) and "
+            "public.oc_occurrences (114,517), but those link via ambiguous id "
+            "columns (accepted_taxon_id resolves only ~504 backbone taxa; "
+            "oc_occurrences.species_id resolves 0). Repointing is NOT done here "
+            "because the alt-source taxon linkage is unverified. Decide source "
+            "before controlled population."
+        ),
+    },
+    "conservation": {
+        "status": "PARTIALLY READY",
+        "identifier_strategy": "direct taxon_id (oc_conservation.conservation_records.taxon_id)",
+        "join_strategy": "direct_id",
+        "crosswalk_required": False,
+        "confidence": "high",
+        "expected_record_count": 2,
+        "actual_record_count": 2,
+        "last_verification": "2026-07-15",
+        "operator_notes": (
+            "Genuinely sparse in production: conservation_records=2, and the "
+            "curated CITES tables (cites_listings, v_cites_current_orchids) are "
+            "empty (0). orchid_taxonomy.iucn_red_list_category is entirely null. "
+            "This is a real source-availability gap, not a wrong-table issue. No "
+            "authoritative conservation dataset is populated yet."
+        ),
+    },
+    "media": {
+        "status": "READY",
+        "identifier_strategy": "direct taxonomy_id (oc_api.species_media_gallery_v1)",
+        "join_strategy": "direct_id",
+        "crosswalk_required": False,
+        "confidence": "high",
+        "expected_record_count": 51,
+        "actual_record_count": 51,
+        "last_verification": "2026-07-15",
+        "operator_notes": "Direct id join via the authoritative gallery view; clean.",
+    },
+    "traits": {
+        "status": "READY WITH OPERATOR REVIEW",
+        "identifier_strategy": "resolved consensus view (oc_views.trait_resolved_v4.taxonomy_id)",
+        "join_strategy": "resolved_view_id",
+        "crosswalk_required": False,
+        "confidence": "medium",
+        "expected_record_count": 33791,
+        "actual_record_count": 2807,
+        "last_verification": "2026-07-15",
+        "operator_notes": (
+            "Resolved-view id join (no name matching). Covers ~43% of backbone "
+            "taxa; remainder simply lack resolved trait consensus rows."
+        ),
+    },
+    "climate": {
+        "status": "BLOCKED",
+        "identifier_strategy": "direct taxonomy_id, but source is a proxy not climate",
+        "join_strategy": "direct_id",
+        "crosswalk_required": False,
+        "confidence": "low",
+        "expected_record_count": 0,
+        "actual_record_count": 19263,
+        "last_verification": "2026-07-15",
+        "operator_notes": (
+            "species_environment_profile is an OCCURRENCE-DERIVED environmental "
+            "summary (elevation bounds, lat/long bbox, country counts, qualitative "
+            "climate_proxy_zones) -- NOT modelled bioclim. The true-climate table "
+            "public.species_climate_profile_monthly (tmin/tmax/precip percentiles) "
+            "exists but is EMPTY (0 rows), as are climate_normals_monthly_point, "
+            "culture_engine_species_monthly_climate and oacs_origin_climate_profiles. "
+            "No real climate data is populated in production. Do not present the "
+            "proxy as climate. BLOCKED until a real climate source is populated."
+        ),
+    },
+    "pollinators": {
+        "status": "READY WITH OPERATOR REVIEW",
+        "identifier_strategy": (
+            "authoritative id available: orchid_taxonomy_id -> "
+            "oc_taxonomy.taxon_crosswalk (confidence-scored) -> oc_taxonomy.taxa; "
+            "final hop to backbone is canonical-name equality (no pure-id bridge "
+            "between the two taxonomy backbones)"
+        ),
+        "join_strategy": "name_join (crosswalk-upgradable)",
+        "crosswalk_required": True,
+        "confidence": "high",
+        "expected_record_count": 23,
+        "actual_record_count": 23,
+        "last_verification": "2026-07-15",
+        "operator_notes": (
+            "Tiny but clean: 23 rows / 4 distinct names, all 4 resolve to the "
+            "backbone, zero collisions, zero orphans. taxon_crosswalk covers all "
+            "4 orchid_taxonomy_ids, enabling an id-anchored path."
+        ),
+    },
+    "mycorrhiza": {
+        "status": "PARTIALLY READY",
+        "identifier_strategy": (
+            "orchid_taxonomy_id present; crosswalk chain available but final hop "
+            "is canonical-name equality"
+        ),
+        "join_strategy": "name_join (crosswalk-upgradable)",
+        "crosswalk_required": True,
+        "confidence": "medium",
+        "expected_record_count": 462,
+        "actual_record_count": 626,
+        "last_verification": "2026-07-15",
+        "operator_notes": (
+            "462 source rows / 218 distinct names; only 122 names resolve to the "
+            "backbone; 96 names are orphans; 32 names collide with >1 backbone "
+            "node, inflating 462 rows to 626 edges (fan-out). Backbone itself has "
+            "466 duplicate display_labels driving the collisions. Needs a "
+            "confidence-scored crosswalk or operator review before population."
+        ),
+    },
+    "literature": {
+        "status": "PARTIALLY READY",
+        "identifier_strategy": (
+            "NO taxon id on source (scientific_name only); pure name join, not "
+            "crosswalk-upgradable without an upstream id"
+        ),
+        "join_strategy": "name_join",
+        "crosswalk_required": True,
+        "confidence": "medium",
+        "expected_record_count": 35,
+        "actual_record_count": 29,
+        "last_verification": "2026-07-15",
+        "operator_notes": (
+            "35 source rows / 20 distinct names; 15 resolve, 5 orphan, 0 "
+            "collision; unmatched rows drop to 29 edges. taxon_literature_edges "
+            "carries no taxon identifier, so a crosswalk cannot be applied until "
+            "the upstream extractor emits an id."
+        ),
+    },
+}
+
+SOURCE_QUERIES = tuple(
+    _replace(q, metadata={**_BUILD064_META.get(q.domain, {}), **q.metadata})
+    for q in SOURCE_QUERIES
 )
 
 

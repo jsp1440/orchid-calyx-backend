@@ -1,0 +1,54 @@
+{
+  "build": {
+    "mode": "audit",
+    "wrote_to_production": false,
+    "publish_authorized": false,
+    "batch_size": 500,
+    "duration_seconds": 2.4039
+  },
+  "preflight": {
+    "mode": "audit",
+    "batch_size": 500,
+    "publish_authorized": false,
+    "domain_order": [
+      "occurrences",
+      "traits",
+      "pollinators",
+      "mycorrhiza",
+      "conservation",
+      "climate",
+      "literature",
+      "media"
+    ],
+    "source_availability": {
+      "occurrences": 26,
+      "traits": 2807,
+      "pollinators": 23,
+      "mycorrhiza": 626,
+      "conservation": 2,
+      "climate": 19263,
+      "literature": 29,
+      "media": 51
+    },
+    "warnings": []
+  },
+  "per_domain": [],
+  "totals": {
+    "nodes_written": 0,
+    "edges_written": 0,
+    "skipped_existing_nodes": 0,
+    "skipped_existing_edges": 0,
+    "rows_processed": 0,
+    "invalid": 0
+  },
+  "cross_domain_validation": null,
+  "estimated_graph_growth": {
+    "estimated_new_nodes": 0,
+    "estimated_new_edges": 0,
+    "basis": "projected_from_audit"
+  },
+  "checkpoints": [],
+  "warnings": [],
+  "errors": [],
+  "healthy": true
+}

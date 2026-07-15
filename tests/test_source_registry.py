@@ -249,3 +249,96 @@ def test_vocabulary_is_compliant_for_every_registry_domain():
     ).run(ExecutionMode.DRY_RUN)
     vocab = report["cross_domain_validation"]["vocabulary_compliance"]
     assert vocab["compliant"] is True
+
+
+# --- BUILD-064: crosswalk / collision / climate / completeness / metadata ----
+
+import json as _json
+import os as _os
+
+from runtime.knowledge_graph.source_registry import registry_by_domain
+
+_DOCS = _os.path.join(_os.path.dirname(__file__), "..", "docs", "crosswalks")
+
+_B064_REQUIRED_META = (
+    "status", "identifier_strategy", "join_strategy", "crosswalk_required",
+    "confidence", "expected_record_count", "actual_record_count",
+    "last_verification", "operator_notes",
+)
+_VALID_STATUS = {
+    "READY", "READY WITH OPERATOR REVIEW", "PARTIALLY READY", "BLOCKED",
+}
+
+
+def test_every_domain_has_complete_build064_metadata():
+    for domain, q in registry_by_domain().items():
+        md = q.metadata
+        for key in _B064_REQUIRED_META:
+            assert key in md, f"{domain} missing metadata key {key}"
+        assert md["status"] in _VALID_STATUS, f"{domain} bad status {md['status']}"
+        assert isinstance(md["crosswalk_required"], bool)
+        assert isinstance(md["actual_record_count"], int)
+        assert isinstance(md["expected_record_count"], int)
+
+
+def test_metadata_survives_to_dict():
+    for q in SOURCE_QUERIES:
+        assert q.to_dict()["metadata"]["status"] in _VALID_STATUS
+
+
+def test_climate_is_classified_blocked_as_proxy():
+    md = registry_by_domain()["climate"].metadata
+    assert md["status"] == "BLOCKED"
+    assert md["confidence"] == "low"
+    assert "proxy" in md["operator_notes"].lower()
+    assert "bioclim" in md["operator_notes"].lower()
+
+
+def test_name_join_domains_flag_crosswalk_required():
+    for domain in ("pollinators", "mycorrhiza", "literature"):
+        assert registry_by_domain()[domain].metadata["crosswalk_required"] is True
+
+
+def test_literature_has_no_upstream_id_so_not_upgradable():
+    md = registry_by_domain()["literature"].metadata
+    assert md["join_strategy"] == "name_join"
+    assert "no taxon id" in md["identifier_strategy"].lower()
+
+
+def test_direct_id_domains_do_not_require_crosswalk():
+    for domain in ("occurrences", "conservation", "media", "traits"):
+        assert registry_by_domain()[domain].metadata["crosswalk_required"] is False
+
+
+def _load_json(name):
+    path = _os.path.join(_DOCS, name)
+    if not _os.path.exists(path):
+        pytest.skip(f"artifact {name} not generated in this environment")
+    with open(path) as fh:
+        return _json.load(fh)
+
+
+def test_name_collision_stats_shape_and_rates():
+    stats = _load_json("name_collision_statistics.json")
+    for domain in ("pollinators", "mycorrhiza", "literature"):
+        d = stats[domain]
+        assert d["distinct_names"] >= d["names_matched_backbone"]
+        assert 0.0 <= d["match_rate"] <= 1.0
+        assert 0.0 <= d["orphan_rate"] <= 1.0
+        # orphans + matched cannot exceed distinct names
+        assert d["orphan_names"] + d["names_matched_backbone"] >= d["distinct_names"] - 0
+
+
+def test_mycorrhiza_collision_detected():
+    stats = _load_json("name_collision_statistics.json")
+    myc = stats["mycorrhiza"]
+    # collisions inflate rows into more edges than source rows
+    assert myc["edges_after_join_fanout"] > myc["source_rows"]
+    assert myc["colliding_names_gt1_node"] > 0
+
+
+def test_crosswalk_confidence_bounds():
+    stats = _load_json("crosswalk_statistics.json")
+    x = stats["orchid_taxonomy_to_backbone"]
+    assert x["total_pairs"] >= x["distinct_source_ids"]
+    assert x["distinct_destination_ids"] > 0
