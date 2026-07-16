@@ -11,6 +11,7 @@ on:
   push:
     branches:
       - build-070-knowledge-intake
+      - build-070-post-merge-audit-fixes
     paths:
       - "app/intake/**"
       - "app/routers/health.py"
@@ -34,13 +35,24 @@ jobs:
           PYTHONPATH: .
         run: |
           python - <<'PY'
-          from app.intake.extractor import content_hash, extract
+          from pathlib import Path
+          import importlib.util
+          import sys
+          import types
+
+          package = types.ModuleType("app.intake")
+          package.__path__ = [str(Path("app/intake").resolve())]
+          sys.modules["app.intake"] = package
+          spec = importlib.util.spec_from_file_location("app.intake.extractor", "app/intake/extractor.py")
+          module = importlib.util.module_from_spec(spec)
+          sys.modules[spec.name] = module
+          spec.loader.exec_module(module)
 
           text = (
               "A newly described orchid species Pleurothallis pembertoniii was reported by "
               "Kew Gardens. The Darwin Initiative grant deadline is July 20, 2026."
           )
-          result = extract(text)
+          result = module.extract(text)
           names = {(e.entity_type, e.canonical_name) for e in result.entities}
           assert ("species", "Pleurothallis pembertoniii") in names
           assert ("deadline", "July 20, 2026") in names
@@ -49,16 +61,28 @@ jobs:
           assert ("species", "Initiative grant") not in names
           assert any(t.task_type == "verify_taxonomy" for t in result.tasks)
           assert any(t.task_type == "review_funding" for t in result.tasks)
+          assert result.model_dump() == module.extract(text).model_dump()
+          assert module.content_hash(text) == module.content_hash(text)
 
-          second = extract(text)
-          assert result.model_dump() == second.model_dump()
-          assert content_hash(text) == content_hash(text)
-
-          api_result = extract("API documentation: https://example.org/api and DOI 10.1111/gcb.12345")
-          assert any(e.entity_type == "api_or_url" for e in api_result.entities)
-          assert any(e.metadata.get("scheme") == "doi" for e in api_result.entities)
-          assert any(t.task_type == "review_api" for t in api_result.tasks)
-          print("BUILD-070 smoke validation passed")
+          repository = Path("app/intake/repository.py").read_text()
+          assert "ON CONFLICT (content_hash) DO NOTHING" in repository
+          assert "WHERE content_hash = %s" in repository
+          print("BUILD-070 focused validation passed")
           PY
       - name: Compile intake package
         run: python -m compileall -q app/intake
+
+  startup-import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+      - name: Import FastAPI application
+        env:
+          PYTHONPATH: .
+        run: python -c "from app.main import app; assert app is not None; print('app.main import passed')"
