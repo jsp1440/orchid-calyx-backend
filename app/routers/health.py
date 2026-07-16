@@ -1,6 +1,7 @@
 import os
 from fastapi import APIRouter, Depends, Request, Response
 
+from app.intake.routes import router as intake_router
 from app.routers.calyx_queue import router as calyx_queue_router
 from app.routers.executive import router as executive_router
 from app.routers.mission_control import router as mission_control_router
@@ -71,6 +72,12 @@ def harvesters_options(full_path: str, request: Request, response: Response):
     return {"status": "ok", "path": full_path}
 
 
+@router.options("/api/intake/{full_path:path}")
+def intake_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
 @router.get("/health")
 def health():
     return {"status": "ok"}
@@ -91,6 +98,7 @@ router.include_router(owner_session_token_router, dependencies=[Depends(add_miss
 router.include_router(executive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(scientific_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(calyx_queue_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(intake_router)
 router.include_router(config_router)
 router.include_router(infrastructure_router)
 router.include_router(connector_router)
