@@ -10,7 +10,9 @@ def test_extracts_species_deadline_organization_and_tasks():
     names = {(e.entity_type, e.canonical_name) for e in result.entities}
     assert ("species", "Pleurothallis pembertoniii") in names
     assert ("deadline", "July 20, 2026") in names
-    assert any(e.entity_type == "organization" for e in result.entities)
+    assert ("organization", "Kew Gardens") in names
+    assert ("organization", "Darwin Initiative") in names
+    assert ("species", "Initiative grant") not in names
     assert any(t.task_type == "verify_taxonomy" for t in result.tasks)
     assert any(t.task_type == "review_funding" for t in result.tasks)
 
