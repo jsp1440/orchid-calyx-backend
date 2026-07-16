@@ -1,5 +1,5 @@
-"""BUILD-070 knowledge intake pipeline."""
+"""BUILD-070 knowledge intake pipeline.
 
-from .routes import router
-
-__all__ = ["router"]
+Routers are imported explicitly from ``app.intake.routes`` by the application so
+standalone extraction and validation do not initialize database dependencies.
+"""
