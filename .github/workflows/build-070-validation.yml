@@ -33,6 +33,9 @@ jobs:
       - name: Run BUILD-070 tests
         env:
           PYTHONPATH: .
-        run: pytest -q tests/test_build_070_intake_extractor.py
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -vv tests/test_build_070_intake_extractor.py 2>&1 | tee /tmp/build070-pytest.log
       - name: Compile intake package
         run: python -m compileall -q app/intake
