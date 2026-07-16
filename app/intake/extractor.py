@@ -2,14 +2,30 @@ import re
 from hashlib import sha256
 from .schemas import ExtractionResult, IntakeEntity, IntakeRelationship, IntakeTask
 
-PARSER_VERSION = "build-070-rules-v1"
+PARSER_VERSION = "build-070-rules-v2"
 
 SPECIES_PATTERN = re.compile(r"\b([A-Z][a-z]{2,})\s+([a-z][a-z-]{2,})\b")
 DOI_PATTERN = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\b", re.I)
 URL_PATTERN = re.compile(r"https?://[^\s)]+", re.I)
-DEADLINE_PATTERN = re.compile(r"\b(?:deadline|closing|closes|before)\s+(?:on\s+)?([A-Z][a-z]+\s+\d{1,2},\s+20\d{2})", re.I)
+DEADLINE_PATTERN = re.compile(
+    r"\b(?:deadline|closing|closes|before)\s+(?:(?:is|on)\s+)?([A-Z][a-z]+\s+\d{1,2},\s+20\d{2})",
+    re.I,
+)
 ORG_SUFFIX = r"(?:Initiative|Fund|Foundation|Garden|Gardens|Institute|University|Society|Consortium|Department|Agency|Center|Centre)"
-ORG_PATTERN = re.compile(rf"\b([A-Z][A-Za-z&'’.-]*(?:\s+[A-Z][A-Za-z&'’.-]*){{0,7}}\s+{ORG_SUFFIX})\b")
+ORG_PATTERN = re.compile(
+    rf"\b([A-Z][A-Za-z&'’()-]*(?:[ \t]+[A-Z][A-Za-z&'’()-]*){{0,7}}[ \t]+{ORG_SUFFIX})\b"
+)
+
+NON_TAXON_FIRST_WORDS = {
+    "American", "Australian", "Botanical", "Conservation", "Darwin", "Elegant",
+    "Fen", "Global", "Initiative", "International", "Kew", "Mohamed", "New",
+    "Orchid", "Royal", "Synthetic", "The", "Translocation",
+}
+NON_TAXON_EPITHETS = {
+    "agency", "applications", "border", "climate", "consortium", "department",
+    "foundation", "fund", "garden", "gardens", "grant", "initiative", "institute",
+    "opportunity", "program", "report", "services", "study", "summit", "university",
+}
 
 
 def normalize(value: str) -> str:
@@ -27,17 +43,24 @@ def _entity(entity_type: str, name: str, exact: str, confidence: float, **metada
     )
 
 
+def _is_probable_species(match: re.Match[str], content: str) -> bool:
+    genus, epithet = match.group(1), match.group(2)
+    if genus in NON_TAXON_FIRST_WORDS or epithet in NON_TAXON_EPITHETS:
+        return False
+    nearby = content[max(0, match.start() - 60):match.end() + 60].lower()
+    return any(marker in nearby for marker in ("orchid", "species", "described", "taxon", "endemic"))
+
+
 def extract(content: str) -> ExtractionResult:
     entities: dict[tuple[str, str], IntakeEntity] = {}
     relationships: list[IntakeRelationship] = []
     tasks: list[IntakeTask] = []
 
     for match in SPECIES_PATTERN.finditer(content):
+        if not _is_probable_species(match, content):
+            continue
         name = f"{match.group(1)} {match.group(2)}"
-        # Conservative botanical filter: exclude ordinary title-case phrases.
-        nearby = content[max(0, match.start() - 80):match.end() + 80].lower()
-        if any(marker in nearby for marker in ("orchid", "species", "described", "taxon", "endemic")):
-            entities[("species", normalize(name))] = _entity("species", name, match.group(0), 0.86)
+        entities[("species", normalize(name))] = _entity("species", name, match.group(0), 0.86)
 
     for match in DOI_PATTERN.finditer(content):
         value = match.group(0).rstrip(".,;")
@@ -59,7 +82,7 @@ def extract(content: str) -> ExtractionResult:
     lower = content.lower()
     if any(word in lower for word in ("grant", "funding", "applications open")):
         tasks.append(IntakeTask(task_type="review_funding", title="Review funding opportunity", priority="HIGH", rationale="Funding language detected in source."))
-    if "new species" in lower or "formally described" in lower or "species description" in lower:
+    if "new species" in lower or "formally described" in lower or "species description" in lower or "newly described" in lower:
         tasks.append(IntakeTask(task_type="verify_taxonomy", title="Verify newly described taxa", priority="HIGH", rationale="Taxonomic novelty language detected."))
     if "api" in lower:
         tasks.append(IntakeTask(task_type="review_api", title="Review referenced API or integration", priority="MEDIUM", rationale="API language detected."))
