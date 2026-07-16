@@ -99,6 +99,51 @@ def test_pagination_limit_and_truncation():
     assert len(result["edges"]) == 2
 
 
+def test_pagination_preserves_nonzero_first_hop_offset():
+    repo = build_taxonomy_repo(
+        "Bulbophyllum", 99,
+        [(f"Bulbophyllum sp{i}", 5000 + i) for i in range(6)],
+    )
+    focal = repo.find_genus_node("Bulbophyllum")
+
+    result = traverse(
+        repo, focal, depth=1, edge_types=["genus_contains_species"],
+        limit=2, offset=2,
+    )
+
+    assert result["pagination"] == {
+        "limit": 2,
+        "offset": 2,
+        "truncated": True,
+        "next_offset": 4,
+    }
+    assert [edge["id"] for edge in result["edges"]] == [5, 7]
+
+
+def test_depth_two_aggregates_taxonomy_and_authorized_domain_evidence():
+    nodes = [
+        _genus(1, "Cattleya", 560),
+        _species(2, "Cattleya labiata", 1001),
+        Node(3, "trait", "trait:t1", "epiphyte", "oc_views.trait_resolved_v4",
+             "t1", "normalized", 0.9, "high", {"trait_name": "habit"}),
+    ]
+    edges = [
+        _edge(1, "genus_contains_species", 1, 2),
+        Edge(2, "has_trait", 2, 3, "oc_views.trait_resolved_v4", "t1",
+             "normalized", 0.9, "high", "traits_build"),
+    ]
+    repo = InMemoryGraphRepository(nodes, edges)
+
+    result = traverse(repo, repo.find_genus_node("Cattleya"), depth=2, limit=10)
+
+    assert {node["node_type"] for node in result["nodes"]} == {"taxon", "trait"}
+    assert {edge["edge_type"] for edge in result["edges"]} == {
+        "genus_contains_species", "has_trait",
+    }
+    assert result["domain_coverage"]["taxonomy"] == {"nodes": 1, "edges": 1}
+    assert result["domain_coverage"]["traits"] == {"nodes": 1, "edges": 1}
+
+
 def test_depth_is_clamped():
     repo = build_taxonomy_repo("Cattleya", 560, [("Cattleya labiata", 1001)])
     focal = repo.find_genus_node("Cattleya")
