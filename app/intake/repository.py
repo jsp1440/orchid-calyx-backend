@@ -1,5 +1,6 @@
 import os
 from typing import Any
+
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -15,20 +16,31 @@ def database_url() -> str:
 def create_source(*, source_type: str, title: str, content: str, content_hash: str, source_url: str | None, imported_by: str | None, extraction: Any) -> dict[str, Any]:
     with psycopg.connect(database_url(), row_factory=dict_row) as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, status FROM oc_intake.sources WHERE content_hash = %s", (content_hash,))
-            existing = cur.fetchone()
-            if existing:
-                return {**existing, "duplicate": True}
             cur.execute(
                 """
                 INSERT INTO oc_intake.sources
                     (source_type, title, source_url, raw_content, content_hash, imported_by, status, parser_version)
                 VALUES (%s, %s, %s, %s, %s, %s, 'REVIEW', %s)
+                ON CONFLICT (content_hash) DO NOTHING
                 RETURNING id, source_type, title, source_url, content_hash, status, imported_at, parser_version
                 """,
                 (source_type, title, source_url, content, content_hash, imported_by, extraction.parser_version),
             )
             source = cur.fetchone()
+            if source is None:
+                cur.execute(
+                    """
+                    SELECT id, source_type, title, source_url, content_hash, status, imported_at, parser_version
+                    FROM oc_intake.sources
+                    WHERE content_hash = %s
+                    """,
+                    (content_hash,),
+                )
+                existing = cur.fetchone()
+                if existing is None:
+                    raise RuntimeError("Duplicate intake source could not be re-read after conflict")
+                return {**existing, "duplicate": True}
+
             for entity in extraction.entities:
                 cur.execute(
                     """
@@ -53,7 +65,14 @@ def create_source(*, source_type: str, title: str, content: str, content_hash: s
                     VALUES (%s, %s, %s, %s, %s, 'OPEN')""",
                     (source["id"], task.task_type, task.title, task.priority, task.rationale),
                 )
-            cur.execute("INSERT INTO oc_intake.review_queue (source_id, review_status) VALUES (%s, 'PENDING')", (source["id"],))
+            cur.execute(
+                """
+                INSERT INTO oc_intake.review_queue (source_id, review_status)
+                VALUES (%s, 'PENDING')
+                ON CONFLICT (source_id) DO NOTHING
+                """,
+                (source["id"],),
+            )
             source["duplicate"] = False
             source["entity_count"] = len(extraction.entities)
             source["relationship_count"] = len(extraction.relationships)
