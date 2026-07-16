@@ -1,7 +1,6 @@
 import os
 from fastapi import APIRouter, Depends, Request, Response
 
-from app.intake.routes import router as intake_router
 from app.routers.calyx_queue import router as calyx_queue_router
 from app.routers.executive import router as executive_router
 from app.routers.mission_control import router as mission_control_router
@@ -18,8 +17,15 @@ ALLOWED_MISSION_CONTROL_ORIGINS = {
     "http://localhost:5174",
     "http://127.0.0.1:5174",
 }
+
+
 def allowed_mission_control_origins() -> set[str]:
-    return ALLOWED_MISSION_CONTROL_ORIGINS | {item.strip().rstrip("/") for item in os.getenv("CORS_ALLOW_ORIGIN", "").split(",") if item.strip() and item.strip() != "*"}
+    return ALLOWED_MISSION_CONTROL_ORIGINS | {
+        item.strip().rstrip("/")
+        for item in os.getenv("CORS_ALLOW_ORIGIN", "").split(",")
+        if item.strip() and item.strip() != "*"
+    }
+
 
 router = APIRouter(tags=["health"])
 
@@ -91,6 +97,11 @@ def system_status():
         "backend": "calyx",
     }
 
+
+# Import only after the CORS dependency has been defined. The intake router imports
+# add_mission_control_cors_headers from this module, so importing it at module start
+# creates a partially initialized-module cycle and prevents app startup.
+from app.intake.routes import router as intake_router
 
 router.include_router(mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(owner_operations_router, dependencies=[Depends(add_mission_control_cors_headers)])
