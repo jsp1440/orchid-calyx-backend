@@ -2,7 +2,7 @@ import re
 from hashlib import sha256
 from .schemas import ExtractionResult, IntakeEntity, IntakeRelationship, IntakeTask
 
-PARSER_VERSION = "build-070-rules-v2"
+PARSER_VERSION = "build-070-rules-v3"
 
 SPECIES_PATTERN = re.compile(r"\b([A-Z][a-z]{2,})\s+([a-z][a-z-]{2,})\b")
 DOI_PATTERN = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\b", re.I)
@@ -30,6 +30,11 @@ NON_TAXON_EPITHETS = {
 
 def normalize(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def canonical_organization_name(value: str) -> str:
+    value = value.strip()
+    return re.sub(r"^(?:The|A|An)\s+", "", value).strip()
 
 
 def _entity(entity_type: str, name: str, exact: str, confidence: float, **metadata) -> IntakeEntity:
@@ -76,8 +81,9 @@ def extract(content: str) -> ExtractionResult:
         tasks.append(IntakeTask(task_type="review_deadline", title=f"Review deadline: {value}", priority="HIGH", rationale=match.group(0)))
 
     for match in ORG_PATTERN.finditer(content):
-        value = match.group(1).strip()
-        entities[("organization", normalize(value))] = _entity("organization", value, match.group(0), 0.82)
+        exact = match.group(1).strip()
+        value = canonical_organization_name(exact)
+        entities[("organization", normalize(value))] = _entity("organization", value, exact, 0.82)
 
     lower = content.lower()
     if any(word in lower for word in ("grant", "funding", "applications open")):
