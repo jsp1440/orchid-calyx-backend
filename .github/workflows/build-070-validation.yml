@@ -27,15 +27,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install focused dependencies
+        run: pip install "pydantic>=2,<3" pytest
       - name: Run BUILD-070 tests
         env:
           PYTHONPATH: .
-        shell: bash
-        run: |
-          set -o pipefail
-          pytest -vv tests/test_build_070_intake_extractor.py 2>&1 | tee /tmp/build070-pytest.log
+        run: pytest -q tests/test_build_070_intake_extractor.py
       - name: Compile intake package
         run: python -m compileall -q app/intake
