@@ -1,0 +1,64 @@
+name: BUILD-070 Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/intake/**"
+      - "app/routers/health.py"
+      - "migrations/070_knowledge_intake.sql"
+      - "tests/test_build_070_intake_extractor.py"
+      - ".github/workflows/build-070-validation.yml"
+  push:
+    branches:
+      - build-070-knowledge-intake
+    paths:
+      - "app/intake/**"
+      - "app/routers/health.py"
+      - "migrations/070_knowledge_intake.sql"
+      - "tests/test_build_070_intake_extractor.py"
+      - ".github/workflows/build-070-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  focused-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused dependency
+        run: pip install "pydantic>=2,<3"
+      - name: Run standalone BUILD-070 smoke test
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          from app.intake.extractor import content_hash, extract
+
+          text = (
+              "A newly described orchid species Pleurothallis pembertoniii was reported by "
+              "Kew Gardens. The Darwin Initiative grant deadline is July 20, 2026."
+          )
+          result = extract(text)
+          names = {(e.entity_type, e.canonical_name) for e in result.entities}
+          assert ("species", "Pleurothallis pembertoniii") in names
+          assert ("deadline", "July 20, 2026") in names
+          assert ("organization", "Kew Gardens") in names
+          assert ("organization", "Darwin Initiative") in names
+          assert ("species", "Initiative grant") not in names
+          assert any(t.task_type == "verify_taxonomy" for t in result.tasks)
+          assert any(t.task_type == "review_funding" for t in result.tasks)
+
+          second = extract(text)
+          assert result.model_dump() == second.model_dump()
+          assert content_hash(text) == content_hash(text)
+
+          api_result = extract("API documentation: https://example.org/api and DOI 10.1111/gcb.12345")
+          assert any(e.entity_type == "api_or_url" for e in api_result.entities)
+          assert any(e.metadata.get("scheme") == "doi" for e in api_result.entities)
+          assert any(t.task_type == "review_api" for t in api_result.tasks)
+          print("BUILD-070 smoke validation passed")
+          PY
+      - name: Compile intake package
+        run: python -m compileall -q app/intake
