@@ -40,6 +40,7 @@ def traverse(
     depth = _clamp(depth, 1, MAX_DEPTH)
     limit = _clamp(limit, 1, MAX_LIMIT)
     offset = max(0, offset)
+    requested_offset = offset
     node_type_filter = set(node_types) if node_types else None
     edge_type_filter = set(edge_types) if edge_types else None
 
@@ -96,9 +97,9 @@ def traverse(
         },
         "pagination": {
             "limit": limit,
-            "offset": offset,
+            "offset": requested_offset,
             "truncated": truncated,
-            "next_offset": (offset + limit) if truncated else None,
+            "next_offset": (requested_offset + limit) if truncated else None,
         },
         "filters": {
             "node_types": sorted(node_type_filter) if node_type_filter else None,
