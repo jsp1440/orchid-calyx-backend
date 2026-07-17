@@ -289,7 +289,6 @@ def executive_intelligence_snapshot(
                 execution_history: list[dict[str, Any]] = []
                 workflow_logs: list[dict[str, Any]] = []
                 execution_summary = {"total_actions": 0, "completed": 0, "pending": 0}
-                execution_summary = {"total_actions": 0, "completed": 0, "pending": 0}
                 if workflow_actions_exists:
                     source_join = "LEFT JOIN oc_intake.sources s ON s.id = a.source_id" if source_table_exists else ""
                     source_title_select = ", s.title AS source_title" if source_table_exists else ""
@@ -423,12 +422,12 @@ def executive_intelligence_snapshot(
                         "recent_entries": recent_usage,
                     },
                 }
-    except Exception as exc:
+    except Exception:
         return {
             **base,
             "status": "telemetry_error",
             "database_connected": False,
-            "blockers": [f"Executive Intelligence Mission Control telemetry unavailable: {exc}"],
+            "blockers": ["Executive Intelligence Mission Control telemetry is temporarily unavailable."],
             "providers": {"summary": {"total": 0, "healthy": 0, "available": 0, "managed": 0}, "items": []},
             "budgets": {"summary": {"scopes": 0, "tracked_calls": 0, "tracked_spend_usd": 0.0}, "items": []},
             "recommendation_queue": {"summary": {"total": 0, "pending": 0, "approved": 0, "rejected": 0, "routed": 0}, "items": []},
