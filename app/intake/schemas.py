@@ -38,6 +38,13 @@ class ReviewDecision(BaseModel):
     notes: Optional[str] = None
 
 
+class DocumentReview(BaseModel):
+    action: str
+    classification: Optional[str] = None
+    note: Optional[str] = None
+    actor: Optional[str] = Field(default=None, max_length=200)
+
+
 class IntakeEntity(BaseModel):
     entity_type: str
     canonical_name: str

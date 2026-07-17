@@ -108,7 +108,6 @@ def system_status():
 
 # Import after CORS helpers are defined; these routers depend on this module.
 from app.executive_intelligence.routes import router as executive_intelligence_router
-from app.intake.routes import router as intake_router
 from app.workflow.routes import router as workflow_router
 
 router.include_router(mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
@@ -117,7 +116,6 @@ router.include_router(owner_session_token_router, dependencies=[Depends(add_miss
 router.include_router(executive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(scientific_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(calyx_queue_router, dependencies=[Depends(add_mission_control_cors_headers)])
-router.include_router(intake_router)
 router.include_router(workflow_router)
 router.include_router(executive_intelligence_router)
 router.include_router(config_router)
