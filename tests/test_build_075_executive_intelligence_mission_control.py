@@ -36,7 +36,7 @@ def test_owner_executive_intelligence_returns_snapshot_when_authenticated(monkey
 
     resp = client.get(
         "/api/mission-control/owner/executive-intelligence",
-        headers={"Authorization": f"******"},
+        headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -61,7 +61,7 @@ def test_owner_executive_intelligence_snapshot_is_read_only_except_review(monkey
 
     body = client.get(
         "/api/mission-control/owner/executive-intelligence",
-        headers={"Authorization": f"******"},
+        headers={"Authorization": f"Bearer {token}"},
     ).json()
 
     assert body["mode"] == "read_only_except_approval_reject"
@@ -77,7 +77,7 @@ def test_owner_executive_intelligence_snapshot_includes_future_module_slots(monk
 
     layout = client.get(
         "/api/mission-control/owner/executive-intelligence",
-        headers={"Authorization": f"******"},
+        headers={"Authorization": f"Bearer {token}"},
     ).json()["layout"]
 
     future_modules = {item["id"] for item in layout["future_modules"]}
@@ -109,7 +109,7 @@ def test_owner_eos_state_includes_executive_intelligence(monkeypatch):
 
     body = client.get(
         "/api/mission-control/owner/eos-state",
-        headers={"Authorization": f"******"},
+        headers={"Authorization": f"Bearer {token}"},
     ).json()
 
     assert "executive_intelligence" in body
@@ -144,7 +144,7 @@ def test_owner_executive_intelligence_decision_endpoint_records_approval(monkeyp
     monkeypatch.setattr("app.routers.owner_operations.executive_intelligence_decide", fake_decide)
     resp = client.patch(
         "/api/mission-control/owner/executive-intelligence/recommendations/12",
-        headers={"Authorization": f"******"},
+        headers={"Authorization": f"Bearer {token}"},
         json={"decision": "APPROVE", "notes": "Looks good"},
     )
     assert resp.status_code == 200
@@ -163,7 +163,7 @@ def test_owner_executive_intelligence_decision_endpoint_returns_404_for_missing_
     monkeypatch.setattr("app.routers.owner_operations.executive_intelligence_decide", lambda *args, **kwargs: None)
     resp = client.patch(
         "/api/mission-control/owner/executive-intelligence/recommendations/12",
-        headers={"Authorization": f"******"},
+        headers={"Authorization": f"Bearer {token}"},
         json={"decision": "REJECT"},
     )
     assert resp.status_code == 404
