@@ -54,6 +54,12 @@ def executive_options(full_path: str, request: Request, response: Response):
     return {"status": "ok", "path": full_path}
 
 
+@router.options("/api/executive-intelligence/{full_path:path}")
+def executive_intelligence_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
 @router.options("/api/scientific-intelligence/{full_path:path}")
 def scientific_intelligence_options(full_path: str, request: Request, response: Response):
     add_mission_control_cors_headers(request, response)
@@ -97,14 +103,11 @@ def health():
 
 @router.get("/system/status")
 def system_status():
-    return {
-        "status": "ok",
-        "service": "orchid-continuum",
-        "backend": "calyx",
-    }
+    return {"status": "ok", "service": "orchid-continuum", "backend": "calyx"}
 
 
-# Import after CORS helpers are defined; both routers depend on this module.
+# Import after CORS helpers are defined; these routers depend on this module.
+from app.executive_intelligence.routes import router as executive_intelligence_router
 from app.intake.routes import router as intake_router
 from app.workflow.routes import router as workflow_router
 
@@ -116,6 +119,7 @@ router.include_router(scientific_intelligence_router, dependencies=[Depends(add_
 router.include_router(calyx_queue_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(intake_router)
 router.include_router(workflow_router)
+router.include_router(executive_intelligence_router)
 router.include_router(config_router)
 router.include_router(infrastructure_router)
 router.include_router(connector_router)
