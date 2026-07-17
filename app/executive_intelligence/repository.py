@@ -70,7 +70,10 @@ def executive_intelligence_snapshot(
     history_limit: int = 25,
     usage_limit: int = 25,
 ) -> dict[str, Any]:
-    url = database_url()
+    try:
+        url = database_url()
+    except RuntimeError:
+        url = None
     base = {
         "build": MISSION_CONTROL_BUILD,
         "section_id": "executive_intelligence",
