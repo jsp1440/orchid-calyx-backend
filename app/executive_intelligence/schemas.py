@@ -3,6 +3,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 Priority = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+BudgetDecision = Literal["ALLOW", "WARN", "DOWNGRADE", "BLOCK"]
+RecommendationStatus = Literal["PENDING", "APPROVED", "REJECTED", "ROUTED"]
 
 
 class RecommendationGenerateRequest(BaseModel):
