@@ -4,5 +4,7 @@
 - `GET /api/executive-intelligence/recommendations`
 - `PATCH /api/executive-intelligence/recommendations/{recommendation_id}`
 - `POST /api/executive-intelligence/providers/route`
+- `GET /api/mission-control/owner/executive-intelligence`
+- `PATCH /api/mission-control/owner/executive-intelligence/recommendations/{recommendation_id}`
 
 All endpoints require the existing owner session or API key. Recommendation generation is permitted only for APPROVED or PUBLISHED intake sources.

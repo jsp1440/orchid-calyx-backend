@@ -264,6 +264,38 @@ class KernelRegistryService:
     def builds(self) -> list[BuildRegistryEntry]:
         return [
             BuildRegistryEntry(
+                id="build-075",
+                name="BUILD-075 Executive Intelligence Mission Control",
+                description="Exposes the Executive Intelligence foundation through a secure Mission Control interface with provider registry, budget, recommendation, workflow, and usage telemetry.",
+                version=KERNEL_VERSION,
+                status="active",
+                health="healthy",
+                owner=self.owner,
+                repository=self.backend_repo,
+                dependencies=["fastapi", "runtime", "build-074", "build-065"],
+                capabilities=[
+                    "executive-intelligence-mission-control",
+                    "provider-registry-telemetry",
+                    "budget-telemetry",
+                    "recommendation-review",
+                    "workflow-log-telemetry",
+                    "usage-ledger-telemetry",
+                ],
+                telemetry_source="kernel_build_registry",
+                evidence=_evidence("BUILD-075", "Mission Control now exposes Executive Intelligence through an owner-authenticated read-only dashboard with approval/reject controls."),
+                build_number="BUILD-075",
+                branch="feature/build-075-executive-intelligence-mission-control",
+                deployment="backend",
+                success_criteria=[
+                    "GET /api/mission-control/owner/executive-intelligence returns provider, budget, recommendation, workflow, and usage telemetry",
+                    "PATCH /api/mission-control/owner/executive-intelligence/recommendations/{id} records approve/reject decisions",
+                    "Executive session and EOS state include the Executive Intelligence Mission Control section",
+                    "All Mission Control and Executive Intelligence tests still pass",
+                ],
+                blockers=[],
+                next_build="BUILD-076",
+            ),
+            BuildRegistryEntry(
                 id="build-065",
                 name="BUILD-065 Executive Operating System Integration",
                 description="Integrates Mission Control into a unified Executive Operating System with decision layer, priority queue, Calyx narrative, subsystem relationships, and multi-dimensional readiness.",
