@@ -84,6 +84,12 @@ def intake_options(full_path: str, request: Request, response: Response):
     return {"status": "ok", "path": full_path}
 
 
+@router.options("/api/workflow/{full_path:path}")
+def workflow_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
 @router.get("/health")
 def health():
     return {"status": "ok"}
@@ -98,10 +104,9 @@ def system_status():
     }
 
 
-# Import only after the CORS dependency has been defined. The intake router imports
-# add_mission_control_cors_headers from this module, so importing it at module start
-# creates a partially initialized-module cycle and prevents app startup.
+# Import after CORS helpers are defined; both routers depend on this module.
 from app.intake.routes import router as intake_router
+from app.workflow.routes import router as workflow_router
 
 router.include_router(mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(owner_operations_router, dependencies=[Depends(add_mission_control_cors_headers)])
@@ -110,6 +115,7 @@ router.include_router(executive_router, dependencies=[Depends(add_mission_contro
 router.include_router(scientific_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(calyx_queue_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(intake_router)
+router.include_router(workflow_router)
 router.include_router(config_router)
 router.include_router(infrastructure_router)
 router.include_router(connector_router)
