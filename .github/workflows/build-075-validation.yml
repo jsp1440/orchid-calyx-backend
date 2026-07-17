@@ -1,0 +1,26 @@
+name: BUILD-075 validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/executive_intelligence/**'
+      - 'app/routers/mission_control.py'
+      - 'app/routers/owner_operations.py'
+      - 'runtime/kernel_registry.py'
+      - 'tests/test_build_075_executive_intelligence_mission_control.py'
+      - '.github/workflows/build-075-validation.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt pytest httpx
+      - run: python -m pytest tests/test_build_074_executive_intelligence.py tests/test_build_075_executive_intelligence_mission_control.py tests/test_build_065_eos_integration.py tests/test_mission_control_regression_001.py tests/test_mission_control_telemetry.py
+      - run: python -m compileall app/executive_intelligence app/routers/mission_control.py app/routers/owner_operations.py runtime/kernel_registry.py

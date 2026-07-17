@@ -21,6 +21,10 @@ BUILD-065 additions:
 BUILD-066A additions:
 - POST /control-verification: create and persist labeled verification record
 - GET /control-verification/:id: retrieve verification record by ID with DB read-back
+
+BUILD-075 additions:
+- Owner-authenticated Executive Intelligence Mission Control section
+- Read-only Executive Intelligence snapshot with explicit approval/reject actions
 """
 
 from __future__ import annotations
@@ -40,6 +44,9 @@ from psycopg.types.json import Jsonb
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
+from app.executive_intelligence.repository import executive_intelligence_snapshot
+from app.executive_intelligence.repository import decide as executive_intelligence_decide
+from app.executive_intelligence.schemas import RecommendationDecisionRequest
 from app.security import OWNER_SESSION_COOKIE, REVOKED_OWNER_NONCES, create_owner_session_token, owner_cookie_samesite, owner_cookie_secure, owner_session_ttl_seconds, verify_owner_access_code, verify_owner_or_api_key, verify_owner_session
 from app.routers.mission_control import completeness_rows, harvester_rows, metric_snapshot
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
@@ -583,6 +590,23 @@ async def executive_session(request: Request) -> dict[str, Any]:
                     "status": "operational",
                 },
                 {
+                    "id": "executive_intelligence",
+                    "title": "Executive Intelligence",
+                    "description": "Secure Mission Control view of provider registry, budgets, recommendation queue, workflow execution, and usage ledger.",
+                    "endpoint": "/api/mission-control/owner/executive-intelligence",
+                    "auth_required": True,
+                    "status": "operational" if authenticated else "requires_owner_authorization",
+                    "review_endpoint": "/api/mission-control/owner/executive-intelligence/recommendations/{id}",
+                    "future_modules": [
+                        "SKAS",
+                        "Literature Acquisition",
+                        "Source Registry",
+                        "Harvesters",
+                        "Research Agents",
+                        "Knowledge Object generation",
+                    ],
+                },
+                {
                     "id": "intelligence",
                     "title": "Intelligence Workspace",
                     "description": "Source briefings, intelligence items, and Brain knowledge promotion queue.",
@@ -619,6 +643,7 @@ async def executive_session(request: Request) -> dict[str, Any]:
             "navigation": {
                 "executive_state": "/api/executive/state",
                 "owner_session": "/api/mission-control/owner/executive-session",
+                "executive_intelligence": "/api/mission-control/owner/executive-intelligence",
                 "telemetry_status": "/api/mission-control/status",
                 "audit": "/api/mission-control/audit",
                 "completeness": "/api/mission-control/completeness",
@@ -1233,6 +1258,46 @@ def owner_recommendations(auth: dict[str, object] = Depends(verify_owner_or_api_
     }
 
 
+@router.get("/executive-intelligence")
+def owner_executive_intelligence(
+    workspace_id: str | None = Query(default=None),
+    project_id: str | None = Query(default=None),
+    auth: dict[str, object] = Depends(verify_owner_or_api_key),
+) -> dict[str, Any]:
+    snapshot = executive_intelligence_snapshot(workspace_id=workspace_id, project_id=project_id)
+    return {
+        **snapshot,
+        "owner": actor(auth),
+        "allowedActions": allowed_actions(True),
+        "review_status": "owner_review_enabled",
+        "generated_at": utc_now(),
+    }
+
+
+@router.patch("/executive-intelligence/recommendations/{recommendation_id}")
+def owner_executive_intelligence_recommendation_decision(
+    recommendation_id: int,
+    payload: RecommendationDecisionRequest,
+    auth: dict[str, object] = Depends(verify_owner_or_api_key),
+) -> dict[str, Any]:
+    result = executive_intelligence_decide(
+        recommendation_id,
+        payload.decision,
+        payload.actor or actor(auth),
+        payload.notes,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Pending recommendation not found")
+    return {
+        "build": "BUILD-075",
+        "owner": actor(auth),
+        "review_status": "decision_recorded",
+        "recommendation": result,
+        "allowedActions": allowed_actions(True),
+        "generated_at": utc_now(),
+    }
+
+
 @router.get("/governance")
 def owner_governance(auth: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict[str, Any]:
     """Return live governance state with owner context.
@@ -1756,6 +1821,7 @@ def owner_eos_state(auth: dict[str, object] = Depends(verify_owner_or_api_key)) 
     executive_flow = mission_control_executive_flow()
     relationships = mission_control_relationships()
     readiness = mission_control_readiness()
+    executive_intelligence = executive_intelligence_snapshot()
 
     return {
         "build": "BUILD-065",
@@ -1780,6 +1846,7 @@ def owner_eos_state(auth: dict[str, object] = Depends(verify_owner_or_api_key)) 
         "recommended_next_build": priorities[0] if priorities else None,
         "subsystem_relationships": relationships.get("relationships", []),
         "readiness": readiness.get("subsystems", []),
+        "executive_intelligence": executive_intelligence,
         "calyx_narrative": narrative,
         "governance_summary": {
             "north_star": governance.get("north_star"),
