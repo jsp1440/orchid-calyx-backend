@@ -131,3 +131,100 @@ def mark_published(source_id: int) -> dict[str, Any] | None:
             if result:
                 cur.execute("UPDATE oc_intake.review_queue SET review_status='PUBLISHED', published_at=NOW() WHERE source_id=%s", (source_id,))
             return result
+
+
+def create_batch(display_name: str, source_label: str | None, notes: str | None, uploader: str | None) -> dict[str, Any]:
+    with psycopg.connect(database_url(), row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO oc_intake.ingestion_batches(display_name, source_label, notes, uploader, status)
+                VALUES (%s, %s, %s, %s, 'RECEIVING')
+                RETURNING *""", (display_name, source_label, notes, uploader),
+            )
+            return cur.fetchone()
+
+
+def add_document(*, batch_id: int, filename: str, media_type: str | None, extension: str,
+                 stored, analysis, uploader: str | None) -> dict[str, Any]:
+    with psycopg.connect(database_url(), row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM oc_intake.documents WHERE sha256=%s ORDER BY uploaded_at LIMIT 1", (stored.sha256,))
+            duplicate = cur.fetchone()
+            review_status = "DUPLICATE" if duplicate else "PENDING"
+            cur.execute(
+                """INSERT INTO oc_intake.documents
+                (batch_id, original_filename, display_title, media_type, extension, byte_size, sha256,
+                 storage_key, uploader, processing_status, text_extraction_status, extracted_text,
+                 preliminary_document_type, classification_confidence, relevance, relevance_confidence,
+                 relevance_explanation, review_status, duplicate_of_id, archive_only,
+                 canonical_promotion_prohibited, provenance, candidate_dates, grant_candidate, external_sources)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'PROCESSED',%s,%s,%s,%s,%s,%s,%s,%s,%s,FALSE,TRUE,%s,%s,%s,%s)
+                RETURNING *""",
+                (batch_id, filename, stored.display_filename, media_type, extension, stored.byte_size,
+                 stored.sha256, stored.storage_key, uploader, analysis.extraction_status,
+                 analysis.extracted_text, analysis.document_type, analysis.classification_confidence,
+                 analysis.relevance, analysis.relevance_confidence, analysis.explanation, review_status,
+                 duplicate["id"] if duplicate else None, Jsonb({"original_filename": filename}),
+                 Jsonb(analysis.candidate_dates), Jsonb(analysis.grant_candidate) if analysis.grant_candidate else None,
+                 Jsonb(analysis.external_sources)),
+            )
+            document = cur.fetchone()
+            cur.execute(
+                """INSERT INTO oc_intake.document_events(document_id, action, resulting_state, actor, reason, origin)
+                VALUES (%s, 'INGESTED', %s, %s, %s, 'AUTOMATED')""",
+                (document["id"], Jsonb({"review_status": review_status, "document_type": analysis.document_type}), uploader, analysis.explanation),
+            )
+            return document
+
+
+def finalize_batch(batch_id: int, accepted: int, duplicates: int, failed: int, review_required: int) -> dict[str, Any]:
+    with psycopg.connect(database_url(), row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE oc_intake.ingestion_batches SET status='COMPLETED', file_count=%s,
+                accepted_count=%s, duplicate_count=%s, failed_count=%s, review_required_count=%s,
+                completed_at=NOW() WHERE id=%s RETURNING *""",
+                (accepted + duplicates + failed, accepted, duplicates, failed, review_required, batch_id),
+            )
+            return cur.fetchone()
+
+
+def list_batches(limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+    with psycopg.connect(database_url(), row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM oc_intake.ingestion_batches ORDER BY created_at DESC LIMIT %s OFFSET %s", (limit, offset))
+            return list(cur.fetchall())
+
+
+def get_batch(batch_id: int) -> dict[str, Any] | None:
+    with psycopg.connect(database_url(), row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM oc_intake.ingestion_batches WHERE id=%s", (batch_id,))
+            batch = cur.fetchone()
+            if not batch: return None
+            cur.execute("SELECT * FROM oc_intake.documents WHERE batch_id=%s ORDER BY uploaded_at, id", (batch_id,))
+            batch["documents"] = list(cur.fetchall())
+            return batch
+
+
+def review_document(document_id: int, action: str, actor: str | None, note: str | None,
+                    classification: str | None = None) -> dict[str, Any] | None:
+    allowed = {"ACCEPT", "ARCHIVE_ONLY", "MARK_FOR_EXTRACTION", "REPROCESS", "RETAIN", "REJECT_ACTIVE_CORPUS"}
+    if action not in allowed: raise ValueError("INVALID_REVIEW_ACTION")
+    with psycopg.connect(database_url(), row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT review_status, preliminary_document_type FROM oc_intake.documents WHERE id=%s FOR UPDATE", (document_id,))
+            previous = cur.fetchone()
+            if not previous: return None
+            status = "ACCEPTED" if action in {"ACCEPT", "RETAIN"} else action
+            cur.execute(
+                """UPDATE oc_intake.documents SET review_status=%s,
+                preliminary_document_type=COALESCE(%s, preliminary_document_type), archive_only=(%s='ARCHIVE_ONLY'),
+                reviewed_at=NOW() WHERE id=%s RETURNING *""", (status, classification, action, document_id),
+            )
+            result = cur.fetchone()
+            cur.execute(
+                """INSERT INTO oc_intake.document_events(document_id, action, previous_state, resulting_state, actor, reason, origin)
+                VALUES (%s,%s,%s,%s,%s,%s,'HUMAN')""", (document_id, action, Jsonb(previous), Jsonb({"review_status": status, "classification": classification}), actor, note),
+            )
+            return result
