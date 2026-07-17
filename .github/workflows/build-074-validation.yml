@@ -1,0 +1,25 @@
+name: BUILD-074 validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/executive_intelligence/**'
+      - 'migrations/074_unified_executive_intelligence.sql'
+      - 'tests/test_build_074_executive_intelligence.py'
+      - 'app/routers/health.py'
+      - '.github/workflows/build-074-validation.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest tests/test_build_074_executive_intelligence.py
+      - run: python -m compileall app/executive_intelligence app/routers/health.py
