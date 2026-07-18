@@ -8,9 +8,56 @@ from fastapi.testclient import TestClient
 
 from app.ontology.dependencies import get_evidence_service, get_readiness_service, get_registry_service, get_resolution_service, get_term_service
 from app.ontology.normalizers import normalize_canonical_key, normalize_ontology_text
+from app.ontology.repositories import PostgresOntologyRepository
 from app.ontology.routers import router
 from app.ontology.services import CandidateResolutionService, DeterministicResolutionEngine, EvidenceRegistryService, OntologyRegistryService, OntologyTermService, PublicationReadinessService
 from app.ontology.validators import ensure_no_hierarchy_cycle, require_provenance, validate_readiness_flags, validate_resolution_state
+
+
+class FakeSearchCursor:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[Any, ...]]] = []
+        self.rows = [
+            {
+                "id": 1,
+                "registry_id": 7,
+                "canonical_key": "dracula_lafleurii",
+                "preferred_label": "Dracula lafleurii",
+                "normalized_label": "dracula lafleurii",
+                "term_type": "TAXON",
+                "namespace": "orchid-taxonomy",
+                "version": "2026.1",
+                "registry_status": "ACTIVE",
+                "synonym": None,
+                "normalized_synonym": None,
+            }
+        ]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, sql, params=()):
+        self.calls.append((sql, tuple(params)))
+
+    def fetchall(self):
+        return self.rows
+
+
+class FakeSearchConnection:
+    def __init__(self, cursor: FakeSearchCursor) -> None:
+        self._cursor = cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def cursor(self):
+        return self._cursor
 
 
 class MemoryOntologyRepository:
@@ -163,6 +210,34 @@ def test_exact_normalized_synonym_and_fuzzy_resolution_never_auto_accept(reposit
     assert engine.suggestions("D. lafleurii",terms)[0]["resolution_method"] == "SYNONYM"
     fuzzy=engine.suggestions("Dracula lafleur",terms)[0]
     assert fuzzy["resolution_method"] == "FUZZY" and fuzzy["status"] == "PROPOSED"
+
+
+def test_resolution_service_exact_and_normalized_paths(repository, seeded):
+    service=CandidateResolutionService(repository)
+    exact=service.resolve_one(1,"owner")[0]
+    assert exact["resolution_method"] == "EXACT"
+    assert exact["status"] == "PROPOSED"
+
+    repository.candidates[1]["name"]="DRACULA LAFLEURII."
+    normalized=service.resolve_one(1,"owner")[0]
+    assert normalized["resolution_method"] == "NORMALIZED"
+    assert normalized["status"] == "PROPOSED"
+
+
+def test_postgres_search_terms_empty_and_non_empty_queries_have_typed_optional_registry_filter(monkeypatch):
+    cursor=FakeSearchCursor()
+    repository=PostgresOntologyRepository("postgresql://build-077-validation")
+    monkeypatch.setattr(repository, "_connect", lambda: FakeSearchConnection(cursor))
+
+    assert repository.search_terms("")
+    assert repository.search_terms("dracula", registry_id=7)
+
+    empty_sql, empty_params=cursor.calls[0]
+    filtered_sql, filtered_params=cursor.calls[1]
+    assert "%s::bigint IS NULL OR t.registry_id=%s::bigint" in empty_sql
+    assert "%s::bigint IS NULL OR t.registry_id=%s::bigint" in filtered_sql
+    assert empty_params == (None, None)
+    assert filtered_params == (7, 7)
 
 
 def test_unresolved_manual_accept_reject_and_duplicate_acceptance(repository, seeded):

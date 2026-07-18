@@ -120,7 +120,7 @@ class PostgresOntologyRepository:
                 r.namespace,r.version,r.status AS registry_status,s.synonym,s.normalized_synonym
                 FROM oc_ontology.ontology_terms t JOIN oc_ontology.ontology_registries r ON r.id=t.registry_id
                 LEFT JOIN oc_ontology.ontology_synonyms s ON s.term_id=t.id
-                WHERE r.status='ACTIVE' AND t.status IN ('DRAFT','ACTIVE') AND (%s IS NULL OR t.registry_id=%s)
+                WHERE r.status='ACTIVE' AND t.status IN ('DRAFT','ACTIVE') AND (%s::bigint IS NULL OR t.registry_id=%s::bigint)
                 ORDER BY t.id,s.id LIMIT 2000""", (registry_id, registry_id)); return list(cur.fetchall())
 
     def hierarchy_ancestors(self, term_id: int) -> list[int]:
