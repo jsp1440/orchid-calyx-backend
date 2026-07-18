@@ -1,6 +1,20 @@
 name: BUILD-077 PostgreSQL validation
 
 on:
+  push:
+    branches:
+      - feature/build-077-ontology-evidence-registry
+    paths:
+      - "app/ontology/**"
+      - "app/semantic/**"
+      - "app/intake/**"
+      - "migrations/076a_universal_intake.sql"
+      - "migrations/076b_semantic_extraction.sql"
+      - "migrations/077_ontology_evidence_registry.sql"
+      - "tests/test_build_076b_semantic_extraction.py"
+      - "tests/test_build_077_ontology_registry.py"
+      - "scripts/build_077_postgres_validation.py"
+      - ".github/workflows/build-077-postgres-validation.yml"
   workflow_dispatch:
 
 jobs:
