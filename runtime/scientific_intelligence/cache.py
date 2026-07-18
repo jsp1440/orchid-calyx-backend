@@ -24,7 +24,7 @@ def get_cached(key: str, ttl: int = DEFAULT_TTL) -> dict[str, Any] | None:
     if entry is None:
         return None
     stored_at, payload = entry
-    if time.monotonic() - stored_at > ttl:
+    if ttl <= 0 or time.monotonic() - stored_at > ttl:
         del _STORE[key]
         return None
     return payload

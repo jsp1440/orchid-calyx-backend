@@ -19,6 +19,7 @@ from app.routers import (
     reference_docs,
 )
 from app.intake.routes import router as intake_router
+from app.semantic.routers import router as semantic_router
 from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, owner_cookie_secure, verify_owner_or_api_key
 from app.routers.health import add_mission_control_cors_headers, allowed_mission_control_origins
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
@@ -1113,6 +1114,7 @@ app.include_router(harvesters.router, dependencies=[Depends(add_mission_control_
 app.include_router(judging.router)
 app.include_router(reference_docs.router)
 app.include_router(intake_router)
+app.include_router(semantic_router)
 app.include_router(runtime_router)
 app.include_router(science_router)
 app.include_router(cds_router)
