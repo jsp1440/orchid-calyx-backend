@@ -20,6 +20,7 @@ from app.routers import (
 )
 from app.intake.routes import router as intake_router
 from app.semantic.routers import router as semantic_router
+from app.source_registry.routes import router as source_registry_router
 from app.ontology.routers import router as ontology_router
 from app.publication.routers import router as publication_router
 from app.missions.dependencies import get_mission_service
@@ -1148,6 +1149,7 @@ app.include_router(judging.router)
 app.include_router(reference_docs.router)
 app.include_router(intake_router)
 app.include_router(semantic_router)
+app.include_router(source_registry_router)
 app.include_router(ontology_router)
 app.include_router(publication_router)
 app.include_router(missions_router)
