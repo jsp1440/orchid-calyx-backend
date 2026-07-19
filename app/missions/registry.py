@@ -75,6 +75,7 @@ MISSION_TYPES: dict[str, MissionType] = {
     "graph_integrity_audit": MissionType("graph_integrity_audit", "graph_integrity_audit", allowed_database_schemas=("oc_graph",)),
     "taxonomy_integrity_audit": MissionType("taxonomy_integrity_audit", "taxonomy_integrity_audit", allowed_database_schemas=("oc_taxonomy",)),
     "source_registry_refresh": MissionType("source_registry_refresh", "not_implemented_safe_block", risk_level="medium"),
+    "controlled_drive_import": MissionType("controlled_drive_import", "controlled_drive_import", risk_level="medium", write_scope="universal_intake_only", allowed_database_schemas=("oc_import", "oc_intake", "oc_sources", "oc_missions"), human_approval_required=True),
     "literature_ingestion_review": MissionType("literature_ingestion_review", "not_implemented_safe_block", risk_level="medium"),
     "stale_record_review": MissionType("stale_record_review", "not_implemented_safe_block"),
     "failed_job_retry": MissionType("failed_job_retry", "not_implemented_safe_block", risk_level="medium"),

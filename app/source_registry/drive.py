@@ -68,14 +68,14 @@ class GoogleApiDriveGateway:
         self.service = service
 
     @classmethod
-    def from_environment(cls) -> "GoogleApiDriveGateway":
+    def from_environment(cls, scopes: list[str] | None = None) -> "GoogleApiDriveGateway":
         try:
             from google.oauth2 import service_account
             from googleapiclient.discovery import build
             import google.auth
         except ImportError as exc:
             raise RuntimeError("Google Drive dependencies are not installed") from exc
-        scopes = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
+        scopes = scopes or ["https://www.googleapis.com/auth/drive.metadata.readonly"]
         credentials_json = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON")
         if credentials_json:
             credentials = service_account.Credentials.from_service_account_info(json.loads(credentials_json), scopes=scopes)
