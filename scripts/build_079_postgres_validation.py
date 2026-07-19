@@ -33,6 +33,57 @@ def count_or_none(cur, table: str) -> int | None:
     return int(cur.fetchone()["count"])
 
 
+def claim_validation_job(repository: PostgresMissionRepository, mission_id: int, worker_id: str) -> dict:
+    with repository._connect() as conn, conn.cursor() as cur:
+        repository.register_worker(cur, worker_id)
+        cur.execute(
+            """WITH candidate AS (
+                SELECT job_id FROM oc_missions.mission_jobs
+                WHERE mission_id=%s AND state IN ('available','retry_wait') AND available_at <= NOW()
+                ORDER BY priority DESC, available_at ASC, job_id ASC
+                LIMIT 1 FOR UPDATE SKIP LOCKED
+            )
+            UPDATE oc_missions.mission_jobs j
+            SET state='claimed', claimed_at=NOW(), lease_expires_at=NOW() + interval '300 seconds',
+                worker_id=%s, attempt_number=attempt_number + 1
+            FROM candidate WHERE j.job_id=candidate.job_id
+            RETURNING j.*""",
+            (mission_id, worker_id),
+        )
+        job = cur.fetchone()
+        if not job:
+            raise AssertionError(f"controlled validation job was not claimable for mission_id={mission_id}")
+        cur.execute("SELECT * FROM oc_missions.missions WHERE mission_id=%s", (mission_id,))
+        mission = cur.fetchone()
+        repository.audit(
+            cur,
+            actor=worker_id,
+            actor_type="runtime_worker",
+            event_type="job_claimed",
+            mission=mission,
+            job=job,
+            previous_state="available",
+            new_state="claimed",
+            worker_id=worker_id,
+        )
+        return {**job, "mission": mission}
+
+
+def execute_validation_mission(service: MissionService, mission_id: int, worker_id: str) -> dict:
+    repository = service.repository
+    if not isinstance(repository, PostgresMissionRepository):
+        raise AssertionError("BUILD-079 PostgreSQL validation requires PostgresMissionRepository")
+    job = claim_validation_job(repository, mission_id, worker_id)
+    started = repository.start_job(job["job_id"], worker_id)
+    try:
+        output = service._execute_registered_handler(started)
+        completed = repository.complete_job(started, output, worker_id)
+        return {"status": "completed", "job": completed, "output": output}
+    except Exception as exc:
+        failed = repository.fail_job(started, exc.__class__.__name__, str(exc), worker_id)
+        return {"status": "failed", "job": failed, "error_code": exc.__class__.__name__, "error_message": str(exc)}
+
+
 def main() -> None:
     dsn = database_url()
     marker = uuid.uuid4().hex[:12]
@@ -68,7 +119,7 @@ def main() -> None:
     service.submit(mission["mission_id"], "build-079-ci", "submit validation mission")
     service.approve(mission["mission_id"], "build-079-ci", "approve validation mission", f"ci-{marker}")
     service.queue(mission["mission_id"], "build-079-ci", "queue validation mission")
-    result = service.execute_cycle("build-079-worker", 1)
+    result = execute_validation_mission(service, mission["mission_id"], "build-079-worker")
     if result["status"] != "completed":
         raise AssertionError(f"safe mission did not complete: {result}")
 
@@ -93,7 +144,7 @@ def main() -> None:
     service.submit(blocked["mission_id"], "build-079-ci", "submit retry validation")
     service.approve(blocked["mission_id"], "build-079-ci", "approve retry validation", f"ci-{marker}-retry")
     service.queue(blocked["mission_id"], "build-079-ci", "queue retry validation")
-    service.execute_cycle("build-079-worker", 1)
+    execute_validation_mission(service, blocked["mission_id"], "build-079-worker")
     with psycopg.connect(dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -104,7 +155,7 @@ def main() -> None:
             (blocked["mission_id"],),
         )
         conn.commit()
-    service.execute_cycle("build-079-worker", 1)
+    execute_validation_mission(service, blocked["mission_id"], "build-079-worker")
 
     with psycopg.connect(dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
         cur.execute(
