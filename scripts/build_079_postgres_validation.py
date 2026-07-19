@@ -79,7 +79,7 @@ def main() -> None:
             "description": "Controlled blocked-handler validation mission.",
             "mission_type": "intake_batch_review",
             "requested_by": "build-079-ci",
-            "priority": 50,
+            "priority": 100,
             "maximum_runs": 1,
             "input_manifest": {"marker": marker},
             "allowed_actions": ["review"],
@@ -96,19 +96,28 @@ def main() -> None:
     service.execute_cycle("build-079-worker", 1)
     with psycopg.connect(dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
         cur.execute(
-            "UPDATE oc_missions.mission_jobs SET available_at=NOW() WHERE mission_id=%s AND state='retry_wait'",
+            """
+            UPDATE oc_missions.mission_jobs
+            SET available_at=NOW(), priority=100
+            WHERE mission_id=%s AND state='retry_wait'
+            """,
             (blocked["mission_id"],),
         )
         conn.commit()
     service.execute_cycle("build-079-worker", 1)
-    if not service.dead_letters():
-        raise AssertionError("expected dead-letter record was not created")
 
     with psycopg.connect(dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) AS count FROM oc_missions.dead_letter_jobs WHERE mission_id=%s",
+            (blocked["mission_id"],),
+        )
+        dead_letter_count = int(cur.fetchone()["count"])
         graph_after = {"nodes": count_or_none(cur, "oc_graph.kg_nodes"), "edges": count_or_none(cur, "oc_graph.kg_edges")}
         taxonomy_after = {name: count_or_none(cur, f"oc_taxonomy.{name}") for name in taxonomy_tables}
         cur.execute("SELECT count(*) AS count FROM oc_missions.mission_events WHERE actor IN ('build-079-ci','build-079-worker')")
         audit_count = int(cur.fetchone()["count"])
+    if dead_letter_count < 1:
+        raise AssertionError("expected dead-letter record was not created for the controlled validation mission")
     if graph_after != graph_before:
         raise AssertionError(f"canonical graph changed unexpectedly: {graph_before} -> {graph_after}")
     if taxonomy_after != taxonomy_before:
