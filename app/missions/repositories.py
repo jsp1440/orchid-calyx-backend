@@ -29,6 +29,10 @@ def json_digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(value or {}, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 
 
+def json_safe_payload(value: Any) -> Any:
+    return json.loads(json.dumps(value or {}, default=str))
+
+
 class PostgresMissionRepository:
     def __init__(self, database_url: str | None = None) -> None:
         self.database_url = database_url or mission_database_url()
@@ -233,7 +237,7 @@ class PostgresMissionRepository:
             cur.execute("UPDATE oc_missions.missions SET state=%s, failure_count=failure_count+1, last_error=%s WHERE mission_id=%s RETURNING *", (mission_state, error_message, job["mission_id"]))
             mission = cur.fetchone()
             if final:
-                cur.execute("INSERT INTO oc_missions.dead_letter_jobs(job_id,mission_id,final_error_code,final_error_message,payload) VALUES (%s,%s,%s,%s,%s) ON CONFLICT (job_id) DO NOTHING", (job["job_id"], job["mission_id"], error_code, error_message, Jsonb(dict(job))))
+                cur.execute("INSERT INTO oc_missions.dead_letter_jobs(job_id,mission_id,final_error_code,final_error_message,payload) VALUES (%s,%s,%s,%s,%s) ON CONFLICT (job_id) DO NOTHING", (job["job_id"], job["mission_id"], error_code, error_message, Jsonb(json_safe_payload(job))))
             cur.execute("INSERT INTO oc_missions.job_attempts(job_id,attempt_number,worker_id,state,finished_at,error_code,error_message,traceback_digest) VALUES (%s,%s,%s,%s,NOW(),%s,%s,%s) ON CONFLICT (job_id,attempt_number) DO NOTHING", (job["job_id"], updated_job["attempt_number"], worker_id, "dead_lettered" if final else "failed", error_code, error_message, json_digest(error_message)))
             self.audit(cur, actor=worker_id, actor_type="runtime_worker", event_type="job_failed", mission=mission, job=updated_job, previous_state="running", new_state=state, error=error_message, worker_id=worker_id)
             return {**updated_job, "mission": mission}

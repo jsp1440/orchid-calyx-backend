@@ -1,3 +1,5 @@
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -6,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.missions.dependencies import get_mission_service
-from app.missions.repositories import InMemoryMissionRepository, PostgresMissionRepository
+from app.missions.repositories import InMemoryMissionRepository, PostgresMissionRepository, json_safe_payload
 from app.missions.routers import router, runtime_queue_router, templates_router
 from app.missions.services import MissionService
 from app.routers.health import add_mission_control_cors_headers
@@ -130,6 +132,13 @@ def test_lease_recovery_retry_and_dead_letter(service: MissionService):
     assert second["status"] == "failed"
     assert service.dead_letters()
     assert service.get(mission["mission_id"])["state"] == "failed"
+
+
+def test_dead_letter_payload_is_json_safe_for_postgres_datetime_rows():
+    payload = json_safe_payload({"job_id": 1, "claimed_at": datetime(2026, 7, 19, tzinfo=timezone.utc)})
+
+    assert payload["claimed_at"] == "2026-07-19 00:00:00+00:00"
+    assert json.loads(json.dumps(payload))["job_id"] == 1
 
 
 def test_runtime_enqueue_cycle_has_no_jobs_behavior(service: MissionService):
