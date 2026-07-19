@@ -1,0 +1,97 @@
+[
+  {
+    "architectural_impact": "medium",
+    "blockers": [
+      "Owner sequencing decision"
+    ],
+    "build": "BUILD-080.R01",
+    "dependencies": [
+      "frontend",
+      "ontology",
+      "runtime"
+    ],
+    "estimated_complexity": "medium",
+    "expected_deliverables": [
+      "Planning implementation brief",
+      "updated provenance index"
+    ],
+    "purpose": "Convert Brain Architect output into owner-sequenced future build briefs.",
+    "recommended_sequence": 1
+  },
+  {
+    "architectural_impact": "medium",
+    "blockers": [
+      "Owner sequencing decision"
+    ],
+    "build": "BUILD-080.R02",
+    "dependencies": [
+      "frontend",
+      "ontology",
+      "knowledge_graph"
+    ],
+    "estimated_complexity": "medium",
+    "expected_deliverables": [
+      "Reasoning implementation brief",
+      "updated provenance index"
+    ],
+    "purpose": "Define the next reasoning architecture layer across ontology resolution, evidence, and readiness decisions.",
+    "recommended_sequence": 2
+  },
+  {
+    "architectural_impact": "medium",
+    "blockers": [
+      "Owner sequencing decision"
+    ],
+    "build": "BUILD-080.R03",
+    "dependencies": [
+      "frontend",
+      "knowledge_graph",
+      "ontology"
+    ],
+    "estimated_complexity": "medium",
+    "expected_deliverables": [
+      "Educational Intelligence implementation brief",
+      "updated provenance index"
+    ],
+    "purpose": "Specify education modules that use the knowledge graph without hiding provenance or uncertainty.",
+    "recommended_sequence": 3
+  },
+  {
+    "architectural_impact": "medium",
+    "blockers": [
+      "Owner sequencing decision"
+    ],
+    "build": "BUILD-080.R04",
+    "dependencies": [
+      "frontend",
+      "ontology",
+      "database"
+    ],
+    "estimated_complexity": "medium",
+    "expected_deliverables": [
+      "Research Intelligence implementation brief",
+      "updated provenance index"
+    ],
+    "purpose": "Harden research-source intake, evidence review, and architecture-level source governance.",
+    "recommended_sequence": 4
+  },
+  {
+    "architectural_impact": "medium",
+    "blockers": [
+      "Owner sequencing decision"
+    ],
+    "build": "BUILD-080.R05",
+    "dependencies": [
+      "frontend",
+      "ontology",
+      "knowledge_graph"
+    ],
+    "estimated_complexity": "medium",
+    "expected_deliverables": [
+      "Conservation implementation brief",
+      "updated provenance index"
+    ],
+    "purpose": "Map conservation intelligence responsibilities, datasets, and stewardship workflows into implementation-ready plans.",
+    "recommended_sequence": 5
+  }
+]
