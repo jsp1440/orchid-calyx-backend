@@ -94,6 +94,12 @@ def main() -> None:
     service.approve(blocked["mission_id"], "build-079-ci", "approve retry validation", f"ci-{marker}-retry")
     service.queue(blocked["mission_id"], "build-079-ci", "queue retry validation")
     service.execute_cycle("build-079-worker", 1)
+    with psycopg.connect(dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE oc_missions.mission_jobs SET available_at=NOW() WHERE mission_id=%s AND state='retry_wait'",
+            (blocked["mission_id"],),
+        )
+        conn.commit()
     service.execute_cycle("build-079-worker", 1)
     if not service.dead_letters():
         raise AssertionError("expected dead-letter record was not created")
