@@ -1,0 +1,25 @@
+name: BUILD-082A live pilot validation
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/build-082-drive-document-import]
+    paths:
+      - 'scripts/build_082a_live_validation.py'
+      - '.github/workflows/build-082a-live-validation.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Run limited live Pilot validation
+        run: python scripts/build_082a_live_validation.py
