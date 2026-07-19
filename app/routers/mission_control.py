@@ -441,7 +441,13 @@ def mission_control_harvesters() -> dict[str, Any]:
 
 @router.get("/runtime")
 def mission_control_runtime() -> dict[str, Any]:
-    return {"build": BUILD_ID, "runtime": runtime_telemetry(), "generated_at": utc_now()}
+    mission_queue: dict[str, Any]
+    try:
+        from app.missions.dependencies import get_mission_service
+        mission_queue = get_mission_service().queue_status()
+    except Exception as exc:
+        mission_queue = {"status": "unavailable", "runtime_blocker": str(exc)}
+    return {"build": BUILD_ID, "runtime": runtime_telemetry(), "mission_queue": mission_queue, "generated_at": utc_now()}
 
 
 @router.get("/repositories")

@@ -21,6 +21,10 @@ from app.routers import (
 from app.intake.routes import router as intake_router
 from app.semantic.routers import router as semantic_router
 from app.source_registry.routes import router as source_registry_router
+from app.ontology.routers import router as ontology_router
+from app.publication.routers import router as publication_router
+from app.missions.dependencies import get_mission_service
+from app.missions.routers import router as missions_router, runtime_queue_router, templates_router
 from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, owner_cookie_secure, verify_owner_or_api_key
 from app.routers.health import add_mission_control_cors_headers, allowed_mission_control_origins
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
@@ -1079,10 +1083,39 @@ def heartbeat_once():
     return CalyxHeartbeat().run_once()
 
 
+def mission_enqueue_cycle() -> dict[str, Any]:
+    try:
+        return get_mission_service().enqueue_cycle(worker_id="calyx-runtime-engine")
+    except RuntimeError as exc:
+        return {"status": "mission_queue_unavailable", "error": str(exc), "queue_depth": None}
+
+
+def mission_execute_cycle() -> dict[str, Any]:
+    try:
+        result = get_mission_service().execute_cycle(worker_id="calyx-runtime-engine", limit=1)
+    except RuntimeError as exc:
+        result = {"status": "mission_queue_unavailable", "error": str(exc), "queue_depth": None}
+    if result.get("status") != "no_jobs":
+        return result
+    legacy = execute_next()
+    return {**legacy, "mission_queue": result}
+
+
+def runtime_enqueue_cycle() -> dict[str, Any]:
+    legacy = run_once()
+    missions = mission_enqueue_cycle()
+    return {
+        "status": missions.get("status") if missions.get("status") != "no_jobs" else legacy.get("status", "ok"),
+        "legacy_runner": legacy,
+        "missions": missions,
+        "queue_depth": missions.get("queue_depth"),
+    }
+
+
 runtime_engine = RuntimeEngine(
     heartbeat=heartbeat_once,
-    enqueue_jobs=run_once,
-    execute_jobs=execute_next,
+    enqueue_jobs=runtime_enqueue_cycle,
+    execute_jobs=mission_execute_cycle,
     interval_seconds=AUTO_LOOP_INTERVAL_SECONDS,
     enabled=AUTO_LOOP_ENABLED,
 )
@@ -1117,6 +1150,11 @@ app.include_router(reference_docs.router)
 app.include_router(intake_router)
 app.include_router(semantic_router)
 app.include_router(source_registry_router)
+app.include_router(ontology_router)
+app.include_router(publication_router)
+app.include_router(missions_router)
+app.include_router(templates_router)
+app.include_router(runtime_queue_router)
 app.include_router(runtime_router)
 app.include_router(science_router)
 app.include_router(cds_router)

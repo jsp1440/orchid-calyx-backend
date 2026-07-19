@@ -1,0 +1,44 @@
+name: BUILD-079 PostgreSQL validation
+
+on:
+  pull_request:
+    paths:
+      - "app/missions/**"
+      - "app/main.py"
+      - "app/routers/mission_control.py"
+      - "migrations/079_controlled_mission_orchestration.sql"
+      - "tests/test_build_079_mission_queue.py"
+      - "scripts/build_079_postgres_validation.py"
+      - ".github/workflows/build-079-postgres-validation.yml"
+  push:
+    branches:
+      - feature/build-079-controlled-mission-orchestration
+    paths:
+      - "app/missions/**"
+      - "app/main.py"
+      - "app/routers/mission_control.py"
+      - "migrations/079_controlled_mission_orchestration.sql"
+      - "tests/test_build_079_mission_queue.py"
+      - "scripts/build_079_postgres_validation.py"
+      - ".github/workflows/build-079-postgres-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  postgres-validation:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt pytest httpx
+      - name: Validate BUILD-079 against PostgreSQL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/build_079_postgres_validation.py

@@ -1,0 +1,1697 @@
+[
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "taxonomy",
+      "knowledge_graph",
+      "ontology",
+      "database",
+      "runtime",
+      "backend"
+    ],
+    "future_work": [
+      "**Auth**: owner session or API key - **Wraps**: existing read-only `GET /api/mission-control/recommendations` - **Adds**: `owner` identity, `allowedActions`, `review_status`, `generated_at` - **Note**: Recommendation approval actions are re",
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Finding:** a genuine source-availability gap (not a wrong-table issue).",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns.",
+      "**Generated:** 2026-05-03 **For:** Jeff, advisors, grant reviewers, future developers, Replit Agent --- This Replit project hosts **Calyx**, a production-ready backend API for orchid show management (shows, entries, judging, volunteers, awa"
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**Build 199 \u2014 Julius: Column-Level Schema Verification** Ask Julius to run the following against Neon (read-only `\\d` queries, no writes): ```sql \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d recor",
+      "**Build 199B (Julius) \u2014 Column-Level Schema Verification** Run `\\d` (schema describe) queries against Neon for the following tables: ``` \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d record_media_l",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo",
+      "**Files inspected:** 42 (39 Python, 2 shell scripts, 1 SQL seed file) --- | File | Role | DB Target | Entry Points | |---|---|---|---| | `app/main.py` | **CANONICAL FastAPI app** | PGHOST (heliumdb) via `app/database.py` | `app = FastAPI(.."
+    ],
+    "name": "Scientific Intelligence",
+    "outputs": [
+      "BuildOrchestrator",
+      "PostgresGraphRepository",
+      "Repository",
+      "/api/runner/autonomous-status",
+      "Registry"
+    ],
+    "provenance": [
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "# The Orchid Continuum Constitution",
+        "line": 1,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "The Orchid Continuum Constitution"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "Nature is continuous. The boundaries between botany, zoology, ecology, genetics, chemistry, climatology, geology, anthropology, education, and philosophy are useful human abstractions. Nature recognizes none of them. The Orchid Continuum se",
+        "line": 5,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "Article I \u2014 The Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "Every journey should begin with something alive, beautiful, specific, and meaningful. The visitor should encounter an orchid before they encounter a database.",
+        "line": 5,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 1 \u2014 Begin with a living orchid"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "The ideal experience moves through wonder, curiosity, discovery, evidence, understanding, and stewardship.",
+        "line": 13,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 3 \u2014 Move from beauty to understanding"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "# The Orchid Continuum Founding Charter",
+        "line": 1,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "**Status:** Foundational institutional memory",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "**Status:** Preserved institutional memory summary",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Founding Dialogue I \u2014 Discovering the Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "This document preserves the philosophical discoveries that emerged during the founding dialogue about the Orchid Continuum. It is not a transcript. It is an institutional memory artifact summarizing the principles that should guide future b",
+        "line": 9,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "Orchids are botanical organisms, but no orchid can be understood through botany alone. A single orchid may involve pollinator behavior, fungal symbiosis, climate, chemistry, genetics, geography, soil and substrate, evolutionary history, eco",
+        "line": 5,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "The Continuum therefore rejects isolated presentation as the default mode of understanding. It seeks to show how disciplines meet inside living organisms and living places.",
+        "line": 7,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      }
+    ],
+    "purpose": "Scientific Intelligence is represented by 76 provenance-linked source document(s), led by The Orchid Continuum Constitution.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Scientific Intelligence.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "documented foundation",
+    "dependencies": [
+      "frontend",
+      "knowledge_graph",
+      "ontology",
+      "database",
+      "backend",
+      "runtime",
+      "brain"
+    ],
+    "future_work": [
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns.",
+      "Coverage: canonical node/edge creation; idempotent rebuild; duplicate prevention; provenance/evidence/confidence preservation; unknown-vocabulary rejection; orphan + dangling-edge detection; genus/taxon lookup (case-insensitive); node-type/",
+      "Every future decision should be evaluated by one question: > Does this help someone discover a meaningful relationship they could not see before?",
+      "Future contributors should use this dialogue summary as a compass.",
+      "If images, relationships, or evidence are missing, explain the gap or hide the card until it can serve the visitor."
+    ],
+    "inputs": [
+      "**Before this pass the graph is taxonomy-only:** | | Value | |---|---| | kg_nodes (active) | 34,519 \u2014 node types: `genus` (733), `taxon` (33,786) | | kg_edges (active) | 67,572 \u2014 edge types: `genus_contains_species` (33,786), `species_belon",
+      "**Calyx** receives evidence-linked relationships by consuming edges' `evidence_class`/`confidence`/`provenance`.",
+      "**Canonical identity strategy (observed):** `canonical_key = \"<node_type>:<source_pk>\"` (e.g.",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns.",
+      "**Graph model fields available:** `kg_nodes` carries `node_type`, `canonical_key`, `display_label`, `source_table`/`source_pk` (provenance), `evidence_class`, `confidence_score`/`confidence_label`, `payload_json`, `is_active`, `build_run_id"
+    ],
+    "name": "Educational Intelligence",
+    "outputs": [
+      "Orchestrator",
+      "/api/knowledge-graph/",
+      "/api/knowledge-graph/genus/Cattleya",
+      "/api/knowledge-graph/genus/{genus_name}",
+      "/api/knowledge-graph/genus/{name}"
+    ],
+    "provenance": [
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "# The Orchid Continuum Constitution",
+        "line": 1,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "The Orchid Continuum Constitution"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "Nature is continuous. The boundaries between botany, zoology, ecology, genetics, chemistry, climatology, geology, anthropology, education, and philosophy are useful human abstractions. Nature recognizes none of them. The Orchid Continuum se",
+        "line": 5,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "Article I \u2014 The Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "Every journey should begin with something alive, beautiful, specific, and meaningful. The visitor should encounter an orchid before they encounter a database.",
+        "line": 5,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 1 \u2014 Begin with a living orchid"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "The ideal experience moves through wonder, curiosity, discovery, evidence, understanding, and stewardship.",
+        "line": 13,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 3 \u2014 Move from beauty to understanding"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "# The Orchid Continuum Founding Charter",
+        "line": 1,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "**Status:** Foundational institutional memory",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "**Status:** Preserved institutional memory summary",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Founding Dialogue I \u2014 Discovering the Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "This document preserves the philosophical discoveries that emerged during the founding dialogue about the Orchid Continuum. It is not a transcript. It is an institutional memory artifact summarizing the principles that should guide future b",
+        "line": 9,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "Orchids are botanical organisms, but no orchid can be understood through botany alone. A single orchid may involve pollinator behavior, fungal symbiosis, climate, chemistry, genetics, geography, soil and substrate, evolutionary history, eco",
+        "line": 5,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "The Continuum therefore rejects isolated presentation as the default mode of understanding. It seeks to show how disciplines meet inside living organisms and living places.",
+        "line": 7,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      }
+    ],
+    "purpose": "Educational Intelligence is represented by 8 provenance-linked source document(s), led by The Orchid Continuum Constitution.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Educational Intelligence.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "ontology",
+      "database",
+      "runtime",
+      "taxonomy",
+      "knowledge_graph",
+      "backend"
+    ],
+    "future_work": [
+      "**BUILD-064 may resume.** The infrastructure blocker that paused BUILD-064 was a transient session-scoping issue in the prior Copilot agent invocation \u2014 not a persistent permissions defect.",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Finding:** a genuine source-availability gap (not a wrong-table issue).",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns."
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**Build 199 \u2014 Julius: Column-Level Schema Verification** Ask Julius to run the following against Neon (read-only `\\d` queries, no writes): ```sql \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d recor",
+      "**Build 199B (Julius) \u2014 Column-Level Schema Verification** Run `\\d` (schema describe) queries against Neon for the following tables: ``` \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d record_media_l",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo"
+    ],
+    "name": "Research Intelligence",
+    "outputs": [
+      "BuildOrchestrator",
+      "Repository",
+      "PostgresGraphRepository",
+      "/api/runner/autonomous-status",
+      "Registry"
+    ],
+    "provenance": [
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "# The Orchid Continuum Constitution",
+        "line": 1,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "The Orchid Continuum Constitution"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "Nature is continuous. The boundaries between botany, zoology, ecology, genetics, chemistry, climatology, geology, anthropology, education, and philosophy are useful human abstractions. Nature recognizes none of them. The Orchid Continuum se",
+        "line": 5,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "Article I \u2014 The Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "Every journey should begin with something alive, beautiful, specific, and meaningful. The visitor should encounter an orchid before they encounter a database.",
+        "line": 5,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 1 \u2014 Begin with a living orchid"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "The ideal experience moves through wonder, curiosity, discovery, evidence, understanding, and stewardship.",
+        "line": 13,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 3 \u2014 Move from beauty to understanding"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "# The Orchid Continuum Founding Charter",
+        "line": 1,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "**Status:** Foundational institutional memory",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "**Status:** Preserved institutional memory summary",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Founding Dialogue I \u2014 Discovering the Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "This document preserves the philosophical discoveries that emerged during the founding dialogue about the Orchid Continuum. It is not a transcript. It is an institutional memory artifact summarizing the principles that should guide future b",
+        "line": 9,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "Orchids are botanical organisms, but no orchid can be understood through botany alone. A single orchid may involve pollinator behavior, fungal symbiosis, climate, chemistry, genetics, geography, soil and substrate, evolutionary history, eco",
+        "line": 5,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "The Continuum therefore rejects isolated presentation as the default mode of understanding. It seeks to show how disciplines meet inside living organisms and living places.",
+        "line": 7,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      }
+    ],
+    "purpose": "Research Intelligence is represented by 73 provenance-linked source document(s), led by The Orchid Continuum Constitution.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Research Intelligence.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "backend",
+      "runtime",
+      "database",
+      "ontology",
+      "missions",
+      "knowledge_graph"
+    ],
+    "future_work": [
+      "**Auth**: owner session or API key - **Wraps**: existing read-only `GET /api/mission-control/recommendations` - **Adds**: `owner` identity, `allowedActions`, `review_status`, `generated_at` - **Note**: Recommendation approval actions are re",
+      "**BUILD-064 may resume.** The infrastructure blocker that paused BUILD-064 was a transient session-scoping issue in the prior Copilot agent invocation \u2014 not a persistent permissions defect.",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns."
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**Build 199 \u2014 Julius: Column-Level Schema Verification** Ask Julius to run the following against Neon (read-only `\\d` queries, no writes): ```sql \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d recor",
+      "**Build 199B (Julius) \u2014 Column-Level Schema Verification** Run `\\d` (schema describe) queries against Neon for the following tables: ``` \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d record_media_l",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo"
+    ],
+    "name": "Engineering Intelligence",
+    "outputs": [
+      "/api/runner/autonomous-status",
+      "BuildOrchestrator",
+      "Registry",
+      "/api/runner/summary",
+      "Repository"
+    ],
+    "provenance": [
+      {
+        "document_id": "readme-md",
+        "excerpt": "# Calyx - Orchid Show Management System",
+        "line": 1,
+        "path": "README.md",
+        "section": "Calyx - Orchid Show Management System"
+      },
+      {
+        "document_id": "readme-md",
+        "excerpt": "Backend API for Calyx, powered by Orchid Continuum.",
+        "line": 3,
+        "path": "README.md",
+        "section": "Calyx - Orchid Show Management System"
+      },
+      {
+        "document_id": "docs-brain-backed-config-integration-md",
+        "excerpt": "# Brain-Backed Calyx Runtime Configuration",
+        "line": 1,
+        "path": "docs/BRAIN_BACKED_CONFIG_INTEGRATION.md",
+        "section": "Brain-Backed Calyx Runtime Configuration"
+      },
+      {
+        "document_id": "docs-brain-backed-config-integration-md",
+        "excerpt": "This branch begins moving Calyx configuration out of backend code and into the Brain repository.",
+        "line": 5,
+        "path": "docs/BRAIN_BACKED_CONFIG_INTEGRATION.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "docs-build-012a-autonomous-runtime-engine-md",
+        "excerpt": "# BUILD-012A \u2014 Autonomous Runtime Engine",
+        "line": 1,
+        "path": "docs/BUILD-012A-autonomous-runtime-engine.md",
+        "section": "BUILD-012A \u2014 Autonomous Runtime Engine"
+      },
+      {
+        "document_id": "docs-build-012a-autonomous-runtime-engine-md",
+        "excerpt": "BUILD-012A gives Calyx a persistent runtime loop instead of requiring a human to manually call `/api/runner/execute-next`.",
+        "line": 3,
+        "path": "docs/BUILD-012A-autonomous-runtime-engine.md",
+        "section": "BUILD-012A \u2014 Autonomous Runtime Engine"
+      },
+      {
+        "document_id": "docs-build-012a-implementation-note-md",
+        "excerpt": "- the autonomous runtime engine is disabled by default;",
+        "line": 8,
+        "path": "docs/BUILD-012A-implementation-note.md",
+        "section": "BUILD-012A Implementation Note"
+      },
+      {
+        "document_id": "docs-build-012a-implementation-note-md",
+        "excerpt": "- Render can enable it with `OC_RUNNER_AUTOLOOP=true`;",
+        "line": 9,
+        "path": "docs/BUILD-012A-implementation-note.md",
+        "section": "BUILD-012A Implementation Note"
+      },
+      {
+        "document_id": "docs-build-012a-smoke-test-md",
+        "excerpt": "After Render deploys this branch:",
+        "line": 3,
+        "path": "docs/BUILD-012A-smoke-test.md",
+        "section": "BUILD-012A Smoke Test"
+      },
+      {
+        "document_id": "docs-build-012a-smoke-test-md",
+        "excerpt": "1. Confirm `/api/runner/health` returns `mode: build_012a_autonomous_runtime_engine`.",
+        "line": 5,
+        "path": "docs/BUILD-012A-smoke-test.md",
+        "section": "BUILD-012A Smoke Test"
+      }
+    ],
+    "purpose": "Engineering Intelligence is represented by 82 provenance-linked source document(s), led by Calyx - Orchid Show Management System.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Engineering Intelligence.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "knowledge_graph",
+      "ontology",
+      "database",
+      "runtime",
+      "taxonomy",
+      "backend"
+    ],
+    "future_work": [
+      "Every future decision should be evaluated by one question: > Does this help someone discover a meaningful relationship they could not see before?",
+      "**Auth**: owner session or API key - **Wraps**: existing read-only `GET /api/mission-control/recommendations` - **Adds**: `owner` identity, `allowedActions`, `review_status`, `generated_at` - **Note**: Recommendation approval actions are re",
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns.",
+      "**Generated:** 2026-05-03 **For:** Jeff, advisors, grant reviewers, future developers, Replit Agent --- This Replit project hosts **Calyx**, a production-ready backend API for orchid show management (shows, entries, judging, volunteers, awa"
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**Build 199 \u2014 Julius: Column-Level Schema Verification** Ask Julius to run the following against Neon (read-only `\\d` queries, no writes): ```sql \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d recor",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo",
+      "**Files inspected:** 42 (39 Python, 2 shell scripts, 1 SQL seed file) --- | File | Role | DB Target | Entry Points | |---|---|---|---| | `app/main.py` | **CANONICAL FastAPI app** | PGHOST (heliumdb) via `app/database.py` | `app = FastAPI(..",
+      "**Until Build 199B (Julius's column audit) is done, the pipeline is intentionally frozen.** - **`oc_control_panel.py`** \u2014 CLI summary of totals (occurrences, species, genera, countries, elevation range) - **`oc_mission_control.py`** \u2014 Strea"
+    ],
+    "name": "Knowledge Graph",
+    "outputs": [
+      "BuildOrchestrator",
+      "PostgresGraphRepository",
+      "Repository",
+      "/api/runner/autonomous-status",
+      "Registry"
+    ],
+    "provenance": [
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "# The Orchid Continuum Constitution",
+        "line": 1,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "The Orchid Continuum Constitution"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "Nature is continuous. The boundaries between botany, zoology, ecology, genetics, chemistry, climatology, geology, anthropology, education, and philosophy are useful human abstractions. Nature recognizes none of them. The Orchid Continuum se",
+        "line": 5,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "Article I \u2014 The Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "Every journey should begin with something alive, beautiful, specific, and meaningful. The visitor should encounter an orchid before they encounter a database.",
+        "line": 5,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 1 \u2014 Begin with a living orchid"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "The ideal experience moves through wonder, curiosity, discovery, evidence, understanding, and stewardship.",
+        "line": 13,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 3 \u2014 Move from beauty to understanding"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "# The Orchid Continuum Founding Charter",
+        "line": 1,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "**Status:** Foundational institutional memory",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "**Status:** Preserved institutional memory summary",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Founding Dialogue I \u2014 Discovering the Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "This document preserves the philosophical discoveries that emerged during the founding dialogue about the Orchid Continuum. It is not a transcript. It is an institutional memory artifact summarizing the principles that should guide future b",
+        "line": 9,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "Orchids are botanical organisms, but no orchid can be understood through botany alone. A single orchid may involve pollinator behavior, fungal symbiosis, climate, chemistry, genetics, geography, soil and substrate, evolutionary history, eco",
+        "line": 5,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "The Continuum therefore rejects isolated presentation as the default mode of understanding. It seeks to show how disciplines meet inside living organisms and living places.",
+        "line": 7,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      }
+    ],
+    "purpose": "Knowledge Graph is represented by 71 provenance-linked source document(s), led by The Orchid Continuum Constitution.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Knowledge Graph.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "runtime",
+      "frontend",
+      "backend",
+      "database",
+      "ontology",
+      "missions",
+      "knowledge_graph"
+    ],
+    "future_work": [
+      "**Auth**: owner session or API key - **Wraps**: existing read-only `GET /api/mission-control/recommendations` - **Adds**: `owner` identity, `allowedActions`, `review_status`, `generated_at` - **Note**: Recommendation approval actions are re",
+      "**BUILD-064 may resume.** The infrastructure blocker that paused BUILD-064 was a transient session-scoping issue in the prior Copilot agent invocation \u2014 not a persistent permissions defect.",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns."
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**Build 199 \u2014 Julius: Column-Level Schema Verification** Ask Julius to run the following against Neon (read-only `\\d` queries, no writes): ```sql \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d recor",
+      "**Build 199B (Julius) \u2014 Column-Level Schema Verification** Run `\\d` (schema describe) queries against Neon for the following tables: ``` \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d record_media_l",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo"
+    ],
+    "name": "Runtime",
+    "outputs": [
+      "/api/runner/autonomous-status",
+      "BuildOrchestrator",
+      "/api/runner/summary",
+      "PostgresGraphRepository",
+      "Registry"
+    ],
+    "provenance": [
+      {
+        "document_id": "docs-brain-backed-config-integration-md",
+        "excerpt": "# Brain-Backed Calyx Runtime Configuration",
+        "line": 1,
+        "path": "docs/BRAIN_BACKED_CONFIG_INTEGRATION.md",
+        "section": "Brain-Backed Calyx Runtime Configuration"
+      },
+      {
+        "document_id": "docs-brain-backed-config-integration-md",
+        "excerpt": "This branch begins moving Calyx configuration out of backend code and into the Brain repository.",
+        "line": 5,
+        "path": "docs/BRAIN_BACKED_CONFIG_INTEGRATION.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "docs-build-012a-autonomous-runtime-engine-md",
+        "excerpt": "# BUILD-012A \u2014 Autonomous Runtime Engine",
+        "line": 1,
+        "path": "docs/BUILD-012A-autonomous-runtime-engine.md",
+        "section": "BUILD-012A \u2014 Autonomous Runtime Engine"
+      },
+      {
+        "document_id": "docs-build-012a-autonomous-runtime-engine-md",
+        "excerpt": "BUILD-012A gives Calyx a persistent runtime loop instead of requiring a human to manually call `/api/runner/execute-next`.",
+        "line": 3,
+        "path": "docs/BUILD-012A-autonomous-runtime-engine.md",
+        "section": "BUILD-012A \u2014 Autonomous Runtime Engine"
+      },
+      {
+        "document_id": "docs-build-012a-implementation-note-md",
+        "excerpt": "- the autonomous runtime engine is disabled by default;",
+        "line": 8,
+        "path": "docs/BUILD-012A-implementation-note.md",
+        "section": "BUILD-012A Implementation Note"
+      },
+      {
+        "document_id": "docs-build-012a-implementation-note-md",
+        "excerpt": "- Render can enable it with `OC_RUNNER_AUTOLOOP=true`;",
+        "line": 9,
+        "path": "docs/BUILD-012A-implementation-note.md",
+        "section": "BUILD-012A Implementation Note"
+      },
+      {
+        "document_id": "docs-build-012a-smoke-test-md",
+        "excerpt": "After Render deploys this branch:",
+        "line": 3,
+        "path": "docs/BUILD-012A-smoke-test.md",
+        "section": "BUILD-012A Smoke Test"
+      },
+      {
+        "document_id": "docs-build-012a-smoke-test-md",
+        "excerpt": "1. Confirm `/api/runner/health` returns `mode: build_012a_autonomous_runtime_engine`.",
+        "line": 5,
+        "path": "docs/BUILD-012A-smoke-test.md",
+        "section": "BUILD-012A Smoke Test"
+      },
+      {
+        "document_id": "docs-build-012b-cds-runtime-registry-md",
+        "excerpt": "# BUILD-012B \u2014 CDS Runtime Registry",
+        "line": 1,
+        "path": "docs/BUILD-012B-cds-runtime-registry.md",
+        "section": "BUILD-012B \u2014 CDS Runtime Registry"
+      },
+      {
+        "document_id": "docs-build-012b-cds-runtime-registry-md",
+        "excerpt": "BUILD-012B turns the Calyx Development Suite v2 package into live backend configuration and API endpoints.",
+        "line": 3,
+        "path": "docs/BUILD-012B-cds-runtime-registry.md",
+        "section": "BUILD-012B \u2014 CDS Runtime Registry"
+      }
+    ],
+    "purpose": "Runtime is represented by 70 provenance-linked source document(s), led by Brain-Backed Calyx Runtime Configuration.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Runtime.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "missions",
+      "backend",
+      "database",
+      "runtime",
+      "ontology",
+      "knowledge_graph"
+    ],
+    "future_work": [
+      "Every future decision should be evaluated by one question: > Does this help someone discover a meaningful relationship they could not see before?",
+      "**Auth**: owner session or API key - **Wraps**: existing read-only `GET /api/mission-control/recommendations` - **Adds**: `owner` identity, `allowedActions`, `review_status`, `generated_at` - **Note**: Recommendation approval actions are re",
+      "**BUILD-064 may resume.** The infrastructure blocker that paused BUILD-064 was a transient session-scoping issue in the prior Copilot agent invocation \u2014 not a persistent permissions defect.",
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "**Finding:** a genuine source-availability gap (not a wrong-table issue).",
+      "**Generated:** 2026-05-03 **For:** Jeff, advisors, grant reviewers, future developers, Replit Agent --- This Replit project hosts **Calyx**, a production-ready backend API for orchid show management (shows, entries, judging, volunteers, awa"
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**Build 199 \u2014 Julius: Column-Level Schema Verification** Ask Julius to run the following against Neon (read-only `\\d` queries, no writes): ```sql \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d recor",
+      "**Build 199B (Julius) \u2014 Column-Level Schema Verification** Run `\\d` (schema describe) queries against Neon for the following tables: ``` \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d record_media_l",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo",
+      "**Files inspected:** 42 (39 Python, 2 shell scripts, 1 SQL seed file) --- | File | Role | DB Target | Entry Points | |---|---|---|---| | `app/main.py` | **CANONICAL FastAPI app** | PGHOST (heliumdb) via `app/database.py` | `app = FastAPI(.."
+    ],
+    "name": "Vision",
+    "outputs": [
+      "/api/runner/autonomous-status",
+      "/api/runner/summary",
+      "/api/mission-control/",
+      "/api/mission-control/owner/session",
+      "/api/runner/autonomous-cycle"
+    ],
+    "provenance": [
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "# The Orchid Continuum Founding Charter",
+        "line": 1,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "**Status:** Foundational institutional memory",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "**Status:** Preserved institutional memory summary",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Founding Dialogue I \u2014 Discovering the Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "This document preserves the philosophical discoveries that emerged during the founding dialogue about the Orchid Continuum. It is not a transcript. It is an institutional memory artifact summarizing the principles that should guide future b",
+        "line": 9,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "docs-build-031-md",
+        "excerpt": "# BUILD-031 \u2014 Institutional Memory and Founding Charter",
+        "line": 1,
+        "path": "docs/BUILD-031.md",
+        "section": "BUILD-031 \u2014 Institutional Memory and Founding Charter"
+      },
+      {
+        "document_id": "docs-build-031-md",
+        "excerpt": "Preserve the founding philosophy of the Orchid Continuum as first-class institutional memory in GitHub and prepare it for Brain storage through the `oc_philosophy` schema.",
+        "line": 5,
+        "path": "docs/BUILD-031.md",
+        "section": "Objective"
+      },
+      {
+        "document_id": "docs-build-032-md",
+        "excerpt": "# BUILD-032 \u2014 Calyx Frontend Workbench",
+        "line": 1,
+        "path": "docs/BUILD-032.md",
+        "section": "BUILD-032 \u2014 Calyx Frontend Workbench"
+      },
+      {
+        "document_id": "docs-build-032-md",
+        "excerpt": "Turn Calyx's frontend inspection work into an organized, philosophy-aware frontend repair workbench.",
+        "line": 5,
+        "path": "docs/BUILD-032.md",
+        "section": "Objective"
+      },
+      {
+        "document_id": "docs-build-034-md",
+        "excerpt": "# BUILD-034 - Constitutional Mission Orchestrator",
+        "line": 1,
+        "path": "docs/BUILD-034.md",
+        "section": "BUILD-034 - Constitutional Mission Orchestrator"
+      },
+      {
+        "document_id": "docs-build-034-md",
+        "excerpt": "Give Calyx a constitutional autonomy layer so it can evaluate proposed work, assign delegated authority, record decision rationale, raise governance questions, and preserve rollback checkpoints before autonomous execution expands.",
+        "line": 5,
+        "path": "docs/BUILD-034.md",
+        "section": "Objective"
+      }
+    ],
+    "purpose": "Vision is represented by 41 provenance-linked source document(s), led by The Orchid Continuum Founding Charter.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Vision.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "ontology",
+      "taxonomy",
+      "database",
+      "runtime",
+      "backend",
+      "knowledge_graph"
+    ],
+    "future_work": [
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns.",
+      "**Generated:** 2026-05-03 **For:** Jeff, advisors, grant reviewers, future developers, Replit Agent --- This Replit project hosts **Calyx**, a production-ready backend API for orchid show management (shows, entries, judging, volunteers, awa",
+      "**Large documented source gaps are expected, not errors** \u2014 see the Unconnected Records Report (e.g.",
+      "A future control panel can display: - `GET /api/runner/health` for enabled, running, thread alive, cycle count, last heartbeat, last execution, queue depth, completed count, failed count, and last error."
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**Build 199 \u2014 Julius: Column-Level Schema Verification** Ask Julius to run the following against Neon (read-only `\\d` queries, no writes): ```sql \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d recor",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo",
+      "**Files inspected:** 42 (39 Python, 2 shell scripts, 1 SQL seed file) --- | File | Role | DB Target | Entry Points | |---|---|---|---| | `app/main.py` | **CANONICAL FastAPI app** | PGHOST (heliumdb) via `app/database.py` | `app = FastAPI(..",
+      "**Until Build 199B (Julius's column audit) is done, the pipeline is intentionally frozen.** - **`oc_control_panel.py`** \u2014 CLI summary of totals (occurrences, species, genera, countries, elevation range) - **`oc_mission_control.py`** \u2014 Strea"
+    ],
+    "name": "Collection Management",
+    "outputs": [
+      "/api/runner/autonomous-status",
+      "/api/runner/summary",
+      "Repository",
+      "/api/runner/autonomous-cycle",
+      "/api/runner/execute-next"
+    ],
+    "provenance": [
+      {
+        "document_id": "readme-md",
+        "excerpt": "# Calyx - Orchid Show Management System",
+        "line": 1,
+        "path": "README.md",
+        "section": "Calyx - Orchid Show Management System"
+      },
+      {
+        "document_id": "readme-md",
+        "excerpt": "Backend API for Calyx, powered by Orchid Continuum.",
+        "line": 3,
+        "path": "README.md",
+        "section": "Calyx - Orchid Show Management System"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "Orchids are botanical organisms, but no orchid can be understood through botany alone. A single orchid may involve pollinator behavior, fungal symbiosis, climate, chemistry, genetics, geography, soil and substrate, evolutionary history, eco",
+        "line": 5,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "The Continuum therefore rejects isolated presentation as the default mode of understanding. It seeks to show how disciplines meet inside living organisms and living places.",
+        "line": 7,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "docs-build-040-kernel-md",
+        "excerpt": "BUILD-040 adds the Orchid Continuum Kernel as read-only backend infrastructure. The Kernel lives in `runtime.kernel_registry` and is exposed through `runtime.kernel_router` at `/api/kernel/*`.",
+        "line": 5,
+        "path": "docs/BUILD-040-KERNEL.md",
+        "section": "Architecture"
+      },
+      {
+        "document_id": "docs-build-040-kernel-md",
+        "excerpt": "The Kernel does not replace Mission Control, Atlas, or any frontend route. It makes existing and planned platform surfaces discoverable through typed registries that Mission Control can consume in a later build.",
+        "line": 7,
+        "path": "docs/BUILD-040-KERNEL.md",
+        "section": "Architecture"
+      },
+      {
+        "document_id": "docs-build-049-runtime-integration-readiness-md",
+        "excerpt": "# BUILD-049 Runtime Integration Readiness",
+        "line": 1,
+        "path": "docs/BUILD-049-RUNTIME-INTEGRATION-READINESS.md",
+        "section": "BUILD-049 Runtime Integration Readiness"
+      },
+      {
+        "document_id": "docs-build-049-runtime-integration-readiness-md",
+        "excerpt": "| PR | Role | Depends On | Overlap | Conflict / Resolution |",
+        "line": 5,
+        "path": "docs/BUILD-049-RUNTIME-INTEGRATION-READINESS.md",
+        "section": "Dependency And Conflict Matrix"
+      },
+      {
+        "document_id": "docs-build-055-md",
+        "excerpt": "# BUILD-055 - API Key Authentication, Runtime Activation, and Calyx Autonomous Operations",
+        "line": 1,
+        "path": "docs/BUILD-055.md",
+        "section": "BUILD-055 - API Key Authentication, Runtime Activation, and Calyx Autonomous Operations"
+      },
+      {
+        "document_id": "docs-build-055-md",
+        "excerpt": "BUILD-055 standardizes runtime write authorization on two server-side credentials: signed owner sessions for browser owner controls and `CALYX_API_KEY` for backend-to-backend administrative runtime calls. The frontend never receives the API",
+        "line": 5,
+        "path": "docs/BUILD-055.md",
+        "section": "1. Authentication Model"
+      }
+    ],
+    "purpose": "Collection Management is represented by 31 provenance-linked source document(s), led by Calyx - Orchid Show Management System.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Collection Management.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "ontology",
+      "knowledge_graph",
+      "database",
+      "taxonomy",
+      "runtime",
+      "backend"
+    ],
+    "future_work": [
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Finding:** a genuine source-availability gap (not a wrong-table issue).",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns.",
+      "A future frontend/control-panel build should consume backend-backed evidence structures for: - Pollinator cards: `pollinator_relationships` mission output and future relationship endpoints with source/citation fields.",
+      "Add or extend the module/mission registry to include scientific mission families: - `pollinator_relationships` - `mycorrhiza_relationships` - `literature_extraction` - `ecological_relationship_graph` - `traitbank_traits` - `conservation_hab",
+      "BUILD-016 turns Calyx's runtime self-discovery memory into a first-pass Orchid Continuum knowledge-gap discovery layer."
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**Until Build 199B (Julius's column audit) is done, the pipeline is intentionally frozen.** - **`oc_control_panel.py`** \u2014 CLI summary of totals (occurrences, species, genera, countries, elevation range) - **`oc_mission_control.py`** \u2014 Strea",
+      "Archived:** - **Active:** `app/` directory (Calyx API), `replit.md`, `requirements.txt`, `README.md`, `.replit`, `seed.sql`, `migrations/`, `tools/` - **Likely archival/prototype:** All `oc_*.py` and `orchid_*.py` scripts at root level, `mi",
+      "Authenticated owner-session/API-key routes are under `/api/ontology`: registry lifecycle and versions, terms and synonyms, candidate/session resolution, resolution review, evidence registration/validation, and candidate/session readiness ev",
+      "BUILD-060 reuses all of that and adds: | Module | Responsibility | |---|---| | `runtime/knowledge_graph/sources.py` | `SourceProvider` protocol; `InMemorySourceProvider` (tests/dry-run) and read-only `PostgresSourceProvider` | | `runtime/kn"
+    ],
+    "name": "Conservation",
+    "outputs": [
+      "BuildOrchestrator",
+      "Repository",
+      "Orchestrator",
+      "PostgresGraphRepository",
+      "/api/runner/autonomous-cycle"
+    ],
+    "provenance": [
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "# The Orchid Continuum Constitution",
+        "line": 1,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "The Orchid Continuum Constitution"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "Nature is continuous. The boundaries between botany, zoology, ecology, genetics, chemistry, climatology, geology, anthropology, education, and philosophy are useful human abstractions. Nature recognizes none of them. The Orchid Continuum se",
+        "line": 5,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "Article I \u2014 The Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "Every journey should begin with something alive, beautiful, specific, and meaningful. The visitor should encounter an orchid before they encounter a database.",
+        "line": 5,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 1 \u2014 Begin with a living orchid"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "The ideal experience moves through wonder, curiosity, discovery, evidence, understanding, and stewardship.",
+        "line": 13,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 3 \u2014 Move from beauty to understanding"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "# The Orchid Continuum Founding Charter",
+        "line": 1,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "**Status:** Foundational institutional memory",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "**Status:** Preserved institutional memory summary",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Founding Dialogue I \u2014 Discovering the Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "This document preserves the philosophical discoveries that emerged during the founding dialogue about the Orchid Continuum. It is not a transcript. It is an institutional memory artifact summarizing the principles that should guide future b",
+        "line": 9,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "Orchids are botanical organisms, but no orchid can be understood through botany alone. A single orchid may involve pollinator behavior, fungal symbiosis, climate, chemistry, genetics, geography, soil and substrate, evolutionary history, eco",
+        "line": 5,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "The Continuum therefore rejects isolated presentation as the default mode of understanding. It seeks to show how disciplines meet inside living organisms and living places.",
+        "line": 7,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      }
+    ],
+    "purpose": "Conservation is represented by 44 provenance-linked source document(s), led by The Orchid Continuum Constitution.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Conservation.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "ontology",
+      "backend",
+      "database",
+      "runtime",
+      "knowledge_graph",
+      "missions"
+    ],
+    "future_work": [
+      "Every future decision should be evaluated by one question: > Does this help someone discover a meaningful relationship they could not see before?",
+      "**BUILD-064 may resume.** The infrastructure blocker that paused BUILD-064 was a transient session-scoping issue in the prior Copilot agent invocation \u2014 not a persistent permissions defect.",
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "A future repository hygiene PR should still remove or rename the malformed artifacts after owner review.",
+      "BUILD-016 should move from remembering software discovery to knowledge-gap discovery across Orchid Continuum scientific data.",
+      "BUILD-031 makes that purpose durable and version-controlled so future contributors and Calyx itself can inherit the project identity, not only its code."
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo",
+      "Archived:** - **Active:** `app/` directory (Calyx API), `replit.md`, `requirements.txt`, `README.md`, `.replit`, `seed.sql`, `migrations/`, `tools/` - **Likely archival/prototype:** All `oc_*.py` and `orchid_*.py` scripts at root level, `mi",
+      "Authenticated owner-session/API-key routes are under `/api/ontology`: registry lifecycle and versions, terms and synonyms, candidate/session resolution, resolution review, evidence registration/validation, and candidate/session readiness ev",
+      "Key permissions when authenticated: | Action key | Description | |---|---| | `runtimeStart` | Start autonomous runtime worker | | `runtimeStop` | Stop / disable autonomous runtime worker | | `runtimeRestart` | Restart autonomous runtime wor"
+    ],
+    "name": "Historical Intelligence",
+    "outputs": [
+      "/api/harvesters/",
+      "/api/mission-control/",
+      "/api/runner/",
+      "/api/executive/state",
+      "/api/harvesters"
+    ],
+    "provenance": [
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "# The Orchid Continuum Constitution",
+        "line": 1,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "The Orchid Continuum Constitution"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "Nature is continuous. The boundaries between botany, zoology, ecology, genetics, chemistry, climatology, geology, anthropology, education, and philosophy are useful human abstractions. Nature recognizes none of them. The Orchid Continuum se",
+        "line": 5,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "Article I \u2014 The Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "# The Orchid Continuum Founding Charter",
+        "line": 1,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "**Status:** Foundational institutional memory",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "**Status:** Preserved institutional memory summary",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Founding Dialogue I \u2014 Discovering the Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "This document preserves the philosophical discoveries that emerged during the founding dialogue about the Orchid Continuum. It is not a transcript. It is an institutional memory artifact summarizing the principles that should guide future b",
+        "line": 9,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "Orchids are botanical organisms, but no orchid can be understood through botany alone. A single orchid may involve pollinator behavior, fungal symbiosis, climate, chemistry, genetics, geography, soil and substrate, evolutionary history, eco",
+        "line": 5,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "The Continuum therefore rejects isolated presentation as the default mode of understanding. It seeks to show how disciplines meet inside living organisms and living places.",
+        "line": 7,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "docs-build-012d-runtime-executor-md",
+        "excerpt": "# BUILD-012D \u2014 Runtime Executor",
+        "line": 1,
+        "path": "docs/BUILD-012D-runtime-executor.md",
+        "section": "BUILD-012D \u2014 Runtime Executor"
+      },
+      {
+        "document_id": "docs-build-012d-runtime-executor-md",
+        "excerpt": "BUILD-012D converts the BUILD-012C planner queue into executable runtime records.",
+        "line": 3,
+        "path": "docs/BUILD-012D-runtime-executor.md",
+        "section": "BUILD-012D \u2014 Runtime Executor"
+      }
+    ],
+    "purpose": "Historical Intelligence is represented by 28 provenance-linked source document(s), led by The Orchid Continuum Constitution.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Historical Intelligence.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "ontology",
+      "knowledge_graph",
+      "database",
+      "taxonomy",
+      "runtime",
+      "backend"
+    ],
+    "future_work": [
+      "**Auth**: owner session or API key - **Wraps**: existing read-only `GET /api/mission-control/recommendations` - **Adds**: `owner` identity, `allowedActions`, `review_status`, `generated_at` - **Note**: Recommendation approval actions are re",
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns.",
+      "**Large documented source gaps are expected, not errors** \u2014 see the Unconnected Records Report (e.g.",
+      "A future frontend/control-panel build should consume backend-backed evidence structures for: - Pollinator cards: `pollinator_relationships` mission output and future relationship endpoints with source/citation fields.",
+      "Add or extend the module/mission registry to include scientific mission families: - `pollinator_relationships` - `mycorrhiza_relationships` - `literature_extraction` - `ecological_relationship_graph` - `traitbank_traits` - `conservation_hab"
+    ],
+    "inputs": [
+      "**Build 199 \u2014 Julius: Column-Level Schema Verification** Ask Julius to run the following against Neon (read-only `\\d` queries, no writes): ```sql \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d recor",
+      "**Build 199B (Julius) \u2014 Column-Level Schema Verification** Run `\\d` (schema describe) queries against Neon for the following tables: ``` \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d record_media_l",
+      "**Files inspected:** 42 (39 Python, 2 shell scripts, 1 SQL seed file) --- | File | Role | DB Target | Entry Points | |---|---|---|---| | `app/main.py` | **CANONICAL FastAPI app** | PGHOST (heliumdb) via `app/database.py` | `app = FastAPI(..",
+      "**Until Build 199B (Julius's column audit) is done, the pipeline is intentionally frozen.** - **`oc_control_panel.py`** \u2014 CLI summary of totals (occurrences, species, genera, countries, elevation range) - **`oc_mission_control.py`** \u2014 Strea",
+      "**What is known:** - Table name: `record_media_link` - Schema: `public` - Row count: **1,889,737** (as of 2026-03-14, from `orchid_continuum_db_audit_current.txt`) - This is more rows than `orchid_images` (1,074,218), meaning on average eac"
+    ],
+    "name": "Reasoning",
+    "outputs": [
+      "/api/runner/autonomous-status",
+      "/api/mission-control/",
+      "/api/runner/",
+      "/api/runner/summary",
+      "BuildOrchestrator"
+    ],
+    "provenance": [
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "# The Orchid Continuum Constitution",
+        "line": 1,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "The Orchid Continuum Constitution"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "Nature is continuous. The boundaries between botany, zoology, ecology, genetics, chemistry, climatology, geology, anthropology, education, and philosophy are useful human abstractions. Nature recognizes none of them. The Orchid Continuum se",
+        "line": 5,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "Article I \u2014 The Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "Every journey should begin with something alive, beautiful, specific, and meaningful. The visitor should encounter an orchid before they encounter a database.",
+        "line": 5,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 1 \u2014 Begin with a living orchid"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "The ideal experience moves through wonder, curiosity, discovery, evidence, understanding, and stewardship.",
+        "line": 13,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 3 \u2014 Move from beauty to understanding"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "# The Orchid Continuum Founding Charter",
+        "line": 1,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "**Status:** Foundational institutional memory",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "**Status:** Preserved institutional memory summary",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Founding Dialogue I \u2014 Discovering the Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "This document preserves the philosophical discoveries that emerged during the founding dialogue about the Orchid Continuum. It is not a transcript. It is an institutional memory artifact summarizing the principles that should guide future b",
+        "line": 9,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "Orchids are botanical organisms, but no orchid can be understood through botany alone. A single orchid may involve pollinator behavior, fungal symbiosis, climate, chemistry, genetics, geography, soil and substrate, evolutionary history, eco",
+        "line": 5,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "The Continuum therefore rejects isolated presentation as the default mode of understanding. It seeks to show how disciplines meet inside living organisms and living places.",
+        "line": 7,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      }
+    ],
+    "purpose": "Reasoning is represented by 32 provenance-linked source document(s), led by The Orchid Continuum Constitution.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Reasoning.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "documented foundation",
+    "dependencies": [
+      "frontend",
+      "database",
+      "ontology",
+      "knowledge_graph",
+      "backend",
+      "taxonomy",
+      "missions"
+    ],
+    "future_work": [
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "**Generated:** 2026-05-03 **For:** Jeff, advisors, grant reviewers, future developers, Replit Agent --- This Replit project hosts **Calyx**, a production-ready backend API for orchid show management (shows, entries, judging, volunteers, awa",
+      "Below is what each one does, what backend supports it, and where the gaps are.",
+      "Currently this would be a no-op (no files in `alembic/versions/`), but this is a silent trap for any future developer who adds a migration file.",
+      "Every future decision should be evaluated by one question: > Does this help someone discover a meaningful relationship they could not see before?",
+      "Future contributors should use this dialogue summary as a compass."
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo",
+      "**Files inspected:** 42 (39 Python, 2 shell scripts, 1 SQL seed file) --- | File | Role | DB Target | Entry Points | |---|---|---|---| | `app/main.py` | **CANONICAL FastAPI app** | PGHOST (heliumdb) via `app/database.py` | `app = FastAPI(..",
+      "**Until Build 199B (Julius's column audit) is done, the pipeline is intentionally frozen.** - **`oc_control_panel.py`** \u2014 CLI summary of totals (occurrences, species, genera, countries, elevation range) - **`oc_mission_control.py`** \u2014 Strea",
+      "Archived:** - **Active:** `app/` directory (Calyx API), `replit.md`, `requirements.txt`, `README.md`, `.replit`, `seed.sql`, `migrations/`, `tools/` - **Likely archival/prototype:** All `oc_*.py` and `orchid_*.py` scripts at root level, `mi"
+    ],
+    "name": "Community",
+    "outputs": [
+      "/api/admin/reference-docs",
+      "/api/awards",
+      "/api/entries",
+      "/api/shows",
+      "/api/tiles/registry"
+    ],
+    "provenance": [
+      {
+        "document_id": "readme-md",
+        "excerpt": "# Calyx - Orchid Show Management System",
+        "line": 1,
+        "path": "README.md",
+        "section": "Calyx - Orchid Show Management System"
+      },
+      {
+        "document_id": "readme-md",
+        "excerpt": "Backend API for Calyx, powered by Orchid Continuum.",
+        "line": 3,
+        "path": "README.md",
+        "section": "Calyx - Orchid Show Management System"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "# The Orchid Continuum Constitution",
+        "line": 1,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "The Orchid Continuum Constitution"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "Nature is continuous. The boundaries between botany, zoology, ecology, genetics, chemistry, climatology, geology, anthropology, education, and philosophy are useful human abstractions. Nature recognizes none of them. The Orchid Continuum se",
+        "line": 5,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "Article I \u2014 The Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "Every journey should begin with something alive, beautiful, specific, and meaningful. The visitor should encounter an orchid before they encounter a database.",
+        "line": 5,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 1 \u2014 Begin with a living orchid"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "The ideal experience moves through wonder, curiosity, discovery, evidence, understanding, and stewardship.",
+        "line": 13,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 3 \u2014 Move from beauty to understanding"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "# The Orchid Continuum Founding Charter",
+        "line": 1,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "**Status:** Foundational institutional memory",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "**Status:** Preserved institutional memory summary",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Founding Dialogue I \u2014 Discovering the Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "This document preserves the philosophical discoveries that emerged during the founding dialogue about the Orchid Continuum. It is not a transcript. It is an institutional memory artifact summarizing the principles that should guide future b",
+        "line": 9,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Purpose"
+      }
+    ],
+    "purpose": "Community is represented by 14 provenance-linked source document(s), led by Calyx - Orchid Show Management System.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Community.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "ontology",
+      "runtime",
+      "backend",
+      "database",
+      "taxonomy",
+      "knowledge_graph"
+    ],
+    "future_work": [
+      "**Auth**: owner session or API key - **Wraps**: existing read-only `GET /api/mission-control/recommendations` - **Adds**: `owner` identity, `allowedActions`, `review_status`, `generated_at` - **Note**: Recommendation approval actions are re",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns.",
+      "**Generated:** 2026-05-03 **For:** Jeff, advisors, grant reviewers, future developers, Replit Agent --- This Replit project hosts **Calyx**, a production-ready backend API for orchid show management (shows, entries, judging, volunteers, awa"
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**Build 199 \u2014 Julius: Column-Level Schema Verification** Ask Julius to run the following against Neon (read-only `\\d` queries, no writes): ```sql \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d recor",
+      "**Build 199B (Julius) \u2014 Column-Level Schema Verification** Run `\\d` (schema describe) queries against Neon for the following tables: ``` \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d record_media_l",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo"
+    ],
+    "name": "Governance",
+    "outputs": [
+      "/api/runner/autonomous-status",
+      "BuildOrchestrator",
+      "Repository",
+      "/api/runner/summary",
+      "PostgresGraphRepository"
+    ],
+    "provenance": [
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "# The Orchid Continuum Constitution",
+        "line": 1,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "The Orchid Continuum Constitution"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "Nature is continuous. The boundaries between botany, zoology, ecology, genetics, chemistry, climatology, geology, anthropology, education, and philosophy are useful human abstractions. Nature recognizes none of them. The Orchid Continuum se",
+        "line": 5,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "Article I \u2014 The Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "Orchids are botanical organisms, but no orchid can be understood through botany alone. A single orchid may involve pollinator behavior, fungal symbiosis, climate, chemistry, genetics, geography, soil and substrate, evolutionary history, eco",
+        "line": 5,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "The Continuum therefore rejects isolated presentation as the default mode of understanding. It seeks to show how disciplines meet inside living organisms and living places.",
+        "line": 7,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "docs-brain-backed-config-integration-md",
+        "excerpt": "# Brain-Backed Calyx Runtime Configuration",
+        "line": 1,
+        "path": "docs/BRAIN_BACKED_CONFIG_INTEGRATION.md",
+        "section": "Brain-Backed Calyx Runtime Configuration"
+      },
+      {
+        "document_id": "docs-brain-backed-config-integration-md",
+        "excerpt": "This branch begins moving Calyx configuration out of backend code and into the Brain repository.",
+        "line": 5,
+        "path": "docs/BRAIN_BACKED_CONFIG_INTEGRATION.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "docs-build-013-brain-integration-md",
+        "excerpt": "BUILD-013 connects the BUILD-012 runtime executor to first live-aware Orchid Continuum Brain modules.",
+        "line": 3,
+        "path": "docs/BUILD-013-brain-integration.md",
+        "section": "BUILD-013 \u2014 Brain Integration"
+      },
+      {
+        "document_id": "docs-build-013-brain-integration-md",
+        "excerpt": "- executor",
+        "line": 11,
+        "path": "docs/BUILD-013-brain-integration.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "docs-build-016-knowledge-gap-discovery-md",
+        "excerpt": "# BUILD-016 \u2014 Knowledge Gap Discovery",
+        "line": 1,
+        "path": "docs/BUILD-016-knowledge-gap-discovery.md",
+        "section": "BUILD-016 \u2014 Knowledge Gap Discovery"
+      },
+      {
+        "document_id": "docs-build-016-knowledge-gap-discovery-md",
+        "excerpt": "BUILD-016 turns Calyx's runtime self-discovery memory into a first-pass Orchid Continuum knowledge-gap discovery layer.",
+        "line": 3,
+        "path": "docs/BUILD-016-knowledge-gap-discovery.md",
+        "section": "BUILD-016 \u2014 Knowledge Gap Discovery"
+      }
+    ],
+    "purpose": "Governance is represented by 68 provenance-linked source document(s), led by The Orchid Continuum Constitution.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Governance.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "database",
+      "backend",
+      "runtime",
+      "ontology",
+      "missions",
+      "knowledge_graph"
+    ],
+    "future_work": [
+      "Every future decision should be evaluated by one question: > Does this help someone discover a meaningful relationship they could not see before?",
+      "**Auth**: owner session or API key - **Wraps**: existing read-only `GET /api/mission-control/recommendations` - **Adds**: `owner` identity, `allowedActions`, `review_status`, `generated_at` - **Note**: Recommendation approval actions are re",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Gaps in the model:** provenance, confidence and evidence linkage are supported; **temporal validity (valid-from/valid-to) and supersession are not** first-class columns."
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**Build 199 \u2014 Julius: Column-Level Schema Verification** Ask Julius to run the following against Neon (read-only `\\d` queries, no writes): ```sql \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d recor",
+      "**Build 199B (Julius) \u2014 Column-Level Schema Verification** Run `\\d` (schema describe) queries against Neon for the following tables: ``` \\d oc_occurrences \\d oc_harvest_targets \\d oc_harvest_runs \\d oc_job_queue \\d records \\d record_media_l",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo"
+    ],
+    "name": "Infrastructure",
+    "outputs": [
+      "/api/runner/autonomous-status",
+      "BuildOrchestrator",
+      "/api/runner/summary",
+      "Registry",
+      "PostgresGraphRepository"
+    ],
+    "provenance": [
+      {
+        "document_id": "readme-md",
+        "excerpt": "# Calyx - Orchid Show Management System",
+        "line": 1,
+        "path": "README.md",
+        "section": "Calyx - Orchid Show Management System"
+      },
+      {
+        "document_id": "readme-md",
+        "excerpt": "Backend API for Calyx, powered by Orchid Continuum.",
+        "line": 3,
+        "path": "README.md",
+        "section": "Calyx - Orchid Show Management System"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "# The Orchid Continuum Constitution",
+        "line": 1,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "The Orchid Continuum Constitution"
+      },
+      {
+        "document_id": "brain-philosophy-constitution-md",
+        "excerpt": "Nature is continuous. The boundaries between botany, zoology, ecology, genetics, chemistry, climatology, geology, anthropology, education, and philosophy are useful human abstractions. Nature recognizes none of them. The Orchid Continuum se",
+        "line": 5,
+        "path": "brain/philosophy/CONSTITUTION.md",
+        "section": "Article I \u2014 The Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "Every journey should begin with something alive, beautiful, specific, and meaningful. The visitor should encounter an orchid before they encounter a database.",
+        "line": 5,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 1 \u2014 Begin with a living orchid"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "The ideal experience moves through wonder, curiosity, discovery, evidence, understanding, and stewardship.",
+        "line": 13,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 3 \u2014 Move from beauty to understanding"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "# The Orchid Continuum Founding Charter",
+        "line": 1,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-charter-md",
+        "excerpt": "**Status:** Foundational institutional memory",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_CHARTER.md",
+        "section": "The Orchid Continuum Founding Charter"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "**Status:** Preserved institutional memory summary",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Founding Dialogue I \u2014 Discovering the Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "This document preserves the philosophical discoveries that emerged during the founding dialogue about the Orchid Continuum. It is not a transcript. It is an institutional memory artifact summarizing the principles that should guide future b",
+        "line": 9,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Purpose"
+      }
+    ],
+    "purpose": "Infrastructure is represented by 76 provenance-linked source document(s), led by Calyx - Orchid Show Management System.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Infrastructure.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  },
+  {
+    "current_maturity": "implemented and evolving",
+    "dependencies": [
+      "frontend",
+      "ontology",
+      "runtime",
+      "backend",
+      "database",
+      "missions",
+      "knowledge_graph"
+    ],
+    "future_work": [
+      "**Auth**: owner session or API key - **Wraps**: existing read-only `GET /api/mission-control/recommendations` - **Adds**: `owner` identity, `allowedActions`, `review_status`, `generated_at` - **Note**: Recommendation approval actions are re",
+      "**BUILD-064 may resume.** The infrastructure blocker that paused BUILD-064 was a transient session-scoping issue in the prior Copilot agent invocation \u2014 not a persistent permissions defect.",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2` - **Env vars:** `DATABASE_URL` - **Write operations:** None \u2014 SELECT/COUNT only (includes `conn.rollback()` on error) - **Runnable:** Yes \u2014 runs queries and prints results - **Risk:** LOW (read-only; references",
+      "**Featured Genus** should call `GET /api/knowledge-graph/genus/{name}` and render `focal_node` + connected species from `nodes`, using `data_gaps` to show honest \"not yet in graph\" states instead of empty placeholders.",
+      "**Finding:** a genuine source-availability gap (not a wrong-table issue)."
+    ],
+    "inputs": [
+      "**Active:** `app/main.py` \u2192 uvicorn on port 3000 - **Stale alternates:** `orchid_api.py` (separate FastAPI), `oc_system_health.py` (separate FastAPI stub), `api_occurrence_points.py` (separate FastAPI stub) \u2014 none of these are registered in",
+      "**Connector marketplace**: Centralized registry of public connectors - \u2705 Project builds successfully - \u2705 All tests pass - \u2705 Linting passes (if configured) - \u2705 Application starts without runtime errors - \u2705 BUILD-019 endpoints continue to wor",
+      "**DB libraries:** `psycopg2`, `fastapi` - **Env vars:** `DATABASE_URL` (raises RuntimeError if missing) - **Write operations:** None \u2014 SELECT only + placeholder returns - **Runnable:** Yes, with `uvicorn orchid_api:app` \u2014 not in any workflo",
+      "**Files inspected:** 42 (39 Python, 2 shell scripts, 1 SQL seed file) --- | File | Role | DB Target | Entry Points | |---|---|---|---| | `app/main.py` | **CANONICAL FastAPI app** | PGHOST (heliumdb) via `app/database.py` | `app = FastAPI(..",
+      "**Until Build 199B (Julius's column audit) is done, the pipeline is intentionally frozen.** - **`oc_control_panel.py`** \u2014 CLI summary of totals (occurrences, species, genera, countries, elevation range) - **`oc_mission_control.py`** \u2014 Strea"
+    ],
+    "name": "Planning",
+    "outputs": [
+      "/api/runner/autonomous-status",
+      "Repository",
+      "/api/runner/autonomous-cycle",
+      "/api/runner/summary",
+      "BuildOrchestrator"
+    ],
+    "provenance": [
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "Every journey should begin with something alive, beautiful, specific, and meaningful. The visitor should encounter an orchid before they encounter a database.",
+        "line": 5,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 1 \u2014 Begin with a living orchid"
+      },
+      {
+        "document_id": "brain-philosophy-design-principles-md",
+        "excerpt": "The ideal experience moves through wonder, curiosity, discovery, evidence, understanding, and stewardship.",
+        "line": 13,
+        "path": "brain/philosophy/DESIGN_PRINCIPLES.md",
+        "section": "Principle 3 \u2014 Move from beauty to understanding"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "**Status:** Preserved institutional memory summary",
+        "line": 5,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Founding Dialogue I \u2014 Discovering the Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-founding-dialogue-i-md",
+        "excerpt": "This document preserves the philosophical discoveries that emerged during the founding dialogue about the Orchid Continuum. It is not a transcript. It is an institutional memory artifact summarizing the principles that should guide future b",
+        "line": 9,
+        "path": "brain/philosophy/FOUNDING_DIALOGUE_I.md",
+        "section": "Purpose"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "Orchids are botanical organisms, but no orchid can be understood through botany alone. A single orchid may involve pollinator behavior, fungal symbiosis, climate, chemistry, genetics, geography, soil and substrate, evolutionary history, eco",
+        "line": 5,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "brain-philosophy-integrative-science-md",
+        "excerpt": "The Continuum therefore rejects isolated presentation as the default mode of understanding. It seeks to show how disciplines meet inside living organisms and living places.",
+        "line": 7,
+        "path": "brain/philosophy/INTEGRATIVE_SCIENCE.md",
+        "section": "Integrative Science in the Orchid Continuum"
+      },
+      {
+        "document_id": "docs-build-015-discovery-memory-md",
+        "excerpt": "BUILD-015 persists BUILD-014 autonomous discovery snapshots so Calyx can remember what it discovered, compare snapshots over time, and detect changes in modules, capabilities, recommendations, and dependency graph shape.",
+        "line": 3,
+        "path": "docs/BUILD-015-discovery-memory.md",
+        "section": "BUILD-015 \u2014 Discovery Memory"
+      },
+      {
+        "document_id": "docs-build-015-discovery-memory-md",
+        "excerpt": "- `runtime/discovery_memory.py`",
+        "line": 7,
+        "path": "docs/BUILD-015-discovery-memory.md",
+        "section": "Added"
+      },
+      {
+        "document_id": "docs-build-016-knowledge-gap-discovery-md",
+        "excerpt": "# BUILD-016 \u2014 Knowledge Gap Discovery",
+        "line": 1,
+        "path": "docs/BUILD-016-knowledge-gap-discovery.md",
+        "section": "BUILD-016 \u2014 Knowledge Gap Discovery"
+      },
+      {
+        "document_id": "docs-build-016-knowledge-gap-discovery-md",
+        "excerpt": "BUILD-016 turns Calyx's runtime self-discovery memory into a first-pass Orchid Continuum knowledge-gap discovery layer.",
+        "line": 3,
+        "path": "docs/BUILD-016-knowledge-gap-discovery.md",
+        "section": "BUILD-016 \u2014 Knowledge Gap Discovery"
+      }
+    ],
+    "purpose": "Planning is represented by 41 provenance-linked source document(s), led by Orchid Continuum Design Principles.",
+    "responsibilities": [
+      "Maintain the canonical responsibilities for Planning.",
+      "Coordinate with components: backend, brain, database, frontend, knowledge_graph, missions.",
+      "Preserve provenance, confidence, and owner-reviewed architecture decisions."
+    ]
+  }
+]
