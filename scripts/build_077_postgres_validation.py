@@ -611,8 +611,12 @@ def exercise_api(marker: str) -> dict[str, Any]:
     }
 
 
-def run_command(args: list[str]) -> str:
-    completed = subprocess.run(args, cwd=ROOT, check=True, text=True, capture_output=True)
+def run_command(args: list[str], *, expose_database_url: bool = False) -> str:
+    env = os.environ.copy()
+    if not expose_database_url:
+        env.pop("DATABASE_URL", None)
+        env.pop("TEST_DATABASE_URL", None)
+    completed = subprocess.run(args, cwd=ROOT, check=True, text=True, capture_output=True, env=env)
     return completed.stdout.strip()
 
 
@@ -620,7 +624,7 @@ def run_regressions() -> dict[str, str]:
     return {
         "build_077_focused": run_command([sys.executable, "-m", "pytest", "tests/test_build_077_ontology_registry.py", "-q"]),
         "build_076b_regression": run_command([sys.executable, "-m", "pytest", "tests/test_build_076b_semantic_extraction.py", "-q"]),
-        "postgres_backed": run_command([sys.executable, "-m", "pytest", "tests/test_build_067_pg_writer.py", "-q"]),
+        "postgres_backed": run_command([sys.executable, "-m", "pytest", "tests/test_build_067_pg_writer.py", "-q"], expose_database_url=True),
         "complete_backend": run_command([sys.executable, "-m", "pytest", "-q"]),
         "compile": run_command([sys.executable, "-m", "compileall", "-q", "app", "tests"]),
     }
