@@ -1,0 +1,2640 @@
+{
+  "acceptance criteria matrix": [
+    "Acceptance Criteria Matrix"
+  ],
+  "access control allow credentials": [
+    "Access-Control-Allow-Credentials"
+  ],
+  "access control allow headers": [
+    "Access-Control-Allow-Headers"
+  ],
+  "access control allow methods": [
+    "Access-Control-Allow-Methods"
+  ],
+  "access control allow origin": [
+    "Access-Control-Allow-Origin"
+  ],
+  "access control max age": [
+    "Access-Control-Max-Age"
+  ],
+  "access control request headers": [
+    "Access-Control-Request-Headers"
+  ],
+  "access control request method": [
+    "Access-Control-Request-Method"
+  ],
+  "access paths tested": [
+    "Access Paths Tested"
+  ],
+  "accessible mission control": [
+    "Accessible Mission Control"
+  ],
+  "activation audit": [
+    "Activation Audit"
+  ],
+  "active calyx": [
+    "Active Calyx"
+  ],
+  "adaptive source router": [
+    "Adaptive Source Router"
+  ],
+  "add build": [
+    "Add BUILD",
+    "Add Build"
+  ],
+  "add cors": [
+    "Add CORS"
+  ],
+  "add mission control cors headers": [
+    "add_mission_control_cors_headers"
+  ],
+  "added options": [
+    "Added OPTIONS"
+  ],
+  "after build": [
+    "After BUILD"
+  ],
+  "after render": [
+    "After Render"
+  ],
+  "alert conditions": [
+    "Alert Conditions"
+  ],
+  "all build": [
+    "All BUILD"
+  ],
+  "all mission control": [
+    "All Mission Control"
+  ],
+  "allowed cors": [
+    "Allowed CORS"
+  ],
+  "allowed mission control origins": [
+    "allowed_mission_control_origins"
+  ],
+  "any script": [
+    "Any Script"
+  ],
+  "aos pdfs": [
+    "AOS PDFs"
+  ],
+  "aos reference documents": [
+    "AOS Reference Documents"
+  ],
+  "api endpoints": [
+    "API Endpoints"
+  ],
+  "api examples": [
+    "API Examples"
+  ],
+  "api key authentication": [
+    "API Key Authentication"
+  ],
+  "api key configuration": [
+    "API Key Configuration"
+  ],
+  "api routes": [
+    "API Routes"
+  ],
+  "api services": [
+    "API Services"
+  ],
+  "api/calyx queue": [
+    "api/calyx-queue"
+  ],
+  "api/config/runtime services": [
+    "api/config/runtime-services"
+  ],
+  "api/knowledge graph": [
+    "api/knowledge-graph"
+  ],
+  "api/knowledge graph/genus": [
+    "api/knowledge-graph/genus"
+  ],
+  "api/knowledge graph/genus/cattleya": [
+    "api/knowledge-graph/genus/cattleya"
+  ],
+  "api/knowledge graph/node": [
+    "api/knowledge-graph/node"
+  ],
+  "api/knowledge graph/quality": [
+    "api/knowledge-graph/quality"
+  ],
+  "api/knowledge graph/taxon": [
+    "api/knowledge-graph/taxon"
+  ],
+  "api/mission control": [
+    "api/mission-control"
+  ],
+  "api/mission control/audit": [
+    "api/mission-control/audit"
+  ],
+  "api/mission control/builds": [
+    "api/mission-control/builds"
+  ],
+  "api/mission control/completeness": [
+    "api/mission-control/completeness"
+  ],
+  "api/mission control/deployments": [
+    "api/mission-control/deployments"
+  ],
+  "api/mission control/governance": [
+    "api/mission-control/governance"
+  ],
+  "api/mission control/harvesters": [
+    "api/mission-control/harvesters"
+  ],
+  "api/mission control/metrics": [
+    "api/mission-control/metrics"
+  ],
+  "api/mission control/owner/audits": [
+    "api/mission-control/owner/audits"
+  ],
+  "api/mission control/owner/commands": [
+    "api/mission-control/owner/commands"
+  ],
+  "api/mission control/owner/control verification": [
+    "api/mission-control/owner/control-verification"
+  ],
+  "api/mission control/owner/executive session": [
+    "api/mission-control/owner/executive-session"
+  ],
+  "api/mission control/owner/governance": [
+    "api/mission-control/owner/governance"
+  ],
+  "api/mission control/owner/intelligence": [
+    "api/mission-control/owner/intelligence"
+  ],
+  "api/mission control/owner/intelligence/import local": [
+    "api/mission-control/owner/intelligence/import-local"
+  ],
+  "api/mission control/owner/operations queue": [
+    "api/mission-control/owner/operations-queue"
+  ],
+  "api/mission control/owner/partnership packets": [
+    "api/mission-control/owner/partnership-packets"
+  ],
+  "api/mission control/owner/permissions": [
+    "api/mission-control/owner/permissions"
+  ],
+  "api/mission control/owner/recommendations": [
+    "api/mission-control/owner/recommendations"
+  ],
+  "api/mission control/owner/research requests": [
+    "api/mission-control/owner/research-requests"
+  ],
+  "api/mission control/owner/session": [
+    "api/mission-control/owner/session"
+  ],
+  "api/mission control/owner/session token": [
+    "api/mission-control/owner/session-token"
+  ],
+  "api/mission control/owner/session/refresh": [
+    "api/mission-control/owner/session/refresh"
+  ],
+  "api/mission control/owner/source briefings": [
+    "api/mission-control/owner/source-briefings"
+  ],
+  "api/mission control/recommendations": [
+    "api/mission-control/recommendations"
+  ],
+  "api/mission control/repositories": [
+    "api/mission-control/repositories"
+  ],
+  "api/mission control/status": [
+    "api/mission-control/status"
+  ],
+  "api/mission control/subsystems": [
+    "api/mission-control/subsystems"
+  ],
+  "api/mission templates": [
+    "api/mission-templates"
+  ],
+  "api/missions": [
+    "api/missions"
+  ],
+  "api/ontology": [
+    "api/ontology"
+  ],
+  "api/publication/dry run": [
+    "api/publication/dry-run"
+  ],
+  "api/publication/publish": [
+    "api/publication/publish"
+  ],
+  "api/publication/runs": [
+    "api/publication/runs"
+  ],
+  "api/runner/brain gap diagnostics/queue": [
+    "api/runner/brain-gap-diagnostics/queue"
+  ],
+  "api/runner/constitutional/missions": [
+    "api/runner/constitutional/missions"
+  ],
+  "api/runner/graph": [
+    "api/runner/graph"
+  ],
+  "api/runner/knowledge diagnostics/queue": [
+    "api/runner/knowledge-diagnostics/queue"
+  ],
+  "api/runner/knowledge gaps/queue": [
+    "api/runner/knowledge-gaps/queue"
+  ],
+  "api/runner/queue": [
+    "api/runner/queue"
+  ],
+  "api/runner/seed missions": [
+    "api/runner/seed-missions"
+  ],
+  "api/runner/seed scientific missions": [
+    "api/runner/seed-scientific-missions"
+  ],
+  "api/runtime": [
+    "api/runtime"
+  ],
+  "api/runtime/configuration": [
+    "api/runtime/configuration"
+  ],
+  "api/runtime/constitutional": [
+    "api/runtime/constitutional"
+  ],
+  "api/runtime/constitutional/decision ledger": [
+    "api/runtime/constitutional/decision-ledger"
+  ],
+  "api/runtime/constitutional/evaluate": [
+    "api/runtime/constitutional/evaluate"
+  ],
+  "api/runtime/constitutional/governance questions": [
+    "api/runtime/constitutional/governance-questions"
+  ],
+  "api/runtime/constitutional/missions": [
+    "api/runtime/constitutional/missions"
+  ],
+  "api/runtime/constitutional/policies": [
+    "api/runtime/constitutional/policies"
+  ],
+  "api/runtime/constitutional/status": [
+    "api/runtime/constitutional/status"
+  ],
+  "api/runtime/cycle": [
+    "api/runtime/cycle"
+  ],
+  "api/runtime/dead letter": [
+    "api/runtime/dead-letter"
+  ],
+  "api/runtime/health": [
+    "api/runtime/health"
+  ],
+  "api/runtime/heartbeat": [
+    "api/runtime/heartbeat"
+  ],
+  "api/runtime/queue": [
+    "api/runtime/queue"
+  ],
+  "api/science/missions": [
+    "api/science/missions"
+  ],
+  "api/science/seed missions": [
+    "api/science/seed-missions"
+  ],
+  "app/routers/knowledge graph": [
+    "app/routers/knowledge_graph"
+  ],
+  "app/routers/mission control": [
+    "app/routers/mission_control"
+  ],
+  "application registry": [
+    "Application Registry"
+  ],
+  "apply build": [
+    "Apply BUILD"
+  ],
+  "approval boundary": [
+    "Approval Boundary"
+  ],
+  "approval gates": [
+    "Approval Gates"
+  ],
+  "article i": [
+    "Article I"
+  ],
+  "article ii": [
+    "Article II"
+  ],
+  "article iii": [
+    "Article III"
+  ],
+  "article iv": [
+    "Article IV"
+  ],
+  "article ix": [
+    "Article IX"
+  ],
+  "article v": [
+    "Article V"
+  ],
+  "article vi": [
+    "Article VI"
+  ],
+  "article vii": [
+    "Article VII"
+  ],
+  "article viii": [
+    "Article VIII"
+  ],
+  "article x": [
+    "Article X"
+  ],
+  "article xi": [
+    "Article XI"
+  ],
+  "article xii": [
+    "Article XII"
+  ],
+  "ask julius": [
+    "Ask Julius"
+  ],
+  "atlas visualization systems": [
+    "Atlas Visualization Systems"
+  ],
+  "attention summary": [
+    "Attention Summary"
+  ],
+  "audit ecological relationship graph gaps": [
+    "audit_ecological_relationship_graph_gaps"
+  ],
+  "audit image species evidence coverage": [
+    "audit_image_species_evidence_coverage"
+  ],
+  "audit reference files": [
+    "Audit Reference Files"
+  ],
+  "audit report": [
+    "AUDIT Report"
+  ],
+  "auth session configuration": [
+    "Auth Session Configuration"
+  ],
+  "authentication architecture summary": [
+    "Authentication Architecture Summary"
+  ],
+  "authentication completion": [
+    "Authentication Completion"
+  ],
+  "authentication model": [
+    "Authentication Model"
+  ],
+  "authentication status": [
+    "Authentication Status"
+  ],
+  "autonomous discovery": [
+    "Autonomous Discovery"
+  ],
+  "autonomous loop": [
+    "Autonomous Loop"
+  ],
+  "autonomous orchestration": [
+    "Autonomous Orchestration"
+  ],
+  "autonomous runtime enabled": [
+    "autonomous_runtime_enabled"
+  ],
+  "autonomous runtime engine": [
+    "Autonomous Runtime Engine"
+  ],
+  "awaiting sql": [
+    "Awaiting SQL"
+  ],
+  "awards crud": [
+    "Awards CRUD"
+  ],
+  "backend": [
+    "backend"
+  ],
+  "backend activation": [
+    "Backend Activation"
+  ],
+  "backend api": [
+    "Backend API"
+  ],
+  "backend evidence": [
+    "Backend Evidence"
+  ],
+  "backend health audit": [
+    "Backend Health Audit"
+  ],
+  "backend implementation report": [
+    "Backend Implementation Report"
+  ],
+  "backup orchid images unlinked taxonomy fix": [
+    "backup_orchid_images_unlinked_taxonomy_fix"
+  ],
+  "backward compatibility": [
+    "Backward Compatibility"
+  ],
+  "batch update": [
+    "Batch UPDATE"
+  ],
+  "best supported diagnosis": [
+    "Best-Supported Diagnosis"
+  ],
+  "blob sha": [
+    "Blob SHA"
+  ],
+  "block reason": [
+    "Block Reason"
+  ],
+  "brain": [
+    "brain"
+  ],
+  "brain backed calyx runtime configuration": [
+    "Brain-Backed Calyx Runtime Configuration"
+  ],
+  "brain integration": [
+    "Brain Integration"
+  ],
+  "brain/knowledge graph": [
+    "brain/knowledge-graph"
+  ],
+  "build 012a autonomous runtime engine": [
+    "build_012a_autonomous_runtime_engine"
+  ],
+  "build history": [
+    "Build History"
+  ],
+  "build orchestrator": [
+    "Build Orchestrator"
+  ],
+  "build registry": [
+    "Build Registry"
+  ],
+  "build051 operations queue": [
+    "build051_operations_queue"
+  ],
+  "bulk inserts": [
+    "Bulk INSERTs"
+  ],
+  "bulk update": [
+    "Bulk UPDATE"
+  ],
+  "calyx api": [
+    "Calyx API"
+  ],
+  "calyx application package": [
+    "Calyx Application Package"
+  ],
+  "calyx autonomous operations": [
+    "Calyx Autonomous Operations"
+  ],
+  "calyx autonomous runtime": [
+    "Calyx Autonomous Runtime"
+  ],
+  "calyx base": [
+    "Calyx Base"
+  ],
+  "calyx core": [
+    "Calyx Core"
+  ],
+  "calyx db": [
+    "Calyx DB"
+  ],
+  "calyx ddl": [
+    "Calyx DDL"
+  ],
+  "calyx development suite": [
+    "Calyx Development Suite"
+  ],
+  "calyx executive intelligence engine": [
+    "Calyx Executive Intelligence Engine"
+  ],
+  "calyx fastapi": [
+    "Calyx FastAPI"
+  ],
+  "calyx frontend workbench": [
+    "Calyx Frontend Workbench"
+  ],
+  "calyx harvester command center": [
+    "Calyx Harvester Command Center"
+  ],
+  "calyx judging": [
+    "Calyx Judging"
+  ],
+  "calyx operationalization": [
+    "Calyx Operationalization"
+  ],
+  "calyx reference docs": [
+    "Calyx Reference Docs"
+  ],
+  "calyx runtime": [
+    "Calyx Runtime"
+  ],
+  "calyx runtime disabled": [
+    "calyx_runtime_disabled"
+  ],
+  "calyx runtime enabled": [
+    "calyx_runtime_enabled"
+  ],
+  "calyx runtime interval seconds": [
+    "calyx_runtime_interval_seconds"
+  ],
+  "calyx runtime journal": [
+    "calyx_runtime_journal"
+  ],
+  "calyx runtime planner": [
+    "Calyx Runtime Planner"
+  ],
+  "calyx runtime state": [
+    "calyx_runtime_state"
+  ],
+  "calyx scientific priority realignment": [
+    "Calyx Scientific Priority Realignment"
+  ],
+  "calyx shows": [
+    "Calyx Shows"
+  ],
+  "calyx url/api/runner/seed missions": [
+    "calyx_url/api/runner/seed-missions"
+  ],
+  "calyx volunteer ops": [
+    "Calyx Volunteer Ops"
+  ],
+  "calyx workspace": [
+    "Calyx Workspace"
+  ],
+  "canonical architecture": [
+    "Canonical Architecture"
+  ],
+  "canonical fastapi": [
+    "CANONICAL FastAPI"
+  ],
+  "canonical system": [
+    "Canonical System"
+  ],
+  "canonical taxonomy": [
+    "canonical taxonomy",
+    "canonical-taxonomy",
+    "oc_taxonomy",
+    "taxonomy"
+  ],
+  "canonical taxonomy architecture": [
+    "Canonical Taxonomy Architecture"
+  ],
+  "canonical taxonomy operator guide": [
+    "Canonical Taxonomy Operator Guide"
+  ],
+  "capability registry": [
+    "Capability Registry"
+  ],
+  "cds runtime registry": [
+    "CDS Runtime Registry"
+  ],
+  "check health": [
+    "Check Health"
+  ],
+  "classification key": [
+    "Classification Key"
+  ],
+  "climate engine": [
+    "Climate Engine"
+  ],
+  "climate validation report": [
+    "Climate Validation Report"
+  ],
+  "coding agent": [
+    "Coding Agent"
+  ],
+  "collection management": [
+    "Collection Management"
+  ],
+  "column level schema verification": [
+    "Column-Level Schema Verification"
+  ],
+  "com/api/mission control/owner/control verification": [
+    "com/api/mission-control/owner/control-verification"
+  ],
+  "com/api/mission control/owner/session": [
+    "com/api/mission-control/owner/session"
+  ],
+  "com/api/mission control/owner/session token": [
+    "com/api/mission-control/owner/session-token"
+  ],
+  "community": [
+    "Community"
+  ],
+  "complete capability audit": [
+    "Complete Capability Audit"
+  ],
+  "complete disabled state trace": [
+    "Complete Disabled-State Trace"
+  ],
+  "complete file inventory": [
+    "Complete File Inventory"
+  ],
+  "completeness matrix": [
+    "Completeness Matrix"
+  ],
+  "completion report": [
+    "Completion Report"
+  ],
+  "completion scoring formula": [
+    "Completion Scoring Formula"
+  ],
+  "conditions that can disable runtime": [
+    "Conditions That Can Disable Runtime"
+  ],
+  "confidence model": [
+    "Confidence Model"
+  ],
+  "configuration files": [
+    "Configuration Files"
+  ],
+  "configure render": [
+    "Configure Render"
+  ],
+  "confirmed present": [
+    "Confirmed Present"
+  ],
+  "connection map": [
+    "Connection Map"
+  ],
+  "connector execution framework": [
+    "Connector Execution Framework"
+  ],
+  "connector lifecycle": [
+    "Connector Lifecycle"
+  ],
+  "connector modules": [
+    "Connector Modules"
+  ],
+  "connector planning": [
+    "Connector Planning"
+  ],
+  "connector runtime scaffolds": [
+    "Connector Runtime Scaffolds"
+  ],
+  "conservation": [
+    "Conservation"
+  ],
+  "consolidation summary": [
+    "Consolidation Summary"
+  ],
+  "constitution registry": [
+    "Constitution Registry"
+  ],
+  "constitutional mission orchestrator": [
+    "Constitutional Mission Orchestrator"
+  ],
+  "constitutional orchestrator": [
+    "Constitutional Orchestrator"
+  ],
+  "constitutional safety": [
+    "Constitutional Safety"
+  ],
+  "content type": [
+    "Content-Type"
+  ],
+  "control matrix": [
+    "Control Matrix"
+  ],
+  "control panel display": [
+    "Control Panel Display"
+  ],
+  "controlled knowledge graph publication gate": [
+    "Controlled Knowledge Graph Publication Gate"
+  ],
+  "controlled mission queue": [
+    "Controlled Mission Queue"
+  ],
+  "controlled population guide": [
+    "Controlled Population Guide"
+  ],
+  "controlled production population": [
+    "Controlled Production Population"
+  ],
+  "controlled publication": [
+    "controlled_publication"
+  ],
+  "core commitments": [
+    "Core Commitments"
+  ],
+  "core components": [
+    "Core Components"
+  ],
+  "core discovery": [
+    "Core Discovery"
+  ],
+  "core principles": [
+    "Core Principles"
+  ],
+  "cors configuration": [
+    "CORS Configuration"
+  ],
+  "critical discovery": [
+    "Critical Discovery"
+  ],
+  "critical systems inventory": [
+    "Critical Systems Inventory"
+  ],
+  "critical unguarded risks": [
+    "Critical Unguarded Risks"
+  ],
+  "crosswalk maintenance guide": [
+    "Crosswalk Maintenance Guide"
+  ],
+  "crosswalk statistics": [
+    "Crosswalk Statistics"
+  ],
+  "current neon": [
+    "Current Neon"
+  ],
+  "current runtime architecture": [
+    "Current Runtime Architecture"
+  ],
+  "current state preservation index": [
+    "Current State Preservation Index"
+  ],
+  "daily brief": [
+    "Daily Brief"
+  ],
+  "data entry": [
+    "Data Entry"
+  ],
+  "data source": [
+    "Data Source"
+  ],
+  "database": [
+    "database"
+  ],
+  "database migration": [
+    "Database Migration"
+  ],
+  "database migration readiness": [
+    "Database Migration Readiness"
+  ],
+  "database objects": [
+    "Database Objects"
+  ],
+  "db contact": [
+    "DB Contact"
+  ],
+  "db target": [
+    "DB Target"
+  ],
+  "decision queue": [
+    "Decision Queue"
+  ],
+  "deferred build": [
+    "Deferred BUILD"
+  ],
+  "dem backfill queue": [
+    "dem_backfill_queue"
+  ],
+  "dependency and conflict matrix": [
+    "Dependency And Conflict Matrix"
+  ],
+  "depends on": [
+    "Depends On"
+  ],
+  "deployment checklist": [
+    "Deployment Checklist"
+  ],
+  "deployment notes": [
+    "Deployment Notes"
+  ],
+  "deployment order": [
+    "Deployment Order"
+  ],
+  "design decisions": [
+    "Design Decisions"
+  ],
+  "did not repair these paths": [
+    "Did Not Repair These Paths"
+  ],
+  "discovery memory": [
+    "Discovery Memory"
+  ],
+  "discovery phase": [
+    "Discovery Phase"
+  ],
+  "do not touch": [
+    "Do Not Touch"
+  ],
+  "docs/build 060 knowledge graph orchestrator operator guide": [
+    "docs/build-060-knowledge-graph-orchestrator-operator-guide"
+  ],
+  "docs/crosswalks/orchid taxonomy to backbone crosswalk": [
+    "docs/crosswalks/orchid_taxonomy_to_backbone_crosswalk"
+  ],
+  "docs/orchid continuum scientific knowledge graph completion report": [
+    "docs/orchid_continuum_scientific_knowledge_graph_completion_report"
+  ],
+  "domain coverage report": [
+    "Domain Coverage Report"
+  ],
+  "domains withheld": [
+    "Domains WITHHELD"
+  ],
+  "during build": [
+    "During BUILD"
+  ],
+  "dynamic cognitive knowledge map": [
+    "Dynamic Cognitive Knowledge Map"
+  ],
+  "ecological relationship graph": [
+    "ecological_relationship_graph"
+  ],
+  "edge types": [
+    "Edge Types"
+  ],
+  "educational intelligence": [
+    "Educational Intelligence"
+  ],
+  "elevation backfill": [
+    "Elevation Backfill"
+  ],
+  "elevation backfill queue": [
+    "elevation_backfill_queue"
+  ],
+  "elevation trigger": [
+    "Elevation Trigger"
+  ],
+  "emergency legacy script safety lock": [
+    "Emergency Legacy Script Safety Lock"
+  ],
+  "emergency safety lock verification": [
+    "Emergency Safety Lock Verification"
+  ],
+  "endpoint inventory": [
+    "Endpoint Inventory"
+  ],
+  "endpoints added": [
+    "Endpoints Added"
+  ],
+  "engineering intelligence": [
+    "Engineering Intelligence"
+  ],
+  "engineering memory": [
+    "Engineering Memory"
+  ],
+  "enqueue": [
+    "enqueue"
+  ],
+  "enqueue job": [
+    "enqueue_job"
+  ],
+  "enqueue/claim": [
+    "enqueue/claim"
+  ],
+  "enqueue/execute": [
+    "enqueue/execute"
+  ],
+  "enqueuer": [
+    "enqueuer"
+  ],
+  "enqueues": [
+    "enqueues"
+  ],
+  "entries crud": [
+    "Entries CRUD"
+  ],
+  "env var matrix": [
+    "Env Var Matrix"
+  ],
+  "environment variables": [
+    "Environment Variables"
+  ],
+  "environmental evidence score": [
+    "environmental_evidence_score"
+  ],
+  "eol traitbank": [
+    "EOL TraitBank"
+  ],
+  "error handling": [
+    "Error Handling"
+  ],
+  "estimated graph growth": [
+    "estimated_graph_growth"
+  ],
+  "every widget": [
+    "Every Widget"
+  ],
+  "evidence": [
+    "evidence"
+  ],
+  "evidence acquisition": [
+    "evidence-acquisition"
+  ],
+  "evidence backed": [
+    "evidence-backed"
+  ],
+  "evidence class": [
+    "evidence_class"
+  ],
+  "evidence classes": [
+    "Evidence Classes"
+  ],
+  "evidence linked": [
+    "evidence-linked"
+  ],
+  "evidence notes": [
+    "evidence_notes"
+  ],
+  "evidence objects": [
+    "evidence_objects"
+  ],
+  "evidence quality": [
+    "evidence_quality"
+  ],
+  "evidence registry": [
+    "Evidence Registry"
+  ],
+  "evidence summary": [
+    "evidence_summary"
+  ],
+  "evidence validation": [
+    "evidence-validation"
+  ],
+  "execute next": [
+    "Execute Next"
+  ],
+  "execute task": [
+    "Execute Task"
+  ],
+  "executed postgresql": [
+    "Executed PostgreSQL"
+  ],
+  "execution phase": [
+    "Execution Phase"
+  ],
+  "executive intelligence": [
+    "Executive Intelligence"
+  ],
+  "executive state schema": [
+    "Executive State Schema"
+  ],
+  "executive summary": [
+    "Executive Summary"
+  ],
+  "existing mission control": [
+    "Existing Mission Control"
+  ],
+  "expected error responses": [
+    "Expected Error Responses"
+  ],
+  "explicit postgresql": [
+    "Explicit PostgreSQL"
+  ],
+  "extension guide": [
+    "Extension Guide"
+  ],
+  "external api": [
+    "External API"
+  ],
+  "famous ai": [
+    "Famous AI"
+  ],
+  "fastapi integration": [
+    "FastAPI Integration"
+  ],
+  "feat/scientific knowledge graph completion": [
+    "feat/scientific-knowledge-graph-completion"
+  ],
+  "featured genus": [
+    "Featured Genus"
+  ],
+  "features activated": [
+    "Features Activated"
+  ],
+  "field conservation office": [
+    "Field Conservation Office"
+  ],
+  "files changed": [
+    "Files Changed"
+  ],
+  "files guarded": [
+    "Files Guarded"
+  ],
+  "files modified": [
+    "Files Modified"
+  ],
+  "files needing manual review": [
+    "Files Needing Manual Review"
+  ],
+  "files not": [
+    "Files NOT"
+  ],
+  "files not found": [
+    "Files Not Found"
+  ],
+  "first dangerous line blocked": [
+    "First Dangerous Line Blocked"
+  ],
+  "first production safe template": [
+    "First Production-Safe Template"
+  ],
+  "fix required": [
+    "Fix Required"
+  ],
+  "flora online": [
+    "Flora Online"
+  ],
+  "focused build": [
+    "Focused BUILD"
+  ],
+  "folium html": [
+    "Folium HTML"
+  ],
+  "for replit deployments": [
+    "For Replit Deployments"
+  ],
+  "foundational sentence": [
+    "Foundational Sentence"
+  ],
+  "founding charter": [
+    "Founding Charter"
+  ],
+  "founding dialogue i": [
+    "Founding Dialogue I"
+  ],
+  "frontend": [
+    "frontend"
+  ],
+  "frontend alignment": [
+    "Frontend Alignment"
+  ],
+  "frontend consumption": [
+    "Frontend Consumption"
+  ],
+  "frontend knowledge graph integration": [
+    "frontend_knowledge_graph_integration"
+  ],
+  "frontend mission control": [
+    "Frontend Mission Control"
+  ],
+  "frontend pr": [
+    "Frontend PR"
+  ],
+  "full activation audit": [
+    "Full Activation Audit"
+  ],
+  "full crud": [
+    "Full CRUD"
+  ],
+  "full graph": [
+    "full-graph"
+  ],
+  "full graph population": [
+    "Full Graph Population"
+  ],
+  "full graph population report": [
+    "Full Graph Population Report"
+  ],
+  "full neon": [
+    "Full Neon"
+  ],
+  "full scientific knowledge graph population": [
+    "Full Scientific Knowledge Graph Population"
+  ],
+  "full system activation": [
+    "Full System Activation"
+  ],
+  "full triage table": [
+    "Full Triage Table"
+  ],
+  "fungal dependency evidence": [
+    "fungal_dependency_evidence"
+  ],
+  "future enhancements": [
+    "Future Enhancements"
+  ],
+  "future expansion": [
+    "Future Expansion"
+  ],
+  "future extensions": [
+    "Future Extensions"
+  ],
+  "future sanitation pr scope": [
+    "Future Sanitation PR Scope"
+  ],
+  "future use": [
+    "Future Use"
+  ],
+  "gap diagnostics": [
+    "Gap Diagnostics"
+  ],
+  "garden center": [
+    "Garden Center"
+  ],
+  "gbif occurrence key refetch queue": [
+    "gbif_occurrence_key_refetch_queue"
+  ],
+  "generated openapi": [
+    "Generated OpenAPI"
+  ],
+  "generated output files": [
+    "Generated Output Files"
+  ],
+  "generic alembic readme": [
+    "Generic Alembic README"
+  ],
+  "geographic": [
+    "geographic"
+  ],
+  "geographic occurrences": [
+    "Geographic Occurrences"
+  ],
+  "geography": [
+    "geography"
+  ],
+  "geography/climate": [
+    "geography/climate"
+  ],
+  "giant jsx": [
+    "Giant JSX"
+  ],
+  "git diff confirmation": [
+    "Git Diff Confirmation"
+  ],
+  "github actions": [
+    "GitHub Actions"
+  ],
+  "github api": [
+    "GitHub API"
+  ],
+  "github coding agent backend access verification": [
+    "GitHub Coding Agent Backend Access Verification"
+  ],
+  "github connector": [
+    "GitHub Connector"
+  ],
+  "github contents api": [
+    "GitHub Contents API"
+  ],
+  "github copilot coding agent": [
+    "GitHub Copilot Coding Agent"
+  ],
+  "github mcp server": [
+    "GitHub MCP Server"
+  ],
+  "github pr": [
+    "GitHub PR"
+  ],
+  "give calyx": [
+    "Give Calyx"
+  ],
+  "global health": [
+    "Global Health"
+  ],
+  "google drive": [
+    "Google Drive"
+  ],
+  "governance": [
+    "Governance"
+  ],
+  "governance rule": [
+    "Governance Rule"
+  ],
+  "grant office": [
+    "Grant Office"
+  ],
+  "graph": [
+    "graph"
+  ],
+  "graph aware": [
+    "graph-aware"
+  ],
+  "graph build order": [
+    "Graph Build Order"
+  ],
+  "graph completeness aggregate": [
+    "graph_completeness_aggregate"
+  ],
+  "graph completeness per taxon": [
+    "graph_completeness_per_taxon"
+  ],
+  "graph completeness report": [
+    "Graph Completeness Report",
+    "graph-completeness-report",
+    "graph_completeness_report"
+  ],
+  "graph growth": [
+    "graph-growth"
+  ],
+  "graph scope": [
+    "Graph Scope"
+  ],
+  "graph tables": [
+    "Graph Tables"
+  ],
+  "graph wide": [
+    "graph-wide"
+  ],
+  "graph/taxonomy": [
+    "graph/taxonomy"
+  ],
+  "guard active": [
+    "Guard Active"
+  ],
+  "guard pattern applied": [
+    "Guard Pattern Applied"
+  ],
+  "guard position": [
+    "Guard Position"
+  ],
+  "guiding principle": [
+    "Guiding Principle"
+  ],
+  "harvester runner": [
+    "Harvester Runner"
+  ],
+  "harvesters cors": [
+    "Harvesters CORS"
+  ],
+  "hassler feb": [
+    "Hassler Feb"
+  ],
+  "health check phase": [
+    "Health Check Phase"
+  ],
+  "heartbeat changes": [
+    "Heartbeat Changes"
+  ],
+  "historical intelligence": [
+    "Historical Intelligence"
+  ],
+  "http status": [
+    "HTTP Status"
+  ],
+  "human history": [
+    "Human History"
+  ],
+  "identifier crosswalk report": [
+    "Identifier Crosswalk Report"
+  ],
+  "if brain": [
+    "If Brain"
+  ],
+  "image service": [
+    "Image Service"
+  ],
+  "image species evidence": [
+    "image_species_evidence"
+  ],
+  "implementation note": [
+    "Implementation Note"
+  ],
+  "implementation report": [
+    "Implementation Report"
+  ],
+  "implements githubconnector": [
+    "Implements GitHubConnector"
+  ],
+  "implements gmailconnector": [
+    "Implements GmailConnector"
+  ],
+  "implements openaiconnector": [
+    "Implements OpenAIConnector"
+  ],
+  "independent re": [
+    "Independent Re"
+  ],
+  "independently guarded": [
+    "Independently Guarded"
+  ],
+  "infrastructure": [
+    "Infrastructure"
+  ],
+  "initial use cases enabled": [
+    "Initial Use Cases Enabled"
+  ],
+  "inmemorygraphrepository": [
+    "inmemorygraphrepository"
+  ],
+  "institutional memory": [
+    "Institutional Memory"
+  ],
+  "institutional promise": [
+    "Institutional Promise"
+  ],
+  "institutional rule": [
+    "Institutional Rule"
+  ],
+  "integration registry": [
+    "Integration Registry"
+  ],
+  "integration status matrix": [
+    "Integration Status Matrix"
+  ],
+  "integrative science": [
+    "Integrative Science"
+  ],
+  "intelligence center": [
+    "Intelligence Center"
+  ],
+  "interactive docs": [
+    "Interactive Docs"
+  ],
+  "invalid tracked paths": [
+    "Invalid Tracked Paths"
+  ],
+  "is it ready": [
+    "Is It Ready"
+  ],
+  "jeffery parham": [
+    "Jeffery Parham"
+  ],
+  "job lifecycle": [
+    "Job Lifecycle"
+  ],
+  "job table": [
+    "Job Table"
+  ],
+  "john doe": [
+    "John Doe"
+  ],
+  "judging widget": [
+    "Judging Widget"
+  ],
+  "julius sql": [
+    "Julius SQL"
+  ],
+  "keep api": [
+    "Keep API"
+  ],
+  "key insights": [
+    "Key Insights"
+  ],
+  "knowledge gap discovery": [
+    "Knowledge Gap Discovery"
+  ],
+  "knowledge graph": [
+    "Knowledge Graph",
+    "kg",
+    "knowledge graph",
+    "knowledge-graph",
+    "knowledge_graph",
+    "oc graph",
+    "oc_graph"
+  ],
+  "knowledge graph driven": [
+    "knowledge-graph-driven"
+  ],
+  "knowledge layers": [
+    "Knowledge Layers"
+  ],
+  "known limitations": [
+    "Known Limitations"
+  ],
+  "let mission control": [
+    "Let Mission Control"
+  ],
+  "list connectors": [
+    "List Connectors"
+  ],
+  "literature/evidence": [
+    "literature/evidence"
+  ],
+  "live backend activation": [
+    "Live Backend Activation"
+  ],
+  "live gbif": [
+    "Live GBIF"
+  ],
+  "live github": [
+    "Live GitHub"
+  ],
+  "live telemetry": [
+    "Live Telemetry"
+  ],
+  "live telemetry sources": [
+    "Live Telemetry Sources"
+  ],
+  "living continuum": [
+    "Living Continuum"
+  ],
+  "living ecology": [
+    "Living Ecology"
+  ],
+  "living graph": [
+    "Living Graph"
+  ],
+  "loads json": [
+    "Loads JSON"
+  ],
+  "local filesystem": [
+    "Local Filesystem"
+  ],
+  "lock release": [
+    "Lock-Release"
+  ],
+  "lock status summary": [
+    "Lock Status Summary"
+  ],
+  "logging strategy": [
+    "Logging Strategy"
+  ],
+  "make discovery trails": [
+    "Make Discovery Trails"
+  ],
+  "manual operation": [
+    "Manual Operation"
+  ],
+  "manual review": [
+    "Manual Review"
+  ],
+  "michael hassler": [
+    "Michael Hassler"
+  ],
+  "migration and rollback": [
+    "Migration And Rollback"
+  ],
+  "migration notes": [
+    "Migration Notes"
+  ],
+  "migration order": [
+    "Migration Order"
+  ],
+  "migrations/078 controlled publication gate": [
+    "migrations/078_controlled_publication_gate"
+  ],
+  "migrations/knowledge graph/0001 edge temporal supersession": [
+    "migrations/knowledge_graph/0001_edge_temporal_supersession"
+  ],
+  "minimal fastapi": [
+    "Minimal FastAPI"
+  ],
+  "mission": [
+    "mission"
+  ],
+  "mission control": [
+    "Mission Control",
+    "mission_control"
+  ],
+  "mission control backend live telemetry api": [
+    "Mission Control Backend Live Telemetry API"
+  ],
+  "mission control cors": [
+    "Mission Control CORS"
+  ],
+  "mission control loop": [
+    "mission_control_loop"
+  ],
+  "mission control scheduler": [
+    "mission_control_scheduler"
+  ],
+  "mission control ui": [
+    "Mission Control UI"
+  ],
+  "mission id": [
+    "mission_id"
+  ],
+  "mission lifecycle": [
+    "Mission Lifecycle"
+  ],
+  "mission planner": [
+    "Mission Planner"
+  ],
+  "mission planner v1": [
+    "Mission Planner V1"
+  ],
+  "mission queue": [
+    "controlled mission queue",
+    "mission queue",
+    "orchestration queue"
+  ],
+  "missionreporterservice": [
+    "missionreporterservice"
+  ],
+  "missions": [
+    "missions"
+  ],
+  "mobile qr": [
+    "Mobile QR"
+  ],
+  "module registry": [
+    "Module Registry"
+  ],
+  "module/mission": [
+    "module/mission"
+  ],
+  "modules/missions": [
+    "modules/missions"
+  ],
+  "monitoring requirements": [
+    "Monitoring Requirements"
+  ],
+  "move active calyx": [
+    "Move Active Calyx"
+  ],
+  "my tasks": [
+    "My Tasks"
+  ],
+  "name collision statistics": [
+    "Name Collision Statistics"
+  ],
+  "neon postgresql": [
+    "Neon PostgreSQL"
+  ],
+  "neon public": [
+    "Neon Public"
+  ],
+  "new api": [
+    "New API"
+  ],
+  "new connector": [
+    "New Connector"
+  ],
+  "new endpoints": [
+    "New Endpoints"
+  ],
+  "new location": [
+    "New Location"
+  ],
+  "new runtime components": [
+    "New Runtime Components"
+  ],
+  "no alembic": [
+    "No Alembic"
+  ],
+  "no database commands were run": [
+    "No Database Commands Were Run"
+  ],
+  "no github": [
+    "No GitHub"
+  ],
+  "no graph mutation": [
+    "no-graph-mutation"
+  ],
+  "no llm": [
+    "No LLM"
+  ],
+  "no sql": [
+    "No SQL"
+  ],
+  "node types": [
+    "Node Types"
+  ],
+  "non python files": [
+    "Non-Python Files"
+  ],
+  "non taxonomy": [
+    "non-taxonomy"
+  ],
+  "north star": [
+    "North Star"
+  ],
+  "now working": [
+    "Now Working"
+  ],
+  "oc extract taxonomy": [
+    "oc_extract_taxonomy"
+  ],
+  "oc job queue": [
+    "oc_job_queue"
+  ],
+  "oc mission control": [
+    "oc_mission_control"
+  ],
+  "oc ontology": [
+    "oc_ontology"
+  ],
+  "oc publication": [
+    "oc_publication"
+  ],
+  "once famous ai": [
+    "Once Famous AI"
+  ],
+  "one page orientation": [
+    "One-Page Orientation"
+  ],
+  "one page triage guide": [
+    "One-Page Triage Guide"
+  ],
+  "only audit": [
+    "Only AUDIT"
+  ],
+  "only world plants": [
+    "Only World Plants"
+  ],
+  "ontology": [
+    "ontology"
+  ],
+  "ontology audit events": [
+    "ontology_audit_events"
+  ],
+  "ontology registry": [
+    "ontology",
+    "ontology registry",
+    "resolution registry"
+  ],
+  "openapi json": [
+    "OpenAPI JSON"
+  ],
+  "operational note": [
+    "Operational Note"
+  ],
+  "operational readiness assessment": [
+    "Operational Readiness Assessment"
+  ],
+  "operations queue": [
+    "operations_queue"
+  ],
+  "operator guide": [
+    "Operator Guide"
+  ],
+  "orchid atlas": [
+    "Orchid Atlas"
+  ],
+  "orchid continuum": [
+    "Orchid Continuum"
+  ],
+  "orchid continuum brain": [
+    "Orchid Continuum Brain",
+    "Orchid-Continuum-Brain"
+  ],
+  "orchid continuum constitution": [
+    "Orchid Continuum Constitution"
+  ],
+  "orchid continuum design principles": [
+    "Orchid Continuum Design Principles"
+  ],
+  "orchid continuum graph architecture canon": [
+    "Orchid Continuum Graph Architecture Canon"
+  ],
+  "orchid continuum kernel": [
+    "Orchid Continuum Kernel"
+  ],
+  "orchid continuum neon": [
+    "Orchid Continuum Neon"
+  ],
+  "orchid continuum scientific integration package": [
+    "Orchid Continuum Scientific Integration Package"
+  ],
+  "orchid continuum university": [
+    "Orchid Continuum University"
+  ],
+  "orchid culture intelligence system": [
+    "Orchid Culture Intelligence System"
+  ],
+  "orchid show management system": [
+    "Orchid Show Management System"
+  ],
+  "orchid taxonomy": [
+    "orchid_taxonomy"
+  ],
+  "orchid taxonomy id": [
+    "orchid_taxonomy_id"
+  ],
+  "orchid university": [
+    "Orchid University"
+  ],
+  "override should only happen after": [
+    "Override Should Only Happen After"
+  ],
+  "override variable verification": [
+    "Override Variable Verification"
+  ],
+  "owner authentication": [
+    "Owner Authentication"
+  ],
+  "owner control verification": [
+    "Owner Control Verification"
+  ],
+  "owner operations backend": [
+    "Owner Operations Backend"
+  ],
+  "owner operations console": [
+    "Owner Operations Console"
+  ],
+  "owner safety checkpoint": [
+    "Owner Safety Checkpoint"
+  ],
+  "owner session active": [
+    "Owner Session Active"
+  ],
+  "owner session bridge": [
+    "Owner Session Bridge"
+  ],
+  "owner/operations queue": [
+    "owner/operations-queue"
+  ],
+  "owner/permissions": [
+    "owner/permissions"
+  ],
+  "partnership generator": [
+    "Partnership Generator"
+  ],
+  "paste text": [
+    "Paste Text"
+  ],
+  "per file verification": [
+    "Per-File Verification"
+  ],
+  "permission": [
+    "permission"
+  ],
+  "permissions": [
+    "permissions"
+  ],
+  "persistent tables": [
+    "Persistent Tables"
+  ],
+  "personal journey": [
+    "Personal Journey"
+  ],
+  "photograph": [
+    "photograph"
+  ],
+  "photographers": [
+    "photographers"
+  ],
+  "photographs": [
+    "photographs"
+  ],
+  "planning": [
+    "Planning"
+  ],
+  "postgresgraphrepository": [
+    "postgresgraphrepository"
+  ],
+  "postgresql concurrency proof": [
+    "PostgreSQL Concurrency Proof"
+  ],
+  "pr integration corrections": [
+    "PR-Integration Corrections"
+  ],
+  "preservation risks": [
+    "Preservation Risks"
+  ],
+  "primary risk": [
+    "Primary Risk"
+  ],
+  "priority model": [
+    "Priority Model"
+  ],
+  "priority queue": [
+    "Priority Queue"
+  ],
+  "production db": [
+    "Production DB"
+  ],
+  "production knowledge graph writer": [
+    "Production Knowledge Graph Writer"
+  ],
+  "production operations activation": [
+    "Production Operations Activation"
+  ],
+  "production requirement": [
+    "Production Requirement"
+  ],
+  "production verification checklist": [
+    "Production Verification Checklist"
+  ],
+  "projected limited": [
+    "Projected LIMITED"
+  ],
+  "projection sql": [
+    "Projection SQL"
+  ],
+  "publication": [
+    "publication"
+  ],
+  "publication audit events": [
+    "publication_audit_events"
+  ],
+  "publication conflicts": [
+    "publication_conflicts"
+  ],
+  "publication decisions": [
+    "publication_decisions"
+  ],
+  "publication items": [
+    "publication_items"
+  ],
+  "publication lock": [
+    "publication_lock"
+  ],
+  "publication readiness": [
+    "publication-readiness"
+  ],
+  "publication rollbacks": [
+    "publication_rollbacks"
+  ],
+  "publication runs": [
+    "publication_runs"
+  ],
+  "publicationlockerror": [
+    "publicationlockerror"
+  ],
+  "python files": [
+    "Python Files"
+  ],
+  "queries mission control": [
+    "Queries Mission Control"
+  ],
+  "queue": [
+    "queue"
+  ],
+  "queue depth": [
+    "queue-depth"
+  ],
+  "queue from audit": [
+    "queue_from_audit"
+  ],
+  "queueactions": [
+    "queueactions"
+  ],
+  "queued": [
+    "queued"
+  ],
+  "queues": [
+    "queues"
+  ],
+  "read first": [
+    "Read First"
+  ],
+  "real postgresql": [
+    "Real PostgreSQL"
+  ],
+  "real source data connection report": [
+    "Real Source-Data Connection Report"
+  ],
+  "reason not guarded": [
+    "Reason Not Guarded"
+  ],
+  "reasoning": [
+    "Reasoning"
+  ],
+  "reasoning pipeline": [
+    "Reasoning Pipeline"
+  ],
+  "recommendation algorithm": [
+    "Recommendation Algorithm"
+  ],
+  "recommendation cards": [
+    "Recommendation Cards"
+  ],
+  "recommended next build": [
+    "Recommended Next Build"
+  ],
+  "recommended next builds": [
+    "Recommended Next Builds"
+  ],
+  "recommended next step": [
+    "Recommended Next Step"
+  ],
+  "recommended table definitions": [
+    "Recommended Table Definitions"
+  ],
+  "reference documents": [
+    "Reference Documents"
+  ],
+  "referenced by": [
+    "Referenced By"
+  ],
+  "registration desk": [
+    "Registration Desk"
+  ],
+  "registry api": [
+    "Registry API"
+  ],
+  "release publication lock": [
+    "release_publication_lock"
+  ],
+  "remaining blockers": [
+    "Remaining Blockers"
+  ],
+  "remaining external dependencies": [
+    "Remaining External Dependencies"
+  ],
+  "remaining true blockers": [
+    "Remaining True Blockers"
+  ],
+  "render configuration steps": [
+    "Render Configuration Steps"
+  ],
+  "replit agent": [
+    "Replit Agent"
+  ],
+  "required environment variables": [
+    "Required Environment Variables"
+  ],
+  "required oauth credentials": [
+    "Required OAuth Credentials"
+  ],
+  "required render environment variables": [
+    "Required Render Environment Variables"
+  ],
+  "required secrets": [
+    "Required Secrets"
+  ],
+  "research intelligence": [
+    "Research Intelligence"
+  ],
+  "research workspace": [
+    "Research Workspace"
+  ],
+  "response schema": [
+    "Response Schema"
+  ],
+  "restore calyx autonomous runtime": [
+    "Restore Calyx Autonomous Runtime"
+  ],
+  "restore genus": [
+    "Restore Genus"
+  ],
+  "resumption statement": [
+    "Resumption Statement"
+  ],
+  "reveals neon": [
+    "Reveals Neon"
+  ],
+  "review queue": [
+    "review-queue"
+  ],
+  "review queue report": [
+    "Review Queue Report",
+    "review-queue-report",
+    "review_queue_report"
+  ],
+  "review queues": [
+    "review_queues"
+  ],
+  "rollback notes": [
+    "Rollback Notes"
+  ],
+  "root cause": [
+    "Root Cause"
+  ],
+  "root level files": [
+    "Root-Level Files"
+  ],
+  "root level script triage": [
+    "Root-Level Script Triage"
+  ],
+  "root level scripts": [
+    "Root-Level Scripts"
+  ],
+  "root script start here": [
+    "Root Script Start Here"
+  ],
+  "route and authorization inventory": [
+    "Route And Authorization Inventory"
+  ],
+  "row count": [
+    "Row Count"
+  ],
+  "run build": [
+    "Run BUILD"
+  ],
+  "run casually": [
+    "Run Casually"
+  ],
+  "run command": [
+    "Run Command"
+  ],
+  "run mission control": [
+    "Run Mission Control"
+  ],
+  "runner api": [
+    "Runner API"
+  ],
+  "runtime": [
+    "Runtime",
+    "autonomous runtime",
+    "runner",
+    "runtime",
+    "worker"
+  ],
+  "runtime activation": [
+    "Runtime Activation"
+  ],
+  "runtime api": [
+    "Runtime API"
+  ],
+  "runtime behavior": [
+    "Runtime Behavior"
+  ],
+  "runtime endpoint matrix": [
+    "Runtime Endpoint Matrix"
+  ],
+  "runtime endpoints": [
+    "Runtime Endpoints"
+  ],
+  "runtime engine": [
+    "Runtime Engine",
+    "runtime_engine"
+  ],
+  "runtime engine disabled": [
+    "runtime_engine_disabled"
+  ],
+  "runtime executor": [
+    "Runtime Executor"
+  ],
+  "runtime integration readiness": [
+    "Runtime Integration Readiness"
+  ],
+  "runtime jobs": [
+    "Runtime Jobs"
+  ],
+  "runtime lifecycle": [
+    "Runtime Lifecycle"
+  ],
+  "runtime loop": [
+    "Runtime Loop"
+  ],
+  "runtime only": [
+    "runtime-only"
+  ],
+  "runtime planner": [
+    "Runtime Planner"
+  ],
+  "runtime/autonomous discovery": [
+    "runtime/autonomous_discovery"
+  ],
+  "runtime/brain gap diagnostics": [
+    "runtime/brain_gap_diagnostics"
+  ],
+  "runtime/brain integration": [
+    "runtime/brain_integration"
+  ],
+  "runtime/brain router": [
+    "runtime/brain_router"
+  ],
+  "runtime/cds loader": [
+    "runtime/cds_loader"
+  ],
+  "runtime/cds router": [
+    "runtime/cds_router"
+  ],
+  "runtime/config loader": [
+    "runtime/config_loader"
+  ],
+  "runtime/connector runs": [
+    "runtime/connector_runs"
+  ],
+  "runtime/connector runtime": [
+    "runtime/connector_runtime"
+  ],
+  "runtime/connectors": [
+    "runtime/connectors"
+  ],
+  "runtime/constitutional kernel": [
+    "runtime/constitutional_kernel"
+  ],
+  "runtime/constitutional orchestrator": [
+    "runtime/constitutional_orchestrator"
+  ],
+  "runtime/constitutional router": [
+    "runtime/constitutional_router"
+  ],
+  "runtime/discovery memory": [
+    "runtime/discovery_memory"
+  ],
+  "runtime/discovery router": [
+    "runtime/discovery_router"
+  ],
+  "runtime/executions": [
+    "runtime/executions"
+  ],
+  "runtime/executive": [
+    "runtime/executive"
+  ],
+  "runtime/frontend workbench": [
+    "runtime/frontend_workbench"
+  ],
+  "runtime/infrastructure": [
+    "runtime/infrastructure"
+  ],
+  "runtime/kernel registry": [
+    "runtime/kernel_registry"
+  ],
+  "runtime/knowledge gap diagnostics": [
+    "runtime/knowledge_gap_diagnostics"
+  ],
+  "runtime/knowledge gap diagnostics/latest": [
+    "runtime/knowledge_gap_diagnostics/latest"
+  ],
+  "runtime/knowledge gap discovery": [
+    "runtime/knowledge_gap_discovery"
+  ],
+  "runtime/knowledge gaps/latest": [
+    "runtime/knowledge_gaps/latest"
+  ],
+  "runtime/knowledge graph/ init ": [
+    "runtime/knowledge_graph/__init__"
+  ],
+  "runtime/knowledge graph/adapters": [
+    "runtime/knowledge_graph/adapters"
+  ],
+  "runtime/knowledge graph/canonical taxonomy": [
+    "runtime/knowledge_graph/canonical_taxonomy"
+  ],
+  "runtime/knowledge graph/checkpoint": [
+    "runtime/knowledge_graph/checkpoint"
+  ],
+  "runtime/knowledge graph/domain sources": [
+    "runtime/knowledge_graph/domain_sources"
+  ],
+  "runtime/knowledge graph/orchestrator": [
+    "runtime/knowledge_graph/orchestrator"
+  ],
+  "runtime/knowledge graph/production publish": [
+    "runtime/knowledge_graph/production_publish"
+  ],
+  "runtime/knowledge graph/publisher": [
+    "runtime/knowledge_graph/publisher"
+  ],
+  "runtime/knowledge graph/reporting": [
+    "runtime/knowledge_graph/reporting"
+  ],
+  "runtime/knowledge graph/repository": [
+    "runtime/knowledge_graph/repository"
+  ],
+  "runtime/knowledge graph/source registry": [
+    "runtime/knowledge_graph/source_registry"
+  ],
+  "runtime/knowledge graph/sources": [
+    "runtime/knowledge_graph/sources"
+  ],
+  "runtime/knowledge graph/validation": [
+    "runtime/knowledge_graph/validation"
+  ],
+  "runtime/module": [
+    "runtime/module"
+  ],
+  "runtime/module/capability": [
+    "runtime/module/capability"
+  ],
+  "runtime/planner router": [
+    "runtime/planner_router"
+  ],
+  "runtime/router fastapi": [
+    "runtime/router_fastapi"
+  ],
+  "runtime/runtime engine": [
+    "runtime/runtime_engine"
+  ],
+  "runtime/runtime executor": [
+    "runtime/runtime_executor"
+  ],
+  "runtime/runtime planner": [
+    "runtime/runtime_planner"
+  ],
+  "runtime/science registry": [
+    "runtime/science_registry"
+  ],
+  "runtime/scientific intelligence/cache": [
+    "runtime/scientific_intelligence/cache"
+  ],
+  "runtimeengine": [
+    "runtimeengine"
+  ],
+  "runtimeerror": [
+    "runtimeerror"
+  ],
+  "runtimememorywriter": [
+    "runtimememorywriter"
+  ],
+  "runtimerestart": [
+    "runtimerestart"
+  ],
+  "runtimestart": [
+    "runtimestart"
+  ],
+  "runtimestop": [
+    "runtimestop"
+  ],
+  "safest files": [
+    "Safest Files"
+  ],
+  "safety boundaries": [
+    "Safety Boundaries"
+  ],
+  "sandbox clone": [
+    "Sandbox Clone"
+  ],
+  "sandboxed pdf": [
+    "Sandboxed PDF"
+  ],
+  "scientific graph": [
+    "Scientific Graph"
+  ],
+  "scientific integration coordinator": [
+    "Scientific Integration Coordinator"
+  ],
+  "scientific intelligence": [
+    "Scientific Intelligence"
+  ],
+  "scientific job classification": [
+    "Scientific Job Classification"
+  ],
+  "scientific knowledge": [
+    "Scientific Knowledge"
+  ],
+  "scientific knowledge graph": [
+    "Scientific Knowledge Graph"
+  ],
+  "scientific knowledge graph completion report": [
+    "Scientific Knowledge Graph Completion Report"
+  ],
+  "scientific knowledge graph dry run verification": [
+    "Scientific Knowledge Graph Dry-Run Verification"
+  ],
+  "scientific target contract": [
+    "Scientific Target Contract"
+  ],
+  "scripts blocked": [
+    "Scripts Blocked"
+  ],
+  "scripts not guarded": [
+    "Scripts NOT Guarded"
+  ],
+  "section a": [
+    "Section A"
+  ],
+  "section c": [
+    "Section C"
+  ],
+  "section h": [
+    "Section H"
+  ],
+  "see build": [
+    "See Build"
+  ],
+  "see deliverable": [
+    "See Deliverable"
+  ],
+  "see section": [
+    "See Section"
+  ],
+  "seeded harvesters": [
+    "Seeded Harvesters"
+  ],
+  "seeded scientific missions": [
+    "Seeded Scientific Missions"
+  ],
+  "select show": [
+    "Select Show"
+  ],
+  "service registry": [
+    "Service Registry"
+  ],
+  "session changes made": [
+    "Session Changes Made"
+  ],
+  "session ttl": [
+    "Session TTL"
+  ],
+  "session/permissions/executive session": [
+    "session/permissions/executive-session"
+  ],
+  "setup crew": [
+    "Setup Crew"
+  ],
+  "shows crud": [
+    "Shows CRUD"
+  ],
+  "single count": [
+    "Single COUNT"
+  ],
+  "smoke test": [
+    "Smoke Test"
+  ],
+  "smoke tests": [
+    "Smoke Tests"
+  ],
+  "source completeness report": [
+    "Source Completeness Report"
+  ],
+  "source elevation backfill queue": [
+    "source_elevation_backfill_queue"
+  ],
+  "source table mapping": [
+    "Source Table Mapping"
+  ],
+  "species explorer": [
+    "Species Explorer"
+  ],
+  "spring show": [
+    "Spring Show"
+  ],
+  "stale name": [
+    "Stale Name"
+  ],
+  "stale table names": [
+    "Stale Table Names"
+  ],
+  "standalone fastapi": [
+    "Standalone FastAPI"
+  ],
+  "start here": [
+    "Start Here"
+  ],
+  "state machine": [
+    "State Machine"
+  ],
+  "submission": [
+    "submission"
+  ],
+  "subsystem status": [
+    "Subsystem Status"
+  ],
+  "success metrics": [
+    "Success Metrics"
+  ],
+  "summary scorecard": [
+    "Summary Scorecard"
+  ],
+  "superseded prs": [
+    "Superseded PRs"
+  ],
+  "swagger ui": [
+    "Swagger UI"
+  ],
+  "system reference documents": [
+    "System Reference Documents"
+  ],
+  "systems activated": [
+    "Systems Activated"
+  ],
+  "tables added": [
+    "Tables Added"
+  ],
+  "tables referenced": [
+    "Tables Referenced"
+  ],
+  "tap choose": [
+    "Tap Choose"
+  ],
+  "targeted concurrency": [
+    "Targeted Concurrency"
+  ],
+  "targeted knowledge graph": [
+    "Targeted Knowledge Graph"
+  ],
+  "targeted resume": [
+    "Targeted Resume"
+  ],
+  "taxonomy": [
+    "taxonomy"
+  ],
+  "taxonomy authority links": [
+    "taxonomy_authority_links"
+  ],
+  "taxonomy id": [
+    "taxonomy_id"
+  ],
+  "taxonomy identity": [
+    "taxonomy_identity"
+  ],
+  "taxonomy nodes": [
+    "taxonomy_nodes"
+  ],
+  "taxonomy seeded": [
+    "taxonomy-seeded"
+  ],
+  "taxonomy service": [
+    "Taxonomy Service"
+  ],
+  "taxonomy species": [
+    "taxonomy_species"
+  ],
+  "test edge null evidence class defaults to normalized": [
+    "test_edge_null_evidence_class_defaults_to_normalized"
+  ],
+  "test mission control build id is 064": [
+    "test_mission_control_build_id_is_064"
+  ],
+  "test mission control status reflects 064": [
+    "test_mission_control_status_reflects_064"
+  ],
+  "test publication lock releases after exception": [
+    "test_publication_lock_releases_after_exception"
+  ],
+  "test results": [
+    "Test Results"
+  ],
+  "tests/test build 066 graph completion": [
+    "tests/test_build_066_graph_completion"
+  ],
+  "tests/test canonical taxonomy": [
+    "tests/test_canonical_taxonomy"
+  ],
+  "tests/test knowledge graph orchestrator": [
+    "tests/test_knowledge_graph_orchestrator"
+  ],
+  "tests/test knowledge graph traversal": [
+    "tests/test_knowledge_graph_traversal"
+  ],
+  "tests/test mission control telemetry": [
+    "tests/test_mission_control_telemetry"
+  ],
+  "that sql": [
+    "That SQL"
+  ],
+  "the brain": [
+    "The Brain"
+  ],
+  "the build": [
+    "The BUILD"
+  ],
+  "the calyx api": [
+    "The Calyx API"
+  ],
+  "the continuum": [
+    "The Continuum"
+  ],
+  "the copilot": [
+    "The Copilot"
+  ],
+  "the db": [
+    "The DB"
+  ],
+  "the github actions": [
+    "The GitHub Actions"
+  ],
+  "the kernel": [
+    "The Kernel"
+  ],
+  "the knowledge graph": [
+    "The Knowledge Graph"
+  ],
+  "the living graph": [
+    "The Living Graph"
+  ],
+  "the mission control": [
+    "The Mission Control"
+  ],
+  "the observer": [
+    "The Observer"
+  ],
+  "the orchid continuum": [
+    "The Orchid Continuum"
+  ],
+  "the orchid continuum constitution": [
+    "The Orchid Continuum Constitution"
+  ],
+  "the orchid continuum founding charter": [
+    "The Orchid Continuum Founding Charter"
+  ],
+  "these neon": [
+    "These Neon"
+  ],
+  "this phase": [
+    "This Phase"
+  ],
+  "this pr": [
+    "This PR"
+  ],
+  "this render": [
+    "This Render"
+  ],
+  "this replit": [
+    "This Replit"
+  ],
+  "tile registry": [
+    "Tile Registry"
+  ],
+  "turn calyx": [
+    "Turn Calyx"
+  ],
+  "two minute orientation": [
+    "Two-Minute Orientation"
+  ],
+  "unconnected records report": [
+    "Unconnected Records Report"
+  ],
+  "under upload": [
+    "Under Upload"
+  ],
+  "unguarded api": [
+    "Unguarded API"
+  ],
+  "unicode nfkc": [
+    "Unicode NFKC"
+  ],
+  "unified build orchestrator": [
+    "Unified Build Orchestrator"
+  ],
+  "unified calyx executive intelligence": [
+    "Unified Calyx Executive Intelligence"
+  ],
+  "unified scientific knowledge graph build": [
+    "Unified Scientific Knowledge Graph Build"
+  ],
+  "unresolved taxonomy names": [
+    "unresolved_taxonomy_names"
+  ],
+  "updated operator guide": [
+    "Updated Operator Guide"
+  ],
+  "updated source registry": [
+    "Updated Source Registry"
+  ],
+  "updated test results": [
+    "Updated Test Results"
+  ],
+  "valid table names": [
+    "Valid Table Names"
+  ],
+  "validate graph": [
+    "validate_graph"
+  ],
+  "validation corrections": [
+    "Validation Corrections"
+  ],
+  "verification checklist": [
+    "Verification Checklist"
+  ],
+  "verification procedure": [
+    "Verification Procedure"
+  ],
+  "verify after deployment": [
+    "Verify After Deployment"
+  ],
+  "vision": [
+    "Vision"
+  ],
+  "vision ai": [
+    "Vision AI"
+  ],
+  "vision lab": [
+    "Vision Lab"
+  ],
+  "vite mission control access code": [
+    "vite_mission_control_access_code"
+  ],
+  "volunteer tasks crud": [
+    "Volunteer Tasks CRUD"
+  ],
+  "what it is": [
+    "What It Is"
+  ],
+  "what julius should handle": [
+    "What Julius Should Handle"
+  ],
+  "what replit agent should handle": [
+    "What Replit Agent Should Handle"
+  ],
+  "what should wait": [
+    "What Should Wait"
+  ],
+  "what was done": [
+    "What Was Done"
+  ],
+  "what you": [
+    "What You"
+  ],
+  "why build": [
+    "Why BUILD"
+  ],
+  "why dangerous": [
+    "Why Dangerous"
+  ],
+  "why each file was guarded": [
+    "Why Each File Was Guarded"
+  ],
+  "why julius": [
+    "Why Julius"
+  ],
+  "why manual": [
+    "Why Manual"
+  ],
+  "windows path repair audit": [
+    "Windows Path Repair Audit"
+  ],
+  "with api key authentication": [
+    "With API Key Authentication"
+  ],
+  "worker/queue": [
+    "worker/queue"
+  ],
+  "workspace map": [
+    "Workspace Map"
+  ],
+  "world plants": [
+    "World Plants"
+  ],
+  "world plants version management guide": [
+    "World Plants Version Management Guide"
+  ],
+  "writablepostgresgraphrepository": [
+    "writablepostgresgraphrepository"
+  ],
+  "write capable components": [
+    "Write-Capable Components"
+  ],
+  "x api key": [
+    "X-API-Key"
+  ],
+  "x judge id": [
+    "X-Judge-Id"
+  ],
+  "x orchid actor": [
+    "X-Orchid-Actor"
+  ],
+  "x orchid admin key": [
+    "X-Orchid-Admin-Key"
+  ]
+}
