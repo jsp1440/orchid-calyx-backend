@@ -1,6 +1,11 @@
 name: BUILD-082A live pilot validation
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/build_082a_live_validation.py'
+      - '.github/workflows/build-082a-live-validation.yml'
   push:
     branches: [feature/build-082-drive-document-import]
     paths:
