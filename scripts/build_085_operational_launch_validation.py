@@ -123,7 +123,7 @@ def verify_read_only_credentials() -> dict[str, Any]:
         raise NotReady("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON is not configured")
     try:
         payload = json.loads(raw)
-    except Exception as exc:  # pragma: no cover - defensive
+    except json.JSONDecodeError as exc:
         raise NotReady("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON is invalid JSON") from exc
     client_email = payload.get("client_email")
     if not client_email:
@@ -225,10 +225,10 @@ def _safety_checks() -> list[SafetyCheck]:
     scientific = (ROOT / "app" / "document_intelligence" / "scientific.py").read_text(encoding="utf-8")
     migration_084 = (ROOT / "migrations" / "084_document_intelligence.sql").read_text(encoding="utf-8").upper()
 
-    normalized_bulk = bulk_service.replace(" ", "").replace("\n", "")
+    bulk_service_compressed = bulk_service.replace(" ", "").replace("\n", "")
     checks = [
         SafetyCheck("Drive access is read-only", READONLY_SCOPE in (ROOT / "app" / "document_import" / "drive.py").read_text(encoding="utf-8"), "BUILD-082 gateway is configured for drive.readonly"),
-        SafetyCheck("Only NEW/UPDATED are executed", "classification\"]notin{\"NEW\",\"UPDATED\"}" in normalized_bulk, "Bulk execute skips unchanged/duplicates/unsupported"),
+        SafetyCheck("Only NEW/UPDATED are executed", "classification\"]notin{\"NEW\",\"UPDATED\"}" in bulk_service_compressed, "Bulk execute skips unchanged/duplicates/unsupported"),
         SafetyCheck("SHA-256 hashing is active", "hashlib.sha256" in doc_service, "Document import computes SHA-256 for every retrieved payload"),
         SafetyCheck("Mission Control registry-id authorization is enforced", "validate_mission_payload" in mission_service and "registry_ids" in mission_service, "Mission payload is validated to registry_ids only"),
         SafetyCheck("File failures do not abort bulk run", "state = \"FAILED\"" in bulk_service and "for item in self.repository.pending" in bulk_service, "Bulk loop continues after failed file import results"),
@@ -323,6 +323,7 @@ def _post_run_verification(dsn: str, run_id: int) -> dict[str, Any]:
         revision_stats = conn.execute(
             """
             SELECT
+              count(*) AS revision_total,
               count(*) FILTER (WHERE r.sha256 IS NOT NULL) AS sha_complete,
               count(*) FILTER (WHERE r.provenance ? 'folder') AS provenance_complete,
               count(*) FILTER (WHERE r.duplicate_of_revision_id IS NOT NULL) AS duplicate_revision_count,
@@ -339,6 +340,24 @@ def _post_run_verification(dsn: str, run_id: int) -> dict[str, Any]:
             """,
             (run_id,),
         ).fetchone()
+        immutable_conflicts = conn.execute(
+            """
+            SELECT count(*) AS count FROM (
+              SELECT registry_id, revision_number, count(*) AS c
+              FROM oc_import.document_revisions
+              WHERE session_id IN (
+                SELECT DISTINCT (result->>'session_id')::bigint
+                FROM oc_import.bulk_items
+                WHERE bulk_run_id=%s
+                  AND result IS NOT NULL
+                  AND result ? 'session_id'
+              )
+              GROUP BY registry_id, revision_number
+              HAVING count(*) > 1
+            ) t
+            """,
+            (run_id,),
+        ).fetchone()["count"]
         run_state = conn.execute(
             "SELECT state FROM oc_import.bulk_runs WHERE bulk_run_id=%s",
             (run_id,),
@@ -367,9 +386,10 @@ def _post_run_verification(dsn: str, run_id: int) -> dict[str, Any]:
         "unsupported": by_classification.get("UNSUPPORTED", 0),
         "failed": by_state.get("FAILED", 0),
         "checkpoint_integrity": {"run_state": run_state, "pending_items": pending_count, "complete": pending_count == 0},
-        "provenance_integrity": revision_stats["provenance_complete"] >= 0,
-        "sha256_integrity": revision_stats["sha_complete"] >= 0,
-        "immutable_revision_integrity": True,
+        "provenance_integrity": revision_stats["provenance_complete"] == revision_stats["revision_total"],
+        "sha256_integrity": revision_stats["sha_complete"] == revision_stats["revision_total"],
+        "immutable_revision_integrity": immutable_conflicts == 0,
+        "revision_total": revision_stats["revision_total"],
         "orphan_count": revision_stats["orphan_count"],
         "duplicate_revision_count": revision_stats["duplicate_revision_count"],
         "extraction_counts": extraction_counts,
