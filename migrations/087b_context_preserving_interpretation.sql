@@ -71,13 +71,13 @@ CREATE INDEX IF NOT EXISTS interpretation_audit_idx ON oc_scientific_interpretat
 CREATE OR REPLACE FUNCTION oc_scientific_interpretation.audit_artifact_insert() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE artifact_id BIGINT;
 BEGIN
-    artifact_id := CASE TG_TABLE_NAME
-        WHEN 'evidence_packets' THEN NEW.packet_id
-        WHEN 'machine_interpretations' THEN NEW.interpretation_id
-        WHEN 'routing_decisions' THEN NEW.routing_decision_id
-        WHEN 'canonical_assertions' THEN NEW.assertion_id
-        WHEN 'correction_records' THEN NEW.correction_id
-    END;
+    artifact_id := (to_jsonb(NEW)->>CASE TG_TABLE_NAME
+        WHEN 'evidence_packets' THEN 'packet_id'
+        WHEN 'machine_interpretations' THEN 'interpretation_id'
+        WHEN 'routing_decisions' THEN 'routing_decision_id'
+        WHEN 'canonical_assertions' THEN 'assertion_id'
+        WHEN 'correction_records' THEN 'correction_id'
+    END)::BIGINT;
     INSERT INTO oc_scientific_interpretation.audit_events(event_type, artifact_type, artifact_id, actor, details)
     VALUES ('ARTIFACT_APPENDED', UPPER(TG_TABLE_NAME), artifact_id, 'repository-trigger', jsonb_build_object('created_at', NEW.created_at));
     RETURN NEW;
