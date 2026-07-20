@@ -350,7 +350,7 @@ def _post_run_verification(dsn: str, run_id: int) -> dict[str, Any]:
         extraction_counts: dict[str, int] = {}
         for table in INTELLIGENCE_TABLES:
             extraction_counts[table] = conn.execute(
-                f"SELECT count(*) AS count FROM oc_document_intelligence.{table}"
+                sql.SQL("SELECT count(*) AS count FROM oc_document_intelligence.{}").format(sql.Identifier(table))
             ).fetchone()["count"]
 
     by_state = {row["state"]: row["count"] for row in counts}

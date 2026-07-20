@@ -40,7 +40,6 @@ python3 scripts/build_085_operational_launch_validation.py cancel --run-id <bulk
 
 ```bash
 python3 scripts/build_085_operational_launch_validation.py status --run-id <bulk_run_id>
-python3 scripts/build_085_operational_launch_validation.py final-report --source-id "$GOOGLE_DRIVE_BRAIN_SOURCE_ID" --root-folder-id "$GOOGLE_DRIVE_BRAIN_ROOT_FOLDER_ID"
 ```
 
 ### View the final report
