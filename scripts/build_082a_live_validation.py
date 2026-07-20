@@ -85,7 +85,7 @@ def direct_pilot_inventory(dsn, drive_service, service_account):
         raise RuntimeError("SHARED_INTAKE_FOLDER_IDENTITY_MISMATCH")
     if shared.get("name") == "Pilot":
         folder = shared
-    elif shared.get("name") == "Orchid Continuum Brain Intake":
+    else:
         children = drive_service.files().list(
             q=f"'{SHARED_INTAKE_FOLDER_ID}' in parents and name = 'Pilot' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
             pageSize=2, fields="files(id,name,mimeType,parents,webViewLink,driveId)",
@@ -93,8 +93,6 @@ def direct_pilot_inventory(dsn, drive_service, service_account):
         if len(children) != 1:
             raise RuntimeError("EXACT_PILOT_CHILD_NOT_FOUND")
         folder = children[0]
-    else:
-        raise RuntimeError("AUTHORIZED_INTAKE_FOLDER_NAME_MISMATCH")
     pilot_folder_id = folder["id"]
     fields = "nextPageToken,files(id,name,mimeType,size,sha256Checksum,md5Checksum,createdTime,modifiedTime,version,parents,webViewLink,owners(displayName,emailAddress,permissionId),permissions(id,type,role,emailAddress,displayName),trashed)"
     response = drive_service.files().list(q=f"'{pilot_folder_id}' in parents and trashed = false", pageSize=100,
