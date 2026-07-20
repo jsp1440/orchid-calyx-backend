@@ -62,7 +62,13 @@ Local Windows validation:
 - Compile checks: **passed**
 - `git diff --check`: **passed**
 
-The Draft PR workflow runs focused tests against disposable PostgreSQL 16, the BUILD-082–087 regression matrix, the full backend suite on Linux, lint, compile, and diff checks. Its results are the authoritative cross-platform validation for the PostgreSQL-only and Windows-only cases.
+Disposable PostgreSQL 16 / Linux Draft PR validation:
+
+- BUILD-087B focused, including PostgreSQL persistence, migration, audit, and immutability: **18 passed, 0 skipped, 0 failed**
+- BUILD-082 through BUILD-087 regression: **108 passed, 0 skipped, 0 failed**
+- Full backend: **704 passed, 17 skipped, 0 failed**
+- Ruff lint, compile checks, and `git diff --check`: **passed**
+- Existing BUILD-086 candidate, aggregation, and PostgreSQL validation checks: **passed**
 
 ## Performance observations
 
@@ -72,4 +78,4 @@ The deterministic in-memory foundation constructed 1,000 fully contextual packet
 
 - BUILD-087B is a backend foundation; user interfaces, reviewer authentication design, dashboards, queue workers, consensus review, immediate retraining, and Knowledge Graph publication remain intentionally out of scope.
 - Model quality and policy calibration require representative adjudicated scientific corpora in later validation builds. Confidence remains an explainable routing factor, not a truth probability.
-- Local PostgreSQL was not configured; the dedicated Draft PR workflow supplies disposable PostgreSQL 16 and validates migration idempotency, persistence reconstruction, auditability, and mutation rejection.
+- Local PostgreSQL was not configured. Disposable PostgreSQL 16 CI validated migration idempotency, persistence reconstruction, auditability, and mutation rejection successfully.
