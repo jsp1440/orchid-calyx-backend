@@ -12,6 +12,48 @@
 
 Changed scope: candidate and aggregation routes; PostgreSQL repository adapters; shared state codec/transaction repository; additive migration `086d_persistent_runtime.sql`; corrected BUILD-086C validation; BUILD-086D tests; PostgreSQL CI workflow; this report. No unrelated files are included.
 
+## Verified blocker traceability
+
+### BLOCKER 1 — Non-durable process-local runtime state
+
+**Evidence from BUILD-086C:** Production routes instantiated `MemoryCandidateRepository` and `MemoryAggregateRepository`. PostgreSQL transaction isolation, rollback, advisory-lock cleanup, durable concurrent-submission idempotency, and process-restart recovery therefore could not be validated.
+
+**Correction applied:** Added PostgreSQL adapters selected when `DATABASE_URL` or `TEST_DATABASE_URL` is configured, backed by the additive `086d_persistent_runtime.sql` migration. Each existing BUILD-086A/B service operation now runs against one versioned durable snapshot inside a PostgreSQL transaction with a transaction-scoped advisory lock. The adapters preserve the existing repositories, services, domain behavior, provenance, immutability, and publication restrictions; this persistence layer exists solely to resolve this verified blocker.
+
+**Validation proving correction:** Disposable PostgreSQL 16 tests passed persistence across repository/process reconstruction, cancellation checkpoint persistence and resume, rollback without a partial revision, four concurrent duplicate submissions producing one active canonical aggregate version for the submitted identity, transaction isolation, and lock availability after both success and controlled exceptions.
+
+### BLOCKER 2 — Collection APIs had no pagination
+
+**Evidence from BUILD-086C:** Candidate cluster and aggregate list endpoints returned unbounded collections and exposed no pagination contract.
+
+**Correction applied:** Added bounded and validated `limit`/`offset` parameters, total counts, and consistent empty-page behavior to the existing collection endpoints without renaming or replacing them.
+
+**Validation proving correction:** BUILD-086D API-contract tests passed first-page, subsequent-page, empty-page, out-of-range, and invalid-pagination cases in the disposable PostgreSQL run.
+
+### BLOCKER 3 — Collection ordering was not explicitly deterministic
+
+**Evidence from BUILD-086C:** Cluster and aggregate collection responses relied on repository iteration order rather than an explicit stable sort.
+
+**Correction applied:** Added stable ID/version ordering before pagination while preserving the existing filters and response models.
+
+**Validation proving correction:** Repeated API-contract requests returned the same ordered identities, and the corrected BUILD-086C rerun passed deterministic-order assertions.
+
+### BLOCKER 4 — Missing records could return 500 responses
+
+**Evidence from BUILD-086C:** Some missing candidate, aggregate, and review records could escape as dictionary lookup/domain errors and surface as internal-server errors instead of the required not-found contract.
+
+**Correction applied:** Mapped missing domain resources to explicit structured HTTP 404 responses at the existing route boundary; no API was renamed.
+
+**Validation proving correction:** BUILD-086D API-contract tests passed candidate, aggregate, and review not-found cases and confirmed structured 404 responses rather than 500 responses.
+
+### BLOCKER 5 — No unavailable-service response contract
+
+**Evidence from BUILD-086C:** Runtime persistence failures had no explicit service-unavailable mapping, so infrastructure unavailability could surface as an internal error.
+
+**Correction applied:** Added route-boundary handling that maps repository/service unavailability to a structured HTTP 503 response while leaving validation, authorization, and domain errors unchanged.
+
+**Validation proving correction:** BUILD-086D API-contract tests injected unavailable repositories for BUILD-086A and BUILD-086B endpoints and passed explicit structured 503 assertions.
+
 ## Persistent repositories and migration
 
 When `DATABASE_URL` or `TEST_DATABASE_URL` is configured, production BUILD-086A/B routes now use `PostgresCandidateRepository` and `PostgresAggregateRepository`. Without a database, the existing memory repositories remain available for deterministic unit tests.
