@@ -14,7 +14,7 @@ Smallest corrective action: replace the API runtime's in-memory candidate/aggreg
 - Tested `main`: `d6e2cbb37dffc733ec3fea52e22ce70716713389`
 - BUILD-086A merge: `bc893e3edb16fb4d515c873b4e79f6959b9c760a` (PR #81)
 - BUILD-086B merge/current tested main: `d6e2cbb37dffc733ec3fea52e22ce70716713389` (PR #82)
-- BUILD-086C validation implementation: recorded in the Draft PR commit history
+- BUILD-086C validation implementation tested: `69c2af0735b97d07133da7affa3bb0d37cb022c0`
 
 Both required additive migrations are present: `086a_candidate_knowledge.sql` and `086b_evidence_aggregation.sql`. `DATABASE_URL` was not configured in this environment, so no database migration was applied. No reset, drop, truncate, or protected-schema operation was performed.
 
