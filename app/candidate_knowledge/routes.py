@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
@@ -10,10 +10,36 @@ from app.security import verify_owner_or_api_key
 from .models import EvidenceInput, SourceAnchor
 from .repository import MemoryCandidateRepository
 from .service import CandidateExtractionService
+from app.persistence.state_repository import configured_database_url
 
 router = APIRouter(prefix="/api/candidate-knowledge", tags=["candidate-knowledge"], dependencies=[Depends(verify_owner_or_api_key)])
-REPOSITORY = MemoryCandidateRepository()
-SERVICE = CandidateExtractionService(REPOSITORY)
+def _build_repository():
+    if configured_database_url():
+        from .postgres_repository import PostgresCandidateRepository
+        return PostgresCandidateRepository()
+    return MemoryCandidateRepository()
+try:
+    REPOSITORY = _build_repository()
+    REPOSITORY_ERROR = None
+except Exception:
+    REPOSITORY = None
+    REPOSITORY_ERROR = "CANDIDATE_DATABASE_UNAVAILABLE"
+SERVICE = CandidateExtractionService(REPOSITORY) if REPOSITORY is not None else None
+def _available():
+    if REPOSITORY is None or SERVICE is None:
+        raise HTTPException(503, detail={"code": REPOSITORY_ERROR or "CANDIDATE_DATABASE_UNAVAILABLE"})
+    return REPOSITORY, SERVICE
+def _write(operation):
+    repository, _ = _available()
+    try: return repository.atomic(operation) if hasattr(repository, "atomic") else operation()
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(503, detail={"code":"CANDIDATE_DATABASE_UNAVAILABLE"}) from exc
+def _read():
+    repository, _ = _available()
+    try:
+        if hasattr(repository, "refresh"): repository.refresh()
+        return repository
+    except Exception as exc: raise HTTPException(503, detail={"code":"CANDIDATE_DATABASE_UNAVAILABLE"}) from exc
 
 
 class AnchorIn(BaseModel):
@@ -60,78 +86,101 @@ def _evidence(value: EvidenceIn) -> EvidenceInput:
 @router.post("/preview", status_code=201)
 def preview(payload: PreviewIn):
     try:
-        return SERVICE.preview([_evidence(item) for item in payload.evidence], payload.configuration)
+        _, service = _available()
+        return _write(lambda: service.preview([_evidence(item) for item in payload.evidence], payload.configuration))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
 
 @router.post("/runs/{run_id}/execute")
 def execute(run_id: int):
-    return SERVICE.execute(run_id)
+    _, service = _available()
+    try: return _write(lambda: service.execute(run_id))
+    except KeyError as exc: raise HTTPException(404, detail={"code":"CANDIDATE_RUN_NOT_FOUND"}) from exc
 
 
 @router.get("/runs/{run_id}")
 def status(run_id: int):
-    return REPOSITORY.status(run_id)
+    try: return _read().status(run_id)
+    except KeyError as exc: raise HTTPException(404, detail={"code":"CANDIDATE_RUN_NOT_FOUND"}) from exc
+
+@router.get("/runs")
+def history(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
+    values=sorted(_read().runs.values(),key=lambda x:x["candidate_run_id"])
+    return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 
 
 @router.get("/runs/{run_id}/items")
 def items(run_id: int):
-    return {"items": REPOSITORY.items[run_id]}
+    repository=_read()
+    if run_id not in repository.items: raise HTTPException(404, detail={"code":"CANDIDATE_RUN_NOT_FOUND"})
+    return {"items": sorted(repository.items[run_id],key=lambda x:x["item_id"])}
 
 
 @router.post("/runs/{run_id}/cancel")
 def cancel(run_id: int):
-    return SERVICE.cancel(run_id)
+    _, service = _available()
+    try:return _write(lambda:service.cancel(run_id))
+    except KeyError as exc:raise HTTPException(404,detail={"code":"CANDIDATE_RUN_NOT_FOUND"}) from exc
 
 
 @router.post("/runs/{run_id}/resume")
 def resume(run_id: int):
-    return SERVICE.resume(run_id)
+    _, service = _available()
+    try:return _write(lambda:service.resume(run_id))
+    except KeyError as exc:raise HTTPException(404,detail={"code":"CANDIDATE_RUN_NOT_FOUND"}) from exc
 
 
 @router.get("/candidates")
-def candidates(kind: str | None = None, review_state: str | None = None, active: bool = True):
-    values = [x for x in REPOSITORY.candidates if x["active"] == active]
+def candidates(kind: str | None = None, review_state: str | None = None, active: bool = True, limit:int=Query(50,ge=1,le=200), offset:int=Query(0,ge=0,le=10000)):
+    values = [x for x in _read().candidates if x["active"] == active]
     if kind:
         values = [x for x in values if x["kind"] == kind]
     if review_state:
         values = [x for x in values if x["review_state"] == review_state]
-    return {"items": values}
+    values=sorted(values,key=lambda x:(x["candidate_id"],x["version"]))
+    return {"items": values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 
 
 @router.get("/candidates/{candidate_id}")
 def candidate(candidate_id: int):
-    value = next((x for x in REPOSITORY.candidates if x["candidate_id"] == candidate_id), None)
+    repository=_read(); value = next((x for x in repository.candidates if x["candidate_id"] == candidate_id), None)
     if value is None:
         raise HTTPException(404, "CANDIDATE_NOT_FOUND")
-    return {**value, "evidence": [x for x in REPOSITORY.evidence_links if x["candidate_id"] == candidate_id]}
+    return {**value, "evidence": sorted([x for x in repository.evidence_links if x["candidate_id"] == candidate_id],key=lambda x:x["evidence_link_id"])}
 
 
 @router.get("/reviews")
-def reviews(state: str = "OPEN"):
-    return {"items": [x for x in REPOSITORY.reviews.values() if x["state"] == state]}
+def reviews(state: str = "OPEN",limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
+    values=sorted([x for x in _read().reviews.values() if x["state"] == state],key=lambda x:x["review_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 
 
 @router.post("/reviews/{review_id}/resolve")
 def resolve(review_id: int, payload: ReviewDecision, auth: Annotated[dict, Depends(verify_owner_or_api_key)]):
     actor = str(auth.get("actor") or auth.get("subject") or "operator")
     try:
-        return REPOSITORY.resolve_review(review_id, payload.decision, payload.rationale, actor)
+        repository,_=_available()
+        if review_id not in repository.reviews: raise HTTPException(404,detail={"code":"CANDIDATE_REVIEW_NOT_FOUND"})
+        return _write(lambda:repository.resolve_review(review_id, payload.decision, payload.rationale, actor))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/duplicates")
-def duplicates():
-    return {"items": list(REPOSITORY.duplicate_groups.values())}
+def duplicates(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
+    values=sorted(_read().duplicate_groups.values(),key=lambda x:x["duplicate_group_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 
 
 @router.get("/conflicts")
-def conflicts():
-    return {"items": list(REPOSITORY.conflicts.values())}
+def conflicts(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
+    values=sorted(_read().conflicts.values(),key=lambda x:x["conflict_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
+
+@router.get("/tombstones")
+def tombstones(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
+    values=sorted(getattr(_read(),"tombstones",[]),key=lambda x:x.get("tombstone_id",0))
+    return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "candidate_only": True, "publishes_graph": False, "extractor_version": SERVICE.extractor_version, "ruleset_version": SERVICE.ruleset_version}
+    _,service=_available();return {"status": "ok", "candidate_only": True, "publishes_graph": False, "persistent":hasattr(REPOSITORY,"atomic"),"extractor_version": service.extractor_version, "ruleset_version": service.ruleset_version}
