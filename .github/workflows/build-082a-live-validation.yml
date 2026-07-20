@@ -13,6 +13,9 @@ on:
       - '.github/workflows/build-082a-live-validation.yml'
 permissions:
   contents: read
+concurrency:
+  group: orchid-validation-postgres
+  cancel-in-progress: false
 jobs:
   validate:
     runs-on: ubuntu-latest

@@ -23,6 +23,10 @@ on:
       - ".github/workflows/build-079-postgres-validation.yml"
   workflow_dispatch:
 
+concurrency:
+  group: orchid-validation-postgres
+  cancel-in-progress: false
+
 jobs:
   postgres-validation:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
