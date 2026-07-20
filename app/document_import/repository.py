@@ -39,7 +39,7 @@ class PostgresDocumentImportRepository:
             row = cur.fetchone()
             if not row: return False
             owners = (row["configuration"] or {}).get("approved_importers", [])
-            return actor in owners or actor in {"owner_session", "api_key", "backend_api_key", "owner"}
+            return actor in owners or actor in {"owner_session", "api_key", "backend_api_key", "owner", "mission_control"}
 
     def create_session(self, actor: str, registry_ids: list[int], mission_id: int | None, version: str) -> int:
         with self._connect() as conn, conn.cursor() as cur:

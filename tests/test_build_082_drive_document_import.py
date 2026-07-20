@@ -123,3 +123,8 @@ def test_migration_is_additive_idempotent_indexed_and_forbids_graph_ontology_sem
     for table in ("import_sessions","document_revisions","hash_index","audit_trail","retry_tracking"): assert table in sql
     assert "DROP " not in sql.upper() and "ALTER TABLE" not in sql.upper()
     assert "oc_graph" not in sql and "oc_ontology" not in sql and "oc_semantic" not in sql
+
+
+def test_mission_control_is_an_explicit_internal_import_actor():
+    source = (Path(__file__).parents[1]/"app"/"document_import"/"repository.py").read_text()
+    assert '"mission_control"' in source
