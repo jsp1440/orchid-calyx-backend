@@ -78,6 +78,37 @@ def protected_counts(dsn):
     return result
 
 
+def mission_only_validation(dsn):
+    with psycopg.connect(dsn, row_factory=dict_row) as conn:
+        records = conn.execute("""SELECT inventory_id,external_file_id,filename FROM oc_sources.document_inventory
+            WHERE external_file_id=ANY(%s) ORDER BY filename""", ([
+                "1fxW6gYK3SdgF4SqV-VTir8y3frcFJNKu", "1JwjD2-EreTioRDDbh52sass61-oH9s5M",
+                "1sRqJPU4wW8d7BJzNMkf-cY9tZ01me8hE"],)).fetchall()
+    if len(records) != 3 or {row["filename"] for row in records} != set(NAMES):
+        raise RuntimeError("AUTHORIZED_REGISTRY_SET_NOT_FOUND")
+    ids = [row["inventory_id"] for row in records]
+    invalid = ({"paths":["x"]},{"urls":["https://invalid"]},{"sql":"select 1"},{"shell":"echo x"},{"drive_ids":["unregistered"]})
+    rejected = sum(1 for payload in invalid if _rejected(payload))
+    if rejected != len(invalid): raise RuntimeError("MISSION_REJECTION_FAILED")
+    before = protected_counts(dsn)
+    run_identity = f"{os.environ.get('GITHUB_RUN_ID','local')}-{os.environ.get('GITHUB_RUN_ATTEMPT',time.time_ns())}"
+    key = f"build-082b-live-pilot-{run_identity}"
+    service = MissionService(PostgresMissionRepository(dsn)); service.initialize()
+    mission = service.create({"mission_key":key,"title":"BUILD-082B live pilot","description":"Approved registry-ID-only acceptance import",
+        "mission_type":"controlled_drive_import","requested_by":"owner","priority":90,"schedule_type":"manual","scheduled_at":None,
+        "recurrence_rule":None,"maximum_runs":1,"maximum_failures":1,"input_manifest":{"registry_ids":ids},
+        "allowed_actions":["universal_intake_import"],"prohibited_actions":["drive_write","semantic_extraction","graph_write"],
+        "target_services":["google_drive","universal_intake"],"target_domains":["Pilot"],"idempotency_key":key,"created_from_template_id":None})
+    service.submit(mission["mission_id"],"owner","BUILD-082B acceptance")
+    service.approve(mission["mission_id"],"owner","explicit BUILD-082B authorization","BUILD-082B")
+    result = service.run_one(mission["mission_id"],"build-082b-validator")
+    after = protected_counts(dsn)
+    if before != after: raise RuntimeError("PROTECTED_SCHEMA_MUTATION_DETECTED")
+    print(json.dumps({"verdict":"READY_FOR_REVIEW","mode":"mission_only","mission_id":mission["mission_id"],
+        "idempotency_key":key,"registry_ids":ids,"result":result,"invalid_payloads_rejected":rejected,
+        "protected_before":before,"protected_after":after},default=str,sort_keys=True))
+
+
 def direct_pilot_inventory(dsn, drive_service, service_account):
     shared = drive_service.files().get(fileId=SHARED_INTAKE_FOLDER_ID, supportsAllDrives=True,
         fields="id,name,mimeType,parents,webViewLink,driveId").execute()
@@ -146,6 +177,9 @@ class TimedRepository:
 
 def main():
     dsn = os.environ["DATABASE_URL"]
+    if os.environ.get("BUILD_082B_MISSION_ONLY") == "1":
+        mission_only_validation(dsn)
+        return
     credentials = json.loads(os.environ["GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON"])
     service_account = credentials.get("client_email")
     if not service_account: raise RuntimeError("SERVICE_ACCOUNT_IDENTITY_MISSING")

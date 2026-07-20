@@ -20,6 +20,7 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON }}
+      BUILD_082B_MISSION_ONLY: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
