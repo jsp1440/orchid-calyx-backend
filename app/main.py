@@ -23,6 +23,7 @@ from app.semantic.routers import router as semantic_router
 from app.source_registry.routes import router as source_registry_router
 from app.document_import.routes import router as document_import_router
 from app.document_intelligence.routes import router as document_intelligence_router
+from app.semantic_index.routes import router as semantic_index_router
 from app.ontology.routers import router as ontology_router
 from app.publication.routers import router as publication_router
 from app.missions.dependencies import get_mission_service
@@ -1154,6 +1155,7 @@ app.include_router(semantic_router)
 app.include_router(source_registry_router)
 app.include_router(document_import_router)
 app.include_router(document_intelligence_router)
+app.include_router(semantic_index_router)
 app.include_router(ontology_router)
 app.include_router(publication_router)
 app.include_router(missions_router)
