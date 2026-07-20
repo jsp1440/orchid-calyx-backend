@@ -21,7 +21,7 @@ from app.source_registry.models import DriveFile
 from app.source_registry.repository import PostgresSourceRegistryRepository
 
 ROOT = Path(__file__).parents[1]
-PILOT_FOLDER_ID = "1sOVXh7ixd8TNeEjtXfm9KlziDQ_GsCsS"
+SHARED_INTAKE_FOLDER_ID = "1sOVXh7ixd8TNeEjtXfm9KlziDQ_GsCsS"
 NAMES = (
     "BUILD-INFRA-004 Architecture Review.pdf",
     "comprehensive_orchid_glossary.pdf",
@@ -79,12 +79,25 @@ def protected_counts(dsn):
 
 
 def direct_pilot_inventory(dsn, drive_service, service_account):
-    folder = drive_service.files().get(fileId=PILOT_FOLDER_ID, supportsAllDrives=True,
+    shared = drive_service.files().get(fileId=SHARED_INTAKE_FOLDER_ID, supportsAllDrives=True,
         fields="id,name,mimeType,parents,webViewLink,driveId").execute()
-    if folder.get("id") != PILOT_FOLDER_ID or folder.get("name") != "Pilot" or folder.get("mimeType") != "application/vnd.google-apps.folder":
-        raise RuntimeError("PILOT_FOLDER_IDENTITY_MISMATCH")
+    if shared.get("mimeType") != "application/vnd.google-apps.folder":
+        raise RuntimeError("SHARED_INTAKE_FOLDER_IDENTITY_MISMATCH")
+    if shared.get("name") == "Pilot":
+        folder = shared
+    elif shared.get("name") == "Orchid Continuum Brain Intake":
+        children = drive_service.files().list(
+            q=f"'{SHARED_INTAKE_FOLDER_ID}' in parents and name = 'Pilot' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+            pageSize=2, fields="files(id,name,mimeType,parents,webViewLink,driveId)",
+            supportsAllDrives=True, includeItemsFromAllDrives=True).execute().get("files", [])
+        if len(children) != 1:
+            raise RuntimeError("EXACT_PILOT_CHILD_NOT_FOUND")
+        folder = children[0]
+    else:
+        raise RuntimeError("AUTHORIZED_INTAKE_FOLDER_NAME_MISMATCH")
+    pilot_folder_id = folder["id"]
     fields = "nextPageToken,files(id,name,mimeType,size,sha256Checksum,md5Checksum,createdTime,modifiedTime,version,parents,webViewLink,owners(displayName,emailAddress,permissionId),permissions(id,type,role,emailAddress,displayName),trashed)"
-    response = drive_service.files().list(q=f"'{PILOT_FOLDER_ID}' in parents and trashed = false", pageSize=100,
+    response = drive_service.files().list(q=f"'{pilot_folder_id}' in parents and trashed = false", pageSize=100,
         fields=fields, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
     if response.get("nextPageToken"):
         raise RuntimeError("PILOT_FOLDER_EXCEEDS_SINGLE_CONTROLLED_PAGE")
@@ -92,13 +105,13 @@ def direct_pilot_inventory(dsn, drive_service, service_account):
     if set(by_name) != set(NAMES) or len(by_name) != 3:
         raise RuntimeError("EXACT_PILOT_DOCUMENT_SET_NOT_FOUND")
     repository = PostgresSourceRegistryRepository()
-    source = repository.register_google_drive("BUILD-082 Pilot", "SERVICE_ACCOUNT", [PILOT_FOLDER_ID])
+    source = repository.register_google_drive("BUILD-082 Pilot", "SERVICE_ACCOUNT", [pilot_folder_id])
     scan_id = repository.start_scan(str(source["source_id"]))
     states = []
     try:
         for name in NAMES:
             item = by_name[name]
-            if item.get("parents") != [PILOT_FOLDER_ID]:
+            if item.get("parents") != [pilot_folder_id]:
                 raise RuntimeError("PILOT_PARENT_MISMATCH")
             owners = item.get("owners") or []
             owner = owners[0].get("emailAddress") if owners else None
@@ -106,7 +119,7 @@ def direct_pilot_inventory(dsn, drive_service, service_account):
                 int(item["size"]) if item.get("size") is not None else None,
                 item.get("sha256Checksum") or item.get("md5Checksum"), _date(item.get("createdTime")),
                 _date(item.get("modifiedTime")), str(item.get("version") or "") or None, None,
-                {"parent_pilot_folder_id":PILOT_FOLDER_ID,"web_url":item.get("webViewLink"),"owner":owner,
+                {"parent_pilot_folder_id":pilot_folder_id,"web_url":item.get("webViewLink"),"owner":owner,
                  "owners":owners,"permissions":item.get("permissions") or [],"authenticated_service_account":service_account,
                  "registration_source":"BUILD-082B_DIRECT_NON_RECURSIVE"})
             states.append(repository.inventory_file(str(source["source_id"]), scan_id, file))
