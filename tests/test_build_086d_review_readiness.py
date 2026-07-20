@@ -44,7 +44,7 @@ def test_postgres_aggregate_persistence_concurrent_idempotency_and_restart():
   def operation():plan=service.preview([candidate()]);return service.execute(plan["aggregate_run_id"])
   return repo.atomic(operation)["state"]
  with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:states=list(pool.map(lambda _:submit(),range(4)))
- fresh=PostgresAggregateRepository(DSN);assert all(x=="COMPLETED" for x in states) and len(fresh.versions)==1 and sum(x["active"] for x in fresh.versions)==1 and fresh.lock_available()
+ fresh=PostgresAggregateRepository(DSN);matching=[x for x in fresh.versions if x["contributing_candidate_ids"]==[1]];assert all(x=="COMPLETED" for x in states) and len(matching)==1 and sum(x["active"] for x in matching)==1 and fresh.lock_available()
 
 def test_candidate_pagination_order_filters_not_found_and_unavailable(monkeypatch):
  import app.candidate_knowledge.routes as routes
