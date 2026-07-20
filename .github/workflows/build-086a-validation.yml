@@ -1,0 +1,41 @@
+name: BUILD-086A validation
+
+on:
+  pull_request:
+    paths:
+      - "app/candidate_knowledge/**"
+      - "app/main.py"
+      - "migrations/086a_candidate_knowledge.sql"
+      - "tests/test_build_086a_candidate_knowledge.py"
+      - ".github/workflows/build-086a-validation.yml"
+  push:
+    branches:
+      - feature/build-086a-candidate-knowledge-extraction
+  workflow_dispatch:
+
+jobs:
+  candidate-knowledge-validation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt pytest httpx
+      - name: Validate BUILD-086A and evidence pipeline regressions
+        run: >-
+          python -m pytest -q
+          tests/test_build_082_drive_document_import.py
+          tests/test_build_083_bulk_drive_import.py
+          tests/test_build_084c_foundation.py
+          tests/test_build_084d_scientific_objects.py
+          tests/test_build_084e_integration.py
+          tests/test_build_085a_semantic_index.py
+          tests/test_build_085b_hybrid_retrieval.py
+          tests/test_build_085c_retrieval_validation.py
+          tests/test_build_086a_candidate_knowledge.py
