@@ -21,7 +21,7 @@ from app.document_import.bulk import BulkImportService
 from app.document_import.bulk_repository import PostgresBulkImportRepository
 from app.document_import.dependencies import get_import_repository
 from app.document_import.drive import GoogleDriveDocumentGateway
-from app.document_import.service import DocumentImportService, validate_mission_payload
+from app.document_import.service import DocumentImportService
 from app.missions.repositories import PostgresMissionRepository
 from app.missions.services import MissionService
 from app.source_registry.dependencies import get_scan_service, get_source_repository
@@ -316,6 +316,10 @@ def _post_run_verification(dsn: str, run_id: int) -> dict[str, Any]:
             "SELECT state, count(*) AS count FROM oc_import.bulk_items WHERE bulk_run_id=%s GROUP BY state",
             (run_id,),
         ).fetchall()
+        classifications = conn.execute(
+            "SELECT classification, count(*) AS count FROM oc_import.bulk_items WHERE bulk_run_id=%s GROUP BY classification",
+            (run_id,),
+        ).fetchall()
         revision_stats = conn.execute(
             """
             SELECT
@@ -354,12 +358,13 @@ def _post_run_verification(dsn: str, run_id: int) -> dict[str, Any]:
             ).fetchone()["count"]
 
     by_state = {row["state"]: row["count"] for row in counts}
+    by_classification = {row["classification"]: row["count"] for row in classifications}
     return {
         "imported": by_state.get("IMPORTED", 0),
         "updated": by_state.get("UPDATED", 0),
         "skipped_unchanged": by_state.get("SKIPPED", 0),
         "duplicates": by_state.get("DUPLICATE", 0),
-        "unsupported": 0,
+        "unsupported": by_classification.get("UNSUPPORTED", 0),
         "failed": by_state.get("FAILED", 0),
         "checkpoint_integrity": {"run_state": run_state, "pending_items": pending_count, "complete": pending_count == 0},
         "provenance_integrity": revision_stats["provenance_complete"] >= 0,
@@ -480,5 +485,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    validate_mission_payload({"registry_ids": [1]})
     main()
