@@ -11,3 +11,13 @@ The evaluation harness reports precision/recall@K, MRR, NDCG, diversity, duplica
 “BUILD-085B retrieves and ranks preserved evidence. It does not generate final scientific answers, extract or publish Knowledge Graph facts, design experiments, recommend conservation actions, or generate adapted protocols.”
 
 BUILD-085C is deferred for independent end-to-end validation, a larger corpus, ranking calibration and thresholds, performance/concurrency testing, refresh validation, and final BUILD-085 review readiness.
+
+## BUILD-085C validation and operations
+
+The controlled corpus covers primary research, protocols, results, taxonomic/key material, conservation and educational insights, AI/intelligence provenance, internal decisions, every display policy, duplicates, historical events, and supersession. Acceptance requires MRR ≥ 0.90 plus 100% fixture citation completeness, parent linkage, copyright correctness, deterministic top-K order, zero restricted-text leaks, zero tombstoned default results, and no duplicate active index identities. These fixture thresholds validate mechanics, not real-world scientific accuracy.
+
+The non-production fixture budget is under 1 second per query and under 5 seconds for 30 concurrent mixed reads on six workers. Indexing metrics separately report tokens, calls, elapsed time, reuse, exclusion, and failure. Operations should monitor excluded/review counts, active models, tombstones, duplicate rate, citation completeness, query latency, and provider failures. Refresh uses preview before execute; cancellation/resume preserves safe item boundaries and historical versions.
+
+“BUILD-085 provides versioned indexing and read-only hybrid retrieval over preserved BUILD-084 evidence. It does not generate final scientific answers, extract or publish Knowledge Graph facts, design experiments, recommend conservation actions, publish candidate events, or generate adapted protocols.”
+
+BUILD-086 is deferred for structured candidate knowledge extraction, taxon/trait and morphology/glossary candidates, pollinator/mycorrhizal and habitat/geographic relationships, phenology, conservation threats/actions, measurements/tolerances, molecular markers, cultivation-method candidates, evidence aggregation, and human review before publication.
