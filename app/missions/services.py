@@ -169,6 +169,13 @@ class MissionService:
             return {"status": "ok", "audit": "taxonomy_integrity_read_only", "canonical_graph_mutated": False, "taxonomy_mutated": False}
         if handler == "mission_control_status_report":
             return {"status": "ok", "report": self.repository.telemetry(), "canonical_graph_mutated": False, "taxonomy_mutated": False}
+        if handler == "controlled_drive_import":
+            from app.document_import.dependencies import get_import_service
+            from app.document_import.service import validate_mission_payload
+            registry_ids = validate_mission_payload(mission.get("input_manifest") or {})
+            result = get_import_service().import_batch(registry_ids, "mission_control", mission_id=mission["mission_id"])
+            return {**result, "semantic_extraction_performed": False, "ontology_mutated": False,
+                    "embeddings_created": False, "canonical_graph_mutated": False, "taxonomy_mutated": False}
         raise ValueError("MISSION_HANDLER_NOT_REGISTERED")
 
 

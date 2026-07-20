@@ -39,4 +39,4 @@ jobs:
       - name: Validate BUILD-078 against PostgreSQL
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python scripts/build_078_postgres_validation.py
+        run: python scripts/run_with_postgres_validation_lock.py scripts/build_078_postgres_validation.py
