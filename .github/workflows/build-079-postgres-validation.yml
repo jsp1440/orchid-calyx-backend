@@ -23,10 +23,6 @@ on:
       - ".github/workflows/build-079-postgres-validation.yml"
   workflow_dispatch:
 
-concurrency:
-  group: orchid-validation-postgres
-  cancel-in-progress: false
-
 jobs:
   postgres-validation:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -45,4 +41,4 @@ jobs:
       - name: Validate BUILD-079 against PostgreSQL
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python scripts/build_079_postgres_validation.py
+        run: python scripts/run_with_postgres_validation_lock.py scripts/build_079_postgres_validation.py

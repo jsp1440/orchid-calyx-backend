@@ -13,9 +13,6 @@ on:
       - '.github/workflows/build-082a-live-validation.yml'
 permissions:
   contents: read
-concurrency:
-  group: orchid-validation-postgres
-  cancel-in-progress: false
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -31,4 +28,4 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - name: Run limited live Pilot validation
-        run: PYTHONPATH=. python scripts/build_082a_live_validation.py
+        run: PYTHONPATH=. python scripts/run_with_postgres_validation_lock.py scripts/build_082a_live_validation.py
