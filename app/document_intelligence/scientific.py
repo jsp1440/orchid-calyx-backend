@@ -52,8 +52,9 @@ class IntelligenceStore:
         may_show=policy==DisplayPolicy.FULL_TEXT_ALLOWED or (authenticated and policy==DisplayPolicy.INTERNAL_RESEARCH_ONLY)
         if not may_show:
             for key in ("complete_text","text","claim_text","original_wording","ordered_sections"): value.pop(key,None)
-            if policy==DisplayPolicy.LIMITED_PREVIEW_ONLY and record.get("text"): value["preview"]=record["text"][:240]
-        value["display_policy"]=policy.value; return value
+            if policy==DisplayPolicy.LIMITED_PREVIEW_ONLY and record.get("text"): value["preview"]=record["text"][:int(record["metadata"].get("excerpt_limit",240))]
+        value.update(display_policy=policy.value,license=record["metadata"].get("license"),attribution_requirements=record["metadata"].get("attribution_requirements"),public_display_permission=bool(record["metadata"].get("public_display_permission",policy==DisplayPolicy.FULL_TEXT_ALLOWED)))
+        return value
     def review(self,rid,category,severity,evidence,object_id=None,anchors=None):
         ident=self._next(); value={"review_id":ident,"record_id":rid,"category":category,"severity":severity,"affected_object_id":object_id,"source_anchors":anchors or [],"evidence":deepcopy(evidence),"status":"OPEN","created_at":now()}; self.reviews[ident]=value; return deepcopy(value)
     def resolve_review(self,ident,decision,rationale,actor):

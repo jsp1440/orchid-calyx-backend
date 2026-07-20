@@ -5,3 +5,7 @@ BUILD-084D completes the remaining evidence-preserving domain layer: determinist
 Operator mutations are protected by the repository-standard owner/API-key dependency. A credential never overrides the stored legal display policy. Complete permitted objects are returned without truncation. Unknown rights default to review and restricted display.
 
 No Google Drive write scope, production embeddings, protected-schema write, taxon publication, claim publication, Knowledge Graph publication, experiment design, or adapted-protocol generation is introduced.
+
+“BUILD-084 does not yet design experiments, recommend conservation actions, generate adapted protocols, publish candidate events, or publish extracted claims into the production Knowledge Graph. It creates the trustworthy evidence foundation required for those later capabilities.”
+
+BUILD-085 is deferred for semantic indexing, embeddings, hybrid retrieval, citation-aware question answering, retrieval evaluation, ranking, and index refresh/deletion behavior.
