@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.routers.health import add_mission_control_cors_headers
 from app.security import verify_owner_or_api_key
-from .dependencies import get_import_repository, get_import_service
+from .dependencies import get_bulk_import_service, get_import_repository, get_import_service
 
 router = APIRouter(prefix="/api/brain/imports", tags=["drive-document-import"],
     dependencies=[Depends(verify_owner_or_api_key), Depends(add_mission_control_cors_headers)])
@@ -19,6 +19,10 @@ class SingleImport(BaseModel):
 class BatchImport(BaseModel):
     registry_ids: list[int] = Field(min_length=1, max_length=25)
     mission_id: int | None = Field(default=None, gt=0)
+
+
+class BulkPreview(BaseModel):
+    source_id: str = Field(min_length=1)
 
 
 def _actor(auth: dict[str, Any]) -> str:
@@ -67,3 +71,31 @@ def cancel(session_id: int, auth: Annotated[dict[str, Any], Depends(verify_owner
     try: return service.cancel(session_id, _actor(auth))
     except Exception as exc: raise _translate(exc) from exc
 
+
+@router.post("/bulk/preview", status_code=201)
+def preview_bulk(payload: BulkPreview, auth: Annotated[dict[str, Any], Depends(verify_owner_or_api_key)], service: Annotated[Any, Depends(get_bulk_import_service)]):
+    try: return service.preview(payload.source_id, _actor(auth))
+    except Exception as exc: raise _translate(exc) from exc
+
+
+@router.post("/bulk/{run_id}/execute")
+def execute_bulk(run_id: int, auth: Annotated[dict[str, Any], Depends(verify_owner_or_api_key)], service: Annotated[Any, Depends(get_bulk_import_service)]):
+    try: return service.execute(run_id, _actor(auth))
+    except Exception as exc: raise _translate(exc) from exc
+
+
+@router.post("/bulk/{run_id}/resume")
+def resume_bulk(run_id: int, auth: Annotated[dict[str, Any], Depends(verify_owner_or_api_key)], service: Annotated[Any, Depends(get_bulk_import_service)]):
+    try: return service.resume(run_id, _actor(auth))
+    except Exception as exc: raise _translate(exc) from exc
+
+
+@router.post("/bulk/{run_id}/cancel")
+def cancel_bulk(run_id: int, auth: Annotated[dict[str, Any], Depends(verify_owner_or_api_key)], service: Annotated[Any, Depends(get_bulk_import_service)]):
+    try: return service.cancel(run_id, _actor(auth))
+    except Exception as exc: raise _translate(exc) from exc
+
+
+@router.get("/bulk/history")
+def bulk_history(service: Annotated[Any, Depends(get_bulk_import_service)], limit: int = Query(100, ge=1, le=500)):
+    return {"items":service.history(limit)}

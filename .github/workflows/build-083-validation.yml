@@ -1,0 +1,23 @@
+name: BUILD-083 validation
+on:
+  pull_request:
+    paths:
+      - 'app/document_import/**'
+      - 'migrations/083_bulk_drive_brain_import.sql'
+      - 'tests/test_build_083_bulk_drive_import.py'
+      - '.github/workflows/build-083-validation.yml'
+  push:
+    branches: [feature/build-083-bulk-drive-brain-import]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt pytest httpx
+      - run: PYTHONPATH=. pytest -q tests/test_build_082_drive_document_import.py tests/test_build_083_bulk_drive_import.py

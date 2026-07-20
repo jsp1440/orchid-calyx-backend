@@ -12,10 +12,11 @@ DEFAULT_BATCH_LIMIT = 25
 
 
 class DocumentImportService:
-    def __init__(self, repository: Any, gateway: Any, *, pilot_folder: str | None = None, batch_limit: int = DEFAULT_BATCH_LIMIT):
+    def __init__(self, repository: Any, gateway: Any, *, pilot_folder: str | None = None, folder_prefix: str | None = None, batch_limit: int = DEFAULT_BATCH_LIMIT):
         self.repository = repository
         self.gateway = gateway
         self.pilot_folder = pilot_folder or os.getenv("GOOGLE_DRIVE_PILOT_FOLDER", "/Pilot/")
+        self.folder_prefix = folder_prefix
         self.batch_limit = batch_limit
 
     def preview(self, registry_id: int, actor: str) -> dict[str, Any]:
@@ -84,7 +85,11 @@ class DocumentImportService:
             raise LookupError("REGISTRY_ITEM_NOT_FOUND")
         if not self.repository.actor_owns_source(actor, document.source_id):
             raise PermissionError("SOURCE_OWNERSHIP_REQUIRED")
-        if document.folder.rstrip("/") != self.pilot_folder.rstrip("/"):
+        if self.folder_prefix is not None:
+            allowed = document.folder.startswith(self.folder_prefix)
+        else:
+            allowed = document.folder.rstrip("/") == self.pilot_folder.rstrip("/")
+        if not allowed:
             raise PermissionError("PILOT_FOLDER_REQUIRED")
         format_for(document.mime_type)
         return document
