@@ -8,6 +8,9 @@ from .models import (
 )
 from .policy import PublicationAuthority
 from .postgres_repository import PostgresPublicationRegistry
+from .graph_models import PublicationExecutionRequest
+from .graph_postgres_repository import PostgresControlledGraphRepository
+from .graph_service import ControlledGraphPublicationService
 
 __all__ = [
     "CandidateRequest",
@@ -16,4 +19,7 @@ __all__ = [
     "PublicationPolicy",
     "PublicationState",
     "PostgresPublicationRegistry",
+    "PublicationExecutionRequest",
+    "PostgresControlledGraphRepository",
+    "ControlledGraphPublicationService",
 ]
