@@ -1,7 +1,7 @@
 name: BUILD-088C validation
 on:
   pull_request:
-    paths: ["app/knowledge_publication/**", "migrations/088c_atomic_graph_transaction_publication_engine.sql", "tests/test_build_088c_atomic_graph_publication.py", ".github/workflows/build-088c-validation.yml"]
+    paths: ["app/knowledge_publication/**", "migrations/088c_atomic_graph_transaction_publication_engine.sql", "tests/test_build_088c_atomic_graph_publication.py", "docs/BUILD-088C-ATOMIC-GRAPH-TRANSACTION-PUBLICATION-ENGINE-IMPLEMENTATION.md", ".github/workflows/build-088c-validation.yml"]
   workflow_dispatch:
 jobs:
   atomic-graph-publication:

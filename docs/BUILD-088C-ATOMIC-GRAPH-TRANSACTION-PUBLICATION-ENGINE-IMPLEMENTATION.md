@@ -56,4 +56,11 @@ BUILD-088D scientific supersession, withdrawal, retraction, restoration, and tec
 
 ## Validation and readiness
 
-Exact local and PostgreSQL CI results are recorded in the Draft PR after execution. Readiness requires the PostgreSQL atomic, concurrency, version, provenance, idempotency, and rollback tests to pass.
+- Local BUILD-088C plus BUILD-088B/087/graph regression: 39 passed and 3 PostgreSQL-dependent tests skipped because `TEST_DATABASE_URL` was unavailable.
+- GitHub PostgreSQL 16 BUILD-088C: 7 passed in 0.33 seconds. This exercised migration, transaction preparation, concurrent identical publication, one-winner graph-version serialization, committed retry no-op, graph-object persistence, lifecycle completion, and reverse provenance.
+- GitHub BUILD-088B, BUILD-087, and BUILD-078 graph regression: 35 passed in 1.48 seconds.
+- Dedicated Knowledge Graph API/traversal/orchestrator/telemetry, genus-media, and route regression: 62 passed locally.
+- Full backend: 714 passed, 22 skipped, and one unrelated legacy BUILD-085 Windows subprocess test failed. The failure is independently reproducible on unchanged main: that test replaces the child environment with only `PYTHONPATH`, which prevents its validation subprocess from initializing in this Windows runtime. BUILD-088C does not modify the test or script.
+- Ruff, Python compilation, and `git diff --check`: passed.
+
+PostgreSQL atomic, concurrency, graph-version, provenance, idempotency, and rollback-on-error invariants are validated. The implementation is ready for BUILD-088D review while this pull request remains Draft and unmerged.
