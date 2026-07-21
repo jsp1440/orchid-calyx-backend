@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt pytest ruff psycopg[binary]
-      - run: pytest tests/test_build_089a_design_intelligence_corpus.py tests/test_build_089b_design_knowledge_acquisition.py tests/test_build_089c_design_corpus_population.py -q
+      - run: pip install -r requirements.txt pytest ruff httpx psycopg[binary]
+      - run: python -m pytest tests/test_build_089a_design_intelligence_corpus.py tests/test_build_089b_design_knowledge_acquisition.py tests/test_build_089c_design_corpus_population.py -q
       - run: python -m compileall app
       - run: ruff check app/design_intelligence tests/test_build_089c_design_corpus_population.py
