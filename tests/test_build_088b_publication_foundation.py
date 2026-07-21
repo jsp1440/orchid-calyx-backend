@@ -148,3 +148,106 @@ def test_postgres_migration_enforces_append_only_registry():
                 "DELETE FROM oc_knowledge_publication.policy_versions WHERE policy_version_id=%s",
                 (row[0],),
             )
+
+
+@pytest.mark.skipif(
+    not os.getenv("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not configured"
+)
+def test_postgres_repository_resolves_trusted_inputs_and_suppresses_duplicates():
+    import uuid
+    from concurrent.futures import ThreadPoolExecutor
+
+    import psycopg
+
+    from app.knowledge_publication.postgres_repository import (
+        PostgresPublicationRegistry,
+    )
+
+    dsn = os.environ["TEST_DATABASE_URL"]
+    suffix = uuid.uuid4().hex
+    prerequisite = Path(
+        "migrations/087b_context_preserving_interpretation.sql"
+    ).read_text()
+    migration = Path(
+        "migrations/088b_publication_registry_policy_foundation.sql"
+    ).read_text()
+    with psycopg.connect(dsn, autocommit=True) as connection:
+        connection.execute(prerequisite)
+        connection.execute(migration)
+        packet = connection.execute(
+            """INSERT INTO oc_scientific_interpretation.evidence_packets(packet_key,version,fingerprint,payload)
+            VALUES(%s,1,%s,%s::jsonb) RETURNING packet_id""",
+            (
+                f"packet-{suffix}",
+                f"packet-{suffix}",
+                '{"sources":[{"source_revision_id":101,"copyright_policy":"DERIVED_FACTS_ALLOWED"},{"source_revision_id":102,"copyright_policy":"DERIVED_FACTS_ALLOWED"}]}',
+            ),
+        ).fetchone()[0]
+        interpretation = connection.execute(
+            """INSERT INTO oc_scientific_interpretation.machine_interpretations(interpretation_key,version,fingerprint,payload)
+            VALUES(%s,1,%s,%s::jsonb) RETURNING interpretation_id""",
+            (
+                f"interpretation-{suffix}",
+                f"interpretation-{suffix}",
+                f'{{"packet_ids":[{packet}]}}',
+            ),
+        ).fetchone()[0]
+        routing = connection.execute(
+            """INSERT INTO oc_scientific_interpretation.routing_decisions(interpretation_id,policy_name,policy_version,path,fingerprint,payload)
+            VALUES(%s,'build-087','1','AUTOMATIC_PROMOTION',%s,%s::jsonb) RETURNING routing_decision_id""",
+            (
+                interpretation,
+                f"routing-{suffix}",
+                f'{{"interpretation_id":{interpretation},"path":"AUTOMATIC_PROMOTION","hard_failures":[],"factors":{{"confidence":0.99}}}}',
+            ),
+        ).fetchone()[0]
+        assertion = connection.execute(
+            """INSERT INTO oc_scientific_interpretation.canonical_assertions(assertion_key,version,fingerprint,payload)
+            VALUES(%s,1,%s,%s::jsonb) RETURNING assertion_id""",
+            (
+                f"assertion-{suffix}",
+                f"assertion-{suffix}",
+                f'{{"published":false,"publication_eligible":true,"routing_decision_id":{routing},"supporting_interpretation_ids":[{interpretation}],"conflicting_interpretation_ids":[],"normalized_statement":{{"assertion_type":"TRAIT"}},"scientific_scope":{{"scientific_domain":"BOTANY","taxonomy_unambiguous":true,"impact_class":"STANDARD"}}}}',
+            ),
+        ).fetchone()[0]
+
+    registry = PostgresPublicationRegistry(dsn)
+    publication_policy = PublicationPolicy(
+        f"policy-{suffix}",
+        1,
+        "Botany",
+        ("TRAIT",),
+        ("BOTANY",),
+        automatic_assertion_types=("TRAIT",),
+        automatic_domains=("BOTANY",),
+        provenance={"approval": "BUILD-088A"},
+    )
+    registry.create_policy(publication_policy, "policy-admin")
+    registry.activate_policy(publication_policy.policy_id, 1, "policy-admin")
+    request = CandidateRequest(
+        assertion,
+        1,
+        publication_policy.policy_id,
+        1,
+        PublicationPathway.AUTOMATIC,
+        f"request-{suffix}",
+        "publication-service",
+        f"correlation-{suffix}",
+    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        candidates = list(
+            pool.map(lambda _: registry.create_candidate(request), range(2))
+        )
+    assert candidates[0]["publication_id"] == candidates[1]["publication_id"]
+    first = registry.authorize(candidates[0]["publication_id"], "publication-authority")
+    second = registry.authorize(
+        candidates[0]["publication_id"], "publication-authority"
+    )
+    assert first["decision_id"] == second["decision_id"]
+    assert registry.candidate(candidates[0]["publication_id"])["state"] == "AUTHORIZED"
+    assert {
+        event["event_type"]
+        for event in registry.audit_history(
+            "PUBLICATION_CANDIDATE", candidates[0]["publication_id"]
+        )
+    } == {"CANDIDATE_CREATED", "AUTHORITY_EVALUATED"}
