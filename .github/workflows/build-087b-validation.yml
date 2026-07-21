@@ -40,14 +40,12 @@ jobs:
         run: |
           createdb "$BUILD087_FOCUSED_DATABASE"
           createdb "$BUILD087_REGRESSION_DATABASE"
-          createdb "$BUILD087_FULL_SUITE_DATABASE"
         env:
           PGHOST: localhost
           PGUSER: build087
           PGPASSWORD: build087_test_only
           BUILD087_FOCUSED_DATABASE: build087_focused
           BUILD087_REGRESSION_DATABASE: build087_regression
-          BUILD087_FULL_SUITE_DATABASE: build087_full_suite
       - name: BUILD-087B focused and PostgreSQL validation
         run: python -m pytest -q tests/test_build_087b_scientific_interpretation.py
         env:
@@ -71,9 +69,7 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_regression
       - name: Full backend suite
-        run: python -m pytest -q
-        env:
-          TEST_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_full_suite
+        run: env -u TEST_DATABASE_URL python -m pytest -q
       - name: Compile, lint, and diff checks
         run: >-
           python -m compileall -q app/scientific_interpretation app/main.py
