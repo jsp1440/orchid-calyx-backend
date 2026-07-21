@@ -583,8 +583,8 @@ class PostgresPublicationLifecycleRepository:
                     "SELECT dependent_publication_id FROM oc_knowledge_publication.publication_dependencies WHERE source_publication_id=%s ORDER BY dependency_id LIMIT 100",
                     (publication_id,),
                 )
-                for row in cur.fetchall():
-                    dependent = row["dependent_publication_id"]
+                dependents = [row["dependent_publication_id"] for row in cur.fetchall()]
+                for dependent in dependents:
                     if self._state(cur, dependent) == "PUBLISHED":
                         self._transition(
                             cur,
@@ -596,6 +596,39 @@ class PostgresPublicationLifecycleRepository:
                                 "trigger_publication_id": publication_id,
                             },
                         )
+                    reevaluation_identity = {
+                        "trigger": publication_id,
+                        "affected": dependent,
+                        "action_id": action["action_id"],
+                        "reason": reason.reason_code,
+                    }
+                    cur.execute(
+                        "INSERT INTO oc_knowledge_publication.reevaluation_records(trigger_publication_id,affected_publication_id,trigger_type,trigger_reference,affected_object_keys,status,fingerprint,correlation_id) "
+                        "VALUES(%s,%s,'DEPENDENCY_RETRACTED',%s,%s,'PROPAGATED',%s,%s) ON CONFLICT(fingerprint) DO NOTHING RETURNING reevaluation_id",
+                        (
+                            publication_id,
+                            dependent,
+                            Jsonb({"action_id": action["action_id"]}),
+                            Jsonb(self._object_keys(cur, dependent)),
+                            digest(reevaluation_identity),
+                            authority.correlation_id,
+                        ),
+                    )
+                    cur.fetchone()
+                checkpoint_identity = {
+                    "action_id": action["action_id"],
+                    "visited": [publication_id, *dependents],
+                }
+                cur.execute(
+                    "INSERT INTO oc_knowledge_publication.propagation_checkpoints(trigger_action_id,batch_number,visited_publication_ids,next_publication_ids,completed,fingerprint,correlation_id) "
+                    "VALUES(%s,1,%s,'[]',TRUE,%s,%s) ON CONFLICT(fingerprint) DO NOTHING",
+                    (
+                        action["action_id"],
+                        Jsonb(checkpoint_identity["visited"]),
+                        digest(checkpoint_identity),
+                        authority.correlation_id,
+                    ),
+                )
             return action
 
     def _publication(self, cur, pid):
