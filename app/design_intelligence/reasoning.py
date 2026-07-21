@@ -380,6 +380,10 @@ class DesignReasoningService:
             raise ValueError("INVALID_DESIGN_REASONING_QUERY")
         query_vector = self.provider.embed_batch([normalized])[0]
         terms = set(re.findall(r"[a-z0-9]+", normalized))
+        relationships_by_unit: dict[str, list[DesignRelationship]] = {}
+        for relationship in self.repository.relationships:
+            relationships_by_unit.setdefault(relationship.source_unit_id, []).append(relationship)
+            relationships_by_unit.setdefault(relationship.target_unit_id, []).append(relationship)
         ranked = []
         for unit in self.repository.units:
             if domains and not set(domains).intersection(unit.domains):
@@ -408,11 +412,7 @@ class DesignReasoningService:
             )
             if score <= 0:
                 continue
-            related = [
-                rel
-                for rel in self.repository.relationships
-                if unit.unit_id in {rel.source_unit_id, rel.target_unit_id}
-            ]
+            related = relationships_by_unit.get(unit.unit_id, [])
             ranked.append((score, unit, related, lexical, semantic))
         ranked.sort(
             key=lambda item: (
