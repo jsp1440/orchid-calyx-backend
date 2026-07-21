@@ -28,6 +28,17 @@ from .reasoning import (
     MemoryDesignKnowledgeRepository,
     SemanticDecomposer,
 )
+from .population import (
+    ARCHIVE_DRIVE_ID,
+    ARCHIVE_SHA256,
+    ARCHIVE_VERSION,
+    REUSE_LICENSE,
+    RIGHTS_STATE,
+    UNKNOWN_AUTHOR,
+    CorpusFile,
+    DesignCorpusPopulationService,
+    ProvenanceBinding,
+)
 
 __all__ = [
     "DesignDomain",
@@ -54,4 +65,13 @@ __all__ = [
     "PostgresDesignCorpusRepository",
     "PublicationStatus",
     "ReviewState",
+    "ARCHIVE_DRIVE_ID",
+    "ARCHIVE_SHA256",
+    "ARCHIVE_VERSION",
+    "REUSE_LICENSE",
+    "RIGHTS_STATE",
+    "UNKNOWN_AUTHOR",
+    "CorpusFile",
+    "DesignCorpusPopulationService",
+    "ProvenanceBinding",
 ]
