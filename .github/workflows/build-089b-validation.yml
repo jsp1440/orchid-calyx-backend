@@ -1,0 +1,70 @@
+name: BUILD-089B validation
+
+on:
+  pull_request:
+    paths:
+      - "app/design_intelligence/**"
+      - "migrations/089b_design_knowledge_acquisition.sql"
+      - "tests/test_build_089b_design_knowledge_acquisition.py"
+      - "docs/BUILD-089B-DESIGN-KNOWLEDGE-ACQUISITION.md"
+      - ".github/workflows/build-089b-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  design-knowledge-semantic-reasoning:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: build089b
+          POSTGRES_PASSWORD: build089b_test_only
+          POSTGRES_DB: build089b_validation
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U build089b -d build089b_validation"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PYTHONPATH: .
+      TEST_DATABASE_URL: postgresql://build089b:build089b_test_only@localhost:5432/build089b_validation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Seed authoritative BUILD-089A document
+        run: >-
+          python -m pytest -q
+          tests/test_build_089a_design_intelligence_corpus.py::test_postgres_authoritative_repository_and_immutability
+      - name: Apply additive BUILD-089B migration and validate PostgreSQL
+        run: |
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/089b_design_knowledge_acquisition.sql
+          python -m pytest -q tests/test_build_089b_design_knowledge_acquisition.py
+      - name: BUILD-082 through BUILD-089B regression
+        run: >-
+          env -u TEST_DATABASE_URL python -m pytest -q
+          tests/test_build_082_drive_document_import.py
+          tests/test_build_083_bulk_drive_import.py
+          tests/test_build_084c_foundation.py
+          tests/test_build_084d_scientific_objects.py
+          tests/test_build_084e_integration.py
+          tests/test_build_085a_semantic_index.py
+          tests/test_build_085b_hybrid_retrieval.py
+          tests/test_build_085c_retrieval_validation.py
+          tests/test_build_086a_candidate_knowledge.py
+          tests/test_build_086b_evidence_aggregation.py
+          tests/test_build_086c_final_validation.py
+          tests/test_build_086d_review_readiness.py
+          tests/test_build_087b_scientific_interpretation.py
+          tests/test_build_088b_publication_foundation.py
+          tests/test_build_088c_atomic_graph_publication.py
+          tests/test_build_088d_publication_lifecycle.py
+          tests/test_build_088e_publication_operational_readiness.py
+          tests/test_build_089a_design_intelligence_corpus.py
+          tests/test_build_089b_design_knowledge_acquisition.py
+      - name: Compile, Ruff, and diff checks
+        run: |
+          python -m compileall -q app
+          python -m ruff check app/design_intelligence tests/test_build_089b_design_knowledge_acquisition.py
+          git diff --check
