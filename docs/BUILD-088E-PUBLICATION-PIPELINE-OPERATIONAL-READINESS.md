@@ -13,6 +13,8 @@ Two integration records required for operational proof are now part of the exist
 - a successful initial publication appends its `AUTHORITATIVE_CURRENT` projection event;
 - a replay of a committed transaction appends a `NO_OP_DUPLICATE` transaction attempt before returning the existing graph version.
 
+Retraction propagation now also appends the dependent reevaluation records and completed propagation checkpoint promised by BUILD-088D in the same lifecycle transaction; the dependent state transition is no longer an unauditable standalone effect.
+
 ## End-to-end pipeline
 
 The PostgreSQL corpus automatically exercises:

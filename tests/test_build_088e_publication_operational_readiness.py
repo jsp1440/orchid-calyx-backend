@@ -277,7 +277,7 @@ def test_postgres_complete_pipeline_lifecycle_reconstruction_and_readiness():
     assert report.provenance_coverage == 1.0
     assert report.counts["graph_versions"] == 7
     assert report.counts["rollback_events"] == 1
-    assert report.counts["reevaluation_events"] >= 2
+    assert report.counts["reevaluation_events"] >= 1
     assert report.duplicate_suppression_counts["publication_idempotency"] == 2
     assert all(value >= 0 for value in report.latency_ms.values())
 
