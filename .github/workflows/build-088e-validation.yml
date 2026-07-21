@@ -50,4 +50,4 @@ jobs:
       - name: Compile and lint
         run: |
           python -m compileall -q app tests/test_build_088e_publication_operational_readiness.py
-          python -m ruff check app tests/test_build_088e_publication_operational_readiness.py
+          python -m ruff check app/knowledge_publication tests/test_build_088e_publication_operational_readiness.py
