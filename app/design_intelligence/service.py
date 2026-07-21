@@ -51,9 +51,8 @@ class DesignIntelligenceService:
         )
         previous = self.repository.latest(value.logical_key)
         document = DesignDocument(
-            document_id=1 + max(
-                (item.document_id for item in self.repository.documents), default=0
-            ),
+            document_id=1
+            + max((item.document_id for item in self.repository.documents), default=0),
             logical_key=value.logical_key,
             version=1 if previous is None else previous.version + 1,
             title=value.title,
@@ -68,7 +67,10 @@ class DesignIntelligenceService:
             topics=tuple(sorted(set(value.topics))),
             classification_confidence=confidence,
             classification_version=self.CLASSIFIER_VERSION,
-            source_metadata={**value.source_metadata, "classification_evidence": evidence},
+            source_metadata={
+                **value.source_metadata,
+                "classification_evidence": evidence,
+            },
             created_at=utcnow(),
         )
         return self.repository.append_document(document)
@@ -107,7 +109,9 @@ class DesignIntelligenceService:
                 0.55 * lexical + 0.45 * document.classification_confidence,
             )
             candidates.append((score, document, matched))
-        candidates.sort(key=lambda item: (-item[0], item[1].logical_key, -item[1].version))
+        candidates.sort(
+            key=lambda item: (-item[0], item[1].logical_key, -item[1].version)
+        )
         results = [
             self._result(score, document, matched)
             for score, document, matched in candidates
@@ -125,7 +129,10 @@ class DesignIntelligenceService:
         normalized = text.casefold()
         terms = set(re.findall(r"[a-z0-9-]+", normalized))
         for domain, aliases in DOMAIN_TERMS.items():
-            if any(alias in normalized for alias in aliases) or domain.value.casefold().replace("_", " ") in normalized:
+            if (
+                any(alias in normalized for alias in aliases)
+                or domain.value.casefold().replace("_", " ") in normalized
+            ):
                 terms.update(aliases)
         if "mayer" in normalized:
             terms.update(("mayer", "multimedia learning"))
@@ -146,7 +153,9 @@ class DesignIntelligenceService:
             "matched_terms": list(matched),
             "authors": list(document.authors),
             "publication_date": (
-                document.publication_date.isoformat() if document.publication_date else None
+                document.publication_date.isoformat()
+                if document.publication_date
+                else None
             ),
             "license_metadata": dict(document.license_metadata),
             "publication_status": self.repository.publication_status(

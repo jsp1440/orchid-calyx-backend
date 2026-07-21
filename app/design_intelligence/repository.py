@@ -25,13 +25,21 @@ class MemoryDesignCorpusRepository:
         if any(item.document_id == document.document_id for item in self.documents):
             raise ValueError("DESIGN_DOCUMENT_ID_ALREADY_EXISTS")
         expected = 1 + max(
-            (item.version for item in self.documents if item.logical_key == document.logical_key),
+            (
+                item.version
+                for item in self.documents
+                if item.logical_key == document.logical_key
+            ),
             default=0,
         )
         if document.version != expected:
             raise ValueError("DESIGN_DOCUMENT_VERSION_NOT_MONOTONIC")
         self.documents.append(document)
-        self._audit("DOCUMENT_VERSION_APPENDED", document.document_id, {"version": document.version})
+        self._audit(
+            "DOCUMENT_VERSION_APPENDED",
+            document.document_id,
+            {"version": document.version},
+        )
         return document
 
     def latest(self, logical_key: str) -> DesignDocument | None:
@@ -39,9 +47,13 @@ class MemoryDesignCorpusRepository:
         return max(matches, key=lambda item: item.version) if matches else None
 
     def document(self, document_id: int) -> DesignDocument | None:
-        return next((item for item in self.documents if item.document_id == document_id), None)
+        return next(
+            (item for item in self.documents if item.document_id == document_id), None
+        )
 
-    def add_review(self, document_id: int, decision: DesignReviewDecision) -> dict[str, Any]:
+    def add_review(
+        self, document_id: int, decision: DesignReviewDecision
+    ) -> dict[str, Any]:
         if not self.document(document_id):
             raise KeyError(document_id)
         record = {
@@ -67,11 +79,17 @@ class MemoryDesignCorpusRepository:
         current = self.publication_status(document_id)
         allowed = {
             PublicationStatus.DRAFT: {PublicationStatus.PUBLISHED},
-            PublicationStatus.PUBLISHED: {PublicationStatus.RETIRED, PublicationStatus.RETRACTED},
+            PublicationStatus.PUBLISHED: {
+                PublicationStatus.RETIRED,
+                PublicationStatus.RETRACTED,
+            },
         }
         if status not in allowed.get(current, set()):
             raise ValueError("INVALID_DESIGN_PUBLICATION_TRANSITION")
-        if status is PublicationStatus.PUBLISHED and self.review_state(document_id) is not ReviewState.APPROVED:
+        if (
+            status is PublicationStatus.PUBLISHED
+            and self.review_state(document_id) is not ReviewState.APPROVED
+        ):
             raise ValueError("DESIGN_REVIEW_APPROVAL_REQUIRED")
         if not actor.strip() or not rationale.strip():
             raise ValueError("DESIGN_PUBLICATION_AUDIT_REQUIRED")
@@ -88,7 +106,11 @@ class MemoryDesignCorpusRepository:
         return event
 
     def publication_status(self, document_id: int) -> PublicationStatus:
-        matches = [item for item in self.publication_events if item["document_id"] == document_id]
+        matches = [
+            item
+            for item in self.publication_events
+            if item["document_id"] == document_id
+        ]
         return matches[-1]["status"] if matches else PublicationStatus.DRAFT
 
     def published_latest(self) -> list[DesignDocument]:
@@ -98,10 +120,13 @@ class MemoryDesignCorpusRepository:
         return [
             item
             for item in latest.values()
-            if item and self.publication_status(item.document_id) is PublicationStatus.PUBLISHED
+            if item
+            and self.publication_status(item.document_id) is PublicationStatus.PUBLISHED
         ]
 
-    def _audit(self, event_type: str, document_id: int, details: dict[str, Any]) -> None:
+    def _audit(
+        self, event_type: str, document_id: int, details: dict[str, Any]
+    ) -> None:
         self.audit_events.append(
             {
                 "audit_id": len(self.audit_events) + 1,

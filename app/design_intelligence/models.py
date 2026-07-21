@@ -87,7 +87,12 @@ class DesignDocumentInput:
     def __post_init__(self) -> None:
         if not all(
             value.strip()
-            for value in (self.logical_key, self.title, self.content, self.document_type)
+            for value in (
+                self.logical_key,
+                self.title,
+                self.content,
+                self.document_type,
+            )
         ):
             raise ValueError("INCOMPLETE_DESIGN_DOCUMENT")
         if not self.authors or not self.license_metadata.get("license"):
