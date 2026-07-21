@@ -57,7 +57,9 @@ The deterministic validation corpus contains seven governed publications and exe
 - Focused BUILD-088E plus BUILD-088C/D local validation: `10 passed, 3 skipped` (PostgreSQL tests skipped locally because `TEST_DATABASE_URL` is unavailable).
 - Full local backend suite: `718 passed, 24 skipped, 1 failed`; the sole failure is the independently reproducible BUILD-085 Windows subprocess environment failure, with PostgreSQL tests skipped when the database URL was unavailable.
 - Changed-scope Ruff, Python compilation, and `git diff --check`: passed.
-- PostgreSQL 16 pipeline/readiness and isolated BUILD-088B–D regression: executed by `.github/workflows/build-088e-validation.yml`; exact pull-request totals are recorded in the Draft PR checks.
+- PostgreSQL 16 pipeline/readiness: `2 passed in 0.80s` on Draft PR #91.
+- Isolated PostgreSQL regression: BUILD-088B `9 passed in 0.37s`; BUILD-088C `7 passed in 0.30s`; BUILD-088D `4 passed in 0.47s` (20 passed total).
+- Draft PR #91 BUILD-088B, BUILD-088C, BUILD-088D, and BUILD-088E workflows: all passed. CI compilation and changed-scope Ruff: passed.
 
 The full-repository Ruff command reports pre-existing style violations in historical files outside this change. Changed BUILD-088E and knowledge-publication scope passes Ruff. The known BUILD-085 failure replaces the child process environment with only `PYTHONPATH` on Windows and is unchanged by BUILD-088E.
 
