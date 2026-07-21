@@ -38,9 +38,15 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          createdb -h localhost -U postgres orchid_build_088_regression
-          TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/orchid_build_088_regression \
-            pytest -q tests/test_build_088b_publication_foundation.py tests/test_build_088c_atomic_graph_publication.py tests/test_build_088d_publication_lifecycle.py
+          createdb -h localhost -U postgres orchid_build_088b_regression
+          TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/orchid_build_088b_regression \
+            pytest -q tests/test_build_088b_publication_foundation.py
+          createdb -h localhost -U postgres orchid_build_088c_regression
+          TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/orchid_build_088c_regression \
+            pytest -q tests/test_build_088c_atomic_graph_publication.py
+          createdb -h localhost -U postgres orchid_build_088d_regression
+          TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/orchid_build_088d_regression \
+            pytest -q tests/test_build_088d_publication_lifecycle.py
       - name: Compile and lint
         run: |
           python -m compileall -q app tests/test_build_088e_publication_operational_readiness.py
