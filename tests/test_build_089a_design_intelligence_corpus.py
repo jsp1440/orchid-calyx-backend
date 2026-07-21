@@ -1,5 +1,6 @@
 import hashlib
 import os
+import uuid
 from dataclasses import FrozenInstanceError
 from datetime import date
 from pathlib import Path
@@ -215,6 +216,7 @@ def test_postgres_authoritative_repository_and_immutability():
     )
 
     dsn = os.environ["TEST_DATABASE_URL"]
+    suffix = uuid.uuid4().hex
     with psycopg.connect(dsn, autocommit=True) as con:
         con.execute("CREATE SCHEMA IF NOT EXISTS oc_import")
         con.execute(
@@ -243,7 +245,7 @@ def test_postgres_authoritative_repository_and_immutability():
     service = DesignIntelligenceService(repository)
     item = service.import_document(
         document(
-            "postgres-dashboard",
+            f"postgres-dashboard-{suffix}",
             "PostgreSQL dashboard guidance",
             "Dashboard design guideline with a status display pattern.",
             40,
@@ -251,8 +253,12 @@ def test_postgres_authoritative_repository_and_immutability():
     )
     approve_and_publish(service, item)
     result = service.search(DesignSearchQuery("dashboard guidance"))
-    assert result["total"] == 1
-    assert result["results"][0]["provenance"]["anchor_ids"] == (1040,)
+    match = next(
+        value
+        for value in result["results"]
+        if value["logical_key"] == f"postgres-dashboard-{suffix}"
+    )
+    assert match["provenance"]["anchor_ids"] == (1040,)
     with psycopg.connect(dsn, autocommit=True) as con:
         with pytest.raises(psycopg.errors.RaiseException):
             con.execute(
