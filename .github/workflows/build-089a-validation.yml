@@ -1,0 +1,64 @@
+name: BUILD-089A validation
+
+on:
+  pull_request:
+    paths:
+      - "app/design_intelligence/**"
+      - "app/main.py"
+      - "migrations/089a_design_intelligence_corpus.sql"
+      - "tests/test_build_089a_design_intelligence_corpus.py"
+      - "docs/BUILD-089A-DESIGN-INTELLIGENCE-CORPUS.md"
+      - ".github/workflows/build-089a-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  design-intelligence-postgresql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: build089a
+          POSTGRES_PASSWORD: build089a_test_only
+          POSTGRES_DB: build089a_validation
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U build089a -d build089a_validation"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://build089a:build089a_test_only@localhost:5432/build089a_validation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: BUILD-089A PostgreSQL-authoritative validation
+        run: python -m pytest tests/test_build_089a_design_intelligence_corpus.py -q
+      - name: BUILD-087 through BUILD-089A regression
+        env:
+          PGPASSWORD: build089a_test_only
+        run: |
+          createdb -h localhost -U build089a build087_regression
+          TEST_DATABASE_URL=postgresql://build089a:build089a_test_only@localhost:5432/build087_regression \
+            python -m pytest -q tests/test_build_087b_scientific_interpretation.py
+          createdb -h localhost -U build089a build088b_regression
+          TEST_DATABASE_URL=postgresql://build089a:build089a_test_only@localhost:5432/build088b_regression \
+            python -m pytest -q tests/test_build_088b_publication_foundation.py
+          createdb -h localhost -U build089a build088c_regression
+          TEST_DATABASE_URL=postgresql://build089a:build089a_test_only@localhost:5432/build088c_regression \
+            python -m pytest -q tests/test_build_088c_atomic_graph_publication.py
+          createdb -h localhost -U build089a build088d_regression
+          TEST_DATABASE_URL=postgresql://build089a:build089a_test_only@localhost:5432/build088d_regression \
+            python -m pytest -q tests/test_build_088d_publication_lifecycle.py
+          createdb -h localhost -U build089a build088e_regression
+          TEST_DATABASE_URL=postgresql://build089a:build089a_test_only@localhost:5432/build088e_regression \
+            python -m pytest -q tests/test_build_088e_publication_operational_readiness.py
+          env -u TEST_DATABASE_URL python -m pytest -q tests/test_build_089a_design_intelligence_corpus.py
+      - name: Compile, lint, and diff validation
+        run: |
+          python -m compileall -q app
+          python -m ruff check app/design_intelligence tests/test_build_089a_design_intelligence_corpus.py
+          git diff --check
