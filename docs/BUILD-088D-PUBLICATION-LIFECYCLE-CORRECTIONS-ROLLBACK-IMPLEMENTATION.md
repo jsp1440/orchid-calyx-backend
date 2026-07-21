@@ -50,4 +50,11 @@ No continuous reevaluation engine, downstream consumer implementation, reviewer 
 
 ## Validation and readiness
 
-Exact local and PostgreSQL CI results are recorded after execution. BUILD-088E readiness requires PostgreSQL lifecycle, concurrency, projection, propagation, rollback, immutability, and regression tests to pass.
+- Local focused BUILD-088D through BUILD-078 regression: 42 passed and 4 PostgreSQL-dependent tests skipped because `TEST_DATABASE_URL` was unavailable.
+- GitHub PostgreSQL 16 BUILD-088D: 4 passed in 0.55 seconds. This exercised migration upgrades, non-destructive supersession, withdrawal/restoration/retraction, dependency reevaluation, conflicting concurrent actions, downstream impacts, technical rollback preparation/execution, coherent current-version restoration, and duplicate suppression.
+- Isolated GitHub BUILD-088C/B/087/078 regression: 42 passed in 1.69 seconds. Historical migrations run in a separate database so no older migration is incorrectly applied as a downgrade over BUILD-088D states.
+- Knowledge Graph API/traversal/orchestrator/telemetry, genus-media, and route regression: 62 passed locally.
+- Full backend: 717 passed, 23 skipped, and one independently reproduced unrelated legacy BUILD-085 Windows subprocess failure. That test replaces the complete child environment with only `PYTHONPATH`; BUILD-088D modifies neither the test nor its validation script.
+- Ruff, Python compilation, migration execution, and `git diff --check`: passed.
+
+PostgreSQL lifecycle, concurrency, projection, propagation, rollback, immutability, and regression guarantees are validated. This Draft, unmerged implementation is ready for BUILD-088E final validation.
