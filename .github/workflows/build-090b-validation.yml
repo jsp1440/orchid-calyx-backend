@@ -1,0 +1,44 @@
+name: BUILD-090B Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/design_planning/**"
+      - "app/main.py"
+      - "migrations/090b_design_reasoning_interface_planning_foundation.sql"
+      - "tests/test_build_090b_*.py"
+      - "docs/BUILD-090B-*.md"
+      - ".github/workflows/build-090b-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  design-reasoning-interface-planning:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: build090b
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d build090b"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      BUILD_090B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/build090b
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest ruff httpx psycopg[binary]
+      - name: BUILD-090B focused and PostgreSQL 16
+        run: pytest -q tests/test_build_090b_design_reasoning_interface_planning.py tests/test_build_090b_postgres.py
+      - name: BUILD-089 regression
+        run: pytest -q tests/test_build_089a_design_intelligence_corpus.py tests/test_build_089b_design_knowledge_acquisition.py tests/test_build_089c_design_corpus_population.py
+      - name: BUILD-087 through BUILD-090B regression
+        run: pytest -q tests/test_build_087b_scientific_interpretation.py tests/test_build_088b_publication_foundation.py tests/test_build_088c_atomic_graph_publication.py tests/test_build_088d_publication_lifecycle.py tests/test_build_088e_publication_operational_readiness.py tests/test_build_089a_design_intelligence_corpus.py tests/test_build_089b_design_knowledge_acquisition.py tests/test_build_089c_design_corpus_population.py tests/test_build_090b_design_reasoning_interface_planning.py
+      - run: python -m compileall app
+      - run: ruff check app/design_planning tests/test_build_090b_design_reasoning_interface_planning.py tests/test_build_090b_postgres.py
+      - run: git diff --check
