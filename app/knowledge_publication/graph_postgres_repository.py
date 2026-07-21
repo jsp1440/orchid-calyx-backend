@@ -18,6 +18,11 @@ def fingerprint(value: Any) -> str:
     ).hexdigest()
 
 
+def json_safe(value: Any) -> Any:
+    """Canonicalize trusted database values without admitting caller encoders."""
+    return json.loads(json.dumps(value, sort_keys=True, default=str))
+
+
 class PostgresControlledGraphRepository:
     """Atomic BUILD-088C writer; no caller-supplied scientific or authority state."""
 
@@ -104,7 +109,7 @@ class PostgresControlledGraphRepository:
                     publication["policy_version_id"],
                     current["graph_version_id"],
                     Jsonb(operation_values),
-                    Jsonb(publication),
+                    Jsonb(json_safe(publication)),
                     change_fingerprint,
                     request.service_identity,
                     request.correlation_id,
