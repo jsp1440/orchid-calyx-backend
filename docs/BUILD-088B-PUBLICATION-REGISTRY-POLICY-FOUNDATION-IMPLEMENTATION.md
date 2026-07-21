@@ -27,3 +27,16 @@ Policy activation retires any previously active version of the same policy by ad
 ## Deferred by architecture
 
 Graph transaction preparation, graph mutation, rollback of graph mutations, public serving, reviewer interfaces, and workflow dashboards belong to later BUILD-088 increments and are intentionally absent.
+
+## Validation and performance
+
+- Focused BUILD-088B, BUILD-087 and Knowledge Graph regression: 33 passed, 2 skipped locally because `TEST_DATABASE_URL` was unavailable.
+- GitHub PostgreSQL 16 validation: passed; the migration upgrade and database append-only invariant ran against PostgreSQL.
+- Full backend: 708 passed, 21 skipped, and one unrelated BUILD-085 Windows subprocess test failed because that legacy test replaces the complete child environment with only `PYTHONPATH`. BUILD-088B does not change that script or test; all BUILD-088B and graph regressions passed independently.
+- Ruff, Python compilation, and `git diff --check`: passed.
+
+Exact-version and fingerprint lookups are indexed. Provenance is loaded using set-based interpretation and packet queries rather than full source documents. Advisory locks are transaction-scoped and keyed to the logical candidate or policy. No unbounded list interface or distributed dependency was introduced.
+
+## Known limitations and readiness
+
+No graph transaction, graph mutation, reviewer workflow, or public endpoint exists by design. The foundation exposes immutable authorized records and read-only history for BUILD-088C. With PostgreSQL invariants validated in CI, this implementation is ready for BUILD-088C review and integration work; the Draft PR remains unmerged.
