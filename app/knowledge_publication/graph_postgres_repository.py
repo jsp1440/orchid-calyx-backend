@@ -172,6 +172,18 @@ class PostgresControlledGraphRepository:
                     (manifest["fingerprint"],),
                 )
                 if existing := cur.fetchone():
+                    cur.execute(
+                        "INSERT INTO oc_knowledge_publication.graph_transaction_attempts(graph_transaction_id,attempt_number,outcome,reason_code,details,actor,correlation_id) "
+                        "SELECT %s,COALESCE(MAX(attempt_number),0)+1,'NO_OP_DUPLICATE','COMMITTED_FINGERPRINT_REPLAY',%s,%s,%s "
+                        "FROM oc_knowledge_publication.graph_transaction_attempts WHERE graph_transaction_id=%s",
+                        (
+                            manifest["graph_transaction_id"],
+                            Jsonb({"graph_version_id": existing["graph_version_id"]}),
+                            request.service_identity,
+                            request.correlation_id,
+                            manifest["graph_transaction_id"],
+                        ),
+                    )
                     return {**dict(existing), "outcome": "NO_OP_DUPLICATE"}
                 cur.execute(
                     "SELECT * FROM oc_knowledge_publication.graph_transaction_manifests WHERE graph_transaction_id=%s",
@@ -258,6 +270,27 @@ class PostgresControlledGraphRepository:
                     "UPDATE oc_knowledge_publication.current_graph_version SET graph_version_id=%s,sequence=%s,updated_at=NOW() WHERE singleton=TRUE",
                     (graph_version["graph_version_id"], graph_version["sequence"]),
                 )
+                cur.execute(
+                    "SELECT to_regclass('oc_knowledge_publication.publication_projection_events') IS NOT NULL AS available"
+                )
+                if cur.fetchone()["available"]:
+                    projection_identity = {
+                        "publication_id": request.publication_id,
+                        "graph_version_id": graph_version["graph_version_id"],
+                        "projection": "AUTHORITATIVE_CURRENT",
+                        "source": "ATOMIC_PUBLICATION",
+                    }
+                    cur.execute(
+                        "INSERT INTO oc_knowledge_publication.publication_projection_events(publication_id,graph_version_id,projection,included,source_action_type,source_action_id,fingerprint,correlation_id) "
+                        "VALUES(%s,%s,'AUTHORITATIVE_CURRENT',TRUE,'ATOMIC_PUBLICATION',%s,%s,%s)",
+                        (
+                            request.publication_id,
+                            graph_version["graph_version_id"],
+                            manifest_row["graph_transaction_id"],
+                            fingerprint(projection_identity),
+                            request.correlation_id,
+                        ),
+                    )
                 cur.execute(
                     "INSERT INTO oc_knowledge_publication.graph_transaction_attempts(graph_transaction_id,attempt_number,outcome,reason_code,details,actor,correlation_id) VALUES(%s,1,'COMMITTED','ATOMIC_PUBLICATION_COMMITTED',%s,%s,%s)",
                     (
