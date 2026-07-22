@@ -257,6 +257,8 @@ class DesignReasoningRecord:
 @dataclass(frozen=True)
 class MaterialConflictRecord:
     conflict_id: str
+    logical_key: str
+    version: int
     product_request_id: str
     context_snapshot_id: str
     evidence_package_ids: tuple[str, ...]

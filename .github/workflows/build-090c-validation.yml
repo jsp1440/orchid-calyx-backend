@@ -1,0 +1,42 @@
+name: BUILD-090C Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/design_planning/**"
+      - "tests/test_build_090c_*.py"
+      - "docs/BUILD-090C-*.md"
+      - ".github/workflows/build-090c-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  my-conservatory-interface-planning:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: build090c
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d build090c"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      BUILD_090C_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/build090c
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest ruff httpx psycopg[binary]
+      - name: BUILD-090C focused and PostgreSQL 16
+        run: python -m pytest -q tests/test_build_090c_my_conservatory_planning.py tests/test_build_090c_postgres.py
+      - name: BUILD-090 regression
+        run: python -m pytest -q tests/test_build_090b_design_reasoning_interface_planning.py tests/test_build_090b_postgres.py tests/test_build_090c_my_conservatory_planning.py tests/test_build_090c_postgres.py
+      - name: BUILD-089 regression
+        run: python -m pytest -q tests/test_build_089a_design_intelligence_corpus.py tests/test_build_089b_design_knowledge_acquisition.py tests/test_build_089c_design_corpus_population.py
+      - run: python -m compileall app
+      - run: python -m ruff check app/design_planning tests/test_build_090c_my_conservatory_planning.py tests/test_build_090c_postgres.py
+      - run: git diff --check

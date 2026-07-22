@@ -393,6 +393,8 @@ class DesignPlanningService:
         prior = self.repository.history("conflict", logical)
         artifact = MaterialConflictRecord(
             conflict_id=f"cf-{digest[:24]}",
+            logical_key=logical,
+            version=len(prior) + 1,
             product_request_id=payload["product_request_id"],
             context_snapshot_id=payload["context_snapshot_id"],
             evidence_package_ids=tuple(payload.get("evidence_package_ids", ())),
@@ -420,7 +422,7 @@ class DesignPlanningService:
         self._audit(
             "MaterialConflictRecord",
             result.conflict_id,
-            len(prior) + 1,
+            result.version,
             actor,
             "CREATE",
             digest,
