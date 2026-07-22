@@ -1,0 +1,58 @@
+name: BUILD-092 Validation
+
+on:
+  pull_request:
+    paths:
+      - "client/**"
+      - "tests/test_build_092_frontend_foundation.py"
+      - "docs/BUILD-092-*"
+      - ".github/workflows/build-092-validation.yml"
+  push:
+    branches: [main]
+
+jobs:
+  my-conservatory-frontend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: {POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: build092}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d build092"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      BUILD_089A_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/build092
+      BUILD_090B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/build092
+      BUILD_090C_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/build092
+      BUILD_091_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/build092
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - uses: pnpm/action-setup@v4
+        with: {version: "11.9.0"}
+      - uses: actions/setup-node@v4
+        with: {node-version: "22", cache: pnpm, cache-dependency-path: client/pnpm-lock.yaml}
+      - run: pip install -r requirements.txt pytest ruff httpx psycopg[binary]
+      - name: Install frontend dependencies
+        working-directory: client
+        run: pnpm install --frozen-lockfile
+      - name: BUILD-092 frontend tests
+        working-directory: client
+        run: pnpm test
+      - name: BUILD-092 production build and lint
+        working-directory: client
+        run: |
+          pnpm build
+          pnpm lint
+      - name: BUILD-092 backend contract tests
+        run: python -m pytest -q tests/test_build_092_frontend_foundation.py
+      - name: BUILD-089 through BUILD-091 regression with PostgreSQL 16
+        run: python -m pytest -q tests/test_build_089*.py tests/test_build_090*.py tests/test_build_091*.py
+      - name: Compile and lint backend
+        run: |
+          python -m compileall -q app
+          ruff check tests/test_build_092_frontend_foundation.py
+      - name: Diff integrity
+        run: git diff --check
