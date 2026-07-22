@@ -5,6 +5,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, Mapping
 
+from .models import HarvestPage
+
 
 class BaseHarvester(ABC):
     """Abstract contract implemented by every source harvester plugin."""
@@ -20,7 +22,7 @@ class BaseHarvester(ABC):
         """Authenticate with the upstream source when required."""
 
     @abstractmethod
-    def fetch_page(self, checkpoint: Mapping[str, Any] | None = None) -> Any:
+    def fetch_page(self, checkpoint: Mapping[str, Any] | None = None) -> HarvestPage:
         """Fetch one page or batch from the upstream source."""
 
     @abstractmethod
@@ -40,17 +42,24 @@ class BaseHarvester(ABC):
     def extract_occurrences(self, record: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
         return ()
 
-    def persist(self, batch: Iterable[Mapping[str, Any]]) -> Any:
+    def persist(self, batch: Iterable[Mapping[str, Any]]) -> int:
         """Persist a normalized batch using the injected persistence adapter."""
-        return self.persistence.save_batch(source=self.source, records=list(batch))
+        return int(self.persistence.save_batch(source=self.source, records=list(batch)))
 
-    def checkpoint(self, state: Mapping[str, Any]) -> Any:
-        """Persist resumable state for this source."""
-        return self.checkpoints.save(self.source, dict(state))
+    def checkpoint(self, job_key: str, state: Mapping[str, Any]) -> None:
+        """Persist resumable state for this source and job."""
+        self.checkpoints.save_from_state(self.source, job_key, dict(state))
 
-    def resume(self) -> Mapping[str, Any] | None:
-        """Load resumable state for this source."""
-        return self.checkpoints.load(self.source)
+    def resume(self, job_key: str) -> Mapping[str, Any] | None:
+        """Load resumable state for this source and job."""
+        checkpoint = self.checkpoints.load(self.source, job_key)
+        return None if checkpoint is None else {
+            "cursor": checkpoint.cursor,
+            "offset": checkpoint.offset,
+            "processed": checkpoint.processed,
+            "completed": checkpoint.completed,
+            **dict(checkpoint.state),
+        }
 
     def statistics(self) -> Mapping[str, Any]:
         """Return the current metric snapshot for this source."""
