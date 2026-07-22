@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12", cache: pip}
-      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - run: pip install -r requirements.txt pytest ruff httpx psycopg[binary]
       - name: BUILD-091 focused validation
         run: python -m pytest -q tests/test_build_091_implementation_specification.py tests/test_build_091_postgres.py
       - name: BUILD-089 through BUILD-090 regression
