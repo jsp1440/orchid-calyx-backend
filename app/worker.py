@@ -80,7 +80,7 @@ def execute_harvester_job(job_type: str, payload: dict) -> dict:
         return {"status": "skipped", "reason": f"No harvester mapping for job_type '{job_type}'"}
 
     actor = str(payload.get("actor") or "calyx_worker")
-    result = control_plane.run_once(harvester_id, actor)
+    result = control_plane.run_once(harvester_id, actor, execute=True)
     log.info(f"Dispatched {job_type} → harvester '{harvester_id}': {result.get('status')}")
     return result
 

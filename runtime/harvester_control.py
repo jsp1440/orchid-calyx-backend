@@ -205,8 +205,15 @@ class HarvesterControlPlane:
         self._require_harvester(harvester_id)
         return [asdict(run) for run in self.runs.get(harvester_id, [])]
 
-    def run_once(self, harvester_id: str, actor: str) -> dict[str, Any]:
+    def run_once(self, harvester_id: str, actor: str, execute: bool = False) -> dict[str, Any]:
         harvester = self._transition(harvester_id, "run_once", actor, "run_once", risk="low")
+        # Real execution is opt-in (worker path passes execute=True). The API
+        # run-once path and unintegrated ids keep the governed queued-stub
+        # behavior. Governance denial (needs_review) also falls back to stub.
+        if execute and harvester.operational_state != "needs_review":
+            from harvesters.execution import is_integrated
+            if is_integrated(harvester_id):
+                return self._execute_run(harvester, actor)
         run = HarvesterRun(
             harvester_id=harvester_id,
             run_id=f"HRUN-{uuid4().hex[:10].upper()}",
@@ -221,6 +228,52 @@ class HarvesterControlPlane:
         )
         self.runs[harvester_id].insert(0, run)
         return {"status": "queued", "harvester": self.serialize_harvester(harvester), "run": asdict(run)}
+
+    def _execute_run(self, harvester: Harvester, actor: str) -> dict[str, Any]:
+        """Execute an integrated harvester via the BUILD-093 adapter and record
+        real run telemetry (checkpoints, rows, status) on the HarvesterRun."""
+        from harvesters.execution import run_harvester
+
+        started = utc_now()
+        errors: list[str] = []
+        try:
+            telemetry = run_harvester(harvester.harvester_id)
+            status = "success"
+        except Exception as exc:  # execution failures are recorded, not raised
+            telemetry = {}
+            status = "failed"
+            errors = [str(exc)]
+        ended = utc_now()
+
+        run = HarvesterRun(
+            harvester_id=harvester.harvester_id,
+            run_id=f"HRUN-{uuid4().hex[:10].upper()}",
+            starting_checkpoint=telemetry.get("starting_checkpoint", harvester.checkpoint_cursor),
+            ending_checkpoint=telemetry.get("ending_checkpoint", harvester.checkpoint_cursor),
+            trigger_type="worker_dispatch",
+            started_at=started,
+            ended_at=ended,
+            status=status,
+            records_examined=telemetry.get("records_examined"),
+            inserted=telemetry.get("inserted"),
+            errors=errors,
+            source_response_metadata=telemetry.get("source_response_metadata", {}),
+            execution_log_reference="harvesters.execution.run_harvester",
+            provenance={"actor": actor, "source": "BUILD-093 execution adapter"},
+        )
+        self.runs[harvester.harvester_id].insert(0, run)
+
+        harvester.last_attempted_run = started
+        if status == "success":
+            harvester.last_successful_run = ended
+            if run.ending_checkpoint is not None:
+                harvester.checkpoint_cursor = run.ending_checkpoint
+            harvester.rows_inserted = telemetry.get("inserted")
+            harvester.rows_examined = telemetry.get("records_examined")
+        else:
+            harvester.errors = list(harvester.errors) + errors
+        harvester.updated_at = utc_now()
+        return {"status": status, "harvester": self.serialize_harvester(harvester), "run": asdict(run)}
 
     def pause(self, harvester_id: str, actor: str) -> dict[str, Any]:
         return {"status": "paused", "harvester": self.serialize_harvester(self._transition(harvester_id, "paused", actor, "pause", risk="low"))}
