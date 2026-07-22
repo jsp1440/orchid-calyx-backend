@@ -1,0 +1,38 @@
+name: BUILD-091 Validation
+on:
+  pull_request:
+    paths: ["app/implementation_planning/**", "app/main.py", "migrations/091_*", "tests/test_build_091*", "docs/BUILD-091-*", ".github/workflows/build-091-validation.yml"]
+  push:
+    branches: [main]
+jobs:
+  implementation-specification:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: {POSTGRES_USER: postgres, POSTGRES_PASSWORD: postgres, POSTGRES_DB: build091}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d build091"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      BUILD_091_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/build091
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -r requirements.txt pytest ruff httpx psycopg[binary]
+      - name: BUILD-091 focused validation
+        run: python -m pytest -q tests/test_build_091_implementation_specification.py tests/test_build_091_postgres.py
+      - name: BUILD-089 through BUILD-090 regression
+        run: python -m pytest -q tests/test_build_089*.py tests/test_build_090*.py
+      - name: Compile and lint
+        run: |
+          python -m compileall -q app
+          ruff check app/implementation_planning tests/test_build_091_implementation_specification.py tests/test_build_091_postgres.py
+      - name: Prohibited frontend artifact check
+        run: |
+          if find app/implementation_planning -type f \( -name '*.tsx' -o -name '*.jsx' -o -name '*.vue' -o -name '*.html' -o -name '*.css' \) | grep -q .; then exit 1; fi
+          if grep -R -n -E 'import React|<html|<style|createApp\(' app/implementation_planning; then exit 1; fi
+      - name: Diff integrity
+        run: git diff --check
