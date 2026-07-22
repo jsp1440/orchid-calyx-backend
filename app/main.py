@@ -29,6 +29,7 @@ from app.candidate_knowledge.routes import router as candidate_knowledge_router
 from app.evidence_aggregation.routes import router as evidence_aggregation_router
 from app.design_intelligence.routes import router as design_intelligence_router
 from app.design_planning.routes import router as design_planning_router
+from app.implementation_planning.routes import router as implementation_planning_router
 from app.scientific_interpretation.routes import router as scientific_interpretation_router
 from app.ontology.routers import router as ontology_router
 from app.publication.routers import router as publication_router
@@ -1167,6 +1168,7 @@ app.include_router(candidate_knowledge_router)
 app.include_router(evidence_aggregation_router)
 app.include_router(design_intelligence_router)
 app.include_router(design_planning_router)
+app.include_router(implementation_planning_router)
 app.include_router(scientific_interpretation_router)
 app.include_router(ontology_router)
 app.include_router(publication_router)
