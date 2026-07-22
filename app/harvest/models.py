@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 
@@ -66,6 +66,25 @@ class HarvestTrait:
 
 
 @dataclass(slots=True, frozen=True)
+class HarvestCheckpoint:
+    source: str
+    job_key: str
+    cursor: str | None = None
+    offset: int = 0
+    processed: int = 0
+    completed: bool = False
+    state: Mapping[str, Any] = field(default_factory=dict)
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass(slots=True, frozen=True)
+class HarvestPage:
+    records: tuple[Mapping[str, Any], ...]
+    next_checkpoint: Mapping[str, Any] = field(default_factory=dict)
+    end_of_stream: bool = False
+
+
+@dataclass(slots=True, frozen=True)
 class HarvestBatch:
     source: str
     raw_records: tuple[Mapping[str, Any], ...]
@@ -74,3 +93,16 @@ class HarvestBatch:
     images: tuple[HarvestImage, ...] = ()
     traits: tuple[HarvestTrait, ...] = ()
     checkpoint: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True, frozen=True)
+class HarvestResult:
+    source: str
+    job_key: str
+    pages: int
+    fetched: int
+    normalized: int
+    persisted: int
+    rejected: int
+    completed: bool
+    checkpoint: HarvestCheckpoint
