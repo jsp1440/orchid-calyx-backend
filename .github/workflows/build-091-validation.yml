@@ -35,4 +35,4 @@ jobs:
           if find app/implementation_planning -type f \( -name '*.tsx' -o -name '*.jsx' -o -name '*.vue' -o -name '*.html' -o -name '*.css' \) | grep -q .; then exit 1; fi
           if grep -R -n -E 'import React|<html|<style|createApp\(' app/implementation_planning; then exit 1; fi
       - name: Diff integrity
-        run: git diff --check HEAD^
+        run: git diff --check
