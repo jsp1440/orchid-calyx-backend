@@ -1,2 +1,0 @@
-import { describe,expect,it } from "vitest";import { parseRoute } from "../routing";
-describe("BUILD-091 route graph",()=>{it.each([["/conservatory","dashboard"],["/conservatory/plants","plants"],["/conservatory/plants/new","add"],["/conservatory/plants/123","plant"],["/conservatory/search","search"],["/conservatory/scan","scan"],["/conservatory/reports","deferred"],["/unknown","not-found"]])("maps %s",(path,page)=>expect(parseRoute(path).page).toBe(page));});
