@@ -1,0 +1,12 @@
+import { describe, expect, it } from "vitest";
+import { decodeQrIdentifier, ExistingCalyxAdapter } from "../api";
+import { filterAndPage, toPlantView, type BackendPlant } from "../domain";
+
+const backend: BackendPlant = {id:"p1",exhibitor_id:"e1",judging_event_id:"j1",category_id:"c1",name:"Cattleya cf. labiata",qr_code:"calyx:plant:p1",notes:"bench",created_at:"2026-07-20T00:00:00Z"};
+describe("scientific and adapter contracts",()=>{
+  it("preserves backend provenance and marks uncertain identification",()=>{const plant=toPlantView(backend,"2026-07-21T00:00:00Z");expect(plant.displayName).toBe(backend.name);expect(plant.uncertainIdentification).toBe(true);expect(plant.acceptedScientificName).toBeNull();expect(plant.provenance[0].recordId).toBe("p1");});
+  it("filters, sorts, and paginates without mutating evidence",()=>{const one=toPlantView(backend);const two={...one,id:"p2",displayName:"Angraecum sesquipedale"};const result=filterAndPage([one,two],{query:"angra",sort:"name-asc",page:1,pageSize:1});expect(result.total).toBe(1);expect(result.items[0].id).toBe("p2");expect(one.displayName).toContain("cf.");});
+  it.each([["calyx:plant:abc","abc"],["plant:def","def"],["https://calyx.test/conservatory/plants/g","g"],["plain","plain"]])("decodes %s",(value,expected)=>expect(decodeQrIdentifier(value)).toBe(expected));
+  it("authenticates before reading existing event plants",async()=>{const request=vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ready:true}),{status:200})).mockResolvedValueOnce(new Response(JSON.stringify([backend]),{status:200}));const api=new ExistingCalyxAdapter("https://api.test",{kind:"api-key",value:"secret"},{eventId:"j1",exhibitorId:"e1",categoryId:"c1"},request);const plants=await api.listPlants();expect(plants).toHaveLength(1);expect(request.mock.calls[0][0]).toContain("implementation-planning/health");expect(request.mock.calls[1][0]).toContain("/judging/events/j1/plants");expect(request.mock.calls[0][1].headers["X-API-Key"]).toBe("secret");});
+  it("blocks duplicates before backend persistence",async()=>{const request=vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ready:true}),{status:200})).mockResolvedValueOnce(new Response(JSON.stringify([backend]),{status:200}));const api=new ExistingCalyxAdapter("",{kind:"bearer",value:"token"},{eventId:"j1",exhibitorId:"e1",categoryId:"c1"},request);await expect(api.addPlant({name:"cattleya CF. labiata"})).rejects.toMatchObject({status:409});expect(request).toHaveBeenCalledTimes(2);});
+});
