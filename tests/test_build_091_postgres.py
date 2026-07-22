@@ -38,7 +38,7 @@ def test_postgres_migration_persistence_idempotency_and_immutability():
     assert len(repository.audits(first.specification_id)) == 1
 
     with psycopg.connect(DATABASE_URL) as connection:
-        with pytest.raises(psycopg.errors.RaiseException, match="IMMUTABLE"):
+        with pytest.raises(psycopg.errors.RaiseException, match="immutable"):
             connection.execute(
                 "UPDATE implementation_planning.specification_sets SET lifecycle_state='APPROVED' WHERE specification_id=%s",
                 (first.specification_id,),
