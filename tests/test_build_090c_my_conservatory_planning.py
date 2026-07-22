@@ -21,6 +21,7 @@ from app.design_planning.my_conservatory import (
     MyConservatoryPlanningDemonstration,
 )
 from app.design_planning.repository import MemoryDesignPlanningRepository
+from app.design_planning.postgres_repository import PostgresDesignPlanningRepository
 from app.design_planning.service import Build089EvidenceAdapter, DesignPlanningService
 
 
@@ -259,3 +260,15 @@ def test_audit_history_links_every_persisted_artifact(demonstration):
     assert all(
         item.actor and item.integrity_hash and item.correlation_id for item in events
     )
+
+
+def test_postgresql_json_payload_serializes_datetimes_and_enums(demonstration):
+    import json
+
+    demo, service = demonstration
+    result = demo.execute()
+    request = service.repository.get("product_request", result.product_request_id)
+    payload = PostgresDesignPlanningRepository._json_payload(request)
+    encoded = json.dumps(payload)
+    assert request.created_at.isoformat() in encoded
+    assert '"REQUEST_DRAFT"' in encoded

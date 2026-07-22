@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from psycopg.types.json import Jsonb
@@ -69,7 +71,7 @@ class PostgresDesignPlanningRepository:
                         logical_key,
                         artifact.version,
                         digest,
-                        Jsonb(asdict(artifact)),
+                        Jsonb(self._json_payload(artifact)),
                     ),
                 )
             except Exception as exc:
@@ -112,7 +114,7 @@ class PostgresDesignPlanningRepository:
                     review.reviewer_role.value,
                     review.decision.value,
                     review.integrity_hash,
-                    Jsonb(asdict(review)),
+                    Jsonb(self._json_payload(review)),
                 ),
             )
         return review
@@ -133,7 +135,7 @@ class PostgresDesignPlanningRepository:
                     event.event_id,
                     event.artifact_id,
                     event.integrity_hash,
-                    Jsonb(asdict(event)),
+                    Jsonb(self._json_payload(event)),
                 ),
             )
         return event
@@ -223,3 +225,18 @@ class PostgresDesignPlanningRepository:
             if hasattr(artifact, name):
                 return getattr(artifact, name)
         raise TypeError("UNSUPPORTED_ARTIFACT")
+
+    @classmethod
+    def _json_payload(cls, artifact: Any) -> Any:
+        value = (
+            asdict(artifact) if hasattr(artifact, "__dataclass_fields__") else artifact
+        )
+        if isinstance(value, dict):
+            return {key: cls._json_payload(item) for key, item in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [cls._json_payload(item) for item in value]
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, Enum):
+            return value.value
+        return value
