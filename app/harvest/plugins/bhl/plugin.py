@@ -30,6 +30,7 @@ class BHLHarvester(BaseHarvester):
         page = max(1, int(state.get("page", 1)))
         entity = str(state.get("entity", "item")).lower()
         search_term = str(state.get("search_term") or "Orchidaceae")
+        hydrate = _boolean(state.get("hydrate", True))
         if entity == "part":
             payload = self.client.part_search(search_term=search_term, page=page)
         elif entity == "page":
@@ -39,11 +40,12 @@ class BHLHarvester(BaseHarvester):
             payload = self.client.item_search(search_term=search_term, page=page)
         raw = payload.get("Result", [])
         if isinstance(raw, Mapping):
-            records = (dict(raw, _bhl_entity=entity),)
+            candidates = (dict(raw, _bhl_entity=entity),)
         elif isinstance(raw, list):
-            records = tuple(dict(item, _bhl_entity=entity) for item in raw if isinstance(item, Mapping))
+            candidates = tuple(dict(item, _bhl_entity=entity) for item in raw if isinstance(item, Mapping))
         else:
             raise ValueError("BHL payload Result must be a list or object")
+        records = tuple(self.hydrate_record(record) for record in candidates) if hydrate else candidates
         end = not records
         return HarvestPage(
             records=records,
@@ -51,10 +53,33 @@ class BHLHarvester(BaseHarvester):
                 "page": page + 1,
                 "entity": entity,
                 "search_term": search_term,
+                "hydrate": hydrate,
                 "processed": int(state.get("processed", 0)) + len(records),
             },
             end_of_stream=end,
         )
+
+    def hydrate_record(self, record: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Merge search results with BHL metadata while retaining search provenance."""
+        entity = str(record.get("_bhl_entity") or _infer_entity(record))
+        source_id = _source_id(record, entity)
+        if source_id is None:
+            return record
+        if entity == "item":
+            payload = self.client.item_metadata(int(source_id))
+        elif entity == "part":
+            payload = self.client.part_metadata(int(source_id))
+        else:
+            payload = self.client.page_metadata(int(source_id))
+        result = payload.get("Result")
+        metadata = _first_mapping(result)
+        if metadata is None:
+            return record
+        merged = dict(record)
+        merged.update(metadata)
+        merged["_bhl_entity"] = entity
+        merged["_bhl_search_record"] = {key: value for key, value in record.items() if key != "_bhl_entity"}
+        return merged
 
     def normalize(self, record: Mapping[str, Any]) -> Mapping[str, Any]:
         entity = str(record.get("_bhl_entity") or _infer_entity(record))
@@ -94,33 +119,78 @@ class BHLHarvester(BaseHarvester):
         )
 
     def extract_images(self, record: Mapping[str, Any]):
-        page_id = record.get("PageID") or record.get("PageId")
-        full_image = _text(record.get("FullImageUrl") or record.get("ImageUrl"))
-        thumbnail = _text(record.get("ThumbnailUrl"))
         media: list[Mapping[str, Any]] = []
-        if full_image:
-            media.append({
-                "source": self.source,
-                "source_record_id": f"page:{page_id}:image" if page_id else full_image,
-                "media_type": "plate",
-                "url": full_image,
-                "thumbnail_url": thumbnail,
-                "license": _text(record.get("LicenseUrl") or record.get("License")),
-                "rights": _text(record.get("Rights") or record.get("CopyrightStatus")),
-                "references": _text(record.get("PageUrl") or record.get("ItemUrl")),
-            })
-        pdf_url = _text(record.get("PdfUrl") or record.get("PDFUrl"))
-        if pdf_url:
-            media.append({
-                "source": self.source,
-                "source_record_id": f"item:{record.get('ItemID')}:pdf",
-                "media_type": "pdf",
-                "url": pdf_url,
-                "license": _text(record.get("LicenseUrl") or record.get("License")),
-                "rights": _text(record.get("Rights") or record.get("CopyrightStatus")),
-                "references": _text(record.get("ItemUrl")),
-            })
-        return tuple(media)
+        _append_record_media(media, record, source=self.source)
+        pages = record.get("Pages")
+        if isinstance(pages, list):
+            for page in pages:
+                if isinstance(page, Mapping):
+                    _append_record_media(media, page, source=self.source, parent=record)
+        return tuple(_deduplicate_media(media))
+
+
+def _append_record_media(
+    media: list[Mapping[str, Any]],
+    record: Mapping[str, Any],
+    *,
+    source: str,
+    parent: Mapping[str, Any] | None = None,
+) -> None:
+    page_id = record.get("PageID") or record.get("PageId")
+    full_image = _text(record.get("FullImageUrl") or record.get("ImageUrl"))
+    thumbnail = _text(record.get("ThumbnailUrl"))
+    license_value = _text(record.get("LicenseUrl") or record.get("License") or (parent or {}).get("LicenseUrl"))
+    rights = _text(record.get("Rights") or record.get("CopyrightStatus") or (parent or {}).get("Rights"))
+    references = _text(record.get("PageUrl") or record.get("ItemUrl") or (parent or {}).get("ItemUrl"))
+    if full_image:
+        media.append({
+            "source": source,
+            "source_record_id": f"page:{page_id}:image" if page_id else full_image,
+            "media_type": "plate",
+            "url": full_image,
+            "thumbnail_url": thumbnail,
+            "license": license_value,
+            "rights": rights,
+            "references": references,
+        })
+    pdf_url = _text(record.get("PdfUrl") or record.get("PDFUrl"))
+    item_id = record.get("ItemID") or record.get("ItemId") or (parent or {}).get("ItemID")
+    if pdf_url:
+        media.append({
+            "source": source,
+            "source_record_id": f"item:{item_id}:pdf" if item_id else pdf_url,
+            "media_type": "pdf",
+            "url": pdf_url,
+            "license": license_value,
+            "rights": rights,
+            "references": _text(record.get("ItemUrl") or (parent or {}).get("ItemUrl")),
+        })
+
+
+def _deduplicate_media(media: list[Mapping[str, Any]]):
+    seen: set[tuple[Any, Any]] = set()
+    for entry in media:
+        key = (entry.get("media_type"), entry.get("url"))
+        if key in seen:
+            continue
+        seen.add(key)
+        yield entry
+
+
+def _first_mapping(value: Any) -> Mapping[str, Any] | None:
+    if isinstance(value, Mapping):
+        return value
+    if isinstance(value, list):
+        return next((item for item in value if isinstance(item, Mapping)), None)
+    return None
+
+
+def _boolean(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return bool(value)
 
 
 def _infer_entity(record: Mapping[str, Any]) -> str:
