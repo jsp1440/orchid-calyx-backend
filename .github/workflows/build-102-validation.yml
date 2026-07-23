@@ -1,0 +1,31 @@
+name: BUILD-102 validation
+
+on:
+  push:
+    branches:
+      - feature/build-102-inaturalist-harvester-v2-plugin
+  pull_request:
+    paths:
+      - "app/harvest/plugins/inaturalist/**"
+      - "tests/harvest/test_inaturalist_plugin.py"
+      - ".github/workflows/build-102-validation.yml"
+
+jobs:
+  inaturalist-tests:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+      - name: Verify imports
+        run: python -c "from app.harvest.plugins.inaturalist import INaturalistHarvester"
+      - name: Run BUILD-102 tests
+        run: python -m pytest -q tests/harvest/test_inaturalist_plugin.py tests/harvest/test_manager.py tests/harvest/test_gbif_plugin.py
