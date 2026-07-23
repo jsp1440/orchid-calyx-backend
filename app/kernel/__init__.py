@@ -10,6 +10,7 @@ from .contracts import (
     RelationshipService,
     ScientificEventBus,
     ScientificQueryService,
+    ScientificRuntime,
 )
 from .evidence import Evidence, EvidenceType, Provenance
 from .events import EventType, ScientificEvent
@@ -30,6 +31,13 @@ from .relationships import (
     RelationshipDirection,
     RelationshipStatus,
     RelationshipType,
+)
+from .runtime import (
+    RuntimeContext,
+    RuntimeOperation,
+    RuntimeRequest,
+    RuntimeResult,
+    RuntimeStatus,
 )
 
 __all__ = [
@@ -66,10 +74,16 @@ __all__ = [
     "RelationshipService",
     "RelationshipStatus",
     "RelationshipType",
+    "RuntimeContext",
+    "RuntimeOperation",
+    "RuntimeRequest",
+    "RuntimeResult",
+    "RuntimeStatus",
     "ScientificEvent",
     "ScientificEventBus",
     "ScientificObject",
     "ScientificObjectValidationError",
     "ScientificQuery",
     "ScientificQueryService",
+    "ScientificRuntime",
 ]
