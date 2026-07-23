@@ -90,7 +90,7 @@ class Assertion(ScientificObject):
     qualifiers: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        ScientificObject.__post_init__(self)
         if self.ocid.kind is not OCIDKind.ASSERTION:
             raise ScientificObjectValidationError("assertion requires an ASSERTION OCID")
         predicate = self.predicate.strip()
