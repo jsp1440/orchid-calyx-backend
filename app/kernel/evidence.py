@@ -70,7 +70,7 @@ class Evidence(ScientificObject):
     fingerprint: str = field(init=False)
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        ScientificObject.__post_init__(self)
         if self.ocid.kind is not OCIDKind.EVIDENCE:
             raise ScientificObjectValidationError("evidence requires an EVIDENCE OCID")
         title = self.title.strip()
