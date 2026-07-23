@@ -13,6 +13,8 @@ import requests
 
 @dataclass(slots=True)
 class BHLClient:
+    """Small resilient client for the public BHL API v2 endpoint."""
+
     api_key: str | None = None
     base_url: str = "https://www.biodiversitylibrary.org/api2/httpquery.ashx"
     timeout_seconds: float = 30.0
@@ -27,30 +29,56 @@ class BHLClient:
             self.api_key = os.getenv("BHL_API_KEY")
         if self.session is None:
             self.session = requests.Session()
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be greater than zero")
+        if self.max_attempts < 1:
+            raise ValueError("max_attempts must be at least one")
+        if self.backoff_seconds < 0:
+            raise ValueError("backoff_seconds cannot be negative")
+        if self.min_interval_seconds < 0:
+            raise ValueError("min_interval_seconds cannot be negative")
 
     def item_search(self, *, search_term: str, page: int = 1) -> Mapping[str, Any]:
-        return self._request("ItemSearch", searchterm=search_term, page=page)
+        return self._search("ItemSearch", search_term=search_term, page=page)
 
     def part_search(self, *, search_term: str, page: int = 1) -> Mapping[str, Any]:
-        return self._request("PartSearch", searchterm=search_term, page=page)
+        return self._search("PartSearch", search_term=search_term, page=page)
 
     def page_search(self, *, search_term: str, page: int = 1) -> Mapping[str, Any]:
-        return self._request("PageSearch", searchterm=search_term, page=page)
+        return self._search("PageSearch", search_term=search_term, page=page)
 
     def item_metadata(self, item_id: int) -> Mapping[str, Any]:
-        return self._request("GetItemMetadata", id=item_id, pages="t", ocr="t", parts="t")
+        return self._request("GetItemMetadata", id=self._positive_id(item_id), pages="t", ocr="t", parts="t")
 
     def part_metadata(self, part_id: int) -> Mapping[str, Any]:
-        return self._request("GetPartMetadata", id=part_id)
+        return self._request("GetPartMetadata", id=self._positive_id(part_id))
+
+    def page_metadata(self, page_id: int) -> Mapping[str, Any]:
+        return self._request("GetPageMetadata", pageid=self._positive_id(page_id), ocr="t", names="t")
 
     def page_ocr(self, page_id: int) -> Mapping[str, Any]:
-        return self._request("GetPageOcrText", pageid=page_id)
+        return self._request("GetPageOcrText", pageid=self._positive_id(page_id))
 
     def page_images(self, page_id: int) -> Mapping[str, Any]:
-        return self._request("GetPageImages", pageid=page_id)
+        return self._request("GetPageImages", pageid=self._positive_id(page_id))
 
     def item_pdfs(self, item_id: int) -> Mapping[str, Any]:
-        return self._request("GetItemPDFs", id=item_id)
+        return self._request("GetItemPDFs", id=self._positive_id(item_id))
+
+    def _search(self, operation: str, *, search_term: str, page: int) -> Mapping[str, Any]:
+        term = str(search_term).strip()
+        if not term:
+            raise ValueError("search_term is required")
+        if page < 1:
+            raise ValueError("page must be at least one")
+        return self._request(operation, searchterm=term, page=page)
+
+    @staticmethod
+    def _positive_id(value: int) -> int:
+        identifier = int(value)
+        if identifier < 1:
+            raise ValueError("BHL identifier must be a positive integer")
+        return identifier
 
     def _request(self, operation: str, **params: Any) -> Mapping[str, Any]:
         if not self.api_key:
@@ -71,9 +99,12 @@ class BHLClient:
                 payload = response.json()
                 if not isinstance(payload, Mapping):
                     raise ValueError("BHL returned a non-object payload")
-                status = str(payload.get("Status", "ok")).lower()
+                status = str(payload.get("Status", "ok")).strip().lower()
                 if status not in {"ok", "success"}:
-                    raise ValueError(str(payload.get("ErrorMessage") or payload.get("Status")))
+                    message = payload.get("ErrorMessage") or payload.get("Status") or "unknown BHL API error"
+                    raise ValueError(str(message))
+                if "Result" not in payload:
+                    raise ValueError("BHL response is missing Result")
                 return payload
             except (requests.RequestException, ValueError) as exc:
                 last_error = exc
