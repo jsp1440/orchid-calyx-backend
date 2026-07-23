@@ -74,7 +74,7 @@ jobs:
           DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_regression
           TEST_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_regression
       - name: Full backend suite
-        run: python -m pytest -q
+        run: env -u TEST_DATABASE_URL python -m pytest -q
         env:
           DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_full
           TEST_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_full
