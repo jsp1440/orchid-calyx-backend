@@ -45,6 +45,13 @@ def test_fetch_page_preserves_checkpoint(harvester):
     assert page.next_checkpoint["processed"] == 2
 
 
+def test_fetch_page_rejects_unknown_result_shape(harvester):
+    harvester.client = Mock()
+    harvester.client.item_search.return_value = {"Status": "ok", "Result": "invalid"}
+    with pytest.raises(ValueError, match="list or object"):
+        harvester.fetch_page({"entity": "item", "search_term": "Orchidaceae"})
+
+
 def test_normalize_item_preserves_bibliography_and_media(harvester):
     record = {
         "_bhl_entity": "item",
@@ -106,6 +113,43 @@ def test_client_builds_request_without_live_network():
     assert kwargs["params"]["searchterm"] == "Orchidaceae"
     assert kwargs["params"]["page"] == 2
     assert kwargs["params"]["apikey"] == "test-key"
+
+
+def test_client_builds_page_metadata_request():
+    response = Mock(status_code=200)
+    response.json.return_value = {"Status": "ok", "Result": {"PageID": 123}}
+    response.raise_for_status.return_value = None
+    session = Mock()
+    session.get.return_value = response
+    client = BHLClient(api_key="test-key", session=session, max_attempts=1, min_interval_seconds=0)
+    payload = client.page_metadata(123)
+    assert payload["Result"]["PageID"] == 123
+    _, kwargs = session.get.call_args
+    assert kwargs["params"]["op"] == "GetPageMetadata"
+    assert kwargs["params"]["pageid"] == 123
+    assert kwargs["params"]["ocr"] == "t"
+    assert kwargs["params"]["names"] == "t"
+
+
+def test_client_validates_arguments():
+    client = BHLClient(api_key="test-key", session=Mock(), min_interval_seconds=0)
+    with pytest.raises(ValueError, match="search_term"):
+        client.item_search(search_term="   ")
+    with pytest.raises(ValueError, match="page must"):
+        client.item_search(search_term="Orchidaceae", page=0)
+    with pytest.raises(ValueError, match="positive integer"):
+        client.page_metadata(0)
+
+
+def test_client_rejects_missing_result():
+    response = Mock(status_code=200)
+    response.json.return_value = {"Status": "ok"}
+    response.raise_for_status.return_value = None
+    session = Mock()
+    session.get.return_value = response
+    client = BHLClient(api_key="test-key", session=session, max_attempts=1, min_interval_seconds=0)
+    with pytest.raises(ValueError, match="missing Result"):
+        client.item_search(search_term="Orchidaceae")
 
 
 def test_client_retries_transient_failure(monkeypatch):
