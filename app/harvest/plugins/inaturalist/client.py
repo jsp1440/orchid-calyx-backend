@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import random
 import time
 from typing import Any, Mapping
@@ -18,11 +18,11 @@ class INaturalistClient:
     backoff_seconds: float = 0.5
     min_interval_seconds: float = 0.0
     session: requests.Session | None = None
+    _last_request_at: float = field(default=0.0, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.session is None:
             self.session = requests.Session()
-        self._last_request_at = 0.0
 
     def observations(
         self,
