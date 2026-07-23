@@ -1,0 +1,31 @@
+name: BUILD-101 validation
+
+on:
+  pull_request:
+    paths:
+      - "app/harvest/**"
+      - "tests/harvest/**"
+      - ".github/workflows/build-101-validation.yml"
+  push:
+    branches:
+      - "feature/build-101-harvester-v2-rewrite"
+    paths:
+      - "app/harvest/**"
+      - "tests/harvest/**"
+      - ".github/workflows/build-101-validation.yml"
+
+jobs:
+  harvest-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Run Harvester V2 tests
+        run: pytest -q tests/harvest
