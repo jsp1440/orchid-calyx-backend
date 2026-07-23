@@ -6,6 +6,7 @@ from .contracts import (
     EvidenceService,
     EventHandler,
     GovernanceService,
+    IntegrityAuditService,
     KnowledgeObjectService,
     PublicationService,
     RelationshipService,
@@ -25,6 +26,7 @@ from .governance import (
     PolicyStatus,
 )
 from .identity import OCID, OCIDFactory, OCIDKind
+from .integrity import IntegrityAudit, IntegrityFinding, IntegritySeverity, IntegrityStatus
 from .knowledge import KnowledgeObject, KnowledgeObjectType, KnowledgeStatus
 from .models import ScientificObject
 from .publications import Publication, PublicationManifest, PublicationStatus
@@ -65,6 +67,11 @@ __all__ = [
     "GovernancePolicy",
     "GovernanceRequest",
     "GovernanceService",
+    "IntegrityAudit",
+    "IntegrityAuditService",
+    "IntegrityFinding",
+    "IntegritySeverity",
+    "IntegrityStatus",
     "InvalidOCIDError",
     "KernelError",
     "KnowledgeObject",
