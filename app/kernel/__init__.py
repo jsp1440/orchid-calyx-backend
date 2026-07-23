@@ -6,12 +6,20 @@ from .contracts import (
     EvidenceService,
     PublicationService,
     RelationshipService,
+    ScientificQueryService,
 )
 from .evidence import Evidence, EvidenceType, Provenance
 from .exceptions import InvalidOCIDError, KernelError, ScientificObjectValidationError
 from .identity import OCID, OCIDFactory, OCIDKind
 from .models import ScientificObject
 from .publications import Publication, PublicationManifest, PublicationStatus
+from .queries import (
+    QueryObjectType,
+    QueryPage,
+    QuerySort,
+    QuerySortDirection,
+    ScientificQuery,
+)
 from .relationships import (
     Relationship,
     RelationshipDirection,
@@ -38,6 +46,10 @@ __all__ = [
     "PublicationManifest",
     "PublicationService",
     "PublicationStatus",
+    "QueryObjectType",
+    "QueryPage",
+    "QuerySort",
+    "QuerySortDirection",
     "Relationship",
     "RelationshipDirection",
     "RelationshipService",
@@ -45,4 +57,6 @@ __all__ = [
     "RelationshipType",
     "ScientificObject",
     "ScientificObjectValidationError",
+    "ScientificQuery",
+    "ScientificQueryService",
 ]
