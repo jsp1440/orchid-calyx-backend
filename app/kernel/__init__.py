@@ -6,6 +6,12 @@ from .evidence import Evidence, EvidenceType, Provenance
 from .exceptions import InvalidOCIDError, KernelError, ScientificObjectValidationError
 from .identity import OCID, OCIDFactory, OCIDKind
 from .models import ScientificObject
+from .relationships import (
+    Relationship,
+    RelationshipDirection,
+    RelationshipStatus,
+    RelationshipType,
+)
 
 __all__ = [
     "Assertion",
@@ -22,7 +28,11 @@ __all__ = [
     "OCIDFactory",
     "OCIDKind",
     "Provenance",
+    "Relationship",
+    "RelationshipDirection",
     "RelationshipService",
+    "RelationshipStatus",
+    "RelationshipType",
     "ScientificObject",
     "ScientificObjectValidationError",
 ]

@@ -34,12 +34,25 @@ class AssertionService(ABC):
 
 
 class RelationshipService(ABC):
-    """Contract for durable first-class relationships."""
+    """Contract for durable first-class relationships and graph traversal."""
 
     @abstractmethod
     def create(self, relationship: ScientificObject) -> ScientificObject:
         raise NotImplementedError
 
     @abstractmethod
-    def traverse(self, origin_ocid: OCID) -> Iterable[ScientificObject]:
+    def get(self, ocid: OCID) -> ScientificObject | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_for_object(self, object_ocid: OCID) -> Iterable[ScientificObject]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def traverse(
+        self,
+        origin_ocid: OCID,
+        *,
+        max_depth: int = 1,
+    ) -> Iterable[ScientificObject]:
         raise NotImplementedError
