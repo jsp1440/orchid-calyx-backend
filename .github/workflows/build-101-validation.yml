@@ -17,6 +17,8 @@ on:
 jobs:
   harvest-tests:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -25,7 +27,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+      - name: Verify repository imports
+        run: python -c "import app.harvest; print('app.harvest import OK')"
       - name: Run Harvester V2 tests
-        run: pytest -q tests/harvest
+        run: python -m pytest -q tests/harvest
