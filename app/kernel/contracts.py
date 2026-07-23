@@ -9,6 +9,7 @@ from .events import EventType, ScientificEvent
 from .identity import OCID
 from .models import ScientificObject
 from .queries import QueryPage, ScientificQuery
+from .runtime import RuntimeRequest, RuntimeResult
 
 
 class EvidenceService(ABC):
@@ -144,4 +145,20 @@ class ScientificEventBus(ABC):
 
     @abstractmethod
     def unsubscribe(self, event_type: EventType, handler: EventHandler) -> None:
+        raise NotImplementedError
+
+
+class ScientificRuntime(ABC):
+    """Contract for transaction-scoped orchestration across Kernel services."""
+
+    @abstractmethod
+    def execute(self, request: RuntimeRequest) -> RuntimeResult:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_result(self, correlation_id: str) -> RuntimeResult | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def cancel(self, correlation_id: str) -> RuntimeResult:
         raise NotImplementedError
