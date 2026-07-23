@@ -5,6 +5,7 @@ from .contracts import (
     AssertionService,
     EvidenceService,
     EventHandler,
+    GovernanceService,
     KnowledgeObjectService,
     PublicationService,
     RelationshipService,
@@ -15,6 +16,14 @@ from .contracts import (
 from .evidence import Evidence, EvidenceType, Provenance
 from .events import EventType, ScientificEvent
 from .exceptions import InvalidOCIDError, KernelError, ScientificObjectValidationError
+from .governance import (
+    GovernanceAction,
+    GovernanceDecision,
+    GovernancePolicy,
+    GovernanceRequest,
+    PolicyEffect,
+    PolicyStatus,
+)
 from .identity import OCID, OCIDFactory, OCIDKind
 from .knowledge import KnowledgeObject, KnowledgeObjectType, KnowledgeStatus
 from .models import ScientificObject
@@ -51,6 +60,11 @@ __all__ = [
     "EvidenceType",
     "EventHandler",
     "EventType",
+    "GovernanceAction",
+    "GovernanceDecision",
+    "GovernancePolicy",
+    "GovernanceRequest",
+    "GovernanceService",
     "InvalidOCIDError",
     "KernelError",
     "KnowledgeObject",
@@ -60,6 +74,8 @@ __all__ = [
     "OCID",
     "OCIDFactory",
     "OCIDKind",
+    "PolicyEffect",
+    "PolicyStatus",
     "Provenance",
     "Publication",
     "PublicationManifest",
