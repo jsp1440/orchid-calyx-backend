@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Callable, Iterable
 
 from .events import EventType, ScientificEvent
+from .governance import GovernanceDecision, GovernancePolicy, GovernanceRequest
 from .identity import OCID
 from .models import ScientificObject
 from .queries import QueryPage, ScientificQuery
@@ -161,4 +162,24 @@ class ScientificRuntime(ABC):
 
     @abstractmethod
     def cancel(self, correlation_id: str) -> RuntimeResult:
+        raise NotImplementedError
+
+
+class GovernanceService(ABC):
+    """Contract for registering and evaluating scientific governance policies."""
+
+    @abstractmethod
+    def register(self, policy: GovernancePolicy) -> GovernancePolicy:
+        raise NotImplementedError
+
+    @abstractmethod
+    def evaluate(self, request: GovernanceRequest) -> GovernanceDecision:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get(self, policy_ocid: OCID) -> GovernancePolicy | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_active(self) -> Iterable[GovernancePolicy]:
         raise NotImplementedError
