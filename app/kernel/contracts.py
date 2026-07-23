@@ -7,6 +7,7 @@ from typing import Iterable
 
 from .identity import OCID
 from .models import ScientificObject
+from .queries import QueryPage, ScientificQuery
 
 
 class EvidenceService(ABC):
@@ -79,4 +80,20 @@ class PublicationService(ABC):
 
     @abstractmethod
     def list_for_object(self, object_ocid: OCID) -> Iterable[ScientificObject]:
+        raise NotImplementedError
+
+
+class ScientificQueryService(ABC):
+    """Contract for bounded, implementation-neutral scientific object queries."""
+
+    @abstractmethod
+    def execute(self, query: ScientificQuery) -> QueryPage:
+        raise NotImplementedError
+
+    @abstractmethod
+    def count(self, query: ScientificQuery) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get(self, ocid: OCID) -> ScientificObject | None:
         raise NotImplementedError
