@@ -97,3 +97,23 @@ class ScientificQueryService(ABC):
     @abstractmethod
     def get(self, ocid: OCID) -> ScientificObject | None:
         raise NotImplementedError
+
+
+class KnowledgeObjectService(ABC):
+    """Contract for publishing and retrieving curated knowledge syntheses."""
+
+    @abstractmethod
+    def publish(self, knowledge_object: ScientificObject) -> ScientificObject:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get(self, knowledge_ocid: OCID) -> ScientificObject | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_for_subject(self, subject_ocid: OCID) -> Iterable[ScientificObject]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_supporting_object(self, object_ocid: OCID) -> Iterable[ScientificObject]:
+        raise NotImplementedError
