@@ -38,11 +38,44 @@ def test_fetch_page_preserves_checkpoint(harvester):
         "Status": "ok",
         "Result": [{"ItemID": 1}, {"ItemID": 2}],
     }
-    page = harvester.fetch_page({"page": 1, "entity": "item", "search_term": "Orchidaceae"})
+    page = harvester.fetch_page(
+        {"page": 1, "entity": "item", "search_term": "Orchidaceae", "hydrate": False}
+    )
     assert len(page.records) == 2
     assert page.end_of_stream is False
     assert page.next_checkpoint["page"] == 2
     assert page.next_checkpoint["processed"] == 2
+    assert page.next_checkpoint["hydrate"] is False
+
+
+def test_fetch_page_hydrates_search_results(harvester):
+    harvester.client = Mock()
+    harvester.client.item_search.return_value = {
+        "Status": "ok",
+        "Result": [{"ItemID": 42, "Title": "Search title"}],
+    }
+    harvester.client.item_metadata.return_value = {
+        "Status": "ok",
+        "Result": {"ItemID": 42, "Title": "Canonical title", "Year": "1901"},
+    }
+    page = harvester.fetch_page({"entity": "item", "search_term": "Orchidaceae"})
+    assert page.records[0]["Title"] == "Canonical title"
+    assert page.records[0]["_bhl_search_record"]["Title"] == "Search title"
+    harvester.client.item_metadata.assert_called_once_with(42)
+
+
+def test_hydrate_record_supports_part_and_page(harvester):
+    harvester.client = Mock()
+    harvester.client.part_metadata.return_value = {
+        "Status": "ok",
+        "Result": [{"PartID": 7, "Title": "Article"}],
+    }
+    harvester.client.page_metadata.return_value = {
+        "Status": "ok",
+        "Result": {"PageID": 9, "OcrText": "Orchis"},
+    }
+    assert harvester.hydrate_record({"_bhl_entity": "part", "PartID": 7})["Title"] == "Article"
+    assert harvester.hydrate_record({"_bhl_entity": "page", "PageID": 9})["OcrText"] == "Orchis"
 
 
 def test_fetch_page_rejects_unknown_result_shape(harvester):
@@ -74,6 +107,38 @@ def test_normalize_item_preserves_bibliography_and_media(harvester):
     assert normalized["doi"] == "10.1234/orchid.42"
     assert normalized["media"][0]["media_type"] == "pdf"
     assert harvester.validate(normalized) is True
+
+
+def test_normalize_item_extracts_nested_page_plates(harvester):
+    record = {
+        "_bhl_entity": "item",
+        "ItemID": 42,
+        "ItemUrl": "https://www.biodiversitylibrary.org/item/42",
+        "LicenseUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+        "Pages": [
+            {
+                "PageID": 99,
+                "PageNumber": "pl. 12",
+                "PageUrl": "https://www.biodiversitylibrary.org/page/99",
+                "FullImageUrl": "https://example.org/page-99.jpg",
+                "ThumbnailUrl": "https://example.org/page-99-thumb.jpg",
+            }
+        ],
+    }
+    normalized = harvester.normalize(record)
+    assert normalized["page_numbers"] == ("pl. 12",)
+    assert normalized["media"] == (
+        {
+            "source": "bhl",
+            "source_record_id": "page:99:image",
+            "media_type": "plate",
+            "url": "https://example.org/page-99.jpg",
+            "thumbnail_url": "https://example.org/page-99-thumb.jpg",
+            "license": "https://creativecommons.org/publicdomain/mark/1.0/",
+            "rights": None,
+            "references": "https://www.biodiversitylibrary.org/page/99",
+        },
+    )
 
 
 def test_normalize_page_preserves_ocr_and_plate(harvester):
