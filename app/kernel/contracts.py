@@ -8,6 +8,7 @@ from typing import Callable, Iterable
 from .events import EventType, ScientificEvent
 from .governance import GovernanceDecision, GovernancePolicy, GovernanceRequest
 from .identity import OCID
+from .integrity import IntegrityAudit
 from .models import ScientificObject
 from .queries import QueryPage, ScientificQuery
 from .runtime import RuntimeRequest, RuntimeResult
@@ -53,12 +54,7 @@ class RelationshipService(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def traverse(
-        self,
-        origin_ocid: OCID,
-        *,
-        max_depth: int = 1,
-    ) -> Iterable[ScientificObject]:
+    def traverse(self, origin_ocid: OCID, *, max_depth: int = 1) -> Iterable[ScientificObject]:
         raise NotImplementedError
 
 
@@ -182,4 +178,24 @@ class GovernanceService(ABC):
 
     @abstractmethod
     def list_active(self) -> Iterable[GovernancePolicy]:
+        raise NotImplementedError
+
+
+class IntegrityAuditService(ABC):
+    """Contract for executing and retrieving scientific integrity audits."""
+
+    @abstractmethod
+    def run(self, audit: IntegrityAudit) -> IntegrityAudit:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get(self, audit_ocid: OCID) -> IntegrityAudit | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_for_object(self, object_ocid: OCID) -> Iterable[IntegrityAudit]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def cancel(self, audit_ocid: OCID) -> IntegrityAudit:
         raise NotImplementedError
