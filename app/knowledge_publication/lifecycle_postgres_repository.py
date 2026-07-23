@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 from typing import Any
+
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+
 from .lifecycle_models import LifecycleAuthority, LifecycleReason, RetractionReason
 
 
