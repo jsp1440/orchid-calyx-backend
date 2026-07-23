@@ -4,12 +4,15 @@ from .assertions import Assertion, AssertionObject, AssertionStatus, Confidence
 from .contracts import (
     AssertionService,
     EvidenceService,
+    EventHandler,
     KnowledgeObjectService,
     PublicationService,
     RelationshipService,
+    ScientificEventBus,
     ScientificQueryService,
 )
 from .evidence import Evidence, EvidenceType, Provenance
+from .events import EventType, ScientificEvent
 from .exceptions import InvalidOCIDError, KernelError, ScientificObjectValidationError
 from .identity import OCID, OCIDFactory, OCIDKind
 from .knowledge import KnowledgeObject, KnowledgeObjectType, KnowledgeStatus
@@ -38,6 +41,8 @@ __all__ = [
     "Evidence",
     "EvidenceService",
     "EvidenceType",
+    "EventHandler",
+    "EventType",
     "InvalidOCIDError",
     "KernelError",
     "KnowledgeObject",
@@ -61,6 +66,8 @@ __all__ = [
     "RelationshipService",
     "RelationshipStatus",
     "RelationshipType",
+    "ScientificEvent",
+    "ScientificEventBus",
     "ScientificObject",
     "ScientificObjectValidationError",
     "ScientificQuery",
