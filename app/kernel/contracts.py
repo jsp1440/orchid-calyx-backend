@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Iterable
+from typing import Callable, Iterable
 
+from .events import EventType, ScientificEvent
 from .identity import OCID
 from .models import ScientificObject
 from .queries import QueryPage, ScientificQuery
@@ -116,4 +117,31 @@ class KnowledgeObjectService(ABC):
 
     @abstractmethod
     def list_supporting_object(self, object_ocid: OCID) -> Iterable[ScientificObject]:
+        raise NotImplementedError
+
+
+EventHandler = Callable[[ScientificEvent], None]
+
+
+class ScientificEventBus(ABC):
+    """Contract for durable publication and subscription of scientific events."""
+
+    @abstractmethod
+    def publish(self, event: ScientificEvent) -> ScientificEvent:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get(self, event_ocid: OCID) -> ScientificEvent | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_for_subject(self, subject_ocid: OCID) -> Iterable[ScientificEvent]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def subscribe(self, event_type: EventType, handler: EventHandler) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def unsubscribe(self, event_type: EventType, handler: EventHandler) -> None:
         raise NotImplementedError
