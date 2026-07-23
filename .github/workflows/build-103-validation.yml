@@ -1,0 +1,32 @@
+name: BUILD-103 validation
+
+on:
+  push:
+    branches:
+      - feature/build-103-bhl-harvester-v2
+  pull_request:
+    paths:
+      - "app/harvest/plugins/bhl/**"
+      - "tests/harvest/test_bhl_plugin.py"
+      - "docs/BUILD-103.md"
+      - ".github/workflows/build-103-validation.yml"
+
+jobs:
+  bhl-tests:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+      - name: Verify imports
+        run: python -c "from app.harvest.plugins.bhl import BHLHarvester"
+      - name: Run BUILD-103 tests
+        run: python -m pytest -q tests/harvest/test_bhl_plugin.py tests/harvest/test_manager.py tests/harvest/test_gbif_plugin.py tests/harvest/test_inaturalist_plugin.py
