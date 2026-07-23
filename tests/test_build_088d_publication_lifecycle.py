@@ -160,12 +160,15 @@ def test_postgres_lifecycle_concurrency_projections_propagation_and_rollback():
             )
             return pid, gv
 
-        prior, _ = seed(1, 1)
-        successor, _ = seed(2, 2)
-        withdrawable, _ = seed(3, 3)
-        dependent, _ = seed(4, 4)
-        racing, _ = seed(5, 5)
-        rollback_pub, rollback_gv = seed(6, 6)
+        base_seq = con.execute(
+            "SELECT sequence FROM oc_knowledge_publication.current_graph_version WHERE singleton"
+        ).fetchone()[0]
+        prior, _ = seed(1, base_seq + 1)
+        successor, _ = seed(2, base_seq + 2)
+        withdrawable, _ = seed(3, base_seq + 3)
+        dependent, _ = seed(4, base_seq + 4)
+        racing, _ = seed(5, base_seq + 5)
+        rollback_pub, rollback_gv = seed(6, base_seq + 6)
         con.execute(
             "INSERT INTO oc_knowledge_publication.publication_dependencies(source_publication_id,dependent_publication_id,dependency_type,fingerprint) VALUES(%s,%s,'SUPPORTS',%s)",
             (withdrawable, dependent, f"dep-{suffix}"),
