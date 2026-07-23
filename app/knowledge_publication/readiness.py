@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from time import perf_counter
+
 import psycopg
 from psycopg.rows import dict_row
 

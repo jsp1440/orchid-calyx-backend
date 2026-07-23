@@ -119,7 +119,9 @@ def test_execution_request_prevents_mass_assignment_surface():
 def test_postgres_atomic_idempotent_concurrent_publication_and_rollback():
     import json
     import uuid
+
     import psycopg
+
     from app.knowledge_publication.graph_postgres_repository import (
         PostgresControlledGraphRepository,
     )
