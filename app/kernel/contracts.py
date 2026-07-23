@@ -56,3 +56,27 @@ class RelationshipService(ABC):
         max_depth: int = 1,
     ) -> Iterable[ScientificObject]:
         raise NotImplementedError
+
+
+class PublicationService(ABC):
+    """Contract for preparing and atomically committing scientific publications."""
+
+    @abstractmethod
+    def prepare(self, publication: ScientificObject) -> ScientificObject:
+        raise NotImplementedError
+
+    @abstractmethod
+    def commit(self, publication_ocid: OCID) -> ScientificObject:
+        raise NotImplementedError
+
+    @abstractmethod
+    def reject(self, publication_ocid: OCID, *, reason: str) -> ScientificObject:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get(self, publication_ocid: OCID) -> ScientificObject | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_for_object(self, object_ocid: OCID) -> Iterable[ScientificObject]:
+        raise NotImplementedError
