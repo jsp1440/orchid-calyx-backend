@@ -245,7 +245,7 @@ def test_postgres_complete_pipeline_lifecycle_reconstruction_and_readiness():
         if label == "new":
             with ThreadPoolExecutor(max_workers=3) as pool:
                 outcomes = [
-                    item["outcome"] for item in pool.map(lambda _: graph.publish(request), range(3))
+                    item["outcome"] for item in pool.map(lambda _, req=request: graph.publish(req), range(3))
                 ]
             assert outcomes.count("PUBLISHED") == 1
             assert outcomes.count("NO_OP_DUPLICATE") == 2
