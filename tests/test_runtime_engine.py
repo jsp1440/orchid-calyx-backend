@@ -5,7 +5,12 @@ def test_runtime_engine_cycle_updates_status():
     engine = RuntimeEngine(
         heartbeat=lambda: {"overall_status": "healthy"},
         enqueue_jobs=lambda: {"status": "ok"},
-        execute_jobs=lambda: {"status": "completed", "completed": 1, "failed": 0, "job_name": "audit_pollinator_relationships"},
+        execute_jobs=lambda: {
+            "status": "completed",
+            "completed": 1,
+            "failed": 0,
+            "job_name": "audit_pollinator_relationships",
+        },
         interval_seconds=30,
         enabled=True,
     )
