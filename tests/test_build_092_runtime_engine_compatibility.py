@@ -40,7 +40,8 @@ def test_runtime_engine_explicit_dependencies_remain_authoritative():
 
     engine = RuntimeEngine(
         heartbeat=lambda: calls.append("heartbeat") or {"overall_status": "healthy"},
-        enqueue_jobs=lambda: calls.append("enqueue") or {"status": "queued", "queue_depth": 2},
+        enqueue_jobs=lambda: calls.append("enqueue")
+        or {"status": "queued", "queue_depth": 2},
         execute_jobs=lambda: calls.append("execute")
         or {
             "status": "completed",
