@@ -1,0 +1,43 @@
+name: BUILD-092 validation
+
+on:
+  pull_request:
+    paths:
+      - "runtime/runtime_engine.py"
+      - "tests/test_build_092_runtime_engine_compatibility.py"
+      - "tests/test_runtime_engine.py"
+      - ".github/workflows/build-092-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  runtime-engine-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt pytest ruff
+      - name: Compile and lint
+        run: |
+          python -m compileall -q runtime tests/test_runtime_engine.py tests/test_build_092_runtime_engine_compatibility.py
+          python -m ruff check runtime/runtime_engine.py tests/test_runtime_engine.py tests/test_build_092_runtime_engine_compatibility.py
+      - name: Run focused RuntimeEngine tests
+        run: |
+          python -m pytest -q \
+            tests/test_runtime_engine.py \
+            tests/test_build_092_runtime_engine_compatibility.py
+      - name: Verify historical suite collection
+        run: |
+          python -m pytest --collect-only -q \
+            tests/test_build_034_046_049_integration.py \
+            tests/test_build_046_scientific_priorities.py \
+            tests/test_build_055_runtime_activation.py \
+            tests/test_build_056_owner_authentication.py \
+            tests/test_build_063_owner_auth.py \
+            tests/test_build_064_production_operations.py \
+            tests/test_build_065_oes_integration.py \
+            tests/test_build_066_owner_control_verification.py \
+            tests/test_build_075_executive_intelligence_mission_control.py \
+            tests/test_owner_session_cors_repair.py
