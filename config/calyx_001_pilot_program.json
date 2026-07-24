@@ -1,0 +1,55 @@
+{
+  "program_id": "CALYX-001",
+  "title": "Graduate research acquisition architecture audit",
+  "status": "audit_complete",
+  "scope": {
+    "domain": "orchids",
+    "mode": "documentation_only",
+    "production_database_changes": false,
+    "runtime_changes": false,
+    "new_identity_system": false,
+    "parallel_knowledge_graph": false
+  },
+  "canonical_owners": {
+    "acquisition": "Harvester V2 and source plugins",
+    "documents": "existing document intelligence pipeline",
+    "evidence": "Scientific Kernel Evidence Engine",
+    "assertions": "Scientific Kernel Assertion Engine",
+    "relationships": "Scientific Kernel Relationship Engine",
+    "publication": "Publication and Transaction Engine",
+    "knowledge_objects": "Knowledge Object Engine",
+    "query": "Scientific Query Engine",
+    "events": "Scientific Event Bus",
+    "runtime": "Scientific Runtime",
+    "governance": "Policy and Governance Engine",
+    "integrity": "Scientific Integrity and Audit Engine",
+    "workspace": "Research Station"
+  },
+  "pilot": {
+    "approved_sources": [
+      "Biodiversity Heritage Library via BUILD-103"
+    ],
+    "conditional_sources": [
+      "one independently verified dissertation or thesis metadata source"
+    ],
+    "mandatory_invariants": [
+      "claims trace to exact source spans",
+      "rights and provenance are preserved",
+      "automated outputs remain candidates until reviewed",
+      "publication uses canonical transaction boundaries",
+      "non-permitted full text is not redistributed",
+      "taxonomic uncertainty is retained"
+    ]
+  },
+  "follow_on_builds": [
+    "CALYX-002",
+    "CALYX-003",
+    "CALYX-004",
+    "CALYX-005",
+    "CALYX-006",
+    "CALYX-007"
+  ],
+  "dependencies": {
+    "build_rs_001": "separate draft; must be refreshed and independently validated before integration"
+  }
+}
