@@ -15,6 +15,26 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _default_heartbeat() -> dict[str, str]:
+    """Safe compatibility callback used when no heartbeat dependency is supplied."""
+    return {"overall_status": "not_configured"}
+
+
+def _default_enqueue_jobs() -> dict[str, Any]:
+    """Safe compatibility callback that performs no queue writes."""
+    return {"status": "not_configured", "queue_depth": None}
+
+
+def _default_execute_jobs() -> dict[str, Any]:
+    """Safe compatibility callback that performs no job execution."""
+    return {
+        "status": "not_configured",
+        "completed": 0,
+        "failed": 0,
+        "queue_depth": None,
+    }
+
+
 @dataclass
 class RuntimeEngineState:
     enabled: bool
@@ -65,20 +85,27 @@ class RuntimeEngineState:
 
 
 class RuntimeEngine:
-    """Background loop that runs heartbeat, mission seeding, and work execution."""
+    """Background loop that runs heartbeat, mission seeding, and work execution.
+
+    Runtime dependencies are injectable for production use. They remain optional for
+    compatibility with historical callers and tests that construct the engine only
+    to inspect configuration, lifecycle behavior, or status. Missing dependencies
+    resolve to deterministic no-op callbacks and never perform writes or execute
+    work.
+    """
 
     def __init__(
         self,
         *,
-        heartbeat: RuntimeCallable,
-        enqueue_jobs: RuntimeCallable,
-        execute_jobs: RuntimeCallable,
+        heartbeat: RuntimeCallable | None = None,
+        enqueue_jobs: RuntimeCallable | None = None,
+        execute_jobs: RuntimeCallable | None = None,
         interval_seconds: int = 30,
         enabled: bool = True,
     ) -> None:
-        self.heartbeat = heartbeat
-        self.enqueue_jobs = enqueue_jobs
-        self.execute_jobs = execute_jobs
+        self.heartbeat = heartbeat or _default_heartbeat
+        self.enqueue_jobs = enqueue_jobs or _default_enqueue_jobs
+        self.execute_jobs = execute_jobs or _default_execute_jobs
         self.state = RuntimeEngineState(
             enabled=enabled,
             interval_seconds=max(5, int(interval_seconds)),
@@ -152,19 +179,36 @@ class RuntimeEngine:
                 self.state.last_enqueue_status = self._status_from(enqueue_result)
                 self.state.last_execute_status = self._status_from(execute_result)
                 if isinstance(execute_result, dict):
-                    completed = int(execute_result.get("completed") or (1 if execute_result.get("status") == "completed" else 0))
-                    failed = int(execute_result.get("failed") or (1 if execute_result.get("status") == "failed" else 0))
+                    completed = int(
+                        execute_result.get("completed")
+                        or (1 if execute_result.get("status") == "completed" else 0)
+                    )
+                    failed = int(
+                        execute_result.get("failed")
+                        or (1 if execute_result.get("status") == "failed" else 0)
+                    )
                     self.state.last_execute_completed = completed
                     self.state.last_execute_failed = failed
                     self.state.completed_count += completed
                     self.state.failed_count += failed
                     if completed:
-                        self.state.last_completed_job = str(execute_result.get("job_name") or execute_result.get("module") or "runtime_job")
+                        self.state.last_completed_job = str(
+                            execute_result.get("job_name")
+                            or execute_result.get("module")
+                            or "runtime_job"
+                        )
                     if failed:
-                        self.state.last_failed_job = str(execute_result.get("job_name") or execute_result.get("module") or "runtime_job")
+                        self.state.last_failed_job = str(
+                            execute_result.get("job_name")
+                            or execute_result.get("module")
+                            or "runtime_job"
+                        )
                     if execute_result.get("queue_depth") is not None:
                         self.state.queue_depth = execute_result.get("queue_depth")
-                if isinstance(enqueue_result, dict) and enqueue_result.get("queue_depth") is not None:
+                if (
+                    isinstance(enqueue_result, dict)
+                    and enqueue_result.get("queue_depth") is not None
+                ):
                     self.state.queue_depth = enqueue_result.get("queue_depth")
                 self._record_event(
                     "runtime_cycle_completed",
@@ -220,7 +264,9 @@ class RuntimeEngine:
             return str(value.get("status") or value.get("overall_status") or "ok")
         return "ok"
 
-    def _record_event(self, name: str, details: Optional[dict[str, Any]] = None) -> None:
+    def _record_event(
+        self, name: str, details: Optional[dict[str, Any]] = None
+    ) -> None:
         self.state.events.append(
             {
                 "event": name,
