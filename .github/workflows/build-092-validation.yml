@@ -29,15 +29,20 @@ jobs:
             tests/test_runtime_engine.py \
             tests/test_build_092_runtime_engine_compatibility.py
       - name: Verify historical suite collection
+        shell: bash
         run: |
-          python -m pytest --collect-only -q \
-            tests/test_build_034_046_049_integration.py \
-            tests/test_build_046_scientific_priorities.py \
-            tests/test_build_055_runtime_activation.py \
-            tests/test_build_056_owner_authentication.py \
-            tests/test_build_063_owner_auth.py \
-            tests/test_build_064_production_operations.py \
-            tests/test_build_065_oes_integration.py \
-            tests/test_build_066_owner_control_verification.py \
-            tests/test_build_075_executive_intelligence_mission_control.py \
-            tests/test_owner_session_cors_repair.py
+          mapfile -t runtime_suites < <(
+            git grep -l -E \
+              'RuntimeEngine|runtime_engine|from app\.main import|import app\.main' \
+              -- 'tests/test_*.py' 'tests/**/test_*.py' \
+              | sort -u
+          )
+
+          if (( ${#runtime_suites[@]} == 0 )); then
+            echo "No RuntimeEngine-related historical test suites were discovered."
+            exit 1
+          fi
+
+          echo "Collecting ${#runtime_suites[@]} RuntimeEngine-related test suites:"
+          printf '  %s\n' "${runtime_suites[@]}"
+          python -m pytest --collect-only -q "${runtime_suites[@]}"
