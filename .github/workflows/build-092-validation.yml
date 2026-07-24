@@ -1,0 +1,47 @@
+name: BUILD-092 validation
+
+on:
+  pull_request:
+    paths:
+      - "runtime/runtime_engine.py"
+      - "tests/test_build_092_runtime_engine_compatibility.py"
+      - "tests/test_runtime_engine.py"
+      - ".github/workflows/build-092-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  runtime-engine-compatibility:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt pytest ruff httpx
+      - name: Compile and lint
+        run: |
+          python -m compileall -q runtime tests/test_runtime_engine.py tests/test_build_092_runtime_engine_compatibility.py
+          python -m ruff check runtime/runtime_engine.py tests/test_runtime_engine.py tests/test_build_092_runtime_engine_compatibility.py
+      - name: Run focused RuntimeEngine tests
+        run: |
+          python -m pytest -q \
+            tests/test_runtime_engine.py \
+            tests/test_build_092_runtime_engine_compatibility.py
+      - name: Verify repository historical suite collection
+        shell: bash
+        run: |
+          mapfile -t historical_suites < <(
+            find tests -type f -name 'test_*.py' -print | sort
+          )
+
+          if (( ${#historical_suites[@]} == 0 )); then
+            echo "No historical test suites were discovered under tests/."
+            exit 1
+          fi
+
+          echo "Collecting ${#historical_suites[@]} historical test suites discovered in the repository:"
+          printf '  %s\n' "${historical_suites[@]}"
+          python -m pytest --collect-only -q "${historical_suites[@]}"
