@@ -45,6 +45,7 @@ from runtime.constitutional_router import router as constitutional_router
 from runtime.kernel_router import router as kernel_router
 from runtime.orchestrator_router import router as orchestrator_router
 from runtime.planner_router import router as planner_router
+from runtime.autonomous_runner import enqueue_default_jobs, execute_next_job, run_job_logic
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
@@ -364,8 +365,14 @@ def runtime_configuration():
     }
 
 
-runtime_engine = RuntimeEngine()
 calyx_heartbeat = CalyxHeartbeat()
+runtime_engine = RuntimeEngine(
+    heartbeat=calyx_heartbeat.run_once,
+    enqueue_jobs=enqueue_default_jobs,
+    execute_jobs=execute_next_job,
+    interval_seconds=AUTO_LOOP_INTERVAL_SECONDS,
+    enabled=AUTO_LOOP_ENABLED,
+)
 
 
 @app.on_event("startup")
