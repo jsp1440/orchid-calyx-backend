@@ -5,6 +5,7 @@ from uuid import uuid4
 import psycopg
 
 MIGRATIONS = (
+    Path("migrations/070_knowledge_intake.sql"),
     Path("migrations/076a_universal_intake.sql"),
     Path("migrations/076b_semantic_extraction.sql"),
     Path("migrations/077_ontology_evidence_registry.sql"),

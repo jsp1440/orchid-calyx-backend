@@ -64,7 +64,7 @@ The focused tests cover:
 
 The static migration validator checks required tables, identity triggers, release consistency, and absence of destructive or ontology-altering statements.
 
-The CI PostgreSQL validator applies migrations 076a, 076b, 077, and 102a to an ephemeral PostgreSQL 16 service, reapplies 102a, exercises activation and supersession, proves UUID/URI updates and deletion are rejected, and confirms legacy ontology tables remain present.
+The CI PostgreSQL validator applies prerequisite migrations 070, 076a, 076b, and 077 plus 102a to an ephemeral PostgreSQL 16 service, reapplies 102a, exercises activation and supersession, proves UUID/URI updates and deletion are rejected, and confirms legacy ontology tables remain present.
 
 ## Known limitations
 
