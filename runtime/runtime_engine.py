@@ -208,6 +208,7 @@ class RuntimeEngine:
                 if (
                     isinstance(enqueue_result, dict)
                     and enqueue_result.get("queue_depth") is not None
+                    and self.state.queue_depth is None
                 ):
                     self.state.queue_depth = enqueue_result.get("queue_depth")
                 self._record_event(
