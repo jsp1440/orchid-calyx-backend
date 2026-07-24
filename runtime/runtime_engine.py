@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 
 RuntimeCallable = Callable[[], Any]
@@ -41,21 +41,21 @@ class RuntimeEngineState:
     running: bool = False
     interval_seconds: int = 30
     cycle_count: int = 0
-    started_at: Optional[str] = None
-    stopped_at: Optional[str] = None
-    last_cycle_started_at: Optional[str] = None
-    last_cycle_finished_at: Optional[str] = None
-    last_heartbeat_status: Optional[str] = None
-    last_enqueue_status: Optional[str] = None
-    last_execute_status: Optional[str] = None
-    last_execute_completed: Optional[int] = None
-    last_execute_failed: Optional[int] = None
-    last_completed_job: Optional[str] = None
-    last_failed_job: Optional[str] = None
+    started_at: str | None = None
+    stopped_at: str | None = None
+    last_cycle_started_at: str | None = None
+    last_cycle_finished_at: str | None = None
+    last_heartbeat_status: str | None = None
+    last_enqueue_status: str | None = None
+    last_execute_status: str | None = None
+    last_execute_completed: int | None = None
+    last_execute_failed: int | None = None
+    last_completed_job: str | None = None
+    last_failed_job: str | None = None
     completed_count: int = 0
     failed_count: int = 0
-    queue_depth: Optional[int] = None
-    last_error: Optional[str] = None
+    queue_depth: int | None = None
+    last_error: str | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -112,7 +112,7 @@ class RuntimeEngine:
         )
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def set_enabled(self, enabled: bool) -> None:
         with self._lock:
@@ -230,7 +230,7 @@ class RuntimeEngine:
                 "enqueue": enqueue_result,
                 "execute": execute_result,
             }
-        except Exception as exc:  # pragma: no cover - defensive runtime guard
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive runtime guard
             with self._lock:
                 self.state.cycle_count += 1
                 self.state.failed_count += 1
@@ -265,7 +265,7 @@ class RuntimeEngine:
         return "ok"
 
     def _record_event(
-        self, name: str, details: Optional[dict[str, Any]] = None
+        self, name: str, details: dict[str, Any] | None = None
     ) -> None:
         self.state.events.append(
             {
