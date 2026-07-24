@@ -16,7 +16,6 @@ from .models import (
     StateSpecification,
 )
 
-
 PAGES = (
     ("Dashboard", "/conservatory", ()),
     ("My Plants", "/conservatory/plants", ()),
