@@ -20,7 +20,12 @@ def main() -> None:
     missing = [token for token in required if token not in lowered]
     destructive = [
         token
-        for token in ("drop table", "truncate", "delete from", "alter table oc_ontology")
+        for token in (
+            "drop table",
+            "truncate",
+            "delete from",
+            "alter table oc_ontology",
+        )
         if token in lowered
     ]
     if missing or destructive:

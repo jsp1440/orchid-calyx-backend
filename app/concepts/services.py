@@ -98,7 +98,7 @@ class ConceptRegistryService:
             return identifier
         value = identifier.strip()
         prefix = "https://id.orchidcontinuum.org/concept/"
-        candidate = value[len(prefix) :] if value.startswith(prefix) else value
+        candidate = value.removeprefix(prefix)
         try:
             return UUID(candidate)
         except ValueError:

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Annotated, Any
 
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,7 +22,7 @@ router = APIRouter(
 @router.get("/{id_or_uri:path}")
 def get_concept(
     id_or_uri: str,
-    service: ConceptRegistryService = Depends(get_concept_service),
+    service: Annotated[ConceptRegistryService, Depends(get_concept_service)],
 ) -> dict[str, Any]:
     try:
         return service.get_concept(id_or_uri)

@@ -114,7 +114,9 @@ class PostgresConceptRepository:
                 ),
             )
             result = cur.fetchone()
-            self._audit(cur, data["steward"], "CONCEPT_CREATED", result["concept_id"], result)
+            self._audit(
+                cur, data["steward"], "CONCEPT_CREATED", result["concept_id"], result
+            )
             return result
 
     def get_concept(self, identifier: UUID | str) -> dict[str, Any] | None:
@@ -208,5 +210,7 @@ class PostgresConceptRepository:
                 """,
                 (term_id, result["concept_id"], actor),
             )
-            self._audit(cur, actor, "ONTOLOGY_TERM_ADAPTED", result["concept_id"], result)
+            self._audit(
+                cur, actor, "ONTOLOGY_TERM_ADAPTED", result["concept_id"], result
+            )
             return result

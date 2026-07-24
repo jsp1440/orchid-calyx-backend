@@ -33,7 +33,9 @@ class MemoryConceptRepository:
     def create_scheme(self, data):
         if data["scheme_id"] in self.schemes:
             raise ValueError("SCHEME_IDENTIFIER_REUSE")
-        if any(row["scheme_key"] == data["scheme_key"] for row in self.schemes.values()):
+        if any(
+            row["scheme_key"] == data["scheme_key"] for row in self.schemes.values()
+        ):
             raise ValueError("DUPLICATE_SCHEME_KEY")
         row = self._timestamps(dict(data))
         self.schemes[row["scheme_id"]] = row
@@ -61,7 +63,9 @@ class MemoryConceptRepository:
         concept_id = data["concept_id"]
         if concept_id in self.concepts:
             raise ValueError("CONCEPT_IDENTIFIER_REUSE")
-        if any(row["concept_uri"] == data["concept_uri"] for row in self.concepts.values()):
+        if any(
+            row["concept_uri"] == data["concept_uri"] for row in self.concepts.values()
+        ):
             raise ValueError("CONCEPT_URI_REUSE")
         row = self._timestamps({**dict(data), "superseded_by_id": None})
         self.concepts[concept_id] = row
@@ -297,9 +301,7 @@ def test_api_retrieves_by_uuid_and_full_uri(repository, registry, scheme):
 
 
 def test_migration_is_additive_immutable_and_preserves_ontology():
-    sql = Path("migrations/102a_core_concept_registry.sql").read_text(
-        encoding="utf-8"
-    )
+    sql = Path("migrations/102a_core_concept_registry.sql").read_text(encoding="utf-8")
     lowered = sql.lower()
     assert "create schema if not exists oc_concepts" in lowered
     assert lowered.count("create table if not exists") == 5
