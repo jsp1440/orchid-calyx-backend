@@ -73,6 +73,43 @@ CREATE OR REPLACE VIEW oc_knowledge_publication.withdrawn_publications AS
  SELECT * FROM oc_knowledge_publication.current_publication_projection WHERE projection='WITHDRAWN';
 CREATE OR REPLACE VIEW oc_knowledge_publication.retracted_publications AS
  SELECT * FROM oc_knowledge_publication.current_publication_projection WHERE projection='RETRACTED';
+INSERT INTO oc_knowledge_publication.publication_projection_events(
+ publication_id,graph_version_id,projection,included,source_action_type,source_action_id,fingerprint,correlation_id
+)
+SELECT terminal.publication_id,
+ latest_graph.graph_version_id,
+ CASE terminal.state
+  WHEN 'PUBLISHED' THEN 'AUTHORITATIVE_CURRENT'
+  WHEN 'SUPERSEDED' THEN 'HISTORICAL'
+  WHEN 'WITHDRAWN' THEN 'WITHDRAWN'
+  WHEN 'RETRACTED' THEN 'RETRACTED'
+  WHEN 'ROLLED_BACK' THEN 'ROLLED_BACK'
+ END,
+ CASE terminal.state
+  WHEN 'PUBLISHED' THEN TRUE
+  WHEN 'SUPERSEDED' THEN TRUE
+  ELSE FALSE
+ END,
+ 'MIGRATION_BACKFILL',
+ terminal.transition_id,
+ '088d-backfill-' || terminal.publication_id || '-' || terminal.transition_id,
+ '088d-backfill-' || terminal.publication_id || '-' || terminal.transition_id
+FROM (
+ SELECT DISTINCT ON(publication_id) publication_id,state,transition_id
+ FROM oc_knowledge_publication.lifecycle_transitions
+ ORDER BY publication_id,transition_id DESC
+) terminal
+LEFT JOIN (
+ SELECT DISTINCT ON(publication_id) publication_id,graph_version_id
+ FROM oc_knowledge_publication.graph_versions
+ ORDER BY publication_id,sequence DESC,graph_version_id DESC
+) latest_graph ON latest_graph.publication_id=terminal.publication_id
+WHERE terminal.state IN('PUBLISHED','SUPERSEDED','WITHDRAWN','RETRACTED','ROLLED_BACK')
+AND NOT EXISTS (
+ SELECT 1 FROM oc_knowledge_publication.publication_projection_events existing
+ WHERE existing.publication_id=terminal.publication_id
+)
+ON CONFLICT(fingerprint) DO NOTHING;
 
 ALTER TABLE oc_knowledge_publication.lifecycle_transitions DROP CONSTRAINT IF EXISTS lifecycle_transitions_state_check;
 ALTER TABLE oc_knowledge_publication.lifecycle_transitions ADD CONSTRAINT lifecycle_transitions_state_check CHECK(state IN('PUBLICATION_CANDIDATE','VALIDATING','AUTHORIZED','REJECTED','TRANSACTION_PREPARED','PUBLISHING','PUBLISHED','PUBLICATION_FAILED','REEVALUATION_REQUIRED','SUPERSEDED','WITHDRAWN','RETRACTED','ROLLBACK_REQUIRED','ROLLED_BACK'));
