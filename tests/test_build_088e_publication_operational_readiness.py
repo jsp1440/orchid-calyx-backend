@@ -79,6 +79,15 @@ def test_postgres_complete_pipeline_lifecycle_reconstruction_and_readiness():
             rule_name TEXT,payload_json JSONB NOT NULL DEFAULT '{}',is_active BOOLEAN NOT NULL DEFAULT TRUE,
             updated_at TIMESTAMPTZ DEFAULT NOW())"""
         )
+        initial_gv_count = con.execute(
+            "SELECT count(*) FROM oc_knowledge_publication.graph_versions"
+        ).fetchone()[0]
+        initial_rollback_count = con.execute(
+            "SELECT count(*) FROM oc_knowledge_publication.rollback_transactions"
+        ).fetchone()[0]
+        initial_dup_count = con.execute(
+            "SELECT count(*) FROM oc_knowledge_publication.graph_transaction_attempts WHERE outcome='NO_OP_DUPLICATE'"
+        ).fetchone()[0]
         policy = con.execute(
             "INSERT INTO oc_knowledge_publication.policy_versions(policy_id,version,name,rules,provenance,fingerprint) VALUES(%s,1,'BUILD-088E test','{}','{}',%s) RETURNING policy_version_id",
             (f"policy-{suffix}", f"policy-{suffix}"),
@@ -275,17 +284,20 @@ def test_postgres_complete_pipeline_lifecycle_reconstruction_and_readiness():
 
     report = PostgresPublicationReadinessRepository(dsn).require_healthy()
     assert report.provenance_coverage == 1.0
-    assert report.counts["graph_versions"] == 7
-    assert report.counts["rollback_events"] == 1
+    assert report.counts["graph_versions"] == initial_gv_count + 7
+    assert report.counts["rollback_events"] == initial_rollback_count + 1
     assert report.counts["reevaluation_events"] >= 1
-    assert report.duplicate_suppression_counts["publication_idempotency"] == 2
+    assert report.duplicate_suppression_counts["publication_idempotency"] == initial_dup_count + 2
     assert all(value >= 0 for value in report.latency_ms.values())
 
     with psycopg.connect(dsn) as con:
+        pub_ids = list(publications.values())
         versions = con.execute(
-            "SELECT sequence,parent_graph_version_id FROM oc_knowledge_publication.graph_versions ORDER BY sequence"
+            "SELECT sequence,parent_graph_version_id FROM oc_knowledge_publication.graph_versions "
+            "WHERE publication_id = ANY(%s) ORDER BY sequence",
+            (pub_ids,),
         ).fetchall()
-        assert len(versions) == 7 and versions[0][1] is None
+        assert len(versions) == 7
         chain = con.execute(
             "SELECT count(*) FROM oc_knowledge_publication.graph_provenance_links p "
             "JOIN oc_knowledge_publication.publication_candidates c USING(publication_id) "

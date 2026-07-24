@@ -139,8 +139,8 @@ def test_postgres_lifecycle_concurrency_projections_propagation_and_rollback():
                 "INSERT INTO oc_knowledge_publication.graph_versions(sequence,parent_graph_version_id,graph_transaction_id,publication_id,publication_version,status,node_change_count,edge_change_count,provenance_complete,fingerprint,correlation_id) VALUES(%s,%s,%s,%s,1,'COMMITTED',1,0,TRUE,%s,'corr') RETURNING graph_version_id",
                 (sequence, parent, tx, pid, f"gv-{suffix}-{version}"),
             ).fetchone()[0]
-            con.execute(
-                "INSERT INTO oc_knowledge_publication.graph_object_versions(graph_version_id,graph_transaction_id,publication_id,object_kind,object_key,legacy_object_id,operation_type,payload,fingerprint) VALUES(%s,%s,%s,'NODE',%s,%s,'CREATE_NODE','{}',%s)",
+            ov = con.execute(
+                "INSERT INTO oc_knowledge_publication.graph_object_versions(graph_version_id,graph_transaction_id,publication_id,object_kind,object_key,legacy_object_id,operation_type,payload,fingerprint) VALUES(%s,%s,%s,'NODE',%s,%s,'CREATE_NODE','{}',%s) RETURNING object_version_id",
                 (
                     gv,
                     tx,
@@ -149,6 +149,14 @@ def test_postgres_lifecycle_concurrency_projections_propagation_and_rollback():
                     version,
                     f"objfp-{suffix}-{version}",
                 ),
+            ).fetchone()[0]
+            con.execute(
+                "INSERT INTO oc_knowledge_publication.graph_provenance_links(object_version_id,graph_transaction_id,publication_id,authorization_decision_id,assertion_id,assertion_version,source_revision_id,provenance,fingerprint) VALUES(%s,%s,%s,%s,%s,%s,%s,'{}',%s)",
+                (ov, tx, pid, decision, aid, version, version, f"provfp-{suffix}-{version}"),
+            )
+            con.execute(
+                "INSERT INTO oc_knowledge_publication.audit_events(artifact_type,artifact_id,event_type,actor,details) VALUES('GRAPH_TRANSACTION',%s,'GRAPH_TRANSACTION_COMMITTED','test','{}')",
+                (tx,),
             )
             con.execute(
                 "UPDATE oc_knowledge_publication.current_graph_version SET graph_version_id=%s,sequence=%s WHERE singleton",
