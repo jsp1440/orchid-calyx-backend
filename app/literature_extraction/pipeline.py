@@ -20,5 +20,11 @@ class PipelineRunner:
     ) -> PaperKnowledge:
         current = paper
         for extractor in self._extractors:
-            current = await extractor.execute(context, current)
+            current, run = await extractor.execute(context, current)
+            current.analysis_manifest.extractors.append(run)
+            if run.status == "failed":
+                current.analysis_manifest.status = "failed"
+                return current
+
+        current.analysis_manifest.status = "completed"
         return current
