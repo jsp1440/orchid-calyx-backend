@@ -32,7 +32,7 @@ def test_cli_writes_complete_output_bundle(tmp_path: Path) -> None:
     assert manifest.analysis_id == paper.analysis_manifest.analysis_id
     assert metrics_payload["analysis_id"] == manifest.analysis_id
     assert metrics_payload["status"] == "completed"
-    assert metrics_payload["extractor_runs"] == 2
+    assert metrics_payload["extractor_runs"] == 3
 
 
 def test_cli_extracts_metadata_and_sections_deterministically(tmp_path: Path) -> None:
@@ -114,3 +114,62 @@ Example A. 2020. Prior orchid work.
         return payload
 
     assert stable_payload(first) == stable_payload(second)
+
+
+def test_cli_extracts_entities_with_mentions_and_provenance(tmp_path: Path) -> None:
+    source = tmp_path / "entities.txt"
+    text = """ATP Response in Escherichia coli
+
+Abstract
+ATP was measured in Escherichia coli.
+
+Methods
+PCR quantified ATP, and pcr was repeated for confirmation.
+"""
+    source.write_text(text, encoding="utf-8")
+
+    first_output = tmp_path / "first-entities"
+    second_output = tmp_path / "second-entities"
+
+    assert main([str(source), "--output", str(first_output)]) == 0
+    assert main([str(source), "--output", str(second_output)]) == 0
+
+    first = PaperKnowledge.model_validate_json(
+        (first_output / "paper.json").read_text(encoding="utf-8")
+    )
+    second = PaperKnowledge.model_validate_json(
+        (second_output / "paper.json").read_text(encoding="utf-8")
+    )
+
+    assert [entity.entity_id for entity in first.entities] == [
+        "entity-1",
+        "entity-2",
+        "entity-3",
+    ]
+    assert [entity.entity_type for entity in first.entities] == [
+        "chemical",
+        "method",
+        "taxon",
+    ]
+    assert [entity.normalized_name for entity in first.entities] == [
+        "atp",
+        "pcr",
+        "escherichia coli",
+    ]
+    assert [len(entity.mentions) for entity in first.entities] == [3, 2, 2]
+
+    for entity in first.entities:
+        assert entity.provenance.method == "rule_extracted"
+        assert entity.provenance.extractor == "entities"
+        assert entity.provenance.extractor_version == "0.1.0"
+        assert entity.provenance.confidence == 1.0
+        assert entity.mentions
+        for mention in entity.mentions:
+            assert mention.char_start is not None
+            assert mention.char_end is not None
+            assert mention.char_start < mention.char_end
+            assert text[mention.char_start : mention.char_end].casefold() == entity.normalized_name
+
+    first_entities = [entity.model_dump(mode="json") for entity in first.entities]
+    second_entities = [entity.model_dump(mode="json") for entity in second.entities]
+    assert first_entities == second_entities
