@@ -38,10 +38,11 @@ async def test_pipeline_runner_executes_extractors(tmp_path: Path) -> None:
     source.write_text("orchid research", encoding="utf-8")
     document = ingest_text(source)
     paper = build_empty_paper(document)
-    context = PipelineContext(source_path=source)
+    context = PipelineContext(source_path=source, output_dir=tmp_path / "output")
 
     result = await PipelineRunner([RecordingExtractor()]).run(context, paper)
 
     assert result.metadata.title == "sample"
+    assert result.analysis_manifest.status == "completed"
     assert result.analysis_manifest.extractors[0].name == "recording"
     assert result.analysis_manifest.extractors[0].status == "completed"
