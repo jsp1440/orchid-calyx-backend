@@ -1,0 +1,46 @@
+name: CALYX-BRAIN-001 validation
+
+on:
+  pull_request:
+    paths:
+      - "app/literature_extraction/**"
+      - "tests/test_calyx_brain_001_literature_e2e.py"
+      - "tests/test_literature_extraction_*.py"
+      - "tests/fixtures/literature/**"
+      - ".github/workflows/calyx-brain-001-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  literature-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+      - run: >-
+          python -m ruff check
+          app/literature_extraction/ingest.py
+          app/literature_extraction/output.py
+          app/literature_extraction/pipeline.py
+          app/literature_extraction/registry.py
+          app/literature_extraction/repository.py
+          app/literature_extraction/routes.py
+          app/literature_extraction/service.py
+          app/literature_extraction/extractors/claims.py
+          app/literature_extraction/extractors/metadata.py
+          tests/test_calyx_brain_001_literature_e2e.py
+      - run: >-
+          python -m pytest -q
+          tests/test_calyx_brain_001_literature_e2e.py
+          tests/test_literature_extraction_models.py
+          tests/test_literature_extraction_normalization.py
+          tests/test_literature_extraction_output.py
+          tests/test_literature_extraction_pipeline.py
+      - run: >-
+          python -m pytest -q
+          tests/test_build_076b_semantic_extraction.py
+          tests/test_build_077_ontology_registry.py
+          tests/test_build_sem_002a_core_concept_registry.py
+          tests/test_build_sem_002b_lexical_services.py

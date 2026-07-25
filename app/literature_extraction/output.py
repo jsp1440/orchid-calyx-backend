@@ -63,7 +63,7 @@ def write_output_bundle(
     _write_json(paper_path, paper.model_dump(mode="json"))
     _write_json(manifest_path, paper.analysis_manifest.model_dump(mode="json"))
     _write_json(metrics_path, build_metrics(paper))
-    raw_text_path.write_text(document.raw_text, encoding="utf-8")
+    raw_text_path.write_bytes(document.raw_bytes)
 
     return OutputBundle(
         output_dir=destination,

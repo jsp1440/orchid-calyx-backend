@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from uuid import uuid4
 
 from .models import AnalysisManifest, PaperKnowledge, PaperMetadata, SourceDocument
 
@@ -33,8 +32,10 @@ def build_empty_paper(
     *,
     pipeline_version: str = "0.2.0",
 ) -> PaperKnowledge:
-    analysis_id = str(uuid4())
-    paper_id = str(uuid4())
+    paper_id = f"paper-{document.content_hash[:32]}"
+    analysis_id = sha256(
+        f"{document.content_hash}\x1f{pipeline_version}".encode()
+    ).hexdigest()[:32]
     return PaperKnowledge(
         paper_id=paper_id,
         source=SourceDocument(
@@ -47,7 +48,9 @@ def build_empty_paper(
         analysis_manifest=AnalysisManifest(
             analysis_id=analysis_id,
             analysis_version=1,
-            created_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+            created_at=__import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc
+            ),
             pipeline_version=pipeline_version,
             status="pending",
             input_fingerprint=document.content_hash,

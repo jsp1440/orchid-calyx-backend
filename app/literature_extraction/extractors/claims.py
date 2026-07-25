@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import ClassVar
 
 from ..context import PipelineContext
 from ..models import Claim, Evidence, PaperKnowledge, Provenance, SourceSpan
@@ -13,7 +14,7 @@ class ClaimExtractor(Extractor):
     name = "claims"
     version = "0.1.0"
 
-    _claim_types = {
+    _claim_types: ClassVar[dict[str, str]] = {
         "results": "result",
         "discussion": "interpretation",
         "conclusion": "interpretation",
@@ -72,6 +73,17 @@ class ClaimExtractor(Extractor):
                         claim_id=claim_id,
                         statement=statement,
                         claim_type=claim_type,
+                        subject_ids=sorted(
+                            entity.entity_id
+                            for entity in paper.entities
+                            if any(
+                                mention.char_start is not None
+                                and mention.char_end is not None
+                                and mention.char_start >= char_start
+                                and mention.char_end <= char_end
+                                for mention in entity.mentions
+                            )
+                        ),
                         evidence_ids=[evidence_id],
                         polarity="uncertain",
                         provenance=Provenance(

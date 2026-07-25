@@ -33,7 +33,7 @@ class MetadataExtractor(Extractor):
             paper.metadata.publication_year = int(year.group(0))
 
         abstract = re.search(
-            r"(?ims)^\s*abstract\s*\n(?P<body>.+?)(?=^\s*(?:keywords?|introduction|background)\s*$|\Z)",
+            r"(?ims)^\s*abstract\s*\n(?P<body>.+?)(?=^\s*(?:keywords?\s*[:\-]|introduction|background)\s*|\Z)",
             text,
         )
         if abstract and paper.metadata.abstract is None:
