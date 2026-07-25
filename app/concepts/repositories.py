@@ -214,3 +214,109 @@ class PostgresConceptRepository:
                 cur, actor, "ONTOLOGY_TERM_ADAPTED", result["concept_id"], result
             )
             return result
+
+    def create_label(self, data: Mapping[str, Any]) -> dict[str, Any]:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO oc_concepts.concept_labels
+                  (label_id, concept_id, label_type, label, normalized_label,
+                   language, script, editorial_context, provenance, review_state)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    data["label_id"], data["concept_id"], data["label_type"],
+                    data["label"], data["normalized_label"], data["language"],
+                    data.get("script"), data["editorial_context"],
+                    Jsonb(data["provenance"]), data["review_state"],
+                ),
+            )
+            result = cur.fetchone()
+            self._audit(cur, data["actor"], "CONCEPT_LABEL_CREATED", data["concept_id"], result)
+            return result
+
+    def list_labels(self, concept_id: UUID) -> list[dict[str, Any]]:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT * FROM oc_concepts.concept_labels
+                WHERE concept_id=%s
+                ORDER BY language, editorial_context,
+                  CASE label_type WHEN 'PREFERRED' THEN 0 ELSE 1 END,
+                  normalized_label, label_id
+                """,
+                (concept_id,),
+            )
+            return list(cur.fetchall())
+
+    def search_labels(
+        self,
+        normalized_query: str,
+        *,
+        language: str | None = None,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT l.*, c.concept_uri, c.status AS concept_status,
+                       c.review_state AS concept_review_state,
+                       CASE
+                         WHEN l.normalized_label=%s THEN 0
+                         WHEN l.normalized_label LIKE %s THEN 1
+                         ELSE 2
+                       END AS match_rank
+                FROM oc_concepts.concept_labels l
+                JOIN oc_concepts.concepts c ON c.concept_id=l.concept_id
+                WHERE (%s IS NULL OR l.language=%s)
+                  AND (l.normalized_label=%s OR l.normalized_label LIKE %s)
+                ORDER BY match_rank,
+                  CASE l.label_type WHEN 'PREFERRED' THEN 0 ELSE 1 END,
+                  l.normalized_label, l.concept_id, l.label_id
+                LIMIT %s
+                """,
+                (
+                    normalized_query,
+                    f"{normalized_query}%",
+                    language,
+                    language,
+                    normalized_query,
+                    f"{normalized_query}%",
+                    limit,
+                ),
+            )
+            return list(cur.fetchall())
+
+    def create_definition(self, data: Mapping[str, Any]) -> dict[str, Any]:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO oc_concepts.concept_definitions
+                  (definition_id, concept_id, definition_type, text, language,
+                   script, provenance, review_state)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    data["definition_id"], data["concept_id"],
+                    data["definition_type"], data["text"], data["language"],
+                    data.get("script"), Jsonb(data["provenance"]),
+                    data["review_state"],
+                ),
+            )
+            result = cur.fetchone()
+            self._audit(cur, data["actor"], "CONCEPT_DEFINITION_CREATED", data["concept_id"], result)
+            return result
+
+    def list_definitions(self, concept_id: UUID) -> list[dict[str, Any]]:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT * FROM oc_concepts.concept_definitions
+                WHERE concept_id=%s
+                ORDER BY language, definition_type, definition_id
+                """,
+                (concept_id,),
+            )
+            return list(cur.fetchall())
