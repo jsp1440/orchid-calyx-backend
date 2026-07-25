@@ -11,6 +11,7 @@ from .extractors.entities import EntityExtractor
 from .extractors.metadata import MetadataExtractor
 from .extractors.sections import SectionExtractor
 from .ingest import build_empty_paper, ingest_text
+from .normalization import normalize_and_reconcile
 from .output import write_output_bundle
 from .pipeline import PipelineRunner
 
@@ -46,6 +47,7 @@ async def run_cli(source: Path, output_dir: Path) -> int:
             ClaimExtractor(),
         ]
     ).run(context, paper)
+    result = normalize_and_reconcile(result)
     write_output_bundle(result, document, output_dir)
     return 0 if result.analysis_manifest.status == "completed" else 1
 
