@@ -162,6 +162,42 @@ class Evidence(StrictModel):
     contradicts_ids: list[str] = Field(default_factory=list)
 
 
+class NormalizedEvidenceRecord(StrictModel):
+    record_id: str
+    source_claim_id: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    statement: str
+    normalized_statement: str
+    domain: Literal[
+        "taxonomy",
+        "trait",
+        "occurrence",
+        "habitat",
+        "ecological_interaction",
+        "conservation",
+        "cultivation",
+        "other",
+    ]
+    polarity: Literal["positive", "negative", "mixed", "uncertain"] = "uncertain"
+    canonical_entity_ids: list[str] = Field(default_factory=list)
+    unresolved_entities: list[str] = Field(default_factory=list)
+    extraction_confidence: float = Field(ge=0, le=1)
+    normalization_confidence: float = Field(ge=0, le=1)
+    review_status: Literal["unreviewed", "accepted", "corrected", "rejected"] = "unreviewed"
+    validation_notes: list[str] = Field(default_factory=list)
+    source_excerpts: list[str] = Field(default_factory=list)
+    reconciliation_group_id: str | None = None
+    provenance: Provenance
+
+
+class ReconciliationRelation(StrictModel):
+    relation_id: str
+    subject_record_id: str
+    object_record_id: str
+    relation_type: Literal["duplicate", "supports", "potential_contradiction"]
+    reason: str
+
+
 class Relationship(StrictModel):
     relationship_id: str
     subject_id: str
@@ -255,6 +291,8 @@ class PaperKnowledge(StrictModel):
     measurements: list[Measurement] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
+    normalized_evidence_records: list[NormalizedEvidenceRecord] = Field(default_factory=list)
+    reconciliation_relations: list[ReconciliationRelation] = Field(default_factory=list)
     relationships: list[Relationship] = Field(default_factory=list)
     figures: list[Figure] = Field(default_factory=list)
     tables: list[Table] = Field(default_factory=list)
