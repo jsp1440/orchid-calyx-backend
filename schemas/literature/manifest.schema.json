@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchidcontinuum.org/schemas/literature/manifest.schema.json",
+  "title": "Literature Analysis Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "analysis_id",
+    "analysis_version",
+    "created_at",
+    "pipeline_version",
+    "schema_version",
+    "extractors",
+    "status"
+  ],
+  "properties": {
+    "analysis_id": {"type": "string", "minLength": 1},
+    "analysis_version": {"type": "integer", "minimum": 1},
+    "previous_analysis_id": {"type": ["string", "null"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": ["string", "null"], "format": "date-time"},
+    "pipeline_version": {"type": "string", "minLength": 1},
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "ocr_engine": {"type": ["string", "null"]},
+    "ocr_version": {"type": ["string", "null"]},
+    "glossary_version": {"type": ["string", "null"]},
+    "ontology_version": {"type": ["string", "null"]},
+    "relationship_model_version": {"type": ["string", "null"]},
+    "model_provider": {"type": ["string", "null"]},
+    "model_name": {"type": ["string", "null"]},
+    "prompt_bundle_version": {"type": ["string", "null"]},
+    "extractors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "version", "status"],
+        "properties": {
+          "name": {"type": "string"},
+          "version": {"type": "string"},
+          "status": {"type": "string", "enum": ["pending", "running", "completed", "failed", "skipped"]},
+          "started_at": {"type": ["string", "null"], "format": "date-time"},
+          "completed_at": {"type": ["string", "null"], "format": "date-time"},
+          "error": {"type": ["string", "null"]},
+          "output_count": {"type": "integer", "minimum": 0, "default": 0}
+        }
+      }
+    },
+    "status": {"type": "string", "enum": ["pending", "running", "completed", "completed_with_warnings", "failed"]},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "input_fingerprint": {"type": ["string", "null"]},
+    "configuration_fingerprint": {"type": ["string", "null"]}
+  }
+}
