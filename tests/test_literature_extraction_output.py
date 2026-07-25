@@ -32,7 +32,7 @@ def test_cli_writes_complete_output_bundle(tmp_path: Path) -> None:
     assert manifest.analysis_id == paper.analysis_manifest.analysis_id
     assert metrics_payload["analysis_id"] == manifest.analysis_id
     assert metrics_payload["status"] == "completed"
-    assert metrics_payload["extractor_runs"] == 3
+    assert metrics_payload["extractor_runs"] == 4
 
 
 def test_cli_extracts_metadata_and_sections_deterministically(tmp_path: Path) -> None:
@@ -173,3 +173,71 @@ PCR quantified ATP, and pcr was repeated for confirmation.
     first_entities = [entity.model_dump(mode="json") for entity in first.entities]
     second_entities = [entity.model_dump(mode="json") for entity in second.entities]
     assert first_entities == second_entities
+
+
+def test_cli_extracts_claims_with_linked_evidence(tmp_path: Path) -> None:
+    source = tmp_path / "claims.txt"
+    text = """Orchid Growth Study
+
+Results
+Growth increased by 20 percent. Flowering began two days earlier.
+
+Discussion
+The response may reflect improved nutrient availability.
+
+Conclusion
+The treatment appears beneficial.
+"""
+    source.write_text(text, encoding="utf-8")
+
+    first_output = tmp_path / "first-claims"
+    second_output = tmp_path / "second-claims"
+
+    assert main([str(source), "--output", str(first_output)]) == 0
+    assert main([str(source), "--output", str(second_output)]) == 0
+
+    first = PaperKnowledge.model_validate_json(
+        (first_output / "paper.json").read_text(encoding="utf-8")
+    )
+    second = PaperKnowledge.model_validate_json(
+        (second_output / "paper.json").read_text(encoding="utf-8")
+    )
+
+    assert [claim.claim_id for claim in first.claims] == [
+        "claim-1",
+        "claim-2",
+        "claim-3",
+        "claim-4",
+    ]
+    assert [claim.claim_type for claim in first.claims] == [
+        "result",
+        "result",
+        "interpretation",
+        "interpretation",
+    ]
+    assert [evidence.evidence_id for evidence in first.evidence] == [
+        "evidence-1",
+        "evidence-2",
+        "evidence-3",
+        "evidence-4",
+    ]
+
+    for claim, evidence in zip(first.claims, first.evidence, strict=True):
+        assert claim.evidence_ids == [evidence.evidence_id]
+        assert evidence.supports_ids == [claim.claim_id]
+        assert evidence.excerpt == claim.statement
+        assert evidence.span.section_id is not None
+        assert evidence.span.char_start is not None
+        assert evidence.span.char_end is not None
+        assert text[evidence.span.char_start : evidence.span.char_end] == evidence.excerpt
+        assert claim.provenance.method == "rule_extracted"
+        assert claim.provenance.extractor == "claims"
+        assert claim.provenance.extractor_version == "0.1.0"
+        assert claim.provenance.confidence == 0.8
+
+    assert [claim.model_dump(mode="json") for claim in first.claims] == [
+        claim.model_dump(mode="json") for claim in second.claims
+    ]
+    assert [evidence.model_dump(mode="json") for evidence in first.evidence] == [
+        evidence.model_dump(mode="json") for evidence in second.evidence
+    ]

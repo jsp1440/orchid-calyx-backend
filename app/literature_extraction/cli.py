@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .context import PipelineContext
+from .extractors.claims import ClaimExtractor
 from .extractors.entities import EntityExtractor
 from .extractors.metadata import MetadataExtractor
 from .extractors.sections import SectionExtractor
@@ -38,7 +39,12 @@ async def run_cli(source: Path, output_dir: Path) -> int:
         pipeline_version=context.config.pipeline_version,
     )
     result = await PipelineRunner(
-        [MetadataExtractor(), SectionExtractor(), EntityExtractor()]
+        [
+            MetadataExtractor(),
+            SectionExtractor(),
+            EntityExtractor(),
+            ClaimExtractor(),
+        ]
     ).run(context, paper)
     write_output_bundle(result, document, output_dir)
     return 0 if result.analysis_manifest.status == "completed" else 1
