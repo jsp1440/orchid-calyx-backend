@@ -198,6 +198,54 @@ class ReconciliationRelation(StrictModel):
     reason: str
 
 
+class ReviewItem(StrictModel):
+    review_item_id: str
+    source_record_id: str
+    reconciliation_group_id: str | None = None
+    priority: int = Field(ge=0)
+    priority_reasons: list[Literal[
+        "unresolved_entities",
+        "potential_contradiction",
+        "low_normalization_confidence",
+        "duplicate_group",
+        "standard_review",
+    ]] = Field(default_factory=list)
+    source_record_fingerprint: str
+    status: Literal["pending", "decided"] = "pending"
+
+
+class ReviewDecision(StrictModel):
+    decision_id: str
+    review_item_id: str
+    decision: Literal[
+        "accept",
+        "accept_with_corrections",
+        "reject",
+        "defer",
+        "needs_expert_review",
+    ]
+    reviewer_id: str = Field(min_length=1)
+    decided_at: datetime
+    reason_codes: list[str] = Field(default_factory=list)
+    notes: str | None = None
+    corrections: dict[str, Any] = Field(default_factory=dict)
+    source_record_fingerprint: str
+
+
+class PublicationDecision(StrictModel):
+    publication_decision_id: str
+    review_item_id: str
+    source_record_id: str
+    status: Literal[
+        "eligible_for_publication",
+        "blocked",
+        "deferred",
+        "rejected",
+    ]
+    reason_codes: list[str] = Field(default_factory=list)
+    based_on_decision_id: str | None = None
+
+
 class Relationship(StrictModel):
     relationship_id: str
     subject_id: str
@@ -293,6 +341,9 @@ class PaperKnowledge(StrictModel):
     evidence: list[Evidence] = Field(default_factory=list)
     normalized_evidence_records: list[NormalizedEvidenceRecord] = Field(default_factory=list)
     reconciliation_relations: list[ReconciliationRelation] = Field(default_factory=list)
+    review_items: list[ReviewItem] = Field(default_factory=list)
+    review_decisions: list[ReviewDecision] = Field(default_factory=list)
+    publication_decisions: list[PublicationDecision] = Field(default_factory=list)
     relationships: list[Relationship] = Field(default_factory=list)
     figures: list[Figure] = Field(default_factory=list)
     tables: list[Table] = Field(default_factory=list)
