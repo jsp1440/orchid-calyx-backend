@@ -40,7 +40,7 @@ def search_concepts(
     service: Annotated[ConceptRegistryService, Depends(get_concept_service)] = None,
 ) -> dict[str, Any]:
     try:
-        return service.search(q, language=language, limit=limit)
+        return service.search_concepts(q, language=language, limit=limit)
     except Exception as exc:  # translated into stable API errors below
         _translate_error(exc)
         raise
