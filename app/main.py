@@ -32,6 +32,7 @@ from app.design_planning.routes import router as design_planning_router
 from app.implementation_planning.routes import router as implementation_planning_router
 from app.scientific_interpretation.routes import router as scientific_interpretation_router
 from app.ontology.routers import router as ontology_router
+from app.concepts.routers import router as concepts_router
 from app.publication.routers import router as publication_router
 from app.research_workspace.routes import router as research_workspace_router
 from app.missions.dependencies import get_mission_service
@@ -413,6 +414,7 @@ app.include_router(design_planning_router)
 app.include_router(implementation_planning_router)
 app.include_router(scientific_interpretation_router)
 app.include_router(ontology_router)
+app.include_router(concepts_router)
 app.include_router(publication_router)
 app.include_router(research_workspace_router)
 app.include_router(missions_router)
