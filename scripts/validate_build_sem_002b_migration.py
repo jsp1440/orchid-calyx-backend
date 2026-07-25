@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 MIGRATION = Path("migrations/102b_concept_lexical_definition_services.sql")
 
 
