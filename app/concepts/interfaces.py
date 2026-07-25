@@ -31,3 +31,19 @@ class ConceptRepository(Protocol):
         concept_data: Mapping[str, Any],
         actor: str,
     ) -> dict[str, Any]: ...
+
+    def create_label(self, data: Mapping[str, Any]) -> dict[str, Any]: ...
+
+    def list_labels(self, concept_id: UUID) -> list[dict[str, Any]]: ...
+
+    def search_labels(
+        self,
+        normalized_query: str,
+        *,
+        language: str | None = None,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]: ...
+
+    def create_definition(self, data: Mapping[str, Any]) -> dict[str, Any]: ...
+
+    def list_definitions(self, concept_id: UUID) -> list[dict[str, Any]]: ...
