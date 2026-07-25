@@ -53,7 +53,10 @@ def list_concept_labels(
     service: Annotated[ConceptRegistryService, Depends(get_concept_service)] = None,
 ) -> list[dict[str, Any]]:
     try:
-        return service.list_labels(id_or_uri, language=language)
+        labels = service.list_labels(id_or_uri)
+        if language is None:
+            return labels
+        return [row for row in labels if row.get("language") == language]
     except Exception as exc:
         _translate_error(exc)
         raise
@@ -66,7 +69,10 @@ def list_concept_definitions(
     service: Annotated[ConceptRegistryService, Depends(get_concept_service)] = None,
 ) -> list[dict[str, Any]]:
     try:
-        return service.list_definitions(id_or_uri, language=language)
+        definitions = service.list_definitions(id_or_uri)
+        if language is None:
+            return definitions
+        return [row for row in definitions if row.get("language") == language]
     except Exception as exc:
         _translate_error(exc)
         raise
