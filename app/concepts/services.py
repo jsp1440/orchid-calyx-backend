@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from .interfaces import ConceptRepository
+from .lexical import DefinitionType, LabelType, normalize_lexical_value
 from .models import ConceptStatus, ReviewState, concept_uri
 
 _TRANSITIONS: dict[ConceptStatus, set[ConceptStatus]] = {
@@ -145,6 +146,114 @@ class ConceptRegistryService:
         if result is None:
             raise LookupError("CONCEPT_NOT_FOUND")
         return result
+
+    def create_label(
+        self,
+        *,
+        concept_id: UUID,
+        label_type: LabelType,
+        label: str,
+        actor: str,
+        language: str = "und",
+        script: str | None = None,
+        editorial_context: str = "default",
+        provenance: Mapping[str, Any] | None = None,
+        review_state: ReviewState = ReviewState.PENDING,
+    ) -> dict[str, Any]:
+        self.get_concept(concept_id)
+        normalized = normalize_lexical_value(label)
+        if not normalized:
+            raise ValueError("EMPTY_CONCEPT_LABEL")
+        return self.repository.create_label(
+            {
+                "label_id": uuid4(),
+                "concept_id": concept_id,
+                "label_type": label_type.value,
+                "label": label.strip(),
+                "normalized_label": normalized,
+                "language": language.strip() or "und",
+                "script": script,
+                "editorial_context": editorial_context.strip() or "default",
+                "provenance": dict(provenance or {}),
+                "review_state": review_state.value,
+                "actor": actor,
+            }
+        )
+
+    def list_labels(self, identifier: UUID | str) -> list[dict[str, Any]]:
+        concept = self.get_concept(identifier)
+        return self.repository.list_labels(concept["concept_id"])
+
+    def search_concepts(
+        self,
+        query: str,
+        *,
+        language: str | None = None,
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        normalized = normalize_lexical_value(query)
+        if not normalized:
+            raise ValueError("EMPTY_CONCEPT_SEARCH_QUERY")
+        bounded_limit = max(1, min(limit, 100))
+        matches = self.repository.search_labels(
+            normalized,
+            language=language,
+            limit=bounded_limit,
+        )
+        exact_concept_ids = {
+            row["concept_id"]
+            for row in matches
+            if row["normalized_label"] == normalized
+        }
+        if not matches:
+            resolution = "UNRESOLVED"
+        elif len(exact_concept_ids) == 1:
+            resolution = "RESOLVED"
+        elif len(exact_concept_ids) > 1:
+            resolution = "AMBIGUOUS"
+        else:
+            resolution = "CANDIDATES"
+        return {
+            "query": query,
+            "normalized_query": normalized,
+            "resolution": resolution,
+            "exact_concept_ids": sorted(str(value) for value in exact_concept_ids),
+            "matches": matches,
+        }
+
+    def create_definition(
+        self,
+        *,
+        concept_id: UUID,
+        definition_type: DefinitionType,
+        text: str,
+        actor: str,
+        language: str = "und",
+        script: str | None = None,
+        provenance: Mapping[str, Any] | None = None,
+        review_state: ReviewState = ReviewState.PENDING,
+    ) -> dict[str, Any]:
+        self.get_concept(concept_id)
+        normalized_text = text.strip()
+        if not normalized_text:
+            raise ValueError("EMPTY_CONCEPT_DEFINITION")
+        return self.repository.create_definition(
+            {
+                "definition_id": uuid4(),
+                "concept_id": concept_id,
+                "definition_type": definition_type.value,
+                "text": normalized_text,
+                "language": language.strip() or "und",
+                "script": script,
+                "provenance": dict(provenance or {}),
+                "review_state": review_state.value,
+                "actor": actor,
+            }
+        )
+
+    def list_definitions(self, identifier: UUID | str) -> list[dict[str, Any]]:
+        concept = self.get_concept(identifier)
+        return self.repository.list_definitions(concept["concept_id"])
 
 
 class OntologyTermConceptAdapter:
