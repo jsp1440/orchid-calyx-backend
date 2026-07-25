@@ -14,6 +14,7 @@ from .ingest import build_empty_paper, ingest_text
 from .normalization import normalize_and_reconcile
 from .output import write_output_bundle
 from .pipeline import PipelineRunner
+from .review import build_review_queue, refresh_publication_decisions
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -48,6 +49,8 @@ async def run_cli(source: Path, output_dir: Path) -> int:
         ]
     ).run(context, paper)
     result = normalize_and_reconcile(result)
+    result = build_review_queue(result)
+    result = refresh_publication_decisions(result)
     write_output_bundle(result, document, output_dir)
     return 0 if result.analysis_manifest.status == "completed" else 1
 
