@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt pytest ruff
+        run: python -m pip install -r requirements.txt pytest httpx ruff
       - name: Validate additive migration
         run: python scripts/validate_build_sem_002b_migration.py
       - name: Run focused tests
