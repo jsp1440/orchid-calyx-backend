@@ -6,7 +6,9 @@ from fastapi.testclient import TestClient
 
 from app.candidate_knowledge.repository import MemoryCandidateRepository
 from app.candidate_knowledge.service import CandidateExtractionService
-from app.literature_extraction.candidate_handoff import LiteratureCandidateHandoffService
+from app.literature_extraction.candidate_handoff import (
+    LiteratureCandidateHandoffService,
+)
 from app.literature_extraction.repository import LiteratureResultRepository
 from app.literature_extraction.routes import (
     get_candidate_handoff_service,
