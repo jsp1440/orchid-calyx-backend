@@ -7,15 +7,17 @@ from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
 
-from .dependencies import _REPOSITORY_ERROR, _SERVICE, get_candidate_components
+from .dependencies import _REPOSITORY, _REPOSITORY_ERROR, _SERVICE
 from .models import EvidenceInput, SourceAnchor
 
 router = APIRouter(prefix="/api/candidate-knowledge", tags=["candidate-knowledge"], dependencies=[Depends(verify_owner_or_api_key)])
-REPOSITORY = None  # kept for backward-compatibility; actual singleton is in dependencies
+REPOSITORY = _REPOSITORY
 REPOSITORY_ERROR = _REPOSITORY_ERROR
 SERVICE = _SERVICE
 def _available():
-    return get_candidate_components()
+    if REPOSITORY is None or SERVICE is None:
+        raise HTTPException(503, detail={"code": REPOSITORY_ERROR or "CANDIDATE_DATABASE_UNAVAILABLE"})
+    return REPOSITORY, SERVICE
 def _write(operation):
     repository, _ = _available()
     try: return repository.atomic(operation) if hasattr(repository, "atomic") else operation()
