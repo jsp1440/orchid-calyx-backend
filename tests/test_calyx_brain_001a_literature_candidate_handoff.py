@@ -185,3 +185,4 @@ async def test_unknown_anchor_keys_are_rejected(tmp_path: Path) -> None:
         service.handoff(paper, binding)
 
     assert candidate_repository.candidates == []
+    assert candidate_repository.candidates_for_run(301) == []
