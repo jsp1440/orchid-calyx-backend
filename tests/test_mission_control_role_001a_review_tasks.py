@@ -61,7 +61,9 @@ def test_capability_enforced_for_queue_reservation_and_decision():
     service = GovernedReviewTaskService()
     created = service.create(task())
     assert service.queue(("review.science",)) == []
-    assert [item["task_id"] for item in service.queue(("review.expert",))] == [created["task_id"]]
+    assert [item["task_id"] for item in service.queue(("review.expert",))] == [
+        created["task_id"]
+    ]
     with pytest.raises(ReviewTaskError) as denied:
         service.reserve(created["task_id"], "volunteer-1", ("review.science",))
     assert denied.value.code == "CAPABILITY_REQUIRED"
@@ -142,5 +144,10 @@ def test_invalid_policy_inputs_block_creation():
         service.create(task(priority=101))
     assert bad_priority.value.code == "INVALID_PRIORITY"
     with pytest.raises(ReviewTaskError) as not_reviewable:
-        service.create(task(routing_outcome="PROVISIONAL_KNOWLEDGE"))
+        service.create(
+            task(
+                routing_outcome="PROVISIONAL_KNOWLEDGE",
+                required_capability="review.science",
+            )
+        )
     assert not_reviewable.value.code == "ROUTING_NOT_REVIEWABLE"
