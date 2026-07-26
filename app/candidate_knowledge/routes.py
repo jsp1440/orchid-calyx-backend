@@ -7,24 +7,13 @@ from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
 
+from .dependencies import _REPOSITORY, _REPOSITORY_ERROR, _SERVICE
 from .models import EvidenceInput, SourceAnchor
-from .repository import MemoryCandidateRepository
-from .service import CandidateExtractionService
-from app.persistence.state_repository import configured_database_url
 
 router = APIRouter(prefix="/api/candidate-knowledge", tags=["candidate-knowledge"], dependencies=[Depends(verify_owner_or_api_key)])
-def _build_repository():
-    if configured_database_url():
-        from .postgres_repository import PostgresCandidateRepository
-        return PostgresCandidateRepository()
-    return MemoryCandidateRepository()
-try:
-    REPOSITORY = _build_repository()
-    REPOSITORY_ERROR = None
-except Exception:
-    REPOSITORY = None
-    REPOSITORY_ERROR = "CANDIDATE_DATABASE_UNAVAILABLE"
-SERVICE = CandidateExtractionService(REPOSITORY) if REPOSITORY is not None else None
+REPOSITORY = _REPOSITORY
+REPOSITORY_ERROR = _REPOSITORY_ERROR
+SERVICE = _SERVICE
 def _available():
     if REPOSITORY is None or SERVICE is None:
         raise HTTPException(503, detail={"code": REPOSITORY_ERROR or "CANDIDATE_DATABASE_UNAVAILABLE"})

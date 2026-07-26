@@ -60,6 +60,13 @@ class MemoryCandidateRepository:
     def candidate_for_fingerprint(self, fingerprint: str) -> dict[str, Any] | None:
         return next((candidate for candidate in reversed(self.candidates) if candidate["evidence_fingerprint"] == fingerprint), None)
 
+    def candidates_for_run(self, run_id: int) -> list[dict[str, Any]]:
+        """Return all candidates produced during a specific extraction run."""
+        if run_id not in self.items:
+            return []
+        fingerprints = {item["fingerprint"] for item in self.items[run_id]}
+        return [c for c in self.candidates if c["evidence_fingerprint"] in fingerprints]
+
     def active_identity(self, kind: str, subject: str, predicate: str) -> list[dict[str, Any]]:
         return [candidate for candidate in self.candidates if candidate["active"] and candidate["kind"] == kind and candidate["normalized_subject"] == subject and candidate["predicate"] == predicate]
 
