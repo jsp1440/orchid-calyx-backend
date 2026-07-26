@@ -1,0 +1,37 @@
+name: CALYX-BRAIN-001A Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/literature_extraction/**"
+      - "app/candidate_knowledge/**"
+      - "tests/test_calyx_brain_001a_literature_candidate_handoff.py"
+      - ".github/workflows/calyx-brain-001a-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install validation dependencies
+        run: python -m pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+      - name: Lint changed Python scope
+        run: >-
+          python -m ruff check
+          app/literature_extraction/candidate_handoff.py
+          app/literature_extraction/routes.py
+          tests/test_calyx_brain_001a_literature_candidate_handoff.py
+      - name: Validate handoff and adjacent contracts
+        run: >-
+          pytest -q
+          tests/test_calyx_brain_001a_literature_candidate_handoff.py
+          tests/test_calyx_brain_001_literature_e2e.py
+          tests/test_literature_extraction_models.py
+          tests/test_literature_extraction_pipeline.py
+          tests/test_literature_extraction_normalization.py
+          tests/test_literature_extraction_output.py
+          tests/test_build_086a_candidate_knowledge.py
