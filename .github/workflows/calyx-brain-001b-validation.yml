@@ -17,8 +17,13 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: pip install -r requirements.txt pytest httpx ruff
-      - name: Lint changed scope
-        run: ruff check app/literature_extraction tests/test_calyx_brain_001b_canonical_source_binding.py
+      - name: Lint CALYX-BRAIN-001B changed Python files
+        run: |
+          ruff check \
+            app/literature_extraction/routes.py \
+            app/literature_extraction/source_binding.py \
+            tests/test_calyx_brain_001a_literature_candidate_handoff.py \
+            tests/test_calyx_brain_001b_canonical_source_binding.py
       - name: Run focused and adjacent tests
         run: |
           pytest -q \
