@@ -57,6 +57,15 @@ class GovernedReviewTaskService:
             return existing
         if item.routing_outcome not in self.ROUTING_CAPABILITIES:
             raise ReviewTaskError("ROUTING_NOT_REVIEWABLE")
+        expected_capability = self.ROUTING_CAPABILITIES[item.routing_outcome]
+        if item.required_capability != expected_capability:
+            raise ReviewTaskError(
+                "INVALID_REQUIRED_CAPABILITY",
+                {
+                    "expected": expected_capability,
+                    "received": item.required_capability,
+                },
+            )
         if item.priority < 0 or item.priority > 100:
             raise ReviewTaskError("INVALID_PRIORITY")
         if item.consensus_required < 1:
@@ -113,9 +122,17 @@ class GovernedReviewTaskService:
             )
         )
 
-    def reserve(self, task_id: str, reviewer_id: str, capabilities: tuple[str, ...]) -> dict[str, Any]:
+    def reserve(
+        self,
+        task_id: str,
+        reviewer_id: str,
+        capabilities: tuple[str, ...],
+    ) -> dict[str, Any]:
         task = self._authorized_task(task_id, capabilities)
-        if task["state"] not in {ReviewTaskState.OPEN.value, ReviewTaskState.EXPIRED.value}:
+        if task["state"] not in {
+            ReviewTaskState.OPEN.value,
+            ReviewTaskState.EXPIRED.value,
+        }:
             raise ReviewTaskError("TASK_NOT_AVAILABLE")
         task["state"] = ReviewTaskState.RESERVED.value
         task["assigned_to"] = reviewer_id
@@ -169,14 +186,33 @@ class GovernedReviewTaskService:
             item
             for item in self.repository.list_tasks()
             if item["required_capability"] in allowed
-            and item["state"] in {ReviewTaskState.OPEN.value, ReviewTaskState.RESERVED.value, ReviewTaskState.IN_REVIEW.value}
+            and item["state"]
+            in {
+                ReviewTaskState.OPEN.value,
+                ReviewTaskState.RESERVED.value,
+                ReviewTaskState.IN_REVIEW.value,
+            }
         ]
-        return sorted(tasks, key=lambda item: (-item["priority"], -item["scientific_impact_score"], item["task_id"]))
+        return sorted(
+            tasks,
+            key=lambda item: (
+                -item["priority"],
+                -item["scientific_impact_score"],
+                item["task_id"],
+            ),
+        )
 
-    def _authorized_task(self, task_id: str, capabilities: tuple[str, ...]) -> dict[str, Any]:
+    def _authorized_task(
+        self,
+        task_id: str,
+        capabilities: tuple[str, ...],
+    ) -> dict[str, Any]:
         task = self.repository.get(task_id)
         if not task:
             raise ReviewTaskError("TASK_NOT_FOUND")
         if task["required_capability"] not in set(capabilities):
-            raise ReviewTaskError("CAPABILITY_REQUIRED", {"capability": task["required_capability"]})
+            raise ReviewTaskError(
+                "CAPABILITY_REQUIRED",
+                {"capability": task["required_capability"]},
+            )
         return task
