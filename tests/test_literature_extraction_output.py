@@ -72,8 +72,12 @@ Example A. 2020. Prior orchid work.
     assert main([str(source), "--output", str(first_output)]) == 0
     assert main([str(source), "--output", str(second_output)]) == 0
 
-    first_payload = json.loads((first_output / "paper.json").read_text(encoding="utf-8"))
-    second_payload = json.loads((second_output / "paper.json").read_text(encoding="utf-8"))
+    first_payload = json.loads(
+        (first_output / "paper.json").read_text(encoding="utf-8")
+    )
+    second_payload = json.loads(
+        (second_output / "paper.json").read_text(encoding="utf-8")
+    )
 
     first = PaperKnowledge.model_validate(first_payload)
     second = PaperKnowledge.model_validate(second_payload)
@@ -82,9 +86,10 @@ Example A. 2020. Prior orchid work.
     assert first.metadata.publication_year == 2024
     assert first.metadata.abstract == "Pollination success varied across habitats."
     assert first.metadata.keywords == ["orchids", "pollination", "habitat"]
-    assert [(identifier.scheme, identifier.value) for identifier in first.metadata.identifiers] == [
-        ("doi", "10.1234/orchid.2024.7")
-    ]
+    assert [
+        (identifier.scheme, identifier.value)
+        for identifier in first.metadata.identifiers
+    ] == [("doi", "10.1234/orchid.2024.7")]
 
     assert [section.canonical_type for section in first.sections] == [
         "abstract",
@@ -127,6 +132,7 @@ Methods
 PCR quantified ATP, and pcr was repeated for confirmation.
 """
     source.write_text(text, encoding="utf-8")
+    original_source = source.read_bytes().decode("utf-8")
 
     first_output = tmp_path / "first-entities"
     second_output = tmp_path / "second-entities"
@@ -168,7 +174,10 @@ PCR quantified ATP, and pcr was repeated for confirmation.
             assert mention.char_start is not None
             assert mention.char_end is not None
             assert mention.char_start < mention.char_end
-            assert text[mention.char_start : mention.char_end].casefold() == entity.normalized_name
+            assert (
+                original_source[mention.char_start : mention.char_end].casefold()
+                == entity.normalized_name
+            )
 
     first_entities = [entity.model_dump(mode="json") for entity in first.entities]
     second_entities = [entity.model_dump(mode="json") for entity in second.entities]
@@ -189,6 +198,7 @@ Conclusion
 The treatment appears beneficial.
 """
     source.write_text(text, encoding="utf-8")
+    original_source = source.read_bytes().decode("utf-8")
 
     first_output = tmp_path / "first-claims"
     second_output = tmp_path / "second-claims"
@@ -229,7 +239,10 @@ The treatment appears beneficial.
         assert evidence.span.section_id is not None
         assert evidence.span.char_start is not None
         assert evidence.span.char_end is not None
-        assert text[evidence.span.char_start : evidence.span.char_end] == evidence.excerpt
+        assert (
+            original_source[evidence.span.char_start : evidence.span.char_end]
+            == evidence.excerpt
+        )
         assert claim.provenance.method == "rule_extracted"
         assert claim.provenance.extractor == "claims"
         assert claim.provenance.extractor_version == "0.1.0"

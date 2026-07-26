@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from .ingest import IngestedDocument
 from .models import PaperKnowledge
@@ -19,10 +21,21 @@ class OutputBundle:
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-        encoding="utf-8",
+    _write_bytes_atomic(
+        path,
+        (
+            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+        ).encode("utf-8"),
     )
+
+
+def _write_bytes_atomic(path: Path, payload: bytes) -> None:
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(payload)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def build_metrics(paper: PaperKnowledge) -> dict[str, Any]:
@@ -63,7 +76,7 @@ def write_output_bundle(
     _write_json(paper_path, paper.model_dump(mode="json"))
     _write_json(manifest_path, paper.analysis_manifest.model_dump(mode="json"))
     _write_json(metrics_path, build_metrics(paper))
-    raw_text_path.write_text(document.raw_text, encoding="utf-8")
+    _write_bytes_atomic(raw_text_path, document.raw_bytes)
 
     return OutputBundle(
         output_dir=destination,

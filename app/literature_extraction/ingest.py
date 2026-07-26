@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from uuid import uuid4
 
 from .models import AnalysisManifest, PaperKnowledge, PaperMetadata, SourceDocument
 
@@ -28,13 +27,25 @@ def ingest_text(path: str | Path) -> IngestedDocument:
     )
 
 
+def read_text_exact(path: str | Path) -> str:
+    """Decode UTF-8 without universal-newline translation.
+
+    Character offsets are part of the evidence contract, so extractors must
+    operate on exactly the same decoded text that ingestion hashed.
+    """
+    with Path(path).open("r", encoding="utf-8", newline="") as source:
+        return source.read()
+
+
 def build_empty_paper(
     document: IngestedDocument,
     *,
     pipeline_version: str = "0.2.0",
 ) -> PaperKnowledge:
-    analysis_id = str(uuid4())
-    paper_id = str(uuid4())
+    paper_id = f"paper-{document.content_hash}"
+    analysis_id = sha256(
+        f"{document.content_hash}\x1f{pipeline_version}".encode()
+    ).hexdigest()
     return PaperKnowledge(
         paper_id=paper_id,
         source=SourceDocument(
@@ -47,7 +58,9 @@ def build_empty_paper(
         analysis_manifest=AnalysisManifest(
             analysis_id=analysis_id,
             analysis_version=1,
-            created_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+            created_at=__import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc
+            ),
             pipeline_version=pipeline_version,
             status="pending",
             input_fingerprint=document.content_hash,

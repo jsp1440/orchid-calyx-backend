@@ -3,6 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from .extractors.base import Extractor
+from .extractors.claims import ClaimExtractor
+from .extractors.entities import EntityExtractor
+from .extractors.metadata import MetadataExtractor
+from .extractors.sections import SectionExtractor
 
 
 class ExtractorRegistry:
@@ -23,4 +27,6 @@ class ExtractorRegistry:
         return list(self._extractors)
 
 
-DEFAULT_REGISTRY = ExtractorRegistry()
+DEFAULT_REGISTRY = ExtractorRegistry(
+    [MetadataExtractor(), SectionExtractor(), EntityExtractor(), ClaimExtractor()]
+)

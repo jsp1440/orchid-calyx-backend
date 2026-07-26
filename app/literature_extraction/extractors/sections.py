@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import ClassVar
 
 from ..context import PipelineContext
+from ..ingest import read_text_exact
 from ..models import PaperKnowledge, Section, SourceSpan
 from .base import Extractor
 
@@ -24,7 +26,7 @@ class SectionExtractor(Extractor):
         r"(?im)^(?P<heading>abstract|introduction|background|materials and methods|methods|methodology|results|discussion|conclusion|conclusions|acknowledg(?:e)?ments|references|bibliography|supplementary information|supplement)\s*$"
     )
 
-    _canonical = {
+    _canonical: ClassVar[dict[str, str]] = {
         "abstract": "abstract",
         "introduction": "introduction",
         "background": "introduction",
@@ -48,7 +50,7 @@ class SectionExtractor(Extractor):
         context: PipelineContext,
         paper: PaperKnowledge,
     ) -> PaperKnowledge:
-        text = context.source_path.read_text(encoding="utf-8")
+        text = read_text_exact(context.source_path)
         matches = [
             HeadingMatch(
                 heading=match.group("heading").strip(),
@@ -62,7 +64,9 @@ class SectionExtractor(Extractor):
         sections: list[Section] = []
         for index, match in enumerate(matches):
             body_start = match.end
-            body_end = matches[index + 1].start if index + 1 < len(matches) else len(text)
+            body_end = (
+                matches[index + 1].start if index + 1 < len(matches) else len(text)
+            )
             body = text[body_start:body_end].strip()
             sections.append(
                 Section(

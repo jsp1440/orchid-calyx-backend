@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from ..context import PipelineContext
+from ..ingest import read_text_exact
 from ..models import Identifier, PaperKnowledge
 from .base import Extractor
 
@@ -16,14 +17,16 @@ class MetadataExtractor(Extractor):
         context: PipelineContext,
         paper: PaperKnowledge,
     ) -> PaperKnowledge:
-        text = context.source_path.read_text(encoding="utf-8")
+        text = read_text_exact(context.source_path)
         lines = [line.strip() for line in text.splitlines() if line.strip()]
 
         if paper.metadata.title is None and lines:
             paper.metadata.title = lines[0]
 
         doi = re.search(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\b", text, re.IGNORECASE)
-        if doi and not any(identifier.scheme == "doi" for identifier in paper.metadata.identifiers):
+        if doi and not any(
+            identifier.scheme == "doi" for identifier in paper.metadata.identifiers
+        ):
             paper.metadata.identifiers.append(
                 Identifier(scheme="doi", value=doi.group(0).rstrip(".,;)"))
             )
@@ -33,7 +36,7 @@ class MetadataExtractor(Extractor):
             paper.metadata.publication_year = int(year.group(0))
 
         abstract = re.search(
-            r"(?ims)^\s*abstract\s*\n(?P<body>.+?)(?=^\s*(?:keywords?|introduction|background)\s*$|\Z)",
+            r"(?ims)^\s*abstract\s*\n(?P<body>.+?)(?=^\s*(?:keywords?\s*[:\-]|introduction|background)\s*|\Z)",
             text,
         )
         if abstract and paper.metadata.abstract is None:
