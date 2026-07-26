@@ -23,4 +23,6 @@ jobs:
       - name: Compile review task package
         run: python -m compileall app/review_tasks
       - name: Run deterministic review task tests
+        env:
+          PYTHONPATH: .
         run: pytest -q tests/test_mission_control_role_001a_review_tasks.py
