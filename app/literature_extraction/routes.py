@@ -23,9 +23,9 @@ def get_literature_repository() -> LiteratureResultRepository:
 
 
 def get_candidate_handoff_service() -> LiteratureCandidateHandoffService:
-    from app.candidate_knowledge.routes import _available
+    from app.candidate_knowledge.dependencies import get_candidate_components
 
-    repository, service = _available()
+    repository, service = get_candidate_components()
     return LiteratureCandidateHandoffService(service, repository)
 
 
@@ -104,3 +104,4 @@ def handoff_candidates(
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+

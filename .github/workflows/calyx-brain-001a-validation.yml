@@ -22,6 +22,7 @@ jobs:
       - name: Lint changed Python scope
         run: >-
           python -m ruff check
+          app/candidate_knowledge/dependencies.py
           app/literature_extraction/candidate_handoff.py
           app/literature_extraction/routes.py
           tests/test_calyx_brain_001a_literature_candidate_handoff.py

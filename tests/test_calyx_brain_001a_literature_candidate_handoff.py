@@ -152,3 +152,36 @@ async def test_authenticated_handoff_api_is_queryable_and_idempotent(
     assert first.json()["candidate_ids"] == second.json()["candidate_ids"]
     assert first.json()["published"] is False
     assert candidate_repository.evidence_links[0]["authorized_quote"] is None
+
+
+@pytest.mark.asyncio
+async def test_unknown_anchor_keys_are_rejected(tmp_path: Path) -> None:
+    """Anchor keys not present in the paper are a caller error and must be rejected."""
+    source = _source(
+        tmp_path / "trait.txt",
+        "Escherichia coli was characterized by a red flower trait.",
+    )
+    paper = await extract_and_persist(
+        source, LiteratureResultRepository(tmp_path / "literature")
+    )
+    # Inject a spurious anchor key that does not exist in this paper.
+    valid_anchors = {
+        ev.evidence_id: 400 + i for i, ev in enumerate(paper.evidence, start=1)
+    }
+    spurious_anchors = {**valid_anchors, "unknown-evidence-xyz": 999}
+    binding = LiteratureSourceBinding(
+        source_object_type="LITERATURE_DOCUMENT",
+        source_object_id=101,
+        revision_id=201,
+        extraction_run_id=301,
+        anchor_ids=spurious_anchors,
+    )
+    candidate_repository = MemoryCandidateRepository()
+    service = LiteratureCandidateHandoffService(
+        CandidateExtractionService(candidate_repository), candidate_repository
+    )
+
+    with pytest.raises(ValueError, match="ANCHOR_EVIDENCE_IDS_NOT_IN_PAPER"):
+        service.handoff(paper, binding)
+
+    assert candidate_repository.candidates == []

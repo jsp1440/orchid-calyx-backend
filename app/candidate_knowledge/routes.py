@@ -7,28 +7,15 @@ from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
 
+from .dependencies import _REPOSITORY_ERROR, _SERVICE, get_candidate_components
 from .models import EvidenceInput, SourceAnchor
-from .repository import MemoryCandidateRepository
-from .service import CandidateExtractionService
-from app.persistence.state_repository import configured_database_url
 
 router = APIRouter(prefix="/api/candidate-knowledge", tags=["candidate-knowledge"], dependencies=[Depends(verify_owner_or_api_key)])
-def _build_repository():
-    if configured_database_url():
-        from .postgres_repository import PostgresCandidateRepository
-        return PostgresCandidateRepository()
-    return MemoryCandidateRepository()
-try:
-    REPOSITORY = _build_repository()
-    REPOSITORY_ERROR = None
-except Exception:
-    REPOSITORY = None
-    REPOSITORY_ERROR = "CANDIDATE_DATABASE_UNAVAILABLE"
-SERVICE = CandidateExtractionService(REPOSITORY) if REPOSITORY is not None else None
+REPOSITORY = None  # kept for backward-compatibility; actual singleton is in dependencies
+REPOSITORY_ERROR = _REPOSITORY_ERROR
+SERVICE = _SERVICE
 def _available():
-    if REPOSITORY is None or SERVICE is None:
-        raise HTTPException(503, detail={"code": REPOSITORY_ERROR or "CANDIDATE_DATABASE_UNAVAILABLE"})
-    return REPOSITORY, SERVICE
+    return get_candidate_components()
 def _write(operation):
     repository, _ = _available()
     try: return repository.atomic(operation) if hasattr(repository, "atomic") else operation()

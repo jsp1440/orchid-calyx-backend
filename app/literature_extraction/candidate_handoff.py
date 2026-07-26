@@ -25,7 +25,15 @@ DOMAIN_KINDS: dict[str, CandidateKind] = {
 
 @dataclass(frozen=True, slots=True)
 class LiteratureSourceBinding:
-    """Canonical source identities owned by intake/document intelligence."""
+    """Canonical source identities owned by intake/document intelligence.
+
+    TRUST BOUNDARY: anchor_ids are caller-supplied and not independently
+    verified by this service.  The caller (document intelligence) is
+    responsible for ensuring that every anchor_id value belongs to the
+    specified revision_id and extraction_run_id.  This service validates
+    only that (a) every anchor key corresponds to a known evidence_id in
+    the paper, and (b) no supplied anchor_id value is ≤ 0.
+    """
 
     source_object_type: str
     source_object_id: int
@@ -43,6 +51,15 @@ class LiteratureSourceBinding:
             raise ValueError("CANONICAL_SOURCE_BINDING_REQUIRED")
         if not self.anchor_ids or any(value <= 0 for value in self.anchor_ids.values()):
             raise ValueError("CANONICAL_ANCHOR_BINDINGS_REQUIRED")
+
+    def validate_against_paper(self, paper: Any) -> list[str]:
+        """Return unknown anchor keys (evidence IDs not in this paper).
+
+        Returns an empty list if all keys are valid.  Does not raise; callers
+        decide whether unknown anchors are a hard error or a warning.
+        """
+        known_evidence_ids = {ev.evidence_id for ev in paper.evidence}
+        return [k for k in self.anchor_ids if k not in known_evidence_ids]
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +92,20 @@ def _subject(record: NormalizedEvidenceRecord) -> tuple[str | None, list[str]]:
 def build_candidate_plan(
     paper: PaperKnowledge, binding: LiteratureSourceBinding
 ) -> LiteratureCandidatePlan:
-    """Adapt reviewed-boundary literature records without resolving ambiguity."""
+    """Adapt reviewed-boundary literature records without resolving ambiguity.
+
+    Unknown anchor keys (evidence IDs not in this paper) in the binding are
+    treated as a caller error; the affected records are blocked rather than
+    silently dropped or guessed.
+    """
+
+    unknown_anchors = binding.validate_against_paper(paper)
+    unknown_anchor_set = set(unknown_anchors)
+
+    if unknown_anchor_set:
+        raise ValueError(
+            f"ANCHOR_EVIDENCE_IDS_NOT_IN_PAPER: {sorted(unknown_anchor_set)}"
+        )
 
     evidence_by_id = {item.evidence_id: item for item in paper.evidence}
     claims_by_id = {item.claim_id: item for item in paper.claims}
@@ -224,12 +254,11 @@ class LiteratureCandidateHandoffService:
             },
         )
         result = self.candidate_service.execute(preview["candidate_run_id"])
-        run_items = self.candidate_repository.items[preview["candidate_run_id"]]
-        fingerprints = {item["fingerprint"] for item in run_items}
         candidate_ids = sorted(
             candidate["candidate_id"]
-            for candidate in self.candidate_repository.candidates
-            if candidate["evidence_fingerprint"] in fingerprints
+            for candidate in self.candidate_repository.candidates_for_run(
+                preview["candidate_run_id"]
+            )
         )
         return {
             "paper_id": paper.paper_id,
