@@ -132,12 +132,15 @@ async def test_authenticated_handoff_api_is_queryable_and_idempotent(
     app.dependency_overrides[get_candidate_handoff_service] = lambda: handoff_service
     monkeypatch.setenv("CALYX_API_KEY", "test-key")
     payload = {
-        "source_object_type": "LITERATURE_DOCUMENT",
-        "source_object_id": 101,
-        "revision_id": 201,
-        "extraction_run_id": 301,
-        "anchor_ids": _binding(paper).anchor_ids,
-        "display_policy": "METADATA_ONLY",
+        "use_persisted_binding": False,
+        "source_binding": {
+            "source_object_type": "LITERATURE_DOCUMENT",
+            "source_object_id": 101,
+            "revision_id": 201,
+            "extraction_run_id": 301,
+            "anchor_ids": _binding(paper).anchor_ids,
+            "display_policy": "METADATA_ONLY",
+        },
     }
 
     with TestClient(app) as client:
