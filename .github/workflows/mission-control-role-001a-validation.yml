@@ -1,0 +1,26 @@
+name: MISSION-CONTROL-ROLE-001A validation
+
+on:
+  pull_request:
+    paths:
+      - "app/review_tasks/**"
+      - "tests/test_mission_control_role_001a_review_tasks.py"
+      - ".github/workflows/mission-control-role-001a-validation.yml"
+  push:
+    branches:
+      - feature/mission-control-role-001a-review-task-engine
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused test dependencies
+        run: python -m pip install --upgrade pip pytest
+      - name: Compile review task package
+        run: python -m compileall app/review_tasks
+      - name: Run deterministic review task tests
+        run: pytest -q tests/test_mission_control_role_001a_review_tasks.py
