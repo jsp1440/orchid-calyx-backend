@@ -27,15 +27,25 @@ def ingest_text(path: str | Path) -> IngestedDocument:
     )
 
 
+def read_text_exact(path: str | Path) -> str:
+    """Decode UTF-8 without universal-newline translation.
+
+    Character offsets are part of the evidence contract, so extractors must
+    operate on exactly the same decoded text that ingestion hashed.
+    """
+    with Path(path).open("r", encoding="utf-8", newline="") as source:
+        return source.read()
+
+
 def build_empty_paper(
     document: IngestedDocument,
     *,
     pipeline_version: str = "0.2.0",
 ) -> PaperKnowledge:
-    paper_id = f"paper-{document.content_hash[:32]}"
+    paper_id = f"paper-{document.content_hash}"
     analysis_id = sha256(
         f"{document.content_hash}\x1f{pipeline_version}".encode()
-    ).hexdigest()[:32]
+    ).hexdigest()
     return PaperKnowledge(
         paper_id=paper_id,
         source=SourceDocument(

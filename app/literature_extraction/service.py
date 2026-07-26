@@ -4,7 +4,7 @@ import json
 from hashlib import sha256
 from pathlib import Path
 
-from .context import PipelineContext
+from .context import PipelineConfig, PipelineContext
 from .ingest import build_empty_paper, ingest_text
 from .models import PaperKnowledge
 from .normalization import normalize_and_reconcile
@@ -50,21 +50,35 @@ async def extract_and_persist(
     repository: LiteratureResultRepository,
     *,
     registry: ExtractorRegistry = DEFAULT_REGISTRY,
+    config: PipelineConfig | None = None,
 ) -> PaperKnowledge:
     source_path = Path(source)
     document = ingest_text(source_path)
-    context = PipelineContext(source_path=source_path, output_dir=repository.root)
+    context = PipelineContext(
+        source_path=source_path,
+        output_dir=repository.root,
+        config=config or PipelineConfig(),
+    )
     paper = build_empty_paper(
         document, pipeline_version=context.config.pipeline_version
     )
-    paper.analysis_manifest.configuration_fingerprint = sha256(
+    configuration_fingerprint = sha256(
         json.dumps(
             {
                 "pipeline_version": context.config.pipeline_version,
-                "extractors": registry.names(),
+                "analysis_version": context.config.analysis_version,
+                "extractor_settings": context.config.extractor_settings,
+                "extractors": [
+                    {"name": extractor.name, "version": extractor.version}
+                    for extractor in registry.ordered()
+                ],
             },
             sort_keys=True,
         ).encode("utf-8")
+    ).hexdigest()
+    paper.analysis_manifest.configuration_fingerprint = configuration_fingerprint
+    paper.analysis_manifest.analysis_id = sha256(
+        f"{document.content_hash}\x1f{configuration_fingerprint}".encode()
     ).hexdigest()
     result = await PipelineRunner(registry.ordered()).run(context, paper)
     failed = next(

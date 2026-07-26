@@ -29,7 +29,9 @@ jobs:
           app/literature_extraction/routes.py
           app/literature_extraction/service.py
           app/literature_extraction/extractors/claims.py
+          app/literature_extraction/extractors/entities.py
           app/literature_extraction/extractors/metadata.py
+          app/literature_extraction/extractors/sections.py
           tests/test_calyx_brain_001_literature_e2e.py
       - run: >-
           python -m pytest -q

@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 
 from ..context import PipelineContext
+from ..ingest import read_text_exact
 from ..models import Entity, PaperKnowledge, Provenance, SourceSpan
 from .base import Extractor
 
@@ -52,12 +53,14 @@ class EntityExtractor(Extractor):
         context: PipelineContext,
         paper: PaperKnowledge,
     ) -> PaperKnowledge:
-        text = context.source_path.read_text(encoding="utf-8")
+        text = read_text_exact(context.source_path)
         matches: list[tuple[int, int, str, str]] = []
 
         for rule in self._rules:
             for match in rule.pattern.finditer(text):
-                matches.append((match.start(), match.end(), rule.entity_type, match.group(0)))
+                matches.append(
+                    (match.start(), match.end(), rule.entity_type, match.group(0))
+                )
 
         matches.sort(key=lambda item: (item[0], item[1], item[2], item[3].casefold()))
 
@@ -65,11 +68,15 @@ class EntityExtractor(Extractor):
         surface_forms: dict[tuple[str, str], str] = {}
         for start, end, entity_type, surface in matches:
             key = (entity_type, surface.casefold())
-            grouped.setdefault(key, []).append(SourceSpan(char_start=start, char_end=end))
+            grouped.setdefault(key, []).append(
+                SourceSpan(char_start=start, char_end=end)
+            )
             surface_forms.setdefault(key, surface)
 
         entities: list[Entity] = []
-        for index, key in enumerate(sorted(grouped, key=lambda item: (item[0], item[1]))):
+        for index, key in enumerate(
+            sorted(grouped, key=lambda item: (item[0], item[1]))
+        ):
             entity_type, normalized = key
             entities.append(
                 Entity(

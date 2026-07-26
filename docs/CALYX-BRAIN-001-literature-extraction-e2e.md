@@ -39,4 +39,8 @@ The same checks run in `.github/workflows/calyx-brain-001-validation.yml`. Opera
 
 This is an additive integration repair aligned with `docs/architecture/CALYX_BRAIN_SPECIFICATION_V1.md` and `docs/CODEX_ENGINEERING_PROMPT.md`. Existing extractor models, output files, ontology APIs, semantic candidate-review tables, Concept Registry, and publication gates are preserved. The repository adapter makes the established file persistence boundary explicit; it does not introduce a parallel scientific schema or bypass review.
 
+The extractor order is intentional and is recorded in the configuration fingerprint: `metadata` → `sections` → `entities` → `claims`. Claims run after entities so in-span entity mentions can be retained as unresolved claim subjects. Each extractor name and version, pipeline/analysis version, and extractor settings contribute to analysis identity; changing any of them produces a distinct analysis ID.
+
+All extractors decode the source without universal-newline translation. Evidence character offsets therefore address the original decoded text on both LF and CRLF inputs; `raw.txt` preserves the original bytes.
+
 Known limitations: the supported ingester is UTF-8 text only; extraction rules are intentionally narrow; author and journal parsing remain incomplete; filesystem durability depends on operator configuration; there is no listing endpoint; and concept resolution is ambiguity retention rather than canonical mapping.
