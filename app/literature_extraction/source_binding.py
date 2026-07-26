@@ -68,16 +68,10 @@ class CanonicalLiteratureSourceBinding:
             raise LiteratureSourceBindingError(
                 "ANCHOR_EVIDENCE_IDS_NOT_IN_PAPER", {"evidence_ids": foreign}
             )
-        required = {
-            evidence_id
-            for record in paper.normalized_evidence_records
-            for evidence_id in record.evidence_ids
-        }
-        required_missing = sorted(required - supplied)
-        if required_missing:
+        if missing:
             raise LiteratureSourceBindingError(
                 "CANONICAL_EVIDENCE_BINDING_MISSING",
-                {"evidence_ids": required_missing, "all_unbound_evidence_ids": missing},
+                {"evidence_ids": missing},
             )
 
     def to_dict(self) -> dict[str, Any]:
