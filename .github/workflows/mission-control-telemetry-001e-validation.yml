@@ -36,7 +36,7 @@ jobs:
       - name: Run telemetry regressions
         run: |
           set -o pipefail
-          pytest -vv tests/test_mission_control_telemetry_001a_executive_state.py tests/test_mission_control_telemetry_001b_harvesters.py tests/test_mission_control_telemetry_001c_source_metrics.py tests/test_mission_control_telemetry_001d_dependency_intelligence.py 2>&1 | tee /tmp/mission-control-telemetry-001e-regression.log
+          pytest -vv tests/test_mission_control_telemetry_001a_executive_state.py tests/test_mission_control_telemetry_001b_harvesters.py tests/test_mission_control_telemetry_001c_source_metrics.py tests/test_mission_control_telemetry_001d_intelligence.py 2>&1 | tee /tmp/mission-control-telemetry-001e-regression.log
       - name: Upload regression diagnostics
         if: always()
         uses: actions/upload-artifact@v4
