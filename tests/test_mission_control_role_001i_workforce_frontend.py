@@ -37,12 +37,15 @@ def _task(*, embargoed: bool = False) -> dict:
 
 def _importer(*, include_science: bool = True) -> AccessPrincipal:
     capabilities = ["review.external.import"]
+    qualifications = []
     if include_science:
         capabilities.append("review.science")
+        qualifications.append("qualified.science-reviewer")
     return AccessPrincipal(
         principal_id="importer-1",
         roles=(MissionControlRole.ADMINISTRATOR,),
         direct_capabilities=tuple(capabilities),
+        qualifications=tuple(qualifications),
         authenticated=True,
     )
 
@@ -50,8 +53,9 @@ def _importer(*, include_science: bool = True) -> AccessPrincipal:
 def test_workforce_import_requires_explicit_import_capability() -> None:
     task = _task()
     app.dependency_overrides[authenticated_principal] = lambda: AccessPrincipal(
-        principal_id="admin-only",
-        roles=(MissionControlRole.ADMINISTRATOR,),
+        principal_id="operator-only",
+        roles=(),
+        direct_capabilities=("mission_control.view.operations",),
         authenticated=True,
     )
     response = client.post(
