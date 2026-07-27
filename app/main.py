@@ -37,6 +37,7 @@ from app.literature_extraction.routes import router as literature_extraction_rou
 from app.publication.routers import router as publication_router
 from app.research_workspace.routes import router as research_workspace_router
 from app.review_api.routes import router as review_api_router
+from app.mission_control_briefing.routes import router as mission_control_briefing_router
 from app.missions.dependencies import get_mission_service
 from app.missions.routers import router as missions_router, runtime_queue_router, templates_router
 from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, owner_cookie_secure, verify_owner_or_api_key
@@ -57,21 +58,6 @@ app = FastAPI()
 
 @app.middleware("http")
 async def mission_control_cors_on_all_responses(request, call_next):
-    """Ensure Mission Control CORS headers reach the browser on EVERY response.
-
-    The per-route ``add_mission_control_cors_headers`` dependency attaches CORS
-    headers only to successful responses. When a handler or dependency raises
-    ``HTTPException`` (401 expired/invalid owner session, 503 unconfigured) or
-    FastAPI returns a 422 validation error, the exception handler builds a fresh
-    response WITHOUT those headers. Browsers then block the response entirely,
-    and the frontend sees a network-level failure ("Load failed") instead of a
-    readable 401 — breaking owner-session restore in Mission Control.
-
-    This middleware mirrors the exact header set and origin allow-list used by
-    ``add_mission_control_cors_headers`` and only fills headers in when the
-    route did not already set them. Origins outside the allow-list receive no
-    CORS headers, unchanged from before.
-    """
     response = await call_next(request)
     origin = request.headers.get("origin")
     if (
@@ -88,7 +74,7 @@ async def mission_control_cors_on_all_responses(request, call_next):
             response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key, X-Orchid-Actor, X-Orchid-Roles, X-Orchid-Qualifications, X-Orchid-Specialties"
+        response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key"
         response.headers["Access-Control-Max-Age"] = "86400"
     return response
 
@@ -339,7 +325,6 @@ def runner_health():
     }
 
 
-@app.get("/api/runtime/configuration")
 def runtime_configuration():
     blocker = autonomous_runtime_config_blocker()
     blockers: list[str] = []
@@ -420,6 +405,7 @@ app.include_router(literature_extraction_router)
 app.include_router(publication_router)
 app.include_router(research_workspace_router)
 app.include_router(review_api_router)
+app.include_router(mission_control_briefing_router)
 app.include_router(missions_router)
 app.include_router(templates_router)
 app.include_router(runtime_queue_router)
