@@ -25,7 +25,7 @@ def _request(path: str, *, authenticated: bool) -> tuple[int, dict[str, Any]]:
     if authenticated:
         if not TOKEN:
             raise RuntimeError("MISSION_CONTROL_SMOKE_TOKEN is required for authenticated production smoke tests")
-        headers["Authorization"] = f"Bearer {TOKEN}"
+        headers["X-API-Key"] = TOKEN
     request = urllib.request.Request(f"{BASE_URL}{path}", headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
@@ -42,7 +42,7 @@ def _request(path: str, *, authenticated: bool) -> tuple[int, dict[str, Any]]:
 
 def main() -> int:
     results: list[dict[str, Any]] = []
-    health_status, health = _request("/health", authenticated=False)
+    health_status, _health = _request("/health", authenticated=False)
     results.append({"endpoint": "/health", "status": health_status, "passed": health_status == 200})
 
     for path, expected_contract in EXPECTED.items():
@@ -63,6 +63,7 @@ def main() -> int:
     failed = [item for item in results if not item["passed"]]
     report = {
         "base_url": BASE_URL,
+        "authentication_transport": "x-api-key",
         "passed": not failed,
         "results": results,
         "failed_endpoints": [item["endpoint"] for item in failed],
