@@ -1,13 +1,32 @@
-from fastapi import Depends, FastAPI
-from pydantic import BaseModel
-from typing import Optional, Any
 import os
 import re
 from datetime import datetime, timezone
+from typing import Any
 
 import psycopg
+from fastapi import Depends, FastAPI
 from psycopg.types.json import Jsonb
+from pydantic import BaseModel
 
+from app.candidate_knowledge.routes import router as candidate_knowledge_router
+from app.design_intelligence.routes import router as design_intelligence_router
+from app.design_planning.routes import router as design_planning_router
+from app.document_import.routes import router as document_import_router
+from app.document_intelligence.routes import router as document_intelligence_router
+from app.evidence_aggregation.routes import router as evidence_aggregation_router
+from app.evidence_retrieval.routes import router as evidence_retrieval_router
+from app.implementation_planning.routes import router as implementation_planning_router
+from app.intake.routes import router as intake_router
+from app.mission_control_briefing.routes import (
+    router as mission_control_briefing_router,
+)
+from app.missions.dependencies import get_mission_service
+from app.missions.routers import router as missions_router
+from app.missions.routers import runtime_queue_router, templates_router
+from app.ontology.routers import router as ontology_router
+from app.publication.routers import router as publication_router
+from app.research_workspace.routes import router as research_workspace_router
+from app.review_api.routes import router as review_api_router
 from app.routers import (
     awards,
     calyx_core,
@@ -18,33 +37,34 @@ from app.routers import (
     judging,
     reference_docs,
 )
-from app.intake.routes import router as intake_router
+from app.routers.health import (
+    add_mission_control_cors_headers,
+    allowed_mission_control_origins,
+)
+from app.scientific_interpretation.routes import (
+    router as scientific_interpretation_router,
+)
+from app.security import (
+    get_api_key,
+    get_owner_access_code,
+    get_owner_session_secret,
+    owner_cookie_secure,
+    verify_owner_or_api_key,
+)
 from app.semantic.routers import router as semantic_router
-from app.source_registry.routes import router as source_registry_router
-from app.document_import.routes import router as document_import_router
-from app.document_intelligence.routes import router as document_intelligence_router
 from app.semantic_index.routes import router as semantic_index_router
-from app.evidence_retrieval.routes import router as evidence_retrieval_router
-from app.candidate_knowledge.routes import router as candidate_knowledge_router
-from app.evidence_aggregation.routes import router as evidence_aggregation_router
-from app.design_intelligence.routes import router as design_intelligence_router
-from app.design_planning.routes import router as design_planning_router
-from app.implementation_planning.routes import router as implementation_planning_router
-from app.scientific_interpretation.routes import router as scientific_interpretation_router
-from app.ontology.routers import router as ontology_router
-from app.publication.routers import router as publication_router
-from app.research_workspace.routes import router as research_workspace_router
-from app.missions.dependencies import get_mission_service
-from app.missions.routers import router as missions_router, runtime_queue_router, templates_router
-from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, owner_cookie_secure, verify_owner_or_api_key
-from app.routers.health import add_mission_control_cors_headers, allowed_mission_control_origins
-from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
-from runtime.router_fastapi import router as runtime_router, science_router
+from app.source_registry.routes import router as source_registry_router
 from runtime.cds_router import router as cds_router
+from runtime.constitutional_orchestrator import AutonomyLevel
+from runtime.constitutional_orchestrator import (
+    orchestrator as constitutional_orchestrator,
+)
 from runtime.constitutional_router import router as constitutional_router
 from runtime.kernel_router import router as kernel_router
 from runtime.orchestrator_router import router as orchestrator_router
 from runtime.planner_router import router as planner_router
+from runtime.router_fastapi import router as runtime_router
+from runtime.router_fastapi import science_router
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
@@ -210,7 +230,7 @@ def require_database_url() -> str:
     return DATABASE_URL
 
 
-def env_bool(value: Optional[str]) -> Optional[bool]:
+def env_bool(value: str | None) -> bool | None:
     if value is None:
         return None
     normalized = value.strip().lower()
@@ -237,7 +257,7 @@ def runtime_interval_seconds_from_env() -> int:
     return 30
 
 
-def autonomous_runtime_config_blocker() -> Optional[dict[str, str]]:
+def autonomous_runtime_config_blocker() -> dict[str, str] | None:
     for key in RUNTIME_DISABLE_FLAGS:
         if env_bool(os.environ.get(key)) is True:
             return {"key": key, "reason": "explicit_disable_flag"}
@@ -302,7 +322,7 @@ def evaluate_runtime_action(
 
 
 class VerificationRequest(BaseModel):
-    source_context: Optional[str] = None
+    source_context: str | None = None
 
 
 @app.get("/")
@@ -395,7 +415,7 @@ def runner_summary():
     jobs: list[dict[str, Any]] = []
     runtime_actions: list[dict[str, Any]] = []
 
-    with psycopg.connect(require_database_url()) as conn:
+    with psycopg.connect(require_database_url()) as conn:  # noqa: SIM117
         with conn.cursor() as cur:
             ensure_runtime_log_table(cur)
 
@@ -518,7 +538,7 @@ def run_once():
 @app.post("/api/runner/execute-next", dependencies=RUNTIME_WRITE_AUTH)
 def execute_next():
     decision = evaluate_runtime_action("execute_next", evidence=["authenticated API request", "single-job execution"])
-    with psycopg.connect(require_database_url()) as conn:
+    with psycopg.connect(require_database_url()) as conn:  # noqa: SIM117
         with conn.cursor() as cur:
             ensure_execution_jobs_table(cur)
 
@@ -586,7 +606,7 @@ def execute_next():
                     "allowedActions": runner_allowed_actions(),
                 }
 
-            except Exception as exec_err:
+            except Exception as exec_err:  # noqa: BLE001
                 failure_details = {
                     "message": "execution failed",
                     "error": str(exec_err),
@@ -886,7 +906,7 @@ def log_runtime_action(
     module_name: str,
     action_name: str,
     action_status: str,
-    action_details: Optional[dict[str, Any]] = None,
+    action_details: dict[str, Any] | None = None,
 ) -> None:
     ensure_runtime_log_table(cur)
     cur.execute(
@@ -904,7 +924,7 @@ def insert_job_if_missing(
     cur,
     job_name: str,
     dedup_key: str,
-    details: Optional[dict[str, Any]] = None,
+    details: dict[str, Any] | None = None,
 ) -> bool:
     if details is None:
         details = {}
@@ -936,13 +956,13 @@ def insert_job_if_missing(
     return cur.fetchone() is not None
 
 
-def normalize_title(value: Optional[str]) -> str:
+def normalize_title(value: str | None) -> str:
     if not value:
         return ""
     return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
-def normalize_doi(value: Optional[str]) -> str:
+def normalize_doi(value: str | None) -> str:
     if not value:
         return ""
     value = value.strip().lower()
@@ -1006,7 +1026,7 @@ def run_job_logic(job_name: str):
             evidence_scope="frontend cards that need pollinator, mycorrhiza, graph, literature, and conservation data",
         )
 
-    with psycopg.connect(require_database_url()) as conn:
+    with psycopg.connect(require_database_url()) as conn:  # noqa: SIM117
         with conn.cursor() as cur:
             if job_name == "optimize_calyx_core":
                 return {
@@ -1141,7 +1161,7 @@ def startup_event():
     try:
         from app.routers.owner_operations import load_revoked_nonces
         load_revoked_nonces()
-    except Exception:
+    except Exception:  # noqa: BLE001,S110
         pass
 
 
@@ -1174,6 +1194,8 @@ app.include_router(scientific_interpretation_router)
 app.include_router(ontology_router)
 app.include_router(publication_router)
 app.include_router(research_workspace_router)
+app.include_router(review_api_router)
+app.include_router(mission_control_briefing_router)
 app.include_router(missions_router)
 app.include_router(templates_router)
 app.include_router(runtime_queue_router)
@@ -1184,6 +1206,14 @@ app.include_router(constitutional_router)
 app.include_router(kernel_router)
 app.include_router(orchestrator_router)
 app.include_router(planner_router)
+
+from app.routers import orchid_widgets
+
+app.include_router(orchid_widgets.router)
+
+from app.routers import knowledge_graph
+
+app.include_router(knowledge_graph.router)
 
 from app.routers import orchid_widgets
 

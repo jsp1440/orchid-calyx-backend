@@ -1,30 +1,39 @@
-# BUILD-RS-001 persistent research workspace
+# BUILD-RS-001 — Persistent Research Workspace
 
-This build adds the first production-backed Research Station module under
-`/api/research/projects`. It is intentionally separate from Conservatory inventory,
-public sharing, collaboration, mapping, and AI features.
+## Objective
 
-## Identity and authorization
+Provide the first production-backed Research Station workspace without duplicating canonical taxonomy, documents, evidence, identity, or publication systems.
 
-Routes reuse `verify_owner_or_api_key`. Owner sessions use the signed token subject
-as `owner_subject`; API keys are an explicit privileged service identity and all
-their mutations are attributed to `backend_api_key`. Normal subjects receive `404`
-for projects owned by another subject. Ownership is enforced in every project and
-child-record query, not trusted from request payloads.
+## Scope
 
-## Persistence and audit
+- Owner-isolated research projects
+- Optimistic project updates
+- Archive and restore lifecycle
+- Saved searches
+- Research notes
+- Canonical taxon, document, and evidence links
+- Append-only workspace activity
+- Standard Calyx owner-session/API-key authentication
 
-Apply `migrations/101_research_workspace_foundation.sql` to PostgreSQL. The migration
-is additive and idempotent, creates only the `research_station` schema, and revokes
-public table access. Projects use optimistic versions and soft archive. Saved
-searches store normalized query state, notes remain labeled `USER_ANNOTATION`, and
-taxa/documents/evidence store only canonical identifiers. Audit events are written
-in the same transaction and database triggers reject updates or deletes.
+## Architecture
 
-The API never exposes physical deletion. Archiving blocks child mutations; restoring
-retains the original project and its complete history.
+The Research Station is an organizational layer over existing canonical Orchid Continuum stores. It does not create substitute taxonomy, document, evidence, Knowledge Graph, scientific-object, or publication systems.
 
-## Validation and rollback
+Canonical references are validated against their owning stores before links are persisted.
+
+## Persistence
+
+Migration `migrations/101_research_workspace_foundation.sql` creates the additive `research_station` PostgreSQL schema and seven tables. The migration is idempotent, contains no destructive table operations, protects audit rows from update/delete, and revokes public table access.
+
+## API
+
+Routes are mounted below `/api/research/projects` and require an owner session or API key.
+
+## Validation
+
+- Focused service tests cover ownership isolation, lifecycle, optimistic updates, pagination, saved searches, notes, links, audit redaction, and migration safety.
+- PostgreSQL migration validation remains required in CI before merge.
+- No production database or deployment is modified by this pull request.
 
 Run:
 
@@ -36,6 +45,8 @@ python -m ruff check app/research_workspace tests/test_build_rs_001_research_wor
 
 PostgreSQL migration integration requires an explicitly disposable
 `TEST_DATABASE_URL`; production must never be used for migration tests.
+
+## Rollback
 
 Application rollback is removal of the router include and deployment of the prior
 backend version. The additive schema should remain in place to preserve projects and

@@ -6,7 +6,6 @@ from typing import Any
 
 from .graph_models import GraphOperation, GraphOperationType
 
-
 SUPPORTED_PREDICATES = {
     "HAS_TRAIT",
     "OCCURS_IN",

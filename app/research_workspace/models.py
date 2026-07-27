@@ -7,7 +7,6 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
-    Uuid,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -15,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    Uuid,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column

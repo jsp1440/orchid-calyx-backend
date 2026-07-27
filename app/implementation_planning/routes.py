@@ -15,7 +15,6 @@ from .service import (
     SourcePlanningBundle,
 )
 
-
 router = APIRouter(
     prefix="/api/implementation-planning",
     tags=["implementation-planning"],
@@ -66,7 +65,7 @@ def source_bundle(plan_id: str):
 
 
 @router.post("/specifications/my-conservatory/generate", status_code=201)
-def generate(payload: dict = Body(...), identity: str = Depends(actor)):
+def generate(payload: dict = Body(...), identity: str = Depends(actor)):  # noqa: B008
     if set(payload) != {"source_plan_id"}:
         raise HTTPException(422, detail={"code": "ONLY_SOURCE_PLAN_ID_ACCEPTED"})
     return call(
@@ -133,9 +132,9 @@ def history(specification_id: str):
 @router.post("/specifications/{specification_id}/reviews", status_code=201)
 def review(
     specification_id: str,
-    payload: dict = Body(...),
+    payload: dict = Body(...),  # noqa: B008
     identity: str = Depends(actor),
-    reviewer_roles: set[str] = Depends(roles),
+    reviewer_roles: set[str] = Depends(roles),  # noqa: B008
 ):
     return call(SERVICE.review, specification_id, payload, identity, reviewer_roles)
 

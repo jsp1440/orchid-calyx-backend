@@ -1,0 +1,36 @@
+name: MISSION-CONTROL-ROLE-001H validation
+
+on:
+  pull_request:
+    paths:
+      - "app/review_tasks/**"
+      - "app/review_api/**"
+      - "tests/test_mission_control_role_001h_reservation_workforce.py"
+      - ".github/workflows/mission-control-role-001h-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      CALYX_REVIEW_ALLOW_MEMORY: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest 'httpx<0.28'
+      - name: Compile reservation and workforce operations
+        run: python -m compileall app/review_tasks app/review_api
+      - name: Run 001H tests
+        run: pytest -q tests/test_mission_control_role_001h_reservation_workforce.py 2>&1 | tee pytest-001h.log
+      - name: Upload 001H diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-role-001h-pytest
+          path: pytest-001h.log
+      - name: Run Mission Control regression tests
+        run: pytest -q tests/test_mission_control_role_001a_review_tasks.py tests/test_mission_control_role_001b_capabilities.py tests/test_mission_control_role_001c_principals.py tests/test_mission_control_role_001d_postgres_persistence.py tests/test_mission_control_role_001e_review_api.py tests/test_mission_control_role_001f_auth_postgres_wiring.py tests/test_mission_control_role_001g_briefing.py

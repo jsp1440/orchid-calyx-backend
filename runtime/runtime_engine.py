@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
-
+from typing import Any
 
 RuntimeCallable = Callable[[], Any]
 
@@ -15,27 +15,47 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _default_heartbeat() -> dict[str, str]:
+    """Safe compatibility callback used when no heartbeat dependency is supplied."""
+    return {"overall_status": "not_configured"}
+
+
+def _default_enqueue_jobs() -> dict[str, Any]:
+    """Safe compatibility callback that performs no queue writes."""
+    return {"status": "not_configured", "queue_depth": None}
+
+
+def _default_execute_jobs() -> dict[str, Any]:
+    """Safe compatibility callback that performs no job execution."""
+    return {
+        "status": "not_configured",
+        "completed": 0,
+        "failed": 0,
+        "queue_depth": None,
+    }
+
+
 @dataclass
 class RuntimeEngineState:
     enabled: bool
     running: bool = False
     interval_seconds: int = 30
     cycle_count: int = 0
-    started_at: Optional[str] = None
-    stopped_at: Optional[str] = None
-    last_cycle_started_at: Optional[str] = None
-    last_cycle_finished_at: Optional[str] = None
-    last_heartbeat_status: Optional[str] = None
-    last_enqueue_status: Optional[str] = None
-    last_execute_status: Optional[str] = None
-    last_execute_completed: Optional[int] = None
-    last_execute_failed: Optional[int] = None
-    last_completed_job: Optional[str] = None
-    last_failed_job: Optional[str] = None
+    started_at: str | None = None
+    stopped_at: str | None = None
+    last_cycle_started_at: str | None = None
+    last_cycle_finished_at: str | None = None
+    last_heartbeat_status: str | None = None
+    last_enqueue_status: str | None = None
+    last_execute_status: str | None = None
+    last_execute_completed: int | None = None
+    last_execute_failed: int | None = None
+    last_completed_job: str | None = None
+    last_failed_job: str | None = None
     completed_count: int = 0
     failed_count: int = 0
-    queue_depth: Optional[int] = None
-    last_error: Optional[str] = None
+    queue_depth: int | None = None
+    last_error: str | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -65,27 +85,34 @@ class RuntimeEngineState:
 
 
 class RuntimeEngine:
-    """Background loop that runs heartbeat, mission seeding, and work execution."""
+    """Background loop that runs heartbeat, mission seeding, and work execution.
+
+    Runtime dependencies are injectable for production use. They remain optional for
+    compatibility with historical callers and tests that construct the engine only
+    to inspect configuration, lifecycle behavior, or status. Missing dependencies
+    resolve to deterministic no-op callbacks and never perform writes or execute
+    work.
+    """
 
     def __init__(
         self,
         *,
-        heartbeat: RuntimeCallable,
-        enqueue_jobs: RuntimeCallable,
-        execute_jobs: RuntimeCallable,
+        heartbeat: RuntimeCallable | None = None,
+        enqueue_jobs: RuntimeCallable | None = None,
+        execute_jobs: RuntimeCallable | None = None,
         interval_seconds: int = 30,
         enabled: bool = True,
     ) -> None:
-        self.heartbeat = heartbeat
-        self.enqueue_jobs = enqueue_jobs
-        self.execute_jobs = execute_jobs
+        self.heartbeat = heartbeat or _default_heartbeat
+        self.enqueue_jobs = enqueue_jobs or _default_enqueue_jobs
+        self.execute_jobs = execute_jobs or _default_execute_jobs
         self.state = RuntimeEngineState(
             enabled=enabled,
             interval_seconds=max(5, int(interval_seconds)),
         )
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def set_enabled(self, enabled: bool) -> None:
         with self._lock:
@@ -152,19 +179,37 @@ class RuntimeEngine:
                 self.state.last_enqueue_status = self._status_from(enqueue_result)
                 self.state.last_execute_status = self._status_from(execute_result)
                 if isinstance(execute_result, dict):
-                    completed = int(execute_result.get("completed") or (1 if execute_result.get("status") == "completed" else 0))
-                    failed = int(execute_result.get("failed") or (1 if execute_result.get("status") == "failed" else 0))
+                    completed = int(
+                        execute_result.get("completed")
+                        or (1 if execute_result.get("status") == "completed" else 0)
+                    )
+                    failed = int(
+                        execute_result.get("failed")
+                        or (1 if execute_result.get("status") == "failed" else 0)
+                    )
                     self.state.last_execute_completed = completed
                     self.state.last_execute_failed = failed
                     self.state.completed_count += completed
                     self.state.failed_count += failed
                     if completed:
-                        self.state.last_completed_job = str(execute_result.get("job_name") or execute_result.get("module") or "runtime_job")
+                        self.state.last_completed_job = str(
+                            execute_result.get("job_name")
+                            or execute_result.get("module")
+                            or "runtime_job"
+                        )
                     if failed:
-                        self.state.last_failed_job = str(execute_result.get("job_name") or execute_result.get("module") or "runtime_job")
+                        self.state.last_failed_job = str(
+                            execute_result.get("job_name")
+                            or execute_result.get("module")
+                            or "runtime_job"
+                        )
                     if execute_result.get("queue_depth") is not None:
                         self.state.queue_depth = execute_result.get("queue_depth")
-                if isinstance(enqueue_result, dict) and enqueue_result.get("queue_depth") is not None:
+                if (
+                    isinstance(enqueue_result, dict)
+                    and enqueue_result.get("queue_depth") is not None
+                    and self.state.queue_depth is None
+                ):
                     self.state.queue_depth = enqueue_result.get("queue_depth")
                 self._record_event(
                     "runtime_cycle_completed",
@@ -186,7 +231,7 @@ class RuntimeEngine:
                 "enqueue": enqueue_result,
                 "execute": execute_result,
             }
-        except Exception as exc:  # pragma: no cover - defensive runtime guard
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive runtime guard
             with self._lock:
                 self.state.cycle_count += 1
                 self.state.failed_count += 1
@@ -220,7 +265,9 @@ class RuntimeEngine:
             return str(value.get("status") or value.get("overall_status") or "ok")
         return "ok"
 
-    def _record_event(self, name: str, details: Optional[dict[str, Any]] = None) -> None:
+    def _record_event(
+        self, name: str, details: dict[str, Any] | None = None
+    ) -> None:
         self.state.events.append(
             {
                 "event": name,

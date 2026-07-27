@@ -1,0 +1,46 @@
+name: MISSION-CONTROL-ROLE-001I validation
+
+on:
+  pull_request:
+    paths:
+      - "app/review_tasks/**"
+      - "app/review_api/**"
+      - "tests/test_mission_control_role_001i_workforce_frontend.py"
+      - ".github/workflows/mission-control-role-001i-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      CALYX_REVIEW_ALLOW_MEMORY: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest 'httpx<0.28'
+      - name: Compile workforce reconciliation and frontend contracts
+        run: python -m compileall app/review_tasks app/review_api
+      - name: Run 001I tests
+        run: |
+          set -o pipefail
+          pytest -vv tests/test_mission_control_role_001i_workforce_frontend.py 2>&1 | tee /tmp/mission-control-001i.log
+      - name: Upload 001I diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-role-001i-diagnostics
+          path: /tmp/mission-control-001i.log
+      - name: Run Mission Control regression tests
+        run: |
+          set -o pipefail
+          pytest -vv tests/test_mission_control_role_001a_review_tasks.py tests/test_mission_control_role_001b_capabilities.py tests/test_mission_control_role_001c_principals.py tests/test_mission_control_role_001d_postgres_persistence.py tests/test_mission_control_role_001e_review_api.py tests/test_mission_control_role_001f_auth_postgres_wiring.py tests/test_mission_control_role_001g_briefing.py tests/test_mission_control_role_001h_reservation_workforce.py 2>&1 | tee /tmp/mission-control-regression.log
+      - name: Upload regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-role-001i-regression-diagnostics
+          path: /tmp/mission-control-regression.log

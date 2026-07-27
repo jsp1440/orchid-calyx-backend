@@ -1,1 +1,1 @@
-"""Persistent, owner-isolated Research Station workspaces."""
+"""Persistent Research Station workspace backend."""

@@ -1,0 +1,35 @@
+name: CALYX-BRAIN-001B Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/literature_extraction/**"
+      - "tests/test_calyx_brain_001b_canonical_source_binding.py"
+      - ".github/workflows/calyx-brain-001b-validation.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+      - name: Lint CALYX-BRAIN-001B changed Python files
+        run: |
+          ruff check \
+            app/literature_extraction/routes.py \
+            app/literature_extraction/source_binding.py \
+            tests/test_calyx_brain_001a_literature_candidate_handoff.py \
+            tests/test_calyx_brain_001b_canonical_source_binding.py
+      - name: Run focused and adjacent tests
+        run: |
+          pytest -q \
+            tests/test_calyx_brain_001b_canonical_source_binding.py \
+            tests/test_calyx_brain_001a_literature_candidate_handoff.py
+      - name: Import application
+        run: python -c "import app.main"

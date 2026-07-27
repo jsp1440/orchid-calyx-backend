@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Annotated, Callable
+from collections.abc import Callable
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session

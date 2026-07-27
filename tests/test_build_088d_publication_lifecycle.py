@@ -48,6 +48,7 @@ def test_postgres_lifecycle_concurrency_projections_propagation_and_rollback():
     import uuid
 
     import psycopg
+
     from app.knowledge_publication.lifecycle_postgres_repository import (
         PostgresPublicationLifecycleRepository,
     )

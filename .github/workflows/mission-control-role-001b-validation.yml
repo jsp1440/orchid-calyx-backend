@@ -1,0 +1,28 @@
+name: MISSION-CONTROL-ROLE-001B validation
+
+on:
+  pull_request:
+    paths:
+      - "app/mission_control_access/**"
+      - "tests/test_mission_control_role_001b_capabilities.py"
+      - ".github/workflows/mission-control-role-001b-validation.yml"
+  push:
+    branches:
+      - feature/mission-control-role-001b-capability-framework
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused test dependencies
+        run: python -m pip install --upgrade pip pytest
+      - name: Compile access package
+        run: python -m compileall app/mission_control_access
+      - name: Run capability framework tests
+        env:
+          PYTHONPATH: .
+        run: pytest -q tests/test_mission_control_role_001b_capabilities.py

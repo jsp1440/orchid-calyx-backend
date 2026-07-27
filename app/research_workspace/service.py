@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID
 
 from sqlalchemy import func, select, text
@@ -39,7 +39,7 @@ class ResearchWorkspaceError(Exception):
 class CanonicalReferenceValidator:
     """Validate identifiers against the canonical owning Calyx stores."""
 
-    QUERIES = {
+    QUERIES: ClassVar[dict[str, str]] = {
         "taxon": """
             SELECT 1 FROM oc_graph.kg_nodes
             WHERE canonical_key = :identifier OR kg_node_id::text = :identifier LIMIT 1
@@ -554,16 +554,16 @@ class ResearchWorkspaceService:
         return {
             "items": [
                 {
-                    "event_id": x.event_id,
-                    "project_id": x.project_id,
-                    "actor_subject": x.actor_subject,
-                    "action": x.action,
-                    "entity_type": x.entity_type,
-                    "entity_id": x.entity_id,
-                    "occurred_at": x.occurred_at,
-                    "change_summary": x.change_summary,
+                    "event_id": item.event_id,
+                    "project_id": item.project_id,
+                    "actor_subject": item.actor_subject,
+                    "action": item.action,
+                    "entity_type": item.entity_type,
+                    "entity_id": item.entity_id,
+                    "occurred_at": item.occurred_at,
+                    "change_summary": item.change_summary,
                 }
-                for x in items
+                for item in items
             ],
             "total": total,
             "limit": limit,

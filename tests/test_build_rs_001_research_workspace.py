@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from pydantic import ValidationError
@@ -29,7 +30,6 @@ from app.research_workspace.service import (
     ResearchWorkspaceService,
 )
 
-
 TABLES = [
     Project.__table__,
     SavedSearch.__table__,
@@ -42,7 +42,7 @@ TABLES = [
 
 
 class Validator:
-    allowed = {
+    allowed: ClassVar[set[tuple[str, str]]] = {
         ("taxon", "taxon:42"),
         ("document", "document-7"),
         ("CANDIDATE", "11"),

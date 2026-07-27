@@ -12,7 +12,6 @@ from app.implementation_planning.postgres_repository import (
 from app.implementation_planning.service import ImplementationSpecificationService
 from tests.test_build_091_implementation_specification import source_bundle
 
-
 DATABASE_URL = os.getenv("BUILD_091_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="BUILD_091_DATABASE_URL not set")
 
