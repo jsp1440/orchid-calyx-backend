@@ -5,6 +5,8 @@ from typing import Any
 
 from app.routers.mission_control import harvester_rows
 
+from .source_metrics import enrich_source_row
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -28,6 +30,7 @@ def _status(raw: str | None, enabled: bool) -> str:
 
 
 def normalize_harvester(row: dict[str, Any], *, include_operations: bool = False) -> dict[str, Any]:
+    row = enrich_source_row(row)
     enabled = bool(row.get("enabled"))
     processed = int(row.get("rows_processed") or 0)
     inserted = int(row.get("rows_inserted") or 0)
@@ -61,14 +64,15 @@ def normalize_harvester(row: dict[str, Any], *, include_operations: bool = False
         "throughput": row.get("throughput"),
         "queue_remaining": row.get("queue_remaining"),
         "last_successful_activity": row.get("last_run"),
-        "freshness": row.get("heartbeat_at") or "unavailable",
+        "freshness": row.get("freshness_label") or row.get("heartbeat_at") or "unavailable",
+        "freshness_timestamp": row.get("heartbeat_at"),
         "schedule": row.get("schedule") or "unavailable",
         "estimated_completion": row.get("estimated_completion"),
         "approval_state": "owner_authorization_required",
         "calyx_context": {
             "recommendation_signal": "unavailable" if unavailable else "observe",
-            "reason": errors[0] if errors else "Telemetry is derived from the latest governed execution heartbeat.",
-            "confidence": 0.2 if unavailable else 0.7,
+            "reason": errors[0] if errors else "Telemetry is derived from the latest governed execution heartbeat and source-specific metric profile.",
+            "confidence": 0.2 if unavailable else 0.8 if processed > 0 else 0.7,
         },
         "provenance": {
             "evidence_source": "oc_admin.ocp_execution_jobs",
