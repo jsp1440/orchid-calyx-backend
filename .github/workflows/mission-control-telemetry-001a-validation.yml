@@ -1,0 +1,30 @@
+name: MISSION-CONTROL-TELEMETRY-001A validation
+
+on:
+  pull_request:
+    paths:
+      - "app/executive_telemetry/**"
+      - "app/main.py"
+      - "tests/test_mission_control_telemetry_001a_executive_state.py"
+      - ".github/workflows/mission-control-telemetry-001a-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      CALYX_REVIEW_ALLOW_MEMORY: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest 'httpx<0.28'
+      - name: Compile executive telemetry service
+        run: python -m compileall app/executive_telemetry runtime/executive
+      - name: Run telemetry 001A tests
+        run: pytest -q tests/test_mission_control_telemetry_001a_executive_state.py
+      - name: Run Mission Control governance regressions
+        run: pytest -q tests/test_mission_control_role_001g_briefing.py tests/test_mission_control_role_001i_workforce_frontend.py tests/test_mission_control_role_001j_release_readiness.py
