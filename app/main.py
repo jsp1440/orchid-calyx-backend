@@ -36,6 +36,7 @@ from app.concepts.routers import router as concepts_router
 from app.literature_extraction.routes import router as literature_extraction_router
 from app.publication.routers import router as publication_router
 from app.research_workspace.routes import router as research_workspace_router
+from app.review_api.routes import router as review_api_router
 from app.missions.dependencies import get_mission_service
 from app.missions.routers import router as missions_router, runtime_queue_router, templates_router
 from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, owner_cookie_secure, verify_owner_or_api_key
@@ -87,7 +88,7 @@ async def mission_control_cors_on_all_responses(request, call_next):
             response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key, X-Orchid-Actor"
+        response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key, X-Orchid-Actor, X-Orchid-Roles, X-Orchid-Qualifications, X-Orchid-Specialties"
         response.headers["Access-Control-Max-Age"] = "86400"
     return response
 
@@ -258,7 +259,6 @@ def autonomous_runtime_enabled_by_config() -> bool:
 
     return any(env_bool(os.environ.get(key)) is True for key in RUNTIME_ENABLE_FLAGS)
 
-
 AUTO_LOOP_ENABLED = autonomous_runtime_enabled_by_config()
 AUTO_LOOP_INTERVAL_SECONDS = runtime_interval_seconds_from_env()
 RUNTIME_WRITE_AUTH = [Depends(verify_owner_or_api_key), Depends(add_mission_control_cors_headers)]
@@ -419,6 +419,7 @@ app.include_router(concepts_router)
 app.include_router(literature_extraction_router)
 app.include_router(publication_router)
 app.include_router(research_workspace_router)
+app.include_router(review_api_router)
 app.include_router(missions_router)
 app.include_router(templates_router)
 app.include_router(runtime_queue_router)
