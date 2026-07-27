@@ -1,0 +1,29 @@
+name: MISSION-CONTROL-ROLE-001C validation
+
+on:
+  pull_request:
+    paths:
+      - "app/mission_control_access/**"
+      - "app/review_tasks/**"
+      - "tests/test_mission_control_role_001c_principals.py"
+      - ".github/workflows/mission-control-role-001c-validation.yml"
+  push:
+    branches:
+      - feature/mission-control-role-001c-principal-resolution
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused test dependencies
+        run: python -m pip install --upgrade pip pytest
+      - name: Compile access and review packages
+        run: python -m compileall app/mission_control_access app/review_tasks
+      - name: Run principal integration tests
+        env:
+          PYTHONPATH: .
+        run: pytest -q tests/test_mission_control_role_001b_capabilities.py tests/test_mission_control_role_001c_principals.py tests/test_mission_control_role_001a_review_tasks.py
