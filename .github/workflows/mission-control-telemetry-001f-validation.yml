@@ -1,0 +1,70 @@
+name: MISSION-CONTROL-TELEMETRY-001F validation
+
+on:
+  pull_request:
+    paths:
+      - "app/executive_telemetry/**"
+      - "scripts/smoke_mission_control_telemetry.py"
+      - "tests/test_mission_control_telemetry_001f_release_readiness.py"
+      - ".github/workflows/mission-control-telemetry-001f-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      CALYX_REVIEW_ALLOW_MEMORY: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest 'httpx<0.28'
+      - name: Compile release-readiness and smoke-test code
+        run: python -m compileall app/executive_telemetry scripts/smoke_mission_control_telemetry.py
+      - name: Run telemetry 001F tests
+        run: |
+          set -o pipefail
+          pytest -vv tests/test_mission_control_telemetry_001f_release_readiness.py 2>&1 | tee /tmp/mission-control-telemetry-001f.log
+      - name: Upload telemetry diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-telemetry-001f-diagnostics
+          path: /tmp/mission-control-telemetry-001f.log
+      - name: Run telemetry regressions
+        run: |
+          set -o pipefail
+          pytest -vv \
+            tests/test_mission_control_telemetry_001a_executive_state.py \
+            tests/test_mission_control_telemetry_001b_harvesters.py \
+            tests/test_mission_control_telemetry_001c_source_metrics.py \
+            tests/test_mission_control_telemetry_001d_intelligence.py \
+            tests/test_mission_control_telemetry_001e_frontend_contract.py \
+            2>&1 | tee /tmp/mission-control-telemetry-001f-regression.log
+      - name: Upload regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-telemetry-001f-regression-diagnostics
+          path: /tmp/mission-control-telemetry-001f-regression.log
+      - name: Run authenticated production smoke tests
+        if: ${{ secrets.MISSION_CONTROL_SMOKE_TOKEN != '' }}
+        env:
+          MISSION_CONTROL_BASE_URL: ${{ vars.MISSION_CONTROL_BASE_URL || 'https://orchid-calyx-backend.onrender.com' }}
+          MISSION_CONTROL_SMOKE_TOKEN: ${{ secrets.MISSION_CONTROL_SMOKE_TOKEN }}
+        run: |
+          set -o pipefail
+          python scripts/smoke_mission_control_telemetry.py 2>&1 | tee /tmp/mission-control-production-smoke.log
+      - name: Record production smoke credential status
+        if: ${{ secrets.MISSION_CONTROL_SMOKE_TOKEN == '' }}
+        run: |
+          echo '{"production_smoke":"not_run","reason":"MISSION_CONTROL_SMOKE_TOKEN is not configured"}' | tee /tmp/mission-control-production-smoke.log
+      - name: Upload production smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-telemetry-001f-production-smoke
+          path: /tmp/mission-control-production-smoke.log
