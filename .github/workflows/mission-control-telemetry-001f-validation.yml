@@ -18,6 +18,8 @@ jobs:
     env:
       PYTHONPATH: .
       CALYX_REVIEW_ALLOW_MEMORY: "true"
+      MISSION_CONTROL_BASE_URL: ${{ vars.MISSION_CONTROL_BASE_URL || 'https://orchid-calyx-backend.onrender.com' }}
+      MISSION_CONTROL_SMOKE_TOKEN: ${{ secrets.MISSION_CONTROL_SMOKE_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,15 +56,12 @@ jobs:
           name: mission-control-telemetry-001f-regression-diagnostics
           path: /tmp/mission-control-telemetry-001f-regression.log
       - name: Run authenticated production smoke tests
-        if: ${{ secrets.MISSION_CONTROL_SMOKE_TOKEN != '' }}
-        env:
-          MISSION_CONTROL_BASE_URL: ${{ vars.MISSION_CONTROL_BASE_URL || 'https://orchid-calyx-backend.onrender.com' }}
-          MISSION_CONTROL_SMOKE_TOKEN: ${{ secrets.MISSION_CONTROL_SMOKE_TOKEN }}
+        if: ${{ env.MISSION_CONTROL_SMOKE_TOKEN != '' }}
         run: |
           set -o pipefail
           python scripts/smoke_mission_control_telemetry.py 2>&1 | tee /tmp/mission-control-production-smoke.log
       - name: Record production smoke credential status
-        if: ${{ secrets.MISSION_CONTROL_SMOKE_TOKEN == '' }}
+        if: ${{ env.MISSION_CONTROL_SMOKE_TOKEN == '' }}
         run: |
           echo '{"production_smoke":"not_run","reason":"MISSION_CONTROL_SMOKE_TOKEN is not configured"}' | tee /tmp/mission-control-production-smoke.log
       - name: Upload production smoke diagnostics
