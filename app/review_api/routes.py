@@ -7,11 +7,12 @@ from pydantic import BaseModel, Field
 
 from app.mission_control_access import AccessPrincipal, CapabilityService
 from app.review_tasks.models import ReviewDecisionInput, ReviewDecisionType
+from app.review_tasks.operations import ReviewQueueOperations
 from app.review_tasks.service import GovernedReviewTaskService, ReviewTaskError
 
 from .dependencies import authenticated_principal, review_service_dependency
 
-router = APIRouter(prefix="/api/mission-control/review", tags=["MISSION-CONTROL-ROLE-001F"])
+router = APIRouter(prefix="/api/mission-control/review", tags=["MISSION-CONTROL-ROLE-001H"])
 
 _capability_service = CapabilityService()
 
@@ -23,12 +24,25 @@ class ReviewDecisionRequest(BaseModel):
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 
+class ExpireReservationsRequest(BaseModel):
+    dry_run: bool = False
+
+
 def _translate_review_error(exc: ReviewTaskError) -> HTTPException:
     status = 404 if exc.code == "TASK_NOT_FOUND" else 409 if exc.code in {
         "TASK_NOT_AVAILABLE",
         "AUTHORITATIVE_DECISION_LOCKED",
     } else 403 if exc.code in {"CAPABILITY_REQUIRED", "PRINCIPAL_REVIEWER_MISMATCH"} else 400
     return HTTPException(status_code=status, detail={"code": exc.code, "details": exc.details})
+
+
+def _require_capability(principal: AccessPrincipal, capability: str) -> None:
+    decision = _capability_service.evaluate(principal, capability)
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": decision.reason_code, "details": _capability_service.audit_payload(decision)},
+        )
 
 
 @router.get("/queue")
@@ -43,6 +57,38 @@ def review_queue(
         "count": min(len(tasks), limit),
         "tasks": tasks[:limit],
     }
+
+
+@router.get("/queue/metrics")
+def review_queue_metrics(
+    principal: AccessPrincipal = Depends(authenticated_principal),
+    service: GovernedReviewTaskService = Depends(review_service_dependency),
+) -> dict[str, Any]:
+    _require_capability(principal, "mission_control.view.operations")
+    return ReviewQueueOperations(service).metrics()
+
+
+@router.post("/reservations/expire")
+def expire_review_reservations(
+    request: ExpireReservationsRequest,
+    principal: AccessPrincipal = Depends(authenticated_principal),
+    service: GovernedReviewTaskService = Depends(review_service_dependency),
+) -> dict[str, Any]:
+    _require_capability(principal, "review.assignments.manage")
+    operations = ReviewQueueOperations(service)
+    expired = [] if request.dry_run else operations.expire_reservations()
+    return {"dry_run": request.dry_run, "expired_count": len(expired), "tasks": expired}
+
+
+@router.get("/workforce/export")
+def export_review_workforce_queue(
+    principal: AccessPrincipal = Depends(authenticated_principal),
+    service: GovernedReviewTaskService = Depends(review_service_dependency),
+) -> dict[str, Any]:
+    payload = ReviewQueueOperations(service).export_for_principal(principal)
+    if not payload["allowed"]:
+        raise HTTPException(status_code=403, detail=payload["authorization"])
+    return payload
 
 
 @router.get("/tasks/{task_id}")
