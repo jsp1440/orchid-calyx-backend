@@ -119,38 +119,185 @@ SCIENTIFIC_MODULES: list[dict[str, Any]] = [
         "mission": "Audit literature extraction coverage.",
     },
     {
-        "module_name": "traitbank",
+        "module_name": "ecological_relationship_graph",
+        "state": "scientific_priority",
+        "priority": 95,
+        "job_name": "audit_ecological_relationship_graph_gaps",
+        "mission": "Audit ecological relationship graph gaps.",
+    },
+    {
+        "module_name": "traitbank_traits",
         "state": "scientific_priority",
         "priority": 94,
         "job_name": "audit_traitbank_trait_coverage",
-        "mission": "Audit TraitBank trait coverage and normalization gaps.",
+        "mission": "Audit TraitBank and trait coverage.",
     },
     {
-        "module_name": "ecological_relationship_graph",
+        "module_name": "conservation_habitat",
         "state": "scientific_priority",
-        "priority": 92,
-        "job_name": "audit_ecological_relationship_graph_gaps",
-        "mission": "Audit ecological relationship graph gaps.",
+        "priority": 93,
+        "job_name": "audit_conservation_habitat_gaps",
+        "mission": "Audit conservation and habitat data gaps.",
     },
     {
         "module_name": "image_species_evidence",
         "state": "scientific_priority",
         "priority": 90,
         "job_name": "audit_image_species_evidence_coverage",
-        "mission": "Audit image-to-species evidence coverage.",
+        "mission": "Audit image and species evidence coverage.",
     },
     {
-        "module_name": "conservation_habitat",
+        "module_name": "frontend_knowledge_graph_integration",
         "state": "scientific_priority",
         "priority": 88,
-        "job_name": "audit_conservation_habitat_gaps",
-        "mission": "Audit conservation and habitat gaps.",
+        "job_name": "audit_frontend_relationship_cards",
+        "mission": "Audit frontend relationship cards against backend data.",
     },
 ]
 
+SUPPORT_MODULES: list[dict[str, Any]] = [
+    {
+        "module_name": "calyx_core_health",
+        "state": "runtime_support",
+        "priority": 80,
+        "job_name": "optimize_calyx_core",
+        "mission": "Check Calyx core health after scientific mission seeding.",
+    },
+    {
+        "module_name": "constitutional_orchestrator",
+        "state": "runtime_support",
+        "priority": 85,
+        "job_name": "optimize_constitutional_orchestrator",
+        "mission": "Check Calyx constitutional guardrail and mission registry readiness.",
+    },
+    {
+        "module_name": "judging",
+        "state": "optional_low_priority",
+        "priority": 25,
+        "job_name": "optimize_judging",
+        "mission": "Optional judging module maintenance when no scientific work is pending.",
+    },
+    {
+        "module_name": "awards",
+        "state": "optional_low_priority",
+        "priority": 20,
+        "job_name": "optimize_awards",
+        "mission": "Optional awards module maintenance when no scientific work is pending.",
+    },
+]
+
+MODULE_REGISTRY = SCIENTIFIC_MODULES + SUPPORT_MODULES
+SCIENTIFIC_JOB_NAMES = {module["job_name"] for module in SCIENTIFIC_MODULES}
+JOB_PRIORITIES = {module["job_name"]: module["priority"] for module in MODULE_REGISTRY}
+JOB_MODULES = {module["job_name"]: module for module in MODULE_REGISTRY}
+JOB_PRIORITY_SQL = "CASE job_name " + " ".join(
+    f"WHEN '{job_name}' THEN {priority}" for job_name, priority in JOB_PRIORITIES.items()
+) + " ELSE 0 END"
+
+
+def require_database_url() -> str:
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is required for Calyx runner operations")
+    return DATABASE_URL
+
+
+def env_bool(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def configured(name: str) -> bool:
+    return bool(os.environ.get(name, "").strip())
+
+
+def runtime_interval_seconds_from_env() -> int:
+    for key in RUNTIME_INTERVAL_FLAGS:
+        value = os.environ.get(key)
+        if value is None:
+            continue
+        try:
+            return max(5, int(value))
+        except ValueError:
+            return 30
+    return 30
+
+
+def autonomous_runtime_config_blocker() -> Optional[dict[str, str]]:
+    for key in RUNTIME_DISABLE_FLAGS:
+        if env_bool(os.environ.get(key)) is True:
+            return {"key": key, "reason": "explicit_disable_flag"}
+
+    for key in RUNTIME_ENABLE_FLAGS:
+        if key in os.environ and env_bool(os.environ.get(key)) is False:
+            return {"key": key, "reason": "explicit_enable_flag_false"}
+
+    return None
+
+
+def autonomous_runtime_enabled_by_config() -> bool:
+    if autonomous_runtime_config_blocker() is not None:
+        return False
+
+    return any(env_bool(os.environ.get(key)) is True for key in RUNTIME_ENABLE_FLAGS)
+
+AUTO_LOOP_ENABLED = autonomous_runtime_enabled_by_config()
+AUTO_LOOP_INTERVAL_SECONDS = runtime_interval_seconds_from_env()
+RUNTIME_WRITE_AUTH = [Depends(verify_owner_or_api_key), Depends(add_mission_control_cors_headers)]
+RUNTIME_CORS = [Depends(add_mission_control_cors_headers)]
+
+
+def auth_required_action(reason: str, *, risk: str = "medium") -> dict[str, Any]:
+    return {
+        "allowed": False,
+        "state": "requires_owner_authorization",
+        "auth": "owner_session_or_api_key_required",
+        "risk": risk,
+        "reason": reason,
+    }
+
+
+def runner_allowed_actions() -> dict[str, dict[str, Any]]:
+    return {
+        "runOnce": auth_required_action("Seeds runtime jobs and writes queue state.", risk="medium"),
+        "seedMissions": auth_required_action("Seeds runtime mission jobs and writes queue state.", risk="medium"),
+        "executeNext": auth_required_action("Executes one pending job and writes execution state.", risk="medium"),
+        "executeAll": auth_required_action("Executes the full pending queue and may perform many writes.", risk="high"),
+        "autonomousCycle": auth_required_action("Runs one autonomous worker cycle.", risk="medium"),
+        "startRuntime": auth_required_action("Starts the autonomous runtime worker.", risk="high"),
+        "stopRuntime": auth_required_action("Stops or disables the autonomous runtime worker.", risk="high"),
+        "restartRuntime": auth_required_action("Restarts the autonomous runtime worker.", risk="high"),
+    }
+
+
+def evaluate_runtime_action(
+    action: str,
+    *,
+    requested_autonomy_level: int = int(AutonomyLevel.SAFE_OPERATIONS),
+    evidence: list[str] | None = None,
+) -> dict[str, Any]:
+    return constitutional_orchestrator.evaluate_action(
+        mission_id="engineering",
+        action=f"runtime:{action}",
+        requested_autonomy_level=requested_autonomy_level,
+        evidence=evidence or [f"route=/api/runner/{action}"],
+        reversible=True,
+        provenance_available=True,
+    )
+
 
 class VerificationRequest(BaseModel):
-    source_context: Optional[dict[str, Any]] = None
+    source_context: Optional[str] = None
+
+
+@app.get("/")
+def read_root():
+    return {"status": "Calyx Backend API running"}
 
 
 @app.post("/verify")
@@ -158,7 +305,7 @@ def verify(request: VerificationRequest):
     return {"received": True, "source_context": request.source_context}
 
 
-@app.get("/api/runner/health", dependencies=[Depends(add_mission_control_cors_headers)])
+@app.get("/api/runner/health", dependencies=RUNTIME_CORS)
 def runner_health():
     config = runtime_configuration()
     return {
