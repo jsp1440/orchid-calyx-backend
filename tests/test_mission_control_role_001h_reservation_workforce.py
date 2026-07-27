@@ -14,11 +14,13 @@ client = TestClient(app)
 service = GovernedReviewTaskService(repository=MemoryReviewTaskRepository())
 
 
-def _principal(*capabilities: str) -> AccessPrincipal:
+def _principal(*capabilities: str, science: bool = False) -> AccessPrincipal:
+    qualifications = ("qualified.science-reviewer",) if science else ()
     return AccessPrincipal(
         principal_id="operator-1",
         roles=(MissionControlRole.ADMINISTRATOR,),
         direct_capabilities=tuple(capabilities),
+        qualifications=qualifications,
         authenticated=True,
     )
 
@@ -69,7 +71,11 @@ def test_reservation_sets_expiration_and_worker_expires_it() -> None:
 
 def test_metrics_endpoint_requires_operations_capability() -> None:
     _task()
-    app.dependency_overrides[authenticated_principal] = lambda: _principal()
+    app.dependency_overrides[authenticated_principal] = lambda: AccessPrincipal(
+        principal_id="authenticated-no-ops",
+        roles=(),
+        authenticated=True,
+    )
     denied = client.get("/api/mission-control/review/queue/metrics")
     assert denied.status_code == 403
 
@@ -97,7 +103,7 @@ def test_workforce_export_filters_embargoed_tasks() -> None:
     visible = _task()
     _task(orchestration_id="001h-embargoed", embargoed=True)
     app.dependency_overrides[authenticated_principal] = lambda: _principal(
-        "review.external.export", "review.science"
+        "review.external.export", science=True
     )
     response = client.get("/api/mission-control/review/workforce/export")
     assert response.status_code == 200
