@@ -5,8 +5,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.mission_control_access import AccessDenied, AccessPrincipal, CapabilityService
-from app.mission_control_access.principal_resolution import AuthenticationIdentity, PrincipalResolver
+from app.mission_control_access import (
+    AccessPrincipal,
+    AuthenticatedIdentity,
+    CapabilityService,
+    PrincipalResolutionError,
+    PrincipalResolver,
+)
 from app.review_tasks.models import ReviewDecisionInput, ReviewDecisionType
 from app.review_tasks.service import GovernedReviewTaskService, ReviewTaskError
 
@@ -31,11 +36,11 @@ def resolve_principal(
     x_orchid_specialties: str | None = Header(default=None),
 ) -> AccessPrincipal:
     if not x_orchid_actor:
-        return _principal_resolver.resolve(AuthenticationIdentity.anonymous())
-    identity = AuthenticationIdentity(
-        subject=x_orchid_actor.strip(),
+        return _principal_resolver.resolve(None)
+    identity = AuthenticatedIdentity(
+        subject_id=x_orchid_actor.strip(),
         authenticated=True,
-        roles=tuple(item.strip() for item in (x_orchid_roles or "").split(",") if item.strip()),
+        role_names=tuple(item.strip() for item in (x_orchid_roles or "").split(",") if item.strip()),
         qualifications=tuple(
             item.strip() for item in (x_orchid_qualifications or "").split(",") if item.strip()
         ),
@@ -44,15 +49,18 @@ def resolve_principal(
     )
     try:
         return _principal_resolver.resolve(identity)
-    except ValueError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except PrincipalResolutionError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": exc.code, "details": exc.details},
+        ) from exc
 
 
 def _translate_review_error(exc: ReviewTaskError) -> HTTPException:
     status = 404 if exc.code == "TASK_NOT_FOUND" else 409 if exc.code in {
         "TASK_NOT_AVAILABLE",
         "AUTHORITATIVE_DECISION_LOCKED",
-    } else 403 if exc.code in {"CAPABILITY_REQUIRED", "REVIEWER_PRINCIPAL_MISMATCH"} else 400
+    } else 403 if exc.code in {"CAPABILITY_REQUIRED", "PRINCIPAL_REVIEWER_MISMATCH"} else 400
     return HTTPException(status_code=status, detail={"code": exc.code, "details": exc.details})
 
 
@@ -77,10 +85,9 @@ def review_task_detail(
     principal: AccessPrincipal = Depends(resolve_principal),
 ) -> dict[str, Any]:
     try:
-        task = _review_service.get_for_principal(task_id, principal)
+        return _review_service._authorized_task_for_principal(task_id, principal)
     except ReviewTaskError as exc:
         raise _translate_review_error(exc) from exc
-    return task
 
 
 @router.post("/tasks/{task_id}/reserve")
@@ -109,7 +116,7 @@ def decide_review_task(
             modified_value=request.modified_value,
             provenance=request.provenance,
         )
-        return _review_service.decide_for_principal(task_id, decision, principal)
+        return _review_service.decide_for_principal(task_id, principal, decision)
     except ReviewTaskError as exc:
         raise _translate_review_error(exc) from exc
 
