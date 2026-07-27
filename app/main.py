@@ -39,6 +39,7 @@ from app.research_workspace.routes import router as research_workspace_router
 from app.review_api.routes import router as review_api_router
 from app.mission_control_briefing.routes import router as mission_control_briefing_router
 from app.mission_control_release.routes import router as mission_control_release_router
+from app.executive_telemetry.routes import router as executive_telemetry_router
 from app.missions.dependencies import get_mission_service
 from app.missions.routers import router as missions_router, runtime_queue_router, templates_router
 from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, owner_cookie_secure, verify_owner_or_api_key
@@ -408,6 +409,7 @@ app.include_router(research_workspace_router)
 app.include_router(review_api_router)
 app.include_router(mission_control_briefing_router)
 app.include_router(mission_control_release_router)
+app.include_router(executive_telemetry_router)
 app.include_router(missions_router)
 app.include_router(templates_router)
 app.include_router(runtime_queue_router)
