@@ -8,6 +8,7 @@ from app.mission_control_access import AccessPrincipal, CapabilityService
 from app.review_api.dependencies import authenticated_principal
 
 from .harvesters import normalized_harvesters
+from .intelligence import build_dependency_intelligence
 from .service import build_executive_state
 
 router = APIRouter(prefix="/api/executive", tags=["MISSION-CONTROL-TELEMETRY"])
@@ -66,3 +67,23 @@ def executive_harvester_detail(
                 },
             }
     raise HTTPException(status_code=404, detail="Harvester telemetry source not found")
+
+
+@router.get("/intelligence")
+def executive_intelligence(
+    principal: AccessPrincipal = Depends(authenticated_principal),
+) -> dict[str, Any]:
+    include_operations = _include_operations(principal)
+    state = build_executive_state(include_operations=include_operations)
+    harvesters = normalized_harvesters(include_operations=include_operations)
+    intelligence = build_dependency_intelligence(state.get("subsystems") or [], harvesters)
+    return {
+        "contract_version": "MISSION-CONTROL-TELEMETRY-001D",
+        "generated_at": state.get("generated_at"),
+        **intelligence,
+        "principal": {
+            "id": principal.principal_id,
+            "authenticated": principal.authenticated,
+            "roles": [role.value for role in principal.roles],
+        },
+    }
