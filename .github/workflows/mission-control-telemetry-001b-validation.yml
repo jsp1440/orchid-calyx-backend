@@ -1,0 +1,45 @@
+name: MISSION-CONTROL-TELEMETRY-001B validation
+
+on:
+  pull_request:
+    paths:
+      - "app/executive_telemetry/**"
+      - "tests/test_mission_control_telemetry_001b_harvesters.py"
+      - ".github/workflows/mission-control-telemetry-001b-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      CALYX_REVIEW_ALLOW_MEMORY: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest 'httpx<0.28'
+      - name: Compile telemetry adapters
+        run: python -m compileall app/executive_telemetry
+      - name: Run telemetry 001B tests
+        run: |
+          set -o pipefail
+          pytest -vv tests/test_mission_control_telemetry_001b_harvesters.py 2>&1 | tee /tmp/mission-control-telemetry-001b.log
+      - name: Upload telemetry diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-telemetry-001b-diagnostics
+          path: /tmp/mission-control-telemetry-001b.log
+      - name: Run telemetry regression suite
+        run: |
+          set -o pipefail
+          pytest -vv tests/test_mission_control_telemetry_001a_executive_state.py tests/test_mission_control_role_001j_release_readiness.py 2>&1 | tee /tmp/mission-control-telemetry-001b-regression.log
+      - name: Upload regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-telemetry-001b-regression-diagnostics
+          path: /tmp/mission-control-telemetry-001b-regression.log
