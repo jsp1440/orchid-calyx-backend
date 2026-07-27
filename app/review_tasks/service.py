@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.mission_control_access import AccessPrincipal, CapabilityService
@@ -133,6 +133,8 @@ class GovernedReviewTaskService:
         self,
         task_id: str,
         principal: AccessPrincipal,
+        *,
+        reservation_hours: int = 24,
     ) -> dict[str, Any]:
         task = self._authorized_task_for_principal(task_id, principal)
         if task["state"] not in {
@@ -140,14 +142,20 @@ class GovernedReviewTaskService:
             ReviewTaskState.EXPIRED.value,
         }:
             raise ReviewTaskError("TASK_NOT_AVAILABLE")
+        now = datetime.now(timezone.utc)
         task["state"] = ReviewTaskState.RESERVED.value
         task["assigned_to"] = principal.principal_id
-        task["updated_at"] = _now()
+        task["reservation_expires_at"] = (now + timedelta(hours=reservation_hours)).isoformat()
+        task["updated_at"] = now.isoformat()
         self.repository.save(task)
         self.repository.append_event(
             task_id,
             "TASK_RESERVED",
-            {"reviewer_id": principal.principal_id, "authorization": task.pop("authorization")},
+            {
+                "reviewer_id": principal.principal_id,
+                "reservation_expires_at": task["reservation_expires_at"],
+                "authorization": task.pop("authorization"),
+            },
         )
         return task
 
@@ -236,6 +244,7 @@ class GovernedReviewTaskService:
                 ReviewTaskState.OPEN.value,
                 ReviewTaskState.RESERVED.value,
                 ReviewTaskState.IN_REVIEW.value,
+                ReviewTaskState.EXPIRED.value,
             }:
                 item["authorization"] = self.capability_service.audit_payload(decision)
                 tasks.append(item)
