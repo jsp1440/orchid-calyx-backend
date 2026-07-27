@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest httpx
+        run: pip install -r requirements.txt pytest 'httpx<0.28'
       - name: Compile review API
         run: python -m compileall app/review_api app/mission_control_access app/review_tasks
       - name: Run 001E tests
