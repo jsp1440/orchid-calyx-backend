@@ -15,11 +15,13 @@ from app.document_import.routes import router as document_import_router
 from app.document_intelligence.routes import router as document_intelligence_router
 from app.evidence_aggregation.routes import router as evidence_aggregation_router
 from app.evidence_retrieval.routes import router as evidence_retrieval_router
+from app.executive_telemetry.routes import router as executive_telemetry_router
 from app.implementation_planning.routes import router as implementation_planning_router
 from app.intake.routes import router as intake_router
 from app.mission_control_briefing.routes import (
     router as mission_control_briefing_router,
 )
+from app.mission_control_release.routes import router as mission_control_release_router
 from app.missions.dependencies import get_mission_service
 from app.missions.routers import router as missions_router
 from app.missions.routers import runtime_queue_router, templates_router
@@ -54,10 +56,6 @@ from app.security import (
 from app.semantic.routers import router as semantic_router
 from app.semantic_index.routes import router as semantic_index_router
 from app.source_registry.routes import router as source_registry_router
-from app.concepts.routers import router as concepts_router
-from app.literature_extraction.routes import router as literature_extraction_router
-from app.mission_control_release.routes import router as mission_control_release_router
-from app.executive_telemetry.routes import router as executive_telemetry_router
 from runtime.cds_router import router as cds_router
 from runtime.constitutional_orchestrator import AutonomyLevel
 from runtime.constitutional_orchestrator import (
