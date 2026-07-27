@@ -6,6 +6,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
+from app.mission_control_access import AccessPrincipal, CapabilityService
+
 from .models import ReviewDecisionInput, ReviewDecisionType, ReviewTaskInput, ReviewTaskState
 from .repository import MemoryReviewTaskRepository
 
@@ -36,8 +38,13 @@ class GovernedReviewTaskService:
         "PUBLICATION_REVIEW_REQUIRED": "review.publish",
     }
 
-    def __init__(self, repository: MemoryReviewTaskRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: MemoryReviewTaskRepository | None = None,
+        capability_service: CapabilityService | None = None,
+    ) -> None:
         self.repository = repository or MemoryReviewTaskRepository()
+        self.capability_service = capability_service or CapabilityService()
 
     def create(self, item: ReviewTaskInput) -> dict[str, Any]:
         identity = {
@@ -122,37 +129,62 @@ class GovernedReviewTaskService:
             )
         )
 
-    def reserve(
+    def reserve_for_principal(
         self,
         task_id: str,
-        reviewer_id: str,
-        capabilities: tuple[str, ...],
+        principal: AccessPrincipal,
     ) -> dict[str, Any]:
-        task = self._authorized_task(task_id, capabilities)
+        task = self._authorized_task_for_principal(task_id, principal)
         if task["state"] not in {
             ReviewTaskState.OPEN.value,
             ReviewTaskState.EXPIRED.value,
         }:
             raise ReviewTaskError("TASK_NOT_AVAILABLE")
         task["state"] = ReviewTaskState.RESERVED.value
-        task["assigned_to"] = reviewer_id
+        task["assigned_to"] = principal.principal_id
         task["updated_at"] = _now()
         self.repository.save(task)
-        self.repository.append_event(task_id, "TASK_RESERVED", {"reviewer_id": reviewer_id})
+        self.repository.append_event(
+            task_id,
+            "TASK_RESERVED",
+            {"reviewer_id": principal.principal_id, "authorization": task.pop("authorization")},
+        )
         return task
 
-    def decide(self, task_id: str, decision: ReviewDecisionInput) -> dict[str, Any]:
-        task = self._authorized_task(task_id, decision.reviewer_capabilities)
+    def reserve(
+        self,
+        task_id: str,
+        reviewer_id: str,
+        capabilities: tuple[str, ...],
+    ) -> dict[str, Any]:
+        principal = AccessPrincipal(
+            principal_id=reviewer_id,
+            direct_capabilities=capabilities,
+            qualifications=("legacy.capability-bridge",),
+            authenticated=True,
+        )
+        return self.reserve_for_principal(task_id, principal)
+
+    def decide_for_principal(
+        self,
+        task_id: str,
+        principal: AccessPrincipal,
+        decision: ReviewDecisionInput,
+    ) -> dict[str, Any]:
+        if decision.reviewer_id != principal.principal_id:
+            raise ReviewTaskError("PRINCIPAL_REVIEWER_MISMATCH")
+        task = self._authorized_task_for_principal(task_id, principal)
         if task.get("authoritative_decision") in {"REJECT", "ESCALATE"}:
             raise ReviewTaskError("AUTHORITATIVE_DECISION_LOCKED")
+        authorization = task.pop("authorization")
         stored = self.repository.append_decision(
             {
                 "task_id": task_id,
                 "decision": decision.decision.value,
-                "reviewer_id": decision.reviewer_id,
+                "reviewer_id": principal.principal_id,
                 "comment": decision.comment,
                 "modified_value": deepcopy(decision.modified_value),
-                "provenance": deepcopy(decision.provenance),
+                "provenance": {**deepcopy(decision.provenance), "authorization": authorization},
             }
         )
         decisions = self.repository.decisions_for(task_id)
@@ -174,25 +206,39 @@ class GovernedReviewTaskService:
         self.repository.append_event(
             task_id,
             "DECISION_RECORDED",
-            {"decision_id": stored["decision_id"], "decision": decision.decision.value},
+            {
+                "decision_id": stored["decision_id"],
+                "decision": decision.decision.value,
+                "principal_id": principal.principal_id,
+                "authorization": authorization,
+            },
         )
         task["decisions"] = decisions
         task["history"] = self.repository.history(task_id)
         return task
 
-    def queue(self, capabilities: tuple[str, ...]) -> list[dict[str, Any]]:
-        allowed = set(capabilities)
-        tasks = [
-            item
-            for item in self.repository.list_tasks()
-            if item["required_capability"] in allowed
-            and item["state"]
-            in {
+    def decide(self, task_id: str, decision: ReviewDecisionInput) -> dict[str, Any]:
+        principal = AccessPrincipal(
+            principal_id=decision.reviewer_id,
+            direct_capabilities=decision.reviewer_capabilities,
+            qualifications=("legacy.capability-bridge",),
+            authenticated=True,
+        )
+        return self.decide_for_principal(task_id, principal, decision)
+
+    def queue_for_principal(self, principal: AccessPrincipal) -> list[dict[str, Any]]:
+        tasks = []
+        for item in self.repository.list_tasks():
+            decision = self.capability_service.evaluate(principal, item["required_capability"])
+            if not decision.allowed:
+                continue
+            if item["state"] in {
                 ReviewTaskState.OPEN.value,
                 ReviewTaskState.RESERVED.value,
                 ReviewTaskState.IN_REVIEW.value,
-            }
-        ]
+            }:
+                item["authorization"] = self.capability_service.audit_payload(decision)
+                tasks.append(item)
         return sorted(
             tasks,
             key=lambda item: (
@@ -202,17 +248,28 @@ class GovernedReviewTaskService:
             ),
         )
 
-    def _authorized_task(
+    def queue(self, capabilities: tuple[str, ...]) -> list[dict[str, Any]]:
+        principal = AccessPrincipal(
+            principal_id="legacy-capability-principal",
+            direct_capabilities=capabilities,
+            qualifications=("legacy.capability-bridge",),
+            authenticated=True,
+        )
+        return self.queue_for_principal(principal)
+
+    def _authorized_task_for_principal(
         self,
         task_id: str,
-        capabilities: tuple[str, ...],
+        principal: AccessPrincipal,
     ) -> dict[str, Any]:
         task = self.repository.get(task_id)
         if not task:
             raise ReviewTaskError("TASK_NOT_FOUND")
-        if task["required_capability"] not in set(capabilities):
+        decision = self.capability_service.evaluate(principal, task["required_capability"])
+        if not decision.allowed:
             raise ReviewTaskError(
-                "CAPABILITY_REQUIRED",
-                {"capability": task["required_capability"]},
+                decision.reason_code,
+                self.capability_service.audit_payload(decision),
             )
+        task["authorization"] = self.capability_service.audit_payload(decision)
         return task
