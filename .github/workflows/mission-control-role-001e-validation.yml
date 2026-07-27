@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONPATH: .
+      CALYX_REVIEW_ALLOW_MEMORY: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
