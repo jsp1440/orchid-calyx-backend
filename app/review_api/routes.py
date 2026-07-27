@@ -2,24 +2,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.mission_control_access import (
-    AccessPrincipal,
-    AuthenticatedIdentity,
-    CapabilityService,
-    PrincipalResolutionError,
-    PrincipalResolver,
-)
+from app.mission_control_access import AccessPrincipal, CapabilityService
 from app.review_tasks.models import ReviewDecisionInput, ReviewDecisionType
 from app.review_tasks.service import GovernedReviewTaskService, ReviewTaskError
 
-router = APIRouter(prefix="/api/mission-control/review", tags=["MISSION-CONTROL-ROLE-001E"])
+from .dependencies import authenticated_principal, review_service_dependency
+
+router = APIRouter(prefix="/api/mission-control/review", tags=["MISSION-CONTROL-ROLE-001F"])
 
 _capability_service = CapabilityService()
-_principal_resolver = PrincipalResolver()
-_review_service = GovernedReviewTaskService()
 
 
 class ReviewDecisionRequest(BaseModel):
@@ -27,33 +21,6 @@ class ReviewDecisionRequest(BaseModel):
     comment: str | None = None
     modified_value: dict[str, Any] | None = None
     provenance: dict[str, Any] = Field(default_factory=dict)
-
-
-def resolve_principal(
-    x_orchid_actor: str | None = Header(default=None),
-    x_orchid_roles: str | None = Header(default=None),
-    x_orchid_qualifications: str | None = Header(default=None),
-    x_orchid_specialties: str | None = Header(default=None),
-) -> AccessPrincipal:
-    if not x_orchid_actor:
-        return _principal_resolver.resolve(None)
-    identity = AuthenticatedIdentity(
-        subject_id=x_orchid_actor.strip(),
-        authenticated=True,
-        role_names=tuple(item.strip() for item in (x_orchid_roles or "").split(",") if item.strip()),
-        qualifications=tuple(
-            item.strip() for item in (x_orchid_qualifications or "").split(",") if item.strip()
-        ),
-        specialties=tuple(item.strip() for item in (x_orchid_specialties or "").split(",") if item.strip()),
-        metadata={"auth_source": "mission-control-review-api"},
-    )
-    try:
-        return _principal_resolver.resolve(identity)
-    except PrincipalResolutionError as exc:
-        raise HTTPException(
-            status_code=401,
-            detail={"code": exc.code, "details": exc.details},
-        ) from exc
 
 
 def _translate_review_error(exc: ReviewTaskError) -> HTTPException:
@@ -67,11 +34,10 @@ def _translate_review_error(exc: ReviewTaskError) -> HTTPException:
 @router.get("/queue")
 def review_queue(
     limit: int = Query(default=50, ge=1, le=200),
-    principal: AccessPrincipal = Depends(resolve_principal),
+    principal: AccessPrincipal = Depends(authenticated_principal),
+    service: GovernedReviewTaskService = Depends(review_service_dependency),
 ) -> dict[str, Any]:
-    if not principal.authenticated:
-        raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED")
-    tasks = _review_service.queue_for_principal(principal)
+    tasks = service.queue_for_principal(principal)
     return {
         "principal_id": principal.principal_id,
         "count": min(len(tasks), limit),
@@ -82,10 +48,11 @@ def review_queue(
 @router.get("/tasks/{task_id}")
 def review_task_detail(
     task_id: str,
-    principal: AccessPrincipal = Depends(resolve_principal),
+    principal: AccessPrincipal = Depends(authenticated_principal),
+    service: GovernedReviewTaskService = Depends(review_service_dependency),
 ) -> dict[str, Any]:
     try:
-        return _review_service._authorized_task_for_principal(task_id, principal)
+        return service._authorized_task_for_principal(task_id, principal)
     except ReviewTaskError as exc:
         raise _translate_review_error(exc) from exc
 
@@ -93,10 +60,11 @@ def review_task_detail(
 @router.post("/tasks/{task_id}/reserve")
 def reserve_review_task(
     task_id: str,
-    principal: AccessPrincipal = Depends(resolve_principal),
+    principal: AccessPrincipal = Depends(authenticated_principal),
+    service: GovernedReviewTaskService = Depends(review_service_dependency),
 ) -> dict[str, Any]:
     try:
-        return _review_service.reserve_for_principal(task_id, principal)
+        return service.reserve_for_principal(task_id, principal)
     except ReviewTaskError as exc:
         raise _translate_review_error(exc) from exc
 
@@ -105,7 +73,8 @@ def reserve_review_task(
 def decide_review_task(
     task_id: str,
     request: ReviewDecisionRequest,
-    principal: AccessPrincipal = Depends(resolve_principal),
+    principal: AccessPrincipal = Depends(authenticated_principal),
+    service: GovernedReviewTaskService = Depends(review_service_dependency),
 ) -> dict[str, Any]:
     try:
         decision = ReviewDecisionInput(
@@ -116,14 +85,14 @@ def decide_review_task(
             modified_value=request.modified_value,
             provenance=request.provenance,
         )
-        return _review_service.decide_for_principal(task_id, principal, decision)
+        return service.decide_for_principal(task_id, principal, decision)
     except ReviewTaskError as exc:
         raise _translate_review_error(exc) from exc
 
 
 @router.get("/capabilities")
 def review_capabilities(
-    principal: AccessPrincipal = Depends(resolve_principal),
+    principal: AccessPrincipal = Depends(authenticated_principal),
 ) -> dict[str, Any]:
     return {
         "principal_id": principal.principal_id,
