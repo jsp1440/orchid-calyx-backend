@@ -9,10 +9,11 @@ from app.mission_control_access import AccessPrincipal, CapabilityService
 from app.review_tasks.models import ReviewDecisionInput, ReviewDecisionType
 from app.review_tasks.operations import ReviewQueueOperations
 from app.review_tasks.service import GovernedReviewTaskService, ReviewTaskError
+from app.review_tasks.workforce import WorkforceImportError, WorkforceResultReconciler, frontend_contract
 
 from .dependencies import authenticated_principal, review_service_dependency
 
-router = APIRouter(prefix="/api/mission-control/review", tags=["MISSION-CONTROL-ROLE-001H"])
+router = APIRouter(prefix="/api/mission-control/review", tags=["MISSION-CONTROL-ROLE-001I"])
 
 _capability_service = CapabilityService()
 
@@ -26,6 +27,23 @@ class ReviewDecisionRequest(BaseModel):
 
 class ExpireReservationsRequest(BaseModel):
     dry_run: bool = False
+
+
+class WorkforceResultItem(BaseModel):
+    task_id: str
+    external_result_id: str | None = None
+    reviewer_id: str | None = None
+    decision: ReviewDecisionType
+    comment: str | None = None
+    modified_value: dict[str, Any] | None = None
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkforceImportRequest(BaseModel):
+    source: str
+    batch_id: str
+    dry_run: bool = False
+    results: list[WorkforceResultItem]
 
 
 def _translate_review_error(exc: ReviewTaskError) -> HTTPException:
@@ -89,6 +107,32 @@ def export_review_workforce_queue(
     if not payload["allowed"]:
         raise HTTPException(status_code=403, detail=payload["authorization"])
     return payload
+
+
+@router.post("/workforce/import")
+def import_review_workforce_results(
+    request: WorkforceImportRequest,
+    principal: AccessPrincipal = Depends(authenticated_principal),
+    service: GovernedReviewTaskService = Depends(review_service_dependency),
+) -> dict[str, Any]:
+    try:
+        return WorkforceResultReconciler(service).import_results(
+            principal,
+            source=request.source,
+            batch_id=request.batch_id,
+            results=[item.model_dump() for item in request.results],
+            dry_run=request.dry_run,
+        )
+    except WorkforceImportError as exc:
+        status = 403 if exc.code == "CAPABILITY_REQUIRED" else 400
+        raise HTTPException(status_code=status, detail={"code": exc.code, "details": exc.details}) from exc
+
+
+@router.get("/frontend-contract")
+def review_frontend_contract(
+    principal: AccessPrincipal = Depends(authenticated_principal),
+) -> dict[str, Any]:
+    return frontend_contract(principal)
 
 
 @router.get("/tasks/{task_id}")
