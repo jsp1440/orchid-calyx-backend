@@ -35,4 +35,12 @@ jobs:
           name: mission-control-role-001i-diagnostics
           path: /tmp/mission-control-001i.log
       - name: Run Mission Control regression tests
-        run: pytest -q tests/test_mission_control_role_001a_review_tasks.py tests/test_mission_control_role_001b_capabilities.py tests/test_mission_control_role_001c_principals.py tests/test_mission_control_role_001d_postgres_persistence.py tests/test_mission_control_role_001e_review_api.py tests/test_mission_control_role_001f_auth_postgres_wiring.py tests/test_mission_control_role_001g_briefing.py tests/test_mission_control_role_001h_reservation_workforce.py
+        run: |
+          set -o pipefail
+          pytest -vv tests/test_mission_control_role_001a_review_tasks.py tests/test_mission_control_role_001b_capabilities.py tests/test_mission_control_role_001c_principals.py tests/test_mission_control_role_001d_postgres_persistence.py tests/test_mission_control_role_001e_review_api.py tests/test_mission_control_role_001f_auth_postgres_wiring.py tests/test_mission_control_role_001g_briefing.py tests/test_mission_control_role_001h_reservation_workforce.py 2>&1 | tee /tmp/mission-control-regression.log
+      - name: Upload regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-role-001i-regression-diagnostics
+          path: /tmp/mission-control-regression.log
