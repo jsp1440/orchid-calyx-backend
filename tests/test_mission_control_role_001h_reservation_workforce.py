@@ -34,15 +34,16 @@ def teardown_function() -> None:
     app.dependency_overrides.clear()
 
 
-def _task() -> dict:
+def _task(*, orchestration_id: str = "001h-task", embargoed: bool = False) -> dict:
     return service.create(
         ReviewTaskInput(
-            orchestration_id="001h-task",
+            orchestration_id=orchestration_id,
             review_type="HUMAN_REVIEW_REQUIRED",
             risk_class="2",
             routing_outcome="HUMAN_REVIEW_REQUIRED",
             required_capability="review.science",
             priority=90,
+            embargoed=embargoed,
         )
     )
 
@@ -93,17 +94,8 @@ def test_expiration_endpoint_requires_assignment_management() -> None:
 
 
 def test_workforce_export_filters_embargoed_tasks() -> None:
-    _task()
-    service.create(
-        ReviewTaskInput(
-            orchestration_id="001h-embargoed",
-            review_type="HUMAN_REVIEW_REQUIRED",
-            risk_class="2",
-            routing_outcome="HUMAN_REVIEW_REQUIRED",
-            required_capability="review.science",
-            embargoed=True,
-        )
-    )
+    visible = _task()
+    _task(orchestration_id="001h-embargoed", embargoed=True)
     app.dependency_overrides[authenticated_principal] = lambda: _principal(
         "review.external.export", "review.science"
     )
@@ -112,4 +104,4 @@ def test_workforce_export_filters_embargoed_tasks() -> None:
     payload = response.json()
     assert payload["allowed"] is True
     assert len(payload["tasks"]) == 1
-    assert payload["tasks"][0]["task_id"] == _task()["task_id"]
+    assert payload["tasks"][0]["task_id"] == visible["task_id"]
