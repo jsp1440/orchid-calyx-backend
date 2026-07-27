@@ -25,4 +25,15 @@ jobs:
       - name: Run deterministic review task tests
         env:
           PYTHONPATH: .
-        run: pytest -q tests/test_mission_control_role_001a_review_tasks.py
+        run: |
+          set +e
+          pytest -vv tests/test_mission_control_role_001a_review_tasks.py > pytest-output.txt 2>&1
+          status=$?
+          cat pytest-output.txt
+          exit $status
+      - name: Upload focused pytest diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-role-001a-pytest-output
+          path: pytest-output.txt
