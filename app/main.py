@@ -54,6 +54,10 @@ from app.security import (
 from app.semantic.routers import router as semantic_router
 from app.semantic_index.routes import router as semantic_index_router
 from app.source_registry.routes import router as source_registry_router
+from app.concepts.routers import router as concepts_router
+from app.literature_extraction.routes import router as literature_extraction_router
+from app.mission_control_release.routes import router as mission_control_release_router
+from app.executive_telemetry.routes import router as executive_telemetry_router
 from runtime.cds_router import router as cds_router
 from runtime.constitutional_orchestrator import AutonomyLevel
 from runtime.constitutional_orchestrator import (
@@ -1196,6 +1200,8 @@ app.include_router(publication_router)
 app.include_router(research_workspace_router)
 app.include_router(review_api_router)
 app.include_router(mission_control_briefing_router)
+app.include_router(mission_control_release_router)
+app.include_router(executive_telemetry_router)
 app.include_router(missions_router)
 app.include_router(templates_router)
 app.include_router(runtime_queue_router)

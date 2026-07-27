@@ -1,0 +1,46 @@
+name: MISSION-CONTROL-ROLE-001J validation
+
+on:
+  pull_request:
+    paths:
+      - "app/mission_control_release/**"
+      - "app/main.py"
+      - "tests/test_mission_control_role_001j_release_readiness.py"
+      - ".github/workflows/mission-control-role-001j-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      CALYX_REVIEW_ALLOW_MEMORY: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest 'httpx<0.28'
+      - name: Compile release readiness service
+        run: python -m compileall app/mission_control_release app/review_tasks app/review_api
+      - name: Run 001J tests
+        run: |
+          set -o pipefail
+          pytest -vv tests/test_mission_control_role_001j_release_readiness.py 2>&1 | tee /tmp/mission-control-001j.log
+      - name: Upload 001J diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-role-001j-diagnostics
+          path: /tmp/mission-control-001j.log
+      - name: Run Mission Control end-to-end regression suite
+        run: |
+          set -o pipefail
+          pytest -vv tests/test_mission_control_role_001a_review_tasks.py tests/test_mission_control_role_001b_capabilities.py tests/test_mission_control_role_001c_principals.py tests/test_mission_control_role_001d_postgres_persistence.py tests/test_mission_control_role_001e_review_api.py tests/test_mission_control_role_001f_auth_postgres_wiring.py tests/test_mission_control_role_001g_briefing.py tests/test_mission_control_role_001h_reservation_workforce.py tests/test_mission_control_role_001i_workforce_frontend.py 2>&1 | tee /tmp/mission-control-001j-regression.log
+      - name: Upload regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mission-control-role-001j-regression-diagnostics
+          path: /tmp/mission-control-001j-regression.log
