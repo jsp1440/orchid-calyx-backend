@@ -1,0 +1,30 @@
+name: MISSION-CONTROL-ROLE-001G validation
+
+on:
+  pull_request:
+    paths:
+      - "app/mission_control_briefing/**"
+      - "app/main.py"
+      - "tests/test_mission_control_role_001g_briefing.py"
+      - ".github/workflows/mission-control-role-001g-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      CALYX_REVIEW_ALLOW_MEMORY: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest 'httpx<0.28'
+      - name: Compile briefing API
+        run: python -m compileall app/mission_control_briefing app/review_api app/mission_control_access
+      - name: Run 001G tests
+        run: pytest -q tests/test_mission_control_role_001g_briefing.py
+      - name: Run Mission Control regression tests
+        run: pytest -q tests/test_mission_control_role_001a_review_tasks.py tests/test_mission_control_role_001b_capabilities.py tests/test_mission_control_role_001c_principals.py tests/test_mission_control_role_001d_postgres_persistence.py tests/test_mission_control_role_001e_review_api.py tests/test_mission_control_role_001f_auth_postgres.py
