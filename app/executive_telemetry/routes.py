@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.mission_control_access import AccessPrincipal, CapabilityService
 from app.review_api.dependencies import authenticated_principal
 
+from .frontend_contract import build_frontend_contract
 from .harvesters import normalized_harvesters
 from .intelligence import build_dependency_intelligence
 from .service import build_executive_state
@@ -87,3 +88,21 @@ def executive_intelligence(
             "roles": [role.value for role in principal.roles],
         },
     }
+
+
+@router.get("/frontend-contract")
+def executive_frontend_contract(
+    principal: AccessPrincipal = Depends(authenticated_principal),
+) -> dict[str, Any]:
+    include_operations = _include_operations(principal)
+    state = build_executive_state(include_operations=include_operations)
+    harvesters = normalized_harvesters(include_operations=include_operations)
+    intelligence = build_dependency_intelligence(state.get("subsystems") or [], harvesters)
+    payload = build_frontend_contract(state, harvesters, intelligence)
+    payload["principal"] = {
+        "id": principal.principal_id,
+        "authenticated": principal.authenticated,
+        "roles": [role.value for role in principal.roles],
+    }
+    payload["governance"]["operational_details_included"] = include_operations
+    return payload
