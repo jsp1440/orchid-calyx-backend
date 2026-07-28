@@ -91,7 +91,8 @@ def _fcos_brief() -> ArticleBrief:
 # ---------------------------------------------------------------------------
 
 def test_article_brief_rejects_inverted_word_count() -> None:
-    with pytest.raises(Exception):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
         ArticleBrief(
             title="T",
             focus="F",
