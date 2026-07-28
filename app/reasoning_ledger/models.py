@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 from uuid import UUID, uuid4
-
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -222,11 +222,10 @@ class LedgerEntry:
         if self.kind is LedgerEntryKind.CONFLICT and self.conflict_state is ConflictState.UNRESOLVED:
             # Conflict entries are allowed; validation happens at publication gate.
             pass
-        if self.kind is LedgerEntryKind.REVIEW_DECISION:
-            if "outcome" not in self.attributes:
-                raise LedgerValidationError(
-                    "review_decision entries must carry 'outcome' in attributes"
-                )
+        if self.kind is LedgerEntryKind.REVIEW_DECISION and "outcome" not in self.attributes:
+            raise LedgerValidationError(
+                "review_decision entries must carry 'outcome' in attributes"
+            )
         references_entry_ids = tuple(self.references_entry_ids)
         if len(set(references_entry_ids)) != len(references_entry_ids):
             raise LedgerValidationError("references_entry_ids must be unique")
@@ -325,6 +324,10 @@ class ReasoningLedger:
     version: int = 1
     entries: tuple[LedgerEntry, ...] = field(default_factory=tuple)
     review_decisions: tuple[ReviewDecision, ...] = field(default_factory=tuple)
+    # Entry IDs of CONFLICT entries that have been explicitly superseded/resolved.
+    # Kept separate from the immutable LedgerEntry objects to support append-only
+    # conflict resolution without mutating existing entries.
+    resolved_conflict_ids: frozenset[UUID] = field(default_factory=frozenset)
     created_by: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -362,6 +365,14 @@ class ReasoningLedger:
             raise LedgerValidationError("ledger entries must have unique entry_id values")
 
         review_decisions = tuple(self.review_decisions)
+        resolved_conflict_ids = frozenset(self.resolved_conflict_ids)
+        # Validate that every resolved ID actually corresponds to a CONFLICT entry.
+        conflict_ids = {e.entry_id for e in entries if e.kind is LedgerEntryKind.CONFLICT}
+        bad_ids = resolved_conflict_ids - conflict_ids
+        if bad_ids:
+            raise LedgerValidationError(
+                f"resolved_conflict_ids contains IDs that are not CONFLICT entries: {bad_ids}"
+            )
         created_at = self.created_at.astimezone(timezone.utc)
         updated_at = self.updated_at.astimezone(timezone.utc)
 
@@ -372,6 +383,7 @@ class ReasoningLedger:
             "title": title,
             "version": self.version,
             "entry_fingerprints": [e.fingerprint for e in entries],
+            "resolved_conflict_ids": sorted(str(i) for i in resolved_conflict_ids),
         }
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         ledger_fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -382,6 +394,7 @@ class ReasoningLedger:
         object.__setattr__(self, "created_by", created_by)
         object.__setattr__(self, "entries", entries)
         object.__setattr__(self, "review_decisions", review_decisions)
+        object.__setattr__(self, "resolved_conflict_ids", resolved_conflict_ids)
         object.__setattr__(self, "created_at", created_at)
         object.__setattr__(self, "updated_at", updated_at)
         object.__setattr__(self, "ledger_fingerprint", ledger_fingerprint)
@@ -392,11 +405,13 @@ class ReasoningLedger:
 
     @property
     def unresolved_conflicts(self) -> tuple[LedgerEntry, ...]:
+        """Return CONFLICT entries that have not been superseded via resolved_conflict_ids."""
         return tuple(
             e
             for e in self.entries
             if e.kind is LedgerEntryKind.CONFLICT
             and e.conflict_state is ConflictState.UNRESOLVED
+            and e.entry_id not in self.resolved_conflict_ids
         )
 
     @property
@@ -417,8 +432,14 @@ class ReasoningLedger:
 
     @property
     def has_human_approval(self) -> bool:
+        """True only when there is an APPROVED decision bound to the current version.
+
+        Any append after approval advances the version so prior approvals no
+        longer satisfy this check, forcing a new review cycle.
+        """
         return any(
-            d.outcome is ReviewOutcome.APPROVED for d in self.review_decisions
+            d.outcome is ReviewOutcome.APPROVED and d.ledger_version == self.version
+            for d in self.review_decisions
         )
 
     @property
@@ -434,14 +455,25 @@ class ReasoningLedger:
     # Mutation helpers — return new immutable instances
     # ------------------------------------------------------------------
 
-    def append(self, entry: LedgerEntry) -> "ReasoningLedger":
-        """Return a new ledger with the entry appended and version incremented."""
+    def append(self, entry: LedgerEntry) -> ReasoningLedger:
+        """Return a new ledger with the entry appended and version incremented.
+
+        If the ledger was APPROVED, appending a new entry invalidates that
+        approval and reverts the status to UNDER_REVIEW so a new human review
+        cycle is required before publication.
+        """
         if entry.tenant_id != self.tenant_id or entry.project_id != self.project_id:
             raise LedgerValidationError(
                 "appended entry must share the ledger's tenant_id and project_id"
             )
         if any(e.entry_id == entry.entry_id for e in self.entries):
             raise LedgerValidationError("entry_id already exists in ledger")
+        # Invalidate prior approval when new content is added.
+        new_status = (
+            LedgerStatus.UNDER_REVIEW
+            if self.status is LedgerStatus.APPROVED
+            else self.status
+        )
         now = datetime.now(timezone.utc)
         return ReasoningLedger(
             ledger_id=self.ledger_id,
@@ -449,23 +481,31 @@ class ReasoningLedger:
             project_id=self.project_id,
             title=self.title,
             description=self.description,
-            status=self.status,
+            status=new_status,
             version=self.version + 1,
             entries=self.entries + (entry,),
             review_decisions=self.review_decisions,
+            resolved_conflict_ids=self.resolved_conflict_ids,
             created_by=self.created_by,
             created_at=self.created_at,
             updated_at=now,
         )
 
-    def with_review(self, decision: ReviewDecision) -> "ReasoningLedger":
-        """Return a new ledger with the review decision attached."""
+    def with_review(self, decision: ReviewDecision) -> ReasoningLedger:
+        """Return a new ledger with the review decision bound to the current version."""
+        import dataclasses
+
+        # Bind the decision to the version this new ledger will carry so that
+        # has_human_approval (which compares d.ledger_version == self.version)
+        # is satisfied on the returned ledger.
+        new_version = self.version + 1
+        bound_decision = dataclasses.replace(decision, ledger_version=new_version)
         now = datetime.now(timezone.utc)
         new_status = (
             LedgerStatus.APPROVED
-            if decision.outcome is ReviewOutcome.APPROVED
+            if bound_decision.outcome is ReviewOutcome.APPROVED
             else LedgerStatus.BLOCKED
-            if decision.outcome is ReviewOutcome.REJECTED
+            if bound_decision.outcome is ReviewOutcome.REJECTED
             else LedgerStatus.IN_PROGRESS
         )
         return ReasoningLedger(
@@ -475,9 +515,49 @@ class ReasoningLedger:
             title=self.title,
             description=self.description,
             status=new_status,
+            version=new_version,
+            entries=self.entries,
+            review_decisions=self.review_decisions + (bound_decision,),
+            resolved_conflict_ids=self.resolved_conflict_ids,
+            created_by=self.created_by,
+            created_at=self.created_at,
+            updated_at=now,
+        )
+
+    def resolve_conflict(self, conflict_entry_id: UUID) -> ReasoningLedger:
+        """Return a new ledger with the given CONFLICT entry marked as superseded.
+
+        This is the append-only mechanism for conflict resolution: the original
+        CONFLICT entry is not mutated; instead its ID is added to
+        ``resolved_conflict_ids`` so that ``unresolved_conflicts`` and the
+        publication gate no longer count it as blocking.
+
+        Raises :exc:`LedgerValidationError` if the ID does not refer to a
+        CONFLICT entry in this ledger.
+        """
+        conflict_ids = {
+            e.entry_id for e in self.entries if e.kind is LedgerEntryKind.CONFLICT
+        }
+        if conflict_entry_id not in conflict_ids:
+            raise LedgerValidationError(
+                f"entry {conflict_entry_id!s} is not a CONFLICT entry in this ledger"
+            )
+        if conflict_entry_id in self.resolved_conflict_ids:
+            raise LedgerValidationError(
+                f"conflict entry {conflict_entry_id!s} is already resolved"
+            )
+        now = datetime.now(timezone.utc)
+        return ReasoningLedger(
+            ledger_id=self.ledger_id,
+            tenant_id=self.tenant_id,
+            project_id=self.project_id,
+            title=self.title,
+            description=self.description,
+            status=self.status,
             version=self.version + 1,
             entries=self.entries,
-            review_decisions=self.review_decisions + (decision,),
+            review_decisions=self.review_decisions,
+            resolved_conflict_ids=self.resolved_conflict_ids | {conflict_entry_id},
             created_by=self.created_by,
             created_at=self.created_at,
             updated_at=now,

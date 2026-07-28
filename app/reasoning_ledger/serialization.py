@@ -121,8 +121,8 @@ def ledger_to_canonical_json(ledger: ReasoningLedger) -> str:
 
 
 def dict_to_provenance(d: dict[str, Any]) -> LedgerProvenance:
-    from datetime import timezone
     from datetime import datetime as _dt_cls
+    from datetime import timezone
 
     retrieved_at_raw = d.get("retrieved_at")
     retrieved_at = (
@@ -156,8 +156,8 @@ def dict_to_uncertainty(d: dict[str, Any]) -> UncertaintyMarker:
 
 
 def dict_to_entry(d: dict[str, Any]) -> LedgerEntry:
-    from datetime import timezone
     from datetime import datetime as _dt_cls
+    from datetime import timezone
 
     created_at_raw = d.get("created_at")
     created_at = (
@@ -187,8 +187,8 @@ def dict_to_entry(d: dict[str, Any]) -> LedgerEntry:
 
 
 def dict_to_review_decision(d: dict[str, Any]) -> ReviewDecision:
-    from datetime import timezone
     from datetime import datetime as _dt_cls
+    from datetime import timezone
 
     decided_at_raw = d.get("decided_at")
     decided_at = (
@@ -207,8 +207,8 @@ def dict_to_review_decision(d: dict[str, Any]) -> ReviewDecision:
 
 
 def dict_to_ledger(d: dict[str, Any]) -> ReasoningLedger:
-    from datetime import timezone
     from datetime import datetime as _dt_cls
+    from datetime import timezone
 
     created_at = _dt_cls.fromisoformat(d["created_at"]).astimezone(timezone.utc)
     updated_at = _dt_cls.fromisoformat(d["updated_at"]).astimezone(timezone.utc)

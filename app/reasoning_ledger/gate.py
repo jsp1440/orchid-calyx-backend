@@ -16,11 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .models import (
-    ConflictState,
     LedgerEntryKind,
     LedgerPublicationError,
     ReasoningLedger,
-    ReviewOutcome,
 )
 
 _MIN_CONFIDENCE = 0.6  # must match ReasoningLedger.MIN_PUBLICATION_CONFIDENCE
@@ -41,12 +39,9 @@ def evaluate(ledger: ReasoningLedger) -> list[GateViolation]:
     """
     violations: list[GateViolation] = []
 
-    unresolved = [
-        e
-        for e in ledger.entries
-        if e.kind is LedgerEntryKind.CONFLICT
-        and e.conflict_state is ConflictState.UNRESOLVED
-    ]
+    # Use the model property so that conflicts marked as resolved/superseded
+    # via resolved_conflict_ids are correctly excluded.
+    unresolved = ledger.unresolved_conflicts
     if unresolved:
         violations.append(
             GateViolation(
@@ -87,16 +82,15 @@ def evaluate(ledger: ReasoningLedger) -> list[GateViolation]:
                 )
             )
 
-    has_approval = any(
-        d.outcome is ReviewOutcome.APPROVED for d in ledger.review_decisions
-    )
-    if not has_approval:
+    # Use the version-bound has_human_approval property so that approvals issued
+    # for an earlier version do not satisfy the gate after a subsequent append.
+    if not ledger.has_human_approval:
         violations.append(
             GateViolation(
                 code="MISSING_HUMAN_APPROVAL",
                 message=(
                     "explicit human approval (REVIEW_DECISION with outcome=approved) "
-                    "is required before publication"
+                    "bound to the current ledger version is required before publication"
                 ),
             )
         )

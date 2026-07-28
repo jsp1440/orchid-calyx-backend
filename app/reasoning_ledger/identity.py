@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from uuid import UUID, uuid5, NAMESPACE_URL
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 # A fixed private namespace UUID used to derive deterministic ledger IDs.
 _LEDGER_NS = UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")  # NAMESPACE_URL

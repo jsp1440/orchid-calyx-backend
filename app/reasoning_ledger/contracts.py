@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from uuid import UUID
 
 from .models import LedgerEntry, ReasoningLedger, ReviewDecision
 
@@ -20,7 +21,12 @@ class ReasoningLedgerService(ABC):
         description: str,
         created_by: str,
     ) -> ReasoningLedger:
-        """Create and persist a new ledger in DRAFT status."""
+        """Create and persist a new ledger in DRAFT status.
+
+        Uses a deterministic ledger ID derived from (tenant_id, project_id,
+        title).  Repeated calls with identical arguments return the existing
+        ledger rather than creating a duplicate.
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -33,6 +39,9 @@ class ReasoningLedgerService(ABC):
         tenant_id: str,
     ) -> ReasoningLedger:
         """Append a new entry and return the updated ledger.
+
+        The service assigns the entry's sequence number (strictly increasing)
+        regardless of the value supplied by the caller.
 
         Raises :exc:`LedgerNotFoundError` if the ledger does not exist.
         Raises :exc:`LedgerTenantError` if the actor's tenant does not match.
@@ -70,7 +79,26 @@ class ReasoningLedgerService(ABC):
         *,
         tenant_id: str,
     ) -> ReasoningLedger:
-        """Attach a human review decision and advance ledger status."""
+        """Attach a human review decision and advance ledger status.
+
+        The decision is automatically bound to the current ledger version so
+        that an approval cannot survive a later append.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def resolve_conflict(
+        self,
+        ledger_id: str,
+        conflict_entry_id: UUID,
+        *,
+        tenant_id: str,
+    ) -> ReasoningLedger:
+        """Mark a CONFLICT entry as superseded without mutating it.
+
+        Returns the updated ledger.  Raises :exc:`LedgerValidationError` if
+        the entry is not a CONFLICT entry or is already resolved.
+        """
         raise NotImplementedError
 
     @abstractmethod
