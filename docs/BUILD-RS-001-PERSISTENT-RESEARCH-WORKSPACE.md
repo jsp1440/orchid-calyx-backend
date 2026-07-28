@@ -38,13 +38,14 @@ Routes are mounted below `/api/research/projects` and require an owner session o
 Run:
 
 ```text
-python -m pytest -q tests/test_build_rs_001_research_workspace.py
-python -m pytest -q tests/test_build_056_owner_authentication.py tests/test_owner_session_cors_repair.py
+python -m pytest -q tests/test_build_rs_001_research_workspace.py tests/test_owner_session_cors_repair.py
 python -m ruff check app/research_workspace tests/test_build_rs_001_research_workspace.py
+python -m compileall app/research_workspace
 ```
 
-PostgreSQL migration integration requires an explicitly disposable
-`TEST_DATABASE_URL`; production must never be used for migration tests.
+Run a secret-pattern scan on the changed files before commit. PostgreSQL
+migration integration requires an explicitly disposable `TEST_DATABASE_URL`;
+production must never be used for migration tests.
 
 ## Rollback
 

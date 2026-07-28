@@ -1,31 +1,13 @@
-import os
-from typing import Any
-
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
+from typing import Optional, Any
+import os
+import re
+from datetime import datetime, timezone
 
-from app.candidate_knowledge.routes import router as candidate_knowledge_router
-from app.concepts.routers import router as concepts_router
-from app.design_intelligence.routes import router as design_intelligence_router
-from app.design_planning.routes import router as design_planning_router
-from app.document_import.routes import router as document_import_router
-from app.document_intelligence.routes import router as document_intelligence_router
-from app.evidence_aggregation.routes import router as evidence_aggregation_router
-from app.evidence_retrieval.routes import router as evidence_retrieval_router
-from app.executive_telemetry.routes import router as executive_telemetry_router
-from app.implementation_planning.routes import router as implementation_planning_router
-from app.intake.routes import router as intake_router
-from app.literature_extraction.routes import router as literature_extraction_router
-from app.mission_control_briefing.routes import (
-    router as mission_control_briefing_router,
-)
-from app.mission_control_release.routes import router as mission_control_release_router
-from app.missions.routers import router as missions_router
-from app.missions.routers import runtime_queue_router, templates_router
-from app.ontology.routers import router as ontology_router
-from app.publication.routers import router as publication_router
-from app.research_workspace.routes import router as research_workspace_router
-from app.review_api.routes import router as review_api_router
+import psycopg
+from psycopg.types.json import Jsonb
+
 from app.routers import (
     awards,
     calyx_core,
@@ -36,37 +18,40 @@ from app.routers import (
     judging,
     reference_docs,
 )
-from app.routers.health import (
-    add_mission_control_cors_headers,
-    allowed_mission_control_origins,
-)
-from app.scientific_interpretation.routes import (
-    router as scientific_interpretation_router,
-)
-from app.security import (
-    get_api_key,
-    get_owner_access_code,
-    get_owner_session_secret,
-    verify_owner_or_api_key,
-)
+from app.intake.routes import router as intake_router
 from app.semantic.routers import router as semantic_router
-from app.semantic_index.routes import router as semantic_index_router
 from app.source_registry.routes import router as source_registry_router
-from runtime.autonomous_runner import (
-    enqueue_default_jobs,
-    execute_next_job,
-)
+from app.document_import.routes import router as document_import_router
+from app.document_intelligence.routes import router as document_intelligence_router
+from app.semantic_index.routes import router as semantic_index_router
+from app.evidence_retrieval.routes import router as evidence_retrieval_router
+from app.candidate_knowledge.routes import router as candidate_knowledge_router
+from app.evidence_aggregation.routes import router as evidence_aggregation_router
+from app.design_intelligence.routes import router as design_intelligence_router
+from app.design_planning.routes import router as design_planning_router
+from app.implementation_planning.routes import router as implementation_planning_router
+from app.scientific_interpretation.routes import router as scientific_interpretation_router
+from app.ontology.routers import router as ontology_router
+from app.concepts.routers import router as concepts_router
+from app.literature_extraction.routes import router as literature_extraction_router
+from app.publication.routers import router as publication_router
+from app.research_workspace.routes import router as research_workspace_router
+from app.review_api.routes import router as review_api_router
+from app.mission_control_briefing.routes import router as mission_control_briefing_router
+from app.mission_control_release.routes import router as mission_control_release_router
+from app.executive_telemetry.routes import router as executive_telemetry_router
+from app.missions.dependencies import get_mission_service
+from app.missions.routers import router as missions_router, runtime_queue_router, templates_router
+from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, owner_cookie_secure, verify_owner_or_api_key
+from app.routers.health import add_mission_control_cors_headers, allowed_mission_control_origins
+from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
+from runtime.router_fastapi import router as runtime_router, science_router
 from runtime.cds_router import router as cds_router
-from runtime.constitutional_orchestrator import AutonomyLevel
-from runtime.constitutional_orchestrator import (
-    orchestrator as constitutional_orchestrator,
-)
 from runtime.constitutional_router import router as constitutional_router
 from runtime.kernel_router import router as kernel_router
 from runtime.orchestrator_router import router as orchestrator_router
 from runtime.planner_router import router as planner_router
-from runtime.router_fastapi import router as runtime_router
-from runtime.router_fastapi import science_router
+from runtime.autonomous_runner import enqueue_default_jobs, execute_next_job, run_job_logic
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
@@ -217,7 +202,7 @@ def require_database_url() -> str:
     return DATABASE_URL
 
 
-def env_bool(value: str | None) -> bool | None:
+def env_bool(value: Optional[str]) -> Optional[bool]:
     if value is None:
         return None
     normalized = value.strip().lower()
@@ -244,7 +229,7 @@ def runtime_interval_seconds_from_env() -> int:
     return 30
 
 
-def autonomous_runtime_config_blocker() -> dict[str, str] | None:
+def autonomous_runtime_config_blocker() -> Optional[dict[str, str]]:
     for key in RUNTIME_DISABLE_FLAGS:
         if env_bool(os.environ.get(key)) is True:
             return {"key": key, "reason": "explicit_disable_flag"}
@@ -308,7 +293,7 @@ def evaluate_runtime_action(
 
 
 class VerificationRequest(BaseModel):
-    source_context: str | None = None
+    source_context: Optional[str] = None
 
 
 @app.get("/")
@@ -379,34 +364,6 @@ runtime_engine = RuntimeEngine(
 )
 
 
-@app.post("/api/runner/start", dependencies=RUNTIME_WRITE_AUTH)
-def runner_start():
-    decision = evaluate_runtime_action(
-        "start",
-        requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED),
-        evidence=["authenticated API request", "runtime start requested"],
-    )
-    blocker = autonomous_runtime_config_blocker()
-    if blocker:
-        return {
-            "status": "runtime_disabled_by_config",
-            "config_key": blocker["key"],
-            "reason": blocker["reason"],
-            "engine": runtime_engine.status(),
-            "decision": decision["decision"],
-            "allowedActions": runner_allowed_actions(),
-        }
-
-    runtime_engine.set_enabled(True)
-    started = runtime_engine.start()
-    return {
-        "status": "started" if started else "already_running",
-        "engine": runtime_engine.status(),
-        "decision": decision["decision"],
-        "allowedActions": runner_allowed_actions(),
-    }
-
-
 @app.on_event("startup")
 def startup_event():
     if AUTO_LOOP_ENABLED:
@@ -414,7 +371,7 @@ def startup_event():
     try:
         from app.routers.owner_operations import load_revoked_nonces
         load_revoked_nonces()
-    except Exception:  # noqa: BLE001,S110
+    except Exception:
         pass
 
 

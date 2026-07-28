@@ -2,11 +2,14 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from app.database import Base
+from app.database import Base, get_db
+from app.main import app
 from app.research_workspace.models import (
     AuditEvent,
     Note,
@@ -29,6 +32,7 @@ from app.research_workspace.service import (
     ResearchWorkspaceError,
     ResearchWorkspaceService,
 )
+from app.security import OWNER_SESSION_COOKIE
 
 TABLES = [
     Project.__table__,
@@ -63,6 +67,38 @@ def service():
     Base.metadata.create_all(engine, tables=TABLES)
     with Session(engine) as db:
         yield ResearchWorkspaceService(db, Validator())
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("CALYX_OWNER_ACCESS_CODE", "owner-code-rs")
+    monkeypatch.setenv("CALYX_OWNER_SESSION_SECRET", "owner-session-secret-rs")
+    monkeypatch.setenv("CALYX_API_KEY", "research-api-key")
+    monkeypatch.setenv("CORS_ALLOW_ORIGIN", "https://example.test")
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        execution_options={"schema_translate_map": {"research_station": None}},
+    )
+    Base.metadata.create_all(engine, tables=TABLES)
+    session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    def override_get_db():
+        with session_local() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def assert_cors(response):
+    assert response.headers.get("access-control-allow-origin") == "https://example.test"
+    assert response.headers.get("access-control-allow-credentials") == "true"
 
 
 def project_payload(title="Pollination evidence"):
@@ -201,3 +237,44 @@ def test_migration_is_additive_idempotent_and_audit_protected():
     assert "drop table" not in sql and "truncate" not in sql
     assert "before update or delete" in sql
     assert "revoke all on all tables in schema research_station from public" in sql
+
+
+def test_research_routes_require_auth_and_keep_cors_headers(client):
+    response = client.get(
+        "/api/research/projects", headers={"Origin": "https://example.test"}
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Owner session or API key is required"
+    assert_cors(response)
+
+
+def test_research_routes_accept_owner_session_and_api_key_with_cors(client):
+    login = client.post(
+        "/api/mission-control/owner/session",
+        json={"access_code": "owner-code-rs"},
+        headers={"Origin": "https://example.test"},
+    )
+    assert login.status_code == 200
+    assert OWNER_SESSION_COOKIE in login.cookies
+    assert_cors(login)
+
+    created = client.post(
+        "/api/research/projects",
+        json=project_payload().model_dump(),
+        headers={"Origin": "https://example.test"},
+    )
+    assert created.status_code == 201
+    assert created.json()["title"] == "Pollination evidence"
+    assert_cors(created)
+
+    listed = client.get(
+        "/api/research/projects",
+        headers={
+            "Origin": "https://example.test",
+            "X-API-Key": "research-api-key",
+        },
+    )
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 1
+    assert_cors(listed)
