@@ -299,14 +299,14 @@ class ArticleGenerationService:
         synthesis_findings: list[str] = []
 
         for item in evidence_items:
-            if c := _first_str(item, _CITATION_FIELDS):
-                citations.append(c)
+            item_cite = _first_str(item, _CITATION_FIELDS)
+            if item_cite:
+                citations.append(item_cite)
             if o := _first_str(item, _OVERVIEW_FIELDS):
                 overview_texts.append(o)
             if s := _first_str(item, _SUMMARY_FIELDS):
                 name = str(item.get("project_name") or item.get("project") or "")
-                # Use the bibliographic citation from the item, not the source_id
-                item_cite = _first_str(item, _CITATION_FIELDS)
+                # Reuse the already-resolved bibliographic citation for this item
                 spotlights.append((name, s, item_cite))
             if a := _first_str(item, _APPROACH_FIELDS):
                 if a not in approaches:
@@ -345,6 +345,8 @@ class ArticleGenerationService:
                 GeneratedSection(
                     heading="Orchid Conservation Overview",
                     body=overview_body,
+                    # Cite the first two evidence items as context sources;
+                    # all citations come from the evidence citation fields.
                     citations=citations[:2],
                 )
             )
@@ -409,6 +411,8 @@ class ArticleGenerationService:
                 GeneratedSection(
                     heading="Conservation Approaches",
                     body=approach_body,
+                    # Cite the first two evidence items as approach sources;
+                    # all citations come from the evidence citation fields.
                     citations=citations[:2],
                 )
             )

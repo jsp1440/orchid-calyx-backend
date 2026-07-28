@@ -676,8 +676,13 @@ def test_full_continuum_does_not_claim_corpus_without_evidence() -> None:
         (s for s in response.sections if s.heading == "Evidence Availability"), None
     )
     assert avail_section is not None
-    # The section body must NOT claim corpus evidence was consumed
-    assert "corpus" not in avail_section.body.lower() or "no evidence" in avail_section.body.lower()
+    body_lower = avail_section.body.lower()
+    # If "corpus" appears in the body, "no evidence" must also appear to
+    # clarify that no corpus evidence was consumed.
+    if "corpus" in body_lower:
+        assert "no evidence" in body_lower, (
+            "Section mentions 'corpus' but does not clarify that no evidence was consumed"
+        )
 
 
 def test_preview_returns_packet_id() -> None:
