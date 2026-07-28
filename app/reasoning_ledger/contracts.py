@@ -57,9 +57,7 @@ class ReasoningLedgerService(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def history(
-        self, ledger_id: str, *, tenant_id: str
-    ) -> list[ReasoningLedger]:
+    def history(self, ledger_id: str, *, tenant_id: str) -> list[ReasoningLedger]:
         """Return all historical versions of a ledger, oldest first."""
         raise NotImplementedError
 

@@ -86,7 +86,9 @@ def _make_entry(
 
 
 def _make_conclusion(confidence: float = 0.8) -> LedgerEntry:
-    return _make_entry(kind=LedgerEntryKind.CONCLUSION, text="conclusion", confidence=confidence)
+    return _make_entry(
+        kind=LedgerEntryKind.CONCLUSION, text="conclusion", confidence=confidence
+    )
 
 
 def _make_conflict(text: str = "conflict") -> LedgerEntry:
@@ -105,7 +107,9 @@ def _approve_decision(ledger_version: int = 1) -> ReviewDecision:
 def _build_publishable_ledger(svc: InMemoryReasoningLedgerService) -> ReasoningLedger:
     """Create and advance a ledger to a publishable state."""
     ledger = _create(svc)
-    ledger = svc.append(str(ledger.ledger_id), _make_conclusion(0.9), actor="r1", tenant_id=TENANT)
+    ledger = svc.append(
+        str(ledger.ledger_id), _make_conclusion(0.9), actor="r1", tenant_id=TENANT
+    )
     ledger = svc.review(str(ledger.ledger_id), _approve_decision(), tenant_id=TENANT)
     return ledger
 
@@ -121,7 +125,9 @@ class TestVersionBoundApproval:
     def test_approval_applies_to_exact_version(self):
         svc = _svc()
         ledger = _create(svc)
-        ledger = svc.append(str(ledger.ledger_id), _make_conclusion(), actor="r1", tenant_id=TENANT)
+        ledger = svc.append(
+            str(ledger.ledger_id), _make_conclusion(), actor="r1", tenant_id=TENANT
+        )
         decision = _approve_decision()
         ledger = svc.review(str(ledger.ledger_id), decision, tenant_id=TENANT)
 
@@ -135,12 +141,18 @@ class TestVersionBoundApproval:
     def test_approval_invalidated_after_append(self):
         svc = _svc()
         ledger = _create(svc)
-        ledger = svc.append(str(ledger.ledger_id), _make_conclusion(), actor="r1", tenant_id=TENANT)
-        ledger = svc.review(str(ledger.ledger_id), _approve_decision(), tenant_id=TENANT)
+        ledger = svc.append(
+            str(ledger.ledger_id), _make_conclusion(), actor="r1", tenant_id=TENANT
+        )
+        ledger = svc.review(
+            str(ledger.ledger_id), _approve_decision(), tenant_id=TENANT
+        )
         assert ledger.has_human_approval, "should be approved at this point"
 
         # Append a new entry — prior approval must be invalidated.
-        ledger = svc.append(str(ledger.ledger_id), _make_entry(), actor="r1", tenant_id=TENANT)
+        ledger = svc.append(
+            str(ledger.ledger_id), _make_entry(), actor="r1", tenant_id=TENANT
+        )
 
         assert not ledger.has_human_approval, (
             "approval must not survive a subsequent append"
@@ -152,7 +164,9 @@ class TestVersionBoundApproval:
         ledger = _build_publishable_ledger(svc)
 
         # Append another entry — should invalidate approval.
-        ledger = svc.append(str(ledger.ledger_id), _make_entry(), actor="r1", tenant_id=TENANT)
+        ledger = svc.append(
+            str(ledger.ledger_id), _make_entry(), actor="r1", tenant_id=TENANT
+        )
 
         violations = svc.validate(str(ledger.ledger_id), tenant_id=TENANT)
         assert any("approval" in v.lower() for v in violations), (
@@ -164,11 +178,15 @@ class TestVersionBoundApproval:
         ledger = _build_publishable_ledger(svc)
 
         # Append invalidates approval.
-        ledger = svc.append(str(ledger.ledger_id), _make_entry(), actor="r1", tenant_id=TENANT)
+        ledger = svc.append(
+            str(ledger.ledger_id), _make_entry(), actor="r1", tenant_id=TENANT
+        )
         assert not ledger.has_human_approval
 
         # Re-review with APPROVED outcome at the new version.
-        ledger = svc.review(str(ledger.ledger_id), _approve_decision(), tenant_id=TENANT)
+        ledger = svc.review(
+            str(ledger.ledger_id), _approve_decision(), tenant_id=TENANT
+        )
         assert ledger.has_human_approval
         assert ledger.status is LedgerStatus.APPROVED
 
@@ -176,14 +194,20 @@ class TestVersionBoundApproval:
         """An old approval with a lower ledger_version must not satisfy has_human_approval."""
         svc = _svc()
         ledger = _create(svc)
-        ledger = svc.append(str(ledger.ledger_id), _make_conclusion(), actor="r1", tenant_id=TENANT)
-        ledger = svc.review(str(ledger.ledger_id), _approve_decision(), tenant_id=TENANT)
+        ledger = svc.append(
+            str(ledger.ledger_id), _make_conclusion(), actor="r1", tenant_id=TENANT
+        )
+        ledger = svc.review(
+            str(ledger.ledger_id), _approve_decision(), tenant_id=TENANT
+        )
 
         # Record the version at which approval was granted.
         approval_version = ledger.review_decisions[-1].ledger_version
 
         # Append increments version, triggering a status reset.
-        ledger = svc.append(str(ledger.ledger_id), _make_entry(), actor="r1", tenant_id=TENANT)
+        ledger = svc.append(
+            str(ledger.ledger_id), _make_entry(), actor="r1", tenant_id=TENANT
+        )
         assert ledger.version > approval_version
         assert not ledger.has_human_approval
 
@@ -214,7 +238,9 @@ class TestAtomicOperations:
             except (LedgerValidationError, LedgerTenantError) as exc:
                 errors.append(exc)
 
-        threads = [threading.Thread(target=append_entry, args=(i,)) for i in range(n_threads)]
+        threads = [
+            threading.Thread(target=append_entry, args=(i,)) for i in range(n_threads)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -243,7 +269,9 @@ class TestAtomicOperations:
                 tenant_id=TENANT,
             )
 
-        threads = [threading.Thread(target=append_entry, args=(i,)) for i in range(n_threads)]
+        threads = [
+            threading.Thread(target=append_entry, args=(i,)) for i in range(n_threads)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -251,7 +279,9 @@ class TestAtomicOperations:
 
         final = svc.current(lid, tenant_id=TENANT)
         sequences = [e.sequence for e in final.entries]
-        assert sequences == sorted(sequences), "sequences must be monotonically increasing"
+        assert sequences == sorted(sequences), (
+            "sequences must be monotonically increasing"
+        )
         assert len(set(sequences)) == len(sequences), "sequences must be unique"
 
     def test_review_and_append_no_lost_update(self):
@@ -475,7 +505,9 @@ class TestEntrySequences:
         ledger = _create(svc)
         lid = str(ledger.ledger_id)
         for i in range(5):
-            svc.append(lid, _make_entry(text=f"entry {i}"), actor="r1", tenant_id=TENANT)
+            svc.append(
+                lid, _make_entry(text=f"entry {i}"), actor="r1", tenant_id=TENANT
+            )
 
         final = svc.current(lid, tenant_id=TENANT)
         sequences = [e.sequence for e in final.entries]
@@ -537,7 +569,9 @@ class TestEntrySequences:
         n = 15
 
         def append_one(i: int) -> None:
-            svc.append(lid, _make_entry(text=f"concurrent {i}"), actor="r1", tenant_id=TENANT)
+            svc.append(
+                lid, _make_entry(text=f"concurrent {i}"), actor="r1", tenant_id=TENANT
+            )
 
         threads = [threading.Thread(target=append_one, args=(i,)) for i in range(n)]
         for t in threads:
@@ -590,11 +624,15 @@ class TestPublicationGateIntegration:
         svc = _svc()
         ledger = _create(svc)
         with pytest.raises(LedgerTenantError):
-            svc.review(str(ledger.ledger_id), _approve_decision(), tenant_id=OTHER_TENANT)
+            svc.review(
+                str(ledger.ledger_id), _approve_decision(), tenant_id=OTHER_TENANT
+            )
 
     def test_no_private_cot_accepted(self):
         """LedgerEntry with is_private_cot=True must be rejected at construction."""
-        with pytest.raises(LedgerValidationError, match="private model chain-of-thought"):
+        with pytest.raises(
+            LedgerValidationError, match="private model chain-of-thought"
+        ):
             LedgerEntry(
                 kind=LedgerEntryKind.SUPPORT,
                 text="private thoughts",

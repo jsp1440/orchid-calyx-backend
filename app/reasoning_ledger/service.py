@@ -172,9 +172,7 @@ class InMemoryReasoningLedgerService(ReasoningLedgerService):
         with self._lock:
             return self._get_current_locked(lid, tenant_id)
 
-    def history(
-        self, ledger_id: str, *, tenant_id: str
-    ) -> list[ReasoningLedger]:
+    def history(self, ledger_id: str, *, tenant_id: str) -> list[ReasoningLedger]:
         lid = _parse_uuid(ledger_id)
         with self._lock:
             self._get_current_locked(lid, tenant_id)  # validates existence + tenant

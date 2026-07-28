@@ -102,7 +102,9 @@ def ledger_to_dict(ledger: ReasoningLedger) -> dict[str, Any]:
         "status": ledger.status.value,
         "version": ledger.version,
         "entries": [entry_to_dict(e) for e in ledger.entries],
-        "review_decisions": [review_decision_to_dict(d) for d in ledger.review_decisions],
+        "review_decisions": [
+            review_decision_to_dict(d) for d in ledger.review_decisions
+        ],
         "created_by": ledger.created_by,
         "created_at": _dt(ledger.created_at),
         "updated_at": _dt(ledger.updated_at),
@@ -166,7 +168,9 @@ def dict_to_entry(d: dict[str, Any]) -> LedgerEntry:
         else datetime.now(timezone.utc)
     )
     provenance = dict_to_provenance(d["provenance"]) if d.get("provenance") else None
-    uncertainty = dict_to_uncertainty(d["uncertainty"]) if d.get("uncertainty") else None
+    uncertainty = (
+        dict_to_uncertainty(d["uncertainty"]) if d.get("uncertainty") else None
+    )
     return LedgerEntry(
         entry_id=UUID(d["entry_id"]),
         kind=LedgerEntryKind(d["kind"]),
@@ -178,7 +182,9 @@ def dict_to_entry(d: dict[str, Any]) -> LedgerEntry:
         project_id=d["project_id"],
         provenance=provenance,
         uncertainty=uncertainty,
-        conflict_state=ConflictState(d.get("conflict_state", ConflictState.UNRESOLVED.value)),
+        conflict_state=ConflictState(
+            d.get("conflict_state", ConflictState.UNRESOLVED.value)
+        ),
         references_entry_ids=tuple(UUID(r) for r in d.get("references_entry_ids", [])),
         tags=tuple(d.get("tags", [])),
         attributes=d.get("attributes", {}),

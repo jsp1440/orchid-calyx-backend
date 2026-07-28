@@ -122,7 +122,9 @@ class LedgerProvenance:
         if not source_id:
             raise LedgerValidationError("provenance source_id must not be empty")
         if self.retrieved_at.tzinfo is None or self.retrieved_at.utcoffset() is None:
-            raise LedgerValidationError("provenance retrieved_at must be timezone-aware")
+            raise LedgerValidationError(
+                "provenance retrieved_at must be timezone-aware"
+            )
         retrieved_at = self.retrieved_at.astimezone(timezone.utc)
         collector = self.collector.strip() if self.collector else None
         object.__setattr__(self, "source_kind", source_kind)
@@ -214,15 +216,23 @@ class LedgerEntry:
         if self.sequence < 0:
             raise LedgerValidationError("ledger entry sequence must be >= 0")
         if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
-            raise LedgerValidationError("ledger entry created_at must be timezone-aware")
+            raise LedgerValidationError(
+                "ledger entry created_at must be timezone-aware"
+            )
         if self.is_private_cot:
             raise LedgerValidationError(
                 "private model chain-of-thought entries must not be stored in the reasoning ledger"
             )
-        if self.kind is LedgerEntryKind.CONFLICT and self.conflict_state is ConflictState.UNRESOLVED:
+        if (
+            self.kind is LedgerEntryKind.CONFLICT
+            and self.conflict_state is ConflictState.UNRESOLVED
+        ):
             # Conflict entries are allowed; validation happens at publication gate.
             pass
-        if self.kind is LedgerEntryKind.REVIEW_DECISION and "outcome" not in self.attributes:
+        if (
+            self.kind is LedgerEntryKind.REVIEW_DECISION
+            and "outcome" not in self.attributes
+        ):
             raise LedgerValidationError(
                 "review_decision entries must carry 'outcome' in attributes"
             )
@@ -289,7 +299,9 @@ class ReviewDecision:
         if self.ledger_version < 1:
             raise LedgerValidationError("review decision ledger_version must be >= 1")
         if self.decided_at.tzinfo is None or self.decided_at.utcoffset() is None:
-            raise LedgerValidationError("review decision decided_at must be timezone-aware")
+            raise LedgerValidationError(
+                "review decision decided_at must be timezone-aware"
+            )
         decided_at = self.decided_at.astimezone(timezone.utc)
         object.__setattr__(self, "reviewer", reviewer)
         object.__setattr__(self, "rationale", rationale)
@@ -351,9 +363,13 @@ class ReasoningLedger:
         if self.version < 1:
             raise LedgerValidationError("reasoning ledger version must be >= 1")
         if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
-            raise LedgerValidationError("reasoning ledger created_at must be timezone-aware")
+            raise LedgerValidationError(
+                "reasoning ledger created_at must be timezone-aware"
+            )
         if self.updated_at.tzinfo is None or self.updated_at.utcoffset() is None:
-            raise LedgerValidationError("reasoning ledger updated_at must be timezone-aware")
+            raise LedgerValidationError(
+                "reasoning ledger updated_at must be timezone-aware"
+            )
 
         entries = tuple(self.entries)
         for entry in entries:
@@ -362,12 +378,16 @@ class ReasoningLedger:
                     "all ledger entries must share the ledger's tenant_id and project_id"
                 )
         if len({e.entry_id for e in entries}) != len(entries):
-            raise LedgerValidationError("ledger entries must have unique entry_id values")
+            raise LedgerValidationError(
+                "ledger entries must have unique entry_id values"
+            )
 
         review_decisions = tuple(self.review_decisions)
         resolved_conflict_ids = frozenset(self.resolved_conflict_ids)
         # Validate that every resolved ID actually corresponds to a CONFLICT entry.
-        conflict_ids = {e.entry_id for e in entries if e.kind is LedgerEntryKind.CONFLICT}
+        conflict_ids = {
+            e.entry_id for e in entries if e.kind is LedgerEntryKind.CONFLICT
+        }
         bad_ids = resolved_conflict_ids - conflict_ids
         if bad_ids:
             raise LedgerValidationError(
@@ -424,9 +444,7 @@ class ReasoningLedger:
         if not conclusions:
             return 0.0
         scored = [
-            e.uncertainty.confidence
-            for e in conclusions
-            if e.uncertainty is not None
+            e.uncertainty.confidence for e in conclusions if e.uncertainty is not None
         ]
         return min(scored) if scored else 0.0
 

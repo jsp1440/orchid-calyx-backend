@@ -27,5 +27,7 @@ def deterministic_entry_id(
     author: str,
 ) -> UUID:
     """Return a stable UUID for an entry from its canonical position and content."""
-    seed = f"{ledger_id}:{sequence}:{author}:{hashlib.sha256(text.encode()).hexdigest()}"
+    seed = (
+        f"{ledger_id}:{sequence}:{author}:{hashlib.sha256(text.encode()).hexdigest()}"
+    )
     return uuid5(_ENTRY_NS, seed)
