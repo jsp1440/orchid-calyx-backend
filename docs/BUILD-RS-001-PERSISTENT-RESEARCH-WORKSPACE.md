@@ -40,6 +40,11 @@ Routes are mounted below `/api/research/projects` and require an owner session o
 - Focused service tests cover ownership isolation, lifecycle, optimistic updates, pagination, saved searches, notes, links, audit redaction, and migration safety.
 - The additive migration remains at `migrations/101_research_workspace_foundation.sql` and is already present on current `main`.
 - Minimal router registration remains in `app/main.py` and is already present on current `main`.
+- GitHub Actions `BUILD-088E Validation` run `194` currently finishes as
+  `action_required` with `0` jobs and no failed-job logs; the same no-job
+  `action_required` pattern affects multiple legacy pull-request validation
+  workflows on this Copilot-updated branch, so no workflow weakening was
+  applied from BUILD-RS-001.
 - PostgreSQL migration validation remains required in CI before merge.
 - No production database or deployment is modified by this pull request.
 
