@@ -76,6 +76,9 @@ class EvidencePreviewPacket(BaseModel):
     current status.  All fields are derived directly from the corpus.
     """
 
+    # Server-assigned packet ID — use this in ArticleGenerationRequest to
+    # reference this packet without re-sending all items.
+    packet_id: str = ""
     # Evidence items — each item is a raw corpus fragment
     items: list[dict[str, Any]] = Field(default_factory=list)
     item_count: int = 0
@@ -112,6 +115,12 @@ class ArticleGenerationRequest(BaseModel):
     generation_mode: GenerationMode
     # Optional operator notes that may guide generation without fabrication
     operator_notes: str | None = Field(default=None, max_length=5000)
+    # Approved evidence from the preview step.
+    # Provide EITHER evidence_packet_id (server-side lookup) OR evidence_items
+    # directly.  If both are given, the packet-store lookup takes precedence.
+    evidence_packet_id: str | None = Field(default=None)
+    # Inline evidence items (used when no packet_id is available)
+    evidence_items: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class GeneratedSection(BaseModel):
@@ -146,6 +155,8 @@ class ArticleGenerationResponse(BaseModel):
     unavailable_dependencies: list[str]
     # Generation warnings (e.g. evidence was sparse)
     warnings: list[str]
+    # True when evidence was insufficient to meet the requested word-count floor
+    insufficient_evidence: bool = False
 
 
 # ---------------------------------------------------------------------------

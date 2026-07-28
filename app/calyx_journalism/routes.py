@@ -32,6 +32,7 @@ from .schemas import (
 from .services import (
     ArticleGenerationService,
     ArticleStore,
+    EvidencePacketStore,
     EvidencePreviewService,
     MarkdownExportService,
 )
@@ -42,8 +43,9 @@ router = APIRouter(
     dependencies=[Depends(verify_owner_or_api_key)],
 )
 
-# Shared in-process store — same-day MVP; no database required
+# Shared in-process stores — same-day MVP; no database required
 _store = ArticleStore()
+_packet_store = EvidencePacketStore()
 _preview_service = EvidencePreviewService()
 _generation_service = ArticleGenerationService()
 _export_service = MarkdownExportService()
@@ -96,10 +98,12 @@ class EvidencePreviewRequest(BaseModel):
 
 @router.post("/evidence-preview", status_code=201)
 def evidence_preview(payload: EvidencePreviewRequest) -> EvidencePreviewPacket:
-    return _preview_service.build_preview(
+    packet = _preview_service.build_preview(
         evidence_items=payload.evidence_items,
         available_dependencies=payload.available_dependencies or None,
     )
+    _packet_store.save(packet)
+    return packet
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +112,28 @@ def evidence_preview(payload: EvidencePreviewRequest) -> EvidencePreviewPacket:
 
 @router.post("/generate", status_code=201)
 def generate_article(request: ArticleGenerationRequest) -> ArticleGenerationResponse:
-    response = _generation_service.generate(request)
+    # Resolve evidence: packet store lookup takes precedence over inline items
+    evidence_items: list[dict[str, Any]] = list(request.evidence_items)
+    verified_projects_override = None
+
+    if request.evidence_packet_id:
+        packet = _packet_store.get(request.evidence_packet_id)
+        if packet is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "EVIDENCE_PACKET_NOT_FOUND",
+                    "evidence_packet_id": request.evidence_packet_id,
+                },
+            )
+        evidence_items = list(packet.items)
+        verified_projects_override = list(packet.verified_projects)
+
+    response = _generation_service.generate(
+        request,
+        evidence_items=evidence_items,
+        verified_projects_override=verified_projects_override,
+    )
     _store.save(response)
     return response
 
