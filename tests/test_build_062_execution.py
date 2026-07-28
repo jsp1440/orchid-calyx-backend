@@ -266,7 +266,6 @@ def test_audit_docx_is_valid_zip():
 
 def test_generate_audit_pdf_format_returns_base64(monkeypatch):
     monkeypatch.setenv("CALYX_API_KEY", API_KEY)
-    monkeypatch.setenv("DATABASE_URL", "")  # force in-memory mode
     from app.routers.owner_operations import router as owner_router
     app = FastAPI()
     app.include_router(owner_router)
@@ -289,7 +288,6 @@ def test_generate_audit_docx_format_returns_base64(monkeypatch):
     import io
     import zipfile
     monkeypatch.setenv("CALYX_API_KEY", API_KEY)
-    monkeypatch.setenv("DATABASE_URL", "")  # force in-memory mode
     from app.routers.owner_operations import router as owner_router
     app = FastAPI()
     app.include_router(owner_router)
@@ -311,7 +309,6 @@ def test_generate_audit_docx_format_returns_base64(monkeypatch):
 
 def test_generate_audit_markdown_unchanged(monkeypatch):
     monkeypatch.setenv("CALYX_API_KEY", API_KEY)
-    monkeypatch.setenv("DATABASE_URL", "")  # force in-memory mode
     from app.routers.owner_operations import router as owner_router
     app = FastAPI()
     app.include_router(owner_router)

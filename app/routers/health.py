@@ -1,10 +1,9 @@
 import os
-
 from fastapi import APIRouter, Depends, Request, Response
 
-from app.executive_telemetry.routes import router as executive_telemetry_router
 from app.routers.calyx_queue import router as calyx_queue_router
 from app.routers.executive import router as executive_router
+from app.executive_telemetry.routes import router as executive_telemetry_router
 from app.routers.mission_control import router as mission_control_router
 from app.routers.owner_operations import router as owner_operations_router
 from app.routers.owner_session_token import router as owner_session_token_router

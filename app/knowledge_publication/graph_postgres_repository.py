@@ -116,15 +116,10 @@ class PostgresControlledGraphRepository:
                 ),
             )
             change_set = cur.fetchone()
-            cur.execute(
-                "SELECT graph_version_id, sequence FROM oc_knowledge_publication.graph_versions ORDER BY sequence DESC LIMIT 1"
-            )
-            max_gv = cur.fetchone()
-            next_sequence = (max_gv["sequence"] + 1) if max_gv else 1
             manifest_identity = {
                 "change_set_fingerprint": change_fingerprint,
                 "source_graph_version_id": current["graph_version_id"],
-                "intended_target_sequence": next_sequence,
+                "intended_target_sequence": current["sequence"] + 1,
                 "operations": operation_values,
             }
             cur.execute(
@@ -134,7 +129,7 @@ class PostgresControlledGraphRepository:
                     request.publication_id,
                     request.publication_version,
                     current["graph_version_id"],
-                    next_sequence,
+                    current["sequence"] + 1,
                     Jsonb(operation_values),
                     Jsonb(validation),
                     fingerprint(manifest_identity),
@@ -205,16 +200,10 @@ class PostgresControlledGraphRepository:
                     "SELECT graph_version_id,sequence FROM oc_knowledge_publication.current_graph_version WHERE singleton=TRUE FOR UPDATE"
                 )
                 current = cur.fetchone()
-                cur.execute(
-                    "SELECT graph_version_id, sequence FROM oc_knowledge_publication.graph_versions ORDER BY sequence DESC LIMIT 1"
-                )
-                max_gv = cur.fetchone()
-                next_sequence = (max_gv["sequence"] + 1) if max_gv else 1
-                max_parent_gv_id = max_gv["graph_version_id"] if max_gv else None
                 if (
                     current["graph_version_id"]
                     != manifest_row["source_graph_version_id"]
-                    or next_sequence
+                    or current["sequence"] + 1
                     != manifest_row["intended_target_sequence"]
                 ):
                     raise ValueError("SOURCE_GRAPH_VERSION_CONFLICT")
@@ -236,16 +225,16 @@ class PostgresControlledGraphRepository:
                     op["operation_type"] == "CREATE_EDGE" for op in operations
                 )
                 version_identity = {
-                    "parent": max_parent_gv_id,
+                    "parent": current["graph_version_id"],
                     "transaction": manifest_row["graph_transaction_id"],
-                    "sequence": next_sequence,
+                    "sequence": current["sequence"] + 1,
                     "publication": request.publication_id,
                 }
                 cur.execute(
                     "INSERT INTO oc_knowledge_publication.graph_versions(sequence,parent_graph_version_id,graph_transaction_id,publication_id,publication_version,status,node_change_count,edge_change_count,provenance_complete,fingerprint,correlation_id) VALUES(%s,%s,%s,%s,%s,'COMMITTED',%s,%s,TRUE,%s,%s) RETURNING *",
                     (
-                        next_sequence,
-                        max_parent_gv_id,
+                        current["sequence"] + 1,
+                        current["graph_version_id"],
                         manifest_row["graph_transaction_id"],
                         request.publication_id,
                         request.publication_version,

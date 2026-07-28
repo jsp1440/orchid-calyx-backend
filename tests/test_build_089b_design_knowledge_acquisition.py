@@ -224,8 +224,7 @@ def test_postgresql_authoritative_units_relationships_and_append_only_guards():
     )
 
     dsn = os.environ["TEST_DATABASE_URL"]
-    with psycopg.connect(dsn, autocommit=True) as con:
-        con.execute(Path("migrations/089b_design_knowledge_acquisition.sql").read_text())
+    with psycopg.connect(dsn) as con:
         document_id = con.execute(
             "SELECT document_id FROM oc_design_intelligence.documents ORDER BY document_id LIMIT 1"
         ).fetchone()[0]

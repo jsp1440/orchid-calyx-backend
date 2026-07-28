@@ -12,6 +12,7 @@ failure alike — carries the CORS headers for an allowed origin, and that no
 CORS headers leak to disallowed origins.
 """
 
+import time
 
 from fastapi.testclient import TestClient
 

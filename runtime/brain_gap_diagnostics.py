@@ -41,17 +41,11 @@ class BrainTableMatch:
     matched_keywords: list[str]
 
 
-_UNSET = object()
-
-
 class BrainGapDiagnostics:
     """Inspect live Brain tables and connect them to BUILD-016 gap domains."""
 
-    def __init__(self, database_url: str | None = _UNSET) -> None:  # type: ignore[assignment]
-        if database_url is _UNSET:
-            self.database_url: str | None = os.environ.get("DATABASE_URL")
-        else:
-            self.database_url = database_url
+    def __init__(self, database_url: str | None = None) -> None:
+        self.database_url = database_url or os.environ.get("DATABASE_URL")
 
     def status(self) -> dict[str, Any]:
         if not self.database_url:

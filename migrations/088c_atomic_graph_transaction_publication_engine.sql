@@ -52,7 +52,7 @@ CREATE INDEX IF NOT EXISTS graph_object_version_idx ON oc_knowledge_publication.
 CREATE INDEX IF NOT EXISTS graph_provenance_reverse_idx ON oc_knowledge_publication.graph_provenance_links(source_revision_id,assertion_id);
 
 ALTER TABLE oc_knowledge_publication.lifecycle_transitions DROP CONSTRAINT IF EXISTS lifecycle_transitions_state_check;
-ALTER TABLE oc_knowledge_publication.lifecycle_transitions ADD CONSTRAINT lifecycle_transitions_state_check CHECK(state IN('PUBLICATION_CANDIDATE','VALIDATING','AUTHORIZED','REJECTED','TRANSACTION_PREPARED','PUBLISHING','PUBLISHED','PUBLICATION_FAILED','ROLLBACK_REQUIRED')) NOT VALID;
+ALTER TABLE oc_knowledge_publication.lifecycle_transitions ADD CONSTRAINT lifecycle_transitions_state_check CHECK(state IN('PUBLICATION_CANDIDATE','VALIDATING','AUTHORIZED','REJECTED','TRANSACTION_PREPARED','PUBLISHING','PUBLISHED','PUBLICATION_FAILED','ROLLBACK_REQUIRED'));
 CREATE OR REPLACE FUNCTION oc_knowledge_publication.enforce_lifecycle() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE previous TEXT;
 BEGIN

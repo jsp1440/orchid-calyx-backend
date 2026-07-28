@@ -140,8 +140,8 @@ def test_postgres_lifecycle_concurrency_projections_propagation_and_rollback():
                 "INSERT INTO oc_knowledge_publication.graph_versions(sequence,parent_graph_version_id,graph_transaction_id,publication_id,publication_version,status,node_change_count,edge_change_count,provenance_complete,fingerprint,correlation_id) VALUES(%s,%s,%s,%s,1,'COMMITTED',1,0,TRUE,%s,'corr') RETURNING graph_version_id",
                 (sequence, parent, tx, pid, f"gv-{suffix}-{version}"),
             ).fetchone()[0]
-            ov = con.execute(
-                "INSERT INTO oc_knowledge_publication.graph_object_versions(graph_version_id,graph_transaction_id,publication_id,object_kind,object_key,legacy_object_id,operation_type,payload,fingerprint) VALUES(%s,%s,%s,'NODE',%s,%s,'CREATE_NODE','{}',%s) RETURNING object_version_id",
+            con.execute(
+                "INSERT INTO oc_knowledge_publication.graph_object_versions(graph_version_id,graph_transaction_id,publication_id,object_kind,object_key,legacy_object_id,operation_type,payload,fingerprint) VALUES(%s,%s,%s,'NODE',%s,%s,'CREATE_NODE','{}',%s)",
                 (
                     gv,
                     tx,
@@ -150,14 +150,6 @@ def test_postgres_lifecycle_concurrency_projections_propagation_and_rollback():
                     version,
                     f"objfp-{suffix}-{version}",
                 ),
-            ).fetchone()[0]
-            con.execute(
-                "INSERT INTO oc_knowledge_publication.graph_provenance_links(object_version_id,graph_transaction_id,publication_id,authorization_decision_id,assertion_id,assertion_version,source_revision_id,provenance,fingerprint) VALUES(%s,%s,%s,%s,%s,%s,%s,'{}',%s)",
-                (ov, tx, pid, decision, aid, version, version, f"provfp-{suffix}-{version}"),
-            )
-            con.execute(
-                "INSERT INTO oc_knowledge_publication.audit_events(artifact_type,artifact_id,event_type,actor,details) VALUES('GRAPH_TRANSACTION',%s,'GRAPH_TRANSACTION_COMMITTED','test','{}')",
-                (tx,),
             )
             con.execute(
                 "UPDATE oc_knowledge_publication.current_graph_version SET graph_version_id=%s,sequence=%s WHERE singleton",
@@ -169,15 +161,12 @@ def test_postgres_lifecycle_concurrency_projections_propagation_and_rollback():
             )
             return pid, gv
 
-        base_seq = con.execute(
-            "SELECT sequence FROM oc_knowledge_publication.current_graph_version WHERE singleton"
-        ).fetchone()[0]
-        prior, _ = seed(1, base_seq + 1)
-        successor, _ = seed(2, base_seq + 2)
-        withdrawable, _ = seed(3, base_seq + 3)
-        dependent, _ = seed(4, base_seq + 4)
-        racing, _ = seed(5, base_seq + 5)
-        rollback_pub, rollback_gv = seed(6, base_seq + 6)
+        prior, _ = seed(1, 1)
+        successor, _ = seed(2, 2)
+        withdrawable, _ = seed(3, 3)
+        dependent, _ = seed(4, 4)
+        racing, _ = seed(5, 5)
+        rollback_pub, rollback_gv = seed(6, 6)
         con.execute(
             "INSERT INTO oc_knowledge_publication.publication_dependencies(source_publication_id,dependent_publication_id,dependency_type,fingerprint) VALUES(%s,%s,'SUPPORTS',%s)",
             (withdrawable, dependent, f"dep-{suffix}"),

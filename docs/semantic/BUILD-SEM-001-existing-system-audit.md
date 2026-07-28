@@ -1,7 +1,7 @@
 # BUILD-SEM-001 — Existing Semantic System Audit
 
-Status: architectural audit; documentation only
-Audit baseline: `origin/main` at `7fa2a24` (2026-07-23)
+Status: architectural audit; documentation only  
+Audit baseline: `origin/main` at `7fa2a24` (2026-07-23)  
 Scope: tracked repository content available in the backend repository
 
 ## Executive finding
