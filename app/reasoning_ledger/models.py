@@ -57,6 +57,10 @@ class LedgerEntryKind(str, Enum):
     REVIEW_DECISION = "review_decision"
     MEMORY_REF = "memory_ref"
     MODULE_DEF = "module_def"
+    PLAN = "plan"
+    HYPOTHESIS = "hypothesis"
+    OPERATION = "operation"
+    INTERMEDIATE_ARTIFACT = "intermediate_artifact"
 
 
 class LedgerStatus(str, Enum):
@@ -84,6 +88,7 @@ class ReviewOutcome(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     REQUIRES_REVISION = "requires_revision"
+    DEFERRED = "deferred"
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +293,7 @@ class ReviewDecision:
     rationale: str = ""
     decided_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     ledger_version: int = 1
+    reviewed_content_hash: str = ""
 
     def __post_init__(self) -> None:
         reviewer = self.reviewer.strip()
@@ -298,6 +304,14 @@ class ReviewDecision:
             raise LedgerValidationError("review decision rationale must not be empty")
         if self.ledger_version < 1:
             raise LedgerValidationError("review decision ledger_version must be >= 1")
+        reviewed_content_hash = self.reviewed_content_hash.strip()
+        if reviewed_content_hash and (
+            len(reviewed_content_hash) != 64
+            or any(c not in "0123456789abcdef" for c in reviewed_content_hash.lower())
+        ):
+            raise LedgerValidationError(
+                "reviewed_content_hash must be a SHA-256 hex digest"
+            )
         if self.decided_at.tzinfo is None or self.decided_at.utcoffset() is None:
             raise LedgerValidationError(
                 "review decision decided_at must be timezone-aware"
@@ -306,6 +320,7 @@ class ReviewDecision:
         object.__setattr__(self, "reviewer", reviewer)
         object.__setattr__(self, "rationale", rationale)
         object.__setattr__(self, "decided_at", decided_at)
+        object.__setattr__(self, "reviewed_content_hash", reviewed_content_hash.lower())
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +359,7 @@ class ReasoningLedger:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     ledger_fingerprint: str = field(init=False)
+    review_content_hash: str = field(init=False)
 
     MIN_PUBLICATION_CONFIDENCE: float = 0.6  # class-level constant
 
@@ -407,6 +423,76 @@ class ReasoningLedger:
         }
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         ledger_fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        reviewable_payload = {
+            "ledger_id": str(self.ledger_id),
+            "tenant_id": tenant_id,
+            "project_id": project_id,
+            "title": title,
+            "description": self.description,
+            "version": self.version,
+            "status": self.status.value,
+            "entries": [
+                {
+                    "entry_id": str(entry.entry_id),
+                    "kind": entry.kind.value,
+                    "version": entry.version,
+                    "sequence": entry.sequence,
+                    "text": entry.text,
+                    "author": entry.author,
+                    "tenant_id": entry.tenant_id,
+                    "project_id": entry.project_id,
+                    "provenance": (
+                        {
+                            "source_kind": entry.provenance.source_kind,
+                            "source_id": entry.provenance.source_id,
+                            "literature_record_id": entry.provenance.literature_record_id,
+                            "concept_id": entry.provenance.concept_id,
+                            "rs_project_id": entry.provenance.rs_project_id,
+                            "dataset_id": entry.provenance.dataset_id,
+                            "method_id": entry.provenance.method_id,
+                            "tool_id": entry.provenance.tool_id,
+                            "execution_id": entry.provenance.execution_id,
+                            "content_hash": entry.provenance.content_hash,
+                            "retrieved_at": entry.provenance.retrieved_at.isoformat(),
+                            "collector": entry.provenance.collector,
+                            "extra": dict(entry.provenance.extra),
+                        }
+                        if entry.provenance
+                        else None
+                    ),
+                    "uncertainty": (
+                        {
+                            "confidence": entry.uncertainty.confidence,
+                            "rationale": entry.uncertainty.rationale,
+                            "unresolved_assumptions": list(
+                                entry.uncertainty.unresolved_assumptions
+                            ),
+                        }
+                        if entry.uncertainty
+                        else None
+                    ),
+                    "conflict_state": entry.conflict_state.value,
+                    "references_entry_ids": [
+                        str(identifier) for identifier in entry.references_entry_ids
+                    ],
+                    "tags": list(entry.tags),
+                    "attributes": dict(entry.attributes),
+                    "created_at": entry.created_at.isoformat(),
+                }
+                for entry in entries
+            ],
+            "resolved_conflict_ids": sorted(
+                str(identifier) for identifier in resolved_conflict_ids
+            ),
+        }
+        review_content_hash = hashlib.sha256(
+            json.dumps(
+                reviewable_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
 
         object.__setattr__(self, "tenant_id", tenant_id)
         object.__setattr__(self, "project_id", project_id)
@@ -418,6 +504,7 @@ class ReasoningLedger:
         object.__setattr__(self, "created_at", created_at)
         object.__setattr__(self, "updated_at", updated_at)
         object.__setattr__(self, "ledger_fingerprint", ledger_fingerprint)
+        object.__setattr__(self, "review_content_hash", review_content_hash)
 
     # ------------------------------------------------------------------
     # Derived properties
@@ -430,7 +517,7 @@ class ReasoningLedger:
             e
             for e in self.entries
             if e.kind is LedgerEntryKind.CONFLICT
-            and e.conflict_state is ConflictState.UNRESOLVED
+            and e.conflict_state in {ConflictState.UNRESOLVED, ConflictState.DEFERRED}
             and e.entry_id not in self.resolved_conflict_ids
         )
 
@@ -456,7 +543,9 @@ class ReasoningLedger:
         longer satisfy this check, forcing a new review cycle.
         """
         return any(
-            d.outcome is ReviewOutcome.APPROVED and d.ledger_version == self.version
+            d.outcome is ReviewOutcome.APPROVED
+            and d.ledger_version == self.version
+            and d.reviewed_content_hash == self.review_content_hash
             for d in self.review_decisions
         )
 
@@ -517,16 +606,20 @@ class ReasoningLedger:
         # has_human_approval (which compares d.ledger_version == self.version)
         # is satisfied on the returned ledger.
         new_version = self.version + 1
-        bound_decision = dataclasses.replace(decision, ledger_version=new_version)
+        version_bound = dataclasses.replace(
+            decision, ledger_version=new_version, reviewed_content_hash=""
+        )
         now = datetime.now(timezone.utc)
         new_status = (
             LedgerStatus.APPROVED
-            if bound_decision.outcome is ReviewOutcome.APPROVED
-            else LedgerStatus.BLOCKED
-            if bound_decision.outcome is ReviewOutcome.REJECTED
-            else LedgerStatus.IN_PROGRESS
+            if version_bound.outcome is ReviewOutcome.APPROVED
+            else (
+                LedgerStatus.BLOCKED
+                if version_bound.outcome is ReviewOutcome.REJECTED
+                else LedgerStatus.IN_PROGRESS
+            )
         )
-        return ReasoningLedger(
+        provisional = ReasoningLedger(
             ledger_id=self.ledger_id,
             tenant_id=self.tenant_id,
             project_id=self.project_id,
@@ -535,11 +628,18 @@ class ReasoningLedger:
             status=new_status,
             version=new_version,
             entries=self.entries,
-            review_decisions=self.review_decisions + (bound_decision,),
+            review_decisions=self.review_decisions + (version_bound,),
             resolved_conflict_ids=self.resolved_conflict_ids,
             created_by=self.created_by,
             created_at=self.created_at,
             updated_at=now,
+        )
+        bound_decision = dataclasses.replace(
+            version_bound, reviewed_content_hash=provisional.review_content_hash
+        )
+        return dataclasses.replace(
+            provisional,
+            review_decisions=self.review_decisions + (bound_decision,),
         )
 
     def resolve_conflict(self, conflict_entry_id: UUID) -> ReasoningLedger:

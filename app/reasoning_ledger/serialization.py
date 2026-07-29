@@ -89,6 +89,7 @@ def review_decision_to_dict(d: ReviewDecision) -> dict[str, Any]:
         "rationale": d.rationale,
         "decided_at": _dt(d.decided_at),
         "ledger_version": d.ledger_version,
+        "reviewed_content_hash": d.reviewed_content_hash,
     }
 
 
@@ -105,10 +106,14 @@ def ledger_to_dict(ledger: ReasoningLedger) -> dict[str, Any]:
         "review_decisions": [
             review_decision_to_dict(d) for d in ledger.review_decisions
         ],
+        "resolved_conflict_ids": sorted(
+            str(identifier) for identifier in ledger.resolved_conflict_ids
+        ),
         "created_by": ledger.created_by,
         "created_at": _dt(ledger.created_at),
         "updated_at": _dt(ledger.updated_at),
         "ledger_fingerprint": ledger.ledger_fingerprint,
+        "review_content_hash": ledger.review_content_hash,
     }
 
 
@@ -209,6 +214,7 @@ def dict_to_review_decision(d: dict[str, Any]) -> ReviewDecision:
         rationale=d["rationale"],
         decided_at=decided_at,
         ledger_version=int(d.get("ledger_version", 1)),
+        reviewed_content_hash=d.get("reviewed_content_hash", ""),
     )
 
 
@@ -229,6 +235,9 @@ def dict_to_ledger(d: dict[str, Any]) -> ReasoningLedger:
         entries=tuple(dict_to_entry(e) for e in d.get("entries", [])),
         review_decisions=tuple(
             dict_to_review_decision(r) for r in d.get("review_decisions", [])
+        ),
+        resolved_conflict_ids=frozenset(
+            UUID(identifier) for identifier in d.get("resolved_conflict_ids", [])
         ),
         created_by=d["created_by"],
         created_at=created_at,

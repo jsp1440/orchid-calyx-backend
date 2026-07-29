@@ -1,10 +1,10 @@
 # CALYX-BRAIN-002 Pull Request Checklist
 
-- [ ] Reasoning ledger contracts implemented
-- [ ] Persistence and migration reviewed
-- [ ] Literature and Research Station provenance integrated
-- [ ] Tenant/project isolation tested
-- [ ] Review/publication gates tested
-- [ ] Deterministic serialization tested
-- [ ] Private chain-of-thought explicitly excluded
-- [ ] Ruff, type checks, import smoke test, secret scan, and disposable PostgreSQL validation complete
+- [x] Reasoning ledger contracts implemented
+- [x] Persistence and additive migration implemented
+- [x] Literature and Research Station provenance integrated
+- [x] Tenant/project isolation tested
+- [x] Review/publication gates tested
+- [x] Deterministic serialization tested
+- [x] Private chain-of-thought explicitly excluded
+- [ ] Dedicated CI, including disposable PostgreSQL validation, complete
