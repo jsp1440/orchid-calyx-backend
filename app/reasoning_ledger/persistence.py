@@ -312,6 +312,61 @@ class SqlAlchemyReasoningLedgerRepository:
             self.db.rollback()
             raise
 
+    def mutate_once(
+        self,
+        ledger_id: str,
+        owner: str,
+        expected_version: int,
+        actor: str,
+        event_type: str,
+        operation: Callable[[ReasoningLedger], ReasoningLedger],
+        *,
+        dedupe_attribute: str,
+        dedupe_value: str,
+        event_payload: dict[str, Any] | None = None,
+    ) -> tuple[ReasoningLedger, bool]:
+        """Apply one append-only mutation or reuse its existing artifact.
+
+        Duplicate detection happens while the ledger head row is locked, so
+        concurrent submissions cannot create two revisions for one inference.
+        Version checking remains mandatory even for a duplicate retry.
+        """
+        try:
+            head = self._head(ledger_id, owner, lock=True)
+            if head.current_version != expected_version:
+                raise StaleLedgerVersionError(head.current_version)
+            current = dict_to_ledger(
+                self._revision(ledger_id, head.current_version).canonical_payload
+            )
+            if any(
+                str(entry.attributes.get(dedupe_attribute, "")) == dedupe_value
+                for entry in current.entries
+            ):
+                self.db.commit()
+                return current, False
+            updated = operation(current)
+            if updated.version != current.version + 1:
+                raise LedgerValidationError(
+                    "mutation must create exactly one new version"
+                )
+            payload, content_hash = _payload(updated)
+            self._insert_revision(
+                updated,
+                payload,
+                content_hash,
+                actor,
+                event_type,
+                event_payload or {},
+            )
+            head.current_version = updated.version
+            head.current_content_hash = content_hash
+            head.updated_at = utcnow()
+            self.db.commit()
+            return updated, True
+        except Exception:
+            self.db.rollback()
+            raise
+
     def current(self, ledger_id: str, owner: str) -> ReasoningLedger:
         head = self._head(ledger_id, owner)
         return dict_to_ledger(

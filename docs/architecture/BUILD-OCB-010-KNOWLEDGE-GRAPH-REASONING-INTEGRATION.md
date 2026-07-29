@@ -27,7 +27,6 @@ The scientific graph is the canonical existing `oc_graph.kg_nodes` and `oc_graph
 
 ```text
 app/brain/
-  connectors.py   BrainConnector protocol, registry, entry-point discovery
   providers.py    abstract AI-provider protocol and supported descriptors
   reasoning.py    deterministic rules and evidence-bearing results
   routes.py       authenticated Brain API
@@ -39,6 +38,8 @@ tests/
   test_build_ocb_010_brain.py
   test_build_ocb_010_migration.py
 ```
+
+Connector discovery and lifecycle reuse the canonical `runtime.connector_registry` and `runtime.connector_interface`; BUILD-OCB-010 does not create a second registry.
 
 ## Graph model
 
@@ -73,16 +74,14 @@ This first engine is intentionally conservative:
 Python protocol:
 
 ```python
-class BrainConnector(Protocol):
-    id: str
-    name: str
-    version: str
-    capabilities: tuple[str, ...]
-    def execute(self, action: str, payload: dict) -> dict: ...
+class ConnectorInterface(ABC):
+    @property
+    def name(self) -> str: ...
+    def execute(self, task: str, **kwargs) -> dict: ...
     def health(self) -> dict: ...
 ```
 
-Modules can be discovered from the `orchid_continuum.brain_connectors` Python entry-point group. Identity collisions fail closed. Crossref, OpenAlex, Semantic Scholar, PubMed, GBIF, BHL, and JSTOR are registered as non-operational manifests. This makes integration capability visible without performing surprise network calls or pretending credentials are configured. JSTOR is metadata-only. Operational adapters are a later credentialed deployment slice.
+This is the existing canonical `runtime.connector_interface`, not a second Brain registry. Modules are discovered from the established runtime connector directory or the `orchid_continuum.brain_connectors` Python entry-point group. Identity collisions fail closed. Crossref, OpenAlex, Semantic Scholar, PubMed, GBIF, BHL, and JSTOR are registered as non-operational manifests. This makes integration capability visible without performing surprise network calls or pretending credentials are configured. JSTOR is metadata-only. Operational adapters are a later credentialed deployment slice.
 
 Equivalent TypeScript consumer contract:
 
@@ -114,11 +113,11 @@ export interface InferenceResult {
 Migration 104 creates only the new `oc_brain` schema:
 
 - `connector_registrations`: versions, capabilities, enablement and secret-reference names (never secret values);
-- `inference_runs` and `inference_results`: optional governed persistence for candidates and review state;
-- `literature_records` and `literature_graph_links`: normalized provider metadata with source hashes and explicit graph links;
 - `outreach_nodes` and `outreach_edges`: organizations, universities, gardens, zoos, societies, labs, educators, learners, citizen scientists, volunteers, funders and channels with expertise, audiences, interests, collaboration and engagement edges.
 
-Foreign keys from scientific inference/literature links point to canonical `oc_graph.kg_nodes`. Migration 104 is additive and idempotent. The rollback is separate and intended only for disposable validation or an explicitly approved rollback.
+Inference persistence, immutable history, review, and approval belong exclusively to the Reasoning Ledger. Literature records and evidence remain exclusively in Literature Intelligence. Migration 104 therefore creates neither inference nor literature tables.
+
+Migration 104 has no foreign keys into the scientific graph, Literature Intelligence, or Reasoning Ledger. It is additive and idempotent. The rollback is separate and intended only for disposable validation or an explicitly approved rollback.
 
 ## PostgreSQL and Neo4j compatibility
 
@@ -134,6 +133,7 @@ All endpoints require the existing owner-session or API-key authentication:
 - `GET /brain/relationships/{id}`
 - `GET /brain/reason`
 - `POST /brain/infer`
+- `POST /brain/inferences/{subject_node_id}/submit-to-ledger`
 - `POST /brain/query`
 - `POST /brain/connect`
 
@@ -168,7 +168,7 @@ POST /brain/query
 1. Apply all existing graph/publication migrations and verify `oc_graph.kg_nodes` exists.
 2. Back up the target database and apply migration 104 through the normal release process.
 3. Deploy the authenticated Brain routes with connector manifests disabled.
-4. Validate structured reads and deterministic inference against a non-production graph snapshot.
+4. Validate structured reads, deterministic inference, and the governed Reasoning Ledger handoff against a non-production graph snapshot.
 5. Add provider-specific literature adapters one at a time with rate limiting, source hashing, licensing review, and credential references.
 6. Add governed inference persistence and review workflows before any candidate can reach controlled publication.
 7. Build a read-only Neo4j projection only if PostgreSQL traversal performance justifies it.
@@ -177,7 +177,7 @@ POST /brain/query
 ## Known limitations
 
 - External literature connectors are contracts/manifests, not live network clients.
-- Candidate inference persistence tables are created, but current inference endpoints remain read-only.
+- Candidate inferences are persisted only as immutable Reasoning Ledger revisions through the governed handoff route.
 - The deterministic rules demonstrate auditable graph-pattern inference; domain experts must calibrate and approve rule weights and vocabulary aliases.
 - Outreach recommendation engines are schema-ready but intentionally not operational until privacy and consent governance exists.
 - PostgreSQL `all_nodes`/`all_edges` queries are suitable for the bounded initial slice, not very large graph workloads; indexed repository query methods are the next performance step.

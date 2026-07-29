@@ -4,9 +4,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.brain import routes
-from app.brain.connectors import ConnectorRegistry, ManifestConnector, default_registry
 from app.brain.reasoning import RULES, InferenceEngine, InferenceType
 from app.security import verify_owner_or_api_key
+from runtime.connector_registry import (
+    ConnectorManifest,
+    ConnectorRegistry,
+    default_brain_registry,
+)
 from runtime.knowledge_graph import Edge, InMemoryGraphRepository, Node
 
 
@@ -102,7 +106,7 @@ def test_direct_inference_preserves_source_evidence():
 
 def test_connector_registry_rejects_duplicate_identity():
     registry = ConnectorRegistry()
-    connector = ManifestConnector("module", "Module", "1", ("health",))
+    connector = ConnectorManifest("module", "Module", "1", ("health",))
     registry.register(connector)
     try:
         registry.register(connector)
@@ -113,8 +117,8 @@ def test_connector_registry_rejects_duplicate_identity():
 
 
 def test_default_registry_declares_all_literature_sources_without_network_calls():
-    catalog = default_registry().catalog()
-    assert {item["id"] for item in catalog} >= {
+    catalog = default_brain_registry().catalog()
+    required = {
         "crossref",
         "openalex",
         "semantic-scholar",
@@ -123,7 +127,9 @@ def test_default_registry_declares_all_literature_sources_without_network_calls(
         "bhl",
         "jstor",
     }
-    assert all(item["health"]["operational"] is False for item in catalog)
+    by_id = {item["id"]: item for item in catalog}
+    assert set(by_id) >= required
+    assert all(by_id[item]["health"]["operational"] is False for item in required)
 
 
 def test_brain_routes_are_authenticated_by_default():

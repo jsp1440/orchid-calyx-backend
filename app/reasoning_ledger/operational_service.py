@@ -156,6 +156,51 @@ class OperationalReasoningLedgerService:
             {"entry_id": str(entry.entry_id), "kind": entry.kind.value},
         )
 
+    def append_inference_candidate(
+        self,
+        ledger_id: str,
+        entry: LedgerEntry,
+        *,
+        owner: str,
+        expected_version: int,
+        inference_content_hash: str,
+    ) -> tuple[ReasoningLedger, bool]:
+        """Append one governed inference candidate without approving it."""
+        if entry.kind.value != "hypothesis":
+            raise LedgerValidationError("INFERENCE_ENTRY_MUST_BE_HYPOTHESIS")
+        if entry.attributes.get("inference_content_hash") != inference_content_hash:
+            raise LedgerValidationError("INFERENCE_CONTENT_HASH_MISMATCH")
+
+        def operation(current: ReasoningLedger) -> ReasoningLedger:
+            self.projects.require_owned(current.project_id, owner)
+            if current.status in {LedgerStatus.PUBLISHED, LedgerStatus.BLOCKED}:
+                raise LedgerValidationError(
+                    f"cannot append entries to a {current.status.value} ledger"
+                )
+            if entry.tenant_id != owner or entry.project_id != current.project_id:
+                raise LedgerValidationError("ENTRY_SCOPE_MISMATCH")
+            return current.append(_assign_sequence(entry, len(current.entries)))
+
+        return self.repository.mutate_once(
+            ledger_id,
+            owner,
+            expected_version,
+            owner,
+            "INFERENCE_CANDIDATE_APPENDED",
+            operation,
+            dedupe_attribute="inference_content_hash",
+            dedupe_value=inference_content_hash,
+            event_payload={
+                "entry_id": str(entry.entry_id),
+                "kind": entry.kind.value,
+                "inference_content_hash": inference_content_hash,
+                "rule_id": entry.attributes.get("rule_id"),
+                "rule_version": entry.attributes.get("rule_version"),
+                "automatically_approved": False,
+                "automatically_published": False,
+            },
+        )
+
     def current(self, ledger_id: str, owner: str) -> ReasoningLedger:
         ledger = self.repository.current(ledger_id, owner)
         self.projects.require_owned(ledger.project_id, owner)

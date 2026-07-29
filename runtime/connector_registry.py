@@ -18,7 +18,9 @@ import importlib
 import inspect
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any
 
@@ -52,15 +54,21 @@ class ConnectorRegistry:
         logger.info("Starting connector discovery in %s", self.connectors_dir)
 
         if not self.connectors_dir.exists():
-            logger.warning("Connectors directory does not exist: %s", self.connectors_dir)
+            logger.warning(
+                "Connectors directory does not exist: %s", self.connectors_dir
+            )
             self.connectors_dir.mkdir(parents=True, exist_ok=True)
             return
 
-        py_files = [f for f in self.connectors_dir.glob("*.py") if f.name != "__init__.py"]
+        py_files = [
+            f for f in self.connectors_dir.glob("*.py") if f.name != "__init__.py"
+        ]
         logger.info("Found %d potential connector files", len(py_files))
 
         for py_file in py_files:
             self._load_connector_from_file(py_file)
+
+        self._discover_entry_points()
 
         logger.info(
             "Discovery complete: %d connectors loaded, %d errors",
@@ -89,15 +97,17 @@ class ConnectorRegistry:
                     try:
                         instance = obj()
                         connector_name = instance.name
-                        self.connectors[connector_name] = instance
+                        self.register(instance)
                         logger.info(
                             "Loaded connector: %s (from %s.%s)",
                             connector_name,
                             module_name,
                             name,
                         )
-                    except Exception as exc:
-                        error_msg = f"Failed to instantiate {name} from {module_name}: {str(exc)}"
+                    except Exception as exc:  # noqa: BLE001 - plugin boundary
+                        error_msg = (
+                            f"Failed to instantiate {name} from {module_name}: {exc!s}"
+                        )
                         logger.error(error_msg)
                         self.discovery_errors.append(
                             {
@@ -107,8 +117,8 @@ class ConnectorRegistry:
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                             }
                         )
-        except Exception as exc:
-            error_msg = f"Failed to load connectors from {py_file}: {str(exc)}"
+        except Exception as exc:  # noqa: BLE001 - plugin import boundary
+            error_msg = f"Failed to load connectors from {py_file}: {exc!s}"
             logger.error(error_msg)
             self.discovery_errors.append(
                 {
@@ -117,6 +127,37 @@ class ConnectorRegistry:
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             )
+
+    def _discover_entry_points(self) -> None:
+        """Discover external connectors through the canonical plugin group."""
+        selected = entry_points()
+        selected = (
+            selected.select(group="orchid_continuum.brain_connectors")
+            if hasattr(selected, "select")
+            else selected.get("orchid_continuum.brain_connectors", [])
+        )
+        for entry_point in selected:
+            try:
+                loaded = entry_point.load()
+                connector = loaded() if callable(loaded) else loaded
+                self.register(connector)
+            except Exception as exc:  # noqa: BLE001 - external entry point boundary
+                self.discovery_errors.append(
+                    {
+                        "entry_point": entry_point.name,
+                        "error": str(exc),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+
+    def register(self, connector: ConnectorInterface) -> None:
+        """Register one connector without silently replacing an identity."""
+        name = connector.name.strip()
+        if not name:
+            raise ValueError("INVALID_CONNECTOR_IDENTITY")
+        if name in self.connectors:
+            raise ValueError("CONNECTOR_ALREADY_REGISTERED")
+        self.connectors[name] = connector
 
     def get_connector(self, name: str) -> ConnectorInterface | None:
         """Retrieve a connector by name.
@@ -128,6 +169,26 @@ class ConnectorRegistry:
             The connector instance, or None if not found
         """
         return self.connectors.get(name)
+
+    def get(self, name: str) -> ConnectorInterface:
+        connector = self.get_connector(name)
+        if connector is None:
+            raise LookupError("CONNECTOR_NOT_FOUND")
+        return connector
+
+    def catalog(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": connector.name,
+                "name": getattr(connector, "display_name", connector.name),
+                "version": getattr(connector, "version", "unspecified"),
+                "capabilities": list(getattr(connector, "capabilities", ())),
+                "health": connector.health(),
+            }
+            for connector in sorted(
+                self.connectors.values(), key=lambda item: item.name
+            )
+        ]
 
     def list_connectors(self) -> list[str]:
         """Return list of available connector names."""
@@ -178,12 +239,10 @@ class ConnectorRegistry:
             }
         except Exception as exc:
             execution_time_ms = (time.time() - start_time) * 1000
-            logger.error(
-                "Task '%s' on '%s' failed: %s",
+            logger.exception(
+                "Task '%s' on '%s' failed",
                 task,
                 connector_name,
-                str(exc),
-                exc_info=True,
             )
             return {
                 "connector": connector_name,
@@ -218,8 +277,10 @@ class ConnectorRegistry:
                     healthy_count += 1
                 else:
                     unhealthy_count += 1
-            except Exception as exc:
-                logger.error("Failed to get health for connector %s: %s", name, str(exc))
+            except Exception as exc:  # noqa: BLE001 - connector health boundary
+                logger.error(
+                    "Failed to get health for connector %s: %s", name, str(exc)
+                )
                 connector_health[name] = {
                     "status": "unhealthy",
                     "error": str(exc),
@@ -243,3 +304,74 @@ class ConnectorRegistry:
             "connectors": connector_health,
             "discovery_errors": self.discovery_errors if self.discovery_errors else [],
         }
+
+
+@dataclass(frozen=True)
+class ConnectorManifest(ConnectorInterface):
+    """Declared, non-operational connector metadata in the canonical registry."""
+
+    connector_id: str
+    display_name: str
+    connector_version: str
+    connector_capabilities: tuple[str, ...]
+    metadata_only: bool = True
+
+    @property
+    def name(self) -> str:
+        return self.connector_id
+
+    @property
+    def version(self) -> str:
+        return self.connector_version
+
+    @property
+    def capabilities(self) -> tuple[str, ...]:
+        return self.connector_capabilities
+
+    def execute(self, task: str, **kwargs) -> dict[str, Any]:
+        if task != "describe":
+            raise RuntimeError("CONNECTOR_ADAPTER_NOT_CONFIGURED")
+        return {
+            "connector_id": self.connector_id,
+            "metadata_only": self.metadata_only,
+            "capabilities": list(self.connector_capabilities),
+        }
+
+    def health(self) -> dict[str, Any]:
+        return {
+            "status": "declared",
+            "operational": False,
+            "metadata_only": self.metadata_only,
+        }
+
+
+LITERATURE_CONNECTOR_MANIFESTS = (
+    ConnectorManifest("crossref", "Crossref", "1.0", ("doi", "authors", "citations")),
+    ConnectorManifest(
+        "openalex", "OpenAlex", "1.0", ("works", "authors", "concepts", "citations")
+    ),
+    ConnectorManifest(
+        "semantic-scholar",
+        "Semantic Scholar",
+        "1.0",
+        ("papers", "authors", "citations"),
+    ),
+    ConnectorManifest("pubmed", "PubMed", "1.0", ("papers", "authors", "abstracts")),
+    ConnectorManifest("gbif", "GBIF", "1.0", ("occurrences", "taxonomy", "geography")),
+    ConnectorManifest(
+        "bhl",
+        "Biodiversity Heritage Library",
+        "1.0",
+        ("literature", "pages", "taxonomy"),
+    ),
+    ConnectorManifest("jstor", "JSTOR", "1.0", ("metadata",), metadata_only=True),
+)
+
+
+def default_brain_registry() -> ConnectorRegistry:
+    registry = ConnectorRegistry()
+    registry.discover()
+    for connector in LITERATURE_CONNECTOR_MANIFESTS:
+        if registry.get_connector(connector.name) is None:
+            registry.register(connector)
+    return registry

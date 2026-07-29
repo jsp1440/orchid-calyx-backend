@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -29,6 +31,11 @@ class InferenceRule:
     edge_types: tuple[str, ...]
     weight: float
     mode: str = "shared_target"
+    version: str = "1.0.0"
+
+    @property
+    def rule_id(self) -> str:
+        return f"ocb010.{self.inference_type.value}"
 
 
 RULES = {
@@ -124,16 +131,25 @@ class InferenceEngine:
             if rule.mode == "direct"
             else self._shared(subject, subject_edges, relevant, rule)
         )
-        results.sort(key=lambda item: (-item["confidence"], item["candidate_node_id"]))
+        finalized = [
+            self._finalize(subject, result, rule)
+            for result in results
+            if self.repository.get_node(result["candidate_node_id"]) is not None
+        ]
+        finalized.sort(
+            key=lambda item: (-item["confidence"], item["candidate_node_id"])
+        )
         return {
             "subject": subject.to_dict(),
             "inference_type": inference_type.value,
             "rule": {
+                "rule_id": rule.rule_id,
+                "version": rule.version,
                 "mode": rule.mode,
                 "edge_types": list(rule.edge_types),
                 "weight": rule.weight,
             },
-            "results": results[:limit],
+            "results": finalized[:limit],
             "governance": {
                 "status": "candidate_inference",
                 "automatically_published": False,
@@ -186,4 +202,79 @@ class InferenceEngine:
                 },
                 {"step": 3, "kind": "candidate", "value": candidate_id},
             ],
+        }
+
+    def _finalize(
+        self,
+        subject: Node,
+        result: dict[str, Any],
+        rule: InferenceRule,
+    ) -> dict[str, Any]:
+        candidate = self.repository.get_node(result["candidate_node_id"])
+        if candidate is None:  # guarded by caller; keeps the method total for typing
+            raise LookupError("CANDIDATE_NODE_NOT_FOUND")
+        evidence = result["evidence"]
+        citations = result["supporting_citations"]
+        payloads = [item.get("payload") or {} for item in evidence]
+        source_hashes = sorted(
+            {
+                str(payload[key])
+                for payload in payloads
+                for key in ("source_hash", "content_hash")
+                if payload.get(key)
+            }
+        )
+        connector_ids = sorted(
+            {
+                str(payload[key])
+                for payload in payloads
+                for key in ("connector_id", "provider")
+                if payload.get(key)
+            }
+        )
+        literature_references = []
+        for payload in payloads:
+            reference = {
+                key: payload[key]
+                for key in (
+                    "paper_id",
+                    "claim_id",
+                    "evidence_id",
+                    "extraction_run_id",
+                    "source_hash",
+                    "content_hash",
+                    "source_anchor",
+                )
+                if payload.get(key) is not None
+            }
+            if reference:
+                literature_references.append(reference)
+        identity = {
+            "inference_family": rule.inference_type.value,
+            "subject": {
+                "node_id": subject.kg_node_id,
+                "canonical_key": subject.canonical_key,
+            },
+            "proposed_relationship": {
+                "predicate": f"inferred_{rule.inference_type.value}",
+                "object_node_id": candidate.kg_node_id,
+                "object_canonical_key": candidate.canonical_key,
+            },
+            "confidence": result["confidence"],
+            "rule_id": rule.rule_id,
+            "rule_version": rule.version,
+            "evidence_edge_ids": [item["id"] for item in evidence],
+            "citations": citations,
+            "source_hashes": source_hashes,
+            "literature_evidence_references": literature_references,
+            "originating_connector_ids": connector_ids,
+        }
+        content_hash = hashlib.sha256(
+            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        return {
+            **result,
+            **identity,
+            "inference_content_hash": content_hash,
+            "rule_trace": result["reasoning_chain"],
         }

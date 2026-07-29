@@ -3,15 +3,25 @@ from __future__ import annotations
 import os
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.orm import Session
 
+from app.database import get_db
+from app.reasoning_ledger.routes import _invoke
+from app.reasoning_ledger.serialization import ledger_to_dict
 from app.routers.health import add_mission_control_cors_headers
 from app.security import verify_owner_or_api_key
+from runtime.connector_registry import ConnectorRegistry, default_brain_registry
 from runtime.knowledge_graph import PostgresGraphRepository
 
-from .connectors import ConnectorRegistry, default_registry
+from .ledger_bridge import InferenceLedgerBridge
 from .reasoning import InferenceEngine, InferenceType
-from .schemas import ConnectRequest, GraphQuery, InferRequest
+from .schemas import (
+    ConnectRequest,
+    GraphQuery,
+    InferenceLedgerSubmission,
+    InferRequest,
+)
 
 router = APIRouter(
     prefix="/brain",
@@ -31,10 +41,19 @@ def get_graph_repository():
 
 
 def get_connector_registry() -> ConnectorRegistry:
-    return default_registry()
+    return default_brain_registry()
 
 
 GraphRepositoryDependency = Annotated[Any, Depends(get_graph_repository)]
+AuthDependency = Annotated[dict, Depends(verify_owner_or_api_key)]
+DbDependency = Annotated[Session, Depends(get_db)]
+
+
+def _subject(auth: dict) -> str:
+    subject = str(auth.get("subject") or auth.get("actor") or "").strip()
+    if not subject:
+        raise HTTPException(401, detail={"code": "AUTHENTICATED_SUBJECT_REQUIRED"})
+    return subject
 
 
 def _translate(exc: Exception) -> None:
@@ -97,6 +116,37 @@ def infer(
     )
 
 
+@router.post(
+    "/inferences/{subject_node_id}/submit-to-ledger",
+    status_code=201,
+)
+def submit_inference_to_ledger(
+    subject_node_id: int,
+    payload: InferenceLedgerSubmission,
+    request: Request,
+    auth: AuthDependency,
+    db: DbDependency,
+    repository: GraphRepositoryDependency,
+) -> dict[str, Any]:
+    owner = _subject(auth)
+    result = _invoke(
+        db,
+        request,
+        lambda: InferenceLedgerBridge(db, repository).submit(
+            ledger_id=str(payload.ledger_id),
+            project_id=str(payload.project_id),
+            owner=owner,
+            expected_version=payload.expected_version,
+            subject_node_id=subject_node_id,
+            inference_type=payload.inference_type,
+            candidate_node_id=payload.candidate_node_id,
+            inference_content_hash=payload.inference_content_hash,
+        ),
+    )
+    result["ledger"] = ledger_to_dict(result["ledger"])
+    return result
+
+
 @router.post("/query")
 def query(request: GraphQuery, repository: GraphRepositoryDependency) -> dict[str, Any]:
     nodes = repository.all_nodes()
@@ -134,8 +184,8 @@ def connect(
     try:
         connector = registry.get(request.connector_id)
         if request.action == "health":
-            return {"connector_id": connector.id, "health": connector.health()}
-        return connector.execute(request.action, request.payload)
+            return {"connector_id": connector.name, "health": connector.health()}
+        return connector.execute(request.action, **request.payload)
     except Exception as exc:
         _translate(exc)
         raise

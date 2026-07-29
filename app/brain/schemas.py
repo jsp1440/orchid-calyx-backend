@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,3 +29,12 @@ class ConnectRequest(StrictModel):
     connector_id: str = Field(min_length=1, max_length=100)
     action: Literal["describe", "health"]
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class InferenceLedgerSubmission(StrictModel):
+    ledger_id: UUID
+    project_id: UUID
+    expected_version: int = Field(ge=1)
+    inference_type: InferenceType
+    candidate_node_id: int = Field(gt=0)
+    inference_content_hash: str = Field(pattern="^[0-9a-f]{64}$")

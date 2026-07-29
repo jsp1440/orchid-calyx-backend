@@ -24,7 +24,6 @@ class ConnectorInterface(ABC):
     @abstractmethod
     def name(self) -> str:
         """Return the connector name (e.g., 'github', 'gmail', 'openai')."""
-        pass
 
     @abstractmethod
     def health(self) -> dict[str, Any]:
@@ -36,7 +35,6 @@ class ConnectorInterface(ABC):
             - 'timestamp': ISO 8601 timestamp
             - 'error' (optional): Error message if unhealthy
         """
-        pass
 
     @abstractmethod
     def execute(self, task: str, **kwargs) -> dict[str, Any]:
@@ -54,4 +52,3 @@ class ConnectorInterface(ABC):
             - 'error' (optional): Error message (if failed)
             - 'execution_time_ms': Execution time in milliseconds
         """
-        pass
