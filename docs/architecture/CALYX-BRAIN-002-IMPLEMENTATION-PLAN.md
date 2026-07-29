@@ -60,6 +60,17 @@ Apply migration 101 before migration 103, configure the existing database and
 authentication environment, and run the dedicated `CALYX-BRAIN-002 Validation`
 workflow. No production migration or deployment is performed by this PR.
 
+## Validation record
+
+Local focused reasoning/API tests: 39 passed, with the PostgreSQL-only migration
+test skipped because Docker and `psql` are not installed locally. Adjacent Research
+Station and Literature Intelligence tests: 15 passed. Ruff, Ruff formatting,
+compile/import smoke, secret-pattern scan, and repository hygiene passed.
+
+GitHub Actions workflow `CALYX-BRAIN-002 Validation` run `30414420839` passed,
+including disposable PostgreSQL 16 migration apply, idempotent reapply, schema
+verification, and rollback.
+
 ## Objective
 
 Implement the first governed Calyx reasoning-ledger kernel on top of the merged Literature Intelligence and Research Station foundations.

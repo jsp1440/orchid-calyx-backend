@@ -7,4 +7,4 @@
 - [x] Review/publication gates tested
 - [x] Deterministic serialization tested
 - [x] Private chain-of-thought explicitly excluded
-- [ ] Dedicated CI, including disposable PostgreSQL validation, complete
+- [x] Dedicated CI, including disposable PostgreSQL validation, complete (run 30414420839)
