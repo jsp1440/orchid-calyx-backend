@@ -24,7 +24,8 @@ use the revisioned SQLAlchemy repository described below.
 - The API derives owner, entry author, reviewer, and audit actor from
   `verify_owner_or_api_key`. Request bodies cannot set those identities.
 - Review approval is bound to both the resulting ledger version and its exact
-  ledger fingerprint. Any later append or conflict resolution makes it stale.
+  review-content hash. Any later append, resolution, or supersession makes it
+  stale.
 - No route publishes to the Knowledge Graph. Validation only reports explicit
   governance blockers.
 
@@ -53,6 +54,28 @@ Private model chain-of-thought is neither accepted nor stored. API schemas forbi
 unknown fields and recursively reject private-reasoning keys inside extensible
 metadata. Stored text is limited to externally reviewable objectives, evidence,
 operations, assumptions, conflicts, conclusions, and concise rationales.
+
+## Canonical conflict dispositions
+
+Conflict entries remain immutable in every revision. A later revision may append
+one typed conflict-disposition record containing the conflict entry ID, exact
+disposition, rationale, authenticated actor, effective timestamp, and effective
+ledger version. Resolved means the conflict was substantively addressed.
+Superseded means later evidence or a later decision replaced it as the governing
+conflict. The states are not aliases and produce distinct canonical payload and
+review-content hashes.
+
+Only one terminal disposition is permitted for a conflict. Duplicate or
+contradictory transitions fail. Unresolved and deferred conflicts block
+publication eligibility; resolved and superseded conflicts do not. Either
+disposition advances the immutable ledger revision, records its exact audit event,
+and returns an approved ledger to under_review, invalidating approval until a
+human approves the exact new version and review-content hash.
+
+The existing resolve route remains compatible and dispatches to separate domain
+transitions from its strict resolution_state field. Actor identity is derived
+from authentication. The canonical disposition is stored inside the immutable
+revision JSON, so no migration or competing persistence table is required.
 
 ## Deployment prerequisites
 

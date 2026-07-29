@@ -82,6 +82,13 @@ class ConflictState(str, Enum):
     DEFERRED = "deferred"
 
 
+class ConflictDispositionType(str, Enum):
+    """Canonical terminal disposition applied to an immutable conflict entry."""
+
+    RESOLVED = "resolved"
+    SUPERSEDED = "superseded"
+
+
 class ReviewOutcome(str, Enum):
     """Decision made by a human reviewer."""
 
@@ -89,6 +96,41 @@ class ReviewOutcome(str, Enum):
     REJECTED = "rejected"
     REQUIRES_REVISION = "requires_revision"
     DEFERRED = "deferred"
+
+
+@dataclass(frozen=True, slots=True)
+class ConflictDisposition:
+    """Append-only record explaining why a conflict no longer governs."""
+
+    conflict_entry_id: UUID
+    disposition: ConflictDispositionType
+    rationale: str
+    actor: str
+    effective_at: datetime
+    effective_ledger_version: int
+
+    def __post_init__(self) -> None:
+        rationale = self.rationale.strip()
+        actor = self.actor.strip()
+        if not rationale:
+            raise LedgerValidationError(
+                "conflict disposition rationale must not be empty"
+            )
+        if not actor:
+            raise LedgerValidationError("conflict disposition actor must not be empty")
+        if self.effective_ledger_version < 2:
+            raise LedgerValidationError(
+                "conflict disposition effective_ledger_version must be >= 2"
+            )
+        if self.effective_at.tzinfo is None or self.effective_at.utcoffset() is None:
+            raise LedgerValidationError(
+                "conflict disposition effective_at must be timezone-aware"
+            )
+        object.__setattr__(self, "rationale", rationale)
+        object.__setattr__(self, "actor", actor)
+        object.__setattr__(
+            self, "effective_at", self.effective_at.astimezone(timezone.utc)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +393,9 @@ class ReasoningLedger:
     version: int = 1
     entries: tuple[LedgerEntry, ...] = field(default_factory=tuple)
     review_decisions: tuple[ReviewDecision, ...] = field(default_factory=tuple)
+    conflict_dispositions: tuple[ConflictDisposition, ...] = field(
+        default_factory=tuple
+    )
     # Entry IDs of CONFLICT entries that have been explicitly superseded/resolved.
     # Kept separate from the immutable LedgerEntry objects to support append-only
     # conflict resolution without mutating existing entries.
@@ -399,7 +444,24 @@ class ReasoningLedger:
             )
 
         review_decisions = tuple(self.review_decisions)
-        resolved_conflict_ids = frozenset(self.resolved_conflict_ids)
+        conflict_dispositions = tuple(
+            sorted(
+                self.conflict_dispositions,
+                key=lambda item: (
+                    item.effective_ledger_version,
+                    str(item.conflict_entry_id),
+                    item.disposition.value,
+                ),
+            )
+        )
+        disposition_ids = [item.conflict_entry_id for item in conflict_dispositions]
+        if len(set(disposition_ids)) != len(disposition_ids):
+            raise LedgerValidationError(
+                "a conflict entry may have only one canonical disposition"
+            )
+        resolved_conflict_ids = frozenset(self.resolved_conflict_ids) | frozenset(
+            disposition_ids
+        )
         # Validate that every resolved ID actually corresponds to a CONFLICT entry.
         conflict_ids = {
             e.entry_id for e in entries if e.kind is LedgerEntryKind.CONFLICT
@@ -408,6 +470,13 @@ class ReasoningLedger:
         if bad_ids:
             raise LedgerValidationError(
                 f"resolved_conflict_ids contains IDs that are not CONFLICT entries: {bad_ids}"
+            )
+        if any(
+            item.effective_ledger_version > self.version
+            for item in conflict_dispositions
+        ):
+            raise LedgerValidationError(
+                "conflict disposition cannot be effective after the ledger version"
             )
         created_at = self.created_at.astimezone(timezone.utc)
         updated_at = self.updated_at.astimezone(timezone.utc)
@@ -420,6 +489,17 @@ class ReasoningLedger:
             "version": self.version,
             "entry_fingerprints": [e.fingerprint for e in entries],
             "resolved_conflict_ids": sorted(str(i) for i in resolved_conflict_ids),
+            "conflict_dispositions": [
+                {
+                    "conflict_entry_id": str(item.conflict_entry_id),
+                    "disposition": item.disposition.value,
+                    "rationale": item.rationale,
+                    "actor": item.actor,
+                    "effective_at": item.effective_at.isoformat(),
+                    "effective_ledger_version": item.effective_ledger_version,
+                }
+                for item in conflict_dispositions
+            ],
         }
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         ledger_fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -484,6 +564,17 @@ class ReasoningLedger:
             "resolved_conflict_ids": sorted(
                 str(identifier) for identifier in resolved_conflict_ids
             ),
+            "conflict_dispositions": [
+                {
+                    "conflict_entry_id": str(item.conflict_entry_id),
+                    "disposition": item.disposition.value,
+                    "rationale": item.rationale,
+                    "actor": item.actor,
+                    "effective_at": item.effective_at.isoformat(),
+                    "effective_ledger_version": item.effective_ledger_version,
+                }
+                for item in conflict_dispositions
+            ],
         }
         review_content_hash = hashlib.sha256(
             json.dumps(
@@ -500,6 +591,7 @@ class ReasoningLedger:
         object.__setattr__(self, "created_by", created_by)
         object.__setattr__(self, "entries", entries)
         object.__setattr__(self, "review_decisions", review_decisions)
+        object.__setattr__(self, "conflict_dispositions", conflict_dispositions)
         object.__setattr__(self, "resolved_conflict_ids", resolved_conflict_ids)
         object.__setattr__(self, "created_at", created_at)
         object.__setattr__(self, "updated_at", updated_at)
@@ -592,6 +684,7 @@ class ReasoningLedger:
             version=self.version + 1,
             entries=self.entries + (entry,),
             review_decisions=self.review_decisions,
+            conflict_dispositions=self.conflict_dispositions,
             resolved_conflict_ids=self.resolved_conflict_ids,
             created_by=self.created_by,
             created_at=self.created_at,
@@ -629,6 +722,7 @@ class ReasoningLedger:
             version=new_version,
             entries=self.entries,
             review_decisions=self.review_decisions + (version_bound,),
+            conflict_dispositions=self.conflict_dispositions,
             resolved_conflict_ids=self.resolved_conflict_ids,
             created_by=self.created_by,
             created_at=self.created_at,
@@ -642,17 +736,36 @@ class ReasoningLedger:
             review_decisions=self.review_decisions + (bound_decision,),
         )
 
-    def resolve_conflict(self, conflict_entry_id: UUID) -> ReasoningLedger:
-        """Return a new ledger with the given CONFLICT entry marked as superseded.
+    def resolve_conflict(
+        self, conflict_entry_id: UUID, *, rationale: str, actor: str
+    ) -> ReasoningLedger:
+        """Substantively resolve an immutable conflict."""
+        return self._dispose_conflict(
+            conflict_entry_id,
+            disposition=ConflictDispositionType.RESOLVED,
+            rationale=rationale,
+            actor=actor,
+        )
 
-        This is the append-only mechanism for conflict resolution: the original
-        CONFLICT entry is not mutated; instead its ID is added to
-        ``resolved_conflict_ids`` so that ``unresolved_conflicts`` and the
-        publication gate no longer count it as blocking.
+    def supersede_conflict(
+        self, conflict_entry_id: UUID, *, rationale: str, actor: str
+    ) -> ReasoningLedger:
+        """Replace an immutable conflict with later governing evidence."""
+        return self._dispose_conflict(
+            conflict_entry_id,
+            disposition=ConflictDispositionType.SUPERSEDED,
+            rationale=rationale,
+            actor=actor,
+        )
 
-        Raises :exc:`LedgerValidationError` if the ID does not refer to a
-        CONFLICT entry in this ledger.
-        """
+    def _dispose_conflict(
+        self,
+        conflict_entry_id: UUID,
+        *,
+        disposition: ConflictDispositionType,
+        rationale: str,
+        actor: str,
+    ) -> ReasoningLedger:
         conflict_ids = {
             e.entry_id for e in self.entries if e.kind is LedgerEntryKind.CONFLICT
         }
@@ -662,19 +775,33 @@ class ReasoningLedger:
             )
         if conflict_entry_id in self.resolved_conflict_ids:
             raise LedgerValidationError(
-                f"conflict entry {conflict_entry_id!s} is already resolved"
+                f"conflict entry {conflict_entry_id!s} is already resolved or superseded"
             )
         now = datetime.now(timezone.utc)
+        new_version = self.version + 1
+        record = ConflictDisposition(
+            conflict_entry_id=conflict_entry_id,
+            disposition=disposition,
+            rationale=rationale,
+            actor=actor,
+            effective_at=now,
+            effective_ledger_version=new_version,
+        )
         return ReasoningLedger(
             ledger_id=self.ledger_id,
             tenant_id=self.tenant_id,
             project_id=self.project_id,
             title=self.title,
             description=self.description,
-            status=self.status,
-            version=self.version + 1,
+            status=(
+                LedgerStatus.UNDER_REVIEW
+                if self.status is LedgerStatus.APPROVED
+                else self.status
+            ),
+            version=new_version,
             entries=self.entries,
             review_decisions=self.review_decisions,
+            conflict_dispositions=self.conflict_dispositions + (record,),
             resolved_conflict_ids=self.resolved_conflict_ids | {conflict_entry_id},
             created_by=self.created_by,
             created_at=self.created_at,

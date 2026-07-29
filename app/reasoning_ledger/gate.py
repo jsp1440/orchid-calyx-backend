@@ -49,7 +49,7 @@ def evaluate(ledger: ReasoningLedger) -> list[GateViolation]:
                 message=(
                     f"{len(unresolved)} unresolved conflict "
                     f"{'entry' if len(unresolved) == 1 else 'entries'} "
-                    "must be resolved or deferred before publication"
+                    "must receive a resolved or superseded disposition before publication"
                 ),
             )
         )

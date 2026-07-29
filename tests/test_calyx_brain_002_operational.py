@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -12,9 +13,13 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.reasoning_ledger.models import (
+    ConflictDisposition,
+    ConflictDispositionType,
+    ConflictState,
     LedgerEntry,
     LedgerEntryKind,
     LedgerProvenance,
+    ReasoningLedger,
     ReviewDecision,
     ReviewOutcome,
     UncertaintyMarker,
@@ -152,6 +157,12 @@ def test_serialization_preserves_conflict_supersession_and_review_hash():
         )
         restored = dict_to_ledger(ledger_to_dict(ledger))
         assert restored.resolved_conflict_ids == {conflict_id}
+        disposition = restored.conflict_dispositions[-1]
+        assert disposition.conflict_entry_id == conflict_id
+        assert disposition.disposition is ConflictDispositionType.SUPERSEDED
+        assert disposition.rationale == "Better evidence"
+        assert disposition.actor == "owner-a"
+        assert disposition.effective_ledger_version == 3
         assert restored.has_human_approval
         assert ledger_to_canonical_json(restored) == ledger_to_canonical_json(ledger)
         ledger = service.append(
@@ -161,6 +172,156 @@ def test_serialization_preserves_conflict_supersession_and_review_hash():
             expected_version=ledger.version,
         )
         assert not ledger.has_human_approval
+
+
+@pytest.mark.parametrize(
+    ("state", "expected", "event_type"),
+    [
+        ("resolved", ConflictDispositionType.RESOLVED, "CONFLICT_RESOLVED"),
+        ("superseded", ConflictDispositionType.SUPERSEDED, "CONFLICT_SUPERSEDED"),
+    ],
+)
+def test_conflict_disposition_persistence_history_gate_and_approval_invalidation(
+    state, expected, event_type
+):
+    session_local = _database()
+    with session_local() as db:
+        project_id = _project(db)
+        service = OperationalReasoningLedgerService(db)
+        ledger, _ = service.create(
+            owner="owner-a",
+            project_id=project_id,
+            title=f"Disposition {state}",
+            description="",
+        )
+        ledger = service.append(
+            str(ledger.ledger_id),
+            _entry("owner-a", project_id, LedgerEntryKind.CONFLICT),
+            owner="owner-a",
+            expected_version=ledger.version,
+        )
+        conflict_id = ledger.entries[-1].entry_id
+        ledger = service.append(
+            str(ledger.ledger_id),
+            _entry("owner-a", project_id, LedgerEntryKind.CONCLUSION),
+            owner="owner-a",
+            expected_version=ledger.version,
+        )
+        ledger = service.review(
+            str(ledger.ledger_id),
+            ReviewDecision(
+                reviewer="owner-a",
+                outcome=ReviewOutcome.APPROVED,
+                rationale="Approved before disposition",
+            ),
+            owner="owner-a",
+            expected_version=ledger.version,
+        )
+        assert ledger.has_human_approval
+        original_conflict = ledger.entries[0]
+        ledger = service.resolve_conflict(
+            str(ledger.ledger_id),
+            conflict_id,
+            owner="owner-a",
+            expected_version=ledger.version,
+            resolution_state=state,
+            rationale=f"{state} rationale",
+        )
+        assert ledger.entries[0] == original_conflict
+        assert ledger.entries[0].conflict_state is ConflictState.UNRESOLVED
+        assert not ledger.unresolved_conflicts
+        assert not ledger.has_human_approval
+        assert ledger.status.value == "under_review"
+        disposition = ledger.conflict_dispositions[-1]
+        assert disposition.disposition is expected
+        assert disposition.rationale == f"{state} rationale"
+        assert disposition.actor == "owner-a"
+        assert disposition.effective_ledger_version == ledger.version
+        restored = dict_to_ledger(ledger_to_dict(ledger))
+        assert restored.conflict_dispositions == ledger.conflict_dispositions
+        assert ledger_to_canonical_json(restored) == ledger_to_canonical_json(ledger)
+        assert ledger_to_canonical_json(ledger) == ledger_to_canonical_json(ledger)
+        current = service.current(str(ledger.ledger_id), "owner-a")
+        assert current.conflict_dispositions[-1].disposition is expected
+        history = service.history(str(ledger.ledger_id), "owner-a")
+        assert history["revisions"][-2].entries[0] == original_conflict
+        assert not history["revisions"][-2].conflict_dispositions
+        assert history["audit_events"][-1]["event_type"] == event_type
+        assert history["audit_events"][-1]["event_payload"]["disposition"] == state
+        with pytest.raises(Exception, match="already resolved or superseded"):
+            service.resolve_conflict(
+                str(ledger.ledger_id),
+                conflict_id,
+                owner="owner-a",
+                expected_version=ledger.version,
+                resolution_state=state,
+                rationale="duplicate",
+            )
+
+
+def test_conflict_disposition_hash_distinguishes_resolved_from_superseded():
+    now = datetime.now(timezone.utc)
+    project_id = str(uuid4())
+    conflict = _entry("owner-a", project_id, LedgerEntryKind.CONFLICT)
+    base = {
+        "tenant_id": "owner-a",
+        "project_id": project_id,
+        "title": "Hash distinction",
+        "created_by": "owner-a",
+        "version": 2,
+        "entries": (conflict,),
+        "created_at": now,
+        "updated_at": now,
+    }
+    values = []
+    for disposition in (
+        ConflictDispositionType.RESOLVED,
+        ConflictDispositionType.SUPERSEDED,
+    ):
+        ledger = ReasoningLedger(
+            **base,
+            conflict_dispositions=(
+                ConflictDisposition(
+                    conflict_entry_id=conflict.entry_id,
+                    disposition=disposition,
+                    rationale="Same rationale",
+                    actor="owner-a",
+                    effective_at=now,
+                    effective_ledger_version=2,
+                ),
+            ),
+        )
+        values.append((ledger.ledger_fingerprint, ledger.review_content_hash))
+    assert values[0][0] != values[1][0]
+    assert values[0][1] != values[1][1]
+
+
+def test_operational_service_rejects_unsupported_disposition():
+    session_local = _database()
+    with session_local() as db:
+        project_id = _project(db)
+        service = OperationalReasoningLedgerService(db)
+        ledger, _ = service.create(
+            owner="owner-a",
+            project_id=project_id,
+            title="Invalid disposition",
+            description="",
+        )
+        ledger = service.append(
+            str(ledger.ledger_id),
+            _entry("owner-a", project_id, LedgerEntryKind.CONFLICT),
+            owner="owner-a",
+            expected_version=ledger.version,
+        )
+        with pytest.raises(Exception, match="UNSUPPORTED_CONFLICT_DISPOSITION"):
+            service.resolve_conflict(
+                str(ledger.ledger_id),
+                ledger.entries[-1].entry_id,
+                owner="owner-a",
+                expected_version=ledger.version,
+                resolution_state="dismissed",
+                rationale="invalid",
+            )
 
 
 def test_literature_reference_validation_preserves_roles(tmp_path: Path):
@@ -385,3 +546,117 @@ def test_authenticated_api_owner_project_isolation_and_no_cot(api_client):
         client.get(f"/api/research/projects/{project_id}/reasoning-ledgers").status_code
         == 404
     )
+
+
+@pytest.mark.parametrize("state", ["resolved", "superseded"])
+def test_api_exposes_exact_conflict_disposition_and_invalidates_approval(
+    api_client, state
+):
+    app, client, project_id = api_client
+    app.dependency_overrides[verify_owner_or_api_key] = lambda: {
+        "actor": "owner-a",
+        "auth_type": "owner_session",
+    }
+    ledger = client.post(
+        "/api/reasoning-ledgers",
+        json={"project_id": project_id, "title": f"API {state}", "description": ""},
+    ).json()["ledger"]
+    ledger_id = ledger["ledger_id"]
+    conflict = client.post(
+        f"/api/reasoning-ledgers/{ledger_id}/entries",
+        json={
+            "expected_version": 1,
+            "kind": "conflict",
+            "text": "Conflicting evidence",
+        },
+    ).json()
+    conflict_id = conflict["entries"][-1]["entry_id"]
+    conclusion = client.post(
+        f"/api/reasoning-ledgers/{ledger_id}/entries",
+        json={
+            "expected_version": 2,
+            "kind": "conclusion",
+            "text": "Reviewable conclusion",
+            "uncertainty": {"confidence": 0.9},
+        },
+    )
+    assert conclusion.status_code == 201
+    approved = client.post(
+        f"/api/reasoning-ledgers/{ledger_id}/reviews",
+        json={
+            "expected_version": 3,
+            "outcome": "approved",
+            "rationale": "Reviewed before disposition",
+        },
+    )
+    assert approved.status_code == 200
+    response = client.post(
+        f"/api/reasoning-ledgers/{ledger_id}/conflicts/{conflict_id}/resolve",
+        json={
+            "expected_version": 4,
+            "resolution_state": state,
+            "rationale": f"Canonical {state}",
+        },
+    )
+    assert response.status_code == 200
+    current = response.json()
+    assert current["status"] == "under_review"
+    disposition = current["conflict_dispositions"][-1]
+    assert disposition["disposition"] == state
+    assert disposition["rationale"] == f"Canonical {state}"
+    assert disposition["actor"] == "owner-a"
+    assert disposition["conflict_entry_id"] == conflict_id
+    assert disposition["effective_ledger_version"] == 5
+    validation = client.post(f"/api/reasoning-ledgers/{ledger_id}/validate").json()
+    codes = {item["code"] for item in validation["blocking_reasons"]}
+    assert "UNRESOLVED_CONFLICTS" not in codes
+    assert "MISSING_HUMAN_APPROVAL" in codes
+    retrieved = client.get(f"/api/reasoning-ledgers/{ledger_id}").json()
+    assert retrieved["conflict_dispositions"] == current["conflict_dispositions"]
+    history = client.get(f"/api/reasoning-ledgers/{ledger_id}/history").json()
+    assert history["revisions"][-2]["conflict_dispositions"] == []
+    assert history["revisions"][-1]["conflict_dispositions"][-1]["disposition"] == state
+    assert history["audit_events"][-1]["event_type"] == (
+        "CONFLICT_RESOLVED" if state == "resolved" else "CONFLICT_SUPERSEDED"
+    )
+
+
+def test_api_rejects_invalid_disposition_identity_overrides_and_cross_owner(
+    api_client,
+):
+    app, client, project_id = api_client
+    app.dependency_overrides[verify_owner_or_api_key] = lambda: {
+        "actor": "owner-a",
+        "auth_type": "owner_session",
+    }
+    ledger = client.post(
+        "/api/reasoning-ledgers",
+        json={"project_id": project_id, "title": "API rejection", "description": ""},
+    ).json()["ledger"]
+    ledger_id = ledger["ledger_id"]
+    conflict = client.post(
+        f"/api/reasoning-ledgers/{ledger_id}/entries",
+        json={"expected_version": 1, "kind": "conflict", "text": "Conflict"},
+    ).json()
+    conflict_id = conflict["entries"][-1]["entry_id"]
+    route = f"/api/reasoning-ledgers/{ledger_id}/conflicts/{conflict_id}/resolve"
+    base = {
+        "expected_version": 2,
+        "resolution_state": "resolved",
+        "rationale": "Addressed",
+    }
+    assert client.post(route, json={**base, "actor": "impersonated"}).status_code == 422
+    assert client.post(route, json={**base, "owner": "other"}).status_code == 422
+    assert (
+        client.post(route, json={**base, "chain_of_thought": "hidden"}).status_code
+        == 422
+    )
+    assert (
+        client.post(route, json={**base, "resolution_state": "dismissed"}).status_code
+        == 422
+    )
+    app.dependency_overrides[verify_owner_or_api_key] = lambda: {
+        "actor": "owner-b",
+        "auth_type": "owner_session",
+    }
+    assert client.post(route, json=base).status_code == 404

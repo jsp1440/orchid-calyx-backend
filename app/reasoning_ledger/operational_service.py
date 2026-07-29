@@ -206,16 +206,34 @@ class OperationalReasoningLedgerService:
         resolution_state: str,
         rationale: str,
     ) -> ReasoningLedger:
+        if resolution_state == "resolved":
+            event_type = "CONFLICT_RESOLVED"
+
+            def operation(current):
+                return current.resolve_conflict(
+                    conflict_id, rationale=rationale, actor=owner
+                )
+
+        elif resolution_state == "superseded":
+            event_type = "CONFLICT_SUPERSEDED"
+
+            def operation(current):
+                return current.supersede_conflict(
+                    conflict_id, rationale=rationale, actor=owner
+                )
+
+        else:
+            raise LedgerValidationError("UNSUPPORTED_CONFLICT_DISPOSITION")
         return self.repository.mutate(
             ledger_id,
             owner,
             expected_version,
             owner,
-            "CONFLICT_RESOLVED",
-            lambda current: current.resolve_conflict(conflict_id),
+            event_type,
+            operation,
             {
                 "conflict_id": str(conflict_id),
-                "resolution_state": resolution_state,
+                "disposition": resolution_state,
                 "rationale": rationale,
             },
         )

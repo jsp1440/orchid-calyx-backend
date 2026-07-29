@@ -12,6 +12,8 @@ from typing import Any
 from uuid import UUID
 
 from .models import (
+    ConflictDisposition,
+    ConflictDispositionType,
     ConflictState,
     LedgerEntry,
     LedgerEntryKind,
@@ -93,6 +95,17 @@ def review_decision_to_dict(d: ReviewDecision) -> dict[str, Any]:
     }
 
 
+def conflict_disposition_to_dict(d: ConflictDisposition) -> dict[str, Any]:
+    return {
+        "conflict_entry_id": _uuid(d.conflict_entry_id),
+        "disposition": d.disposition.value,
+        "rationale": d.rationale,
+        "actor": d.actor,
+        "effective_at": _dt(d.effective_at),
+        "effective_ledger_version": d.effective_ledger_version,
+    }
+
+
 def ledger_to_dict(ledger: ReasoningLedger) -> dict[str, Any]:
     return {
         "ledger_id": _uuid(ledger.ledger_id),
@@ -105,6 +118,9 @@ def ledger_to_dict(ledger: ReasoningLedger) -> dict[str, Any]:
         "entries": [entry_to_dict(e) for e in ledger.entries],
         "review_decisions": [
             review_decision_to_dict(d) for d in ledger.review_decisions
+        ],
+        "conflict_dispositions": [
+            conflict_disposition_to_dict(d) for d in ledger.conflict_dispositions
         ],
         "resolved_conflict_ids": sorted(
             str(identifier) for identifier in ledger.resolved_conflict_ids
@@ -218,6 +234,20 @@ def dict_to_review_decision(d: dict[str, Any]) -> ReviewDecision:
     )
 
 
+def dict_to_conflict_disposition(d: dict[str, Any]) -> ConflictDisposition:
+    from datetime import datetime as _dt_cls
+    from datetime import timezone
+
+    return ConflictDisposition(
+        conflict_entry_id=UUID(d["conflict_entry_id"]),
+        disposition=ConflictDispositionType(d["disposition"]),
+        rationale=d["rationale"],
+        actor=d["actor"],
+        effective_at=_dt_cls.fromisoformat(d["effective_at"]).astimezone(timezone.utc),
+        effective_ledger_version=int(d["effective_ledger_version"]),
+    )
+
+
 def dict_to_ledger(d: dict[str, Any]) -> ReasoningLedger:
     from datetime import datetime as _dt_cls
     from datetime import timezone
@@ -235,6 +265,10 @@ def dict_to_ledger(d: dict[str, Any]) -> ReasoningLedger:
         entries=tuple(dict_to_entry(e) for e in d.get("entries", [])),
         review_decisions=tuple(
             dict_to_review_decision(r) for r in d.get("review_decisions", [])
+        ),
+        conflict_dispositions=tuple(
+            dict_to_conflict_disposition(item)
+            for item in d.get("conflict_dispositions", [])
         ),
         resolved_conflict_ids=frozenset(
             UUID(identifier) for identifier in d.get("resolved_conflict_ids", [])

@@ -91,8 +91,11 @@ class ReasoningLedgerService(ABC):
         conflict_entry_id: UUID,
         *,
         tenant_id: str,
+        resolution_state: str = "resolved",
+        rationale: str = "Conflict substantively addressed.",
+        actor: str | None = None,
     ) -> ReasoningLedger:
-        """Mark a CONFLICT entry as superseded without mutating it.
+        """Apply a resolved or superseded disposition without mutating the entry.
 
         Returns the updated ledger.  Raises :exc:`LedgerValidationError` if
         the entry is not a CONFLICT entry or is already resolved.

@@ -208,14 +208,31 @@ class InMemoryReasoningLedgerService(ReasoningLedgerService):
         conflict_entry_id: UUID,
         *,
         tenant_id: str,
+        resolution_state: str = "resolved",
+        rationale: str = "Conflict substantively addressed.",
+        actor: str | None = None,
     ) -> ReasoningLedger:
-        """Atomically mark a CONFLICT entry as superseded."""
+        """Atomically apply one explicit terminal conflict disposition."""
         lid = _parse_uuid(ledger_id)
         with self._lock:
             current = self._get_current_locked(lid, tenant_id)
             if current.status is LedgerStatus.PUBLISHED:
                 raise LedgerValidationError("cannot modify a published ledger")
-            next_ledger = current.resolve_conflict(conflict_entry_id)
+            authenticated_actor = actor or tenant_id
+            if resolution_state == "resolved":
+                next_ledger = current.resolve_conflict(
+                    conflict_entry_id,
+                    rationale=rationale,
+                    actor=authenticated_actor,
+                )
+            elif resolution_state == "superseded":
+                next_ledger = current.supersede_conflict(
+                    conflict_entry_id,
+                    rationale=rationale,
+                    actor=authenticated_actor,
+                )
+            else:
+                raise LedgerValidationError("UNSUPPORTED_CONFLICT_DISPOSITION")
             self._history[lid].append(next_ledger)
         return next_ledger
 
@@ -244,6 +261,7 @@ class InMemoryReasoningLedgerService(ReasoningLedgerService):
                 version=current.version + 1,
                 entries=current.entries,
                 review_decisions=current.review_decisions,
+                conflict_dispositions=current.conflict_dispositions,
                 resolved_conflict_ids=current.resolved_conflict_ids,
                 created_by=current.created_by,
                 created_at=current.created_at,
