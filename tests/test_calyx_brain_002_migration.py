@@ -98,6 +98,7 @@ def test_postgres_conflict_dispositions_round_trip_history_and_audit():
                     rationale=f"PostgreSQL {state} rationale",
                 )
                 ledger_id = str(ledger.ledger_id)
+                db.commit()
             with session_local() as db:
                 service = OperationalReasoningLedgerService(db)
                 current = service.current(ledger_id, "owner-a")
