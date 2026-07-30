@@ -1,0 +1,13 @@
+name: CALYX-BRAIN-002 Runner Probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Runner started
+        run: |
+          echo "runner_started=true"
+          uname -a
