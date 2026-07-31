@@ -130,6 +130,7 @@ def test_traitbank_audit_only_reads_without_database_writes(monkeypatch):
     assert result["inserted"] == 0
     assert result["ending_checkpoint"] == "1"
     assert result["source_response_metadata"]["writes_enabled"] is False
+    assert result["source_response_metadata"]["rejected"] == 2
 
 
 def test_preview_endpoint_requires_authentication(monkeypatch):
@@ -177,3 +178,76 @@ def test_safety_store_is_noop_without_database_url(monkeypatch):
         reason="missing scientific_name",
         payload={"trait_raw": "height"},
     ) is False
+
+
+def test_run_persists_optional_safety_snapshot(monkeypatch):
+    fake = types.ModuleType("harvesters.inat")
+    fake.SOURCE_KEY = "inat"
+    fake.get_state = lambda _key: {"last_offset": 7}
+    fake.harvest_all = lambda limit=1: {"cursor": 8, "batches": 1, "images": 0}
+    monkeypatch.setitem(sys.modules, "harvesters.inat", fake)
+
+    calls = []
+    monkeypatch.setattr(
+        "harvesters.execution.record_safety_snapshot",
+        lambda harvester_id, **kwargs: calls.append((harvester_id, kwargs)) or True,
+    )
+    result = run_harvester("inaturalist", limit=1)
+    assert result["ending_checkpoint"] == "8"
+    assert calls[0][0] == "inaturalist"
+    assert calls[0][1]["mode"] == "live"
+
+
+def test_traitbank_live_rejects_malformed_record_and_continues(monkeypatch):
+    helper = types.ModuleType("harvesters.state_helper")
+    helper.get_state = lambda _key: {"last_offset": 0}
+    helper.save_state = lambda *_args, **_kwargs: None
+
+    traitbank = types.ModuleType("harvesters.traitbank")
+
+    class FakeTraitBankHarvester:
+        def iter_records(self, limit=None, allow_download=False):
+            yield {"trait_raw": "height"}
+
+    traitbank.TraitBankHarvester = FakeTraitBankHarvester
+    monkeypatch.setitem(sys.modules, "harvesters.state_helper", helper)
+    monkeypatch.setitem(sys.modules, "harvesters.traitbank", traitbank)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+
+    class Cursor:
+        rowcount = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, *_args, **_kwargs):
+            return None
+
+    class Conn:
+        def cursor(self):
+            return Cursor()
+
+        def commit(self):
+            return None
+
+        def close(self):
+            return None
+
+    psycopg2 = types.ModuleType("psycopg2")
+    psycopg2.connect = lambda _url: Conn()
+    monkeypatch.setitem(sys.modules, "psycopg2", psycopg2)
+
+    dead_letters = []
+    monkeypatch.setattr(
+        "harvesters.execution.record_dead_letter",
+        lambda harvester_id, **kwargs: dead_letters.append((harvester_id, kwargs)) or True,
+    )
+    monkeypatch.setattr("harvesters.execution.record_safety_snapshot", lambda *_args, **_kwargs: True)
+
+    result = run_harvester("eol_traitbank", limit=1)
+    assert result["inserted"] == 0
+    assert result["source_response_metadata"]["rejected"] == 1
+    assert dead_letters[0][0] == "eol_traitbank"
