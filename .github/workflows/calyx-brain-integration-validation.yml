@@ -1,0 +1,94 @@
+name: Calyx Brain Integration Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/brain/**"
+      - "app/reasoning_ledger/**"
+      - "runtime/connector_interface.py"
+      - "runtime/connector_registry.py"
+      - "app/main.py"
+      - "migrations/101_research_workspace_foundation.sql"
+      - "migrations/103_reasoning_ledger*.sql"
+      - "migrations/104_orchid_continuum_brain*.sql"
+      - "tests/test_calyx_brain_integration*.py"
+      - ".github/workflows/calyx-brain-integration-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: brain_integration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d brain_integration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      CALYX_BRAIN_INTEGRATION_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/brain_integration_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install validation dependencies
+        run: python -m pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+      - name: Ruff
+        run: >-
+          python -m ruff check
+          app/brain
+          app/reasoning_ledger
+          runtime/connector_interface.py
+          runtime/connector_registry.py
+          tests/test_calyx_brain_integration.py
+          tests/test_calyx_brain_integration_migrations.py
+      - name: Formatting
+        run: >-
+          python -m ruff format --check
+          app/brain
+          app/reasoning_ledger
+          runtime/connector_interface.py
+          runtime/connector_registry.py
+          tests/test_calyx_brain_integration.py
+          tests/test_calyx_brain_integration_migrations.py
+      - name: Governed bridge tests
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_brain_integration.py
+          tests/test_calyx_brain_002_correctness.py
+          tests/test_calyx_brain_002_operational.py
+          tests/test_build_ocb_010_brain.py
+          tests/test_connector_registry.py
+      - name: PostgreSQL 16 migration integration
+        run: python -m pytest -q tests/test_calyx_brain_integration_migrations.py
+      - name: Adjacent subsystem regressions
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_brain_001_literature_e2e.py
+          tests/test_calyx_brain_001a_literature_candidate_handoff.py
+          tests/test_build_086a_candidate_knowledge.py
+          tests/test_knowledge_graph_api.py
+          tests/test_knowledge_graph_traversal.py
+          tests/test_build_rs_001_research_workspace.py
+      - name: Compile and route import
+        run: |
+          python -m compileall -q app/brain app/reasoning_ledger
+          python -c "from app.main import app; assert '/brain/inferences/{subject_node_id}/submit-to-ledger' in app.openapi()['paths']"
+      - name: Secret scan and hygiene
+        shell: bash
+        run: |
+          if git grep -nE '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{30,})' -- app/brain app/reasoning_ledger migrations/103_reasoning_ledger.sql migrations/104_orchid_continuum_brain.sql tests/test_calyx_brain_integration*.py; then
+            echo "Potential committed secret detected"
+            exit 1
+          fi
+          git diff --check
+          test -z "$(git status --porcelain)"

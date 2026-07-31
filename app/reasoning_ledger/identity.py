@@ -8,6 +8,9 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 # A fixed private namespace UUID used to derive deterministic ledger IDs.
 _LEDGER_NS = UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")  # NAMESPACE_URL
 _ENTRY_NS = uuid5(NAMESPACE_URL, "orchid-calyx:reasoning-ledger:entry")
+_INFERENCE_ENTRY_NS = uuid5(
+    NAMESPACE_URL, "orchid-calyx:reasoning-ledger:inference-entry"
+)
 
 
 def deterministic_ledger_id(tenant_id: str, project_id: str, title: str) -> UUID:
@@ -31,3 +34,10 @@ def deterministic_entry_id(
         f"{ledger_id}:{sequence}:{author}:{hashlib.sha256(text.encode()).hexdigest()}"
     )
     return uuid5(_ENTRY_NS, seed)
+
+
+def deterministic_inference_entry_id(
+    ledger_id: UUID, inference_content_hash: str
+) -> UUID:
+    """Bind one deterministic inference artifact to one canonical ledger."""
+    return uuid5(_INFERENCE_ENTRY_NS, f"{ledger_id}:{inference_content_hash}")
