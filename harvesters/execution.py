@@ -1,13 +1,10 @@
-"""BUILD-093 execution adapter.
+"""BUILD-093 execution adapter with BUILD-105 bounded safety controls.
 
 Bridges the governed BUILD-049 control plane to the mature production
-harvesters (iNaturalist, GBIF, EOL/TraitBank). This module contains only
-connective glue -- dispatch, checkpoint reporting, idempotent target-table
-bootstrap, and the TraitBank persistence wiring reused from the source
-run_harvests._run_traitbank. No harvesting logic is reimplemented here.
-
-Each mature harvester is imported lazily inside its dispatch branch because
-harvesters.gbif_api raises at import time when DATABASE_URL is unset.
+harvesters (iNaturalist, GBIF, EOL/TraitBank). Source-specific harvesting logic
+remains in the mature harvesters; this module provides dispatch, telemetry,
+checkpoint protection, bounded execution, dry-run/audit-only modes, optional
+safety persistence, and dead-letter capture.
 """
 
 from __future__ import annotations
@@ -16,11 +13,12 @@ import logging
 import os
 from typing import Any, Optional
 
+from harvesters.safety import CursorGuard, WorkBudget, enforce_gbif_offset
+from harvesters.safety_store import record_dead_letter, record_safety_snapshot
+
 log = logging.getLogger("harvesters.execution")
 
 TRAITBANK_SOURCE_KEY = "traitbank"
-
-# Canonical control-plane harvester ids that map to a mature implementation.
 INTEGRATED_HARVESTERS = {"inaturalist", "gbif", "eol_traitbank"}
 
 
@@ -31,55 +29,157 @@ def is_integrated(harvester_id: str) -> bool:
 def _as_text(value: Any) -> Optional[str]:
     if value is None:
         return None
-    if isinstance(value, str):
-        return value
-    return str(value)
+    return value if isinstance(value, str) else str(value)
 
 
 def _to_checkpoint(value: Any) -> Optional[str]:
     return None if value is None else str(value)
 
 
-def run_harvester(harvester_id: str, limit: Optional[int] = None,
-                  family_key: Optional[int] = None) -> dict[str, Any]:
-    """Dispatch a control-plane harvester id to its mature harvester.
+def _mode_name(*, dry_run: bool, audit_only: bool) -> str:
+    if audit_only:
+        return "audit_only"
+    if dry_run:
+        return "dry_run"
+    return "live"
 
-    Returns normalized telemetry: starting_checkpoint, ending_checkpoint,
-    records_examined, inserted, source_response_metadata.
+
+def _mode_metadata(*, dry_run: bool, audit_only: bool, budget: WorkBudget) -> dict[str, Any]:
+    return {
+        "dry_run": dry_run,
+        "audit_only": audit_only,
+        "writes_enabled": not (dry_run or audit_only),
+        "budget": budget.snapshot(),
+    }
+
+
+def _validate_cursor(start: Any, end: Any) -> Any:
+    guard = CursorGuard(previous=start)
+    return guard.validate(end)
+
+
+def _persist_snapshot(
+    harvester_id: str,
+    *,
+    cursor: Any,
+    dry_run: bool,
+    audit_only: bool,
+    budget: WorkBudget,
+    audit: dict[str, Any],
+) -> None:
+    record_safety_snapshot(
+        harvester_id,
+        cursor=cursor,
+        mode=_mode_name(dry_run=dry_run, audit_only=audit_only),
+        budget=budget.snapshot(),
+        audit=audit,
+    )
+
+
+def run_harvester(
+    harvester_id: str,
+    limit: Optional[int] = None,
+    family_key: Optional[int] = None,
+    *,
+    dry_run: bool = False,
+    audit_only: bool = False,
+    budget: Optional[WorkBudget] = None,
+) -> dict[str, Any]:
+    """Dispatch one bounded harvester run and return normalized telemetry.
+
+    ``dry_run`` and ``audit_only`` are fail-closed: source implementations that
+    cannot guarantee no writes are not executed. Optional BUILD-105 telemetry
+    persistence never blocks execution if the migration is absent.
     """
+    active_budget = budget or WorkBudget()
+    active_budget.check()
+
     if harvester_id == "inaturalist":
-        return _run_inaturalist(limit=limit)
-    if harvester_id == "gbif":
-        return _run_gbif(limit=limit, family_key=family_key)
-    if harvester_id == "eol_traitbank":
-        return _run_traitbank(limit=limit)
-    raise KeyError(harvester_id)
+        result = _run_inaturalist(limit=limit, dry_run=dry_run,
+                                  audit_only=audit_only, budget=active_budget)
+    elif harvester_id == "gbif":
+        result = _run_gbif(limit=limit, family_key=family_key, dry_run=dry_run,
+                           audit_only=audit_only, budget=active_budget)
+    elif harvester_id == "eol_traitbank":
+        result = _run_traitbank(limit=limit, dry_run=dry_run,
+                                audit_only=audit_only, budget=active_budget)
+    else:
+        raise KeyError(harvester_id)
+
+    metadata = result.get("source_response_metadata", {})
+    _persist_snapshot(
+        harvester_id,
+        cursor=result.get("ending_checkpoint"),
+        dry_run=dry_run,
+        audit_only=audit_only,
+        budget=active_budget,
+        audit={
+            "records_examined": result.get("records_examined"),
+            "inserted": result.get("inserted"),
+            "rejected": metadata.get("rejected", 0),
+            "status": metadata.get("status", "completed"),
+        },
+    )
+    return result
 
 
-def _run_inaturalist(limit: Optional[int] = None) -> dict[str, Any]:
+def _run_inaturalist(
+    limit: Optional[int] = None,
+    *,
+    dry_run: bool = False,
+    audit_only: bool = False,
+    budget: WorkBudget,
+) -> dict[str, Any]:
     from harvesters import inat
 
     start = None
     try:
         start = inat.get_state(inat.SOURCE_KEY).get("last_offset")
-    except Exception as exc:  # checkpoint read is best-effort
+    except Exception as exc:
         log.warning("iNat starting checkpoint read failed: %s", exc)
 
+    if dry_run or audit_only:
+        return {
+            "starting_checkpoint": _to_checkpoint(start),
+            "ending_checkpoint": _to_checkpoint(start),
+            "records_examined": 0,
+            "inserted": 0,
+            "source_response_metadata": {
+                "harvester": "harvesters.inat.harvest_all",
+                "status": "preview_not_executed",
+                "reason": "mature iNaturalist implementation does not yet expose a guaranteed no-write preview path",
+                **_mode_metadata(dry_run=dry_run, audit_only=audit_only, budget=budget),
+            },
+        }
+
+    budget.add_requests(1)
     result = inat.harvest_all(limit=limit or 1)
+    batches = int(result.get("batches") or 0)
+    inserted = int(result.get("images") or 0)
+    budget.add_records(batches)
+    budget.add_writes(inserted)
+    end = _validate_cursor(start, result.get("cursor"))
     return {
         "starting_checkpoint": _to_checkpoint(start),
-        "ending_checkpoint": _to_checkpoint(result.get("cursor")),
-        "records_examined": None,
-        "inserted": result.get("images"),
+        "ending_checkpoint": _to_checkpoint(end),
+        "records_examined": batches,
+        "inserted": inserted,
         "source_response_metadata": {
-            "batches": result.get("batches"),
+            "batches": batches,
             "harvester": "harvesters.inat.harvest_all",
+            **_mode_metadata(dry_run=dry_run, audit_only=audit_only, budget=budget),
         },
     }
 
 
-def _run_gbif(limit: Optional[int] = None,
-             family_key: Optional[int] = None) -> dict[str, Any]:
+def _run_gbif(
+    limit: Optional[int] = None,
+    family_key: Optional[int] = None,
+    *,
+    dry_run: bool = False,
+    audit_only: bool = False,
+    budget: WorkBudget,
+) -> dict[str, Any]:
     from harvesters import gbif_api
 
     start = None
@@ -89,32 +189,52 @@ def _run_gbif(limit: Optional[int] = None,
             start = gbif_api.load_state(conn).get("offset")
         finally:
             conn.close()
-    except Exception as exc:  # checkpoint read is best-effort
+    except Exception as exc:
         log.warning("GBIF starting checkpoint read failed: %s", exc)
 
+    requested_limit = int(limit or 300)
+    enforce_gbif_offset(int(start or 0), requested_limit)
+
+    if dry_run or audit_only:
+        return {
+            "starting_checkpoint": _to_checkpoint(start),
+            "ending_checkpoint": _to_checkpoint(start),
+            "records_examined": 0,
+            "inserted": 0,
+            "source_response_metadata": {
+                "harvester": "harvesters.gbif_api.run",
+                "status": "preview_not_executed",
+                "reason": "mature GBIF implementation does not yet expose a guaranteed no-write preview path",
+                "requested_limit": requested_limit,
+                **_mode_metadata(dry_run=dry_run, audit_only=audit_only, budget=budget),
+            },
+        }
+
+    budget.add_requests(1)
     kwargs = {"family_key": family_key} if family_key else {}
     result = gbif_api.run(**kwargs)
-    inserted = (result.get("occurrences_added") or 0) + (result.get("images_added") or 0)
+    occurrences = int(result.get("occurrences_added") or 0)
+    images = int(result.get("images_added") or 0)
+    inserted = occurrences + images
+    end = _validate_cursor(start, result.get("next_offset"))
+    examined = max(0, int(end or 0) - int(start or 0))
+    budget.add_records(examined)
+    budget.add_writes(inserted)
     return {
         "starting_checkpoint": _to_checkpoint(start),
-        "ending_checkpoint": _to_checkpoint(result.get("next_offset")),
-        "records_examined": None,
+        "ending_checkpoint": _to_checkpoint(end),
+        "records_examined": examined,
         "inserted": inserted,
         "source_response_metadata": {
-            "occurrences_added": result.get("occurrences_added"),
-            "images_added": result.get("images_added"),
+            "occurrences_added": occurrences,
+            "images_added": images,
             "harvester": "harvesters.gbif_api.run",
+            **_mode_metadata(dry_run=dry_run, audit_only=audit_only, budget=budget),
         },
     }
 
 
 def _ensure_trait_observations(conn) -> None:
-    """Idempotently ensure the TraitBank target table exists.
-
-    Mirrors the columns written by the source TraitBank persistence glue
-    (run_harvests._run_traitbank / scripts/harvest_traits.py). Uses
-    CREATE TABLE IF NOT EXISTS so it never alters an existing table.
-    """
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -135,15 +255,25 @@ def _ensure_trait_observations(conn) -> None:
     conn.commit()
 
 
-def _run_traitbank(limit: Optional[int] = None, allow_download: bool = False,
-                  batch_commit: int = 200) -> dict[str, Any]:
-    """TraitBank/EOL dispatch + persistence.
+def _validate_traitbank_record(rec: Any) -> tuple[bool, str | None]:
+    if not isinstance(rec, dict):
+        return False, "record is not an object"
+    if not rec.get("scientific_name"):
+        return False, "missing scientific_name"
+    if not (rec.get("trait_raw") or rec.get("value_raw")):
+        return False, "missing trait and value"
+    return True, None
 
-    Connective glue reused from the source run_harvests._run_traitbank:
-    resumes from harvesters.state_helper, persists normalized records to
-    trait_observations, and checkpoints. allow_download defaults to False so
-    execution never triggers a network download unless explicitly enabled.
-    """
+
+def _run_traitbank(
+    limit: Optional[int] = None,
+    allow_download: bool = False,
+    batch_commit: int = 200,
+    *,
+    dry_run: bool = False,
+    audit_only: bool = False,
+    budget: WorkBudget,
+) -> dict[str, Any]:
     import psycopg2
 
     from harvesters.state_helper import get_state, save_state
@@ -155,21 +285,55 @@ def _run_traitbank(limit: Optional[int] = None, allow_download: bool = False,
 
     state = get_state(TRAITBANK_SOURCE_KEY) or {}
     already = int(state.get("last_offset", 0) or 0)
-    log.info("TraitBank resume: skipping first %s record(s) from prior runs", already)
-
     harvester = TraitBankHarvester()
-    conn = psycopg2.connect(database_url)
 
+    if dry_run or audit_only:
+        examined = 0
+        rejected = 0
+        for idx, rec in enumerate(harvester.iter_records(limit=limit, allow_download=False)):
+            if idx < already:
+                continue
+            examined += 1
+            budget.add_records(1)
+            valid, _reason = _validate_traitbank_record(rec)
+            if not valid:
+                rejected += 1
+        return {
+            "starting_checkpoint": _to_checkpoint(already),
+            "ending_checkpoint": _to_checkpoint(already),
+            "records_examined": examined,
+            "inserted": 0,
+            "source_response_metadata": {
+                "processed_preview": examined,
+                "rejected": rejected,
+                "harvester": "harvesters.traitbank.TraitBankHarvester",
+                **_mode_metadata(dry_run=dry_run, audit_only=audit_only, budget=budget),
+            },
+        }
+
+    conn = psycopg2.connect(database_url)
     processed = already
     inserted_total = 0
     inserted_delta = 0
+    rejected = 0
     pending = 0
     try:
         _ensure_trait_observations(conn)
         with conn.cursor() as cur:
-            for idx, rec in enumerate(
-                    harvester.iter_records(limit=limit, allow_download=allow_download)):
+            for idx, rec in enumerate(harvester.iter_records(limit=limit, allow_download=allow_download)):
                 if idx < already:
+                    continue
+                budget.add_records(1)
+                valid, reason = _validate_traitbank_record(rec)
+                if not valid:
+                    rejected += 1
+                    record_dead_letter(
+                        "eol_traitbank",
+                        source_record_id=rec.get("reference_raw") if isinstance(rec, dict) else None,
+                        reason=reason or "malformed record",
+                        payload=rec if isinstance(rec, dict) else {"raw": repr(rec)},
+                    )
+                    processed = idx + 1
                     continue
                 cur.execute(
                     """
@@ -189,14 +353,13 @@ def _run_traitbank(limit: Optional[int] = None, allow_download: bool = False,
                 if cur.rowcount and cur.rowcount > 0:
                     inserted_total += cur.rowcount
                     inserted_delta += cur.rowcount
+                    budget.add_writes(cur.rowcount)
                 processed = idx + 1
                 pending += 1
                 if pending >= batch_commit:
                     conn.commit()
                     save_state(TRAITBANK_SOURCE_KEY, last_offset=processed,
                                increment_total=inserted_delta)
-                    log.info("TraitBank checkpoint: processed=%s inserted_new=%s",
-                             processed, inserted_total)
                     inserted_delta = 0
                     pending = 0
         conn.commit()
@@ -205,14 +368,16 @@ def _run_traitbank(limit: Optional[int] = None, allow_download: bool = False,
     finally:
         conn.close()
 
-    log.info("TraitBank done. processed=%s inserted_new=%s", processed, inserted_total)
+    _validate_cursor(already, processed)
     return {
         "starting_checkpoint": _to_checkpoint(already),
         "ending_checkpoint": _to_checkpoint(processed),
-        "records_examined": processed,
+        "records_examined": max(0, processed - already),
         "inserted": inserted_total,
         "source_response_metadata": {
             "processed": processed,
+            "rejected": rejected,
             "harvester": "harvesters.traitbank.TraitBankHarvester",
+            **_mode_metadata(dry_run=dry_run, audit_only=audit_only, budget=budget),
         },
     }

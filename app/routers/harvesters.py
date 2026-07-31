@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -20,6 +20,12 @@ class ScheduleRequest(BaseModel):
 class TargetProposalRequest(BaseModel):
     proposed_assignment: dict[str, Any]
     rationale: str = Field(min_length=1)
+
+
+class PreviewRequest(BaseModel):
+    mode: Literal["dry_run", "audit_only"] = "dry_run"
+    limit: int = Field(default=100, ge=1, le=10_000)
+    family_key: int | None = Field(default=None, ge=1)
 
 
 def actor(x_orchid_actor: str | None = Header(default=None, alias="X-Orchid-Actor")) -> str:
@@ -59,6 +65,44 @@ def verified_actor(auth: dict[str, object] = Depends(verify_owner_or_api_key), h
 def run_once(harvester_id: str, owner: str = Depends(verified_actor)) -> dict[str, Any]:
     try:
         return control_plane.run_once(harvester_id, owner)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@router.post("/{harvester_id}/preview")
+def preview_harvester(
+    harvester_id: str,
+    request: PreviewRequest,
+    owner: str = Depends(verified_actor),
+) -> dict[str, Any]:
+    """Run a bounded, no-write preview through the BUILD-105 adapter.
+
+    This endpoint never schedules work and never invokes the live worker path.
+    iNaturalist and GBIF fail closed with a no-write capability report; TraitBank
+    can audit local records with downloads and persistence disabled.
+    """
+    try:
+        control_plane.get_harvester(harvester_id)
+        from harvesters.execution import is_integrated, run_harvester
+
+        if not is_integrated(harvester_id):
+            raise HTTPException(status_code=409, detail="Harvester has no integrated execution adapter")
+        result = run_harvester(
+            harvester_id,
+            limit=request.limit,
+            family_key=request.family_key,
+            dry_run=request.mode == "dry_run",
+            audit_only=request.mode == "audit_only",
+        )
+        return {
+            "status": "preview_complete",
+            "mode": request.mode,
+            "harvester_id": harvester_id,
+            "actor": owner,
+            "scheduled": False,
+            "writes_enabled": False,
+            "result": result,
+        }
     except KeyError as exc:
         raise not_found(exc) from exc
 
