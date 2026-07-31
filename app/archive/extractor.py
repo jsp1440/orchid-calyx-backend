@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from app.archive.parser import parse_structured
 
@@ -31,8 +31,10 @@ class ExtractionResult:
 
 
 class DocumentExtractor:
-    TEXT_SUFFIXES = {".txt", ".md", ".rst", ".log"}
-    IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp"}
+    TEXT_SUFFIXES: ClassVar[frozenset[str]] = frozenset({".txt", ".md", ".rst", ".log"})
+    IMAGE_SUFFIXES: ClassVar[frozenset[str]] = frozenset(
+        {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp"}
+    )
 
     def __init__(self, ocr: OCRProvider | None = None) -> None:
         self.ocr = ocr
@@ -50,10 +52,18 @@ class DocumentExtractor:
             return ExtractionResult("\n".join(parser.parts), extraction_method="html")
         if suffix == ".pdf":
             from pypdf import PdfReader
-            return ExtractionResult("\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages), extraction_method="pdf")
+
+            return ExtractionResult(
+                "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages),
+                extraction_method="pdf",
+            )
         if suffix == ".docx":
             from docx import Document
-            return ExtractionResult("\n".join(p.text for p in Document(str(path)).paragraphs), extraction_method="docx")
+
+            return ExtractionResult(
+                "\n".join(paragraph.text for paragraph in Document(str(path)).paragraphs),
+                extraction_method="docx",
+            )
         if suffix in self.IMAGE_SUFFIXES:
             if self.ocr is None:
                 return ExtractionResult("", extraction_method="ocr_not_configured")
