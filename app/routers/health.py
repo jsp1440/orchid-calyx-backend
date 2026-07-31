@@ -1,6 +1,7 @@
 import os
 from fastapi import APIRouter, Depends, Request, Response
 
+from app.archive.routes import router as archive_router
 from app.routers.calyx_queue import router as calyx_queue_router
 from app.routers.executive import router as executive_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
@@ -97,6 +98,12 @@ def workflow_options(full_path: str, request: Request, response: Response):
     return {"status": "ok", "path": full_path}
 
 
+@router.options("/archive/{full_path:path}")
+def archive_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
 @router.get("/health")
 def health():
     return {"status": "ok"}
@@ -120,6 +127,7 @@ router.include_router(executive_telemetry_router, dependencies=[Depends(add_miss
 router.include_router(executive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(scientific_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(calyx_queue_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(archive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(workflow_router)
 router.include_router(executive_intelligence_router)
 router.include_router(connector_router)
