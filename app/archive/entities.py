@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+
 @dataclass(frozen=True)
 class ExtractedEntity:
     label: str
@@ -11,8 +12,10 @@ class ExtractedEntity:
     end_offset: int | None = None
     confidence: float | None = None
 
+
 class EntityExtractor(Protocol):
     def extract(self, text: str) -> list[ExtractedEntity]: ...
+
 
 class NullEntityExtractor:
     def extract(self, text: str) -> list[ExtractedEntity]:
