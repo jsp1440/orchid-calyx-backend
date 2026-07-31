@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import zipfile
+from pathlib import Path
 
 from app.archive.extractor import DocumentExtractor
 from app.archive.fingerprint import sha256_bytes, sha256_file
@@ -55,7 +55,9 @@ def test_markdown_html_and_structured_extraction(tmp_path: Path):
     assert DocumentExtractor().extract(html).text == "Orchid\nContinuum"
 
     assert parse_structured('{"species": 3}', ".json") == {"species": 3}
-    assert parse_structured("species,count\nCattleya,2\n", ".csv") == [{"species": "Cattleya", "count": "2"}]
+    assert parse_structured("species,count\nCattleya,2\n", ".csv") == [
+        {"species": "Cattleya", "count": "2"}
+    ]
 
 
 def test_image_extraction_exposes_ocr_hook(tmp_path: Path):
