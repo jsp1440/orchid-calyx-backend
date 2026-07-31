@@ -1,0 +1,53 @@
+name: BUILD-106 Harvester Readiness
+
+on:
+  pull_request:
+    paths:
+      - "harvesters/**"
+      - "app/routers/harvesters.py"
+      - "runtime/harvester_control.py"
+      - "tests/test_build_105_harvester_safety.py"
+      - "tests/test_build_093_harvester_migration.py"
+      - "tests/test_build_093_gbif_checkpoint.py"
+      - "tests/test_build_093_inat_checkpoint.py"
+      - ".github/workflows/build-106-harvester-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-harvester-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://build106:build106@localhost:5432/build106
+      CALYX_API_KEY: build106-ci-key
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest httpx
+      - name: Compile focused modules
+        run: |
+          python -m py_compile \
+            harvesters/safety.py \
+            harvesters/safety_store.py \
+            harvesters/execution.py \
+            app/routers/harvesters.py \
+            runtime/harvester_control.py
+      - name: Run BUILD-105 safety suite
+        run: python -m pytest -q tests/test_build_105_harvester_safety.py
+      - name: Run BUILD-093 regression suite
+        run: |
+          python -m pytest -q \
+            tests/test_build_093_harvester_migration.py \
+            tests/test_build_093_gbif_checkpoint.py \
+            tests/test_build_093_inat_checkpoint.py

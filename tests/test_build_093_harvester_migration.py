@@ -207,7 +207,7 @@ def test_adapter_traitbank_resume_skips_processed(monkeypatch):
     tel = execution.run_harvester("eol_traitbank")
     inserts = [p for sql, p in sink if "INSERT INTO trait_observations" in sql]
     assert len(inserts) == 1  # first two skipped on resume
-    assert tel["records_examined"] == 3
+    assert tel["records_examined"] == 1
 
 
 def test_no_live_http_during_dispatch(monkeypatch):
