@@ -2,7 +2,7 @@
 
 ## Scope
 
-Institutional Archive Manager implementation on `feature/build-080-institutional-archive-manager`.
+Institutional Archive Manager merged through PR #196 into `main`.
 
 ## Static implementation review
 
@@ -32,20 +32,52 @@ Institutional Archive Manager implementation on `feature/build-080-institutional
 - `tests/test_build_080_archive_migration.py`
 - `.github/workflows/build-080-archive-validation.yml`
 
-The workflow provisions PostgreSQL 16, installs repository dependencies plus PyYAML, runs Ruff, compiles the archive package, executes focused tests, applies migration 106 twice to validate idempotency, and validates isolated rollback.
+The workflow provisions PostgreSQL 16, installs repository dependencies plus PyYAML and HTTPX, runs Ruff, compiles the archive package, executes focused tests, applies migration 106 twice to validate idempotency, and validates isolated rollback.
 
-## Current execution status
+## Authoritative execution result
 
-The connected GitHub implementation environment did not provide a local `gh` executable or a repository checkout, so no local test result is claimed. The dedicated GitHub Actions workflow is the authoritative execution gate for this branch. A successful workflow run is required before merge or production migration.
+GitHub Actions BUILD-080 Archive Validation run #12 (`30664980249`) completed successfully against the final merged implementation.
+
+Validated gates:
+
+- Ruff archive-focused checks: PASS
+- Python compilation: PASS
+- Focused archive unit and API tests: PASS
+- PostgreSQL 16 migration application: PASS
+- Migration 106 second application/idempotency: PASS
+- Isolated rollback: PASS
+
+Final implementation branch head: `a9b6c3beee5b92a3bb64f9dc418f71af14830484`.
+
+Merge commit on `main`: `4ee31a91602f8986fafba46ef11bde2ff64130e6`.
+
+## Production activation status
+
+Code validation is complete. Production activation is not established by CI alone.
+
+The following remain separate operational actions:
+
+1. Confirm the deployed backend revision contains merge commit `4ee31a91602f8986fafba46ef11bde2ff64130e6` or a descendant.
+2. Back up or snapshot the production PostgreSQL database according to the current operations policy.
+3. Apply `migrations/106_institutional_archive_manager.sql` to staging.
+4. Verify all seven archive tables and indexes in staging.
+5. Run authenticated archive API smoke tests in staging.
+6. Confirm Mission Control can read `/archive/status` and `/archive/statistics`.
+7. Restrict archive source paths to approved server-side roots.
+8. Apply migration 106 to production only after staging approval.
+9. Deploy or restart the backend on the validated revision.
+10. Run production read-only status/statistics smoke tests before initiating an import.
 
 ## Known deployment boundaries
 
 - Server-side source paths must be restricted by deployment policy to approved archive roots.
 - OCR remains inactive until an OCR provider is configured.
-- YAML parsing requires PyYAML; the CI workflow installs it explicitly.
+- YAML parsing requires PyYAML in the deployed runtime.
 - Semantic indexing and Knowledge Graph export are interfaces only and do not bypass existing governance.
 - FastAPI background tasks are suitable for initial operation; very large production archives should later be delegated to the existing durable worker/runtime queue without changing archive persistence contracts.
 
 ## Recommendation
 
-READY FOR REVIEW, subject to successful BUILD-080 PostgreSQL CI. Do not merge and do not apply migration 106 to production until that validation succeeds.
+BUILD-080 implementation validation: PASS.
+
+Production migration and deployment: READY FOR CONTROLLED STAGING ACTIVATION; not yet confirmed complete.
