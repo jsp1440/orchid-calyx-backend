@@ -18,6 +18,7 @@ from harvesters.safety import (
     WorkBudget,
     enforce_gbif_offset,
 )
+from harvesters.safety_store import record_dead_letter, record_safety_snapshot
 
 
 def test_work_budget_caps_requests_records_and_writes():
@@ -159,3 +160,20 @@ def test_preview_endpoint_returns_no_write_contract(monkeypatch):
     assert payload["scheduled"] is False
     assert payload["writes_enabled"] is False
     assert payload["result"]["inserted"] == 0
+
+
+def test_safety_store_is_noop_without_database_url(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert record_safety_snapshot(
+        "gbif",
+        cursor=100,
+        mode="audit_only",
+        budget={"records": 10},
+        audit={"status": "ok"},
+    ) is False
+    assert record_dead_letter(
+        "eol_traitbank",
+        source_record_id="bad-1",
+        reason="missing scientific_name",
+        payload={"trait_raw": "height"},
+    ) is False
