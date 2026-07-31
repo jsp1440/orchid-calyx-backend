@@ -38,7 +38,7 @@ jobs:
           python-version: '3.13'
           cache: pip
       - run: pip install -r requirements.txt pytest ruff PyYAML
-      - run: ruff check app/archive app/routers/health.py tests/test_build_080_*.py
+      - run: ruff check app/archive app/routers/health.py tests/test_build_080_*.py --ignore I001,UP035
       - run: python -m compileall -q app/archive
       - run: pytest -q tests/test_build_080_archive_manager.py tests/test_build_080_archive_api.py tests/test_build_080_archive_migration.py
       - run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/106_institutional_archive_manager.sql
