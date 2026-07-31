@@ -36,6 +36,10 @@ from app.concepts.routers import router as concepts_router
 from app.literature_extraction.routes import router as literature_extraction_router
 from app.publication.routers import router as publication_router
 from app.research_workspace.routes import router as research_workspace_router
+from app.reasoning_ledger.routes import (
+    project_router as reasoning_ledger_project_router,
+    router as reasoning_ledger_router,
+)
 from app.review_api.routes import router as review_api_router
 from app.mission_control_briefing.routes import router as mission_control_briefing_router
 from app.mission_control_release.routes import router as mission_control_release_router
@@ -406,6 +410,8 @@ app.include_router(concepts_router)
 app.include_router(literature_extraction_router)
 app.include_router(publication_router)
 app.include_router(research_workspace_router)
+app.include_router(reasoning_ledger_router)
+app.include_router(reasoning_ledger_project_router)
 app.include_router(review_api_router)
 app.include_router(mission_control_briefing_router)
 app.include_router(mission_control_release_router)
