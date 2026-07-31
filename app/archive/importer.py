@@ -63,17 +63,26 @@ class ArchiveImporter:
                 for index, item in enumerate(files[start_index:], start=start_index):
                     try:
                         digest = sha256_file(item.path)
+                        source_uri = item.path.resolve().as_uri()
                         if self.registry.find_file_by_sha256(digest):
+                            self.registry.record_duplicate(run_id, relative_path=item.relative_path, digest=digest, source_uri=source_uri)
                             self.registry.update_run_counters(run_id, duplicates_skipped=1, files_processed=1)
                             continue
                         extracted = self.extractor.extract(item.path)
-                        document_id = self.registry.register_document(
-                            run_id=run_id, relative_path=item.relative_path, digest=digest,
-                            size_bytes=item.size_bytes, extraction_method=extracted.extraction_method,
-                            text=extracted.text, metadata={"structured_data": extracted.structured_data},
-                        )
                         entities = self.entity_extractor.extract(extracted.text)
                         relationships = self.relationship_extractor.extract(extracted.text, list(entities))
+                        self.registry.register_document(
+                            run_id=run_id,
+                            relative_path=item.relative_path,
+                            digest=digest,
+                            size_bytes=item.size_bytes,
+                            extraction_method=extracted.extraction_method,
+                            text=extracted.text,
+                            metadata={"structured_data": extracted.structured_data},
+                            entities=entities,
+                            relationships=relationships,
+                            source_uri=source_uri,
+                        )
                         self.registry.update_run_counters(
                             run_id, files_processed=1, documents_indexed=1,
                             entities_extracted=len(entities), relationships_created=len(relationships),
