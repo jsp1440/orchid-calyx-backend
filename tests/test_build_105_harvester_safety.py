@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 
+from harvesters.execution import run_harvester
 from harvesters.safety import (
     BudgetExceeded,
     CircuitBreaker,
@@ -57,3 +61,69 @@ def test_gbif_offset_ceiling_is_enforced():
     enforce_gbif_offset(99_000, 1_000)
     with pytest.raises(BudgetExceeded):
         enforce_gbif_offset(99_500, 1_000)
+
+
+def test_inaturalist_audit_only_does_not_execute(monkeypatch):
+    fake = types.ModuleType("harvesters.inat")
+    fake.SOURCE_KEY = "inat"
+    fake.get_state = lambda _key: {"last_offset": 42}
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("harvest_all must not run in audit-only mode")
+
+    fake.harvest_all = forbidden
+    monkeypatch.setitem(sys.modules, "harvesters.inat", fake)
+
+    result = run_harvester("inaturalist", audit_only=True)
+    assert result["starting_checkpoint"] == "42"
+    assert result["ending_checkpoint"] == "42"
+    assert result["inserted"] == 0
+    assert result["source_response_metadata"]["writes_enabled"] is False
+
+
+def test_gbif_dry_run_enforces_window_without_execution(monkeypatch):
+    fake = types.ModuleType("harvesters.gbif_api")
+
+    class Conn:
+        def close(self):
+            return None
+
+    fake.get_conn = lambda: Conn()
+    fake.load_state = lambda _conn: {"offset": 99_500}
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("GBIF run must not execute in dry-run mode")
+
+    fake.run = forbidden
+    monkeypatch.setitem(sys.modules, "harvesters.gbif_api", fake)
+
+    with pytest.raises(BudgetExceeded):
+        run_harvester("gbif", limit=1_000, dry_run=True)
+
+
+def test_traitbank_audit_only_reads_without_database_writes(monkeypatch):
+    helper = types.ModuleType("harvesters.state_helper")
+    helper.get_state = lambda _key: {"last_offset": 1}
+    helper.save_state = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("save_state must not run in audit-only mode")
+    )
+
+    traitbank = types.ModuleType("harvesters.traitbank")
+
+    class FakeTraitBankHarvester:
+        def iter_records(self, limit=None, allow_download=False):
+            assert allow_download is False
+            yield {"id": 1}
+            yield {"id": 2}
+            yield {"id": 3}
+
+    traitbank.TraitBankHarvester = FakeTraitBankHarvester
+    monkeypatch.setitem(sys.modules, "harvesters.state_helper", helper)
+    monkeypatch.setitem(sys.modules, "harvesters.traitbank", traitbank)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+
+    result = run_harvester("eol_traitbank", audit_only=True)
+    assert result["records_examined"] == 2
+    assert result["inserted"] == 0
+    assert result["ending_checkpoint"] == "1"
+    assert result["source_response_metadata"]["writes_enabled"] is False
