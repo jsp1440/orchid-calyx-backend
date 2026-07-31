@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import zipfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
-import zipfile
 
 
 @dataclass(frozen=True)
@@ -22,14 +22,20 @@ class ArchiveScanner:
             raise FileNotFoundError(root)
         for path in sorted(root.rglob("*")):
             if path.is_file():
-                yield ScannedFile(path, root, path.relative_to(root).as_posix(), path.stat().st_size)
+                yield ScannedFile(
+                    path,
+                    root,
+                    path.relative_to(root).as_posix(),
+                    path.stat().st_size,
+                )
 
     def extract_zip(self, archive: Path, destination: Path) -> Path:
         destination.mkdir(parents=True, exist_ok=True)
+        destination_root = destination.resolve()
         with zipfile.ZipFile(archive) as handle:
             for member in handle.infolist():
                 target = (destination / member.filename).resolve()
-                if destination.resolve() not in target.parents and target != destination.resolve():
+                if destination_root not in target.parents and target != destination_root:
                     raise ValueError(f"unsafe ZIP member: {member.filename}")
             handle.extractall(destination)
         return destination
