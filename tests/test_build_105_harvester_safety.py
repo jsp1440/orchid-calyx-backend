@@ -4,7 +4,9 @@ import sys
 import types
 
 import pytest
+from fastapi.testclient import TestClient
 
+from app.main import app
 from harvesters.execution import run_harvester
 from harvesters.safety import (
     BudgetExceeded,
@@ -127,3 +129,33 @@ def test_traitbank_audit_only_reads_without_database_writes(monkeypatch):
     assert result["inserted"] == 0
     assert result["ending_checkpoint"] == "1"
     assert result["source_response_metadata"]["writes_enabled"] is False
+
+
+def test_preview_endpoint_requires_authentication(monkeypatch):
+    monkeypatch.delenv("CALYX_API_KEY", raising=False)
+    client = TestClient(app)
+    response = client.post("/api/harvesters/inaturalist/preview", json={"mode": "dry_run"})
+    assert response.status_code in {401, 403}
+
+
+def test_preview_endpoint_returns_no_write_contract(monkeypatch):
+    monkeypatch.setenv("CALYX_API_KEY", "build105-test-key")
+    fake = types.ModuleType("harvesters.inat")
+    fake.SOURCE_KEY = "inat"
+    fake.get_state = lambda _key: {"last_offset": 42}
+    fake.harvest_all = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("preview endpoint must not run the live harvester")
+    )
+    monkeypatch.setitem(sys.modules, "harvesters.inat", fake)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/harvesters/inaturalist/preview",
+        headers={"X-API-Key": "build105-test-key"},
+        json={"mode": "dry_run", "limit": 25},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scheduled"] is False
+    assert payload["writes_enabled"] is False
+    assert payload["result"]["inserted"] == 0
