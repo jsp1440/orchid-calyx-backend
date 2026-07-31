@@ -3,7 +3,8 @@
 Bridges the governed BUILD-049 control plane to the mature production
 harvesters (iNaturalist, GBIF, EOL/TraitBank). Source-specific harvesting logic
 remains in the mature harvesters; this module provides dispatch, telemetry,
-checkpoint protection, bounded execution, and dry-run/audit-only modes.
+checkpoint protection, bounded execution, dry-run/audit-only modes, optional
+safety persistence, and dead-letter capture.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import os
 from typing import Any, Optional
 
 from harvesters.safety import CursorGuard, WorkBudget, enforce_gbif_offset
+from harvesters.safety_store import record_dead_letter, record_safety_snapshot
 
 log = logging.getLogger("harvesters.execution")
 
@@ -34,6 +36,14 @@ def _to_checkpoint(value: Any) -> Optional[str]:
     return None if value is None else str(value)
 
 
+def _mode_name(*, dry_run: bool, audit_only: bool) -> str:
+    if audit_only:
+        return "audit_only"
+    if dry_run:
+        return "dry_run"
+    return "live"
+
+
 def _mode_metadata(*, dry_run: bool, audit_only: bool, budget: WorkBudget) -> dict[str, Any]:
     return {
         "dry_run": dry_run,
@@ -48,6 +58,24 @@ def _validate_cursor(start: Any, end: Any) -> Any:
     return guard.validate(end)
 
 
+def _persist_snapshot(
+    harvester_id: str,
+    *,
+    cursor: Any,
+    dry_run: bool,
+    audit_only: bool,
+    budget: WorkBudget,
+    audit: dict[str, Any],
+) -> None:
+    record_safety_snapshot(
+        harvester_id,
+        cursor=cursor,
+        mode=_mode_name(dry_run=dry_run, audit_only=audit_only),
+        budget=budget.snapshot(),
+        audit=audit,
+    )
+
+
 def run_harvester(
     harvester_id: str,
     limit: Optional[int] = None,
@@ -60,22 +88,39 @@ def run_harvester(
     """Dispatch one bounded harvester run and return normalized telemetry.
 
     ``dry_run`` and ``audit_only`` are fail-closed: source implementations that
-    cannot guarantee no writes are not executed. This keeps the control-plane
-    API safe while source-specific preview adapters are added incrementally.
+    cannot guarantee no writes are not executed. Optional BUILD-105 telemetry
+    persistence never blocks execution if the migration is absent.
     """
     active_budget = budget or WorkBudget()
     active_budget.check()
 
     if harvester_id == "inaturalist":
-        return _run_inaturalist(limit=limit, dry_run=dry_run,
+        result = _run_inaturalist(limit=limit, dry_run=dry_run,
+                                  audit_only=audit_only, budget=active_budget)
+    elif harvester_id == "gbif":
+        result = _run_gbif(limit=limit, family_key=family_key, dry_run=dry_run,
+                           audit_only=audit_only, budget=active_budget)
+    elif harvester_id == "eol_traitbank":
+        result = _run_traitbank(limit=limit, dry_run=dry_run,
                                 audit_only=audit_only, budget=active_budget)
-    if harvester_id == "gbif":
-        return _run_gbif(limit=limit, family_key=family_key, dry_run=dry_run,
-                         audit_only=audit_only, budget=active_budget)
-    if harvester_id == "eol_traitbank":
-        return _run_traitbank(limit=limit, dry_run=dry_run,
-                              audit_only=audit_only, budget=active_budget)
-    raise KeyError(harvester_id)
+    else:
+        raise KeyError(harvester_id)
+
+    metadata = result.get("source_response_metadata", {})
+    _persist_snapshot(
+        harvester_id,
+        cursor=result.get("ending_checkpoint"),
+        dry_run=dry_run,
+        audit_only=audit_only,
+        budget=active_budget,
+        audit={
+            "records_examined": result.get("records_examined"),
+            "inserted": result.get("inserted"),
+            "rejected": metadata.get("rejected", 0),
+            "status": metadata.get("status", "completed"),
+        },
+    )
+    return result
 
 
 def _run_inaturalist(
@@ -210,6 +255,16 @@ def _ensure_trait_observations(conn) -> None:
     conn.commit()
 
 
+def _validate_traitbank_record(rec: Any) -> tuple[bool, str | None]:
+    if not isinstance(rec, dict):
+        return False, "record is not an object"
+    if not rec.get("scientific_name"):
+        return False, "missing scientific_name"
+    if not (rec.get("trait_raw") or rec.get("value_raw")):
+        return False, "missing trait and value"
+    return True, None
+
+
 def _run_traitbank(
     limit: Optional[int] = None,
     allow_download: bool = False,
@@ -234,11 +289,15 @@ def _run_traitbank(
 
     if dry_run or audit_only:
         examined = 0
-        for idx, _rec in enumerate(harvester.iter_records(limit=limit, allow_download=False)):
+        rejected = 0
+        for idx, rec in enumerate(harvester.iter_records(limit=limit, allow_download=False)):
             if idx < already:
                 continue
             examined += 1
             budget.add_records(1)
+            valid, _reason = _validate_traitbank_record(rec)
+            if not valid:
+                rejected += 1
         return {
             "starting_checkpoint": _to_checkpoint(already),
             "ending_checkpoint": _to_checkpoint(already),
@@ -246,6 +305,7 @@ def _run_traitbank(
             "inserted": 0,
             "source_response_metadata": {
                 "processed_preview": examined,
+                "rejected": rejected,
                 "harvester": "harvesters.traitbank.TraitBankHarvester",
                 **_mode_metadata(dry_run=dry_run, audit_only=audit_only, budget=budget),
             },
@@ -255,6 +315,7 @@ def _run_traitbank(
     processed = already
     inserted_total = 0
     inserted_delta = 0
+    rejected = 0
     pending = 0
     try:
         _ensure_trait_observations(conn)
@@ -263,6 +324,17 @@ def _run_traitbank(
                 if idx < already:
                     continue
                 budget.add_records(1)
+                valid, reason = _validate_traitbank_record(rec)
+                if not valid:
+                    rejected += 1
+                    record_dead_letter(
+                        "eol_traitbank",
+                        source_record_id=rec.get("reference_raw") if isinstance(rec, dict) else None,
+                        reason=reason or "malformed record",
+                        payload=rec if isinstance(rec, dict) else {"raw": repr(rec)},
+                    )
+                    processed = idx + 1
+                    continue
                 cur.execute(
                     """
                     INSERT INTO trait_observations
@@ -304,6 +376,7 @@ def _run_traitbank(
         "inserted": inserted_total,
         "source_response_metadata": {
             "processed": processed,
+            "rejected": rejected,
             "harvester": "harvesters.traitbank.TraitBankHarvester",
             **_mode_metadata(dry_run=dry_run, audit_only=audit_only, budget=budget),
         },
