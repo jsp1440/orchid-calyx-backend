@@ -21,6 +21,20 @@ class PatchRequest:
     attempt: int
 
 
+def _provider_http_error(exc: HTTPError) -> str:
+    try:
+        raw = exc.read().decode("utf-8", errors="replace")
+        payload = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return f"ENGINEERING_PROVIDER_HTTP_{exc.code}"
+
+    detail = payload.get("detail") if isinstance(payload, dict) else None
+    code = str(detail.get("code", "")).strip() if isinstance(detail, dict) else ""
+    if code:
+        return f"ENGINEERING_PROVIDER_HTTP_{exc.code}:{code}"
+    return f"ENGINEERING_PROVIDER_HTTP_{exc.code}"
+
+
 class StructuredPatchProvider:
     """Calls a governed provider that returns complete UTF-8 file replacements."""
 
@@ -64,7 +78,7 @@ class StructuredPatchProvider:
             with urlopen(http_request, timeout=120) as response:
                 result = json.loads(response.read())
         except HTTPError as exc:
-            raise EngineeringProviderError(f"ENGINEERING_PROVIDER_HTTP_{exc.code}") from exc
+            raise EngineeringProviderError(_provider_http_error(exc)) from exc
         except (URLError, TimeoutError) as exc:
             raise EngineeringProviderError("ENGINEERING_PROVIDER_UNREACHABLE") from exc
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
