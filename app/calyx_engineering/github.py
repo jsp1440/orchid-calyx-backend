@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 _SAFE_BRANCH = re.compile(r"^[a-z0-9][a-z0-9._/-]{2,120}$")
 _SAFE_PATH = re.compile(r"^(?!/)(?!.*\.\.)(?!\.github/workflows/)[A-Za-z0-9._/-]{1,240}$")
@@ -15,6 +15,11 @@ _SAFE_PATH = re.compile(r"^(?!/)(?!.*\.\.)(?!\.github/workflows/)[A-Za-z0-9._/-]
 
 class GitHubAutomationError(RuntimeError):
     pass
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 @dataclass(frozen=True)
@@ -138,10 +143,29 @@ class GitHubEngineeringClient:
                 "User-Agent": "calyx-preproduction-engineer",
             },
         )
+        opener = build_opener(_NoRedirect())
         try:
-            with urlopen(request, timeout=30) as response:
+            with opener.open(request, timeout=30) as response:
                 return response.read().decode("utf-8", errors="replace")[-50_000:]
         except HTTPError as exc:
+            if exc.code in {301, 302, 303, 307, 308}:
+                location = exc.headers.get("Location")
+                if not location:
+                    raise GitHubAutomationError("GITHUB_LOG_REDIRECT_MISSING") from exc
+                redirected = Request(
+                    location,
+                    method="GET",
+                    headers={"User-Agent": "calyx-preproduction-engineer"},
+                )
+                try:
+                    with urlopen(redirected, timeout=30) as response:
+                        return response.read().decode("utf-8", errors="replace")[-50_000:]
+                except HTTPError as redirected_exc:
+                    raise GitHubAutomationError(
+                        f"GITHUB_HTTP_{redirected_exc.code}:workflow_job_logs_redirect"
+                    ) from redirected_exc
+                except URLError as redirected_exc:
+                    raise GitHubAutomationError("GITHUB_UNREACHABLE") from redirected_exc
             raise GitHubAutomationError(f"GITHUB_HTTP_{exc.code}:workflow_job_logs") from exc
         except URLError as exc:
             raise GitHubAutomationError("GITHUB_UNREACHABLE") from exc
