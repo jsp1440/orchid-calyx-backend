@@ -1,0 +1,33 @@
+name: CALYX-AGENT-007 Validation
+
+on:
+  pull_request:
+    paths:
+      - "docs/calyx/CALYX-AGENT-007-PREPRODUCTION-CERTIFICATION.md"
+      - "scripts/calyx_engineering_certify.py"
+      - "tests/test_calyx_agent_007.py"
+      - ".github/workflows/calyx-agent-007.yml"
+
+jobs:
+  preproduction-certification:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest ruff
+      - name: Compile
+        run: python -m compileall -q scripts/calyx_engineering_certify.py tests/test_calyx_agent_007.py
+      - name: Ruff
+        run: ruff check scripts/calyx_engineering_certify.py tests/test_calyx_agent_007.py
+      - name: Focused tests
+        run: pytest -q tests/test_calyx_agent_007.py
+      - name: CLI smoke
+        run: python scripts/calyx_engineering_certify.py --help >/dev/null
