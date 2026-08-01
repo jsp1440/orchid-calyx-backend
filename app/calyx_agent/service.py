@@ -7,6 +7,15 @@ from .models import ActionClass, AgentResponse, AgentStep, RequestIntent
 from .policy import approval_reason, classify_intent, required_action_class
 from .tools import AgentToolRegistry, default_tool_registry
 
+_JOURNALISM_TERMS = (
+    "article",
+    "report",
+    "journalism",
+    "newsletter",
+    "write about",
+    "generate a story",
+)
+
 
 class CalyxAgentService:
     """Structured, reviewable Calyx planning without autonomous mutations."""
@@ -30,7 +39,7 @@ class CalyxAgentService:
             request_id=str(uuid4()),
             actor=actor,
             intent=intent,
-            summary=self._summary(intent),
+            summary=self._summary(intent, text),
             provider_status=self.provider_status(),
         )
 
@@ -52,7 +61,7 @@ class CalyxAgentService:
             )
             return response
 
-        tool_ids = self._select_tools(intent)
+        tool_ids = self._select_tools(intent, text)
         previous: str | None = None
         for index, tool_id in enumerate(tool_ids, start=1):
             step_id = f"inspect-{index}"
@@ -70,14 +79,22 @@ class CalyxAgentService:
             response.tool_results.append(self.registry.execute(tool_id))
             previous = step_id
 
-        if intent in {RequestIntent.PLAN_BUILD, RequestIntent.MONITOR}:
+        if intent in {RequestIntent.PLAN_BUILD, RequestIntent.MONITOR} or self._is_journalism_request(text):
             response.steps.append(
                 AgentStep(
                     step_id="prepare-1",
-                    title="Prepare a bounded implementation or monitoring specification",
+                    title=(
+                        "Prepare an evidence-grounded journalism brief"
+                        if self._is_journalism_request(text)
+                        else "Prepare a bounded implementation or monitoring specification"
+                    ),
                     tool_id=None,
                     action_class=ActionClass.PREPARE_ONLY,
-                    rationale="Preparation may proceed, but repository or schedule mutation remains approval-gated.",
+                    rationale=(
+                        "Calyx may prepare evidence packets and article briefs, but publication remains approval-gated."
+                        if self._is_journalism_request(text)
+                        else "Preparation may proceed, but repository or schedule mutation remains approval-gated."
+                    ),
                     dependencies=((previous,) if previous else ()),
                 )
             )
@@ -88,7 +105,18 @@ class CalyxAgentService:
         return response
 
     @staticmethod
-    def _select_tools(intent: RequestIntent) -> tuple[str, ...]:
+    def _is_journalism_request(text: str) -> bool:
+        normalized = text.casefold()
+        return any(term in normalized for term in _JOURNALISM_TERMS)
+
+    @classmethod
+    def _select_tools(cls, intent: RequestIntent, text: str) -> tuple[str, ...]:
+        if cls._is_journalism_request(text):
+            return (
+                "journalism.readiness",
+                "brain.readiness",
+                "continuum.build_inventory",
+            )
         if intent in {RequestIntent.AUDIT, RequestIntent.INSPECT}:
             return ("brain.readiness", "mission_control.readiness")
         if intent in {RequestIntent.PLAN_BUILD, RequestIntent.MONITOR}:
@@ -99,8 +127,10 @@ class CalyxAgentService:
             )
         return ("continuum.build_inventory",)
 
-    @staticmethod
-    def _summary(intent: RequestIntent) -> str:
+    @classmethod
+    def _summary(cls, intent: RequestIntent, text: str) -> str:
+        if cls._is_journalism_request(text):
+            return "Calyx inspected journalism readiness and prepared an approval-gated article workflow."
         summaries = {
             RequestIntent.AUDIT: "Calyx performed a governed read-only audit plan.",
             RequestIntent.INSPECT: "Calyx inspected the currently registered Continuum capabilities.",
