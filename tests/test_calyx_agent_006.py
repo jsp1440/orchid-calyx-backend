@@ -24,12 +24,14 @@ class FakeResponse:
 
 
 class FakeClient:
-    def __init__(self, *, failures: bool = True) -> None:
+    def __init__(self, *, failures: bool = True, advance_branch: bool = True) -> None:
         self.failures = failures
+        self.advance_branch = advance_branch
         self.committed: list[tuple[str, FileChange]] = []
+        self.head_sha = "abc"
 
     def pull_request(self, number: int) -> dict:
-        return {"number": number, "state": "open", "draft": True, "head": {"ref": "calyx/test", "sha": "abc"}}
+        return {"number": number, "state": "open", "draft": True, "head": {"ref": "calyx/test", "sha": self.head_sha}}
 
     def workflow_runs_for_head(self, _head_sha: str) -> list[dict]:
         if not self.failures:
@@ -47,14 +49,19 @@ class FakeClient:
 
     def put_file(self, branch: str, change: FileChange) -> dict:
         self.committed.append((branch, change))
+        if self.advance_branch:
+            self.head_sha = "commit"
         return {"commit": {"sha": "commit"}}
 
 
 class FakeProvider:
+    def __init__(self, changes: list[FileChange] | None = None) -> None:
+        self.changes = changes if changes is not None else [FileChange("app/example.py", "VALUE = 2\n", "Fix failing assertion")]
+
     def generate(self, request: PatchRequest) -> list[FileChange]:
         assert request.attempt == 1
         assert request.failure_logs
-        return [FileChange("app/example.py", "VALUE = 2\n", "Fix failing assertion")]
+        return self.changes
 
 
 def test_structured_provider_parses_bounded_changes(monkeypatch):
@@ -89,7 +96,29 @@ def test_repair_loop_does_not_change_green_or_pending_pr():
         objective="Correct the failing assertion",
         attempt=1,
     )
-    assert result.status == "green_or_pending_no_repair_applied"
+    assert result.status == "repair_not_applied_no_failed_checks"
+    assert result.commits == 0
+
+
+def test_repair_loop_reports_no_generated_changes():
+    result = BoundedRepairLoop(FakeClient(), FakeProvider(changes=[])).repair_once(
+        pull_request_number=12,
+        paths=["app/example.py"],
+        objective="Correct the failing assertion",
+        attempt=1,
+    )
+    assert result.status == "repair_not_applied_no_changes_generated"
+    assert result.commits == 0
+
+
+def test_repair_loop_refuses_success_when_branch_does_not_advance():
+    result = BoundedRepairLoop(FakeClient(advance_branch=False), FakeProvider()).repair_once(
+        pull_request_number=12,
+        paths=["app/example.py"],
+        objective="Correct the failing assertion",
+        attempt=1,
+    )
+    assert result.status == "repair_not_applied_branch_unchanged"
     assert result.commits == 0
 
 
