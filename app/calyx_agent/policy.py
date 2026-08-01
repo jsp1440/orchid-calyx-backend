@@ -2,19 +2,41 @@ from __future__ import annotations
 
 import re
 
-from .models import ActionClass, RequestIntent
-
+from app.calyx_agent.models import ActionClass, RequestIntent
 
 _MUTATION_WORDS = {
-    "merge", "deploy", "delete", "migrate", "restart", "schedule", "publish",
-    "activate", "disable", "enable", "commit", "push", "write", "change production",
+    "merge",
+    "deploy",
+    "delete",
+    "migrate",
+    "restart",
+    "schedule",
+    "publish",
+    "activate",
+    "disable",
+    "enable",
+    "commit",
+    "push",
+    "write",
+    "change production",
 }
 _SCIENTIFIC_PUBLICATION_WORDS = {
-    "publish scientific", "approve scientific", "canonical knowledge",
-    "promote evidence", "publish conclusion",
+    "publish scientific",
+    "approve scientific",
+    "canonical knowledge",
+    "promote evidence",
+    "publish conclusion",
 }
 _AUDIT_WORDS = {"audit", "diagnose", "inspect", "review", "assess", "status"}
-_BUILD_WORDS = {"build", "implement", "fix", "improve", "create branch", "pull request", "pr"}
+_BUILD_WORDS = {
+    "build",
+    "implement",
+    "fix",
+    "improve",
+    "create branch",
+    "pull request",
+    "pr",
+}
 _MONITOR_WORDS = {"monitor", "watch", "alert", "track", "check regularly"}
 
 
