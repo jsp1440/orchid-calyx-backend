@@ -152,6 +152,7 @@ def _archive_readiness(_: dict[str, Any]) -> ToolResult:
 
 def _harvester_readiness(_: dict[str, Any]) -> ToolResult:
     modules = {
+        "harvest": _module_available("app.harvest"),
         "harvester": _module_available("app.harvester"),
         "harvesters": _module_available("app.harvesters"),
         "connectors": _module_available("app.runtime.connectors"),
@@ -166,7 +167,7 @@ def _harvester_readiness(_: dict[str, Any]) -> ToolResult:
             "mission_control_telemetry": _module_available("app.executive_telemetry"),
             "automatic_source_mutation": False,
         },
-        sources=("app/harvester", "app/harvesters", "app/runtime/connectors"),
+        sources=("app/harvest", "app/harvester", "app/harvesters", "app/runtime/connectors"),
         warnings=(
             ()
             if available
