@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-import os
 from uuid import uuid4
 
 from .models import ActionClass, AgentResponse, AgentStep, RequestIntent
 from .policy import approval_reason, classify_intent, required_action_class
+from .providers import (
+    AgentProvider,
+    ProviderError,
+    ProviderRequest,
+    provider_from_environment,
+)
 from .tools import AgentToolRegistry, default_tool_registry
 
 _JOURNALISM_TERMS = (
@@ -18,18 +23,34 @@ _JOURNALISM_TERMS = (
 
 
 class CalyxAgentService:
-    """Structured, reviewable Calyx planning without autonomous mutations."""
+    """Structured Calyx planning with optional governed external synthesis."""
 
-    def __init__(self, registry: AgentToolRegistry | None = None) -> None:
+    def __init__(
+        self,
+        registry: AgentToolRegistry | None = None,
+        provider: AgentProvider | None = None,
+    ) -> None:
         self.registry = registry or default_tool_registry()
+        self.provider = provider
+        self._provider_configuration_error: str | None = None
+        if provider is None:
+            try:
+                self.provider = provider_from_environment()
+            except (ProviderError, ValueError) as exc:
+                self._provider_configuration_error = str(exc)
 
-    @staticmethod
-    def provider_status() -> str:
-        provider = os.getenv("CALYX_AGENT_PROVIDER", "").strip()
-        model = os.getenv("CALYX_AGENT_MODEL", "").strip()
-        return "configured" if provider and model else "not_configured"
+    def provider_status(self) -> str:
+        if self._provider_configuration_error:
+            return "configuration_error"
+        return "configured" if self.provider is not None else "not_configured"
 
-    def handle(self, *, actor: str, request_text: str) -> AgentResponse:
+    def handle(
+        self,
+        *,
+        actor: str,
+        request_text: str,
+        use_provider: bool = True,
+    ) -> AgentResponse:
         text = request_text.strip()
         if not text:
             raise ValueError("REQUEST_TEXT_REQUIRED")
@@ -99,11 +120,44 @@ class CalyxAgentService:
                     status="planned",
                 )
             )
-        if response.provider_status != "configured":
+
+        if use_provider and self.provider is not None:
+            self._apply_provider_synthesis(response, text)
+        elif self._provider_configuration_error:
+            response.uncertainties.append(
+                "External provider configuration is invalid; deterministic planning was used."
+            )
+        elif use_provider:
             response.uncertainties.append(
                 "No external language-model provider is configured; this response uses deterministic planning only."
             )
         return response
+
+    def _apply_provider_synthesis(self, response: AgentResponse, text: str) -> None:
+        assert self.provider is not None
+        request = ProviderRequest(
+            request_id=response.request_id,
+            user_request=text,
+            deterministic_summary=response.summary,
+            intent=response.intent.value,
+            approval_required=response.approval_required,
+            approval_reason=response.approval_reason,
+            steps=tuple(step.to_dict() for step in response.steps),
+            tool_results=tuple(result.to_dict() for result in response.tool_results),
+        )
+        try:
+            synthesis = self.provider.synthesize(request)
+        except ProviderError:
+            response.provider_status = "unavailable"
+            response.uncertainties.append(
+                "The external provider was unavailable; deterministic planning remains authoritative."
+            )
+            return
+        response.answer = synthesis.text
+        response.provider = synthesis.provider
+        response.provider_model = synthesis.model
+        response.provider_response_id = synthesis.response_id
+        response.provider_status = "completed"
 
     @staticmethod
     def _is_journalism_request(text: str) -> bool:
