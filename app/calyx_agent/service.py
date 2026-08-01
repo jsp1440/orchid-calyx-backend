@@ -96,6 +96,7 @@ class CalyxAgentService:
                         else "Preparation may proceed, but repository or schedule mutation remains approval-gated."
                     ),
                     dependencies=((previous,) if previous else ()),
+                    status="planned",
                 )
             )
         if response.provider_status != "configured":
