@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -95,3 +95,23 @@ def test_hardening_migration_defines_execution_controls():
         assert column in sql
     for state in ("queued", "cancelling", "cancelled"):
         assert state in sql
+
+
+def test_run_control_fences_lease_updates_by_attempt():
+    source = Path("app/archive/control.py").read_text(encoding="utf-8")
+    assert "attempt_count=%s" in source
+    assert "def lease_guard" in source
+    assert "status='cancelled'" in source
+    assert "def fail_unclaimed" in source
+
+
+def test_rollback_normalizes_hardening_only_states():
+    sql = Path("migrations/107_archive_production_hardening_rollback.sql").read_text(
+        encoding="utf-8"
+    )
+    assert "WHEN status = 'queued' THEN 'interrupted'" in sql
+    assert "WHEN status = 'cancelling' THEN 'interrupted'" in sql
+    assert "WHEN status = 'cancelled' THEN 'failed'" in sql
+    assert sql.index("UPDATE archive_import_runs") < sql.index(
+        "ADD CONSTRAINT archive_import_runs_status_check"
+    )
