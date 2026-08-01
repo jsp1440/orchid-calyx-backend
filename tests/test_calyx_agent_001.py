@@ -68,8 +68,10 @@ def test_default_registry_exposes_registered_read_only_tools():
     tools = default_tool_registry().describe()
     tool_ids = {item["tool_id"] for item in tools}
     assert tool_ids == {
+        "archive.readiness",
         "brain.readiness",
         "continuum.build_inventory",
+        "harvester.readiness",
         "journalism.readiness",
         "mission_control.readiness",
     }
