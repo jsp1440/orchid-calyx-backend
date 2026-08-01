@@ -1,0 +1,58 @@
+name: CALYX-JOURNALISM-MVP Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/calyx_journalism/**'
+      - 'app/brain/routes.py'
+      - 'tests/test_calyx_journalism_mvp_001.py'
+      - 'docs/architecture/MISSION-CONTROL-CALYX-JOURNALISM-MVP-001.md'
+      - '.github/workflows/calyx-journalism-mvp-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  journalism-mvp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff httpx
+      - name: Compile
+        run: python -m compileall -q app/calyx_journalism app/brain/routes.py
+      - name: Ruff
+        run: ruff check app/calyx_journalism app/brain/routes.py tests/test_calyx_journalism_mvp_001.py
+      - name: Focused tests
+        run: pytest -q tests/test_calyx_journalism_mvp_001.py
+      - name: Route registration smoke
+        env:
+          CALYX_API_KEY: test-key
+          CALYX_OWNER_SESSION_SECRET: test-secret
+        run: |
+          python - <<'PY'
+          from app.main import app
+          paths = {route.path for route in app.routes}
+          required = {
+              '/brain/journalism/presets',
+              '/brain/journalism/brief',
+              '/brain/journalism/evidence-preview',
+              '/brain/journalism/generate',
+              '/brain/journalism/export/markdown',
+          }
+          missing = required - paths
+          if missing:
+              raise SystemExit(f'Missing routes: {sorted(missing)}')
+          print('CALYX-JOURNALISM-MVP routes registered')
+          PY
