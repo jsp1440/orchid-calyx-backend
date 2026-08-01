@@ -101,7 +101,7 @@ def test_run_control_fences_lease_updates_by_attempt():
     source = Path("app/archive/control.py").read_text(encoding="utf-8")
     assert "attempt_count=%s" in source
     assert "def lease_guard" in source
-    assert "status='cancelled'" in source
+    assert "WHEN status='queued' THEN 'cancelled'" in source
     assert "def fail_unclaimed" in source
 
 
