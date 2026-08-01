@@ -81,6 +81,29 @@ def test_expired_running_job_is_reclaimed(monkeypatch):
     assert reclaimed.attempt_count == 2
 
 
+def test_reclaimed_job_rejects_original_worker_completion(monkeypatch):
+    monkeypatch.delenv("CALYX_AGENT_PROVIDER", raising=False)
+    monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
+    db = _session()
+    service = CalyxOrchestrator(db, CalyxAgentService())
+    service.seed_overnight(owner="owner")
+    original = service.claim(worker_id="worker-1", lease_seconds=120)
+    assert original is not None
+    original_token = original.lease_token
+    assert original_token
+    original.lease_expires_at = utcnow() - timedelta(seconds=1)
+    db.commit()
+
+    reclaimed = service.claim(worker_id="worker-2", lease_seconds=120)
+    assert reclaimed is not None
+    try:
+        service.execute(original, worker_id="worker-1", lease_token=original_token)
+    except PermissionError as exc:
+        assert str(exc) == "STALE_WORKER_LEASE"
+    else:
+        raise AssertionError("original worker overwrote a reclaimed lease")
+
+
 def test_seeded_release_readiness_is_read_only(monkeypatch):
     monkeypatch.delenv("CALYX_AGENT_PROVIDER", raising=False)
     monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
@@ -118,9 +141,13 @@ def test_status_findings_are_owner_scoped(monkeypatch):
         service.execute(job, worker_id=f"worker-{owner}", lease_token=token)
 
     owner_a_job_ids = {job.job_id for job in db.query(CalyxJob).filter(CalyxJob.owner == "owner-a")}
-    status = service.status(owner="owner-a")
-    assert status["findings"]
-    assert {item["job_id"] for item in status["findings"]} <= owner_a_job_ids
+    owner_b_job_ids = {job.job_id for job in db.query(CalyxJob).filter(CalyxJob.owner == "owner-b")}
+    status_a = service.status(owner="owner-a")
+    status_b = service.status(owner="owner-b")
+    assert status_a["findings"]
+    assert status_b["findings"]
+    assert {item["job_id"] for item in status_a["findings"]} <= owner_a_job_ids
+    assert {item["job_id"] for item in status_b["findings"]} <= owner_b_job_ids
 
 
 def test_worker_is_disabled_by_default(monkeypatch):
