@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 from collections.abc import Callable
 from typing import Any
@@ -30,6 +31,10 @@ class AgentToolRegistry:
         if descriptor.action_class is not ActionClass.READ_ONLY:
             raise PermissionError("TOOL_REQUIRES_APPROVAL")
         return self._handlers[tool_id](payload or {})
+
+
+def _module_available(module: str) -> bool:
+    return importlib.util.find_spec(module) is not None
 
 
 def _brain_readiness(_: dict[str, Any]) -> ToolResult:
@@ -117,6 +122,56 @@ def _journalism_readiness(_: dict[str, Any]) -> ToolResult:
     )
 
 
+def _archive_readiness(_: dict[str, Any]) -> ToolResult:
+    modules = {
+        "institutional_archive": _module_available("app.institutional_archive"),
+        "archive": _module_available("app.archive"),
+        "document_ingestion": _module_available("app.document_ingestion"),
+    }
+    available = any(modules.values())
+    return ToolResult(
+        tool_id="archive.readiness",
+        status="available" if available else "degraded",
+        data={
+            "database_configured": bool(os.getenv("DATABASE_URL") or os.getenv("PGHOST")),
+            "runtime_modules": modules,
+            "provenance_required": True,
+            "automatic_publication": False,
+        },
+        sources=("app/institutional_archive", "app/archive", "app/document_ingestion"),
+        warnings=(
+            ()
+            if available
+            else ("No canonical archive runtime module was discoverable in this process.",)
+        ),
+    )
+
+
+def _harvester_readiness(_: dict[str, Any]) -> ToolResult:
+    modules = {
+        "harvester": _module_available("app.harvester"),
+        "harvesters": _module_available("app.harvesters"),
+        "connectors": _module_available("app.runtime.connectors"),
+    }
+    available = any(modules.values())
+    return ToolResult(
+        tool_id="harvester.readiness",
+        status="available" if available else "degraded",
+        data={
+            "database_configured": bool(os.getenv("DATABASE_URL") or os.getenv("PGHOST")),
+            "runtime_modules": modules,
+            "mission_control_telemetry": _module_available("app.executive_telemetry"),
+            "automatic_source_mutation": False,
+        },
+        sources=("app/harvester", "app/harvesters", "app/runtime/connectors"),
+        warnings=(
+            ()
+            if available
+            else ("No canonical harvester or connector runtime module was discoverable in this process.",)
+        ),
+    )
+
+
 def default_tool_registry() -> AgentToolRegistry:
     registry = AgentToolRegistry()
     registry.register(
@@ -154,5 +209,23 @@ def default_tool_registry() -> AgentToolRegistry:
             "Inspect durable evidence, article generation, export, and publication boundaries.",
         ),
         _journalism_readiness,
+    )
+    registry.register(
+        ToolDescriptor(
+            "archive.readiness",
+            "Institutional archive readiness",
+            ActionClass.READ_ONLY,
+            "Inspect archive runtime availability, persistence configuration, and provenance boundaries.",
+        ),
+        _archive_readiness,
+    )
+    registry.register(
+        ToolDescriptor(
+            "harvester.readiness",
+            "Harvester readiness",
+            ActionClass.READ_ONLY,
+            "Inspect harvester and connector runtime availability and telemetry boundaries.",
+        ),
+        _harvester_readiness,
     )
     return registry
