@@ -16,6 +16,7 @@ class CertificationConfig:
     pull_request_number: int
     paths: tuple[str, ...]
     objective: str
+    ref: str
 
 
 def _request(config: CertificationConfig, method: str, path: str, payload: dict | None = None) -> dict:
@@ -48,7 +49,7 @@ def run(config: CertificationConfig, *, apply_repair: bool) -> dict:
         config,
         "POST",
         "/brain/engineering/inspect",
-        {"paths": list(config.paths), "ref": "main"},
+        {"paths": list(config.paths), "ref": config.ref},
     )
     failures = _request(
         config,
@@ -89,6 +90,11 @@ def main() -> int:
     parser.add_argument("--pull-request", type=int, required=True)
     parser.add_argument("--path", action="append", required=True)
     parser.add_argument(
+        "--ref",
+        default="main",
+        help="Repository branch, tag, or commit to inspect. Use the certification PR head branch for disposable files.",
+    )
+    parser.add_argument(
         "--objective",
         default="Repair only the deterministic certification failure without changing workflows or unrelated files.",
     )
@@ -102,6 +108,7 @@ def main() -> int:
         pull_request_number=args.pull_request,
         paths=tuple(args.path),
         objective=args.objective,
+        ref=args.ref,
     )
     try:
         evidence = run(config, apply_repair=args.apply_repair)
