@@ -32,7 +32,7 @@ class ArchivePolicy:
     max_path_depth: int = 40
 
     @classmethod
-    def from_environment(cls) -> "ArchivePolicy":
+    def from_environment(cls) -> ArchivePolicy:
         raw_roots = os.getenv("ARCHIVE_ALLOWED_ROOTS", "")
         roots = tuple(
             Path(value).expanduser().resolve()
