@@ -129,10 +129,23 @@ class CalyxOrchestrator:
             self.db.rollback()
         return None
 
+    def _lease_is_current(self, job_id: str, worker_id: str, lease_token: str) -> bool:
+        return (
+            self.db.scalar(
+                select(CalyxJob.job_id).where(
+                    CalyxJob.job_id == job_id,
+                    CalyxJob.status == "running",
+                    CalyxJob.lease_owner == worker_id,
+                    CalyxJob.lease_token == lease_token,
+                )
+            )
+            is not None
+        )
+
     def execute(self, job: CalyxJob, *, worker_id: str, lease_token: str) -> CalyxJob:
         if job.job_type not in READ_ONLY_JOB_TYPES:
             return self._fail(job, worker_id, lease_token, "JOB_TYPE_NOT_ALLOWED")
-        if job.lease_owner != worker_id or job.lease_token != lease_token:
+        if not self._lease_is_current(job.job_id, worker_id, lease_token):
             raise PermissionError("STALE_WORKER_LEASE")
         response = self.agent.handle(
             actor=job.owner,
@@ -140,28 +153,53 @@ class CalyxOrchestrator:
             use_provider=True,
         )
         payload = response.to_dict()
+        now = utcnow()
+        values: dict = {
+            CalyxJob.result_json: json.dumps(payload, sort_keys=True, default=str),
+            CalyxJob.lease_owner: None,
+            CalyxJob.lease_token: None,
+            CalyxJob.lease_expires_at: None,
+        }
         if payload.get("approval_required"):
-            job.status = "blocked_approval"
-            job.approval_required = True
-            job.approval_class = payload.get("steps", [{}])[0].get("action_class")
+            values.update(
+                {
+                    CalyxJob.status: "blocked_approval",
+                    CalyxJob.approval_required: True,
+                    CalyxJob.approval_class: payload.get("steps", [{}])[0].get("action_class"),
+                }
+            )
         else:
-            job.status = "completed"
-            job.completed_at = utcnow()
+            values.update({CalyxJob.status: "completed", CalyxJob.completed_at: now})
+        updated = (
+            self.db.query(CalyxJob)
+            .filter(
+                CalyxJob.job_id == job.job_id,
+                CalyxJob.status == "running",
+                CalyxJob.lease_owner == worker_id,
+                CalyxJob.lease_token == lease_token,
+            )
+            .update(values, synchronize_session=False)
+        )
+        if not updated:
+            self.db.rollback()
+            raise PermissionError("STALE_WORKER_LEASE")
+        if not payload.get("approval_required"):
             self._record_findings(job, payload)
-        job.result_json = json.dumps(payload, sort_keys=True, default=str)
-        job.lease_owner = None
-        job.lease_token = None
-        job.lease_expires_at = None
         self.db.commit()
-        self.db.refresh(job)
-        return job
+        current = self.db.get(CalyxJob, job.job_id)
+        if current is None:
+            raise LookupError("JOB_NOT_FOUND")
+        self.db.refresh(current)
+        return current
 
     def _record_findings(self, job: CalyxJob, payload: dict) -> None:
         warnings = payload.get("uncertainties") or []
         if not warnings:
             warnings = ["No critical failure was reported; review prepared recommendations and evidence."]
         for warning in warnings:
-            fingerprint = hashlib.sha256(f"{job.job_type}:{warning}".encode()).hexdigest()
+            fingerprint = hashlib.sha256(
+                f"{job.owner}:{job.job_type}:{warning}".encode()
+            ).hexdigest()
             existing = self.db.scalar(select(CalyxFinding).where(CalyxFinding.fingerprint == fingerprint))
             if existing:
                 existing.updated_at = utcnow()
@@ -190,16 +228,35 @@ class CalyxOrchestrator:
             )
 
     def _fail(self, job: CalyxJob, worker_id: str, lease_token: str, code: str) -> CalyxJob:
-        if job.lease_owner != worker_id or job.lease_token != lease_token:
+        next_status = "failed" if job.attempt_count >= job.max_attempts else "queued"
+        updated = (
+            self.db.query(CalyxJob)
+            .filter(
+                CalyxJob.job_id == job.job_id,
+                CalyxJob.status == "running",
+                CalyxJob.lease_owner == worker_id,
+                CalyxJob.lease_token == lease_token,
+            )
+            .update(
+                {
+                    CalyxJob.error_code: code,
+                    CalyxJob.status: next_status,
+                    CalyxJob.lease_owner: None,
+                    CalyxJob.lease_token: None,
+                    CalyxJob.lease_expires_at: None,
+                },
+                synchronize_session=False,
+            )
+        )
+        if not updated:
+            self.db.rollback()
             raise PermissionError("STALE_WORKER_LEASE")
-        job.error_code = code
-        job.status = "failed" if job.attempt_count >= job.max_attempts else "queued"
-        job.lease_owner = None
-        job.lease_token = None
-        job.lease_expires_at = None
         self.db.commit()
-        self.db.refresh(job)
-        return job
+        current = self.db.get(CalyxJob, job.job_id)
+        if current is None:
+            raise LookupError("JOB_NOT_FOUND")
+        self.db.refresh(current)
+        return current
 
     def status(self, *, owner: str) -> dict:
         jobs = self.db.scalars(
