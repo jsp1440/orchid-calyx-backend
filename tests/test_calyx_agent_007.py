@@ -59,7 +59,7 @@ def test_certification_repair_is_explicit(monkeypatch):
             return FakeResponse({"ref": "main", "files": {"app/example.py": "x"}, "file_count": 1})
         if "/failures" in request.full_url:
             return FakeResponse({"failures": [{"job": "tests"}]})
-        return FakeResponse({"status": "repair_committed_waiting_for_ci", "attempt": 1})
+        return FakeResponse({"status": "repair_committed_waiting_for_ci", "attempt": 1, "commits": 1})
 
     monkeypatch.setattr("scripts.calyx_engineering_certify.urlopen", fake_urlopen)
     evidence = run(
@@ -74,5 +74,7 @@ def test_certification_repair_is_explicit(monkeypatch):
         apply_repair=True,
     )
     assert evidence["repair_applied"] is True
+    assert evidence["repair_outcome"] == "repair_committed"
     assert evidence["repair"]["attempt"] == 1
+    assert evidence["repair"]["commits"] == 1
     assert len(calls) == 4
