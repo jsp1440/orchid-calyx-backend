@@ -34,7 +34,10 @@ class AgentToolRegistry:
 
 
 def _module_available(module: str) -> bool:
-    return importlib.util.find_spec(module) is not None
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
 
 
 def _brain_readiness(_: dict[str, Any]) -> ToolResult:
