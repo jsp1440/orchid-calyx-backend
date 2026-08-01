@@ -2,23 +2,22 @@
 
 MISSION-CONTROL-CALYX-JOURNALISM-MVP-001
 
-Endpoints:
-  GET  /api/calyx-journalism/presets              — list article presets
-  GET  /api/calyx-journalism/presets/{preset_id}  — fetch a single preset
-  POST /api/calyx-journalism/brief                — validate and echo a brief
-  POST /api/calyx-journalism/evidence-preview     — build evidence preview packet
-  POST /api/calyx-journalism/generate             — generate article (contract)
-  POST /api/calyx-journalism/export/markdown      — export stored article to Markdown
+Endpoints beneath the authenticated Brain boundary:
+  GET  /brain/journalism/presets
+  GET  /brain/journalism/presets/{preset_id}
+  POST /brain/journalism/brief
+  POST /brain/journalism/evidence-preview
+  POST /brain/journalism/generate
+  POST /brain/journalism/export/markdown
 """
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
-from fastapi import Depends
 
 from .presets import get_preset, list_presets
 from .schemas import (
@@ -38,22 +37,18 @@ from .services import (
 )
 
 router = APIRouter(
-    prefix="/api/calyx-journalism",
+    prefix="/journalism",
     tags=["CALYX-JOURNALISM-MVP-001"],
     dependencies=[Depends(verify_owner_or_api_key)],
 )
 
-# Shared in-process stores — same-day MVP; no database required
+# Shared in-process stores — same-day MVP; no database required.
 _store = ArticleStore()
 _packet_store = EvidencePacketStore()
 _preview_service = EvidencePreviewService()
 _generation_service = ArticleGenerationService()
 _export_service = MarkdownExportService()
 
-
-# ---------------------------------------------------------------------------
-# Presets
-# ---------------------------------------------------------------------------
 
 @router.get("/presets")
 def get_presets() -> dict[str, Any]:
@@ -65,13 +60,12 @@ def get_presets() -> dict[str, Any]:
 def get_preset_by_id(preset_id: str) -> dict[str, Any]:
     preset = get_preset(preset_id)
     if preset is None:
-        raise HTTPException(status_code=404, detail={"code": "PRESET_NOT_FOUND", "preset_id": preset_id})
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "PRESET_NOT_FOUND", "preset_id": preset_id},
+        )
     return preset
 
-
-# ---------------------------------------------------------------------------
-# Brief submission
-# ---------------------------------------------------------------------------
 
 class BriefSubmissionRequest(BaseModel):
     publication: PublicationMeta
@@ -86,10 +80,6 @@ def submit_brief(payload: BriefSubmissionRequest) -> dict[str, Any]:
         "brief": payload.brief.model_dump(),
     }
 
-
-# ---------------------------------------------------------------------------
-# Evidence preview
-# ---------------------------------------------------------------------------
 
 class EvidencePreviewRequest(BaseModel):
     evidence_items: list[dict[str, Any]] = Field(default_factory=list)
@@ -106,13 +96,8 @@ def evidence_preview(payload: EvidencePreviewRequest) -> EvidencePreviewPacket:
     return packet
 
 
-# ---------------------------------------------------------------------------
-# Article generation
-# ---------------------------------------------------------------------------
-
 @router.post("/generate", status_code=201)
 def generate_article(request: ArticleGenerationRequest) -> ArticleGenerationResponse:
-    # Resolve evidence: packet store lookup takes precedence over inline items
     evidence_items: list[dict[str, Any]] = list(request.evidence_items)
     verified_projects_override = None
 
@@ -137,10 +122,6 @@ def generate_article(request: ArticleGenerationRequest) -> ArticleGenerationResp
     _store.save(response)
     return response
 
-
-# ---------------------------------------------------------------------------
-# Markdown export
-# ---------------------------------------------------------------------------
 
 class MarkdownExportIn(BaseModel):
     article_id: str = Field(min_length=1)
