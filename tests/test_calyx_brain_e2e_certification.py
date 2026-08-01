@@ -35,7 +35,9 @@ def test_canonical_migration_chain_is_complete_and_ordered():
     migrations = [_forward_migration(prefix) for prefix in CANONICAL_MIGRATION_PREFIXES]
     names = [path.name for path in migrations]
 
-    assert names == sorted(names, key=lambda name: CANONICAL_MIGRATION_PREFIXES.index(name[:5]))
+    assert names == sorted(
+        names, key=lambda name: CANONICAL_MIGRATION_PREFIXES.index(name[:5])
+    )
     assert len(set(names)) == len(names)
 
     for path in migrations:
