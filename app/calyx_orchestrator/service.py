@@ -30,7 +30,7 @@ OVERNIGHT_PROFILE = (
     (40, "journalism_readiness", "Audit Calyx journalism", "Inspect journalism evidence, persistence, generation, and publication readiness."),
     (50, "archive_readiness", "Audit institutional archive", "Inspect archive durability, ingestion, provenance, and operational readiness."),
     (60, "harvester_readiness", "Audit harvesters", "Inspect harvester health, coverage, duplication, scheduling, and missing connectors."),
-    (70, "deployment_readiness", "Audit deployment readiness", "Inspect migrations, configuration, tests, worker readiness, and deployment blockers."),
+    (70, "deployment_readiness", "Audit release readiness", "Inspect migrations, configuration, tests, worker readiness, and release blockers."),
 )
 
 
@@ -68,11 +68,20 @@ class CalyxOrchestrator:
 
     def claim(self, *, worker_id: str, lease_seconds: int = 180) -> CalyxJob | None:
         now = utcnow()
+        claimable = or_(
+            CalyxJob.status == "queued",
+            and_(
+                CalyxJob.status == "running",
+                CalyxJob.lease_expires_at.is_not(None),
+                CalyxJob.lease_expires_at <= now,
+            ),
+        )
         candidates = self.db.scalars(
             select(CalyxJob)
             .where(
-                CalyxJob.status == "queued",
+                claimable,
                 CalyxJob.approval_required.is_(False),
+                CalyxJob.attempt_count < CalyxJob.max_attempts,
                 or_(
                     CalyxJob.dependency_job_id.is_(None),
                     CalyxJob.dependency_job_id.in_(
@@ -85,9 +94,23 @@ class CalyxOrchestrator:
         ).all()
         for job in candidates:
             token = str(uuid4())
+            row_claimable = or_(
+                CalyxJob.status == "queued",
+                and_(
+                    CalyxJob.status == "running",
+                    CalyxJob.lease_expires_at.is_not(None),
+                    CalyxJob.lease_expires_at <= now,
+                ),
+            )
             updated = (
                 self.db.query(CalyxJob)
-                .filter(and_(CalyxJob.job_id == job.job_id, CalyxJob.status == "queued"))
+                .filter(
+                    and_(
+                        CalyxJob.job_id == job.job_id,
+                        row_claimable,
+                        CalyxJob.attempt_count < CalyxJob.max_attempts,
+                    )
+                )
                 .update(
                     {
                         CalyxJob.status: "running",
@@ -95,6 +118,7 @@ class CalyxOrchestrator:
                         CalyxJob.lease_token: token,
                         CalyxJob.lease_expires_at: now + timedelta(seconds=lease_seconds),
                         CalyxJob.attempt_count: CalyxJob.attempt_count + 1,
+                        CalyxJob.error_code: None,
                     },
                     synchronize_session=False,
                 )
@@ -182,7 +206,11 @@ class CalyxOrchestrator:
             select(CalyxJob).where(CalyxJob.owner == owner).order_by(CalyxJob.created_at.desc())
         ).all()
         findings = self.db.scalars(
-            select(CalyxFinding).order_by(CalyxFinding.updated_at.desc()).limit(100)
+            select(CalyxFinding)
+            .join(CalyxJob, CalyxFinding.job_id == CalyxJob.job_id)
+            .where(CalyxJob.owner == owner)
+            .order_by(CalyxFinding.updated_at.desc())
+            .limit(100)
         ).all()
         counts: dict[str, int] = {}
         for job in jobs:
