@@ -94,6 +94,29 @@ def _build_inventory(_: dict[str, Any]) -> ToolResult:
     )
 
 
+def _journalism_readiness(_: dict[str, Any]) -> ToolResult:
+    configured = bool(os.getenv("DATABASE_URL") or os.getenv("PGHOST"))
+    return ToolResult(
+        tool_id="journalism.readiness",
+        status="ready" if configured else "degraded",
+        data={
+            "evidence_preview": True,
+            "article_generation_contract": True,
+            "markdown_export": True,
+            "durable_repository": True,
+            "owner_scoped_retrieval": True,
+            "automatic_publication": False,
+            "external_model_generation": False,
+        },
+        sources=("app/calyx_journalism", "app/calyx_journalism/persistence.py"),
+        warnings=(
+            ()
+            if configured
+            else ("No PostgreSQL configuration is visible in this process; SQLite fallback may be used.",)
+        ),
+    )
+
+
 def default_tool_registry() -> AgentToolRegistry:
     registry = AgentToolRegistry()
     registry.register(
@@ -122,5 +145,14 @@ def default_tool_registry() -> AgentToolRegistry:
             "Return the current canonical build map and priority gaps.",
         ),
         _build_inventory,
+    )
+    registry.register(
+        ToolDescriptor(
+            "journalism.readiness",
+            "Calyx journalism readiness",
+            ActionClass.READ_ONLY,
+            "Inspect durable evidence, article generation, export, and publication boundaries.",
+        ),
+        _journalism_readiness,
     )
     return registry

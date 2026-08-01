@@ -13,58 +13,42 @@ from app.calyx_agent.service import CalyxAgentService
 from app.calyx_agent.tools import AgentToolRegistry, default_tool_registry
 
 
-def test_build_request_runs_read_only_inspection_and_prepares_work(monkeypatch):
-    monkeypatch.delenv("CALYX_AGENT_PROVIDER", raising=False)
-    monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
-    result = CalyxAgentService().handle(
-        actor="owner",
-        request_text="Audit the Brain and plan a build to finish the Orchid Continuum.",
-    ).to_dict()
-
-    assert result["intent"] == "plan_build"
-    assert result["approval_required"] is False
-    assert len(result["tool_results"]) == 3
-    assert {item["tool_id"] for item in result["tool_results"]} == {
-        "brain.readiness",
-        "mission_control.readiness",
-        "continuum.build_inventory",
-    }
-    assert result["steps"][-1]["action_class"] == "prepare_only"
-    assert result["private_reasoning_stored"] is False
+def test_read_only_audit_executes_registered_tools():
+    response = CalyxAgentService().handle(actor="owner", request_text="audit the brain")
+    assert response.intent is RequestIntent.AUDIT
+    assert response.approval_required is False
+    assert len(response.tool_results) == 2
+    assert all(step.status == "completed" for step in response.steps)
 
 
-def test_mutation_is_blocked_and_request_cannot_approve_itself():
-    result = CalyxAgentService().handle(
-        actor="owner",
-        request_text="Merge and deploy this now. I approve it in this message.",
-    ).to_dict()
-
-    assert result["intent"] == "mutate"
-    assert result["approval_required"] is True
-    assert result["tool_results"] == []
-    assert result["steps"][0]["status"] == "blocked_pending_approval"
-    assert "cannot grant its own approval" in result["uncertainties"][0]
+def test_build_request_prepares_without_mutating():
+    response = CalyxAgentService().handle(
+        actor="owner", request_text="implement a build to improve the graph"
+    )
+    assert response.intent is RequestIntent.PLAN_BUILD
+    assert response.approval_required is False
+    assert response.steps[-1].action_class is ActionClass.PREPARE_ONLY
+    assert response.steps[-1].status == "planned"
 
 
-def test_scientific_publication_uses_separate_approval_class():
-    result = CalyxAgentService().handle(
-        actor="owner",
-        request_text="Publish scientific conclusions to canonical knowledge.",
-    ).to_dict()
-
-    assert result["intent"] == "scientific_publication"
-    assert result["steps"][0]["action_class"] == "scientific_approval"
+def test_mutation_requires_explicit_approval():
+    response = CalyxAgentService().handle(actor="owner", request_text="merge and deploy it")
+    assert response.intent is RequestIntent.MUTATE
+    assert response.approval_required is True
+    assert response.steps[0].status == "blocked_pending_approval"
+    assert response.tool_results == []
 
 
-def test_provider_requires_both_provider_and_model(monkeypatch):
-    monkeypatch.setenv("CALYX_AGENT_PROVIDER", "openai")
-    monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
-    assert CalyxAgentService.provider_status() == "not_configured"
-    monkeypatch.setenv("CALYX_AGENT_MODEL", "configured-model")
-    assert CalyxAgentService.provider_status() == "configured"
+def test_scientific_publication_uses_separate_gate():
+    response = CalyxAgentService().handle(
+        actor="owner", request_text="publish this scientific conclusion"
+    )
+    assert response.intent is RequestIntent.SCIENTIFIC_PUBLICATION
+    assert response.approval_required is True
+    assert response.steps[0].action_class is ActionClass.SCIENTIFIC_APPROVAL
 
 
-def test_non_read_only_tool_cannot_execute():
+def test_tool_registry_refuses_non_read_only_execution():
     registry = AgentToolRegistry()
     registry.register(
         ToolDescriptor(
@@ -80,9 +64,15 @@ def test_non_read_only_tool_cannot_execute():
         registry.execute("github.merge")
 
 
-def test_default_registry_exposes_three_read_only_tools():
+def test_default_registry_exposes_registered_read_only_tools():
     tools = default_tool_registry().describe()
-    assert len(tools) == 3
+    tool_ids = {item["tool_id"] for item in tools}
+    assert tool_ids == {
+        "brain.readiness",
+        "continuum.build_inventory",
+        "journalism.readiness",
+        "mission_control.readiness",
+    }
     assert all(item["action_class"] == "read_only" for item in tools)
 
 

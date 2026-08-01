@@ -27,6 +27,13 @@ _SCIENTIFIC_PUBLICATION_WORDS = {
     "promote evidence",
     "publish conclusion",
 }
+_SCIENTIFIC_CONTEXT_WORDS = {
+    "scientific",
+    "conclusion",
+    "canonical knowledge",
+    "evidence",
+}
+_PUBLICATION_WORDS = {"publish", "approve", "promote"}
 _AUDIT_WORDS = {"audit", "diagnose", "inspect", "review", "assess", "status"}
 _BUILD_WORDS = {
     "build",
@@ -46,7 +53,13 @@ def normalize_request(text: str) -> str:
 
 def classify_intent(text: str) -> RequestIntent:
     normalized = normalize_request(text)
-    if any(term in normalized for term in _SCIENTIFIC_PUBLICATION_WORDS):
+    explicit_scientific_publication = any(
+        term in normalized for term in _SCIENTIFIC_PUBLICATION_WORDS
+    )
+    contextual_scientific_publication = any(
+        term in normalized for term in _PUBLICATION_WORDS
+    ) and any(term in normalized for term in _SCIENTIFIC_CONTEXT_WORDS)
+    if explicit_scientific_publication or contextual_scientific_publication:
         return RequestIntent.SCIENTIFIC_PUBLICATION
     if any(term in normalized for term in _MUTATION_WORDS):
         return RequestIntent.MUTATE

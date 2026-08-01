@@ -3,22 +3,45 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
+from app.calyx_journalism.persistence import TABLES
+from app.database import get_db
 from app.main import app
 from app.security import verify_owner_or_api_key
+
+_engine = create_engine(
+    "sqlite+pysqlite:///:memory:",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+for table in TABLES:
+    table.create(_engine, checkfirst=True)
 
 
 async def _auth_bypass() -> dict[str, str]:
     return {"actor": "test-journalism-owner", "auth_type": "test"}
 
 
+def _test_db():
+    with Session(_engine) as session:
+        yield session
+
+
 def _client() -> TestClient:
     app.dependency_overrides[verify_owner_or_api_key] = _auth_bypass
+    app.dependency_overrides[get_db] = _test_db
     return TestClient(app, raise_server_exceptions=True)
 
 
 def teardown_function() -> None:
     app.dependency_overrides.clear()
+    with Session(_engine) as session:
+        for table in reversed(TABLES):
+            session.execute(table.delete())
+        session.commit()
 
 
 def test_canonical_journalism_routes_are_registered() -> None:
@@ -35,9 +58,13 @@ def test_canonical_journalism_routes_are_registered() -> None:
 
 
 def test_journalism_requires_authentication() -> None:
-    with TestClient(app, raise_server_exceptions=False) as client:
-        response = client.get("/brain/journalism/presets")
-    assert response.status_code == 401
+    app.dependency_overrides[get_db] = _test_db
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get("/brain/journalism/presets")
+        assert response.status_code == 401
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_presets_and_evidence_preview_use_canonical_brain_routes() -> None:
