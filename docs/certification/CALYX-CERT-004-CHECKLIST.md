@@ -1,0 +1,4 @@
+- [ ] CI passes
+- [ ] Diff limited to repair accounting, tests, and certification docs
+- [ ] No workflow, deployment, or merge automation changes
+- [ ] Merge fix before rerunning disposable certification
