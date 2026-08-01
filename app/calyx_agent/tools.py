@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+import os
+from collections.abc import Callable
+from typing import Any
+
+from .models import ActionClass, ToolDescriptor, ToolResult
+
+ToolHandler = Callable[[dict[str, Any]], ToolResult]
+
+
+class AgentToolRegistry:
+    def __init__(self) -> None:
+        self._descriptors: dict[str, ToolDescriptor] = {}
+        self._handlers: dict[str, ToolHandler] = {}
+
+    def register(self, descriptor: ToolDescriptor, handler: ToolHandler) -> None:
+        if descriptor.tool_id in self._handlers:
+            raise ValueError("TOOL_ALREADY_REGISTERED")
+        self._descriptors[descriptor.tool_id] = descriptor
+        self._handlers[descriptor.tool_id] = handler
+
+    def describe(self) -> list[dict[str, Any]]:
+        return [self._descriptors[key].to_dict() for key in sorted(self._descriptors)]
+
+    def execute(self, tool_id: str, payload: dict[str, Any] | None = None) -> ToolResult:
+        descriptor = self._descriptors.get(tool_id)
+        if descriptor is None:
+            raise LookupError("TOOL_NOT_REGISTERED")
+        if descriptor.action_class is not ActionClass.READ_ONLY:
+            raise PermissionError("TOOL_REQUIRES_APPROVAL")
+        return self._handlers[tool_id](payload or {})
+
+
+def _brain_readiness(_: dict[str, Any]) -> ToolResult:
+    configured = bool(os.getenv("DATABASE_URL"))
+    return ToolResult(
+        tool_id="brain.readiness",
+        status="ready" if configured else "degraded",
+        data={
+            "database_configured": configured,
+            "knowledge_graph_routes": True,
+            "deterministic_inference_families": 13,
+            "reasoning_ledger": True,
+            "controlled_publication_adapter": True,
+            "operational_certification": "required",
+        },
+        sources=("app/brain", "app/reasoning_ledger", "app/reasoning_publication"),
+        warnings=(() if configured else ("DATABASE_URL is not configured in this process.",)),
+    )
+
+
+def _mission_control_readiness(_: dict[str, Any]) -> ToolResult:
+    return ToolResult(
+        tool_id="mission_control.readiness",
+        status="available",
+        data={
+            "owner_authentication": True,
+            "executive_telemetry": True,
+            "harvester_telemetry": True,
+            "release_readiness": True,
+            "mutations_automatic": False,
+        },
+        sources=("app/executive_telemetry", "app/mission_control_release"),
+    )
+
+
+def _build_inventory(_: dict[str, Any]) -> ToolResult:
+    return ToolResult(
+        tool_id="continuum.build_inventory",
+        status="available",
+        data={
+            "canonical_brain_components": [
+                "knowledge_graph",
+                "deterministic_inference",
+                "reasoning_ledger",
+                "controlled_publication",
+            ],
+            "priority_gaps": [
+                "end_to_end_brain_certification",
+                "agent_provider_configuration",
+                "durable_agent_session_store",
+                "post_publication_lifecycle",
+                "mission_control_agent_telemetry",
+            ],
+            "parallelizable": [
+                "frontend_calyx_workspace",
+                "brain_certification",
+                "agent_durable_persistence",
+            ],
+        },
+        sources=("docs/architecture", "registered runtime modules"),
+        warnings=("This initial inventory is code-declared; repository adapter expansion is pending.",),
+    )
+
+
+def default_tool_registry() -> AgentToolRegistry:
+    registry = AgentToolRegistry()
+    registry.register(
+        ToolDescriptor(
+            "brain.readiness",
+            "Brain readiness",
+            ActionClass.READ_ONLY,
+            "Inspect Knowledge Graph, inference, ledger, and publication readiness.",
+        ),
+        _brain_readiness,
+    )
+    registry.register(
+        ToolDescriptor(
+            "mission_control.readiness",
+            "Mission Control readiness",
+            ActionClass.READ_ONLY,
+            "Inspect operational telemetry and governance availability.",
+        ),
+        _mission_control_readiness,
+    )
+    registry.register(
+        ToolDescriptor(
+            "continuum.build_inventory",
+            "Continuum build inventory",
+            ActionClass.READ_ONLY,
+            "Return the current canonical build map and priority gaps.",
+        ),
+        _build_inventory,
+    )
+    return registry

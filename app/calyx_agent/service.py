@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import os
+from uuid import uuid4
+
+from .models import ActionClass, AgentResponse, AgentStep, RequestIntent
+from .policy import approval_reason, classify_intent, required_action_class
+from .tools import AgentToolRegistry, default_tool_registry
+
+
+class CalyxAgentService:
+    """Structured, reviewable Calyx planning without autonomous mutations."""
+
+    def __init__(self, registry: AgentToolRegistry | None = None) -> None:
+        self.registry = registry or default_tool_registry()
+
+    @staticmethod
+    def provider_status() -> str:
+        provider = os.getenv("CALYX_AGENT_PROVIDER", "").strip()
+        model = os.getenv("CALYX_AGENT_MODEL", "").strip()
+        return "configured" if provider and model else "not_configured"
+
+    def handle(self, *, actor: str, request_text: str) -> AgentResponse:
+        text = request_text.strip()
+        if not text:
+            raise ValueError("REQUEST_TEXT_REQUIRED")
+        intent = classify_intent(text)
+        action_class = required_action_class(intent)
+        response = AgentResponse(
+            request_id=str(uuid4()),
+            actor=actor,
+            intent=intent,
+            summary=self._summary(intent),
+            provider_status=self.provider_status(),
+        )
+
+        if action_class in {ActionClass.OWNER_APPROVAL, ActionClass.SCIENTIFIC_APPROVAL}:
+            response.approval_required = True
+            response.approval_reason = approval_reason(intent)
+            response.steps.append(
+                AgentStep(
+                    step_id="approval-1",
+                    title="Request explicit governed approval",
+                    tool_id=None,
+                    action_class=action_class,
+                    rationale=response.approval_reason or "Approval is required.",
+                    status="blocked_pending_approval",
+                )
+            )
+            response.uncertainties.append(
+                "No consequential action was executed; request content cannot grant its own approval."
+            )
+            return response
+
+        tool_ids = self._select_tools(intent)
+        previous: str | None = None
+        for index, tool_id in enumerate(tool_ids, start=1):
+            step_id = f"inspect-{index}"
+            response.steps.append(
+                AgentStep(
+                    step_id=step_id,
+                    title=f"Inspect {tool_id.replace('.', ' ')}",
+                    tool_id=tool_id,
+                    action_class=ActionClass.READ_ONLY,
+                    rationale="Collect current Continuum evidence before proposing work.",
+                    dependencies=((previous,) if previous else ()),
+                    status="completed",
+                )
+            )
+            response.tool_results.append(self.registry.execute(tool_id))
+            previous = step_id
+
+        if intent in {RequestIntent.PLAN_BUILD, RequestIntent.MONITOR}:
+            response.steps.append(
+                AgentStep(
+                    step_id="prepare-1",
+                    title="Prepare a bounded implementation or monitoring specification",
+                    tool_id=None,
+                    action_class=ActionClass.PREPARE_ONLY,
+                    rationale="Preparation may proceed, but repository or schedule mutation remains approval-gated.",
+                    dependencies=((previous,) if previous else ()),
+                )
+            )
+        if response.provider_status != "configured":
+            response.uncertainties.append(
+                "No external language-model provider is configured; this response uses deterministic planning only."
+            )
+        return response
+
+    @staticmethod
+    def _select_tools(intent: RequestIntent) -> tuple[str, ...]:
+        if intent in {RequestIntent.AUDIT, RequestIntent.INSPECT}:
+            return ("brain.readiness", "mission_control.readiness")
+        if intent in {RequestIntent.PLAN_BUILD, RequestIntent.MONITOR}:
+            return (
+                "brain.readiness",
+                "mission_control.readiness",
+                "continuum.build_inventory",
+            )
+        return ("continuum.build_inventory",)
+
+    @staticmethod
+    def _summary(intent: RequestIntent) -> str:
+        summaries = {
+            RequestIntent.AUDIT: "Calyx performed a governed read-only audit plan.",
+            RequestIntent.INSPECT: "Calyx inspected the currently registered Continuum capabilities.",
+            RequestIntent.PLAN_BUILD: "Calyx inspected dependencies and prepared a bounded build-planning path.",
+            RequestIntent.MONITOR: "Calyx prepared a monitoring design without changing schedules.",
+            RequestIntent.MUTATE: "The requested mutation was blocked pending explicit owner approval.",
+            RequestIntent.SCIENTIFIC_PUBLICATION: "The requested scientific publication was blocked pending canonical scientific review.",
+            RequestIntent.GENERAL: "Calyx produced a structured response from currently registered internal evidence.",
+        }
+        return summaries[intent]

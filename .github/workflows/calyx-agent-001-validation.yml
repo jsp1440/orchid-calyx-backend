@@ -1,0 +1,52 @@
+name: CALYX-AGENT-001 Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/calyx_agent/**'
+      - 'app/brain/routes.py'
+      - 'tests/test_calyx_agent_001.py'
+      - 'docs/architecture/CALYX-AGENT-001-GOVERNED-CORE.md'
+      - '.github/workflows/calyx-agent-001-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  governed-agent-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile
+        run: python -m compileall -q app/calyx_agent app/brain/routes.py
+      - name: Ruff
+        run: ruff check app/calyx_agent app/brain/routes.py tests/test_calyx_agent_001.py
+      - name: Focused tests
+        run: pytest -q tests/test_calyx_agent_001.py
+      - name: Route registration smoke
+        env:
+          CALYX_API_KEY: test-key
+          CALYX_OWNER_SESSION_SECRET: test-secret
+        run: |
+          python - <<'PY'
+          from app.main import app
+          paths = {route.path for route in app.routes}
+          required = {'/brain/agent/capabilities', '/brain/agent/requests'}
+          missing = required - paths
+          if missing:
+              raise SystemExit(f'Missing routes: {sorted(missing)}')
+          print('CALYX-AGENT-001 routes registered')
+          PY

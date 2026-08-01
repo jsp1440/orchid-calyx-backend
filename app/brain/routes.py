@@ -6,6 +6,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from app.calyx_agent.routes import router as calyx_agent_router
 from app.database import get_db
 from app.reasoning_ledger.routes import _invoke
 from app.reasoning_ledger.serialization import ledger_to_dict
@@ -189,3 +190,6 @@ def connect(
     except Exception as exc:
         _translate(exc)
         raise
+
+
+router.include_router(calyx_agent_router)
