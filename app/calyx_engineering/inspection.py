@@ -10,8 +10,12 @@ class RepositoryContext:
     files: dict[str, str]
     ref: str
 
+    @property
+    def file_count(self) -> int:
+        return len(self.files)
+
     def to_dict(self) -> dict:
-        return {"ref": self.ref, "files": self.files, "file_count": len(self.files)}
+        return {"ref": self.ref, "files": self.files, "file_count": self.file_count}
 
 
 class RepositoryInspector:
