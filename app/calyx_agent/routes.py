@@ -12,7 +12,7 @@ from .service import CalyxAgentService
 from .tools import default_tool_registry
 
 router = APIRouter(
-    prefix="/api/calyx-agent",
+    prefix="/calyx-agent",
     tags=["calyx-agent"],
     dependencies=[
         Depends(verify_owner_or_api_key),
