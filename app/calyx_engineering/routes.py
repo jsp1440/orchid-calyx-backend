@@ -12,7 +12,9 @@ from app.security import verify_owner_or_api_key
 
 from .github import FileChange, GitHubEngineeringClient
 from .inspection import RepositoryInspector
+from .provider import EngineeringProviderError, StructuredPatchProvider
 from .repair import BoundedCIInspector
+from .repair_loop import BoundedRepairLoop
 from .service import CalyxEngineeringService, EngineeringProposal
 
 router = APIRouter(prefix="/engineering", tags=["calyx-engineering"])
@@ -38,6 +40,14 @@ class InspectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     paths: list[str] = Field(min_length=1, max_length=20)
     ref: str = Field(default="main", pattern=r"^[A-Za-z0-9._/-]+$")
+
+
+class RepairRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    paths: list[str] = Field(min_length=1, max_length=20)
+    objective: str = Field(min_length=1, max_length=12000)
+    attempt: int = Field(ge=1, le=3)
+    approved: bool = False
 
 
 def _owner(auth: dict[str, Any]) -> str:
@@ -71,11 +81,14 @@ def status(auth: AuthDependency) -> dict:
         "capabilities": [
             "inspect_repository",
             "inspect_ci_failures",
+            "generate_structured_patches",
+            "apply_bounded_ci_repairs",
             "create_issue",
             "create_branch",
             "commit_changes",
             "open_draft_pr",
         ],
+        "repair_attempt_limit": 3,
         "autonomous_merge": False,
         "deployment": False,
     }
@@ -110,6 +123,33 @@ def inspect_failures(
             "autonomous_merge": False,
         }
     except (RuntimeError, ValueError) as exc:
+        raise HTTPException(422, detail={"code": str(exc)}) from exc
+
+
+@router.post("/pull-requests/{pull_request_number}/repair")
+def repair_pull_request(
+    pull_request_number: int,
+    payload: RepairRequest,
+    auth: AuthDependency,
+) -> dict:
+    _owner(auth)
+    if not payload.approved:
+        raise HTTPException(403, detail={"code": "ENGINEERING_REPAIR_APPROVAL_REQUIRED"})
+    if not CalyxEngineeringService.enabled():
+        raise HTTPException(422, detail={"code": "CALYX_ENGINEERING_DISABLED"})
+    try:
+        service = CalyxEngineeringService()
+        client = GitHubEngineeringClient(service.repository)
+        result = BoundedRepairLoop(client, StructuredPatchProvider()).repair_once(
+            pull_request_number=pull_request_number,
+            paths=payload.paths,
+            objective=payload.objective,
+            attempt=payload.attempt,
+        )
+        return result.to_dict()
+    except PermissionError as exc:
+        raise HTTPException(403, detail={"code": str(exc)}) from exc
+    except (EngineeringProviderError, RuntimeError, ValueError) as exc:
         raise HTTPException(422, detail={"code": str(exc)}) from exc
 
 
