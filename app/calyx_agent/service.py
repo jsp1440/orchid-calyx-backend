@@ -166,12 +166,17 @@ class CalyxAgentService:
 
     @classmethod
     def _select_tools(cls, intent: RequestIntent, text: str) -> tuple[str, ...]:
+        normalized = text.casefold()
         if cls._is_journalism_request(text):
             return (
                 "journalism.readiness",
                 "brain.readiness",
                 "continuum.build_inventory",
             )
+        if "archive" in normalized:
+            return ("archive.readiness", "mission_control.readiness")
+        if "harvester" in normalized or "connector" in normalized:
+            return ("harvester.readiness", "mission_control.readiness")
         if intent in {RequestIntent.AUDIT, RequestIntent.INSPECT}:
             return ("brain.readiness", "mission_control.readiness")
         if intent in {RequestIntent.PLAN_BUILD, RequestIntent.MONITOR}:
