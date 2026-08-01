@@ -43,6 +43,16 @@ def _request(config: CertificationConfig, method: str, path: str, payload: dict 
         raise RuntimeError("CERTIFICATION_ENDPOINT_UNREACHABLE") from exc
 
 
+def _repair_outcome(repair: dict) -> str:
+    status = str(repair.get("status") or "")
+    commits = int(repair.get("commits") or 0)
+    if status == "repair_committed_waiting_for_ci" and commits > 0:
+        return "repair_committed"
+    if status.startswith("repair_not_applied") or commits == 0:
+        return "repair_not_applied"
+    return "repair_generated"
+
+
 def run(config: CertificationConfig, *, apply_repair: bool) -> dict:
     status = _request(config, "GET", "/brain/engineering/status")
     inspection = _request(
@@ -65,6 +75,7 @@ def run(config: CertificationConfig, *, apply_repair: bool) -> dict:
         },
         "failures": failures,
         "repair_applied": False,
+        "repair_outcome": "not_requested",
     }
     if apply_repair:
         repair = _request(
@@ -78,8 +89,10 @@ def run(config: CertificationConfig, *, apply_repair: bool) -> dict:
                 "approved": True,
             },
         )
+        outcome = _repair_outcome(repair)
         evidence["repair"] = repair
-        evidence["repair_applied"] = True
+        evidence["repair_outcome"] = outcome
+        evidence["repair_applied"] = outcome == "repair_committed"
     return evidence
 
 
