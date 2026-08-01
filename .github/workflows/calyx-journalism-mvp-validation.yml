@@ -6,6 +6,7 @@ on:
       - 'app/calyx_journalism/**'
       - 'app/brain/routes.py'
       - 'tests/test_calyx_journalism_mvp_001.py'
+      - 'tests/test_calyx_journalism_brain_routes.py'
       - 'docs/architecture/MISSION-CONTROL-CALYX-JOURNALISM-MVP-001.md'
       - '.github/workflows/calyx-journalism-mvp-validation.yml'
   workflow_dispatch:
@@ -31,13 +32,15 @@ jobs:
           pip install -r requirements.txt
           pip install pytest ruff httpx
       - name: Compile
-        run: python -m compileall -q app/calyx_journalism app/brain/routes.py
+        run: python -m compileall -q app/calyx_journalism app/brain/routes.py tests/test_calyx_journalism_brain_routes.py
       - name: Ruff normalization and substantive lint gate
         run: |
-          ruff check --fix --ignore RUF012,SIM102 app/calyx_journalism app/brain/routes.py tests/test_calyx_journalism_mvp_001.py
+          ruff check --fix --ignore RUF012,SIM102 app/calyx_journalism app/brain/routes.py tests/test_calyx_journalism_mvp_001.py tests/test_calyx_journalism_brain_routes.py
           git diff --check
-      - name: Focused tests
-        run: pytest -q tests/test_calyx_journalism_mvp_001.py
+      - name: Reusable service and generation tests
+        run: pytest -q tests/test_calyx_journalism_mvp_001.py -k 'not http'
+      - name: Canonical Brain route contract
+        run: pytest -q tests/test_calyx_journalism_brain_routes.py
       - name: Route registration smoke
         env:
           CALYX_API_KEY: test-key
