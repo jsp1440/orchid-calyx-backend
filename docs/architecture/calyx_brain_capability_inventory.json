@@ -1,0 +1,131 @@
+{
+  "audit_date": "2026-07-31",
+  "repository": "jsp1440/orchid-calyx-backend",
+  "overall_status": "implemented_not_fully_operationally_certified",
+  "canonical_components": [
+    {
+      "name": "canonical_knowledge_graph",
+      "status": "implemented",
+      "owner": "runtime.knowledge_graph and app.knowledge_publication",
+      "evidence": [
+        "runtime/knowledge_graph.py",
+        "app/knowledge_publication/graph_service.py",
+        "app/knowledge_publication/graph_postgres_repository.py"
+      ],
+      "writes": "controlled_only"
+    },
+    {
+      "name": "deterministic_brain_inference",
+      "status": "implemented",
+      "owner": "app.brain.reasoning",
+      "evidence": [
+        "app/brain/reasoning.py",
+        "app/brain/routes.py"
+      ],
+      "rule_families": 13,
+      "automatically_publishes": false
+    },
+    {
+      "name": "inference_to_ledger_bridge",
+      "status": "implemented",
+      "owner": "app.brain.ledger_bridge",
+      "evidence": [
+        "app/brain/ledger_bridge.py"
+      ],
+      "recomputes_server_side": true,
+      "hash_validated": true
+    },
+    {
+      "name": "reasoning_ledger",
+      "status": "implemented",
+      "owner": "app.reasoning_ledger",
+      "evidence": [
+        "app/reasoning_ledger/operational_service.py",
+        "app/reasoning_ledger/persistence.py",
+        "app/reasoning_ledger/gate.py",
+        "migrations/103_reasoning_ledger.sql"
+      ],
+      "immutable_revisions": true,
+      "exact_version_approval": true,
+      "conflict_dispositions": ["resolved", "superseded"]
+    },
+    {
+      "name": "ledger_to_graph_publication",
+      "status": "implemented",
+      "owner": "app.reasoning_publication",
+      "evidence": [
+        "app/reasoning_publication/service.py",
+        "app/reasoning_publication/gateway.py",
+        "migrations/105_reasoning_ledger_publication_adapter.sql"
+      ],
+      "delegates_to_existing_gate": true,
+      "direct_graph_sql": false
+    }
+  ],
+  "canonical_ownership": {
+    "literature_evidence": "Literature Intelligence",
+    "normalized_unpublished_claims": "Candidate Knowledge",
+    "reasoning_history_and_review": "Reasoning Ledger",
+    "connectors": "runtime.connector_registry",
+    "canonical_graph_publication": "BUILD-088B/088C controlled publication gate",
+    "archive_entities": "Archive Manager until governed handoff"
+  },
+  "superseded_or_prohibited": [
+    "alternate Brain implementation from closed PR 182",
+    "duplicate Brain connector registry",
+    "second literature store inside Brain",
+    "second inference/review persistence store competing with Reasoning Ledger",
+    "direct Brain or Reasoning Ledger graph SQL",
+    "automatic publication based on confidence alone"
+  ],
+  "remaining_gaps": [
+    {
+      "id": "BRAIN-COMPLETE-001",
+      "priority": 1,
+      "name": "end_to_end_certification",
+      "status": "not_proven",
+      "required": true
+    },
+    {
+      "id": "BRAIN-COMPLETE-002",
+      "priority": 2,
+      "name": "operational_readiness_and_mission_control_telemetry",
+      "status": "not_implemented",
+      "required": true
+    },
+    {
+      "id": "CALYX-BRAIN-004",
+      "priority": 3,
+      "name": "post_publication_monitoring_supersession_withdrawal_retraction",
+      "status": "not_implemented",
+      "required": true
+    },
+    {
+      "id": "BRAIN-COMPLETE-003",
+      "priority": 4,
+      "name": "large_graph_query_optimization",
+      "status": "not_implemented",
+      "required": true
+    },
+    {
+      "id": "BRAIN-COMPLETE-004",
+      "priority": 5,
+      "name": "reviewer_workspace_contract",
+      "status": "not_implemented",
+      "required": true
+    }
+  ],
+  "release_definition": {
+    "canonical_graph_evidence_retrieval": true,
+    "deterministic_reproducible_inference": true,
+    "immutable_reasoning_history": true,
+    "explicit_conflicts_and_uncertainty": true,
+    "exact_version_human_approval": true,
+    "controlled_publication_implemented": true,
+    "end_to_end_certified": false,
+    "post_publication_lifecycle": false,
+    "mission_control_operational_visibility": false,
+    "production_migrations_verified": false
+  },
+  "next_build": "BRAIN-COMPLETE-001"
+}
