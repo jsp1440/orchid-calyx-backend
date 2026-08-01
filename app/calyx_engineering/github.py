@@ -56,7 +56,7 @@ class GitHubEngineeringClient:
             },
         )
         try:
-            with urlopen(request, timeout=30) as response:  # noqa: S310
+            with urlopen(request, timeout=30) as response:
                 raw = response.read()
                 return json.loads(raw) if raw else {}
         except HTTPError as exc:
