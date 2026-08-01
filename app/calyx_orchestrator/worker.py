@@ -38,7 +38,7 @@ def run_forever() -> None:
             if token is None:
                 raise RuntimeError("CLAIMED_JOB_WITHOUT_LEASE_TOKEN")
             orchestrator.execute(job, worker_id=worker_id, lease_token=token)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- durable worker must survive unexpected job failures
             db.rollback()
             print(f"[CALYX-ORCHESTRATOR] worker error: {type(exc).__name__}")
             time.sleep(poll_seconds)
