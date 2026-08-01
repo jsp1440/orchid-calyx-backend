@@ -10,6 +10,11 @@ from app.calyx_orchestrator.models import CalyxFinding, CalyxJob
 from app.database import get_db
 from app.security import verify_owner_or_api_key
 
+from .anthropic_provider import (
+    AnthropicPatchProviderError,
+    AnthropicPatchRequest,
+    generate_file_changes,
+)
 from .github import FileChange, GitHubEngineeringClient
 from .inspection import RepositoryInspector
 from .provider import EngineeringProviderError, StructuredPatchProvider
@@ -48,6 +53,17 @@ class RepairRequest(BaseModel):
     objective: str = Field(min_length=1, max_length=12000)
     attempt: int = Field(ge=1, le=3)
     approved: bool = False
+
+
+class ProviderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: str = Field(min_length=1, max_length=120)
+    response_format: str = Field(pattern=r"^calyx_file_changes_v1$")
+    objective: str = Field(min_length=1, max_length=12000)
+    attempt: int = Field(ge=1, le=3)
+    constraints: dict[str, Any]
+    repository_files: dict[str, str] = Field(min_length=1, max_length=10)
+    failure_logs: list[str] = Field(min_length=1, max_length=5)
 
 
 def _owner(auth: dict[str, Any]) -> str:
@@ -92,6 +108,31 @@ def status(auth: AuthDependency) -> dict:
         "autonomous_merge": False,
         "deployment": False,
     }
+
+
+@router.post("/provider/anthropic")
+def anthropic_provider(payload: ProviderRequest, auth: AuthDependency) -> dict:
+    _owner(auth)
+    if payload.constraints.get("workflow_files_forbidden") is not True:
+        raise HTTPException(422, detail={"code": "PROVIDER_WORKFLOW_GUARD_REQUIRED"})
+    if payload.constraints.get("complete_file_replacements") is not True:
+        raise HTTPException(422, detail={"code": "PROVIDER_COMPLETE_FILES_REQUIRED"})
+    if payload.constraints.get("merge_forbidden") is not True:
+        raise HTTPException(422, detail={"code": "PROVIDER_MERGE_GUARD_REQUIRED"})
+    if payload.constraints.get("deployment_forbidden") is not True:
+        raise HTTPException(422, detail={"code": "PROVIDER_DEPLOYMENT_GUARD_REQUIRED"})
+    try:
+        return generate_file_changes(
+            AnthropicPatchRequest(
+                objective=payload.objective,
+                attempt=payload.attempt,
+                constraints=payload.constraints,
+                repository_files=payload.repository_files,
+                failure_logs=payload.failure_logs,
+            )
+        )
+    except AnthropicPatchProviderError as exc:
+        raise HTTPException(422, detail={"code": str(exc)}) from exc
 
 
 @router.post("/inspect")

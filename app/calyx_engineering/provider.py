@@ -49,6 +49,11 @@ class StructuredPatchProvider:
         headers = {"Content-Type": "application/json", "User-Agent": "calyx-engineering-provider"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
+        api_key = os.getenv("CALYX_ENGINEERING_PROVIDER_API_KEY", "").strip() or os.getenv(
+            "CALYX_API_KEY", ""
+        ).strip()
+        if api_key:
+            headers["X-API-Key"] = api_key
         http_request = Request(
             self.endpoint,
             data=json.dumps(payload).encode("utf-8"),
@@ -56,7 +61,7 @@ class StructuredPatchProvider:
             headers=headers,
         )
         try:
-            with urlopen(http_request, timeout=90) as response:
+            with urlopen(http_request, timeout=120) as response:
                 result = json.loads(response.read())
         except HTTPError as exc:
             raise EngineeringProviderError(f"ENGINEERING_PROVIDER_HTTP_{exc.code}") from exc
