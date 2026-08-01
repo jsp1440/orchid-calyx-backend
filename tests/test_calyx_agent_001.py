@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.calyx_agent.models import ActionClass, RequestIntent, ToolDescriptor, ToolResult
+from app.calyx_agent.models import (
+    ActionClass,
+    RequestIntent,
+    ToolDescriptor,
+    ToolResult,
+)
 from app.calyx_agent.policy import classify_intent
 from app.calyx_agent.service import CalyxAgentService
 from app.calyx_agent.tools import AgentToolRegistry, default_tool_registry
