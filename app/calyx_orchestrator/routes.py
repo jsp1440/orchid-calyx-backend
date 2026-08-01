@@ -10,7 +10,7 @@ from app.database import get_db
 from app.security import verify_owner_or_api_key
 
 from .models import CalyxJob
-from .service import CalyxOrchestrator, READ_ONLY_JOB_TYPES
+from .service import READ_ONLY_JOB_TYPES, CalyxOrchestrator
 
 router = APIRouter(prefix="/orchestrator", tags=["calyx-orchestrator"])
 
