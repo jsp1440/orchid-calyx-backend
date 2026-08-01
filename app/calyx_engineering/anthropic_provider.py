@@ -38,6 +38,26 @@ def _extract_json(text: str) -> dict:
     return result
 
 
+def _anthropic_error_code(exc: HTTPError) -> str:
+    try:
+        raw = exc.read().decode("utf-8", errors="replace")
+        payload = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return f"ANTHROPIC_PROVIDER_HTTP_{exc.code}"
+
+    error = payload.get("error") if isinstance(payload, dict) else None
+    error_type = str(error.get("type", "")).strip() if isinstance(error, dict) else ""
+    message = str(error.get("message", "")).strip() if isinstance(error, dict) else ""
+    safe_message = " ".join(message.split())[:500]
+
+    parts = [f"ANTHROPIC_PROVIDER_HTTP_{exc.code}"]
+    if error_type:
+        parts.append(error_type.upper())
+    if safe_message:
+        parts.append(safe_message)
+    return ":".join(parts)
+
+
 def generate_file_changes(payload: AnthropicPatchRequest) -> dict:
     api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
@@ -93,7 +113,7 @@ def generate_file_changes(payload: AnthropicPatchRequest) -> dict:
         with urlopen(request, timeout=120) as response:
             result = json.loads(response.read())
     except HTTPError as exc:
-        raise AnthropicPatchProviderError(f"ANTHROPIC_PROVIDER_HTTP_{exc.code}") from exc
+        raise AnthropicPatchProviderError(_anthropic_error_code(exc)) from exc
     except (URLError, TimeoutError) as exc:
         raise AnthropicPatchProviderError("ANTHROPIC_PROVIDER_UNREACHABLE") from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
