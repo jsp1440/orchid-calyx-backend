@@ -36,6 +36,7 @@ def test_certification_read_only(monkeypatch):
             base_url="https://example.test",
             api_key="secret",
             pull_request_number=1,
+            ref="main",
             paths=("app/example.py",),
             objective="Repair test",
         ),
@@ -43,6 +44,7 @@ def test_certification_read_only(monkeypatch):
     )
     assert evidence["repair_applied"] is False
     assert evidence["inspection"]["file_count"] == 1
+    assert evidence["inspection"]["ref"] == "main"
     assert len(calls) == 3
 
 
@@ -65,6 +67,7 @@ def test_certification_repair_is_explicit(monkeypatch):
             base_url="https://example.test",
             api_key="secret",
             pull_request_number=1,
+            ref="main",
             paths=("app/example.py",),
             objective="Repair test",
         ),
