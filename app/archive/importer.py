@@ -1,21 +1,23 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
 
 from app.archive.checkpoint import CheckpointStore
+from app.archive.control import ArchiveRunControl
 from app.archive.entities import EntityExtractor, NullEntityExtractor
 from app.archive.extractor import DocumentExtractor
 from app.archive.fingerprint import sha256_file
+from app.archive.policy import ArchivePolicy
 from app.archive.registry import ArchiveRegistry
 from app.archive.relationships import NullRelationshipExtractor, RelationshipExtractor
 from app.archive.scanner import ArchiveScanner, ScannedFile
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ImportOptions:
     checkpoint_interval: int = 100
     extract_zip: bool = True
@@ -29,33 +31,43 @@ class ArchiveImporter:
         extractor: DocumentExtractor | None = None,
         entity_extractor: EntityExtractor | None = None,
         relationship_extractor: RelationshipExtractor | None = None,
+        policy: ArchivePolicy | None = None,
+        control: ArchiveRunControl | None = None,
     ) -> None:
         self.registry = registry or ArchiveRegistry()
-        self.scanner = scanner or ArchiveScanner()
+        self.policy = policy or ArchivePolicy.from_environment()
+        self.scanner = scanner or ArchiveScanner(self.policy)
         self.extractor = extractor or DocumentExtractor()
         self.entity_extractor = entity_extractor or NullEntityExtractor()
         self.relationship_extractor = relationship_extractor or NullRelationshipExtractor()
         self.checkpoints = CheckpointStore(self.registry)
+        self.control = control or ArchiveRunControl(self.registry)
 
     def start(self, source: Path, options: ImportOptions | None = None) -> uuid.UUID:
         options = options or ImportOptions()
-        run_id = self.registry.create_run(str(source.resolve()), options.__dict__)
-        self._run(run_id, source, options, start_index=0)
+        authorized = self.policy.authorize_source(source)
+        run_id = self.control.create_queued_run(str(authorized), asdict(options))
+        self.execute(run_id)
         return run_id
 
-    def resume(self, run_id: uuid.UUID) -> uuid.UUID:
+    def execute(self, run_id: uuid.UUID) -> uuid.UUID:
         run = self.registry.run(run_id)
         if not run:
             raise KeyError(f"unknown archive import run: {run_id}")
-        checkpoint = self.checkpoints.load(run_id) or {"next_file_index": 0}
+        source = self.policy.authorize_source(Path(run["source_path"]))
         options = ImportOptions(**dict(run.get("options") or {}))
+        checkpoint = self.checkpoints.load(run_id) or {"next_file_index": 0}
+        self.control.claim(run_id)
         self._run(
             run_id,
-            Path(run["source_path"]),
+            source,
             options,
             start_index=int(checkpoint["next_file_index"]),
         )
         return run_id
+
+    def resume(self, run_id: uuid.UUID) -> uuid.UUID:
+        return self.execute(run_id)
 
     def _discover(
         self, source: Path, options: ImportOptions, temp_root: Path
@@ -82,6 +94,15 @@ class ArchiveImporter:
                         run_id, files_discovered=len(files)
                     )
                 for index, item in enumerate(files[start_index:], start=start_index):
+                    if self.control.cancellation_requested(run_id):
+                        self.checkpoints.save(
+                            run_id,
+                            next_index=index,
+                            relative_path=item.relative_path,
+                            state={"cancelled": True, "elapsed_seconds": monotonic() - started},
+                        )
+                        self.control.complete(run_id, "cancelled")
+                        return
                     try:
                         digest = sha256_file(item.path)
                         source_uri = item.path.resolve().as_uri()
@@ -132,13 +153,14 @@ class ArchiveImporter:
                                 relative_path=item.relative_path,
                                 state={"elapsed_seconds": monotonic() - started},
                             )
+                            self.control.heartbeat(run_id)
                 self.checkpoints.save(
                     run_id,
                     next_index=len(files),
                     relative_path=files[-1].relative_path if files else None,
                     state={"complete": True, "elapsed_seconds": monotonic() - started},
                 )
-            self.registry.finish_run(run_id)
+            self.control.complete(run_id, "completed")
         except Exception:
-            self.registry.finish_run(run_id, "interrupted")
+            self.control.complete(run_id, "interrupted")
             raise
