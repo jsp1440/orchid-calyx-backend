@@ -10,7 +10,9 @@ from app.calyx_orchestrator.models import CalyxFinding, CalyxJob
 from app.database import get_db
 from app.security import verify_owner_or_api_key
 
-from .github import FileChange
+from .github import FileChange, GitHubEngineeringClient
+from .inspection import RepositoryInspector
+from .repair import BoundedCIInspector
 from .service import CalyxEngineeringService, EngineeringProposal
 
 router = APIRouter(prefix="/engineering", tags=["calyx-engineering"])
@@ -30,6 +32,12 @@ class ExecuteRequest(BaseModel):
     approved: bool = False
     base: str = Field(default="main", pattern=r"^[A-Za-z0-9._/-]+$")
     changes: list[ChangeRequest] = Field(min_length=1, max_length=20)
+
+
+class InspectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    paths: list[str] = Field(min_length=1, max_length=20)
+    ref: str = Field(default="main", pattern=r"^[A-Za-z0-9._/-]+$")
 
 
 def _owner(auth: dict[str, Any]) -> str:
@@ -60,10 +68,49 @@ def status(auth: AuthDependency) -> dict:
     return {
         "enabled": CalyxEngineeringService.enabled(),
         "mode": "preproduction",
-        "capabilities": ["create_issue", "create_branch", "commit_changes", "open_draft_pr"],
+        "capabilities": [
+            "inspect_repository",
+            "inspect_ci_failures",
+            "create_issue",
+            "create_branch",
+            "commit_changes",
+            "open_draft_pr",
+        ],
         "autonomous_merge": False,
         "deployment": False,
     }
+
+
+@router.post("/inspect")
+def inspect_repository(payload: InspectRequest, auth: AuthDependency) -> dict:
+    _owner(auth)
+    try:
+        service = CalyxEngineeringService()
+        client = GitHubEngineeringClient(service.repository)
+        return RepositoryInspector(client).inspect(payload.paths, ref=payload.ref).to_dict()
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(422, detail={"code": str(exc)}) from exc
+
+
+@router.get("/pull-requests/{pull_request_number}/failures")
+def inspect_failures(
+    pull_request_number: int,
+    auth: AuthDependency,
+    limit: int = 5,
+) -> dict:
+    _owner(auth)
+    try:
+        service = CalyxEngineeringService()
+        client = GitHubEngineeringClient(service.repository)
+        failures = BoundedCIInspector(client).failed_checks(pull_request_number, limit=limit)
+        return {
+            "pull_request_number": pull_request_number,
+            "failures": [item.to_dict() for item in failures],
+            "repair_attempt_limit": 3,
+            "autonomous_merge": False,
+        }
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(422, detail={"code": str(exc)}) from exc
 
 
 @router.post("/findings/{finding_id}/proposal")
