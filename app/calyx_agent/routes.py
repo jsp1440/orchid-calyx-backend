@@ -25,6 +25,7 @@ class AgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request: str = Field(min_length=1, max_length=12000)
+    use_provider: bool = True
 
 
 def get_agent_service() -> CalyxAgentService:
@@ -43,10 +44,9 @@ def _actor(auth: dict[str, Any]) -> str:
 
 
 @router.get("/capabilities")
-def capabilities() -> dict[str, Any]:
-    service = CalyxAgentService()
+def capabilities(service: ServiceDependency) -> dict[str, Any]:
     return {
-        "status": "foundation",
+        "status": "governed_synthesis",
         "provider_status": service.provider_status(),
         "tools": default_tool_registry().describe(),
         "governance": {
@@ -54,6 +54,7 @@ def capabilities() -> dict[str, Any]:
             "prepare_only": ["build_specifications", "monitoring_specs", "draft_work_plans"],
             "owner_approval": ["repository_mutation", "merge", "deploy", "migration", "schedule_change"],
             "scientific_approval": ["canonical_scientific_publication"],
+            "provider_authority": "synthesis_only",
             "private_reasoning_stored": False,
         },
     }
@@ -66,6 +67,10 @@ def submit_request(
     service: ServiceDependency,
 ) -> dict[str, Any]:
     try:
-        return service.handle(actor=_actor(auth), request_text=payload.request).to_dict()
+        return service.handle(
+            actor=_actor(auth),
+            request_text=payload.request,
+            use_provider=payload.use_provider,
+        ).to_dict()
     except ValueError as exc:
         raise HTTPException(422, detail={"code": str(exc)}) from exc

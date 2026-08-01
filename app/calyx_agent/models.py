@@ -80,6 +80,10 @@ class AgentResponse:
     approval_required: bool = False
     approval_reason: str | None = None
     provider_status: str = "not_configured"
+    answer: str | None = None
+    provider: str | None = None
+    provider_model: str | None = None
+    provider_response_id: str | None = None
     uncertainties: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -88,11 +92,15 @@ class AgentResponse:
             "actor": self.actor,
             "intent": self.intent.value,
             "summary": self.summary,
+            "answer": self.answer,
             "steps": [step.to_dict() for step in self.steps],
             "tool_results": [result.to_dict() for result in self.tool_results],
             "approval_required": self.approval_required,
             "approval_reason": self.approval_reason,
             "provider_status": self.provider_status,
+            "provider": self.provider,
+            "provider_model": self.provider_model,
+            "provider_response_id": self.provider_response_id,
             "uncertainties": self.uncertainties,
             "private_reasoning_stored": False,
         }
