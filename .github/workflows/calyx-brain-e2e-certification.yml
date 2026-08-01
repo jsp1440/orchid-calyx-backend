@@ -74,6 +74,15 @@ jobs:
           tests/test_calyx_brain_002_correctness.py
           tests/test_calyx_brain_002_operational.py
 
+      - name: Reset database before publication lifecycle certification
+        run: |
+          psql postgresql://calyx_cert:calyx_cert_test_only@localhost:5432/postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS calyx_brain_certification WITH (FORCE)"
+          psql postgresql://calyx_cert:calyx_cert_test_only@localhost:5432/postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE calyx_brain_certification OWNER calyx_cert"
+
       - name: Controlled publication and lifecycle regressions
         run: >-
           python -m pytest -q
@@ -81,6 +90,15 @@ jobs:
           tests/test_build_088b_publication_foundation.py
           tests/test_build_088c_atomic_graph_publication.py
           tests/test_build_088d_publication_lifecycle.py
+
+      - name: Reset database before migration certification
+        run: |
+          psql postgresql://calyx_cert:calyx_cert_test_only@localhost:5432/postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS calyx_brain_certification WITH (FORCE)"
+          psql postgresql://calyx_cert:calyx_cert_test_only@localhost:5432/postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE calyx_brain_certification OWNER calyx_cert"
 
       - name: PostgreSQL 16 migration certification
         run: >-
