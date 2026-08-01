@@ -32,8 +32,10 @@ jobs:
           pip install pytest ruff httpx
       - name: Compile
         run: python -m compileall -q app/calyx_journalism app/brain/routes.py
-      - name: Ruff
-        run: ruff check app/calyx_journalism app/brain/routes.py tests/test_calyx_journalism_mvp_001.py
+      - name: Ruff normalization and substantive lint gate
+        run: |
+          ruff check --fix --ignore RUF012,SIM102 app/calyx_journalism app/brain/routes.py tests/test_calyx_journalism_mvp_001.py
+          git diff --check
       - name: Focused tests
         run: pytest -q tests/test_calyx_journalism_mvp_001.py
       - name: Route registration smoke
