@@ -142,9 +142,7 @@ class GovernedDraftEngineeringExecutor:
 
     @staticmethod
     def _slug(value: str) -> str:
-        normalized = "".join(
-            char.lower() if char.isalnum() else "-" for char in value
-        )
+        normalized = "".join(char.lower() if char.isalnum() else "-" for char in value)
         slug = "-".join(part for part in normalized.split("-") if part)
         if not slug:
             raise ValueError("task key must contain letters or numbers")
