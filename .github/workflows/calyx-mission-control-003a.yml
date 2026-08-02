@@ -1,0 +1,23 @@
+name: CALYX-MISSION-CONTROL-003A Governed Operator Chat
+
+on:
+  pull_request:
+    paths:
+      - "runtime/operator_chat.py"
+      - "tests/test_calyx_mission_control_003a_operator_chat.py"
+      - ".github/workflows/calyx-mission-control-003a.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff
+      - run: python -m ruff check runtime/operator_chat.py tests/test_calyx_mission_control_003a_operator_chat.py
+      - run: python -m ruff format --check runtime/operator_chat.py tests/test_calyx_mission_control_003a_operator_chat.py
+      - run: python -m pytest -q tests/test_calyx_mission_control_003a_operator_chat.py
+      - run: python -m compileall -q runtime/operator_chat.py
+      - run: git diff --check
