@@ -1,0 +1,23 @@
+name: CALYX-RUNTIME-001N Authenticated Runtime API
+
+on:
+  pull_request:
+    paths:
+      - app/routers/calyx_runtime_controls.py
+      - tests/test_calyx_runtime_001n_authenticated_runtime_api.py
+      - .github/workflows/calyx-runtime-001n.yml
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install fastapi httpx pytest ruff
+      - run: python -m ruff check app/routers/calyx_runtime_controls.py tests/test_calyx_runtime_001n_authenticated_runtime_api.py
+      - run: python -m ruff format --check app/routers/calyx_runtime_controls.py tests/test_calyx_runtime_001n_authenticated_runtime_api.py
+      - run: python -m pytest -q tests/test_calyx_runtime_001n_authenticated_runtime_api.py
+      - run: python -m compileall -q app/routers/calyx_runtime_controls.py
+      - run: git diff --check
