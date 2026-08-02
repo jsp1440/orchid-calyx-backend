@@ -1,4 +1,5 @@
 import pytest
+
 from runtime.github_connector_dispatcher import (
     AuditedGitHubDispatcher,
     GitHubDispatchCommand,
