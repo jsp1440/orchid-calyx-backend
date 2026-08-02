@@ -1,0 +1,23 @@
+name: CALYX-MISSION-CONTROL-003B Chat API
+
+on:
+  pull_request:
+    paths:
+      - "app/routers/calyx_operator_chat.py"
+      - "tests/test_calyx_mission_control_003b_chat_api.py"
+      - ".github/workflows/calyx-mission-control-003b.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install fastapi httpx pytest ruff
+      - run: python -m ruff check app/routers/calyx_operator_chat.py tests/test_calyx_mission_control_003b_chat_api.py
+      - run: python -m ruff format --check app/routers/calyx_operator_chat.py tests/test_calyx_mission_control_003b_chat_api.py
+      - run: python -m pytest -q tests/test_calyx_mission_control_003b_chat_api.py
+      - run: python -m compileall -q app/routers/calyx_operator_chat.py
+      - run: git diff --check
