@@ -5,6 +5,7 @@ from app.archive.routes import router as archive_router
 from app.routers.calyx_queue import router as calyx_queue_router
 from app.routers.executive import router as executive_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
+from app.routers.live_mission_control import router as live_mission_control_router
 from app.routers.mission_control import router as mission_control_router
 from app.routers.owner_operations import router as owner_operations_router
 from app.routers.owner_session_token import router as owner_session_token_router
@@ -114,15 +115,13 @@ def system_status():
     return {"status": "ok", "service": "orchid-continuum", "backend": "calyx"}
 
 
-# Import after CORS helpers are defined; these routers depend on this module.
 from app.executive_intelligence.routes import router as executive_intelligence_router
 from app.workflow.routes import router as workflow_router
 
 router.include_router(mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(owner_operations_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(owner_session_token_router, dependencies=[Depends(add_mission_control_cors_headers)])
-# Register the role-aware telemetry contract before the legacy BUILD-052 route so
-# GET /api/executive/state resolves to the governed 001A implementation.
+router.include_router(live_mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(executive_telemetry_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(executive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(scientific_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
