@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.brain.education_design_routes import EducationDesignSearch, readiness, search
 from app.calyx_agent.service import CalyxAgentService
 from app.calyx_agent.tools import default_tool_registry
+from app.calyx_orchestrator.service import OVERNIGHT_PROFILE, READ_ONLY_JOB_TYPES
 
 
 def test_registry_exposes_education_and_design_tools():
@@ -61,3 +62,10 @@ def test_agent_routes_university_request_through_education_readiness():
     assert "design_intelligence.readiness" in tool_ids
     assert response.steps[-1].action_class.value == "prepare_only"
     assert response.approval_required is False
+
+
+def test_overnight_profile_includes_governed_design_and_education_audits():
+    job_types = {item[1] for item in OVERNIGHT_PROFILE}
+    assert "website_design_audit" in job_types
+    assert "education_readiness" in job_types
+    assert job_types.issubset(READ_ONLY_JOB_TYPES)
