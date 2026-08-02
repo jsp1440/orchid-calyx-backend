@@ -14,6 +14,7 @@ from runtime.governed_worker_loop import GovernedWorkerLoop
 from runtime.json_activation_store import JsonActivationStateStore
 from runtime.persistent_activation_state import PersistentActivationController
 from runtime.runtime_operator_controls import RuntimeOperatorControls
+from runtime.supervised_pilot import run_supervised_pilot
 
 
 def _state_path() -> Path:
@@ -25,13 +26,8 @@ def _state_path() -> Path:
     )
 
 
-def _supervised_cycle_adapter() -> str:
-    """Fail closed until a reviewed task provider and connector executor are configured."""
-    return "no-approved-task-provider"
-
-
 _controller = PersistentActivationController(JsonActivationStateStore(_state_path()))
-_worker = GovernedWorkerLoop(_controller, _supervised_cycle_adapter)
+_worker = GovernedWorkerLoop(_controller, run_supervised_pilot)
 _controls = RuntimeOperatorControls(_controller, _worker)
 
 
