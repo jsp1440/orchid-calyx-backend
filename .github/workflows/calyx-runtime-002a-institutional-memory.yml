@@ -1,0 +1,26 @@
+name: CALYX-RUNTIME-002A Institutional Memory
+
+on:
+  pull_request:
+    paths:
+      - "runtime/institutional_memory.py"
+      - "tests/test_calyx_runtime_002a_institutional_memory.py"
+      - ".github/workflows/calyx-runtime-002a-institutional-memory.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff
+      - run: python -m ruff check runtime/institutional_memory.py tests/test_calyx_runtime_002a_institutional_memory.py
+      - run: python -m ruff format --check runtime/institutional_memory.py tests/test_calyx_runtime_002a_institutional_memory.py
+      - run: python -m pytest -q tests/test_calyx_runtime_002a_institutional_memory.py
+      - run: python -m compileall -q runtime/institutional_memory.py
+      - run: git diff --check
