@@ -1,0 +1,27 @@
+name: WORLD-PLANTS-INGEST-001
+
+on:
+  pull_request:
+    paths:
+      - "runtime/world_plants_ingest.py"
+      - "tests/test_world_plants_ingest_001.py"
+      - "docs/WORLD-PLANTS-INGEST-001.md"
+      - ".github/workflows/world-plants-ingest-001.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff
+      - run: python -m ruff check runtime/world_plants_ingest.py tests/test_world_plants_ingest_001.py
+      - run: python -m ruff format --check runtime/world_plants_ingest.py tests/test_world_plants_ingest_001.py
+      - run: python -m pytest -q tests/test_world_plants_ingest_001.py
+      - run: python -m compileall -q runtime/world_plants_ingest.py
+      - run: git diff --check
