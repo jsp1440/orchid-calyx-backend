@@ -20,6 +20,32 @@ _JOURNALISM_TERMS = (
     "write about",
     "generate a story",
 )
+_DESIGN_TERMS = (
+    "website",
+    "web page",
+    "frontend",
+    "design",
+    "accessibility",
+    "user experience",
+    "ux",
+    "user interface",
+    "ui",
+    "navigation",
+    "information architecture",
+    "visualization",
+)
+_EDUCATION_TERMS = (
+    "education",
+    "university",
+    "course",
+    "lesson",
+    "curriculum",
+    "student",
+    "assessment",
+    "learning",
+    "virtual lab",
+    "workshop",
+)
 
 
 class CalyxAgentService:
@@ -97,25 +123,23 @@ class CalyxAgentService:
                     status="completed",
                 )
             )
-            response.tool_results.append(self.registry.execute(tool_id))
+            payload = {"query": text, "limit": 10} if tool_id == "design_intelligence.search" else None
+            response.tool_results.append(self.registry.execute(tool_id, payload))
             previous = step_id
 
-        if intent in {RequestIntent.PLAN_BUILD, RequestIntent.MONITOR} or self._is_journalism_request(text):
+        if (
+            intent in {RequestIntent.PLAN_BUILD, RequestIntent.MONITOR}
+            or self._is_journalism_request(text)
+            or self._is_design_request(text)
+            or self._is_education_request(text)
+        ):
             response.steps.append(
                 AgentStep(
                     step_id="prepare-1",
-                    title=(
-                        "Prepare an evidence-grounded journalism brief"
-                        if self._is_journalism_request(text)
-                        else "Prepare a bounded implementation or monitoring specification"
-                    ),
+                    title=self._preparation_title(text),
                     tool_id=None,
                     action_class=ActionClass.PREPARE_ONLY,
-                    rationale=(
-                        "Calyx may prepare evidence packets and article briefs, but publication remains approval-gated."
-                        if self._is_journalism_request(text)
-                        else "Preparation may proceed, but repository or schedule mutation remains approval-gated."
-                    ),
+                    rationale=self._preparation_rationale(text),
                     dependencies=((previous,) if previous else ()),
                     status="planned",
                 )
@@ -160,13 +184,38 @@ class CalyxAgentService:
         response.provider_status = "completed"
 
     @staticmethod
-    def _is_journalism_request(text: str) -> bool:
+    def _matches(text: str, terms: tuple[str, ...]) -> bool:
         normalized = text.casefold()
-        return any(term in normalized for term in _JOURNALISM_TERMS)
+        return any(term in normalized for term in terms)
+
+    @classmethod
+    def _is_journalism_request(cls, text: str) -> bool:
+        return cls._matches(text, _JOURNALISM_TERMS)
+
+    @classmethod
+    def _is_design_request(cls, text: str) -> bool:
+        return cls._matches(text, _DESIGN_TERMS)
+
+    @classmethod
+    def _is_education_request(cls, text: str) -> bool:
+        return cls._matches(text, _EDUCATION_TERMS)
 
     @classmethod
     def _select_tools(cls, intent: RequestIntent, text: str) -> tuple[str, ...]:
         normalized = text.casefold()
+        if cls._is_education_request(text):
+            tools = ["education.readiness", "design_intelligence.readiness"]
+            if cls._is_design_request(text):
+                tools.append("design_intelligence.search")
+            tools.extend(("brain.readiness", "continuum.build_inventory"))
+            return tuple(tools)
+        if cls._is_design_request(text):
+            return (
+                "design_intelligence.readiness",
+                "design_intelligence.search",
+                "brain.readiness",
+                "mission_control.readiness",
+            )
         if cls._is_journalism_request(text):
             return (
                 "journalism.readiness",
@@ -188,7 +237,31 @@ class CalyxAgentService:
         return ("continuum.build_inventory",)
 
     @classmethod
+    def _preparation_title(cls, text: str) -> str:
+        if cls._is_education_request(text):
+            return "Prepare a bounded education or University improvement specification"
+        if cls._is_design_request(text):
+            return "Prepare a bounded website design and accessibility specification"
+        if cls._is_journalism_request(text):
+            return "Prepare an evidence-grounded journalism brief"
+        return "Prepare a bounded implementation or monitoring specification"
+
+    @classmethod
+    def _preparation_rationale(cls, text: str) -> str:
+        if cls._is_education_request(text):
+            return "Calyx may recommend curricula, lessons, assessments, and virtual labs; publication and implementation remain approval-gated."
+        if cls._is_design_request(text):
+            return "Calyx may recommend UX, accessibility, navigation, and visualization changes; repository mutation and deployment remain approval-gated."
+        if cls._is_journalism_request(text):
+            return "Calyx may prepare evidence packets and article briefs, but publication remains approval-gated."
+        return "Preparation may proceed, but repository or schedule mutation remains approval-gated."
+
+    @classmethod
     def _summary(cls, intent: RequestIntent, text: str) -> str:
+        if cls._is_education_request(text):
+            return "Calyx inspected educational-design knowledge and University runtime readiness."
+        if cls._is_design_request(text):
+            return "Calyx inspected website-design intelligence and prepared a governed improvement path."
         if cls._is_journalism_request(text):
             return "Calyx inspected journalism readiness and prepared an approval-gated article workflow."
         summaries = {
