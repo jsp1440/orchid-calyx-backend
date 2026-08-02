@@ -1,11 +1,10 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from runtime.draft_engineering_executor import EngineeringTask
 from runtime.live_activation_bridge import ActivationPolicy, LiveActivationBridge
 from runtime.reactive_scheduler import ReactiveScheduler, SchedulerPolicy
-
 
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 
@@ -32,7 +31,11 @@ def scheduler():
 
 def test_bridge_fails_closed_without_activation_approval():
     bridge = LiveActivationBridge(
-        ActivationPolicy(enabled=True, owner_approved=False, repository_allowlist=(REPOSITORY,)),
+        ActivationPolicy(
+            enabled=True,
+            owner_approved=False,
+            repository_allowlist=(REPOSITORY,),
+        ),
         scheduler(),
     )
     with pytest.raises(PermissionError):
@@ -45,7 +48,11 @@ def test_bridge_fails_closed_without_activation_approval():
 
 def test_bridge_rejects_unapproved_repository():
     bridge = LiveActivationBridge(
-        ActivationPolicy(enabled=True, owner_approved=True, repository_allowlist=(REPOSITORY,)),
+        ActivationPolicy(
+            enabled=True,
+            owner_approved=True,
+            repository_allowlist=(REPOSITORY,),
+        ),
         scheduler(),
     )
     with pytest.raises(PermissionError):
@@ -58,7 +65,11 @@ def test_bridge_rejects_unapproved_repository():
 
 def test_bridge_prepares_draft_only_connector_command():
     bridge = LiveActivationBridge(
-        ActivationPolicy(enabled=True, owner_approved=True, repository_allowlist=(REPOSITORY,)),
+        ActivationPolicy(
+            enabled=True,
+            owner_approved=True,
+            repository_allowlist=(REPOSITORY,),
+        ),
         scheduler(),
     )
     command = bridge.prepare_draft_command(
@@ -75,7 +86,11 @@ def test_bridge_prepares_draft_only_connector_command():
 
 def test_bridge_preserves_executor_scope_and_validation_guards():
     bridge = LiveActivationBridge(
-        ActivationPolicy(enabled=True, owner_approved=True, repository_allowlist=(REPOSITORY,)),
+        ActivationPolicy(
+            enabled=True,
+            owner_approved=True,
+            repository_allowlist=(REPOSITORY,),
+        ),
         scheduler(),
     )
     with pytest.raises(PermissionError):
@@ -94,7 +109,7 @@ def test_bridge_preserves_executor_scope_and_validation_guards():
 
 def test_scheduler_remains_owner_gated_and_interval_bounded():
     active_scheduler = scheduler()
-    now = datetime(2026, 8, 2, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 2, tzinfo=UTC)
     result = active_scheduler.run_if_due(lambda limit: {"limit": limit}, now)
     assert result["executed"] is True
     repeated = active_scheduler.run_if_due(lambda limit: {"limit": limit}, now)
