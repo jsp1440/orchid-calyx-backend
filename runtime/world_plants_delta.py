@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from runtime.world_plants_ingest import WorldPlantsRow
 
@@ -80,7 +81,11 @@ def _index(rows: tuple[WorldPlantsRow, ...], key_fn) -> dict[str, list[WorldPlan
     return result
 
 
-def _classify(previous: WorldPlantsRow, current: WorldPlantsRow, evidence: tuple[str, ...]) -> str:
+def _classify(
+    previous: WorldPlantsRow,
+    current: WorldPlantsRow,
+    evidence: tuple[str, ...],
+) -> str:
     if previous.taxon_code != current.taxon_code:
         return "rank_change"
     if previous.name == current.name:
