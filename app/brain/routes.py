@@ -18,6 +18,7 @@ from app.security import verify_owner_or_api_key
 from runtime.connector_registry import ConnectorRegistry, default_brain_registry
 from runtime.knowledge_graph import PostgresGraphRepository
 
+from .education_design_routes import router as education_design_router
 from .ledger_bridge import InferenceLedgerBridge
 from .reasoning import InferenceEngine, InferenceType
 from .schemas import (
@@ -199,3 +200,4 @@ router.include_router(calyx_agent_router)
 router.include_router(calyx_journalism_router)
 router.include_router(calyx_orchestrator_router)
 router.include_router(calyx_engineering_router)
+router.include_router(education_design_router)
