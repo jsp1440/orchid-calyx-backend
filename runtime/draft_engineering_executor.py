@@ -87,7 +87,9 @@ class GovernedDraftEngineeringExecutor:
         allowed = tuple(PurePosixPath(path) for path in plan.allowed_paths)
         for changed in changed_paths:
             candidate = PurePosixPath(changed)
-            if not any(candidate == root or root in candidate.parents for root in allowed):
+            if not any(
+                candidate == root or root in candidate.parents for root in allowed
+            ):
                 raise PermissionError(f"path outside approved scope: {changed}")
 
     def build_draft_pr_package(
@@ -98,7 +100,9 @@ class GovernedDraftEngineeringExecutor:
         validation_results: dict[str, bool],
     ) -> DraftPullRequestPackage:
         self.validate_changed_paths(plan, changed_paths)
-        failed = sorted(name for name, passed in validation_results.items() if not passed)
+        failed = sorted(
+            name for name, passed in validation_results.items() if not passed
+        )
         if failed:
             raise RuntimeError(f"validation failed: {', '.join(failed)}")
         return DraftPullRequestPackage(
@@ -128,12 +132,19 @@ class GovernedDraftEngineeringExecutor:
             raise PermissionError(f"unsupported autonomous risk: {task.risk}")
         if not task.allowed_paths:
             raise ValueError("at least one allowed path is required")
-        if any(path.startswith("/") or ".." in PurePosixPath(path).parts for path in task.allowed_paths):
-            raise ValueError("allowed paths must be repository-relative and traversal-free")
+        if any(
+            path.startswith("/") or ".." in PurePosixPath(path).parts
+            for path in task.allowed_paths
+        ):
+            raise ValueError(
+                "allowed paths must be repository-relative and traversal-free"
+            )
 
     @staticmethod
     def _slug(value: str) -> str:
-        normalized = "".join(char.lower() if char.isalnum() else "-" for char in value)
+        normalized = "".join(
+            char.lower() if char.isalnum() else "-" for char in value
+        )
         slug = "-".join(part for part in normalized.split("-") if part)
         if not slug:
             raise ValueError("task key must contain letters or numbers")
