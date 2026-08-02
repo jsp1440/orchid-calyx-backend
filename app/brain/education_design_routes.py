@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from psycopg import Error as PsycopgError
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.design_intelligence.knowledge import EducationalClassification
@@ -53,11 +54,21 @@ def readiness() -> dict[str, Any]:
 def search(payload: EducationDesignSearch) -> dict[str, Any]:
     try:
         result = REASONING_SERVICE.search(payload.query, limit=payload.limit)
+        store_status = "available"
+        warnings: list[str] = []
     except ValueError as exc:
         raise HTTPException(422, detail={"code": str(exc)}) from exc
+    except PsycopgError:
+        result = {"query": payload.query, "total": 0, "results": []}
+        store_status = "unavailable"
+        warnings = [
+            "The configured Design Intelligence store could not be reached; no corpus results were returned."
+        ]
     return {
         **result,
         "brain_boundary": True,
         "read_only": True,
         "implementation_requires_approval": True,
+        "store_status": store_status,
+        "warnings": warnings,
     }
