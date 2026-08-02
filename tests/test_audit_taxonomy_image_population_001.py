@@ -9,11 +9,7 @@ from runtime.taxonomy_image_population import (
 def test_exact_taxon_media_links_create_verified_provenance_links():
     result = build_taxonomy_image_candidates(
         links=[RecordMediaLink("taxonomy", "taxon:123", "media:9")],
-        assets={
-            "media:9": MediaAsset(
-                "media:9", "iNaturalist", "obs-42", "CC-BY"
-            )
-        },
+        assets={"media:9": MediaAsset("media:9", "iNaturalist", "obs-42", "CC-BY")},
         canonical_taxon_ids={"taxon:123"},
     )
 
