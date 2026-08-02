@@ -47,7 +47,9 @@ class GovernedOperatorChat:
     def __init__(self) -> None:
         self._messages: list[OperatorMessage | CalyxReply] = []
 
-    def receive(self, content: str, *, created_at: str | None = None) -> OperatorMessage:
+    def receive(
+        self, content: str, *, created_at: str | None = None
+    ) -> OperatorMessage:
         text = content.strip()
         if not text:
             raise ValueError("message content is required")
