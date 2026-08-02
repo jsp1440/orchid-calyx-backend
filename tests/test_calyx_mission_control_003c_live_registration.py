@@ -30,8 +30,9 @@ def test_registration_is_idempotent():
     app = build_app()
     register_mission_control_chat(app)
     matching = [
-        route.path
+        path
         for route in app.routes
-        if route.path == "/brain/mission-control/chat/status"
+        if (path := getattr(route, "path", None))
+        == "/brain/mission-control/chat/status"
     ]
     assert matching == ["/brain/mission-control/chat/status"]
