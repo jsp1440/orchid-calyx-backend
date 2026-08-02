@@ -1,5 +1,8 @@
 from runtime.world_plants_delta import CrosswalkCandidate
-from runtime.world_plants_impact import audit_downstream_impact, read_only_query_contract
+from runtime.world_plants_impact import (
+    audit_downstream_impact,
+    read_only_query_contract,
+)
 
 
 def candidate(classification: str, row: int = 2) -> CrosswalkCandidate:
