@@ -1,0 +1,21 @@
+name: CALYX-RUNTIME-001D Mission Control Briefing
+
+on:
+  pull_request:
+    paths:
+      - "runtime/mission_control_briefing.py"
+      - "tests/test_calyx_runtime_001d_mission_control_briefing.py"
+      - ".github/workflows/calyx-runtime-001d-mission-control-briefing.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff
+      - run: python -m ruff check runtime/mission_control_briefing.py tests/test_calyx_runtime_001d_mission_control_briefing.py
+      - run: python -m ruff format --check runtime/mission_control_briefing.py tests/test_calyx_runtime_001d_mission_control_briefing.py
+      - run: python -m pytest -q tests/test_calyx_runtime_001d_mission_control_briefing.py
