@@ -31,7 +31,9 @@ def test_approved_scheduler_runs_bounded_read_only_cycle_when_due():
     assert result["automatic_merge"] is False
     assert result["automatic_deploy"] is False
 
-    repeated = scheduler.run_if_due(lambda limit: {"prepared_tasks": limit}, now + timedelta(minutes=10))
+    repeated = scheduler.run_if_due(
+        lambda limit: {"prepared_tasks": limit}, now + timedelta(minutes=10)
+    )
     assert repeated["executed"] is False
 
 
