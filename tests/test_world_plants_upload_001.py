@@ -7,31 +7,9 @@ from runtime.world_plants_release_store import WorldPlantsReleaseStore
 
 def _payload() -> bytes:
     header = "|".join(str(index) for index in range(13))
-    row = "|".join(
-        [
-            "S",
-            "123",
-            "Cattleya testensis Author",
-            "lit",
-            "",
-            "Brazil",
-            "= Test synonym",
-            "",
-            "",
-            "",
-            "photo.jpg",
-            "landscape",
-            "Photographer",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
+    row = (
+        "S|123|Cattleya testensis Author|lit||Brazil|= Test synonym|||"
+        "|photo.jpg|landscape|Photographer|||||||||"
     )
     return f"{header}\n{row}\n".encode()
 
