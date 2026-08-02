@@ -1,0 +1,28 @@
+name: CALYX-SUPERVISED-PILOT-001
+
+on:
+  pull_request:
+    paths:
+      - "app/routers/live_mission_control.py"
+      - "runtime/supervised_pilot.py"
+      - "tests/test_calyx_supervised_pilot_001.py"
+      - "docs/CALYX-SUPERVISED-PILOT-001.md"
+      - ".github/workflows/calyx-supervised-pilot-001.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt pytest ruff
+      - run: python -m ruff check runtime/supervised_pilot.py app/routers/live_mission_control.py tests/test_calyx_supervised_pilot_001.py
+      - run: python -m ruff format --check runtime/supervised_pilot.py app/routers/live_mission_control.py tests/test_calyx_supervised_pilot_001.py
+      - run: python -m pytest -q tests/test_calyx_supervised_pilot_001.py
+      - run: python -m compileall -q runtime/supervised_pilot.py app/routers/live_mission_control.py
+      - run: git diff --check
