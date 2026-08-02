@@ -7,9 +7,10 @@ or governance changes.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -19,7 +20,7 @@ class SchedulerPolicy:
     interval_minutes: int = 60
     max_tasks_per_cycle: int = 10
 
-    def validated(self) -> "SchedulerPolicy":
+    def validated(self) -> SchedulerPolicy:
         if not 15 <= self.interval_minutes <= 1440:
             raise ValueError("interval_minutes must be between 15 and 1440")
         if not 0 <= self.max_tasks_per_cycle <= 50:
