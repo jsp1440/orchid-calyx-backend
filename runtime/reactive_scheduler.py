@@ -38,7 +38,8 @@ class ReactiveScheduler:
         authorized = self.policy.enabled and self.policy.owner_approved
         due = authorized and (
             self.last_run_at is None
-            or current - self.last_run_at >= timedelta(minutes=self.policy.interval_minutes)
+            or current - self.last_run_at
+            >= timedelta(minutes=self.policy.interval_minutes)
         )
         return {
             "enabled": self.policy.enabled,
@@ -59,7 +60,11 @@ class ReactiveScheduler:
         current = now or datetime.now(timezone.utc)
         state = self.status(current)
         if not state["due"]:
-            return {"executed": False, "reason": "disabled_not_approved_or_not_due", **state}
+            return {
+                "executed": False,
+                "reason": "disabled_not_approved_or_not_due",
+                **state,
+            }
 
         result = cycle(self.policy.max_tasks_per_cycle)
         self.last_run_at = current
