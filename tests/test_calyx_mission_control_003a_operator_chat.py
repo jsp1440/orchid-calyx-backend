@@ -5,8 +5,12 @@ from runtime.operator_chat import GovernedOperatorChat
 
 def test_chat_records_operator_and_calyx_messages():
     chat = GovernedOperatorChat()
-    operator = chat.receive("What are you working on?", created_at="2026-08-02T06:00:00Z")
-    reply = chat.reply("I am validating the governed cycle.", created_at="2026-08-02T06:00:01Z")
+    operator = chat.receive(
+        "What are you working on?", created_at="2026-08-02T06:00:00Z"
+    )
+    reply = chat.reply(
+        "I am validating the governed cycle.", created_at="2026-08-02T06:00:01Z"
+    )
     transcript = chat.transcript()
     assert transcript == (operator, reply)
     assert operator.role == "operator"
