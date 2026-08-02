@@ -4,7 +4,7 @@ CREATE SCHEMA IF NOT EXISTS reasoning_publication;
 CREATE TABLE IF NOT EXISTS reasoning_publication.publication_artifacts (
     publication_artifact_id uuid PRIMARY KEY,
     artifact_hash char(64) NOT NULL UNIQUE,
-    ledger_id uuid NOT NULL REFERENCES reasoning_ledger.ledger_heads(ledger_id) ON DELETE RESTRICT,
+    ledger_id varchar(36) NOT NULL REFERENCES reasoning_ledger.ledger_heads(ledger_id) ON DELETE RESTRICT,
     ledger_version integer NOT NULL CHECK (ledger_version > 0),
     review_content_hash char(64) NOT NULL,
     owner_subject text NOT NULL,

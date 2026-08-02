@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt pytest httpx ruff
+      - run: pip install -r requirements.txt pytest pytest-asyncio httpx ruff
       - name: PostgreSQL migration order, reapplication, constraints, rollback isolation
         run: python -m pytest -q tests/test_calyx_brain_003_migration.py
       - name: Focused publication adapter

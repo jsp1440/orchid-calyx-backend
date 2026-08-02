@@ -161,12 +161,14 @@ def test_postgres_lifecycle_concurrency_projections_propagation_and_rollback():
             )
             return pid, gv
 
-        prior, _ = seed(1, 1)
-        successor, _ = seed(2, 2)
-        withdrawable, _ = seed(3, 3)
-        dependent, _ = seed(4, 4)
-        racing, _ = seed(5, 5)
-        rollback_pub, rollback_gv = seed(6, 6)
+        # Migration 088C creates the immutable genesis graph at sequence 1.
+        # Test publications must therefore begin at the next available sequence.
+        prior, _ = seed(1, 2)
+        successor, _ = seed(2, 3)
+        withdrawable, _ = seed(3, 4)
+        dependent, _ = seed(4, 5)
+        racing, _ = seed(5, 6)
+        rollback_pub, rollback_gv = seed(6, 7)
         con.execute(
             "INSERT INTO oc_knowledge_publication.publication_dependencies(source_publication_id,dependent_publication_id,dependency_type,fingerprint) VALUES(%s,%s,'SUPPORTS',%s)",
             (withdrawable, dependent, f"dep-{suffix}"),

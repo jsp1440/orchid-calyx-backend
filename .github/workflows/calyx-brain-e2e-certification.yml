@@ -1,0 +1,120 @@
+name: CALYX Brain End-to-End Certification
+
+on:
+  pull_request:
+    paths:
+      - "app/brain/**"
+      - "app/reasoning_ledger/**"
+      - "app/reasoning_publication/**"
+      - "app/knowledge_publication/**"
+      - "migrations/087b_*.sql"
+      - "migrations/088b_*.sql"
+      - "migrations/088c_*.sql"
+      - "migrations/088d_*.sql"
+      - "migrations/101_*.sql"
+      - "migrations/103_*.sql"
+      - "migrations/104_*.sql"
+      - "migrations/105_*.sql"
+      - "tests/test_calyx_brain_e2e_certification.py"
+      - "tests/test_calyx_brain_integration*.py"
+      - "tests/test_build_087b_scientific_interpretation.py"
+      - "tests/test_build_088b_publication_foundation.py"
+      - "tests/test_build_088c_atomic_graph_publication.py"
+      - "tests/test_build_088d_publication_lifecycle.py"
+      - ".github/workflows/calyx-brain-e2e-certification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  governed-chain-certification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: calyx_cert
+          POSTGRES_PASSWORD: calyx_cert_test_only
+          POSTGRES_DB: calyx_brain_certification
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U calyx_cert -d calyx_brain_certification"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      TEST_DATABASE_URL: postgresql://calyx_cert:calyx_cert_test_only@localhost:5432/calyx_brain_certification
+      CALYX_BRAIN_INTEGRATION_TEST_DATABASE_URL: postgresql://calyx_cert:calyx_cert_test_only@localhost:5432/calyx_brain_certification
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install certification dependencies
+        run: python -m pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+
+      - name: Static certification guardrails
+        run: |
+          python -m ruff check tests/test_calyx_brain_e2e_certification.py
+          python -m ruff format --check tests/test_calyx_brain_e2e_certification.py
+          python -m pytest -q tests/test_calyx_brain_e2e_certification.py
+
+      - name: Deterministic inference to immutable ledger
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_brain_integration.py
+          tests/test_calyx_brain_002_correctness.py
+          tests/test_calyx_brain_002_operational.py
+
+      - name: Reset database before publication lifecycle certification
+        run: |
+          psql postgresql://calyx_cert:calyx_cert_test_only@localhost:5432/postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS calyx_brain_certification WITH (FORCE)"
+          psql postgresql://calyx_cert:calyx_cert_test_only@localhost:5432/postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE calyx_brain_certification OWNER calyx_cert"
+
+      - name: Controlled publication and lifecycle regressions
+        run: >-
+          python -m pytest -q
+          tests/test_build_087b_scientific_interpretation.py
+          tests/test_build_088b_publication_foundation.py
+          tests/test_build_088c_atomic_graph_publication.py
+          tests/test_build_088d_publication_lifecycle.py
+
+      - name: Reset database before migration certification
+        run: |
+          psql postgresql://calyx_cert:calyx_cert_test_only@localhost:5432/postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS calyx_brain_certification WITH (FORCE)"
+          psql postgresql://calyx_cert:calyx_cert_test_only@localhost:5432/postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE calyx_brain_certification OWNER calyx_cert"
+
+      - name: PostgreSQL 16 migration certification
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_brain_integration_migrations.py
+          tests/test_calyx_brain_003_migration.py
+
+      - name: Compile canonical modules
+        run: python -m compileall -q app/brain app/reasoning_ledger app/reasoning_publication app/knowledge_publication
+
+      - name: Repository hygiene
+        shell: bash
+        run: |
+          if git grep -nE '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{30,})' -- app tests migrations .github/workflows/calyx-brain-e2e-certification.yml; then
+            echo "Potential committed secret detected"
+            exit 1
+          fi
+          git diff --check
+          test -z "$(git status --porcelain)"
