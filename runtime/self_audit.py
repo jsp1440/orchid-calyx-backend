@@ -84,7 +84,11 @@ class SelfAuditEngine:
         normalized = tuple(signals)
         findings = tuple(
             sorted(
-                (self._finding(signal) for signal in normalized if self._is_finding(signal)),
+                (
+                    self._finding(signal)
+                    for signal in normalized
+                    if self._is_finding(signal)
+                ),
                 key=lambda finding: (-finding.priority, finding.finding_key),
             )
         )
@@ -123,7 +127,11 @@ class SelfAuditEngine:
     @staticmethod
     def _recommended_action(signal: AuditSignal) -> str:
         details = signal.details or {}
-        proposed = str(details.get("recommended_action", "prepare_draft_work_item")).strip().lower()
+        proposed = (
+            str(details.get("recommended_action", "prepare_draft_work_item"))
+            .strip()
+            .lower()
+        )
         return proposed or "prepare_draft_work_item"
 
 
