@@ -44,7 +44,7 @@ jobs:
       - name: Ruff
         run: ruff check scripts/apply_world_plants_staging.py scripts/smoke_world_plants_activation.py tests/test_calyx_taxonomy_activation_001.py
       - name: Focused tests
-        run: pytest -q tests/test_calyx_taxonomy_activation_001.py tests/test_world_plants_ingest_001.py tests/test_world_plants_readiness_api_001.py
+        run: python -m pytest -q tests/test_calyx_taxonomy_activation_001.py tests/test_world_plants_ingest_001.py tests/test_world_plants_readiness_api_001.py
 
   production-activation:
     if: ${{ github.event_name == 'workflow_dispatch' && (inputs.apply_staging_migration || inputs.run_live_smoke) }}

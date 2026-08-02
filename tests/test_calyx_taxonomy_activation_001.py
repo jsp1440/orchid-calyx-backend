@@ -13,7 +13,7 @@ def test_smoke_fixture_is_valid_and_unmistakably_noncanonical():
     assert result.summary()["issues"] == 0
     row = result.rows[0]
     assert row.values["world_plants_number"] == "ACTIVATION-SMOKE-0001"
-    assert "smoke test" in row.values["scientific_name"].casefold()
+    assert "smoke test" in row.values["name"].casefold()
 
 
 def test_activation_scripts_do_not_reference_production_release_filename():
