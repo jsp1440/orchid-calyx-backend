@@ -1,0 +1,27 @@
+name: WORLD-PLANTS-STAGING-READINESS-001
+
+on:
+  pull_request:
+    paths:
+      - 'migrations/WORLD-PLANTS-STAGING-001.sql'
+      - 'runtime/world_plants_upload_readiness.py'
+      - 'tests/test_world_plants_upload_readiness.py'
+      - '.github/workflows/world-plants-staging-readiness-001.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest ruff
+      - run: python -m ruff check runtime/world_plants_upload_readiness.py tests/test_world_plants_upload_readiness.py
+      - run: python -m ruff format --check runtime/world_plants_upload_readiness.py tests/test_world_plants_upload_readiness.py
+      - run: python -m pytest -q tests/test_world_plants_upload_readiness.py
+      - run: python -m compileall -q runtime/world_plants_upload_readiness.py
+      - run: git diff --check
