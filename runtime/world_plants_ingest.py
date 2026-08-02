@@ -13,8 +13,9 @@ import hashlib
 import html
 import io
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import Any, Iterable
+from typing import Any
 
 SOURCE_SYSTEM = "world_plants_hassler"
 EXPECTED_WIDTH = 22
