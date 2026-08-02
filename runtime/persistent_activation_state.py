@@ -53,8 +53,12 @@ class PersistentActivationController:
         payload = self._store.load()
         if not payload:
             return ActivationState().validated()
-        allowed = {field.name for field in ActivationState.__dataclass_fields__.values()}
-        state = ActivationState(**{key: value for key, value in payload.items() if key in allowed})
+        allowed = {
+            field.name for field in ActivationState.__dataclass_fields__.values()
+        }
+        state = ActivationState(
+            **{key: value for key, value in payload.items() if key in allowed}
+        )
         return state.validated()
 
     def save(self, state: ActivationState) -> ActivationState:
@@ -64,7 +68,9 @@ class PersistentActivationController:
         self._store.save(asdict(persisted))
         return persisted
 
-    def record_cycle(self, result: str, *, occurred_at: str | None = None) -> ActivationState:
+    def record_cycle(
+        self, result: str, *, occurred_at: str | None = None
+    ) -> ActivationState:
         current = self.load()
         if not current.authorized:
             raise PermissionError("runtime is not authorized to record an active cycle")
