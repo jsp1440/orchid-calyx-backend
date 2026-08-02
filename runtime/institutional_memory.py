@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Any
+from typing import Any, ClassVar
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class InstitutionalMemoryRecord:
 class InstitutionalMemoryRegistry:
     """Build and query immutable, provenance-backed memory records."""
 
-    allowed_statuses = {"active", "superseded", "withdrawn"}
+    allowed_statuses: ClassVar[set[str]] = {"active", "superseded", "withdrawn"}
 
     def __init__(self) -> None:
         self._records: dict[str, InstitutionalMemoryRecord] = {}
@@ -96,8 +96,8 @@ class InstitutionalMemoryRegistry:
             return ()
         ranked: list[tuple[int, str, InstitutionalMemoryRecord]] = []
         for record in self._records.values():
-            haystack = " ".join(
-                (record.category, record.title, record.summary, record.actor)
+            haystack = (
+                f"{record.category} {record.title} {record.summary} {record.actor}"
             ).lower()
             score = sum(term in haystack for term in terms)
             if score:
