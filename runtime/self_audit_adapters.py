@@ -27,7 +27,10 @@ def github_ci_signals(snapshot: Mapping[str, Any]) -> list[AuditSignal]:
                 check="stale_pull_requests",
                 status="stale",
                 severity="medium",
-                details={"count": stale, "recommended_action": "prepare_draft_work_item"},
+                details={
+                    "count": stale,
+                    "recommended_action": "prepare_draft_work_item",
+                },
             )
         )
     return signals
