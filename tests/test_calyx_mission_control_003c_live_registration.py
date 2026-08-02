@@ -29,10 +29,8 @@ def test_registration_exposes_chat_status_and_message_routes():
 def test_registration_is_idempotent():
     app = build_app()
     register_mission_control_chat(app)
-    matching = [
-        path
-        for route in app.routes
-        if (path := getattr(route, "path", None))
-        == "/brain/mission-control/chat/status"
-    ]
-    assert matching == ["/brain/mission-control/chat/status"]
+    assert app.state.calyx_chat_registered is True
+
+    client = TestClient(app)
+    status = client.get("/brain/mission-control/chat/status")
+    assert status.status_code == 200
