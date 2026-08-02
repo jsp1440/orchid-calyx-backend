@@ -219,7 +219,9 @@ def compare_releases(
     )
 
 
-def promotion_plan(snapshot: WorldPlantsSnapshot, delta: ReleaseDelta) -> dict[str, Any]:
+def promotion_plan(
+    snapshot: WorldPlantsSnapshot, delta: ReleaseDelta
+) -> dict[str, Any]:
     """Return a non-executing, owner-gated promotion plan."""
     return {
         "snapshot": snapshot.as_dict(),
