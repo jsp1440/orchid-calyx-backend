@@ -1,0 +1,27 @@
+name: CALYX-RUNTIME-001H Live Activation Bridge
+
+on:
+  pull_request:
+    paths:
+      - "runtime/live_activation_bridge.py"
+      - "tests/test_calyx_runtime_001h_live_activation_bridge.py"
+      - ".github/workflows/calyx-runtime-001h-live-activation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff
+      - run: python -m ruff check runtime/live_activation_bridge.py tests/test_calyx_runtime_001h_live_activation_bridge.py
+      - run: python -m ruff format --check runtime/live_activation_bridge.py tests/test_calyx_runtime_001h_live_activation_bridge.py
+      - run: python -m pytest -q tests/test_calyx_runtime_001h_live_activation_bridge.py
+      - run: python -m compileall -q runtime/live_activation_bridge.py
+      - run: git diff --check
