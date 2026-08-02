@@ -6,7 +6,10 @@ from app.routers.calyx_runtime_controls import create_runtime_controls_router
 
 class FakeControls:
     def status(self):
-        return {"activation": {"authorized": False}, "safety": {"automatic_merge": False}}
+        return {
+            "activation": {"authorized": False},
+            "safety": {"automatic_merge": False},
+        }
 
     def pause(self, *, owner_approved):
         return {"paused": True, "owner_approved": owner_approved}
