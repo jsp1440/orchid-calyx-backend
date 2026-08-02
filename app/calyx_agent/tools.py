@@ -51,9 +51,11 @@ def _brain_readiness(_: dict[str, Any]) -> ToolResult:
             "deterministic_inference_families": 13,
             "reasoning_ledger": True,
             "controlled_publication_adapter": True,
+            "external_synthesis": True,
+            "durable_orchestrator": True,
             "operational_certification": "required",
         },
-        sources=("app/brain", "app/reasoning_ledger", "app/reasoning_publication"),
+        sources=("app/brain", "app/reasoning_ledger", "app/reasoning_publication", "app/calyx_orchestrator"),
         warnings=(() if configured else ("DATABASE_URL is not configured in this process.",)),
     )
 
@@ -67,9 +69,10 @@ def _mission_control_readiness(_: dict[str, Any]) -> ToolResult:
             "executive_telemetry": True,
             "harvester_telemetry": True,
             "release_readiness": True,
+            "orchestrator_telemetry": True,
             "mutations_automatic": False,
         },
-        sources=("app/executive_telemetry", "app/mission_control_release"),
+        sources=("app/executive_telemetry", "app/mission_control_release", "app/calyx_orchestrator"),
     )
 
 
@@ -83,22 +86,27 @@ def _build_inventory(_: dict[str, Any]) -> ToolResult:
                 "deterministic_inference",
                 "reasoning_ledger",
                 "controlled_publication",
+                "external_synthesis",
+                "durable_orchestrator",
+                "design_intelligence",
+                "educational_design_intelligence",
             ],
             "priority_gaps": [
                 "end_to_end_brain_certification",
-                "agent_provider_configuration",
-                "durable_agent_session_store",
+                "preproduction_orchestrator_activation",
+                "university_course_runtime_integration",
+                "design_to_frontend_approval_workflow",
                 "post_publication_lifecycle",
-                "mission_control_agent_telemetry",
             ],
             "parallelizable": [
                 "frontend_calyx_workspace",
                 "brain_certification",
-                "agent_durable_persistence",
+                "education_runtime_integration",
+                "website_design_audits",
             ],
         },
         sources=("docs/architecture", "registered runtime modules"),
-        warnings=("This initial inventory is code-declared; repository adapter expansion is pending.",),
+        warnings=("Repository-wide dynamic inventory expansion remains pending.",),
     )
 
 
@@ -117,11 +125,7 @@ def _journalism_readiness(_: dict[str, Any]) -> ToolResult:
             "external_model_generation": False,
         },
         sources=("app/calyx_journalism", "app/calyx_journalism/persistence.py"),
-        warnings=(
-            ()
-            if configured
-            else ("No PostgreSQL configuration is visible in this process; SQLite fallback may be used.",)
-        ),
+        warnings=(() if configured else ("No PostgreSQL configuration is visible in this process.",)),
     )
 
 
@@ -142,11 +146,7 @@ def _archive_readiness(_: dict[str, Any]) -> ToolResult:
             "automatic_publication": False,
         },
         sources=("app/institutional_archive", "app/archive", "app/document_ingestion"),
-        warnings=(
-            ()
-            if available
-            else ("No canonical archive runtime module was discoverable in this process.",)
-        ),
+        warnings=(() if available else ("No canonical archive runtime module was discoverable.",)),
     )
 
 
@@ -168,68 +168,87 @@ def _harvester_readiness(_: dict[str, Any]) -> ToolResult:
             "automatic_source_mutation": False,
         },
         sources=("app/harvest", "app/harvester", "app/harvesters", "app/runtime/connectors"),
-        warnings=(
-            ()
-            if available
-            else ("No canonical harvester or connector runtime module was discoverable in this process.",)
-        ),
+        warnings=(() if available else ("No canonical harvester runtime module was discoverable.",)),
+    )
+
+
+def _design_readiness(_: dict[str, Any]) -> ToolResult:
+    available = _module_available("app.design_intelligence")
+    configured = bool(os.getenv("DATABASE_URL") or os.getenv("PGHOST"))
+    return ToolResult(
+        tool_id="design_intelligence.readiness",
+        status="ready" if available and configured else "available" if available else "degraded",
+        data={
+            "runtime_available": available,
+            "database_configured": configured,
+            "corpus_search": True,
+            "semantic_reasoning_search": True,
+            "ux_ui": True,
+            "accessibility": True,
+            "information_architecture": True,
+            "scientific_visualization": True,
+            "automatic_frontend_mutation": False,
+        },
+        sources=("app/design_intelligence", "docs/BUILD-089A-DESIGN-INTELLIGENCE-CORPUS.md"),
+        warnings=(() if available else ("Design Intelligence runtime is not importable.",)),
+    )
+
+
+def _design_search(payload: dict[str, Any]) -> ToolResult:
+    query = str(payload.get("query") or "").strip()
+    if not query:
+        raise ValueError("DESIGN_QUERY_REQUIRED")
+    from app.design_intelligence.routes import REASONING_SERVICE
+
+    result = REASONING_SERVICE.search(query, limit=min(int(payload.get("limit", 10)), 25))
+    return ToolResult(
+        tool_id="design_intelligence.search",
+        status="completed",
+        data=result,
+        sources=("app/design_intelligence/reasoning.py",),
+        warnings=("Results are advisory; website changes require owner approval.",),
+    )
+
+
+def _education_readiness(_: dict[str, Any]) -> ToolResult:
+    from app.design_intelligence.knowledge import EducationalClassification
+
+    classifications = [item.value for item in EducationalClassification]
+    return ToolResult(
+        tool_id="education.readiness",
+        status="partial",
+        data={
+            "educational_design_classifications": classifications,
+            "learning_sciences_indexing": True,
+            "curriculum_runtime": False,
+            "course_persistence": False,
+            "assessment_engine": False,
+            "student_progress": False,
+            "virtual_lab_runtime": False,
+            "recommendation_preparation": True,
+            "automatic_course_publication": False,
+        },
+        sources=("app/design_intelligence/knowledge.py", "app/design_intelligence/reasoning.py"),
+        warnings=("Educational design intelligence exists, but the complete University runtime is not integrated.",),
     )
 
 
 def default_tool_registry() -> AgentToolRegistry:
     registry = AgentToolRegistry()
-    registry.register(
-        ToolDescriptor(
-            "brain.readiness",
-            "Brain readiness",
-            ActionClass.READ_ONLY,
-            "Inspect Knowledge Graph, inference, ledger, and publication readiness.",
-        ),
-        _brain_readiness,
+    registrations = (
+        ("brain.readiness", "Brain readiness", "Inspect Knowledge Graph, inference, ledger, publication, and orchestration readiness.", _brain_readiness),
+        ("mission_control.readiness", "Mission Control readiness", "Inspect operational telemetry and governance availability.", _mission_control_readiness),
+        ("continuum.build_inventory", "Continuum build inventory", "Return the canonical build map and priority gaps.", _build_inventory),
+        ("journalism.readiness", "Calyx journalism readiness", "Inspect durable evidence and article-generation boundaries.", _journalism_readiness),
+        ("archive.readiness", "Institutional archive readiness", "Inspect archive runtime and provenance boundaries.", _archive_readiness),
+        ("harvester.readiness", "Harvester readiness", "Inspect harvester and connector runtime availability.", _harvester_readiness),
+        ("design_intelligence.readiness", "Design Intelligence readiness", "Inspect website design, UX, accessibility, and visualization intelligence.", _design_readiness),
+        ("design_intelligence.search", "Design Intelligence search", "Search existing design and educational-design knowledge with provenance.", _design_search),
+        ("education.readiness", "Education readiness", "Inspect educational-design knowledge and University runtime gaps.", _education_readiness),
     )
-    registry.register(
-        ToolDescriptor(
-            "mission_control.readiness",
-            "Mission Control readiness",
-            ActionClass.READ_ONLY,
-            "Inspect operational telemetry and governance availability.",
-        ),
-        _mission_control_readiness,
-    )
-    registry.register(
-        ToolDescriptor(
-            "continuum.build_inventory",
-            "Continuum build inventory",
-            ActionClass.READ_ONLY,
-            "Return the current canonical build map and priority gaps.",
-        ),
-        _build_inventory,
-    )
-    registry.register(
-        ToolDescriptor(
-            "journalism.readiness",
-            "Calyx journalism readiness",
-            ActionClass.READ_ONLY,
-            "Inspect durable evidence, article generation, export, and publication boundaries.",
-        ),
-        _journalism_readiness,
-    )
-    registry.register(
-        ToolDescriptor(
-            "archive.readiness",
-            "Institutional archive readiness",
-            ActionClass.READ_ONLY,
-            "Inspect archive runtime availability, persistence configuration, and provenance boundaries.",
-        ),
-        _archive_readiness,
-    )
-    registry.register(
-        ToolDescriptor(
-            "harvester.readiness",
-            "Harvester readiness",
-            ActionClass.READ_ONLY,
-            "Inspect harvester and connector runtime availability and telemetry boundaries.",
-        ),
-        _harvester_readiness,
-    )
+    for tool_id, title, description, handler in registrations:
+        registry.register(
+            ToolDescriptor(tool_id, title, ActionClass.READ_ONLY, description),
+            handler,
+        )
     return registry

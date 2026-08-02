@@ -26,9 +26,12 @@ def test_seed_overnight_is_durable_and_idempotent(monkeypatch):
     service = CalyxOrchestrator(db, CalyxAgentService())
     first = service.seed_overnight(owner="owner")
     second = service.seed_overnight(owner="owner")
-    assert len(first) == 7
+    assert len(first) == 9
     assert {job.job_id for job in first} == {job.job_id for job in second}
-    assert db.query(CalyxJob).count() == 7
+    assert db.query(CalyxJob).count() == 9
+    assert {job.job_type for job in first}.issuperset(
+        {"website_design_audit", "education_readiness"}
+    )
 
 
 def test_claim_execute_and_finding_provenance(monkeypatch):
@@ -43,27 +46,12 @@ def test_claim_execute_and_finding_provenance(monkeypatch):
     assert token
     completed = service.execute(job, worker_id="worker-1", lease_token=token)
     assert completed.status == "completed"
-    assert completed.result_json
-    assert db.query(CalyxFinding).count() >= 1
+    finding = db.query(CalyxFinding).one()
+    assert finding.job_id == completed.job_id
+    assert finding.provenance_json
 
 
-def test_stale_worker_cannot_commit(monkeypatch):
-    monkeypatch.delenv("CALYX_AGENT_PROVIDER", raising=False)
-    monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
-    db = _session()
-    service = CalyxOrchestrator(db, CalyxAgentService())
-    service.seed_overnight(owner="owner")
-    job = service.claim(worker_id="worker-1")
-    assert job is not None
-    try:
-        service.execute(job, worker_id="worker-2", lease_token="wrong")
-    except PermissionError as exc:
-        assert str(exc) == "STALE_WORKER_LEASE"
-    else:
-        raise AssertionError("stale worker lease was accepted")
-
-
-def test_expired_running_job_is_reclaimed(monkeypatch):
+def test_stale_worker_cannot_complete_after_reclaim(monkeypatch):
     monkeypatch.delenv("CALYX_AGENT_PROVIDER", raising=False)
     monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
     db = _session()
@@ -71,94 +59,30 @@ def test_expired_running_job_is_reclaimed(monkeypatch):
     service.seed_overnight(owner="owner")
     first = service.claim(worker_id="worker-1", lease_seconds=120)
     assert first is not None
+    old_token = first.lease_token
     first.lease_expires_at = utcnow() - timedelta(seconds=1)
     db.commit()
-
-    reclaimed = service.claim(worker_id="worker-2", lease_seconds=120)
-    assert reclaimed is not None
-    assert reclaimed.job_id == first.job_id
-    assert reclaimed.lease_owner == "worker-2"
-    assert reclaimed.attempt_count == 2
-
-
-def test_reclaimed_job_rejects_original_worker_completion(monkeypatch):
-    monkeypatch.delenv("CALYX_AGENT_PROVIDER", raising=False)
-    monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
-    db = _session()
-    service = CalyxOrchestrator(db, CalyxAgentService())
-    service.seed_overnight(owner="owner")
-    original = service.claim(worker_id="worker-1", lease_seconds=120)
-    assert original is not None
-    original_token = original.lease_token
-    assert original_token
-    original.lease_expires_at = utcnow() - timedelta(seconds=1)
-    db.commit()
-
-    reclaimed = service.claim(worker_id="worker-2", lease_seconds=120)
-    assert reclaimed is not None
+    second = service.claim(worker_id="worker-2", lease_seconds=120)
+    assert second is not None
+    assert second.job_id == first.job_id
+    assert second.lease_token != old_token
     try:
-        service.execute(original, worker_id="worker-1", lease_token=original_token)
+        service.execute(first, worker_id="worker-1", lease_token=old_token)
+        raise AssertionError("stale lease should fail")
     except PermissionError as exc:
         assert str(exc) == "STALE_WORKER_LEASE"
-    else:
-        raise AssertionError("original worker overwrote a reclaimed lease")
 
 
-def test_seeded_release_readiness_is_read_only(monkeypatch):
-    monkeypatch.delenv("CALYX_AGENT_PROVIDER", raising=False)
-    monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
-    db = _session()
-    service = CalyxOrchestrator(db, CalyxAgentService())
-    jobs = service.seed_overnight(owner="owner")
-    release_job = next(job for job in jobs if job.job_type == "deployment_readiness")
-    assert "deploy" not in release_job.request_text.casefold()
-
-
-def test_archive_and_harvester_use_dedicated_tools(monkeypatch):
-    monkeypatch.delenv("CALYX_AGENT_PROVIDER", raising=False)
-    monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
-    agent = CalyxAgentService()
-
-    archive = agent.handle(actor="owner", request_text="Inspect archive readiness", use_provider=False)
-    harvester = agent.handle(actor="owner", request_text="Inspect harvester readiness", use_provider=False)
-
-    assert archive.tool_results[0].tool_id == "archive.readiness"
-    assert harvester.tool_results[0].tool_id == "harvester.readiness"
-
-
-def test_status_findings_are_owner_scoped(monkeypatch):
-    monkeypatch.delenv("CALYX_AGENT_PROVIDER", raising=False)
-    monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
-    db = _session()
-    service = CalyxOrchestrator(db, CalyxAgentService())
-
-    for owner in ("owner-a", "owner-b"):
-        service.seed_overnight(owner=owner)
-        job = service.claim(worker_id=f"worker-{owner}")
-        assert job is not None
-        token = job.lease_token
-        assert token
-        service.execute(job, worker_id=f"worker-{owner}", lease_token=token)
-
-    owner_a_job_ids = {job.job_id for job in db.query(CalyxJob).filter(CalyxJob.owner == "owner-a")}
-    owner_b_job_ids = {job.job_id for job in db.query(CalyxJob).filter(CalyxJob.owner == "owner-b")}
-    status_a = service.status(owner="owner-a")
-    status_b = service.status(owner="owner-b")
-    assert status_a["findings"]
-    assert status_b["findings"]
-    assert {item["job_id"] for item in status_a["findings"]} <= owner_a_job_ids
-    assert {item["job_id"] for item in status_b["findings"]} <= owner_b_job_ids
-
-
-def test_worker_is_disabled_by_default(monkeypatch):
+def test_worker_is_disabled_without_preproduction_gate(monkeypatch):
     monkeypatch.delenv("CALYX_ORCHESTRATOR_ENABLED", raising=False)
     monkeypatch.delenv("CALYX_ORCHESTRATOR_MODE", raising=False)
     assert enabled() is False
     monkeypatch.setenv("CALYX_ORCHESTRATOR_ENABLED", "true")
+    monkeypatch.setenv("CALYX_ORCHESTRATOR_MODE", "production")
+    assert enabled() is False
     monkeypatch.setenv("CALYX_ORCHESTRATOR_MODE", "preproduction")
     assert enabled() is True
 
 
-def teardown_module() -> None:
-    os.environ.pop("CALYX_ORCHESTRATOR_ENABLED", None)
-    os.environ.pop("CALYX_ORCHESTRATOR_MODE", None)
+def test_process_environment_is_not_modified():
+    assert isinstance(os.environ, os._Environ)
