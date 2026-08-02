@@ -3,7 +3,9 @@ from __future__ import annotations
 import re
 from uuid import uuid4
 
-from .models import ActionClass, AgentResponse, AgentStep, RequestIntent
+from psycopg import Error as PsycopgError
+
+from .models import ActionClass, AgentResponse, AgentStep, RequestIntent, ToolResult
 from .policy import approval_reason, classify_intent, required_action_class
 from .providers import (
     AgentProvider,
@@ -86,7 +88,19 @@ class CalyxAgentService:
             step_id = f"inspect-{index}"
             response.steps.append(AgentStep(step_id=step_id, title=f"Inspect {tool_id.replace('.', ' ')}", tool_id=tool_id, action_class=ActionClass.READ_ONLY, rationale="Collect current Continuum evidence before proposing work.", dependencies=((previous,) if previous else ()), status="completed"))
             payload = {"query": text, "limit": 10} if tool_id == "design_intelligence.search" else None
-            response.tool_results.append(self.registry.execute(tool_id, payload))
+            try:
+                result = self.registry.execute(tool_id, payload)
+            except PsycopgError:
+                if tool_id != "design_intelligence.search":
+                    raise
+                result = ToolResult(
+                    tool_id=tool_id,
+                    status="degraded",
+                    data={"query": text, "total": 0, "results": [], "store_status": "unavailable"},
+                    sources=("app/design_intelligence/reasoning.py",),
+                    warnings=("The configured Design Intelligence store could not be reached; no corpus results were returned.",),
+                )
+            response.tool_results.append(result)
             previous = step_id
         if intent in {RequestIntent.PLAN_BUILD, RequestIntent.MONITOR} or self._is_journalism_request(text) or self._is_design_request(text) or self._is_education_request(text):
             response.steps.append(AgentStep(step_id="prepare-1", title=self._preparation_title(text), tool_id=None, action_class=ActionClass.PREPARE_ONLY, rationale=self._preparation_rationale(text), dependencies=((previous,) if previous else ()), status="planned"))
