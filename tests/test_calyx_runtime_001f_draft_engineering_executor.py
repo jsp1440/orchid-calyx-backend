@@ -39,7 +39,9 @@ def test_plan_is_bounded_draft_only_and_prohibits_merge_and_deploy():
 def test_changed_paths_must_remain_inside_approved_scope():
     executor = GovernedDraftEngineeringExecutor()
     plan = executor.plan(approved_task())
-    executor.validate_changed_paths(plan, ("runtime/example.py", "tests/test_example.py"))
+    executor.validate_changed_paths(
+        plan, ("runtime/example.py", "tests/test_example.py")
+    )
     with pytest.raises(PermissionError):
         executor.validate_changed_paths(plan, ("render.yaml",))
 
