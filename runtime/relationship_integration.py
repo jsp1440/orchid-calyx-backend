@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import Any, Iterable
+from typing import Any
 
 AUDIT_TARGET_DOMAINS = (
     "images",
@@ -31,7 +32,7 @@ class RelationshipLink:
     provenance: dict[str, Any] | None = None
     validation_status: str = "provisional"
 
-    def validated(self) -> "RelationshipLink":
+    def validated(self) -> RelationshipLink:
         if not self.source_domain or not self.target_domain:
             raise ValueError("source_domain and target_domain are required")
         if not self.source_record_id or not self.target_record_id:
