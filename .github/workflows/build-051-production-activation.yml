@@ -1,0 +1,36 @@
+name: BUILD-051 Production Activation
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_migration:
+        description: "Apply BUILD-051 migration before smoke tests"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  migrate-and-smoke:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PostgreSQL client
+        if: ${{ inputs.apply_migration }}
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply BUILD-051 migration and database smoke test
+        if: ${{ inputs.apply_migration }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: bash scripts/apply_build_051.sh
+      - name: Smoke-test deployed owner backend
+        env:
+          CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+          CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
+        run: python scripts/smoke_owner_backend.py
