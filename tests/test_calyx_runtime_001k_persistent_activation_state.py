@@ -50,7 +50,9 @@ def test_authorized_cycle_records_last_result():
     store = MemoryStore()
     controller = PersistentActivationController(store)
     controller.save(ActivationState(enabled=True, owner_approved=True, paused=False))
-    updated = controller.record_cycle("draft-pr-created", occurred_at="2026-08-02T06:40:00Z")
+    updated = controller.record_cycle(
+        "draft-pr-created", occurred_at="2026-08-02T06:40:00Z"
+    )
     assert updated.last_cycle_at == "2026-08-02T06:40:00Z"
     assert updated.last_result == "draft-pr-created"
 
