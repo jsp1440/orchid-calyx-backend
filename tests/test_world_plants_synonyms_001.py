@@ -1,5 +1,8 @@
 from runtime.world_plants_ingest import WorldPlantsRow
-from runtime.world_plants_synonyms import parse_release_synonyms, parse_synonym_assertions
+from runtime.world_plants_synonyms import (
+    parse_release_synonyms,
+    parse_synonym_assertions,
+)
 
 
 def row(raw: str, name: str = "Accepted species") -> WorldPlantsRow:
@@ -25,7 +28,9 @@ def test_multiple_assertions_and_citations_are_preserved():
 def test_duplicate_assertions_are_flagged_and_not_duplicated():
     result = parse_synonym_assertions(row("= Same synonym = Same synonym"))
     assert len(result.assertions) == 1
-    assert any(issue["reason"] == "duplicate_synonym_assertion" for issue in result.issues)
+    assert any(
+        issue["reason"] == "duplicate_synonym_assertion" for issue in result.issues
+    )
 
 
 def test_self_synonym_is_flagged_for_review():
