@@ -49,8 +49,9 @@ def test_cycle_creates_branch_and_draft_pr_once():
             "pytest": True,
             "diff_check": True,
         },
-        connector_executor=lambda command: calls.append(command.operation)
-        or {"operation": command.operation},
+        connector_executor=lambda command: (
+            calls.append(command.operation) or {"operation": command.operation}
+        ),
     )
     assert result.executed is True
     assert calls == ["create_branch", "create_draft_pull_request"]
