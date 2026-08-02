@@ -1,0 +1,24 @@
+name: AUDIT-TAXONOMY-IMAGE-001
+
+on:
+  pull_request:
+    paths:
+      - runtime/taxonomy_image_population.py
+      - tests/test_audit_taxonomy_image_population_001.py
+      - migrations/AUDIT-TAXONOMY-IMAGE-001-source-contract.sql
+      - .github/workflows/audit-taxonomy-image-population-001.yml
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff
+      - run: python -m ruff check runtime/taxonomy_image_population.py tests/test_audit_taxonomy_image_population_001.py
+      - run: python -m ruff format --check runtime/taxonomy_image_population.py tests/test_audit_taxonomy_image_population_001.py
+      - run: python -m pytest -q tests/test_audit_taxonomy_image_population_001.py
+      - run: python -m compileall -q runtime/taxonomy_image_population.py
+      - run: git diff --check
