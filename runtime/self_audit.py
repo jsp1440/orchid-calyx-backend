@@ -7,9 +7,10 @@ change governance.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any, Iterable
+from typing import Any, ClassVar
 
 SEVERITIES = {"info": 10, "low": 25, "medium": 50, "high": 75, "critical": 100}
 PROHIBITED_AUTONOMOUS_ACTIONS = {
@@ -70,7 +71,14 @@ class AuditReport:
 class SelfAuditEngine:
     """Convert trusted runtime signals into prioritized, reviewable findings."""
 
-    unhealthy_statuses = {"failed", "error", "blocked", "stale", "degraded", "missing"}
+    unhealthy_statuses: ClassVar[set[str]] = {
+        "failed",
+        "error",
+        "blocked",
+        "stale",
+        "degraded",
+        "missing",
+    }
 
     def audit(self, signals: Iterable[AuditSignal]) -> AuditReport:
         normalized = tuple(signals)
