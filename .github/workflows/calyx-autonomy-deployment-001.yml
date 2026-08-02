@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install -r requirements.txt pytest ruff
+      - run: python -m pip install -r requirements.txt pytest ruff httpx
       - run: python -m ruff check app/routers/live_mission_control.py runtime/json_activation_store.py tests/test_calyx_autonomy_deployment_001.py
       - run: python -m ruff format --check app/routers/live_mission_control.py runtime/json_activation_store.py tests/test_calyx_autonomy_deployment_001.py
       - run: python -m pytest -q tests/test_calyx_autonomy_deployment_001.py
