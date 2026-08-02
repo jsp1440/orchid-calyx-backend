@@ -50,9 +50,9 @@ def create_taxonomy_release_router(
     @router.post("/inspect")
     async def inspect_release(
         file: UploadFile = File(...),  # noqa: B008
-        version_label: str = Form(...),  # noqa: B008
-        acquired_at: str = Form(...),  # noqa: B008
-        notes: str | None = Form(default=None),  # noqa: B008
+        version_label: str = Form(...),
+        acquired_at: str = Form(...),
+        notes: str | None = Form(default=None),
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
         payload = await file.read()
