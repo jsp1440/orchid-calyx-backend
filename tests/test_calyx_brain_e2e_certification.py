@@ -19,13 +19,16 @@ CANONICAL_MIGRATIONS = (
 
 def test_canonical_migration_chain_is_complete_and_ordered():
     migrations = [MIGRATIONS / name for name in CANONICAL_MIGRATIONS]
+    private_key_markers = (
+        "BEGIN " + "RSA PRIVATE KEY",
+        "OPENSSH " + "PRIVATE KEY",
+    )
 
     for path in migrations:
         assert path.is_file(), f"missing canonical migration: {path.name}"
         sql = path.read_text(encoding="utf-8")
         assert sql.strip(), f"empty migration: {path.name}"
-        assert "BEGIN RSA PRIVATE KEY" not in sql
-        assert "OPENSSH PRIVATE KEY" not in sql
+        assert all(marker not in sql for marker in private_key_markers)
 
     assert tuple(path.name for path in migrations) == CANONICAL_MIGRATIONS
     assert len(set(CANONICAL_MIGRATIONS)) == len(CANONICAL_MIGRATIONS)
