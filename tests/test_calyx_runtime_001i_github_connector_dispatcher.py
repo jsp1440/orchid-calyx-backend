@@ -1,10 +1,8 @@
 import pytest
-
 from runtime.github_connector_dispatcher import (
     AuditedGitHubDispatcher,
     GitHubDispatchCommand,
 )
-
 
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 
