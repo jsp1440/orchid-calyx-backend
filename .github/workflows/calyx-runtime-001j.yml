@@ -1,0 +1,23 @@
+name: CALYX-RUNTIME-001J Continuous Governed Cycle
+
+on:
+  pull_request:
+    paths:
+      - "runtime/continuous_governed_cycle.py"
+      - "tests/test_calyx_runtime_001j_continuous_governed_cycle.py"
+      - ".github/workflows/calyx-runtime-001j.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff
+      - run: python -m ruff check runtime/continuous_governed_cycle.py tests/test_calyx_runtime_001j_continuous_governed_cycle.py
+      - run: python -m ruff format --check runtime/continuous_governed_cycle.py tests/test_calyx_runtime_001j_continuous_governed_cycle.py
+      - run: python -m pytest -q tests/test_calyx_runtime_001j_continuous_governed_cycle.py
+      - run: python -m compileall -q runtime/continuous_governed_cycle.py
+      - run: git diff --check
