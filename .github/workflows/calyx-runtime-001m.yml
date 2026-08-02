@@ -1,0 +1,23 @@
+name: CALYX-RUNTIME-001M Mission Control Runtime Controls
+
+on:
+  pull_request:
+    paths:
+      - "runtime/runtime_operator_controls.py"
+      - "tests/test_calyx_runtime_001m_mission_control_controls.py"
+      - ".github/workflows/calyx-runtime-001m.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff
+      - run: python -m ruff check runtime/runtime_operator_controls.py tests/test_calyx_runtime_001m_mission_control_controls.py
+      - run: python -m ruff format --check runtime/runtime_operator_controls.py tests/test_calyx_runtime_001m_mission_control_controls.py
+      - run: python -m pytest -q tests/test_calyx_runtime_001m_mission_control_controls.py
+      - run: python -m compileall -q runtime/runtime_operator_controls.py
+      - run: git diff --check
