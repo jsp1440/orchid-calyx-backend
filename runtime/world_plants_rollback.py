@@ -120,9 +120,7 @@ def rehearse_promotion_and_rollback(
     historical_releases_preserved = set(state["releases"]) == set(baseline["releases"])
     row_counts_restored = {
         key: value.get("row_count") for key, value in state["releases"].items()
-    } == {
-        key: value.get("row_count") for key, value in baseline["releases"].items()
-    }
+    } == {key: value.get("row_count") for key, value in baseline["releases"].items()}
     crosswalk_counts_restored = {
         key: value.get("crosswalk_count") for key, value in state["releases"].items()
     } == {
