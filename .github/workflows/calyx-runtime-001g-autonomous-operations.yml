@@ -1,0 +1,44 @@
+name: CALYX-RUNTIME-001G Autonomous Operations Certification
+
+on:
+  pull_request:
+    paths:
+      - "runtime/self_audit.py"
+      - "runtime/self_audit_queue_bridge.py"
+      - "runtime/reactive_scheduler.py"
+      - "runtime/draft_engineering_executor.py"
+      - "tests/test_calyx_runtime_001g_autonomous_operations.py"
+      - ".github/workflows/calyx-runtime-001g-autonomous-operations.yml"
+  workflow_dispatch:
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff
+      - run: |
+          python -m ruff check \
+            runtime/self_audit.py \
+            runtime/self_audit_queue_bridge.py \
+            runtime/reactive_scheduler.py \
+            runtime/draft_engineering_executor.py \
+            tests/test_calyx_runtime_001g_autonomous_operations.py
+      - run: |
+          python -m ruff format --check \
+            runtime/self_audit.py \
+            runtime/self_audit_queue_bridge.py \
+            runtime/reactive_scheduler.py \
+            runtime/draft_engineering_executor.py \
+            tests/test_calyx_runtime_001g_autonomous_operations.py
+      - run: python -m pytest -q tests/test_calyx_runtime_001g_autonomous_operations.py
+      - run: |
+          python -m compileall -q \
+            runtime/self_audit.py \
+            runtime/self_audit_queue_bridge.py \
+            runtime/reactive_scheduler.py \
+            runtime/draft_engineering_executor.py
+      - run: git diff --check
