@@ -10,25 +10,33 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.security import verify_owner_or_api_key
+from runtime.world_plants_readiness_api import build_taxonomy_readiness_report
 from runtime.world_plants_release_store import WorldPlantsReleaseStore
 
 
+def _intake_root() -> Path:
+    return Path(os.getenv("CALYX_TAXONOMY_INTAKE_DIR", "/tmp/calyx/taxonomy-releases"))
+
+
 def _default_store() -> WorldPlantsReleaseStore:
-    root = Path(os.getenv("CALYX_TAXONOMY_INTAKE_DIR", "/tmp/calyx/taxonomy-releases"))
     limit = int(os.getenv("CALYX_TAXONOMY_MAX_UPLOAD_BYTES", "75000000"))
-    return WorldPlantsReleaseStore(root, max_upload_bytes=limit)
+    return WorldPlantsReleaseStore(_intake_root(), max_upload_bytes=limit)
 
 
 def create_taxonomy_release_router(
     get_store: Callable[[], WorldPlantsReleaseStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
 ) -> APIRouter:
-    router = APIRouter(
-        prefix="/api/mission-control/taxonomy/releases",
-        tags=["taxonomy-releases"],
-    )
+    router = APIRouter(tags=["taxonomy-releases"])
+    releases = APIRouter(prefix="/api/mission-control/taxonomy/releases")
 
-    @router.get("")
+    @router.get("/api/mission-control/taxonomy/readiness")
+    def taxonomy_readiness(
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        return build_taxonomy_readiness_report(intake_root=_intake_root())
+
+    @releases.get("")
     def list_releases(
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
@@ -37,7 +45,7 @@ def create_taxonomy_release_router(
             "automatic_promotion": False,
         }
 
-    @router.get("/{release_id}")
+    @releases.get("/{release_id}")
     def get_release(
         release_id: str,
         _: Any = Depends(require_owner),  # noqa: B008
@@ -47,7 +55,7 @@ def create_taxonomy_release_router(
             raise HTTPException(status_code=404, detail="taxonomy release not found")
         return report
 
-    @router.post("/inspect")
+    @releases.post("/inspect")
     async def inspect_release(
         file: UploadFile = File(...),  # noqa: B008
         version_label: str = Form(...),
@@ -67,6 +75,7 @@ def create_taxonomy_release_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    router.include_router(releases)
     return router
 
 
