@@ -10,6 +10,7 @@ from app.routers.mission_control import router as mission_control_router
 from app.routers.owner_operations import router as owner_operations_router
 from app.routers.owner_session_token import router as owner_session_token_router
 from app.routers.scientific_intelligence import router as scientific_intelligence_router
+from app.routers.taxonomy_releases import router as taxonomy_releases_router
 from runtime.connector_routes import router as connector_router
 from runtime.router_fastapi import config_router, infrastructure_router
 
@@ -122,6 +123,7 @@ router.include_router(mission_control_router, dependencies=[Depends(add_mission_
 router.include_router(owner_operations_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(owner_session_token_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(live_mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(taxonomy_releases_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(executive_telemetry_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(executive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(scientific_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
