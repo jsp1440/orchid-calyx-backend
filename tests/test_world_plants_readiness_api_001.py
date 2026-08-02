@@ -3,7 +3,9 @@ from pathlib import Path
 from runtime.world_plants_readiness_api import build_taxonomy_readiness_report
 
 
-def test_readiness_fails_closed_without_deployment_confirmations(tmp_path: Path, monkeypatch):
+def test_readiness_fails_closed_without_deployment_confirmations(
+    tmp_path: Path, monkeypatch
+):
     monkeypatch.delenv("CALYX_TAXONOMY_STORAGE_PERSISTENT", raising=False)
     monkeypatch.delenv("CALYX_TAXONOMY_STAGING_SCHEMA_VERIFIED", raising=False)
     monkeypatch.delenv("CALYX_TAXONOMY_SMOKE_FIXTURE_VERIFIED", raising=False)
@@ -20,7 +22,9 @@ def test_readiness_fails_closed_without_deployment_confirmations(tmp_path: Path,
     assert statuses["rollback_certification"] == "passed"
 
 
-def test_readiness_passes_upload_gates_with_verified_environment(tmp_path: Path, monkeypatch):
+def test_readiness_passes_upload_gates_with_verified_environment(
+    tmp_path: Path, monkeypatch
+):
     monkeypatch.setenv("CALYX_TAXONOMY_STORAGE_PERSISTENT", "true")
     monkeypatch.setenv("CALYX_TAXONOMY_STAGING_SCHEMA_VERIFIED", "true")
     monkeypatch.setenv("CALYX_TAXONOMY_SMOKE_FIXTURE_VERIFIED", "true")
