@@ -122,7 +122,9 @@ def build_taxonomy_readiness_report(*, intake_root: Path) -> dict[str, Any]:
             "No owner promotion approval has been recorded.",
         ),
     )
-    upload_gates = tuple(gate for gate in gates if gate.name != "owner_promotion_approval")
+    upload_gates = tuple(
+        gate for gate in gates if gate.name != "owner_promotion_approval"
+    )
     ready_for_upload = all(gate.status == "passed" for gate in upload_gates)
     return {
         "ready_for_upload": ready_for_upload,
