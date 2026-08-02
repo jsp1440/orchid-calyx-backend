@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from runtime.world_plants_delta import CrosswalkCandidate
 
@@ -83,7 +84,9 @@ def audit_downstream_impact(
 
     for candidate in candidates:
         supplied = counts_by_previous_row.get(candidate.previous_row, {})
-        domain_counts = {domain: max(0, int(supplied.get(domain, 0))) for domain in DOMAINS}
+        domain_counts = {
+            domain: max(0, int(supplied.get(domain, 0))) for domain in DOMAINS
+        }
         total = sum(domain_counts.values())
         risk_level, blockers = _risk(candidate, total)
         if blockers:
