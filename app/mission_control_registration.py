@@ -12,6 +12,6 @@ def register_mission_control_chat(app: FastAPI) -> None:
         return
     app.include_router(calyx_operator_chat_router)
     app.state.calyx_chat_registered = True
-    assert any(
-        getattr(route, "path", None) == status_path for route in app.routes
-    ), "Mission Control chat status route was not registered"
+    assert any(getattr(route, "path", None) == status_path for route in app.routes), (
+        "Mission Control chat status route was not registered"
+    )
