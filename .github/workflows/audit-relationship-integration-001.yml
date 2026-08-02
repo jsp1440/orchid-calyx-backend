@@ -1,0 +1,24 @@
+name: AUDIT-RELATIONSHIP-INTEGRATION-001
+
+on:
+  pull_request:
+    paths:
+      - "runtime/relationship_integration.py"
+      - "tests/test_audit_relationship_integration_001.py"
+      - "migrations/AUDIT-RELATIONSHIP-INTEGRATION-001.sql"
+      - ".github/workflows/audit-relationship-integration-001.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff
+      - run: python -m ruff check runtime/relationship_integration.py tests/test_audit_relationship_integration_001.py
+      - run: python -m ruff format --check runtime/relationship_integration.py tests/test_audit_relationship_integration_001.py
+      - run: python -m pytest -q tests/test_audit_relationship_integration_001.py
+      - run: python -m compileall -q runtime/relationship_integration.py
+      - run: git diff --check
