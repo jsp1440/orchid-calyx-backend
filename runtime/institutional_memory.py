@@ -143,5 +143,7 @@ class InstitutionalMemoryRegistry:
         evidence: tuple[MemoryEvidence, ...],
     ) -> str:
         source_ids = "|".join(sorted(item.source_id for item in evidence))
-        payload = f"{category.strip().lower()}|{title.strip()}|{occurred_at}|{source_ids}"
+        payload = (
+            f"{category.strip().lower()}|{title.strip()}|{occurred_at}|{source_ids}"
+        )
         return f"mem-{sha256(payload.encode('utf-8')).hexdigest()[:20]}"
