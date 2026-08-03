@@ -1,4 +1,7 @@
-from app.parallel_platform.homepage_intelligence import HomepageSection, build_homepage_document
+from app.parallel_platform.homepage_intelligence import (
+    HomepageSection,
+    build_homepage_document,
+)
 
 
 def test_homepage_fills_missing_sections_with_unavailable_not_empty_data():
