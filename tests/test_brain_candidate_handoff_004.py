@@ -1,3 +1,5 @@
+from app.candidate_knowledge.repository import MemoryCandidateRepository
+from app.candidate_knowledge.service import CandidateExtractionService
 from app.parallel_platform.brain_candidate_handoff import (
     BrainCandidateHandoffRequest,
     handoff_brain_candidate,
@@ -29,7 +31,9 @@ def request_payload(reasoning_id: str = "reasoning:test-1") -> BrainCandidateHan
 
 
 def test_brain_handoff_creates_review_required_unpublished_candidate():
-    result = handoff_brain_candidate(request_payload())
+    repository = MemoryCandidateRepository()
+    service = CandidateExtractionService(repository)
+    result = handoff_brain_candidate(request_payload(), (repository, service))
     assert result["state"] in {"COMPLETED", "PARTIAL"}
     assert result["candidate_ids"]
     assert result["review_required"] is True
