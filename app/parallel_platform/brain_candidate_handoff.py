@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.candidate_knowledge.dependencies import get_candidate_components
 from app.candidate_knowledge.models import CandidateKind, EvidenceInput, SourceAnchor
+from app.candidate_knowledge.repository import MemoryCandidateRepository
+from app.candidate_knowledge.service import CandidateExtractionService
 
 DOMAIN_KINDS: dict[str, CandidateKind] = {
     "taxonomy": CandidateKind.TAXON,
@@ -73,8 +75,11 @@ class BrainCandidateHandoffRequest(BaseModel):
             raise ValueError("CANDIDATE_VALUE_REQUIRED")
 
 
-def handoff_brain_candidate(payload: BrainCandidateHandoffRequest) -> dict[str, Any]:
-    repository, service = get_candidate_components()
+def handoff_brain_candidate(
+    payload: BrainCandidateHandoffRequest,
+    components: tuple[MemoryCandidateRepository, CandidateExtractionService] | None = None,
+) -> dict[str, Any]:
+    repository, service = components or get_candidate_components()
     kind = DOMAIN_KINDS[payload.domain]
     evidence = EvidenceInput(
         source_object_type=payload.source_object_type,
