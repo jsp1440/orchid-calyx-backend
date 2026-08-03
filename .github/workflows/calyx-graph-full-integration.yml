@@ -11,6 +11,8 @@ on:
       - 'tests/test_dynamic_source_projection.py'
       - 'tests/test_full_domain_code_readiness.py'
       - 'tests/test_unresolved_taxon_queue.py'
+      - 'tests/test_controlled_graph_dry_run.py'
+      - 'tests/test_post_publication_audit.py'
       - '.github/workflows/calyx-graph-full-integration.yml'
 
 jobs:
@@ -31,4 +33,6 @@ jobs:
           tests/test_dynamic_source_projection.py
           tests/test_full_domain_code_readiness.py
           tests/test_unresolved_taxon_queue.py
+          tests/test_controlled_graph_dry_run.py
+          tests/test_post_publication_audit.py
       - run: python -m compileall -q runtime/knowledge_graph app/routers/full_graph_integration.py
