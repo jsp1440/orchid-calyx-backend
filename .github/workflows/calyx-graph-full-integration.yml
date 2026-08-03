@@ -8,16 +8,19 @@ on:
       - 'app/routers/knowledge_graph.py'
       - 'tests/test_calyx_full_graph_integration.py'
       - 'tests/test_full_domain_adapters.py'
+      - 'tests/test_dynamic_source_projection.py'
       - '.github/workflows/calyx-graph-full-integration.yml'
 
 jobs:
   graph-integration-contract:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
       - run: pip install -r requirements.txt pytest
-      - run: pytest -q tests/test_calyx_full_graph_integration.py tests/test_full_domain_adapters.py
+      - run: pytest -q tests/test_calyx_full_graph_integration.py tests/test_full_domain_adapters.py tests/test_dynamic_source_projection.py
       - run: python -m compileall -q runtime/knowledge_graph app/routers/full_graph_integration.py
