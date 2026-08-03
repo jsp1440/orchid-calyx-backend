@@ -1,0 +1,28 @@
+name: OC-CONTRACT-DRIFT-001 Validation
+
+on:
+  pull_request:
+    paths:
+      - "contracts/oc-parallel-v1.json"
+      - "scripts/check_oc_parallel_contract.py"
+      - "tests/test_oc_contract_drift_001.py"
+      - ".github/workflows/oc-contract-drift-001-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install pytest ruff
+      - run: ruff check scripts/check_oc_parallel_contract.py tests/test_oc_contract_drift_001.py
+      - run: python -m pytest -q tests/test_oc_contract_drift_001.py
+      - run: python scripts/check_oc_parallel_contract.py contracts/oc-parallel-v1.json contracts/oc-parallel-v1.json

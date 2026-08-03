@@ -1,0 +1,29 @@
+{
+  "contract_version": "oc-parallel-v1",
+  "owner": "orchid-calyx-backend",
+  "routes": {
+    "GET /api/platform/capabilities": {
+      "response_required": ["contract_version", "homepage", "relationship_matrix", "identification", "education", "design", "brain_handoff"]
+    },
+    "GET /api/platform/homepage": {
+      "response_required": ["contract_version", "title", "sections", "governance"]
+    },
+    "POST /api/platform/matrix/pairwise": {
+      "request_required": ["subject_taxon_id", "object_taxon_id", "dimensions"],
+      "response_required": ["contract_version", "subject_taxon_id", "object_taxon_id", "score", "coverage", "dimensions", "interpretation", "publication_authority"]
+    },
+    "POST /api/platform/identification/rank": {
+      "request_required": ["observation_id", "features", "candidates"],
+      "response_required": ["contract_version", "observation_id", "state", "candidates", "next_best_observation", "verified_identity", "publication_authority"]
+    }
+  },
+  "enums": {
+    "availability": ["available", "degraded", "unavailable"],
+    "identification_state": ["observation_incomplete", "candidate_suggestions", "ambiguous", "requires_expert_review", "verified_external_identity"]
+  },
+  "governance": {
+    "client_scoring_allowed": false,
+    "automatic_verified_identity_allowed": false,
+    "automatic_scientific_publication_allowed": false
+  }
+}
