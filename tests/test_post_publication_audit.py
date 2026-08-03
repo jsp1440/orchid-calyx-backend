@@ -14,11 +14,14 @@ class Cursor:
 
     def execute(self, sql):
         normalized = self._normalize(sql)
-        matches = [
-            response
-            for marker, response in self.responses.items()
-            if marker in normalized
-        ]
+        matches = []
+        for marker, response in self.responses.items():
+            if marker.startswith("="):
+                matched = normalized == marker[1:]
+            else:
+                matched = marker in normalized
+            if matched:
+                matches.append(response)
         if len(matches) != 1:
             raise AssertionError(
                 f"Expected exactly one SQL fixture match, found {len(matches)} for: {normalized}"
@@ -34,8 +37,8 @@ class Cursor:
 
 def audit_responses(*, orphan_edges=0, duplicate_node_keys=0, duplicate_edges=0):
     return {
-        "select count(*) from oc_graph.kg_nodes": [(10,)],
-        "select count(*) from oc_graph.kg_edges": [(20,)],
+        "=select count(*) from oc_graph.kg_nodes": [(10,)],
+        "=select count(*) from oc_graph.kg_edges": [(20,)],
         "select node_type, count(*) as records": [
             ("taxon", 5, 5),
             ("image", 5, 5),
