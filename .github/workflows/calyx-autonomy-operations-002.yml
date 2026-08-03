@@ -1,0 +1,25 @@
+name: CALYX-AUTONOMY-OPERATIONS-002 Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/calyx_orchestrator/approved_tasks.py'
+      - 'tests/test_calyx_autonomy_operations_002.py'
+      - '.github/workflows/calyx-autonomy-operations-002.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r requirements.txt
+      - run: pip install pytest ruff
+      - run: ruff check app/calyx_orchestrator/approved_tasks.py tests/test_calyx_autonomy_operations_002.py
+      - run: pytest -q tests/test_calyx_autonomy_operations_002.py
