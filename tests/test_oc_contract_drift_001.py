@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from scripts.check_oc_parallel_contract import compare_contracts
 
 
