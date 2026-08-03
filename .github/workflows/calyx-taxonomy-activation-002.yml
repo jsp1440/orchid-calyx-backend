@@ -1,0 +1,93 @@
+name: CALYX-TAXONOMY-ACTIVATION-002
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/calyx-taxonomy-activation-002.yml"
+      - "scripts/apply_world_plants_staging.py"
+      - "scripts/smoke_world_plants_activation.py"
+      - "tests/fixtures/world_plants_activation_smoke.csv"
+      - "tests/test_calyx_taxonomy_activation_002.py"
+      - "docs/operations/CALYX-TAXONOMY-ACTIVATION-002.md"
+  workflow_dispatch:
+    inputs:
+      apply_staging_migration:
+        description: "Apply and verify the oc_source staging migration"
+        required: true
+        default: false
+        type: boolean
+      run_live_smoke:
+        description: "Upload the harmless fixture and certify live readiness"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  validate-activation-assets:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff httpx
+      - name: Compile
+        run: python -m compileall -q scripts/apply_world_plants_staging.py scripts/smoke_world_plants_activation.py
+      - name: Ruff
+        run: ruff check scripts/apply_world_plants_staging.py scripts/smoke_world_plants_activation.py tests/test_calyx_taxonomy_activation_002.py
+      - name: Focused tests
+        run: python -m pytest -q tests/test_calyx_taxonomy_activation_002.py tests/test_world_plants_ingest_001.py tests/test_world_plants_readiness_api_001.py
+
+  production-activation:
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.apply_staging_migration || inputs.run_live_smoke) }}
+    needs: validate-activation-assets
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Verify required configuration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
+          CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+        run: |
+          test -n "$DATABASE_URL" || { echo "DATABASE_URL missing"; exit 1; }
+          test -n "$CALYX_OWNER_ACCESS_CODE" || { echo "CALYX_OWNER_ACCESS_CODE missing"; exit 1; }
+          test -n "$CALYX_BACKEND_URL" || { echo "CALYX_BACKEND_URL missing"; exit 1; }
+      - name: Apply and verify staging migration
+        if: ${{ inputs.apply_staging_migration }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/apply_world_plants_staging.py
+      - name: Upload harmless fixture and certify readiness
+        if: ${{ inputs.run_live_smoke }}
+        env:
+          CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+          CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
+          CALYX_TAXONOMY_READINESS_REPORT: taxonomy-readiness.json
+        run: python scripts/smoke_world_plants_activation.py
+      - name: Upload readiness evidence
+        if: ${{ always() && inputs.run_live_smoke }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-taxonomy-readiness
+          path: taxonomy-readiness.json
+          if-no-files-found: warn
