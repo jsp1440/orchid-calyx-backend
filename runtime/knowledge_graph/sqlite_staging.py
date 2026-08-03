@@ -9,6 +9,27 @@ from typing import Iterable
 from .models import Edge, Node
 
 
+class _CountedEdgeView:
+    def __init__(self, count: int, loader):
+        self._count = count
+        self._loader = loader
+        self._cache = None
+
+    def __len__(self):
+        return self._count
+
+    def _rows(self):
+        if self._cache is None:
+            self._cache = self._loader()
+        return self._cache
+
+    def __iter__(self):
+        return iter(self._rows())
+
+    def __getitem__(self, index):
+        return self._rows()[index]
+
+
 class SqliteStagingGraphRepository:
     def __init__(self, path: str):
         self.path = path
@@ -74,10 +95,15 @@ class SqliteStagingGraphRepository:
             rows = conn.execute("SELECT * FROM nodes").fetchall()
         return [self._node(row) for row in rows]
 
-    def all_edges(self) -> list[Edge]:
+    def _load_edges(self) -> list[Edge]:
         with self._connect() as conn:
             rows = conn.execute("SELECT * FROM edges").fetchall()
         return [self._edge(row) for row in rows]
+
+    def all_edges(self):
+        with self._connect() as conn:
+            count = conn.execute("SELECT count(*) FROM edges").fetchone()[0]
+        return _CountedEdgeView(count, self._load_edges)
 
     def upsert_node(self, node: Node) -> Node:
         payload = json.dumps(node.payload or {}, default=str)
