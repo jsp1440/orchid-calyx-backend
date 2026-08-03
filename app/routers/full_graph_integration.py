@@ -32,10 +32,22 @@ from runtime.knowledge_graph.unresolved_taxon_queue import (
 
 router = APIRouter(prefix="/api/platform/knowledge-graph", tags=["knowledge-graph-integration"])
 
+# The synchronous endpoint is intentionally diagnostic-only. Complete and
+# multi-million-row runs belong to the resumable domain-by-domain execution API.
+SYNC_DRY_RUN_MAX_ROWS_PER_DOMAIN = 25_000
+
 
 class ControlledDryRunRequest(BaseModel):
-    max_rows_per_domain: int = Field(default=10_000, ge=1, le=10_000_000)
-    batch_size: int = Field(default=500, ge=1, le=10_000)
+    max_rows_per_domain: int = Field(
+        default=10_000,
+        ge=1,
+        le=SYNC_DRY_RUN_MAX_ROWS_PER_DOMAIN,
+        description=(
+            "Diagnostic ceiling for the legacy synchronous route. Use the "
+            "resumable dry-run API for complete or large-domain validation."
+        ),
+    )
+    batch_size: int = Field(default=500, ge=1, le=2_000)
 
 
 def _dsn() -> str:
@@ -105,7 +117,12 @@ def full_graph_integration_inventory():
 
 @router.post("/controlled-dry-run", dependencies=[Depends(verify_owner_or_api_key)])
 def controlled_graph_dry_run(request: ControlledDryRunRequest):
-    """Read Neon and build a two-pass in-memory graph; never persist graph writes."""
+    """Run a bounded diagnostic dry run; never persist graph writes.
+
+    This legacy synchronous route is deliberately capped. Complete validation,
+    especially media-scale validation, must use the resumable execution API so
+    proxy disconnects or request timeouts cannot leave an unbounded task running.
+    """
     dsn = _dsn()
     inventory, objects = _live_inventory(dsn)
     plans, projection_report = _projection_state(objects)
@@ -145,8 +162,9 @@ def controlled_graph_dry_run(request: ControlledDryRunRequest):
     authorization["projection_contract"] = projection_report.get("contract")
     authorization["unresolved_queue_contract"] = unresolved.get("contract")
     authorization["operator_command"] = (
-        "POST /api/platform/knowledge-graph/controlled-dry-run with owner authentication; "
-        "production publication remains a separate explicitly authorized operation."
+        "POST /api/platform/knowledge-graph/controlled-dry-run for a bounded diagnostic; "
+        "use the resumable dry-run API for complete validation; production publication "
+        "remains a separate explicitly authorized operation."
     )
     authorization["rollback_note"] = (
         "No rollback is required for this dry run because all generated nodes and edges exist only in memory."
@@ -157,6 +175,8 @@ def controlled_graph_dry_run(request: ControlledDryRunRequest):
         "authorization": authorization,
         "source_projections": projection_report,
         "unresolved_taxon_queue": unresolved,
+        "synchronous_row_ceiling_per_domain": SYNC_DRY_RUN_MAX_ROWS_PER_DOMAIN,
+        "resumable_execution_required_for_complete_run": True,
         "production_write_executed": False,
     }
 
