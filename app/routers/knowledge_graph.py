@@ -1,14 +1,8 @@
-"""Canonical scientific Knowledge Graph traversal API.
+"""Canonical scientific Knowledge Graph traversal and integration API.
 
-All responses are assembled *from graph nodes and edges* (``oc_graph.kg_nodes``
-/ ``oc_graph.kg_edges``) via the traversal service — never from unrelated direct
-table aggregation.  Every route is read-only.
-
-Endpoints:
-  GET /api/knowledge-graph/node/{node_id}
-  GET /api/knowledge-graph/taxon/{taxon_id}
-  GET /api/knowledge-graph/genus/{genus_name}
-  GET /api/knowledge-graph/quality
+Traversal responses are assembled from ``oc_graph.kg_nodes`` and
+``oc_graph.kg_edges``.  Integration inventory is read-only and inspects the live
+relational catalog without materializing graph records.
 """
 
 from __future__ import annotations
@@ -16,6 +10,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+import psycopg
 from fastapi import APIRouter, HTTPException, Query
 
 from runtime.knowledge_graph import (
@@ -24,16 +19,21 @@ from runtime.knowledge_graph import (
     quality_report,
     traverse,
 )
+from runtime.knowledge_graph.full_integration import build_publication_plan, inventory_full_graph
 from runtime.knowledge_graph.traversal import DEFAULT_LIMIT, MAX_DEPTH, MAX_LIMIT
 
 router = APIRouter(prefix="/api/knowledge-graph", tags=["knowledge-graph"])
 
 
-def _repo() -> PostgresGraphRepository:
+def _dsn() -> str:
     dsn = os.getenv("DATABASE_URL")
     if not dsn:
         raise HTTPException(status_code=503, detail="Knowledge Graph database not configured")
-    return PostgresGraphRepository(dsn)
+    return dsn
+
+
+def _repo() -> PostgresGraphRepository:
+    return PostgresGraphRepository(_dsn())
 
 
 def _csv(value: str | None) -> list[str] | None:
@@ -101,3 +101,25 @@ def get_genus(
 @router.get("/quality")
 def graph_quality() -> dict[str, Any]:
     return quality_report(_repo())
+
+
+@router.get("/full-integration")
+def full_graph_integration() -> dict[str, Any]:
+    """Inventory every configured graph domain and return a gated publication plan.
+
+    This endpoint never writes graph nodes or edges.  A production publication
+    run remains a separately authorized operation.
+    """
+    try:
+        with psycopg.connect(_dsn(), connect_timeout=8) as conn:
+            with conn.cursor() as cur:
+                inventory = inventory_full_graph(cur)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Unable to inventory live Knowledge Graph sources") from exc
+    return {
+        "inventory": inventory,
+        "publication_plan": build_publication_plan(inventory),
+        "warning": "Read-only inventory; no nodes or edges were materialized.",
+    }
