@@ -3,7 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.parallel_platform.contracts import IdentificationRequest, MatrixRequest
-from app.parallel_platform.service import capabilities, homepage_document, rank_candidates, score_matrix
+from app.parallel_platform.service import (
+    capabilities,
+    homepage_document,
+    rank_candidates,
+    score_matrix,
+)
 
 router = APIRouter(prefix="/api/platform", tags=["parallel-platform"])
 
