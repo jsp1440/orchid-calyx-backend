@@ -9,6 +9,8 @@ on:
       - 'tests/test_calyx_full_graph_integration.py'
       - 'tests/test_full_domain_adapters.py'
       - 'tests/test_dynamic_source_projection.py'
+      - 'tests/test_full_domain_code_readiness.py'
+      - 'tests/test_unresolved_taxon_queue.py'
       - '.github/workflows/calyx-graph-full-integration.yml'
 
 jobs:
@@ -22,5 +24,11 @@ jobs:
         with:
           python-version: '3.13'
       - run: pip install -r requirements.txt pytest
-      - run: pytest -q tests/test_calyx_full_graph_integration.py tests/test_full_domain_adapters.py tests/test_dynamic_source_projection.py
+      - run: >-
+          pytest -q
+          tests/test_calyx_full_graph_integration.py
+          tests/test_full_domain_adapters.py
+          tests/test_dynamic_source_projection.py
+          tests/test_full_domain_code_readiness.py
+          tests/test_unresolved_taxon_queue.py
       - run: python -m compileall -q runtime/knowledge_graph app/routers/full_graph_integration.py
