@@ -20,7 +20,7 @@ from .schemas import (
 from .service import UniversityServiceError, UniversitySessionService
 
 router = APIRouter(
-    prefix="/api/learning",
+    prefix="/learning",
     tags=["orchid-continuum-university"],
     dependencies=[Depends(add_mission_control_cors_headers)],
 )
