@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.parallel_platform.brain_candidate_handoff import (
+    BrainCandidateHandoffRequest,
+    handoff_brain_candidate,
+)
 from app.parallel_platform.contracts import IdentificationRequest, MatrixRequest
 from app.parallel_platform.integration_contracts import (
     HomepageSelectionRequest,
@@ -19,6 +23,7 @@ from app.parallel_platform.service import (
     rank_candidates,
     score_matrix,
 )
+from app.security import verify_owner_or_api_key
 
 router = APIRouter(prefix="/api/platform", tags=["parallel-platform"])
 
@@ -65,3 +70,15 @@ def post_identification_session(request: IdentificationSessionRequest):
         return identification_session(request)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/brain/candidate-knowledge",
+    status_code=201,
+    dependencies=[Depends(verify_owner_or_api_key)],
+)
+def post_brain_candidate_knowledge(request: BrainCandidateHandoffRequest):
+    try:
+        return handoff_brain_candidate(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
