@@ -10,6 +10,7 @@ from app.database import get_db
 from app.security import verify_owner_or_api_key
 
 from .models import CalyxJob
+from .operations import operational_status, renew_lease, seed_approved_tasks
 from .service import READ_ONLY_JOB_TYPES, CalyxOrchestrator
 
 router = APIRouter(prefix="/orchestrator", tags=["calyx-orchestrator"])
@@ -28,6 +29,14 @@ class JobRequest(BaseModel):
     dependency_job_id: str | None = None
 
 
+class HeartbeatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    worker_id: str = Field(min_length=1, max_length=240)
+    lease_token: str = Field(min_length=1, max_length=240)
+    lease_seconds: int = Field(default=300, ge=60, le=3600)
+
+
 def _owner(auth: dict[str, Any]) -> str:
     owner = str(auth.get("subject") or auth.get("actor") or "").strip()
     if not owner:
@@ -37,18 +46,39 @@ def _owner(auth: dict[str, Any]) -> str:
 
 @router.get("/status")
 def status(auth: AuthDependency, db: DbDependency) -> dict:
-    return CalyxOrchestrator(db).status(owner=_owner(auth))
+    return operational_status(db, owner=_owner(auth))
 
 
 @router.post("/seed-overnight", status_code=201)
 def seed_overnight(auth: AuthDependency, db: DbDependency) -> dict:
-    jobs = CalyxOrchestrator(db).seed_overnight(owner=_owner(auth))
+    jobs = seed_approved_tasks(db, owner=_owner(auth))
     return {
         "mode": "preproduction",
         "activated": False,
+        "provider": "reviewed-static-v2",
         "jobs": [CalyxOrchestrator.job_dict(job) for job in jobs],
-        "message": "Jobs are durable and queued; a separately enabled preproduction worker is required to execute them.",
+        "message": "Reviewed read-only jobs are durable and queued; a separately enabled preproduction worker is required to execute them.",
     }
+
+
+@router.post("/jobs/{job_id}/heartbeat")
+def heartbeat(
+    job_id: str,
+    payload: HeartbeatRequest,
+    auth: AuthDependency,
+    db: DbDependency,
+) -> dict:
+    try:
+        return renew_lease(
+            db,
+            owner=_owner(auth),
+            job_id=job_id,
+            worker_id=payload.worker_id,
+            lease_token=payload.lease_token,
+            lease_seconds=payload.lease_seconds,
+        )
+    except PermissionError as exc:
+        raise HTTPException(409, detail={"code": str(exc)}) from exc
 
 
 @router.post("/jobs", status_code=201)
