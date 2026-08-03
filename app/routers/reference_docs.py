@@ -8,6 +8,7 @@ from app.deps import get_db
 from app.models import SystemReferenceDocument
 from app.schemas import ReferenceDocumentOut, ReferenceDocumentListOut, ReferenceDocumentUpdate
 from app.storage import compute_sha256, save_file, read_file, file_exists
+from app.species_exhibit.routes import router as species_exhibit_router
 
 router = APIRouter()
 
@@ -142,3 +143,8 @@ def update_reference_doc(
     db.commit()
     db.refresh(doc)
     return doc
+
+
+# Platform composition point: app.main already mounts this router. Keeping the
+# species exhibit as a nested router avoids duplicate application bootstrapping.
+router.include_router(species_exhibit_router)
