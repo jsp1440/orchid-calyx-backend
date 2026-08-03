@@ -17,6 +17,7 @@ from app.schemas import (
     FileCreate, FileOut,
     IntegrationCreate, IntegrationOut,
 )
+from app.university.routes import router as university_router
 
 router = APIRouter(prefix="/api", tags=["calyx-core"])
 
@@ -197,3 +198,6 @@ def create_show_integration(show_id: str, payload: IntegrationCreate, db: Sessio
     db.commit()
     db.refresh(integration)
     return integration
+
+
+router.include_router(university_router)
