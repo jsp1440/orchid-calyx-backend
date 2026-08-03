@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy import text
 
 from app.database import get_engine
+from app.readiness.live_graph_audit import run_live_graph_audit
 
 router = APIRouter(prefix="/api", tags=["Orchid Widgets"])
 
@@ -85,6 +86,32 @@ def genus_of_day(limit: int = 25):
         return {"widget": "genus_of_day", "count": len(rows), "items": [dict(row) for row in rows]}
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Unable to load genus-of-day widget data.") from exc
+
+
+@router.get("/platform/readiness/homepage")
+def homepage_readiness(request: Request, response: Response) -> dict[str, Any]:
+    """Measure live relational linkage and persisted graph materialization.
+
+    This endpoint is read-only. It deliberately does not equate a relational
+    taxonomy foreign key with a persisted Knowledge Graph edge.
+    """
+    _allow_frontend_origin(request, response)
+    raw = None
+    try:
+        raw = get_engine().raw_connection()
+        cursor = raw.cursor()
+        try:
+            return run_live_graph_audit(cursor)
+        finally:
+            cursor.close()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Live homepage readiness audit is unavailable.",
+        ) from exc
+    finally:
+        if raw is not None:
+            raw.close()
 
 
 @router.get("/media/genus/{genus}")
