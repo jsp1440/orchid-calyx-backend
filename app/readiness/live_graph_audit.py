@@ -135,6 +135,7 @@ def measure_graph_materialization(cur) -> dict[str, Any]:
     edge_table = _first_existing(
         cur,
         (
+            "oc_graph.kg_edges",
             "oc_graph.relationship_edges",
             "oc_core.relationship_links",
             "public.knowledge_graph_edges",
@@ -152,8 +153,8 @@ def measure_graph_materialization(cur) -> dict[str, Any]:
     source_domain = next((c for c in ("source_domain", "from_domain") if c in cols), None)
     target_domain = next((c for c in ("target_domain", "to_domain") if c in cols), None)
     relationship_type = next((c for c in ("relationship_type", "predicate", "edge_type") if c in cols), None)
-    source_id = next((c for c in ("source_record_id", "source_id", "from_id") if c in cols), None)
-    target_id = next((c for c in ("target_record_id", "target_id", "to_id") if c in cols), None)
+    source_id = next((c for c in ("source_record_id", "source_id", "from_id", "from_node_id") if c in cols), None)
+    target_id = next((c for c in ("target_record_id", "target_id", "to_id", "to_node_id") if c in cols), None)
 
     total_edges = _scalar(cur, f"SELECT COUNT(*) FROM {edge_table}")
     result: dict[str, Any] = {
