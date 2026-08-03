@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.parallel_platform.matrix_adapters import DimensionEvidence, MATRIX_DIMENSIONS
+from app.parallel_platform.matrix_adapters import MATRIX_DIMENSIONS, DimensionEvidence
 
 
 @dataclass(frozen=True)
