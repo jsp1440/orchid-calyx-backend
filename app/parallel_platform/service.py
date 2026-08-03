@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.parallel_platform.contracts import CONTRACT_VERSION, MATRIX_DIMENSIONS, IdentificationRequest, MatrixRequest
+from app.parallel_platform.contracts import (
+    CONTRACT_VERSION,
+    MATRIX_DIMENSIONS,
+    IdentificationRequest,
+    MatrixRequest,
+)
 
 
 def capabilities() -> dict[str, Any]:
@@ -71,7 +76,9 @@ def score_matrix(request: MatrixRequest) -> dict[str, Any]:
             )
             continue
         availability = "available" if item.evidence else "degraded"
-        confidence = item.confidence if item.confidence is not None else (0.6 if item.evidence else 0.25)
+        confidence = item.confidence if item.confidence is not None else (
+            0.6 if item.evidence else 0.25
+        )
         dimensions.append(
             {
                 "name": name,
@@ -86,7 +93,9 @@ def score_matrix(request: MatrixRequest) -> dict[str, Any]:
             weighted_total += item.score * item.weight
             total_weight += item.weight
     score = round(weighted_total / total_weight, 6) if total_weight else None
-    coverage = round(sum(item["score"] is not None for item in dimensions) / len(dimensions), 6)
+    coverage = round(
+        sum(item["score"] is not None for item in dimensions) / len(dimensions), 6
+    )
     return {
         "contract_version": CONTRACT_VERSION,
         "subject_taxon_id": request.subject_taxon_id,
@@ -94,7 +103,9 @@ def score_matrix(request: MatrixRequest) -> dict[str, Any]:
         "score": score,
         "coverage": coverage,
         "dimensions": dimensions,
-        "interpretation": "candidate_relationship" if score is not None else "insufficient_evidence",
+        "interpretation": (
+            "candidate_relationship" if score is not None else "insufficient_evidence"
+        ),
         "publication_authority": False,
     }
 
@@ -108,7 +119,12 @@ def rank_candidates(request: IdentificationRequest) -> dict[str, Any]:
         conflicts: list[str] = []
         missing: list[str] = []
         for key in keys:
-            if key not in observed or key not in candidate.features or observed[key] is None or candidate.features[key] is None:
+            if (
+                key not in observed
+                or key not in candidate.features
+                or observed[key] is None
+                or candidate.features[key] is None
+            ):
                 missing.append(key)
             elif observed[key] == candidate.features[key]:
                 support.append(key)
@@ -135,7 +151,11 @@ def rank_candidates(request: IdentificationRequest) -> dict[str, Any]:
     state = "observation_incomplete"
     if ranked:
         top = ranked[0]
-        state = "requires_expert_review" if top["score"] >= 0.85 and not top["conflicts"] else "ambiguous"
+        state = (
+            "requires_expert_review"
+            if top["score"] >= 0.85 and not top["conflicts"]
+            else "ambiguous"
+        )
     return {
         "contract_version": CONTRACT_VERSION,
         "observation_id": request.observation_id,
