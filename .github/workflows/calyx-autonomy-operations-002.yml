@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'app/calyx_orchestrator/approved_tasks.py'
+      - 'app/calyx_orchestrator/operations.py'
+      - 'app/calyx_orchestrator/routes.py'
       - 'tests/test_calyx_autonomy_operations_002.py'
       - '.github/workflows/calyx-autonomy-operations-002.yml'
   workflow_dispatch:
@@ -23,5 +25,6 @@ jobs:
           python-version: '3.13'
       - run: pip install -r requirements.txt
       - run: pip install pytest ruff
-      - run: ruff check app/calyx_orchestrator/approved_tasks.py tests/test_calyx_autonomy_operations_002.py
+      - run: ruff check app/calyx_orchestrator/approved_tasks.py app/calyx_orchestrator/operations.py app/calyx_orchestrator/routes.py tests/test_calyx_autonomy_operations_002.py
+      - run: python -m compileall -q app/calyx_orchestrator
       - run: pytest -q tests/test_calyx_autonomy_operations_002.py
