@@ -1,0 +1,27 @@
+name: OC-HOMEPAGE-INTELLIGENCE-002 Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/parallel_platform/homepage_intelligence.py"
+      - "tests/test_oc_homepage_intelligence_002.py"
+      - ".github/workflows/oc-homepage-intelligence-002-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - run: ruff check app/parallel_platform/homepage_intelligence.py tests/test_oc_homepage_intelligence_002.py
+      - run: python -m pytest -q tests/test_oc_homepage_intelligence_002.py tests/test_oc_parallel_platform_001.py
