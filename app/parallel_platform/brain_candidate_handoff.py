@@ -68,7 +68,7 @@ class BrainCandidateHandoffRequest(BaseModel):
     internal_use_permission: bool = False
     language: str = "en"
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: Any, /) -> None:
         if self.object_value is None and self.numeric_value is None:
             raise ValueError("CANDIDATE_VALUE_REQUIRED")
 
