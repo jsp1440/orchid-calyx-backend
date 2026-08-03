@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.parallel_platform.contracts import IdentificationRequest, MatrixRequest
 from app.parallel_platform.routes import router
 from app.parallel_platform.service import rank_candidates, score_matrix
-from app.parallel_platform.contracts import IdentificationRequest, MatrixRequest
 
 
 def test_matrix_excludes_unavailable_dimensions():
@@ -14,14 +14,21 @@ def test_matrix_excludes_unavailable_dimensions():
                 "object_taxon_id": "taxon:b",
                 "dimensions": {
                     "taxonomy": {"score": 0.8, "weight": 2, "evidence": ["edge:1"]},
-                    "ecology": {"score": 0.4, "weight": 1, "evidence": ["occurrence:1"]},
+                    "ecology": {
+                        "score": 0.4,
+                        "weight": 1,
+                        "evidence": ["occurrence:1"],
+                    },
                     "pollinator": {"available": False},
                 },
             }
         )
     )
     assert result["score"] == 0.666667
-    assert next(item for item in result["dimensions"] if item["name"] == "pollinator")["score"] is None
+    pollinator = next(
+        item for item in result["dimensions"] if item["name"] == "pollinator"
+    )
+    assert pollinator["score"] is None
     assert result["publication_authority"] is False
 
 
@@ -35,7 +42,11 @@ def test_identification_is_suggestion_only_and_exposes_next_observation():
                     {
                         "taxon_id": "taxon:a",
                         "scientific_name": "Angraecum alpha",
-                        "features": {"lip_color": "white", "spur": "long", "fragrance": "night"},
+                        "features": {
+                            "lip_color": "white",
+                            "spur": "long",
+                            "fragrance": "night",
+                        },
                     },
                     {
                         "taxon_id": "taxon:b",
