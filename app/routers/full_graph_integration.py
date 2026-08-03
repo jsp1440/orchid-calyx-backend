@@ -7,6 +7,7 @@ import os
 import psycopg
 from fastapi import APIRouter, HTTPException
 
+from runtime.knowledge_graph.full_domain_status import full_domain_code_readiness
 from runtime.knowledge_graph.full_integration import build_publication_plan, inventory_full_graph
 
 router = APIRouter(prefix="/api/platform/knowledge-graph", tags=["knowledge-graph-integration"])
@@ -25,6 +26,7 @@ def full_graph_integration_inventory():
         raise HTTPException(status_code=503, detail="Unable to inventory live Knowledge Graph sources") from exc
     return {
         "inventory": inventory,
+        "code_readiness": full_domain_code_readiness(),
         "publication_plan": build_publication_plan(inventory),
         "warning": "This endpoint is read-only. It does not materialize nodes or edges.",
     }
