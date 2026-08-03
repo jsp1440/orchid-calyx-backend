@@ -1,0 +1,30 @@
+name: BRAIN-CANDIDATE-HANDOFF-004 Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/parallel_platform/brain_candidate_handoff.py'
+      - 'app/parallel_platform/routes.py'
+      - 'tests/test_brain_candidate_handoff_004.py'
+      - '.github/workflows/brain-candidate-handoff-004-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r requirements.txt
+      - run: pip install pytest ruff httpx
+      - run: ruff check app/parallel_platform/brain_candidate_handoff.py app/parallel_platform/routes.py tests/test_brain_candidate_handoff_004.py
+      - run: python -m compileall -q app/parallel_platform
+      - run: pytest -q tests/test_brain_candidate_handoff_004.py
+      - run: pytest -q tests/test_oc_platform_routes_002.py
