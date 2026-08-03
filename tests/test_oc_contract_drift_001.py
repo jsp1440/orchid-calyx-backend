@@ -1,4 +1,4 @@
-from scripts.check_oc_parallel_contract import compare_contracts
+from scripts.check_oc_parallel_contract import compare_contracts  # noqa: I001
 
 
 CANONICAL = {
