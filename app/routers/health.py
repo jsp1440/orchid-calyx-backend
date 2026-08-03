@@ -2,6 +2,7 @@ import os
 from fastapi import APIRouter, Depends, Request, Response
 
 from app.archive.routes import router as archive_router
+from app.parallel_platform.routes import router as parallel_platform_router
 from app.routers.calyx_queue import router as calyx_queue_router
 from app.routers.executive import router as executive_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
@@ -129,6 +130,7 @@ router.include_router(executive_router, dependencies=[Depends(add_mission_contro
 router.include_router(scientific_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(calyx_queue_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(archive_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(parallel_platform_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(workflow_router)
 router.include_router(executive_intelligence_router)
 router.include_router(connector_router)
