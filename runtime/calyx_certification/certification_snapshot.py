@@ -18,7 +18,7 @@ def build_certification_snapshot(
     bundle: dict[str, Any], status: dict[str, Any]
 ) -> dict[str, Any]:
     blockers = _canonical_blockers(bundle.get("blockers"), status.get("blockers"))
-    bundle_complete = bundle.get("complete") is True
+    bundle_complete = bundle.get("complete") is True or bundle.get("certified") is True
     status_ready = status.get("status") == "ready" or status.get("certification_ready") is True
     certified = bundle_complete and status_ready and not blockers
 
