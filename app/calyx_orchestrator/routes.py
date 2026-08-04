@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,7 +12,11 @@ from app.security import verify_owner_or_api_key
 
 from .models import CalyxJob
 from .operations import operational_status, renew_lease, seed_approved_tasks
-from .service import READ_ONLY_JOB_TYPES, CalyxOrchestrator
+from .service import (
+    AUTONOMY_POLICY_CLASSES,
+    READ_ONLY_JOB_TYPES,
+    CalyxOrchestrator,
+)
 
 router = APIRouter(prefix="/orchestrator", tags=["calyx-orchestrator"])
 
@@ -27,6 +32,9 @@ class JobRequest(BaseModel):
     request: str = Field(min_length=1, max_length=12000)
     priority: int = Field(default=100, ge=1, le=1000)
     dependency_job_id: str | None = None
+    policy_class: str = Field(default="read_only_research", max_length=40)
+    max_attempts: int = Field(default=3, ge=1, le=10)
+    deadline_at: datetime | None = None
 
 
 class HeartbeatRequest(BaseModel):
@@ -85,15 +93,25 @@ def heartbeat(
 def create_job(payload: JobRequest, auth: AuthDependency, db: DbDependency) -> dict:
     if payload.job_type not in READ_ONLY_JOB_TYPES:
         raise HTTPException(422, detail={"code": "JOB_TYPE_NOT_ALLOWED"})
-    if payload.dependency_job_id and db.get(CalyxJob, payload.dependency_job_id) is None:
-        raise HTTPException(404, detail={"code": "DEPENDENCY_JOB_NOT_FOUND"})
+    if payload.policy_class not in AUTONOMY_POLICY_CLASSES:
+        raise HTTPException(422, detail={"code": "POLICY_CLASS_NOT_ALLOWED"})
+    owner = _owner(auth)
+    if payload.dependency_job_id:
+        dependency = db.get(CalyxJob, payload.dependency_job_id)
+        if dependency is None or dependency.owner != owner:
+            raise HTTPException(404, detail={"code": "DEPENDENCY_JOB_NOT_FOUND"})
     job = CalyxJob(
         job_type=payload.job_type,
         title=payload.title,
         request_text=payload.request,
-        owner=_owner(auth),
+        owner=owner,
         priority=payload.priority,
         dependency_job_id=payload.dependency_job_id,
+        policy_class=payload.policy_class,
+        max_attempts=payload.max_attempts,
+        deadline_at=payload.deadline_at,
+        approval_required=payload.policy_class in {"review_required", "owner_only"},
+        approval_class=payload.policy_class if payload.policy_class in {"review_required", "owner_only"} else None,
     )
     db.add(job)
     db.commit()
@@ -109,6 +127,18 @@ def cancel_job(job_id: str, auth: AuthDependency, db: DbDependency) -> dict:
     if job.status not in {"queued", "blocked_approval"}:
         raise HTTPException(409, detail={"code": "JOB_NOT_CANCELLABLE"})
     job.status = "cancelled"
+    job.next_attempt_at = None
     db.commit()
     db.refresh(job)
+    return CalyxOrchestrator.job_dict(job)
+
+
+@router.post("/jobs/{job_id}/requeue")
+def requeue_dead_letter(job_id: str, auth: AuthDependency, db: DbDependency) -> dict:
+    try:
+        job = CalyxOrchestrator(db).requeue_dead_letter(owner=_owner(auth), job_id=job_id)
+    except LookupError as exc:
+        raise HTTPException(404, detail={"code": str(exc)}) from exc
+    except ValueError as exc:
+        raise HTTPException(409, detail={"code": str(exc)}) from exc
     return CalyxOrchestrator.job_dict(job)
