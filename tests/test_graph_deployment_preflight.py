@@ -4,12 +4,15 @@ from runtime.knowledge_graph.deployment_preflight import (
 )
 
 
-def test_preflight_ready_with_persistent_directory(tmp_path):
+def test_preflight_ready_with_persistent_directory(tmp_path, monkeypatch):
+    # Use a writable relative path as a persistent-mount surrogate. An absolute
+    # tmp_path lives under /tmp and must remain classified as ephemeral.
+    monkeypatch.chdir(tmp_path)
     report = deployment_preflight(
         route_paths=set(REQUIRED_PLATFORM_ROUTES),
         database_probe=lambda: None,
         env={
-            "CALYX_DRY_RUN_DIRECTORY": str(tmp_path / "dry-runs"),
+            "CALYX_DRY_RUN_DIRECTORY": "persistent-dry-runs",
             "RENDER_GIT_COMMIT": "abc123",
             "RENDER_SERVICE_NAME": "orchid-calyx-backend",
         },
@@ -19,6 +22,7 @@ def test_preflight_ready_with_persistent_directory(tmp_path):
     assert report["routes"]["ready"] is True
     assert report["database"]["reachable"] is True
     assert report["staging_directory"]["writable"] is True
+    assert report["staging_directory"]["appears_ephemeral"] is False
     assert report["blockers"] == []
 
 
