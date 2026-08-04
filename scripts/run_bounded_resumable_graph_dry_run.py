@@ -15,7 +15,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-BASE_URL = os.environ.get("CALYX_BACKEND_URL", "https://orchid-calyx-backend.onrender.com").rstrip("/")
+BASE_URL = os.environ.get("CALYX_BACKEND_URL", "https://orchid-calyx-backend.onrender.com").strip().rstrip("/")
 ACCESS_CODE = os.environ.get("CALYX_OWNER_ACCESS_CODE", "")
 EVIDENCE_PATH = Path(os.environ.get("CALYX_BOUNDED_DRY_RUN_EVIDENCE_PATH", "calyx-bounded-dry-run-evidence.json"))
 PREFERRED_DOMAINS = ("taxonomy", "species", "occurrences", "literature", "traits", "media")
@@ -27,9 +27,13 @@ def request(path: str, *, method: str = "GET", payload: dict | None = None, toke
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = Request(f"{BASE_URL}{path}", data=data, headers=headers, method=method)
-    with urlopen(req, timeout=120) as response:
-        body = response.read().decode()
-        return response.status, json.loads(body) if body else {}
+    try:
+        with urlopen(req, timeout=120) as response:
+            body = response.read().decode()
+            return response.status, json.loads(body) if body else {}
+    except HTTPError as exc:
+        response_body = exc.read().decode(errors="replace")[:1000]
+        raise RuntimeError(f"{method} {path} -> HTTP {exc.code}: {response_body}") from exc
 
 
 def choose_domain(ready_domains: list[str]) -> str:
@@ -121,8 +125,8 @@ def main() -> int:
         print("PASS bounded resumable dry run completed one staging step")
         print("SAFE STOP: production graph publication was not invoked")
         return 0
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
-        print(f"FAIL bounded_dry_run: {exc!r}")
+    except (URLError, TimeoutError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
+        print(f"FAIL bounded_dry_run: {exc}")
         return 1
 
 

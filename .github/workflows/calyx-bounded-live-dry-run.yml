@@ -38,7 +38,10 @@ jobs:
           python -m compileall -q scripts/run_bounded_resumable_graph_dry_run.py
       - name: Run one bounded live staging step
         if: github.event_name != 'pull_request'
-        run: python scripts/run_bounded_resumable_graph_dry_run.py | tee calyx-bounded-dry-run.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/run_bounded_resumable_graph_dry_run.py | tee calyx-bounded-dry-run.txt
       - name: Upload bounded dry-run evidence
         if: github.event_name != 'pull_request' && always()
         uses: actions/upload-artifact@v4
@@ -47,5 +50,5 @@ jobs:
           path: |
             calyx-bounded-dry-run.txt
             calyx-bounded-dry-run-evidence.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
