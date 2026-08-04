@@ -1,16 +1,31 @@
 from app.routers.knowledge_graph import router
 
 
-def test_platform_and_traversal_routes_are_mounted_together():
-    paths = {route.path for route in router.routes}
+def _route_methods():
+    return {
+        (route.path, method)
+        for route in router.routes
+        for method in getattr(route, "methods", set())
+    }
 
-    assert "/api/knowledge-graph/taxon/{taxon_id}" in paths
-    assert "/api/knowledge-graph/quality" in paths
 
-    assert "/api/platform/knowledge-graph/full-integration" in paths
-    assert "/api/platform/knowledge-graph/controlled-dry-run" in paths
-    assert "/api/platform/knowledge-graph/persisted-audit" in paths
-    assert "/api/platform/knowledge-graph/dry-runs" in paths
-    assert "/api/platform/knowledge-graph/dry-runs/{run_id}" in paths
-    assert "/api/platform/knowledge-graph/dry-runs/{run_id}/resume" in paths
-    assert "/api/platform/knowledge-graph/dry-runs/{run_id}/cancel" in paths
+def test_platform_and_traversal_routes_are_mounted_with_expected_methods():
+    routes = _route_methods()
+
+    expected = {
+        ("/api/knowledge-graph/node/{node_id}", "GET"),
+        ("/api/knowledge-graph/taxon/{taxon_id}", "GET"),
+        ("/api/knowledge-graph/genus/{genus_name}", "GET"),
+        ("/api/knowledge-graph/quality", "GET"),
+        ("/api/knowledge-graph/full-integration", "GET"),
+        ("/api/platform/knowledge-graph/full-integration", "GET"),
+        ("/api/platform/knowledge-graph/controlled-dry-run", "POST"),
+        ("/api/platform/knowledge-graph/persisted-audit", "GET"),
+        ("/api/platform/knowledge-graph/deployment-preflight", "GET"),
+        ("/api/platform/knowledge-graph/dry-runs", "POST"),
+        ("/api/platform/knowledge-graph/dry-runs/{run_id}", "GET"),
+        ("/api/platform/knowledge-graph/dry-runs/{run_id}/resume", "POST"),
+        ("/api/platform/knowledge-graph/dry-runs/{run_id}/cancel", "POST"),
+    }
+
+    assert expected <= routes
