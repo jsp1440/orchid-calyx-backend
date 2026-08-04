@@ -1,0 +1,26 @@
+name: CALYX-100-L2 Validation
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/knowledge_graph/all_domain_authorization.py'
+      - 'tests/test_calyx_100_l2_all_domain_authorization.py'
+      - '.github/workflows/calyx-100-l2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install pytest ruff
+      - run: ruff check runtime/knowledge_graph/all_domain_authorization.py tests/test_calyx_100_l2_all_domain_authorization.py
+      - run: pytest -q tests/test_calyx_100_l2_all_domain_authorization.py
