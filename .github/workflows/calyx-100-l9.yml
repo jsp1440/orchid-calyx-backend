@@ -1,0 +1,26 @@
+name: CALYX-100-L9 Validation
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/calyx_certification/full_chain_manifest.py'
+      - 'tests/test_calyx_100_l9_full_chain_manifest.py'
+      - '.github/workflows/calyx-100-l9.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-manifest:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install pytest ruff
+      - run: ruff check runtime/calyx_certification/full_chain_manifest.py tests/test_calyx_100_l9_full_chain_manifest.py
+      - run: pytest -q tests/test_calyx_100_l9_full_chain_manifest.py
