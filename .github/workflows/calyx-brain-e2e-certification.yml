@@ -63,9 +63,12 @@ jobs:
 
       - name: Static certification guardrails
         run: |
-          python -m ruff check tests/test_calyx_brain_e2e_certification.py
-          python -m ruff format --check tests/test_calyx_brain_e2e_certification.py
+          python -m ruff check tests/test_calyx_brain_e2e_certification.py tests/test_calyx_brain_integration_acceptance.py
+          python -m ruff format --check tests/test_calyx_brain_e2e_certification.py tests/test_calyx_brain_integration_acceptance.py
           python -m pytest -q tests/test_calyx_brain_e2e_certification.py
+
+      - name: Joined literature to governed publication acceptance
+        run: python -m pytest -q tests/test_calyx_brain_integration_acceptance.py
 
       - name: Deterministic inference to immutable ledger
         run: >-
