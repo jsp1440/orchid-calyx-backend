@@ -244,20 +244,24 @@ class SqlAlchemyReasoningLedgerRepository:
     ) -> None:
         now = utcnow()
         ledger_id = str(ledger.ledger_id)
-        self.db.add(
-            ReasoningLedgerRevision(
-                revision_id=str(uuid4()),
-                ledger_id=ledger_id,
-                version=ledger.version,
-                owner_subject=ledger.tenant_id,
-                project_id=ledger.project_id,
-                status=ledger.status.value,
-                entry_count=len(ledger.entries),
-                content_hash=content_hash,
-                canonical_payload=payload,
-                created_at=now,
-            )
+        revision = ReasoningLedgerRevision(
+            revision_id=str(uuid4()),
+            ledger_id=ledger_id,
+            version=ledger.version,
+            owner_subject=ledger.tenant_id,
+            project_id=ledger.project_id,
+            status=ledger.status.value,
+            entry_count=len(ledger.entries),
+            content_hash=content_hash,
+            canonical_payload=payload,
+            created_at=now,
         )
+        self.db.add(revision)
+        # The audit row has a composite foreign key to this revision. There is no
+        # ORM relationship between the mapped classes, so SQLAlchemy cannot infer
+        # the required insertion order reliably. Flush the pending head/revision
+        # before adding the dependent audit event.
+        self.db.flush()
         self.db.add(
             ReasoningLedgerAuditEvent(
                 event_id=str(uuid4()),
