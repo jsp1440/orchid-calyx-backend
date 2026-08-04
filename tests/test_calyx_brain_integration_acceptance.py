@@ -105,10 +105,10 @@ def _provenance(paper, evidence, *, role: str) -> LedgerProvenance:
 async def test_literature_to_reviewed_publication_is_persistent_and_idempotent(
     tmp_path,
 ):
-    source = tmp_path / "orchid-study.txt"
+    source = tmp_path / "evidence-study.txt"
     source.write_text(
-        "Orchid pollination study\n\nResults\n"
-        "Masdevallia veitchiana was visited by a pollinating fly.\n",
+        "Orchid evidence study\n\nResults\n"
+        "Escherichia coli was characterized by a red flower trait.\n",
         encoding="utf-8",
     )
     papers = LiteratureResultRepository(tmp_path / "literature")
@@ -134,7 +134,7 @@ async def test_literature_to_reviewed_publication_is_persistent_and_idempotent(
         ledger, created = ledgers.create(
             owner="owner-a",
             project_id=project_id,
-            title="Pollinator inference",
+            title="Trait inference",
             description="Governed end-to-end acceptance fixture",
         )
         assert created is True
@@ -177,16 +177,16 @@ async def test_literature_to_reviewed_publication_is_persistent_and_idempotent(
         attributes = {
             "graph_operation_type": "CREATE_EDGE",
             "subject_canonical_node_id": 11,
-            "subject_canonical_key": "Masdevallia veitchiana",
+            "subject_canonical_key": "Escherichia coli",
             "object_canonical_node_id": 12,
-            "object_canonical_key": "pollinating fly",
-            "predicate": "pollinated_by",
+            "object_canonical_key": "red flower trait",
+            "predicate": "has_trait",
             "supporting_evidence_references": [evidence.evidence_id],
             "counterevidence_references": [evidence.evidence_id],
             "literature_evidence_ids": [evidence.evidence_id],
             "source_document_hashes": [paper.source.content_hash],
-            "inference_family": "pollinator",
-            "inference_rule_id": "calyx.acceptance.pollinator",
+            "inference_family": "trait",
+            "inference_rule_id": "calyx.acceptance.trait",
             "inference_rule_version": "1.0.0",
             "originating_candidate_ids": ["acceptance-candidate-1"],
             "originating_inference_hash": "b" * 64,
@@ -206,7 +206,7 @@ async def test_literature_to_reviewed_publication_is_persistent_and_idempotent(
             str(ledger.ledger_id),
             LedgerEntry(
                 kind=LedgerEntryKind.CONCLUSION,
-                text="The reviewed evidence supports a pollination relationship.",
+                text="The reviewed evidence supports a trait relationship.",
                 author="owner-a",
                 tenant_id="owner-a",
                 project_id=project_id,
