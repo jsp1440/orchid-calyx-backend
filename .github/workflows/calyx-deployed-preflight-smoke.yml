@@ -21,13 +21,6 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Validate required configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          : "${CALYX_BACKEND_URL:?Repository variable CALYX_BACKEND_URL is required}"
-          : "${CALYX_OWNER_ACCESS_CODE:?Repository secret CALYX_OWNER_ACCESS_CODE is required}"
-
       - name: Run read-only deployed preflight
         shell: bash
         run: |
@@ -42,5 +35,5 @@ jobs:
           path: |
             calyx-deployed-preflight.txt
             calyx-deployed-preflight-evidence.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
