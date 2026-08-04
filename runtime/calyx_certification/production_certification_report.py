@@ -27,12 +27,14 @@ def build_production_certification_report(payload: dict[str, Any]) -> dict[str, 
     for key in required_checks:
         if payload.get(key) is not True:
             blockers.append(f"failed:{key}")
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
-    return {
+
+    report = {
         "production_certified": not blockers,
-        "blockers": blockers,
-        "report_hash": sha256(canonical.encode()).hexdigest(),
+        "blockers": sorted(blockers),
         "owner_authorization_required": True,
         "manual_release_required": True,
         "production_action_authorized": False,
+        "inputs": payload,
     }
+    canonical = json.dumps(report, sort_keys=True, separators=(",", ":"), default=str)
+    return {**report, "report_hash": sha256(canonical.encode()).hexdigest()}
