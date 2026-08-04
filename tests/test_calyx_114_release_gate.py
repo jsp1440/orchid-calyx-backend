@@ -1,7 +1,7 @@
 from runtime.calyx_certification.release_gate import evaluate_release_gate
 
 
-def _ready():
+def _ready() -> dict[str, bool]:
     return {
         "snapshot_certified": True,
         "live_evidence_accepted": True,
@@ -23,4 +23,5 @@ def test_complete_gate_is_eligible_but_manual():
 def test_missing_owner_approval_blocks():
     payload = _ready()
     payload["owner_approved"] = False
-    assert "failed:owner_approved" in evaluate_release_gate(payload)["blockers"]
+    result = evaluate_release_gate(payload)
+    assert "failed:owner_approved" in result["blockers"]
