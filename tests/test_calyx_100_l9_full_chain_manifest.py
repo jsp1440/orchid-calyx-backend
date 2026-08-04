@@ -1,4 +1,7 @@
-from runtime.calyx_certification.full_chain_manifest import REQUIRED_STAGES, validate_acceptance_manifest
+from runtime.calyx_certification.full_chain_manifest import (
+    REQUIRED_STAGES,
+    validate_acceptance_manifest,
+)
 
 
 def _passing_manifest():
