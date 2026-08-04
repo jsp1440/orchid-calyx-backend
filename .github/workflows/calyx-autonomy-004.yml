@@ -1,0 +1,33 @@
+name: CALYX-AUTONOMY-004 Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/calyx_orchestrator/models.py'
+      - 'app/calyx_orchestrator/service.py'
+      - 'app/calyx_orchestrator/routes.py'
+      - 'migrations/20260804_calyx_autonomy_004.sql'
+      - 'tests/test_calyx_autonomy_004.py'
+      - 'docs/operations/CALYX-AUTONOMY-004-RUN-LIFECYCLE.md'
+      - '.github/workflows/calyx-autonomy-004.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r requirements.txt
+      - run: pip install pytest ruff
+      - run: ruff check app/calyx_orchestrator/models.py app/calyx_orchestrator/service.py app/calyx_orchestrator/routes.py tests/test_calyx_autonomy_004.py
+      - run: python -m compileall -q app/calyx_orchestrator
+      - run: pytest -q tests/test_calyx_autonomy_004.py tests/test_calyx_autonomy_operations_002.py
