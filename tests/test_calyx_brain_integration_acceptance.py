@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -254,10 +253,12 @@ async def test_literature_to_reviewed_publication_is_persistent_and_idempotent(
         assert first["publication_status"] == "published"
         assert second["artifact_hash"] == first["artifact_hash"]
         assert first["canonical_graph_ids"] == ["graph_version:88"]
+        assert evidence.evidence_id in first["literature_evidence_ids"]
         assert len(gate.calls) == 1
-        assert publication.history(str(ledger.ledger_id), "owner-a")[0][
-            "artifact_hash"
-        ] == first["artifact_hash"]
+        assert (
+            publication.history(str(ledger.ledger_id), "owner-a")[0]["artifact_hash"]
+            == first["artifact_hash"]
+        )
 
         changed = ledgers.append(
             str(ledger.ledger_id),
@@ -284,8 +285,3 @@ async def test_literature_to_reviewed_publication_is_persistent_and_idempotent(
 
         with pytest.raises(Exception, match="ledger not found"):
             ledgers.current(str(ledger.ledger_id), "owner-b")
-
-        assert SimpleNamespace(
-            evidence_anchor=evidence.evidence_id,
-            source_hash=paper.source.content_hash,
-        ).source_hash == paper.source.content_hash
