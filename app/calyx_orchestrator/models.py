@@ -26,10 +26,13 @@ class CalyxJob(Base):
     dependency_job_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("calyx_orchestrator_jobs.job_id"), nullable=True
     )
+    policy_class: Mapped[str] = mapped_column(String(40), default="read_only_research", index=True)
     approval_required: Mapped[bool] = mapped_column(Boolean, default=False)
     approval_class: Mapped[str | None] = mapped_column(String(40), nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     lease_owner: Mapped[str | None] = mapped_column(String(160), nullable=True)
     lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
