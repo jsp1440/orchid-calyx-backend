@@ -1,0 +1,33 @@
+name: CALYX Live Preflight Evidence Validation
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/smoke_graph_deployment_preflight.py'
+      - 'tests/test_smoke_graph_deployment_preflight.py'
+      - '.github/workflows/calyx-deployed-preflight-smoke.yml'
+      - '.github/workflows/calyx-live-preflight-evidence-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/smoke_graph_deployment_preflight.py'
+      - 'tests/test_smoke_graph_deployment_preflight.py'
+      - '.github/workflows/calyx-deployed-preflight-smoke.yml'
+      - '.github/workflows/calyx-live-preflight-evidence-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install pytest ruff
+      - run: ruff check scripts/smoke_graph_deployment_preflight.py tests/test_smoke_graph_deployment_preflight.py
+      - run: pytest -q tests/test_smoke_graph_deployment_preflight.py
