@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 
@@ -6,9 +8,10 @@ def validate_owner_authorization(record: dict[str, Any]) -> dict[str, Any]:
     blockers = [f"missing:{key}" for key in required if not record.get(key)]
     if record.get("decision") not in {"approve", "reject"}:
         blockers.append("invalid_decision")
+    approved = not blockers and record.get("decision") == "approve"
     return {
         "valid": not blockers,
-        "approved": not blockers and record.get("decision") == "approve",
+        "approved": approved,
         "blockers": blockers,
         "production_action_authorized": False,
     }
