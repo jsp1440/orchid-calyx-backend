@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -11,7 +11,7 @@ def validate_observation_window(payload: dict[str, Any]) -> dict[str, Any]:
         ended = datetime.fromisoformat(str(payload.get("ended_at")).replace("Z", "+00:00"))
     except (TypeError, ValueError):
         blockers.append("invalid_observation_timestamp")
-        started = ended = datetime.min
+        started = ended = datetime.min.replace(tzinfo=timezone.utc)
     minimum_seconds = payload.get("minimum_seconds")
     if not isinstance(minimum_seconds, int) or minimum_seconds < 0:
         blockers.append("invalid_minimum_seconds")
