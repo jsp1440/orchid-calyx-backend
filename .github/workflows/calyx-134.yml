@@ -1,0 +1,22 @@
+name: CALYX-134 Validation
+
+on:
+  pull_request:
+    paths:
+      - "runtime/calyx_certification/owner_handoff.py"
+      - "tests/test_calyx_134_owner_handoff.py"
+      - ".github/workflows/calyx-134.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest ruff
+      - run: ruff check runtime/calyx_certification/owner_handoff.py tests/test_calyx_134_owner_handoff.py
+      - run: pytest -q tests/test_calyx_134_owner_handoff.py
