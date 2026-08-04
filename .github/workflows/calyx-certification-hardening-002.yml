@@ -1,0 +1,30 @@
+name: CALYX Certification Hardening 002
+
+on:
+  pull_request:
+    paths:
+      - "runtime/calyx_certification/preflight_execution_lock.py"
+      - "runtime/calyx_certification/owner_decision_lifecycle.py"
+      - "runtime/calyx_certification/change_window_policy.py"
+      - "runtime/calyx_certification/post_release_verification.py"
+      - "runtime/calyx_certification/secret_readiness.py"
+      - "tests/test_calyx_certification_hardening_002.py"
+      - ".github/workflows/calyx-certification-hardening-002.yml"
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "pytest==8.3.5" "ruff==0.11.13"
+      - run: ruff check runtime/calyx_certification/preflight_execution_lock.py runtime/calyx_certification/owner_decision_lifecycle.py runtime/calyx_certification/change_window_policy.py runtime/calyx_certification/post_release_verification.py runtime/calyx_certification/secret_readiness.py tests/test_calyx_certification_hardening_002.py
+      - run: PYTHONPATH=. pytest -q tests/test_calyx_certification_hardening_002.py

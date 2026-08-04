@@ -13,9 +13,9 @@ def evaluate_owner_decision_lifecycle(payload: dict[str, Any]) -> dict[str, Any]
     decision = payload.get("decision")
     if decision not in _ALLOWED_DECISIONS:
         blockers.append("invalid_owner_decision")
-    if payload.get("expired") is True:
+    if bool(payload.get("expired")):
         blockers.append("owner_decision_expired")
-    if payload.get("revoked") is True or decision == "revoked":
+    if bool(payload.get("revoked")) or decision == "revoked":
         blockers.append("owner_decision_revoked")
     approved_current = decision == "approved" and not blockers
     return {
