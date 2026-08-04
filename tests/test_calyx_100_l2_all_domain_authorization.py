@@ -1,4 +1,6 @@
-from runtime.knowledge_graph.all_domain_authorization import evaluate_all_domain_authorization
+from runtime.knowledge_graph.all_domain_authorization import (
+    evaluate_all_domain_authorization,
+)
 
 
 def test_all_domain_report_requires_zero_delta_and_integrity():
