@@ -1,12 +1,22 @@
 name: CALYX-114 Validation
-on: [pull_request]
+
+on:
+  pull_request:
+    paths:
+      - "runtime/calyx_certification/release_gate.py"
+      - "tests/test_calyx_114_release_gate.py"
+      - ".github/workflows/calyx-114.yml"
+
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
+        with:
+          python-version: "3.12"
       - run: pip install pytest ruff
       - run: ruff check runtime/calyx_certification/release_gate.py tests/test_calyx_114_release_gate.py
       - run: pytest -q tests/test_calyx_114_release_gate.py
