@@ -1,0 +1,22 @@
+name: CALYX-120 Validation
+
+on:
+  pull_request:
+    paths:
+      - "runtime/calyx_certification/release_candidate_manifest.py"
+      - "tests/test_calyx_120_release_candidate_manifest.py"
+      - ".github/workflows/calyx-120.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest ruff
+      - run: ruff check runtime/calyx_certification/release_candidate_manifest.py tests/test_calyx_120_release_candidate_manifest.py
+      - run: pytest -q tests/test_calyx_120_release_candidate_manifest.py
