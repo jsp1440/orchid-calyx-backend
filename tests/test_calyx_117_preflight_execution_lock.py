@@ -10,6 +10,7 @@ def test_accepts_single_active_lock():
             "holder": "operator",
             "acquired_at": "2026-08-04T00:00:00Z",
             "expires_at": "2026-08-04T01:00:00Z",
+            "evaluated_at": "2026-08-04T00:30:00Z",
             "active": True,
             "concurrent_run_count": 1,
         }
@@ -24,6 +25,7 @@ def test_rejects_concurrent_execution():
             "holder": "operator",
             "acquired_at": "2026-08-04T00:00:00Z",
             "expires_at": "2026-08-04T01:00:00Z",
+            "evaluated_at": "2026-08-04T00:30:00Z",
             "active": True,
             "concurrent_run_count": 2,
         }
