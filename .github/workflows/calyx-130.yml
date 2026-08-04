@@ -1,0 +1,22 @@
+name: CALYX-130 Validation
+
+on:
+  pull_request:
+    paths:
+      - "runtime/calyx_certification/worker_readiness.py"
+      - "tests/test_calyx_130_worker_readiness.py"
+      - ".github/workflows/calyx-130.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest ruff
+      - run: ruff check runtime/calyx_certification/worker_readiness.py tests/test_calyx_130_worker_readiness.py
+      - run: pytest -q tests/test_calyx_130_worker_readiness.py
