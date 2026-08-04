@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-
 REQUIRED_LEDGER_CAPABILITIES = {
     "support_and_counterevidence",
     "assumptions",
