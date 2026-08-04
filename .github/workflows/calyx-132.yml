@@ -1,0 +1,22 @@
+name: CALYX-132 Validation
+
+on:
+  pull_request:
+    paths:
+      - "runtime/calyx_certification/mutation_budget.py"
+      - "tests/test_calyx_132_mutation_budget.py"
+      - ".github/workflows/calyx-132.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest ruff
+      - run: ruff check runtime/calyx_certification/mutation_budget.py tests/test_calyx_132_mutation_budget.py
+      - run: pytest -q tests/test_calyx_132_mutation_budget.py
