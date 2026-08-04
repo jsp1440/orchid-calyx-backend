@@ -25,6 +25,17 @@ READ_ONLY_JOB_TYPES = {
     "build_specification",
 }
 
+AUTONOMY_POLICY_CLASSES = {
+    "read_only_research",
+    "candidate_generation",
+    "review_required",
+    "owner_only",
+}
+
+EXECUTABLE_POLICY_CLASSES = {"read_only_research", "candidate_generation"}
+TERMINAL_STATUSES = {"completed", "cancelled", "dead_letter"}
+MAX_RETRY_DELAY_SECONDS = 3600
+
 OVERNIGHT_PROFILE = (
     (10, "capability_inventory", "Inventory merged Continuum capabilities", "Audit current capabilities, open work, and readiness gaps."),
     (20, "brain_audit", "Audit Brain and Knowledge Graph", "Audit the Brain, Knowledge Graph, reasoning, evidence, and publication chain."),
@@ -36,6 +47,12 @@ OVERNIGHT_PROFILE = (
     (80, "website_design_audit", "Audit website design intelligence", "Audit the Orchid Continuum website for accessibility, UX, navigation, information architecture, and scientific visualization improvements."),
     (90, "education_readiness", "Audit University and educational design", "Audit educational-design knowledge, curriculum readiness, lessons, assessments, student progress, and virtual-laboratory gaps."),
 )
+
+
+def retry_delay_seconds(attempt_count: int) -> int:
+    if attempt_count < 1:
+        return 0
+    return min(60 * (2 ** (attempt_count - 1)), MAX_RETRY_DELAY_SECONDS)
 
 
 class CalyxOrchestrator:
@@ -62,6 +79,7 @@ class CalyxOrchestrator:
                 request_text=request_text,
                 owner=owner,
                 priority=priority,
+                policy_class="read_only_research",
             )
             self.db.add(job)
             jobs.append(job)
@@ -85,7 +103,10 @@ class CalyxOrchestrator:
             .where(
                 claimable,
                 CalyxJob.approval_required.is_(False),
+                CalyxJob.policy_class.in_(EXECUTABLE_POLICY_CLASSES),
                 CalyxJob.attempt_count < CalyxJob.max_attempts,
+                or_(CalyxJob.next_attempt_at.is_(None), CalyxJob.next_attempt_at <= now),
+                or_(CalyxJob.deadline_at.is_(None), CalyxJob.deadline_at > now),
                 or_(
                     CalyxJob.dependency_job_id.is_(None),
                     CalyxJob.dependency_job_id.in_(
@@ -113,6 +134,7 @@ class CalyxOrchestrator:
                         CalyxJob.job_id == job.job_id,
                         row_claimable,
                         CalyxJob.attempt_count < CalyxJob.max_attempts,
+                        or_(CalyxJob.next_attempt_at.is_(None), CalyxJob.next_attempt_at <= now),
                     )
                 )
                 .update(
@@ -122,6 +144,7 @@ class CalyxOrchestrator:
                         CalyxJob.lease_token: token,
                         CalyxJob.lease_expires_at: now + timedelta(seconds=lease_seconds),
                         CalyxJob.attempt_count: CalyxJob.attempt_count + 1,
+                        CalyxJob.next_attempt_at: None,
                         CalyxJob.error_code: None,
                     },
                     synchronize_session=False,
@@ -149,6 +172,8 @@ class CalyxOrchestrator:
     def execute(self, job: CalyxJob, *, worker_id: str, lease_token: str) -> CalyxJob:
         if job.job_type not in READ_ONLY_JOB_TYPES:
             return self._fail(job, worker_id, lease_token, "JOB_TYPE_NOT_ALLOWED")
+        if job.policy_class not in EXECUTABLE_POLICY_CLASSES:
+            return self._fail(job, worker_id, lease_token, "POLICY_REQUIRES_OWNER_REVIEW")
         if not self._lease_is_current(job.job_id, worker_id, lease_token):
             raise PermissionError("STALE_WORKER_LEASE")
         response = self.agent.handle(
@@ -163,6 +188,7 @@ class CalyxOrchestrator:
             CalyxJob.lease_owner: None,
             CalyxJob.lease_token: None,
             CalyxJob.lease_expires_at: None,
+            CalyxJob.next_attempt_at: None,
         }
         if payload.get("approval_required"):
             values.update(
@@ -232,7 +258,11 @@ class CalyxOrchestrator:
             )
 
     def _fail(self, job: CalyxJob, worker_id: str, lease_token: str, code: str) -> CalyxJob:
-        next_status = "failed" if job.attempt_count >= job.max_attempts else "queued"
+        exhausted = job.attempt_count >= job.max_attempts
+        next_status = "dead_letter" if exhausted else "queued"
+        next_attempt_at = None
+        if not exhausted:
+            next_attempt_at = utcnow() + timedelta(seconds=retry_delay_seconds(job.attempt_count))
         updated = (
             self.db.query(CalyxJob)
             .filter(
@@ -245,6 +275,7 @@ class CalyxOrchestrator:
                 {
                     CalyxJob.error_code: code,
                     CalyxJob.status: next_status,
+                    CalyxJob.next_attempt_at: next_attempt_at,
                     CalyxJob.lease_owner: None,
                     CalyxJob.lease_token: None,
                     CalyxJob.lease_expires_at: None,
@@ -262,6 +293,24 @@ class CalyxOrchestrator:
         self.db.refresh(current)
         return current
 
+    def requeue_dead_letter(self, *, owner: str, job_id: str) -> CalyxJob:
+        job = self.db.get(CalyxJob, job_id)
+        if job is None or job.owner != owner:
+            raise LookupError("JOB_NOT_FOUND")
+        if job.status != "dead_letter":
+            raise ValueError("JOB_NOT_DEAD_LETTER")
+        job.status = "queued"
+        job.next_attempt_at = None
+        job.error_code = None
+        job.approval_required = False
+        job.approval_class = None
+        job.lease_owner = None
+        job.lease_token = None
+        job.lease_expires_at = None
+        self.db.commit()
+        self.db.refresh(job)
+        return job
+
     def status(self, *, owner: str) -> dict:
         jobs = self.db.scalars(
             select(CalyxJob).where(CalyxJob.owner == owner).order_by(CalyxJob.created_at.desc())
@@ -276,9 +325,15 @@ class CalyxOrchestrator:
         counts: dict[str, int] = {}
         for job in jobs:
             counts[job.status] = counts.get(job.status, 0) + 1
+        now = utcnow()
+        retry_waiting = [
+            job for job in jobs if job.status == "queued" and job.next_attempt_at and job.next_attempt_at > now
+        ]
         return {
             "queue": counts,
             "active_jobs": [self.job_dict(job) for job in jobs if job.status == "running"],
+            "retry_waiting": [self.job_dict(job) for job in retry_waiting],
+            "dead_letter": [self.job_dict(job) for job in jobs if job.status == "dead_letter"],
             "blocked_approvals": [self.job_dict(job) for job in jobs if job.status == "blocked_approval"],
             "recent_jobs": [self.job_dict(job) for job in jobs[:50]],
             "findings": [self.finding_dict(item) for item in findings],
@@ -292,9 +347,13 @@ class CalyxOrchestrator:
             "title": job.title,
             "status": job.status,
             "priority": job.priority,
+            "policy_class": job.policy_class,
             "approval_required": job.approval_required,
             "approval_class": job.approval_class,
             "attempt_count": job.attempt_count,
+            "max_attempts": job.max_attempts,
+            "next_attempt_at": job.next_attempt_at.isoformat() if job.next_attempt_at else None,
+            "deadline_at": job.deadline_at.isoformat() if job.deadline_at else None,
             "created_at": job.created_at.isoformat() if job.created_at else None,
             "completed_at": job.completed_at.isoformat() if job.completed_at else None,
             "error_code": job.error_code,
