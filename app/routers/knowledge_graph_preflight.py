@@ -5,7 +5,14 @@ import psycopg
 from fastapi import APIRouter, Depends, Request
 
 from app.security import verify_owner_or_api_key
-from runtime.knowledge_graph.deployment_preflight import deployment_preflight
+from runtime.knowledge_graph.deployment_preflight import (
+    deployment_preflight,
+    initialize_dry_run_directory,
+)
+
+# Router modules are imported during application startup. Initialize the
+# configured staging root once, before any dry-run or preflight request.
+initialize_dry_run_directory()
 
 router = APIRouter(prefix="/api/platform/knowledge-graph", tags=["knowledge-graph-integration"])
 
