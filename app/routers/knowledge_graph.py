@@ -2,7 +2,7 @@
 
 Traversal responses are assembled from ``oc_graph.kg_nodes`` and
 ``oc_graph.kg_edges``. Integration inventory and resumable dry-run operations
-are exposed through a separate platform router mounted by this aggregate.
+are exposed through separate platform routers mounted by this aggregate.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import psycopg
 from fastapi import APIRouter, HTTPException, Query
 
 from app.routers.full_graph_integration import router as platform_graph_router
+from app.routers.knowledge_graph_preflight import router as preflight_router
 from runtime.knowledge_graph import (
     PostgresGraphRepository,
     canonical_key,
@@ -57,46 +58,19 @@ def _traverse_response(focal, depth, node_types, edge_types, limit, offset):
 
 
 @traversal_router.get("/node/{node_id}")
-def get_node(
-    node_id: int,
-    depth: int = Query(1, ge=1, le=MAX_DEPTH),
-    node_types: str | None = None,
-    edge_types: str | None = None,
-    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
-    offset: int = Query(0, ge=0),
-) -> dict[str, Any]:
-    return _traverse_response(
-        lambda r: r.get_node(node_id), depth, node_types, edge_types, limit, offset
-    )
+def get_node(node_id: int, depth: int = Query(1, ge=1, le=MAX_DEPTH), node_types: str | None = None, edge_types: str | None = None, limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT), offset: int = Query(0, ge=0)) -> dict[str, Any]:
+    return _traverse_response(lambda r: r.get_node(node_id), depth, node_types, edge_types, limit, offset)
 
 
 @traversal_router.get("/taxon/{taxon_id}")
-def get_taxon(
-    taxon_id: str,
-    depth: int = Query(1, ge=1, le=MAX_DEPTH),
-    node_types: str | None = None,
-    edge_types: str | None = None,
-    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
-    offset: int = Query(0, ge=0),
-) -> dict[str, Any]:
+def get_taxon(taxon_id: str, depth: int = Query(1, ge=1, le=MAX_DEPTH), node_types: str | None = None, edge_types: str | None = None, limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT), offset: int = Query(0, ge=0)) -> dict[str, Any]:
     key = taxon_id if ":" in taxon_id else canonical_key("taxon", taxon_id)
-    return _traverse_response(
-        lambda r: r.get_node_by_key(key), depth, node_types, edge_types, limit, offset
-    )
+    return _traverse_response(lambda r: r.get_node_by_key(key), depth, node_types, edge_types, limit, offset)
 
 
 @traversal_router.get("/genus/{genus_name}")
-def get_genus(
-    genus_name: str,
-    depth: int = Query(1, ge=1, le=MAX_DEPTH),
-    node_types: str | None = None,
-    edge_types: str | None = None,
-    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
-    offset: int = Query(0, ge=0),
-) -> dict[str, Any]:
-    return _traverse_response(
-        lambda r: r.find_genus_node(genus_name), depth, node_types, edge_types, limit, offset
-    )
+def get_genus(genus_name: str, depth: int = Query(1, ge=1, le=MAX_DEPTH), node_types: str | None = None, edge_types: str | None = None, limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT), offset: int = Query(0, ge=0)) -> dict[str, Any]:
+    return _traverse_response(lambda r: r.find_genus_node(genus_name), depth, node_types, edge_types, limit, offset)
 
 
 @traversal_router.get("/quality")
@@ -106,11 +80,6 @@ def graph_quality() -> dict[str, Any]:
 
 @traversal_router.get("/full-integration")
 def full_graph_integration() -> dict[str, Any]:
-    """Inventory every configured graph domain and return a gated publication plan.
-
-    This endpoint never writes graph nodes or edges. A production publication
-    run remains a separately authorized operation.
-    """
     try:
         with psycopg.connect(_dsn(), connect_timeout=8) as conn:
             with conn.cursor() as cur:
@@ -126,8 +95,7 @@ def full_graph_integration() -> dict[str, Any]:
     }
 
 
-# app.main already mounts ``knowledge_graph.router``. Keep this aggregate router
-# prefix-free so both public prefixes remain unchanged and reachable.
 router = APIRouter()
 router.include_router(traversal_router)
 router.include_router(platform_graph_router)
+router.include_router(preflight_router)
