@@ -1,0 +1,22 @@
+name: CALYX-123 Validation
+
+on:
+  pull_request:
+    paths:
+      - "runtime/calyx_certification/emergency_halt.py"
+      - "tests/test_calyx_123_emergency_halt.py"
+      - ".github/workflows/calyx-123.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest ruff
+      - run: ruff check runtime/calyx_certification/emergency_halt.py tests/test_calyx_123_emergency_halt.py
+      - run: pytest -q tests/test_calyx_123_emergency_halt.py
