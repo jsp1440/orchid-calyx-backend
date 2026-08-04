@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Any
 
 
-def evaluate_certification_expiry(record: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
+def evaluate_certification_expiry(
+    record: dict[str, Any], now: datetime | None = None
+) -> dict[str, Any]:
     now = now or datetime.now(timezone.utc)
     expires_at = record.get("expires_at")
-    blockers = []
+    blockers: list[str] = []
     try:
         expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
     except (TypeError, ValueError):
