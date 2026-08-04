@@ -1,7 +1,52 @@
+import pytest
+
 from runtime.knowledge_graph.deployment_preflight import (
     REQUIRED_PLATFORM_ROUTES,
     deployment_preflight,
+    initialize_dry_run_directory,
 )
+
+
+def test_initializer_creates_directory_inside_declared_mount(tmp_path):
+    mount = tmp_path / "render-disk"
+    mount.mkdir()
+    dry_runs = mount / "calyx-graph-dry-runs"
+
+    result = initialize_dry_run_directory(
+        {
+            "CALYX_DRY_RUN_DIRECTORY": str(dry_runs),
+            "CALYX_DRY_RUN_PERSISTENT_MOUNT": str(mount),
+        }
+    )
+
+    assert result == {"initialized": True, "reason": None, "path": str(dry_runs)}
+    assert dry_runs.is_dir()
+
+
+def test_initializer_fails_closed_outside_declared_mount(tmp_path):
+    mount = tmp_path / "render-disk"
+    mount.mkdir()
+    outside = tmp_path / "outside"
+
+    with pytest.raises(RuntimeError, match="must be inside"):
+        initialize_dry_run_directory(
+            {
+                "CALYX_DRY_RUN_DIRECTORY": str(outside),
+                "CALYX_DRY_RUN_PERSISTENT_MOUNT": str(mount),
+            }
+        )
+    assert outside.exists() is False
+
+
+def test_initializer_is_noop_without_directory_configuration(tmp_path):
+    result = initialize_dry_run_directory(
+        {"CALYX_DRY_RUN_PERSISTENT_MOUNT": str(tmp_path)}
+    )
+    assert result == {
+        "initialized": False,
+        "reason": "directory_not_configured",
+        "path": None,
+    }
 
 
 def test_preflight_ready_with_declared_persistent_mount(tmp_path):
