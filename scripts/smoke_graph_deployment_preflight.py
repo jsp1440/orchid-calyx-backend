@@ -108,7 +108,7 @@ def main() -> int:
 
         if return_code == 0:
             owner_session_status, session = request(
-                "/api/mission-control/owner/session",
+                "/api/mission-control/owner/session-token",
                 method="POST",
                 payload={"access_code": ACCESS_CODE},
             )
