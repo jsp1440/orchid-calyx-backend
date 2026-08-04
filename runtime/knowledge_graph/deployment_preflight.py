@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
@@ -24,24 +23,47 @@ def _commit_metadata(env: dict[str, str]) -> dict[str, str | None]:
     }
 
 
-def _directory_check(path_value: str | None) -> dict[str, Any]:
-    configured = bool(path_value and path_value.strip())
-    path = Path(path_value.strip()) if configured else Path("/tmp/calyx-graph-dry-runs")
-    writable = False
-    error = None
+def _inside_mount(path: Path, mount: Path) -> bool:
     try:
-        path.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(dir=path, prefix="preflight-", delete=True):
-            writable = True
-    except Exception as exc:
-        error = str(exc)
-    ephemeral = str(path).startswith("/tmp") or str(path).startswith("/var/tmp")
+        path.resolve(strict=False).relative_to(mount.resolve(strict=False))
+        return True
+    except ValueError:
+        return False
+
+
+def _directory_check(path_value: str | None, mount_value: str | None) -> dict[str, Any]:
+    configured = bool(path_value and path_value.strip())
+    mount_configured = bool(mount_value and mount_value.strip())
+    if not configured:
+        return {
+            "configured": False,
+            "path": None,
+            "exists": False,
+            "is_directory": False,
+            "writable": False,
+            "persistent_mount_configured": mount_configured,
+            "persistent_mount": mount_value.strip() if mount_configured else None,
+            "inside_persistent_mount": False,
+            "error": None,
+        }
+
+    path = Path(path_value.strip())
+    mount = Path(mount_value.strip()) if mount_configured else None
+    exists = path.exists()
+    is_directory = path.is_dir() if exists else False
+    writable = bool(is_directory and os.access(path, os.W_OK | os.X_OK))
+    inside_mount = bool(mount and _inside_mount(path, mount))
+
     return {
-        "configured": configured,
+        "configured": True,
         "path": str(path),
+        "exists": exists,
+        "is_directory": is_directory,
         "writable": writable,
-        "appears_ephemeral": ephemeral,
-        "error": error,
+        "persistent_mount_configured": mount_configured,
+        "persistent_mount": str(mount) if mount else None,
+        "inside_persistent_mount": inside_mount,
+        "error": None,
     }
 
 
@@ -51,7 +73,7 @@ def deployment_preflight(
     database_probe: Callable[[], None],
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Evaluate deployment readiness without mutating graph or source data."""
+    """Evaluate deployment readiness without graph, source, or filesystem writes."""
     environment = dict(os.environ if env is None else env)
     missing_routes = sorted(REQUIRED_PLATFORM_ROUTES - route_paths)
     database_ok = False
@@ -62,7 +84,10 @@ def deployment_preflight(
     except Exception as exc:
         database_error = str(exc)
 
-    directory = _directory_check(environment.get("CALYX_DRY_RUN_DIRECTORY"))
+    directory = _directory_check(
+        environment.get("CALYX_DRY_RUN_DIRECTORY"),
+        environment.get("CALYX_DRY_RUN_PERSISTENT_MOUNT"),
+    )
     blockers: list[str] = []
     if missing_routes:
         blockers.append("missing_routes:" + ",".join(missing_routes))
@@ -70,14 +95,22 @@ def deployment_preflight(
         blockers.append("database_unreachable")
     if not directory["configured"]:
         blockers.append("CALYX_DRY_RUN_DIRECTORY_not_configured")
-    if not directory["writable"]:
-        blockers.append("dry_run_directory_not_writable")
-    if directory["appears_ephemeral"]:
-        blockers.append("dry_run_directory_appears_ephemeral")
+    else:
+        if not directory["persistent_mount_configured"]:
+            blockers.append("CALYX_DRY_RUN_PERSISTENT_MOUNT_not_configured")
+        elif not directory["inside_persistent_mount"]:
+            blockers.append("dry_run_directory_outside_declared_persistent_mount")
+        if not directory["exists"]:
+            blockers.append("dry_run_directory_missing")
+        elif not directory["is_directory"]:
+            blockers.append("dry_run_path_is_not_directory")
+        elif not directory["writable"]:
+            blockers.append("dry_run_directory_not_writable")
 
     return {
-        "contract": "calyx-graph-deployment-preflight-v1",
+        "contract": "calyx-graph-deployment-preflight-v2",
         "graph_mutation": False,
+        "filesystem_mutation": False,
         "deployment": _commit_metadata(environment),
         "routes": {
             "required": sorted(REQUIRED_PLATFORM_ROUTES),
