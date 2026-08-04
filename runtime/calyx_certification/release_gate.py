@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 
@@ -11,7 +13,9 @@ def evaluate_release_gate(inputs: dict[str, Any]) -> dict[str, Any]:
         "evidence_retained",
         "certification_current",
     )
-    blockers = [f"failed:{key}" for key in required_true if inputs.get(key) is not True]
+    blockers = [
+        f"failed:{key}" for key in required_true if inputs.get(key) is not True
+    ]
     return {
         "release_eligible": not blockers,
         "blockers": blockers,
