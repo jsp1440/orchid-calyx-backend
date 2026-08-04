@@ -1,4 +1,6 @@
-from runtime.calyx_certification.mission_control_readiness import assemble_readiness_view
+from runtime.calyx_certification.mission_control_readiness import (
+    assemble_readiness_view,
+)
 
 
 def test_ready_only_when_snapshot_and_live_evidence_pass():
