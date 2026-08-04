@@ -1,4 +1,4 @@
-"""Read-only deployment preflight for resumable Knowledge Graph dry runs."""
+"""Deployment preflight and guarded startup initialization for graph dry runs."""
 from __future__ import annotations
 
 import os
@@ -29,6 +29,36 @@ def _inside_mount(path: Path, mount: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def initialize_dry_run_directory(env: dict[str, str] | None = None) -> dict[str, Any]:
+    """Create the configured dry-run directory only inside its declared mount.
+
+    Missing configuration is a no-op so local/test imports remain safe. Invalid
+    production configuration fails closed rather than creating a directory in an
+    unintended location.
+    """
+    environment = dict(os.environ if env is None else env)
+    path_value = environment.get("CALYX_DRY_RUN_DIRECTORY")
+    mount_value = environment.get("CALYX_DRY_RUN_PERSISTENT_MOUNT")
+    if not path_value or not path_value.strip():
+        return {"initialized": False, "reason": "directory_not_configured", "path": None}
+    if not mount_value or not mount_value.strip():
+        raise RuntimeError("CALYX_DRY_RUN_PERSISTENT_MOUNT is required before directory initialization")
+
+    path = Path(path_value.strip())
+    mount = Path(mount_value.strip())
+    if not _inside_mount(path, mount):
+        raise RuntimeError("CALYX_DRY_RUN_DIRECTORY must be inside CALYX_DRY_RUN_PERSISTENT_MOUNT")
+    if not mount.exists() or not mount.is_dir():
+        raise RuntimeError("CALYX_DRY_RUN_PERSISTENT_MOUNT does not exist or is not a directory")
+
+    path.mkdir(parents=True, exist_ok=True)
+    if not path.is_dir():
+        raise RuntimeError("CALYX_DRY_RUN_DIRECTORY could not be initialized as a directory")
+    if not os.access(path, os.W_OK | os.X_OK):
+        raise RuntimeError("CALYX_DRY_RUN_DIRECTORY is not writable")
+    return {"initialized": True, "reason": None, "path": str(path)}
 
 
 def _directory_check(path_value: str | None, mount_value: str | None) -> dict[str, Any]:
