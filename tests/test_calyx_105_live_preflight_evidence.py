@@ -1,4 +1,6 @@
-from runtime.calyx_certification.live_preflight_evidence import validate_live_preflight_evidence
+from runtime.calyx_certification.live_preflight_evidence import (
+    validate_live_preflight_evidence,
+)
 
 
 def _payload():
