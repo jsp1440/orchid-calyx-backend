@@ -1,4 +1,6 @@
-from runtime.calyx_certification.certification_snapshot import build_certification_snapshot
+from runtime.calyx_certification.certification_snapshot import (
+    build_certification_snapshot,
+)
 
 
 def test_ready_bundle_builds_certified_snapshot():
