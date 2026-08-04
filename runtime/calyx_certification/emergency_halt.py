@@ -4,16 +4,23 @@ from typing import Any
 
 
 def evaluate_emergency_halt(payload: dict[str, Any]) -> dict[str, Any]:
-    signals = [str(item) for item in payload.get("signals", []) if str(item)]
+    raw_signals = payload.get("signals")
+    signals = (
+        [str(item).strip() for item in raw_signals if str(item).strip()]
+        if isinstance(raw_signals, list)
+        else []
+    )
     halt_requested = payload.get("halt_requested") is True
-    blockers: list[str] = []
-    if halt_requested and not payload.get("reason"):
-        blockers.append("missing:halt_reason")
-    if halt_requested and payload.get("owner_notified") is not True:
-        blockers.append("owner_notification_missing")
-    if halt_requested and payload.get("automated_release_disabled") is not True:
-        blockers.append("automated_release_not_disabled")
     halt_required = halt_requested or bool(signals)
+    blockers: list[str] = []
+
+    if halt_required and not str(payload.get("reason") or "").strip():
+        blockers.append("missing:halt_reason")
+    if halt_required and payload.get("owner_notified") is not True:
+        blockers.append("owner_notification_missing")
+    if halt_required and payload.get("automated_release_disabled") is not True:
+        blockers.append("automated_release_not_disabled")
+
     return {
         "halt_required": halt_required,
         "halt_record_valid": halt_required and not blockers,

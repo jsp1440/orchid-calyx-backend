@@ -1,0 +1,37 @@
+name: CALYX Certification Hardening 001
+
+on:
+  pull_request:
+    paths:
+      - "runtime/calyx_certification/certification_snapshot.py"
+      - "runtime/calyx_certification/production_certification_report.py"
+      - "runtime/calyx_certification/emergency_halt.py"
+      - "runtime/calyx_certification/live_preflight_evidence.py"
+      - "runtime/calyx_certification/release_candidate_manifest.py"
+      - "tests/test_calyx_certification_hardening_001.py"
+      - ".github/workflows/calyx-certification-hardening-001.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "runtime/calyx_certification/certification_snapshot.py"
+      - "runtime/calyx_certification/production_certification_report.py"
+      - "runtime/calyx_certification/emergency_halt.py"
+      - "runtime/calyx_certification/live_preflight_evidence.py"
+      - "runtime/calyx_certification/release_candidate_manifest.py"
+      - "tests/test_calyx_certification_hardening_001.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "pytest==8.3.5" "ruff==0.11.13"
+      - run: ruff check runtime/calyx_certification/certification_snapshot.py runtime/calyx_certification/production_certification_report.py runtime/calyx_certification/emergency_halt.py runtime/calyx_certification/live_preflight_evidence.py runtime/calyx_certification/release_candidate_manifest.py tests/test_calyx_certification_hardening_001.py
+      - run: PYTHONPATH=. pytest -q tests/test_calyx_certification_hardening_001.py
