@@ -48,6 +48,22 @@ def test_controlled_dry_run_requires_zero_delta_and_full_coverage():
     assert authorization["production_write_executed"] is False
 
 
+def test_invalid_source_row_is_counted_once_not_once_per_pass():
+    source = InMemorySourceProvider({
+        "media": [{
+            "source_pk": "image-without-taxon",
+            "taxon_pk": None,
+            "media_url": "https://example.org/unresolved.jpg",
+        }]
+    })
+    report = run_controlled_dry_run(
+        _graph_with_taxon(), source, adapters=(IMAGES_ADAPTER,), max_rows_per_domain=10
+    )
+    domain = report["domains"][0]
+    assert domain["invalid"] == 1
+    assert report["totals"]["invalid"] == 1
+
+
 def test_truncated_dry_run_cannot_request_publication_authorization():
     source = InMemorySourceProvider({
         "media": [

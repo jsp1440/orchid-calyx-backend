@@ -13,6 +13,8 @@ on:
       - 'tests/test_unresolved_taxon_queue.py'
       - 'tests/test_controlled_graph_dry_run.py'
       - 'tests/test_post_publication_audit.py'
+      - 'tests/test_sqlite_staging_graph.py'
+      - 'tests/test_resumable_graph_dry_run.py'
       - '.github/workflows/calyx-graph-full-integration.yml'
 
 jobs:
@@ -35,4 +37,6 @@ jobs:
           tests/test_unresolved_taxon_queue.py
           tests/test_controlled_graph_dry_run.py
           tests/test_post_publication_audit.py
+          tests/test_sqlite_staging_graph.py
+          tests/test_resumable_graph_dry_run.py
       - run: python -m compileall -q runtime/knowledge_graph app/routers/full_graph_integration.py

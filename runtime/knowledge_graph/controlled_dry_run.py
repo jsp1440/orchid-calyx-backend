@@ -104,7 +104,10 @@ def run_controlled_dry_run(
                 first_edges=first.edges_written,
                 second_nodes=second.nodes_written,
                 second_edges=second.edges_written,
-                invalid=len(first.invalid) + len(second.invalid),
+                # The same source rows are validated during both passes. The
+                # first pass is the authoritative source-quality count; adding
+                # second.invalid would double-count identical failures.
+                invalid=len(first.invalid),
                 truncated=available > len(rows),
             ))
         except Exception as exc:  # surfaced per-domain; other domains continue
@@ -164,8 +167,8 @@ def publication_authorization_payload(report: dict[str, Any]) -> dict[str, Any]:
         "blockers": ([] if ready else [
             *report.get("errors", []),
             *(f"truncated:{d}" for d in report.get("truncated_domains", [])),
-            *( ["second_pass_not_zero_delta"] if not report.get("zero_delta") else [] ),
-            *( ["graph_integrity_failed"] if not report.get("validation", {}).get("healthy", False) else [] ),
+            *(["second_pass_not_zero_delta"] if not report.get("zero_delta") else []),
+            *(["graph_integrity_failed"] if not report.get("validation", {}).get("healthy", False) else []),
         ]),
         "operator_action": (
             "Review projected counts and explicitly authorize a separate production publication run."
