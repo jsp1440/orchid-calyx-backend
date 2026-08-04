@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-
 SIGNALS_REQUIRING_REVIEW = {
     "evidence_changed",
     "source_superseded",
