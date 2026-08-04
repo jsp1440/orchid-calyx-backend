@@ -7,9 +7,9 @@ later request to resume without touching production graph tables.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Any
 
-from .publisher import DomainAdapter, publish_domain
+from .publisher import DomainAdapter, canonical_key, publish_domain
 from .repository import GraphRepository
 from .resumable_dry_run import (
     DryRunSession,
@@ -32,17 +32,32 @@ def staging_path(directory: str, run_id: str) -> str:
     return str(Path(directory) / f"{safe}.sqlite3")
 
 
-def _seed_taxonomy(source_repo: GraphRepository, staging: SqliteStagingGraphRepository) -> int:
-    fetch = getattr(source_repo, "taxonomy_nodes", None)
-    nodes: Iterable
-    if callable(fetch):
-        nodes = fetch()
-    else:
-        nodes = (n for n in source_repo.all_nodes() if n.node_type in {"taxon", "genus"})
+def _seed_referenced_taxonomy(
+    source_repo: GraphRepository,
+    staging: SqliteStagingGraphRepository,
+    rows: list[dict[str, Any]],
+) -> int:
+    """Copy only taxon nodes referenced by the current bounded source batch.
+
+    Loading the complete production taxonomy before every resumable run defeats
+    the executor's batch ceiling and can exceed a web request timeout. Domain
+    adapters link from ``taxon:<taxon_pk>``, so the current rows define the
+    exact reference set required for this step. Missing references remain
+    visible to the publisher's normal validation path.
+    """
+    taxon_keys = {
+        canonical_key("taxon", row.get("taxon_pk"))
+        for row in rows
+        if row.get("taxon_pk") is not None
+    }
     seeded = 0
-    for node in nodes:
-        staging.upsert_node(node)
-        seeded += 1
+    for key in sorted(taxon_keys):
+        if staging.get_node_by_key(key) is not None:
+            continue
+        node = source_repo.get_node_by_key(key)
+        if node is not None:
+            staging.upsert_node(node)
+            seeded += 1
     return seeded
 
 
@@ -77,11 +92,6 @@ def resume_session(
         return session_report(session, staging_directory)
 
     staging = SqliteStagingGraphRepository(staging_path(staging_directory, run_id))
-    if not session.taxonomy_seeded:
-        _seed_taxonomy(graph_repo, staging)
-        session.taxonomy_seeded = True
-        store.save(session)
-
     state = next(
         (session.domain_states[d] for d in session.domains if session.domain_states[d].status != RUN_COMPLETED),
         None,
@@ -121,6 +131,8 @@ def resume_session(
                 state.status = RUN_COMPLETED
                 break
 
+            _seed_referenced_taxonomy(graph_repo, staging, rows)
+            session.taxonomy_seeded = True
             result = publish_domain(staging, adapter, rows)
             if state.pass_number == 1:
                 state.first_nodes += result.nodes_written

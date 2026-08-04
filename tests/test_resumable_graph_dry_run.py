@@ -19,6 +19,11 @@ def graph_with_taxon():
     return repo
 
 
+class NoFullTaxonomyScanRepository(InMemoryGraphRepository):
+    def taxonomy_nodes(self):
+        raise AssertionError("bounded resume must not scan the complete taxonomy")
+
+
 def test_resumable_execution_is_bounded_and_zero_delta(tmp_path):
     rows = [
         {"source_pk": f"image-{i}", "taxon_pk": 42, "media_url": f"https://example.org/{i}.jpg"}
@@ -60,6 +65,52 @@ def test_resumable_execution_is_bounded_and_zero_delta(tmp_path):
     assert state["second_edges"] == 0
     assert report["zero_delta"] is True
     assert report["publication_authorization_ready"] is True
+    assert report["production_graph_mutation"] is False
+
+
+def test_resume_seeds_only_taxa_referenced_by_current_batch(tmp_path):
+    repo = NoFullTaxonomyScanRepository()
+    repo.upsert_node(Node(
+        kg_node_id=1,
+        node_type="taxon",
+        canonical_key="taxon:42",
+        display_label="Cattleya labiata",
+        source_table="taxonomy",
+        source_pk="42",
+    ))
+    repo.upsert_node(Node(
+        kg_node_id=2,
+        node_type="taxon",
+        canonical_key="taxon:99",
+        display_label="Unreferenced taxon",
+        source_table="taxonomy",
+        source_pk="99",
+    ))
+    source = InMemorySourceProvider({
+        "media": [
+            {"source_pk": "image-1", "taxon_pk": 42, "media_url": "https://example.org/1.jpg"},
+        ]
+    })
+    store = JsonSessionStore(str(tmp_path / "sessions"))
+    session = create_session(
+        store,
+        domains=["media"],
+        allowed_domains={"media"},
+        batch_size=1,
+        max_batches_per_step=1,
+    )
+
+    report = resume_session(
+        store,
+        str(tmp_path / "staging"),
+        repo,
+        source,
+        {"media": IMAGES_ADAPTER},
+        session.run_id,
+    )
+
+    assert report["staging_counts"]["nodes"] == 2
+    assert report["staging_counts"]["edges"] == 1
     assert report["production_graph_mutation"] is False
 
 
