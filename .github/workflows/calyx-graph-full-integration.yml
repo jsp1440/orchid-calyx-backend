@@ -7,6 +7,7 @@ on:
       - 'app/routers/full_graph_integration.py'
       - 'app/routers/knowledge_graph.py'
       - 'app/routers/knowledge_graph_preflight.py'
+      - 'scripts/smoke_graph_deployment_preflight.py'
       - 'tests/test_calyx_full_graph_integration.py'
       - 'tests/test_full_domain_adapters.py'
       - 'tests/test_dynamic_source_projection.py'
@@ -18,6 +19,7 @@ on:
       - 'tests/test_resumable_graph_dry_run.py'
       - 'tests/test_platform_knowledge_graph_route_mount.py'
       - 'tests/test_graph_deployment_preflight.py'
+      - 'tests/test_smoke_graph_deployment_preflight.py'
       - '.github/workflows/calyx-graph-full-integration.yml'
 
 jobs:
@@ -44,4 +46,5 @@ jobs:
           tests/test_resumable_graph_dry_run.py
           tests/test_platform_knowledge_graph_route_mount.py
           tests/test_graph_deployment_preflight.py
-      - run: python -m compileall -q runtime/knowledge_graph app/routers/full_graph_integration.py app/routers/knowledge_graph.py app/routers/knowledge_graph_preflight.py
+          tests/test_smoke_graph_deployment_preflight.py
+      - run: python -m compileall -q runtime/knowledge_graph app/routers/full_graph_integration.py app/routers/knowledge_graph.py app/routers/knowledge_graph_preflight.py scripts/smoke_graph_deployment_preflight.py
