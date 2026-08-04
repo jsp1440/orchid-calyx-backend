@@ -1,4 +1,10 @@
-from scripts.smoke_graph_deployment_preflight import build_evidence, evaluate_preflight
+import inspect
+
+from scripts.smoke_graph_deployment_preflight import (
+    build_evidence,
+    evaluate_preflight,
+    main,
+)
 
 
 def test_evaluate_preflight_ready():
@@ -53,3 +59,9 @@ def test_build_evidence_deduplicates_blockers():
         preflight_status=0,
     )
     assert evidence["blockers"] == ["blocked"]
+
+
+def test_main_uses_bearer_session_token_endpoint():
+    source = inspect.getsource(main)
+    assert '"/api/mission-control/owner/session-token"' in source
+    assert '"/api/mission-control/owner/session"' not in source
