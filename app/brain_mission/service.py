@@ -3,11 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable
-
+from typing import Any
 
 MissionStep = Callable[[dict[str, Any]], Any]
 
@@ -120,6 +120,7 @@ class BrainMissionService:
             "confidence": None,
             "conclusions": [],
             "reasoning_ledger": None,
+            "artifacts": {},
             "validation": {"valid": False, "blockers": []},
             "review_status": "HUMAN_REVIEW_REQUIRED",
             "publication_eligibility": {
@@ -161,7 +162,7 @@ class BrainMissionService:
             try:
                 output = component({**context, **deepcopy(mission)})
                 self._apply(stage, output or {}, mission, max_sources)
-            except Exception as exc:  # component boundary: preserve partial result
+            except Exception as exc:  # noqa: BLE001 - fail closed at adapter boundary
                 self._block(mission, f"{component_name.upper()}_FAILED", stage, str(exc))
                 break
             self.repository.save(mission)
@@ -208,6 +209,7 @@ class BrainMissionService:
 
     @staticmethod
     def _apply(stage: str, output: Any, mission: dict[str, Any], max_sources: int) -> None:
+        mission["artifacts"].update(deepcopy(output.get("artifacts", {})))
         if stage == "evidence_retrieval":
             results = output.get("results", output if isinstance(output, list) else [])
             mission["sources"] = list(results)[:max_sources]

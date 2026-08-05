@@ -8,7 +8,9 @@ This module connects the existing Brain service boundaries into one bounded scie
 
 Every mission has source, execution-step, and elapsed-time limits. A missing or failing adapter stops the lifecycle with a named blocker while retaining partial evidence. Conclusions are typed separately from source-backed claims. The coordinator accepts and stores no private chain-of-thought. It never invokes publication; eligibility is a status only, always reports `automatic_publication: false`, and requires exact human review plus successful validation.
 
-The production route currently connects the existing deterministic hybrid retrieval engine. Translation from retrieval results into canonical Candidate Knowledge identifiers is intentionally blocked until a safe project-scoped adapter is configured; the route therefore returns partial retrieved evidence plus `AGGREGATE_COMPONENT_UNAVAILABLE` instead of fabricating or bypassing canonical records. All remaining boundaries are exercised deterministically with mocks in `tests/test_brain_mission_core.py`.
+The production route connects the deterministic hybrid retrieval engine to the existing Candidate Knowledge extractor, evidence aggregation service, scientific interpretation service, and Reasoning Ledger service. Retrieval now projects only canonical identities, anchors, provenance, authorized evidence spans, and structured candidate facts already held by the semantic index. Sources missing any required identity, anchor, locator, or authorized span are reported as translation gaps; none are synthesized. If every result is incomplete, the mission fails explicitly with `NO_CANONICAL_RETRIEVAL_EVIDENCE`.
+
+The route currently uses the existing in-memory repositories used by these service implementations, matching the mission repository's process-local lifetime. Durable multi-process production persistence remains a deployment adapter concern; scientific transformations and governance are no longer mock-only.
 
 ## API
 
@@ -35,10 +37,10 @@ Retrieve the durable process-local result with `GET /api/brain/missions/{mission
 |---|---|---|
 | bounded planning | no compatible question-level planner | minimal deterministic plan in coordinator |
 | semantic retrieval | `app.evidence_retrieval` | connected |
-| Candidate Knowledge | `app.candidate_knowledge` | adapter boundary; fail closed |
-| aggregation | `app.evidence_aggregation` | adapter boundary; mock-certified |
-| contradiction/gaps | aggregation plus orchestration policy | adapter boundary; mock-certified |
-| interpretation | `app.scientific_interpretation` | adapter boundary; mock-certified |
-| Reasoning Ledger | `app.reasoning_ledger` | adapter boundary; mock-certified |
+| Candidate Knowledge | `app.candidate_knowledge` | connected through canonical retrieval translation |
+| aggregation | `app.evidence_aggregation` | connected |
+| contradiction/gaps | aggregation plus orchestration policy | connected |
+| interpretation | `app.scientific_interpretation` | connected |
+| Reasoning Ledger | `app.reasoning_ledger` | connected; review pending |
 | human review | Reasoning Ledger/review APIs | mandatory status boundary |
 | publication gateway | `app.reasoning_publication` | eligibility read only; publication never called |
