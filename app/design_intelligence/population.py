@@ -3,12 +3,12 @@ from __future__ import annotations
 import hashlib
 import re
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
-from typing import Callable
 
-from .acquisition import AcquisitionMetadata, DesignDocumentAcquirer, SUPPORTED_FORMATS
+from .acquisition import SUPPORTED_FORMATS, AcquisitionMetadata, DesignDocumentAcquirer
 from .models import DesignDomain, DesignKnowledgeType, DesignReviewDecision, ReviewState
 from .reasoning import DesignReasoningService
 from .service import DesignIntelligenceService
@@ -186,7 +186,7 @@ class DesignCorpusPopulationService:
             "domain_counts": dict(sorted(domain_counts.items())), "knowledge_type_counts": dict(sorted(type_counts.items())),
             "duplicates": sum(count - 1 for count in hashes.values() if count > 1),
             "conflicts": sum(r.relationship_type.value == "CONTRADICTS" for r in relationships),
-            "obsolete_mentions": sum(bool(re.search(r"\b(obsolete|deprecated|superseded|retracted)\b", u.text, re.I)) for u in units),
+            "obsolete_mentions": sum(bool(re.search(r"\b(obsolete|deprecated|superseded|retracted)\b", u.text, re.IGNORECASE)) for u in units),
             "provenance_coverage": 1.0 if units and all(u.source_location.content_hash and u.source_location.locator.get("anchor_ids") for u in units) else 0.0,
             "retrieval": retrieval,
             "retrieval_outcomes": retrieval_outcomes,
