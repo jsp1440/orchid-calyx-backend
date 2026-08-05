@@ -1,0 +1,63 @@
+name: CALYX Eligible Ledger Discovery
+
+on:
+  pull_request:
+    paths:
+      - "scripts/discover_eligible_reasoning_ledgers.py"
+      - ".github/workflows/calyx-eligible-ledger-discovery.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/discover_eligible_reasoning_ledgers.py"
+      - ".github/workflows/calyx-eligible-ledger-discovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eligible-ledger-discovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Validate discovery operator
+        run: |
+          python -m py_compile scripts/discover_eligible_reasoning_ledgers.py
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/discover_eligible_reasoning_ledgers.py').read_text()
+          required = [
+              "read_only",
+              "production_mutation",
+              "publication_endpoint_invoked",
+              "review_content_hash",
+              "SELECT",
+          ]
+          missing = [item for item in required if item not in source]
+          if missing:
+              raise SystemExit(f"missing discovery safeguards: {missing}")
+          PY
+
+      - name: Install runtime dependencies
+        if: github.event_name != 'pull_request'
+        run: pip install sqlalchemy psycopg[binary]
+
+      - name: Discover eligible reviewed ledgers
+        if: github.event_name != 'pull_request'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/discover_eligible_reasoning_ledgers.py
+
+      - name: Upload discovery evidence
+        if: github.event_name != 'pull_request' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-eligible-ledger-discovery-${{ github.run_id }}
+          path: calyx-eligible-ledger-discovery.json
+          if-no-files-found: error
+          retention-days: 30
