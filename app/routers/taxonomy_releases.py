@@ -55,6 +55,24 @@ def create_taxonomy_release_router(
             raise HTTPException(status_code=404, detail="taxonomy release not found")
         return report
 
+    @router.get("/api/mission-control/occurrences/readiness")
+    def occurrence_readiness(
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        from runtime.occurrence_staging import SUPPORTED_SOURCES
+
+        return {
+            "supported_sources": sorted(SUPPORTED_SOURCES),
+            "staging_contract": "occurrence-staging-v1",
+            "idempotency": "checksum-deduplicated per batch",
+            "taxon_reconciliation": "canonical_lookup injection required for resolved state",
+            "unresolved_taxa": "enter explicit review queue, not silently dropped",
+            "production_mutation": False,
+            "next_action": (
+                "POST /api/mission-control/occurrences/stage with source and bounded records"
+            ),
+        }
+
     @releases.post("/inspect")
     async def inspect_release(
         file: UploadFile = File(...),  # noqa: B008

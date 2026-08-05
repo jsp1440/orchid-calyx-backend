@@ -438,3 +438,7 @@ app.include_router(orchid_widgets.router)
 from app.routers import knowledge_graph
 
 app.include_router(knowledge_graph.router)
+
+from runtime.calyx_core_certification import create_certification_router
+
+app.include_router(create_certification_router())
