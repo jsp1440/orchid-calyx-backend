@@ -137,7 +137,14 @@ class ExistingBrainMissionAdapter:
         inputs: list[CandidateInput] = []
         for candidate in candidates:
             links = [item for item in self.candidate_repository.evidence_links if item["candidate_id"] == candidate["candidate_id"]]
-            evidence = next(item for item in translated if item.revision_id == links[0]["revision_id"])
+            if not links:
+                raise ValueError(f"NO_EVIDENCE_LINKS_FOR_CANDIDATE:{candidate['candidate_id']}")
+            evidence = next(
+                (item for item in translated if item.revision_id == links[0]["revision_id"]),
+                None,
+            )
+            if evidence is None:
+                raise ValueError(f"CANONICAL_EVIDENCE_NOT_FOUND_FOR_REVISION:{links[0]['revision_id']}")
             relationship_to = {
                 str(other): "CONTRADICTS"
                 for pair in conflict_pairs
