@@ -1,0 +1,51 @@
+name: CALYX Live Idempotency Proof
+
+on:
+  pull_request:
+    paths:
+      - "scripts/prove_resumable_graph_idempotency.py"
+      - ".github/workflows/calyx-live-idempotency-proof.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/prove_resumable_graph_idempotency.py"
+      - ".github/workflows/calyx-live-idempotency-proof.yml"
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Persisted dry-run session ID to resume
+        required: false
+        default: d4059047-da6f-49f8-96fd-6feba5b372c0
+
+jobs:
+  live-idempotency-proof:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+      CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
+      CALYX_DRY_RUN_ID: ${{ github.event.inputs.run_id || 'd4059047-da6f-49f8-96fd-6feba5b372c0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Validate idempotency operator
+        run: python -m compileall -q scripts/prove_resumable_graph_idempotency.py
+      - name: Resume persisted session and prove zero delta
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/prove_resumable_graph_idempotency.py | tee calyx-live-idempotency-proof.txt
+      - name: Upload idempotency evidence
+        if: github.event_name != 'pull_request' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-live-idempotency-proof-${{ github.run_id }}
+          path: |
+            calyx-live-idempotency-proof.txt
+            calyx-live-idempotency-evidence.json
+          if-no-files-found: warn
+          retention-days: 30
