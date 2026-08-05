@@ -35,6 +35,7 @@ from runtime.knowledge_graph.canonical_taxonomy import (
     SYNONYM,
     CanonicalTaxon,
     build_canonical_registry,
+    canonical_name_of,
 )
 from runtime.world_plants_ingest import parse_world_orchids_release
 
@@ -364,11 +365,10 @@ class TaxonomyStagingPipeline:
 
         # Detect synonym rows the registry silently dropped because the
         # accepted name was not found in the backbone (orphan synonyms).
-        from runtime.knowledge_graph.canonical_taxonomy import canonical_name_of, SYNONYM as _SYNONYM
         registered_names = frozenset(registry.name_index.keys())
         for syn_row in synonym_rows:
             rel = (syn_row.get("relationship") or "").lower()
-            if rel != "synonym":
+            if rel != SYNONYM:
                 continue
             syn_name = canonical_name_of(
                 syn_row.get("input_match_name") or syn_row.get("input_name") or ""
@@ -391,11 +391,20 @@ class TaxonomyStagingPipeline:
 
         resumed = cp_nodes["rows_processed"] > 0
 
-        # Phase 1: nodes
+        # Phase 1: nodes — use a name-set for safe resumability (index-based
+        # skip is unstable if the registry ordering changes between runs).
+        with self._connect() as conn:
+            already_staged: frozenset[str] = frozenset(
+                row[0]
+                for row in conn.execute(
+                    "SELECT canonical_name FROM taxonomy_staging_nodes WHERE release_id = ?",
+                    (release_id,),
+                ).fetchall()
+            )
+
         with self._connect() as conn:
             for i, taxon in enumerate(all_taxa):
-                already_done = cp_nodes["completed"] or i < cp_nodes["rows_processed"]
-                if already_done:
+                if taxon.canonical_name in already_staged:
                     continue
 
                 accepted_name: str | None = None
@@ -446,25 +455,31 @@ class TaxonomyStagingPipeline:
             )
             conn.commit()
 
-        # Phase 2: synonym edges
+        # Phase 2: synonym edges — use existing edge set for safe resumability.
         with self._connect() as conn:
-            edge_count = 0
-            for j, taxon in enumerate(synonym_taxa):
-                already_done = cp_edges["completed"] or j < cp_edges["rows_processed"]
-                if already_done:
-                    continue
+            already_edged: frozenset[str] = frozenset(
+                f"{row[0]}:{row[1]}"
+                for row in conn.execute(
+                    "SELECT from_canonical_name, to_canonical_name"
+                    " FROM taxonomy_staging_edges WHERE release_id = ?",
+                    (release_id,),
+                ).fetchall()
+            )
 
+        with self._connect() as conn:
+            for j, taxon in enumerate(synonym_taxa):
                 if taxon.accepted_canonical_id is not None:
                     acc = registry.taxa.get(taxon.accepted_canonical_id)
                     if acc is not None:
-                        self._upsert_synonym_edge(
-                            conn,
-                            taxon.canonical_name,
-                            acc.canonical_name,
-                            release_id=release_id,
-                            source_sha256=source_sha256,
-                        )
-                        edge_count += 1
+                        edge_key = f"{taxon.canonical_name}:{acc.canonical_name}"
+                        if edge_key not in already_edged:
+                            self._upsert_synonym_edge(
+                                conn,
+                                taxon.canonical_name,
+                                acc.canonical_name,
+                                release_id=release_id,
+                                source_sha256=source_sha256,
+                            )
 
                 if (j + 1) % self.flush_every == 0:
                     self._save_checkpoint(
