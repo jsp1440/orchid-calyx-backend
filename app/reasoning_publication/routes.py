@@ -49,9 +49,10 @@ def eligible_for_publication(request: Request, auth: Auth, db: Db):
     owner = _subject(auth)
 
     def operation():
-        rows = db.execute(
-            text(
-                """
+        rows = (
+            db.execute(
+                text(
+                    """
                 SELECT
                     h.ledger_id,
                     h.project_id::text AS project_id,
@@ -67,9 +68,12 @@ def eligible_for_publication(request: Request, auth: Auth, db: Db):
                   AND r.status = 'approved'
                 ORDER BY h.updated_at DESC, h.ledger_id ASC
                 """
-            ),
-            {"owner": owner},
-        ).mappings().all()
+                ),
+                {"owner": owner},
+            )
+            .mappings()
+            .all()
+        )
         eligible: list[dict[str, Any]] = []
         approved_without_current_review: list[dict[str, Any]] = []
         for row in rows:
