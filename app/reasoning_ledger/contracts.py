@@ -110,3 +110,12 @@ class ReasoningLedgerService(ABC):
     ) -> list[ReasoningLedger]:
         """Return all current ledgers for a tenant/project pair."""
         raise NotImplementedError
+
+    @abstractmethod
+    def list_for_tenant(self, tenant_id: str) -> list[ReasoningLedger]:
+        """Return all current ledgers for a tenant (owner).
+
+        Used by the operator panel to discover eligible ledgers without
+        requiring the operator to supply project identifiers or ledger hashes.
+        """
+        raise NotImplementedError

@@ -13,6 +13,8 @@ CALYX CORE 4.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app.operator_panel.panel import OperatorPanel, friendly_error, MissionBrief
@@ -489,7 +491,6 @@ class TestPlainLanguageErrors:
             confirmation="wrong",
         )
         # Message must not contain a hex hash (64 hex chars).
-        import re
         assert not re.search(r"[0-9a-f]{64}", result["message"])
 
     def test_discovery_results_contain_no_raw_hashes_visible_to_operator(self):

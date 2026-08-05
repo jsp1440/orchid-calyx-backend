@@ -285,3 +285,15 @@ class InMemoryReasoningLedgerService(ReasoningLedgerService):
             if current.tenant_id == tenant_id and current.project_id == project_id:
                 result.append(current)
         return result
+
+    def list_for_tenant(self, tenant_id: str) -> list[ReasoningLedger]:
+        with self._lock:
+            all_histories = list(self._history.values())
+        result = []
+        for versions in all_histories:
+            if not versions:
+                continue
+            current = versions[-1]
+            if current.tenant_id == tenant_id:
+                result.append(current)
+        return result

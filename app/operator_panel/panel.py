@@ -314,14 +314,7 @@ class OperatorPanel:
         from app.reasoning_ledger import gate as publication_gate
 
         eligible = []
-        with self._service._lock:
-            all_histories = list(self._service._history.values())
-        for versions in all_histories:
-            if not versions:
-                continue
-            ledger = versions[-1]
-            if ledger.tenant_id != owner:
-                continue
+        for ledger in self._service.list_for_tenant(owner):
             if ledger.is_publishable:
                 blockers = publication_gate.evaluate(ledger)
                 if not blockers:
@@ -357,8 +350,16 @@ class OperatorPanel:
 
         Returns
         -------
-        dict with keys: outcome, message, ledger_id, version, graph_version.
-        ``outcome`` is one of ``"PUBLISHED"`` or ``"NO_OP_DUPLICATE"``.
+        dict with key ``outcome``, one of:
+        - ``"PUBLISHED"`` — successful publication; includes ``ledger_id``,
+          ``version``, ``graph_version``, and ``automatic_publication``.
+        - ``"NO_OP_DUPLICATE"`` — same version already published; includes
+          ``ledger_id``, ``version``, ``graph_version`` (None), and
+          ``automatic_publication``.
+        - ``"REFUSED"`` — owner confirmation phrase not provided; includes
+          ``message`` and ``publication_endpoint_invoked``.
+        - ``"ERROR"`` — ledger not found or not eligible; includes ``message``
+          and ``publication_endpoint_invoked``.
         """
         if confirmation != self.PUBLICATION_CONFIRMATION_PHRASE:
             return {
@@ -450,6 +451,15 @@ class OperatorPanel:
         last_decision = ledger.review_decisions[-1] if ledger.review_decisions else None
         last_outcome = last_decision.outcome.value if last_decision else None
 
+        # review_state reflects the human review perspective: whether the
+        # ledger is awaiting review, has been reviewed, or is in progress.
+        if ledger.status.value in ("under_review",):
+            review_state = "awaiting_review"
+        elif last_decision is not None:
+            review_state = f"reviewed:{last_outcome}"
+        else:
+            review_state = "not_yet_reviewed"
+
         return MissionBrief(
             ledger_id=str(ledger.ledger_id),
             title=ledger.title,
@@ -462,7 +472,7 @@ class OperatorPanel:
             gap_entries=gap_entries,
             confidence=confidence,
             blockers=blockers,
-            review_state=ledger.status.value,
+            review_state=review_state,
             last_review_outcome=last_outcome,
             is_eligible_for_publication=ledger.is_publishable,
         )
