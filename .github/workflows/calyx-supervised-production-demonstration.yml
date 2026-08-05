@@ -1,0 +1,70 @@
+name: CALYX Supervised Production Demonstration
+
+on:
+  workflow_dispatch:
+    inputs:
+      ledger_id:
+        description: Exact reviewed Reasoning Ledger ID
+        required: true
+        type: string
+      expected_version:
+        description: Exact reviewed ledger version
+        required: true
+        type: string
+      expected_review_content_hash:
+        description: Exact 64-character review content hash
+        required: true
+        type: string
+      confirmation:
+        description: Type PUBLISH ONE REVIEWED LEDGER
+        required: true
+        type: string
+      publication_note:
+        description: Owner publication note
+        required: false
+        default: Supervised CALYX production certification demonstration
+        type: string
+  pull_request:
+    paths:
+      - scripts/run_supervised_reasoning_publication.py
+      - .github/workflows/calyx-supervised-production-demonstration.yml
+
+permissions:
+  contents: read
+
+jobs:
+  supervised-production-demonstration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate operator contract
+        run: |
+          python -m py_compile scripts/run_supervised_reasoning_publication.py
+          grep -q 'PUBLISH ONE REVIEWED LEDGER' scripts/run_supervised_reasoning_publication.py
+          grep -q 'single_publication_attempt' scripts/run_supervised_reasoning_publication.py
+      - name: Execute one owner-authorized production demonstration
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+          CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
+          CALYX_LEDGER_ID: ${{ inputs.ledger_id }}
+          CALYX_EXPECTED_VERSION: ${{ inputs.expected_version }}
+          CALYX_EXPECTED_REVIEW_CONTENT_HASH: ${{ inputs.expected_review_content_hash }}
+          CALYX_PUBLICATION_CONFIRMATION: ${{ inputs.confirmation }}
+          CALYX_PUBLICATION_NOTE: ${{ inputs.publication_note }}
+        run: |
+          set -o pipefail
+          python scripts/run_supervised_reasoning_publication.py 2>&1 | tee calyx-supervised-publication.txt
+      - name: Upload supervised demonstration evidence
+        if: always() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-supervised-production-demonstration-${{ github.run_id }}
+          path: |
+            calyx-supervised-publication.txt
+            calyx-supervised-publication-evidence.json
+          if-no-files-found: warn
+          retention-days: 30
