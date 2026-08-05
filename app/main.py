@@ -34,6 +34,7 @@ from app.scientific_interpretation.routes import router as scientific_interpreta
 from app.ontology.routers import router as ontology_router
 from app.concepts.routers import router as concepts_router
 from app.brain.routes import router as brain_router
+from app.brain_mission.routes import router as brain_mission_router
 from app.literature_extraction.routes import router as literature_extraction_router
 from app.publication.routers import router as publication_router
 from app.research_workspace.routes import router as research_workspace_router
@@ -410,6 +411,7 @@ app.include_router(scientific_interpretation_router)
 app.include_router(ontology_router)
 app.include_router(concepts_router)
 app.include_router(brain_router)
+app.include_router(brain_mission_router)
 app.include_router(literature_extraction_router)
 app.include_router(publication_router)
 app.include_router(research_workspace_router)
