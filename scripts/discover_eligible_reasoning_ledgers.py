@@ -68,7 +68,7 @@ def main() -> int:
         print(f"version={first['version']}")
         print(f"review_content_hash={first['review_content_hash']}")
     else:
-        print("NO_ELIGIBLE_REVIEWED_LEDGER_FOUND")
+        print("NO_ELIGIBLE_LEDGER")
     return 0
 
 

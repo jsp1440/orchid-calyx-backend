@@ -100,6 +100,7 @@ def eligible_for_publication(request: Request, auth: Auth, db: Db):
                 eligible.append(summary)
         return {
             "contract": "calyx-eligible-reasoning-ledger-discovery-v1",
+            "result": "ELIGIBLE_LEDGER_FOUND" if eligible else "NO_ELIGIBLE_LEDGER",
             "read_only": True,
             "eligible_count": len(eligible),
             "eligible_ledgers": eligible,
