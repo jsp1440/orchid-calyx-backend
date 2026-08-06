@@ -5,11 +5,11 @@ import io
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+
 from docx import Document as DocxDocument
 from pypdf import PdfReader
 
 from .models import DesignDocumentInput, DesignProvenance
-
 
 SUPPORTED_FORMATS = {
     ".md": "MARKDOWN",

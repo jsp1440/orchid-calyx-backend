@@ -7,7 +7,6 @@ from typing import Any
 from .models import LifecycleState
 from .service import DesignPlanningService
 
-
 ACTOR = "build-090c-planning-demonstration"
 PROVENANCE = {
     "source_type": "OWNER_APPROVED_BUILD_SPECIFICATION",
