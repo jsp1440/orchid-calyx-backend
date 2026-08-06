@@ -20,6 +20,8 @@ on:
       - 'tests/test_platform_knowledge_graph_route_mount.py'
       - 'tests/test_graph_deployment_preflight.py'
       - 'tests/test_smoke_graph_deployment_preflight.py'
+      - 'tests/test_graph_acceleration_batch.py'
+      - '.github/workflows/calyx-deployed-preflight-smoke.yml'
       - '.github/workflows/calyx-graph-full-integration.yml'
 
 jobs:
@@ -47,4 +49,5 @@ jobs:
           tests/test_platform_knowledge_graph_route_mount.py
           tests/test_graph_deployment_preflight.py
           tests/test_smoke_graph_deployment_preflight.py
+          tests/test_graph_acceleration_batch.py
       - run: python -m compileall -q runtime/knowledge_graph app/routers/full_graph_integration.py app/routers/knowledge_graph.py app/routers/knowledge_graph_preflight.py scripts/smoke_graph_deployment_preflight.py
