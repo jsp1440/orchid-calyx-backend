@@ -183,16 +183,20 @@ def load_csv(path: Path) -> tuple[list[str], list[dict[str, str]], str, str, str
     if not parsed:
         return [], [], encoding, delimiter, "empty", 0
 
-    widths = Counter(len(row) for row in parsed)
-    expected_width = widths.most_common(1)[0][0]
-    width_anomalies = sum(count for width, count in widths.items() if width != expected_width)
     if _looks_like_header(parsed[0]):
+        widths = Counter(len(row) for row in parsed)
+        expected_width = widths.most_common(1)[0][0]
+        width_anomalies = sum(count for width, count in widths.items() if width != expected_width)
         columns = [normalize(value) or f"unnamed_{index}" for index, value in enumerate(parsed[0], start=1)]
         data_rows, input_shape = parsed[1:], "headered"
     elif delimiter == "|" and len(parsed[0]) >= 3:
         columns = _legacy_columns(max(len(row) for row in parsed))
+        width_anomalies = sum(1 for row in parsed if len(row) < 3)
         data_rows, input_shape = parsed, "legacy_world_plants_headerless"
     else:
+        widths = Counter(len(row) for row in parsed)
+        expected_width = widths.most_common(1)[0][0]
+        width_anomalies = sum(count for width, count in widths.items() if width != expected_width)
         columns = [f"column_{index}" for index in range(1, max(len(row) for row in parsed) + 1)]
         data_rows, input_shape = parsed, "headerless_unknown"
 
