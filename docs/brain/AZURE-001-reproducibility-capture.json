@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0.0",
+  "object_id": "azure-001-taxonomy-preflight-reproducibility",
+  "object_type": "implementation_evidence",
+  "title": "AZURE-001 governed taxonomy evidence reproducibility",
+  "lifecycle": "implemented_pending_ci",
+  "summary": "Adds a deterministic two-run verifier proving that governed taxonomy preflight evidence bundles are byte-identical under fixed inputs and SOURCE_DATE_EPOCH.",
+  "capabilities": [
+    "double_execution_reproducibility_check",
+    "artifact_sha256_comparison",
+    "aggregate_evidence_digest",
+    "fixed_timestamp_validation",
+    "fail_closed_on_nondeterminism",
+    "ci_evidence_export"
+  ],
+  "artifacts": [
+    "runtime/taxonomy_preflight_reproducibility.py",
+    "tests/test_taxonomy_preflight_reproducibility.py",
+    ".github/workflows/taxonomy-preflight-ci.yml"
+  ],
+  "safety_boundaries": {
+    "publication_authorized": false,
+    "database_mutation_authorized": false,
+    "azure_resources_created": false,
+    "production_cutover_authorized": false
+  },
+  "validation_status": {
+    "implementation_complete": true,
+    "focused_tests_added": true,
+    "ci_integrated": true,
+    "github_actions_run_observed": false,
+    "exact_world_orchids_26_08_validated": false
+  },
+  "relationships": [
+    {
+      "type": "extends",
+      "target": "azure-001-taxonomy-preflight"
+    },
+    {
+      "type": "supports",
+      "target": "taxonomy-release-gate-readiness"
+    }
+  ],
+  "next_action": "Observe GitHub Actions execution, fix any failures, then validate the exact WorldOrchids 26-08 source file before changing readiness beyond HOLD."
+}
