@@ -13,11 +13,13 @@ from .fixtures import build_canonical_brain_fixture
 from .handoff import BrainCaptureBundle, BrainCaptureResult, capture_build_bundle
 from .mission_control import BrainMissionControlStatus, build_mission_control_status
 from .models import BrainObject, BrainRelationship, BrainSnapshot, SearchHit
+from .orchestration import AgentDescriptor, BuildAssignment, ExecutionReceipt, GovernedOrchestrator
 from .persistence import BrainSnapshotRepository, JsonBrainSnapshotRepository
 from .registry import CanonicalBrainRegistry
 
 __all__ = [
     "AdmissionFinding",
+    "AgentDescriptor",
     "BrainCaptureBundle",
     "BrainCaptureResult",
     "BrainMissionControlStatus",
@@ -27,11 +29,14 @@ __all__ = [
     "BrainSnapshotRepository",
     "BuildAdmissionDecision",
     "BuildAdmissionRequest",
+    "BuildAssignment",
     "BuildQueueItem",
     "BuildQueueSnapshot",
     "CONSTITUTION_VERSION",
     "CanonicalBrainRegistry",
+    "ExecutionReceipt",
     "GovernedBuildQueue",
+    "GovernedOrchestrator",
     "JsonBrainSnapshotRepository",
     "SearchHit",
     "build_canonical_brain_fixture",
