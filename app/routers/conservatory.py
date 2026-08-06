@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+import qrcode
+import qrcode.image.svg
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
@@ -30,6 +33,13 @@ def _default_store() -> ConservatoryStore:
     return ConservatoryStore(root)
 
 
+def _qr_svg(payload: str) -> bytes:
+    image = qrcode.make(payload, image_factory=qrcode.image.svg.SvgPathImage, border=2)
+    buffer = BytesIO()
+    image.save(buffer)
+    return buffer.getvalue()
+
+
 def create_conservatory_router(
     get_store: Callable[[], ConservatoryStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
@@ -50,6 +60,20 @@ def create_conservatory_router(
         if plant is None:
             raise HTTPException(status_code=404, detail="plant not found")
         return plant
+
+    @router.get("/plants/{plant_id}/qr.svg")
+    def get_plant_qr(
+        plant_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> Response:
+        plant = get_store().get(plant_id)
+        if plant is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        return Response(
+            content=_qr_svg(plant["qr_identifier"]),
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
 
     @router.post("/plants", status_code=201)
     def create_plant(
