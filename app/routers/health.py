@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from app.archive.routes import router as archive_router
 from app.parallel_platform.routes import router as parallel_platform_router
 from app.routers.calyx_queue import router as calyx_queue_router
+from app.routers.conservatory import router as conservatory_router
 from app.routers.executive import router as executive_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
 from app.routers.live_mission_control import router as live_mission_control_router
@@ -50,6 +51,12 @@ def add_mission_control_cors_headers(request: Request, response: Response) -> No
 
 @router.options("/api/mission-control/{full_path:path}")
 def mission_control_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
+@router.options("/api/conservatory/{full_path:path}")
+def conservatory_options(full_path: str, request: Request, response: Response):
     add_mission_control_cors_headers(request, response)
     return {"status": "ok", "path": full_path}
 
@@ -127,6 +134,7 @@ router.include_router(owner_session_token_router, dependencies=[Depends(add_miss
 router.include_router(live_mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(taxonomy_releases_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(graph_pipeline_readiness_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(conservatory_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(executive_telemetry_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(executive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(scientific_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
