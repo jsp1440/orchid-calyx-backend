@@ -5,6 +5,8 @@ on:
     paths:
       - "runtime/taxonomy_preflight.py"
       - "tests/test_taxonomy_preflight.py"
+      - "config/taxonomy-preflight-policy.json"
+      - "docs/azure/taxonomy-preflight-runbook.md"
       - ".github/workflows/taxonomy-preflight-ci.yml"
   workflow_dispatch:
 
@@ -29,3 +31,51 @@ jobs:
 
       - name: Run focused unit tests
         run: python -m unittest tests.test_taxonomy_preflight -v
+
+      - name: Run CLI smoke validation
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cat > artifacts/baseline.csv <<'CSV'
+          taxon_id,scientific_name,status
+          1,Cattleya labiata,accepted
+          2,Dendrobium kingianum,accepted
+          CSV
+          cp artifacts/baseline.csv artifacts/candidate.csv
+          cat > artifacts/ci-policy.json <<'JSON'
+          {
+            "minimum_rows": 2,
+            "maximum_removed_ratio": 0.0,
+            "maximum_changed_ratio": 0.0,
+            "maximum_missing_identity_ratio": 0.0,
+            "maximum_duplicate_key_ratio": 0.0,
+            "finding_sample_limit": 25
+          }
+          JSON
+          python -m runtime.taxonomy_preflight artifacts/candidate.csv \
+            --baseline artifacts/baseline.csv \
+            --policy artifacts/ci-policy.json \
+            --json-output artifacts/taxonomy-preflight-report.json \
+            --summary-output artifacts/taxonomy-preflight-summary.md \
+            --manifest-output artifacts/taxonomy-preflight-manifest.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('artifacts/taxonomy-preflight-report.json').read_text())
+          manifest = json.loads(Path('artifacts/taxonomy-preflight-manifest.json').read_text())
+          assert report['status'] == 'PASS'
+          assert report['report_schema_version'] == '1.0.0'
+          assert manifest['run_id'] == report['run_id']
+          assert manifest['artifacts']['report']['sha256']
+          assert manifest['artifacts']['summary']['sha256']
+          PY
+
+      - name: Upload smoke-test evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: taxonomy-preflight-ci-evidence
+          path: |
+            artifacts/taxonomy-preflight-report.json
+            artifacts/taxonomy-preflight-summary.md
+            artifacts/taxonomy-preflight-manifest.json
+          retention-days: 7
