@@ -38,9 +38,18 @@ class SqliteStagingGraphRepository:
                 raise FileNotFoundError(path)
             return
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path) as conn:
+        with sqlite3.connect(self.path, timeout=30) as conn:
             conn.execute("CREATE TABLE IF NOT EXISTS nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node_type TEXT NOT NULL, canonical_key TEXT NOT NULL UNIQUE, display_label TEXT, source_table TEXT, source_pk TEXT, evidence_class TEXT, confidence_score REAL, confidence_label TEXT, payload TEXT NOT NULL)")
             conn.execute("CREATE TABLE IF NOT EXISTS edges (id INTEGER PRIMARY KEY AUTOINCREMENT, edge_type TEXT NOT NULL, from_node_id INTEGER NOT NULL, to_node_id INTEGER NOT NULL, source_table TEXT NOT NULL DEFAULT '', source_pk TEXT, evidence_class TEXT, confidence_score REAL, confidence_label TEXT, rule_name TEXT, payload TEXT NOT NULL, UNIQUE(edge_type, from_node_id, to_node_id, source_table))")
+            # Older staging databases allowed NULL source_table values, and SQLite
+            # treats NULLs as distinct in UNIQUE constraints. Deduplicate by the
+            # normalized identity before replacing NULL with the empty sentinel.
+            conn.execute(
+                "DELETE FROM edges WHERE id NOT IN ("
+                "SELECT MIN(id) FROM edges "
+                "GROUP BY edge_type, from_node_id, to_node_id, COALESCE(source_table, '')"
+                ")"
+            )
             conn.execute("UPDATE edges SET source_table = '' WHERE source_table IS NULL")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS edges_identity_unique ON edges(edge_type, from_node_id, to_node_id, source_table)")
 
