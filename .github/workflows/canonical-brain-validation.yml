@@ -8,6 +8,7 @@ on:
       - "app/canonical_brain/**"
       - "tests/test_canonical_brain_*.py"
       - "docs/architecture/**"
+      - "scripts/validate_canonical_brain.py"
       - "scripts/validate_canonical_brain.sh"
       - ".github/workflows/canonical-brain-validation.yml"
   pull_request:
@@ -15,6 +16,7 @@ on:
       - "app/canonical_brain/**"
       - "tests/test_canonical_brain_*.py"
       - "docs/architecture/**"
+      - "scripts/validate_canonical_brain.py"
       - "scripts/validate_canonical_brain.sh"
       - ".github/workflows/canonical-brain-validation.yml"
   workflow_dispatch:
@@ -42,4 +44,4 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pytest ruff
       - name: Run canonical Brain validation
-        run: bash scripts/validate_canonical_brain.sh
+        run: python scripts/validate_canonical_brain.py
