@@ -4,7 +4,7 @@ import json
 from datetime import timedelta
 from uuid import uuid4
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .engineering_core import EngineeringAdmissionPolicy, EngineeringWorkIdentity
@@ -73,14 +73,7 @@ class PersistentProgramWorker:
             self.db.rollback()
         return None
 
-    def heartbeat(
-        self,
-        *,
-        program_job_id: str,
-        worker_id: str,
-        lease_token: str,
-        lease_seconds: int = 300,
-    ) -> CalyxProgramJob:
+    def heartbeat(self, *, program_job_id: str, worker_id: str, lease_token: str, lease_seconds: int = 300) -> CalyxProgramJob:
         updated = (
             self.db.query(CalyxProgramJob)
             .filter(
@@ -118,17 +111,12 @@ class PersistentProgramWorker:
         job = self.db.get(CalyxProgramJob, program_job_id)
         if job is None:
             raise LookupError("PROGRAM_JOB_NOT_FOUND")
-        if (
-            job.status != "running"
-            or job.lease_owner != worker_id
-            or job.lease_token != lease_token
-        ):
+        if job.status != "running" or job.lease_owner != worker_id or job.lease_token != lease_token:
             raise PermissionError("STALE_PROGRAM_JOB_LEASE")
         program = self.db.get(CalyxProgram, job.program_id)
         if program is None:
             raise LookupError("PROGRAM_NOT_FOUND")
-        repository = PersistentProgramRepository(self.db)
-        completed = repository.record_outcome(
+        completed = PersistentProgramRepository(self.db).record_outcome(
             owner=program.owner,
             program_id=program.program_id,
             job_key=job.job_key,
