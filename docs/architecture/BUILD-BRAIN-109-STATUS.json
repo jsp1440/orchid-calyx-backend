@@ -1,0 +1,17 @@
+{
+  "build_id": "BUILD-BRAIN-109",
+  "status": "candidate_implemented",
+  "issue": 427,
+  "capabilities": [
+    "execution_leases",
+    "heartbeats",
+    "timeout_classification",
+    "retry_candidate_decision",
+    "manual_review_escalation",
+    "cancellation_receipts"
+  ],
+  "production_activation": false,
+  "merge_authority": false,
+  "deployment_authority": false,
+  "publication_authority": false
+}
