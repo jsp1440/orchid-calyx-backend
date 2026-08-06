@@ -68,7 +68,11 @@ class CanonicalBrainRegistry:
                     score=score,
                     matched_fields=sorted(matched),
                 ))
-        return sorted(hits, key=lambda item: (-item.score, item.title.casefold(), item.object_id))
+        _type_rank = {"architecture": 0, "intent": 1, "build": 2, "decision": 3}
+        return sorted(
+            hits,
+            key=lambda item: (-item.score, _type_rank.get(item.object_type, 9), item.title.casefold(), item.object_id),
+        )
 
     def related(self, object_id: str, relationship_type: str | None = None) -> list[BrainObject]:
         related_ids: set[str] = set()

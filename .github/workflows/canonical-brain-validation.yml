@@ -22,10 +22,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install focused dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pydantic fastapi httpx pytest ruff
+          python -m pip install -r requirements.txt
+          python -m pip install pytest ruff
       - name: Compile
         run: python -m compileall -q app/canonical_brain
       - name: Lint

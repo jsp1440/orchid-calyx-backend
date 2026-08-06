@@ -33,7 +33,7 @@ def build_canonical_brain_fixture() -> CanonicalBrainRegistry:
         _object("intent:accelerate-discovery", "intent", "Accelerate scientific discovery", "Connect evidence, tools, and reproducible workflows for orchid research.", ["Research mission"], ["mission", "research"]),
         _object("architecture:brain", "architecture", "Canonical Brain", "Institutional memory for architecture, decisions, intent, dependencies, validation, and reproducibility.", ["Project Brain", "Calyx Brain"], ["brain", "governance", "search"]),
         _object("architecture:mission-control", "architecture", "Mission Control", "Operational command surface for engineers, builds, approvals, blockers, and system health.", ["Control Plane"], ["operations", "orchestration"]),
-        _object("architecture:knowledge-explorer", "architecture", "Knowledge Explorer", "Integrated glossary, scientific figures, photographs, learning paths, and evidence-linked concept exploration.", ["Illustrated Glossary", "Lexicon Engine"], ["glossary", "FigureLabs", "education"]),
+        _object("architecture:knowledge-explorer", "architecture", "Knowledge Explorer", "Integrated glossary, scientific figures, photographs, learning paths, and evidence-linked concept exploration.", ["Illustrated Glossary", "Lexicon Engine", "FigureLabs"], ["glossary", "FigureLabs", "education"]),
         _object("architecture:atlas", "architecture", "Planetary Intelligence Atlas", "Earth systems, biodiversity, conservation, temporal intelligence, and deterministic thematic cartography.", ["Atlas", "Earth Systems Atlas"], ["maps", "earth science", "cartography"]),
         _object("architecture:research-station", "architecture", "Research Station", "Reproducible scientific workspaces and evidence-preserving analysis workflows.", ["Orchid Research Station"], ["research", "evidence"]),
         _object("architecture:conservatory", "architecture", "Conservatory", "Living-collection intelligence, QR records, cultivation history, and specimen dossiers.", ["Oasis", "Collection Manager"], ["collection", "QR"]),
@@ -41,7 +41,7 @@ def build_canonical_brain_fixture() -> CanonicalBrainRegistry:
         _object("architecture:ai-vision", "architecture", "AI.Vision", "Governed visual observations, annotations, and image-to-character proposals.", ["Vision Lab"], ["images", "annotation"]),
         _object("architecture:publishing", "architecture", "Scientific Publishing Platform", "Evidence-backed reports, articles, grants, presentations, and educational outputs.", ["Publishing Engine"], ["reports", "publication"]),
         _object("decision:atlas-earth-systems", "decision", "Earth Systems and Thematic Cartography are core Atlas capabilities", "The Atlas explains environmental context and generates repeatable maps rather than serving only as a point viewer.", ["ADR-ATLAS-001"], ["atlas", "earth science", "thematic maps"]),
-        _object("decision:knowledge-explorer", "decision", "Glossary is a Knowledge Explorer", "Scientific terms are gateways to figures, photographs, literature, taxa, ecology, cultivation, and learning resources.", ["Glossary decision"], ["glossary", "knowledge explorer"]),
+        _object("decision:knowledge-explorer", "decision", "Glossary is a Knowledge Explorer", "Scientific terms are gateways to figures, photographs, literature, taxa, ecology, cultivation, and learning resources.", ["ADR-KE-001"], ["glossary", "knowledge explorer"]),
     ]
     for record in records:
         registry.register_object(record)

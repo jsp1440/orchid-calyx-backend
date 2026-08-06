@@ -40,7 +40,7 @@ def _build_record() -> BrainObject:
 
 def test_read_only_api_is_searchable_and_discoverable() -> None:
     app = FastAPI()
-    app.include_router(create_brain_router())
+    app.include_router(create_brain_router(), prefix="/brain")
     client = TestClient(app)
 
     status = client.get("/canonical/status")
