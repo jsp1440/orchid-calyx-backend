@@ -7,7 +7,10 @@ from app.calyx_orchestrator.execution_bridge import (
     LeaseExecutionBridge,
     decode_receipt_evidence,
 )
-from app.calyx_orchestrator.executor import DeterministicDryRunExecutor, GovernedAssignment
+from app.calyx_orchestrator.executor import (
+    DeterministicDryRunExecutor,
+    GovernedAssignment,
+)
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
     CalyxProgramDependency,
