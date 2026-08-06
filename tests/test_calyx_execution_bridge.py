@@ -3,12 +3,22 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.database import Base
-from app.calyx_orchestrator.execution_bridge import LeaseExecutionBridge, decode_receipt_evidence
+from app.calyx_orchestrator.execution_bridge import (
+    LeaseExecutionBridge,
+    decode_receipt_evidence,
+)
 from app.calyx_orchestrator.executor import DeterministicDryRunExecutor, GovernedAssignment
-from app.calyx_orchestrator.program_models import CalyxProgram, CalyxProgramDependency, CalyxProgramJob
-from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
+from app.calyx_orchestrator.program_models import (
+    CalyxProgram,
+    CalyxProgramDependency,
+    CalyxProgramJob,
+)
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
+from app.database import Base
 
 
 def _db() -> Session:
