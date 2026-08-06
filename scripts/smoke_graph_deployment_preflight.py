@@ -1,4 +1,4 @@
-"""Verify deployed Knowledge Graph dry-run readiness without starting a run."""
+"""Verify deployed Knowledge Graph and Brain readiness without starting a run."""
 from __future__ import annotations
 
 import json
@@ -24,6 +24,18 @@ def request(path: str, *, method: str = "GET", payload: dict | None = None, toke
         return response.status, json.loads(body) if body else {}
 
 
+def _step_request(step: str, *args, **kwargs):
+    try:
+        return request(*args, **kwargs)
+    except HTTPError as exc:
+        body = exc.read().decode(errors="replace")
+        print(f"FAIL {step}: HTTP {exc.code} {body}".rstrip())
+        raise
+    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        print(f"FAIL {step}: {exc!r}")
+        raise
+
+
 def evaluate_preflight(report: dict) -> tuple[bool, list[str]]:
     ready = report.get("ready_for_live_resumable_dry_run") is True
     blockers = [str(item) for item in report.get("blockers", [])]
@@ -33,27 +45,30 @@ def evaluate_preflight(report: dict) -> tuple[bool, list[str]]:
 
 
 def main() -> int:
-    if not ACCESS_CODE:
-        print("FAIL owner_session: CALYX_OWNER_ACCESS_CODE not set")
-        return 1
-
     try:
-        status, _ = request("/health")
+        status, _ = _step_request("health", "/health")
         print(f"{'PASS' if status == 200 else 'FAIL'} health: {status}")
         if status != 200:
             return 1
 
-        status, session = request(
-            "/api/mission-control/owner/session",
-            method="POST",
-            payload={"access_code": ACCESS_CODE},
-        )
-        token = session.get("token") or session.get("access_token") or ""
-        print(f"{'PASS' if status == 200 and token else 'FAIL'} owner_session: {status}")
-        if status != 200 or not token:
+        if not ACCESS_CODE:
+            print("FAIL owner_session: CALYX_OWNER_ACCESS_CODE not set")
             return 1
 
-        status, report = request(
+        status, session = _step_request(
+            "owner_session",
+            "/api/mission-control/owner/session-token",
+            method="POST",
+            payload={"access_code": ACCESS_CODE, "owner": "owner"},
+        )
+        token = session.get("token") or ""
+        print(f"{'PASS' if status == 200 and token else 'FAIL'} owner_session: {status}")
+        if status != 200 or not token or token == "cookie":
+            print("FAIL owner_session: usable bearer token not returned")
+            return 1
+
+        status, report = _step_request(
+            "deployment_preflight",
             "/api/platform/knowledge-graph/deployment-preflight",
             token=token,
         )
@@ -71,8 +86,7 @@ def main() -> int:
         print("PASS ready_for_live_resumable_dry_run: true")
         print("SAFE STOP: no dry run was started")
         return 0
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
-        print(f"FAIL request: {exc!r}")
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
         return 1
 
 
