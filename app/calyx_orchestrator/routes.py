@@ -13,6 +13,8 @@ from app.security import verify_owner_or_api_key
 from .models import CalyxJob
 from .operations import operational_status, renew_lease, seed_approved_tasks
 from .program_routes import router as program_router
+from .scientific_program import scientific_mission_control_snapshot
+from .scientific_routes import router as scientific_router
 from .service import (
     AUTONOMY_POLICY_CLASSES,
     READ_ONLY_JOB_TYPES,
@@ -56,6 +58,12 @@ def _owner(auth: dict[str, Any]) -> str:
 @router.get("/status")
 def status(auth: AuthDependency, db: DbDependency) -> dict:
     return operational_status(db, owner=_owner(auth))
+
+
+@router.get("/scientific/status")
+def scientific_status(auth: AuthDependency) -> dict:
+    _owner(auth)
+    return scientific_mission_control_snapshot()
 
 
 @router.post("/seed-overnight", status_code=201)
@@ -146,3 +154,4 @@ def requeue_dead_letter(job_id: str, auth: AuthDependency, db: DbDependency) -> 
 
 
 router.include_router(program_router)
+router.include_router(scientific_router)

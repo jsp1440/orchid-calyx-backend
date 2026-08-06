@@ -1,0 +1,71 @@
+name: CALYX Phase 2 Scientific Agents Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/calyx_orchestrator/scientific_agents.py"
+      - "app/calyx_orchestrator/scientific_program.py"
+      - "app/calyx_orchestrator/scientific_execution.py"
+      - "app/calyx_orchestrator/scientific_routes.py"
+      - "app/calyx_orchestrator/routes.py"
+      - "tests/test_calyx_scientific_agents_phase_2.py"
+      - "tests/test_calyx_scientific_program_phase_2.py"
+      - "tests/test_calyx_scientific_execution_phase_2.py"
+      - ".github/workflows/calyx-phase-2-scientific-agents.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+      CALYX_API_KEY: test-key
+      CALYX_OWNER_SESSION_SECRET: test-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff httpx
+      - name: Compile
+        run: python -m compileall -q app/calyx_orchestrator
+      - name: Ruff
+        run: >-
+          ruff check
+          app/calyx_orchestrator/scientific_agents.py
+          app/calyx_orchestrator/scientific_program.py
+          app/calyx_orchestrator/scientific_execution.py
+          app/calyx_orchestrator/scientific_routes.py
+          app/calyx_orchestrator/routes.py
+          tests/test_calyx_scientific_agents_phase_2.py
+          tests/test_calyx_scientific_program_phase_2.py
+          tests/test_calyx_scientific_execution_phase_2.py
+      - name: Focused tests
+        run: >-
+          pytest -q
+          tests/test_calyx_scientific_agents_phase_2.py
+          tests/test_calyx_scientific_program_phase_2.py
+          tests/test_calyx_scientific_execution_phase_2.py
+      - name: Route smoke
+        run: |
+          python - <<'PY'
+          from app.main import app
+          paths = {route.path for route in app.routes}
+          required = {
+              "/brain/orchestrator/scientific/status",
+              "/brain/orchestrator/scientific/programs/phase-2-demo",
+              "/brain/orchestrator/scientific/workers/jobs/{program_job_id}/complete",
+          }
+          missing = required - paths
+          if missing:
+              raise SystemExit(f"Missing routes: {sorted(missing)}")
+          print("CALYX Phase 2 scientific execution routes registered")
+          PY
