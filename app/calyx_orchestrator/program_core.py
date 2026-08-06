@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Iterable
 
 from .engineering_core import TerminalOutcome
 
@@ -65,7 +65,7 @@ class EngineeringProgram:
         owner: str,
         title: str,
         jobs: Iterable[ProgramJobSpec],
-    ) -> "EngineeringProgram":
+    ) -> EngineeringProgram:
         specs = list(jobs)
         if not specs:
             raise ValueError("PROGRAM_REQUIRES_JOBS")
