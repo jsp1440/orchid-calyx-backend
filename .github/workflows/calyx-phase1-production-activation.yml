@@ -1,10 +1,18 @@
 name: CALYX Phase 1 Production Activation
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'migrations/20260805_calyx_autonomous_engineering_core.sql'
+      - 'app/orchestrator/**'
+      - 'tests/test_engineering_program*.py'
+      - '.github/workflows/calyx-phase1-production-activation.yml'
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 'Type APPLY CALYX PHASE 1 MIGRATION'
+        description: 'Recovery runs only: type APPLY CALYX PHASE 1 MIGRATION'
         required: true
         type: string
       run_smoke_test:
@@ -26,12 +34,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Validate explicit confirmation
+      - name: Validate invocation policy
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CONFIRMATION: ${{ inputs.confirmation }}
         run: |
-          if [[ "${{ inputs.confirmation }}" != "APPLY CALYX PHASE 1 MIGRATION" ]]; then
-            echo "Exact confirmation is required."
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$CONFIRMATION" != "APPLY CALYX PHASE 1 MIGRATION" ]]; then
+            echo "Manual recovery runs require the exact confirmation phrase."
             exit 1
+          fi
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            echo "Automatic safe-path activation triggered by an approved change merged to main."
           fi
 
       - name: Check required database secret
@@ -41,10 +55,10 @@ jobs:
         run: |
           test -n "$DATABASE_URL" || { echo "DATABASE_URL secret is not configured"; exit 1; }
 
-      - name: Check out merged main
+      - name: Check out triggering main revision
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
 
       - name: Install PostgreSQL client
         shell: bash
@@ -67,21 +81,34 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --tuples-only --no-align <<'SQL'
-          SELECT table_name
+          actual=$(psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --tuples-only --no-align <<'SQL'
+          SELECT count(*)
           FROM information_schema.tables
           WHERE table_schema = 'public'
             AND table_name IN (
               'calyx_engineering_programs',
               'calyx_engineering_program_jobs',
               'calyx_engineering_program_dependencies'
-            )
-          ORDER BY table_name;
+            );
           SQL
+          )
+          test "$actual" = "3" || { echo "Expected 3 program tables; found $actual"; exit 1; }
+
+      - name: Record migration result
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## CALYX autonomous operations"
+            echo "- Event: ${{ github.event_name }}"
+            echo "- Revision: \`${{ github.sha }}\`"
+            echo "- Migration: transactional and idempotent"
+            echo "- Destructive operations: disabled"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   smoke:
     name: Verify deployed protected endpoints
-    if: ${{ inputs.run_smoke_test }}
+    if: ${{ github.event_name == 'push' || inputs.run_smoke_test }}
     needs: migrate
     runs-on: ubuntu-latest
     environment: production
@@ -136,10 +163,15 @@ jobs:
           cat /tmp/program-response.json | python -m json.tool
           test "$status" = "404"
 
-      - name: Record safety boundary
+      - name: Record terminal outcome
+        if: success()
         shell: bash
         run: |
-          echo "Migration and read-only smoke verification completed."
-          echo "No engineering program was created."
-          echo "No worker was activated."
-          echo "No merge, deployment, taxonomy activation, graph mutation, or scientific publication was initiated by this workflow."
+          {
+            echo "## DELIVERED"
+            echo "- Program migration verified"
+            echo "- Protected orchestrator status verified"
+            echo "- Program route verified read-only"
+            echo "- No worker or engineering program created"
+            echo "- No taxonomy activation, graph mutation, scientific publication, credential rotation, or data deletion"
+          } >> "$GITHUB_STEP_SUMMARY"
