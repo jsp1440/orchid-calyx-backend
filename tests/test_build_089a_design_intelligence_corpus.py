@@ -259,9 +259,8 @@ def test_postgres_authoritative_repository_and_immutability():
         if value["logical_key"] == f"postgres-dashboard-{suffix}"
     )
     assert match["provenance"]["anchor_ids"] == (1040,)
-    with psycopg.connect(dsn, autocommit=True) as con:
-        with pytest.raises(psycopg.errors.RaiseException):
-            con.execute(
-                "UPDATE oc_design_intelligence.documents SET title='mutated' WHERE document_id=%s",
-                (item.document_id,),
-            )
+    with psycopg.connect(dsn, autocommit=True) as con, pytest.raises(psycopg.errors.RaiseException):
+        con.execute(
+            "UPDATE oc_design_intelligence.documents SET title='mutated' WHERE document_id=%s",
+            (item.document_id,),
+        )

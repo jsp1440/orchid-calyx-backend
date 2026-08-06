@@ -1,18 +1,5 @@
 """BUILD-089A design intelligence corpus."""
 
-from .models import (
-    DesignDomain,
-    DesignDocument,
-    DesignDocumentInput,
-    DesignKnowledgeType,
-    DesignProvenance,
-    DesignReviewDecision,
-    PublicationStatus,
-    ReviewState,
-)
-from .repository import MemoryDesignCorpusRepository
-from .postgres_repository import PostgresDesignCorpusRepository
-from .service import DesignIntelligenceService, DesignSearchQuery
 from .acquisition import AcquisitionMetadata, DesignDocumentAcquirer
 from .knowledge import (
     DesignRelationship,
@@ -23,10 +10,15 @@ from .knowledge import (
     SemanticUnitType,
     SourceLocation,
 )
-from .reasoning import (
-    DesignReasoningService,
-    MemoryDesignKnowledgeRepository,
-    SemanticDecomposer,
+from .models import (
+    DesignDocument,
+    DesignDocumentInput,
+    DesignDomain,
+    DesignKnowledgeType,
+    DesignProvenance,
+    DesignReviewDecision,
+    PublicationStatus,
+    ReviewState,
 )
 from .population import (
     ARCHIVE_DRIVE_ID,
@@ -39,39 +31,47 @@ from .population import (
     DesignCorpusPopulationService,
     ProvenanceBinding,
 )
+from .postgres_repository import PostgresDesignCorpusRepository
+from .reasoning import (
+    DesignReasoningService,
+    MemoryDesignKnowledgeRepository,
+    SemanticDecomposer,
+)
+from .repository import MemoryDesignCorpusRepository
+from .service import DesignIntelligenceService, DesignSearchQuery
 
 __all__ = [
-    "DesignDomain",
-    "DesignDocument",
-    "DesignDocumentInput",
-    "DesignIntelligenceService",
-    "DesignKnowledgeType",
-    "DesignProvenance",
-    "DesignReviewDecision",
-    "DesignSearchQuery",
-    "AcquisitionMetadata",
-    "DesignDocumentAcquirer",
-    "DesignRelationship",
-    "EducationalClassification",
-    "RelationshipType",
-    "SemanticDesignDomain",
-    "SemanticUnit",
-    "SemanticUnitType",
-    "SourceLocation",
-    "DesignReasoningService",
-    "MemoryDesignKnowledgeRepository",
-    "SemanticDecomposer",
-    "MemoryDesignCorpusRepository",
-    "PostgresDesignCorpusRepository",
-    "PublicationStatus",
-    "ReviewState",
     "ARCHIVE_DRIVE_ID",
     "ARCHIVE_SHA256",
     "ARCHIVE_VERSION",
     "REUSE_LICENSE",
     "RIGHTS_STATE",
     "UNKNOWN_AUTHOR",
+    "AcquisitionMetadata",
     "CorpusFile",
     "DesignCorpusPopulationService",
+    "DesignDocument",
+    "DesignDocumentAcquirer",
+    "DesignDocumentInput",
+    "DesignDomain",
+    "DesignIntelligenceService",
+    "DesignKnowledgeType",
+    "DesignProvenance",
+    "DesignReasoningService",
+    "DesignRelationship",
+    "DesignReviewDecision",
+    "DesignSearchQuery",
+    "EducationalClassification",
+    "MemoryDesignCorpusRepository",
+    "MemoryDesignKnowledgeRepository",
+    "PostgresDesignCorpusRepository",
     "ProvenanceBinding",
+    "PublicationStatus",
+    "RelationshipType",
+    "ReviewState",
+    "SemanticDecomposer",
+    "SemanticDesignDomain",
+    "SemanticUnit",
+    "SemanticUnitType",
+    "SourceLocation",
 ]

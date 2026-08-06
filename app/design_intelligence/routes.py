@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.security import verify_owner_or_api_key
 from app.persistence.state_repository import configured_database_url
+from app.security import verify_owner_or_api_key
 
 from .knowledge import SemanticDesignDomain
 from .models import DesignDomain, DesignKnowledgeType
