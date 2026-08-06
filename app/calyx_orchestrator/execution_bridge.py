@@ -75,7 +75,7 @@ class LeaseExecutionBridge:
         elif receipt.state == ExecutionState.CANCELLED:
             human_action = "Confirm whether the cancelled job should remain closed or be revised and retried."
 
-        return self.worker.complete(
+        completed = self.worker.complete(
             program_job_id=program_job_id,
             worker_id=worker_id,
             lease_token=lease_token,
@@ -84,6 +84,7 @@ class LeaseExecutionBridge:
             blocker=blocker,
             human_action=human_action,
         )
+        return self._normalize_cancelled_status(completed)
 
     def cancel(
         self,
@@ -107,7 +108,7 @@ class LeaseExecutionBridge:
             lease_token=lease_token,
             reason=normalized_reason,
         )
-        return self.worker.complete(
+        completed = self.worker.complete(
             program_job_id=program_job_id,
             worker_id=worker_id,
             lease_token=lease_token,
@@ -116,6 +117,14 @@ class LeaseExecutionBridge:
             blocker="PROGRAM_JOB_CANCELLED",
             human_action="Confirm whether the cancelled job should remain closed or be revised and retried.",
         )
+        return self._normalize_cancelled_status(completed)
+
+    def _normalize_cancelled_status(self, job: CalyxProgramJob) -> CalyxProgramJob:
+        if job.outcome == "CANCELLED" and job.status != "cancelled":
+            job.status = "cancelled"
+            self.db.commit()
+            self.db.refresh(job)
+        return job
 
     def _require_live_lease(
         self,
