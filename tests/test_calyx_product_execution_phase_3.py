@@ -3,8 +3,14 @@ from __future__ import annotations
 import pytest
 
 from app.calyx_orchestrator.product_agents import ProductAgentRole
-from app.calyx_orchestrator.product_execution import product_program_specs, validate_product_payload
-from app.calyx_orchestrator.product_program import PRODUCT_DIRECTOR_JOB, PRODUCT_PREREQUISITE_KEYS
+from app.calyx_orchestrator.product_execution import (
+    product_program_specs,
+    validate_product_payload,
+)
+from app.calyx_orchestrator.product_program import (
+    PRODUCT_DIRECTOR_JOB,
+    PRODUCT_PREREQUISITE_KEYS,
+)
 
 
 def test_product_program_specs_are_persistable() -> None:
