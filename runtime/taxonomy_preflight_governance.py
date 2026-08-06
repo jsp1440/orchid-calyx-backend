@@ -20,6 +20,7 @@ from typing import Any
 from runtime.taxonomy_preflight import (
     REPORT_SCHEMA_VERSION,
     VALIDATOR_VERSION,
+    Finding,
     Policy,
     atomic_write_text,
     sha256_file,
@@ -30,16 +31,8 @@ from runtime.taxonomy_preflight import (
 
 GOVERNANCE_VERSION = "0.1.0"
 REQUIRED_REPORT_KEYS = {
-    "report_schema_version",
-    "run_id",
-    "source_filename",
-    "source_sha256",
-    "generated_at",
-    "validator_version",
-    "status",
-    "input_shape",
-    "metrics",
-    "findings",
+    "report_schema_version", "run_id", "source_filename", "source_sha256",
+    "generated_at", "validator_version", "status", "input_shape", "metrics", "findings",
 }
 
 
@@ -58,8 +51,7 @@ class GovernancePolicy:
         if path is None:
             return cls()
         payload = json.loads(path.read_text(encoding="utf-8"))
-        allowed = set(cls.__dataclass_fields__)
-        unknown = sorted(set(payload) - allowed)
+        unknown = sorted(set(payload) - set(cls.__dataclass_fields__))
         if unknown:
             raise ValueError(f"unknown governance policy fields: {', '.join(unknown)}")
         for key in ("allowed_input_shapes", "allowed_suffixes"):
@@ -76,7 +68,6 @@ class GovernancePolicy:
 
 
 def deterministic_timestamp() -> str:
-    """Use SOURCE_DATE_EPOCH when supplied, otherwise current UTC."""
     raw = os.getenv("SOURCE_DATE_EPOCH")
     if raw is not None:
         try:
@@ -88,7 +79,6 @@ def deterministic_timestamp() -> str:
 
 
 def _directory_is_private(path: Path) -> bool:
-    """Best-effort POSIX check; Windows is treated as not provably unsafe."""
     if os.name == "nt" or not path.exists():
         return True
     return (path.stat().st_mode & 0o077) == 0
@@ -100,9 +90,7 @@ def preflight_inputs(candidate: Path, baseline: Path | None, output_dir: Path, p
     if candidate.suffix.casefold() not in {item.casefold() for item in policy.allowed_suffixes}:
         raise ValueError(f"candidate suffix is not allowed: {candidate.suffix}")
     if candidate.stat().st_size > policy.maximum_candidate_bytes:
-        raise ValueError(
-            f"candidate size {candidate.stat().st_size} exceeds governance maximum {policy.maximum_candidate_bytes}"
-        )
+        raise ValueError(f"candidate size {candidate.stat().st_size} exceeds governance maximum {policy.maximum_candidate_bytes}")
     if policy.require_baseline and baseline is None:
         raise ValueError("baseline is required by governance policy")
     if baseline is not None and not baseline.is_file():
@@ -142,9 +130,7 @@ def enforce_governance(report_payload: dict[str, Any], policy: GovernancePolicy)
         violations.append(f"column count {column_count} exceeds {policy.maximum_columns}")
     null_ratio = _overall_null_ratio(report_payload)
     if null_ratio > policy.maximum_overall_null_ratio:
-        violations.append(
-            f"overall null ratio {null_ratio:.4%} exceeds {policy.maximum_overall_null_ratio:.4%}"
-        )
+        violations.append(f"overall null ratio {null_ratio:.4%} exceeds {policy.maximum_overall_null_ratio:.4%}")
     return violations
 
 
@@ -154,13 +140,14 @@ def _bundle_checksum(artifacts: dict[str, dict[str, str]]) -> str:
 
 
 def verify_bundle(bundle_dir: Path) -> dict[str, Any]:
-    manifest_path = bundle_dir / "manifest.json"
-    receipt_path = bundle_dir / "receipt.json"
+    manifest_path, receipt_path = bundle_dir / "manifest.json", bundle_dir / "receipt.json"
     if not manifest_path.is_file() or not receipt_path.is_file():
         raise ValueError("bundle is missing manifest.json or receipt.json")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     artifacts = manifest.get("artifacts", {})
+    if set(artifacts) != {"report", "summary"}:
+        raise ValueError("manifest must contain exactly report and summary artifacts")
     for name, metadata in artifacts.items():
         artifact_path = (bundle_dir / metadata["path"]).resolve()
         if bundle_dir.resolve() not in artifact_path.parents:
@@ -174,55 +161,42 @@ def verify_bundle(bundle_dir: Path) -> dict[str, Any]:
         raise ValueError("bundle receipt checksum mismatch")
     report_payload = json.loads((bundle_dir / "report.json").read_text(encoding="utf-8"))
     validate_report_contract(report_payload)
+    if receipt.get("run_id") != report_payload["run_id"] or receipt.get("status") != report_payload["status"]:
+        raise ValueError("receipt does not match report identity/status")
     return {"verified": True, "run_id": report_payload["run_id"], "bundle_checksum": expected}
 
 
-def execute_bundle(
-    candidate: Path,
-    baseline: Path | None,
-    output_dir: Path,
-    validator_policy: Policy,
-    governance_policy: GovernancePolicy,
-) -> tuple[Path, dict[str, Any]]:
+def execute_bundle(candidate: Path, baseline: Path | None, output_dir: Path, validator_policy: Policy, governance_policy: GovernancePolicy) -> tuple[Path, dict[str, Any]]:
     preflight_inputs(candidate, baseline, output_dir, governance_policy)
-    output_parent = output_dir.parent
-    output_parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.", dir=output_parent))
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.", dir=output_dir.parent))
     try:
         report = validate(candidate, baseline, validator_policy)
+        report.generated_at = deterministic_timestamp()
         report_payload = report.to_dict()
-        report_payload["generated_at"] = deterministic_timestamp()
         validate_report_contract(report_payload)
         violations = enforce_governance(report_payload, governance_policy)
         if violations:
-            report_payload["status"] = "FAIL"
-            report_payload.setdefault("findings", []).extend(
-                {"level": "FAIL", "code": "governance_violation", "message": item, "row": None}
-                for item in violations
-            )
+            report.status = "FAIL"
+            report.findings.extend(Finding("FAIL", "governance_violation", item) for item in violations)
+            report.finding_counts["FAIL:governance_violation"] = len(violations)
+            report_payload = report.to_dict()
 
-        report_path = staging / "report.json"
-        summary_path = staging / "summary.md"
-        manifest_path = staging / "manifest.json"
+        report_path, summary_path, manifest_path = staging / "report.json", staging / "summary.md", staging / "manifest.json"
         atomic_write_text(report_path, json.dumps(report_payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n")
-        report.status = report_payload["status"]
-        report.generated_at = report_payload["generated_at"]
-        report.findings = [type(report.findings[0])(**item) if report.findings else item for item in report_payload["findings"]] if False else report.findings
         write_human_summary(report, summary_path)
         write_manifest(report, report_path, summary_path, manifest_path)
-
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        # Store paths relative to the bundle so verification is relocation-safe.
         for metadata in manifest["artifacts"].values():
             metadata["path"] = Path(metadata["path"]).name
         atomic_write_text(manifest_path, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         receipt = {
             "governance_version": GOVERNANCE_VERSION,
-            "run_id": report_payload["run_id"],
-            "status": report_payload["status"],
-            "completed_at": report_payload["generated_at"],
-            "candidate": {"filename": candidate.name, "sha256": report_payload["source_sha256"]},
-            "baseline": None if baseline is None else {"filename": baseline.name, "sha256": report_payload["baseline_sha256"]},
+            "run_id": report.run_id,
+            "status": report.status,
+            "completed_at": report.generated_at,
+            "candidate": {"filename": candidate.name, "sha256": report.source_sha256},
+            "baseline": None if baseline is None else {"filename": baseline.name, "sha256": report.baseline_sha256},
             "governance_policy": asdict(governance_policy),
             "bundle_checksum": _bundle_checksum(manifest["artifacts"]),
             "publication_authorized": False,
@@ -255,13 +229,7 @@ def main() -> int:
         if args.command == "verify":
             result = verify_bundle(args.bundle_dir)
         else:
-            bundle, receipt = execute_bundle(
-                args.candidate,
-                args.baseline,
-                args.output_dir,
-                Policy.from_path(args.validator_policy),
-                GovernancePolicy.from_path(args.governance_policy),
-            )
+            bundle, receipt = execute_bundle(args.candidate, args.baseline, args.output_dir, Policy.from_path(args.validator_policy), GovernancePolicy.from_path(args.governance_policy))
             result = {"bundle": str(bundle), **receipt}
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"status": "ERROR", "error": str(exc)}))
