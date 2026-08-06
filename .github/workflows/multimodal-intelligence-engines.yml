@@ -4,10 +4,12 @@ on:
   pull_request:
     paths:
       - "app/multimodal_intelligence/**"
+      - "app/routers/health.py"
       - "tests/test_multimodal_intelligence_engines.py"
       - "tests/test_multimodal_intelligence_status.py"
       - "tests/test_multimodal_intelligence_priority_10.py"
       - "tests/test_multimodal_operator_priority_10.py"
+      - "tests/test_multimodal_operator_priority_20.py"
       - ".github/workflows/multimodal-intelligence-engines.yml"
   workflow_dispatch:
 
@@ -31,14 +33,15 @@ jobs:
           pip install -r requirements.txt
           pip install pytest ruff
       - name: Compile
-        run: python -m compileall -q app/multimodal_intelligence
+        run: python -m compileall -q app/multimodal_intelligence app/routers/health.py
       - name: Ruff
         run: >-
-          ruff check app/multimodal_intelligence
+          ruff check app/multimodal_intelligence app/routers/health.py
           tests/test_multimodal_intelligence_engines.py
           tests/test_multimodal_intelligence_status.py
           tests/test_multimodal_intelligence_priority_10.py
           tests/test_multimodal_operator_priority_10.py
+          tests/test_multimodal_operator_priority_20.py
       - name: Focused tests
         run: >-
           pytest -q
@@ -46,19 +49,21 @@ jobs:
           tests/test_multimodal_intelligence_status.py
           tests/test_multimodal_intelligence_priority_10.py
           tests/test_multimodal_operator_priority_10.py
+          tests/test_multimodal_operator_priority_20.py
       - name: Route smoke
         run: |
           python - <<'PY'
-          from fastapi import FastAPI
-          from app.multimodal_intelligence.routes import router
+          from app.main import app
 
-          app = FastAPI()
-          app.include_router(router)
           paths = {route.path for route in app.routes}
           required = {
               "/api/mission-control/multimodal-intelligence/status",
+              "/api/mission-control/multimodal-intelligence/configuration",
               "/api/mission-control/multimodal-intelligence/batch/plan",
               "/api/mission-control/multimodal-intelligence/review-queue",
+              "/api/mission-control/multimodal-intelligence/operations/{operation_id}",
+              "/api/mission-control/multimodal-intelligence/operations/{operation_id}/review",
+              "/api/mission-control/multimodal-intelligence/operations/{operation_id}/provenance",
               "/api/mission-control/multimodal-intelligence/audit/export",
               "/api/mission-control/multimodal-intelligence/benchmark",
           }
