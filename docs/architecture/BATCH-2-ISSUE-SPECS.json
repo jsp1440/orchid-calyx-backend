@@ -1,0 +1,16 @@
+{
+  "batch": 2,
+  "builds": [
+    {"build_id":"BUILD-KE-302","priority":11,"depends_on":["BUILD-KE-300"],"objective":"Contextual terminology recognition and glossary popovers"},
+    {"build_id":"BUILD-FIG-303","priority":12,"depends_on":["BUILD-FIG-301"],"objective":"Governed visual asset registry and living figures"},
+    {"build_id":"BUILD-KE-304","priority":13,"depends_on":["BUILD-KE-302","BUILD-FIG-303"],"objective":"Knowledge Explorer search, concept graph, and learning pathways"},
+    {"build_id":"BUILD-ATLAS-401","priority":14,"depends_on":["BUILD-ATLAS-400"],"objective":"Persistent spatial layer registry and lineage store"},
+    {"build_id":"BUILD-ATLAS-402","priority":15,"depends_on":["BUILD-ATLAS-401"],"objective":"Earth Systems dataset adapter framework"},
+    {"build_id":"BUILD-ATLAS-403","priority":16,"depends_on":["BUILD-ATLAS-401","BUILD-ATLAS-402"],"objective":"Deterministic thematic-map renderer and export artifacts"},
+    {"build_id":"BUILD-RS-500","priority":17,"depends_on":["BUILD-MC-200"],"objective":"Research Station governed evidence workspace"},
+    {"build_id":"BUILD-CON-600","priority":18,"depends_on":["BUILD-MC-200"],"objective":"Conservatory specimen, QR, and label vertical slice"},
+    {"build_id":"BUILD-MATRIX-700","priority":19,"depends_on":["BUILD-MC-200"],"objective":"Matrix character ontology and comparison engine"},
+    {"build_id":"BUILD-VISION-800","priority":20,"depends_on":["BUILD-MC-200"],"objective":"Governed visual observation and annotation pipeline"}
+  ],
+  "safety":{"merge":false,"deploy":false,"publish":false,"production_graph_mutation":false}
+}
