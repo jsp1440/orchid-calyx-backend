@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections import defaultdict, deque
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -17,7 +16,6 @@ def stable_checksum(value: object) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-# BUILD-KE-304 — concept search, graph, and learning pathways
 class ExplorerConcept(StrictModel):
     concept_id: str
     label: str
@@ -62,7 +60,6 @@ class KnowledgeExplorerIndex:
         return ordered
 
 
-# BUILD-ATLAS-404 — candidate habitat suitability
 class HabitatVariable(StrictModel):
     variable_id: str
     normalized_score: float = Field(ge=0, le=1)
@@ -91,7 +88,6 @@ def calculate_habitat_suitability(taxon_id: str, cell_id: str, variables: list[H
     )
 
 
-# BUILD-RS-501 — reproducible protocol plans
 class ProtocolStep(StrictModel):
     step_id: str
     instruction: str
@@ -110,7 +106,6 @@ class ResearchProtocol(StrictModel):
         return stable_checksum(self.model_dump(mode="json"))
 
 
-# BUILD-CON-601 — care history and environmental linkage
 class CareEvent(StrictModel):
     event_id: str
     specimen_id: str
@@ -138,7 +133,6 @@ class ConservatoryTimeline:
         )
 
 
-# BUILD-MATRIX-701 — explainable identification ranking
 class TaxonCandidate(StrictModel):
     taxon_id: str
     states: dict[str, str | None]
@@ -170,7 +164,6 @@ def rank_taxa(observed_states: dict[str, str], candidates: list[TaxonCandidate])
     return sorted(results, key=lambda item: (-item.score, item.conflicting, item.missing, item.taxon_id))
 
 
-# BUILD-VISION-801 — review queue for visual observations
 class VisionReviewItem(StrictModel):
     observation_id: str
     image_id: str
@@ -204,7 +197,6 @@ class VisionReviewQueue:
         return updated
 
 
-# BUILD-PUB-901 — deterministic report assembler
 class ReportSection(StrictModel):
     section_id: str
     title: str
@@ -229,7 +221,6 @@ def assemble_report(report_id: str, title: str, sections: list[ReportSection]) -
     return ReportPackage(report_id=report_id, title=title, sections=ordered, checksum=checksum)
 
 
-# BUILD-INT-951 — idempotent event routing
 class RoutedEvent(StrictModel):
     event_id: str
     event_type: str
@@ -255,7 +246,6 @@ class EventRouter:
         return candidate
 
 
-# BUILD-MC-202 — risk and blocker projection
 class RiskItem(StrictModel):
     risk_id: str
     architecture_id: str
@@ -279,7 +269,6 @@ def summarize_risks(items: list[RiskItem]) -> RiskSummary:
     )
 
 
-# BUILD-BRAIN-114 — architecture-change capture proposals
 class ArchitectureChangeProposal(StrictModel):
     proposal_id: str
     title: str
