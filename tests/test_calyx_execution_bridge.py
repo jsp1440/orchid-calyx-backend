@@ -106,6 +106,7 @@ def test_cancellation_persists_explicit_receipt_and_rejects_stale_replay():
             reason="Superseded by a corrected governed assignment.",
         )
         assert completed.outcome == "CANCELLED"
+        assert completed.status == "cancelled"
         assert decode_receipt_evidence(completed)["reason"].startswith("Superseded")
         try:
             bridge.cancel(
