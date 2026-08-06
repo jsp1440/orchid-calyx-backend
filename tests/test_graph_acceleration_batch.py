@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import time
 
 import pytest
@@ -23,6 +24,20 @@ def test_null_source_edge_is_idempotent(tmp_path):
     repo.upsert_edge(edge)
     repo.upsert_edge(edge)
     assert repo.counts()["edges"] == 1
+
+
+def test_legacy_duplicate_null_edges_are_migrated_safely(tmp_path):
+    path = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(path) as conn:
+        conn.execute("CREATE TABLE nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node_type TEXT NOT NULL, canonical_key TEXT NOT NULL UNIQUE, display_label TEXT, source_table TEXT, source_pk TEXT, evidence_class TEXT, confidence_score REAL, confidence_label TEXT, payload TEXT NOT NULL)")
+        conn.execute("CREATE TABLE edges (id INTEGER PRIMARY KEY AUTOINCREMENT, edge_type TEXT NOT NULL, from_node_id INTEGER NOT NULL, to_node_id INTEGER NOT NULL, source_table TEXT, source_pk TEXT, evidence_class TEXT, confidence_score REAL, confidence_label TEXT, rule_name TEXT, payload TEXT NOT NULL, UNIQUE(edge_type, from_node_id, to_node_id, source_table))")
+        values = ("has_image", 1, 2, None, "1", None, None, None, None, "{}")
+        conn.execute("INSERT INTO edges(edge_type, from_node_id, to_node_id, source_table, source_pk, evidence_class, confidence_score, confidence_label, rule_name, payload) VALUES(?,?,?,?,?,?,?,?,?,?)", values)
+        conn.execute("INSERT INTO edges(edge_type, from_node_id, to_node_id, source_table, source_pk, evidence_class, confidence_score, confidence_label, rule_name, payload) VALUES(?,?,?,?,?,?,?,?,?,?)", values)
+    repo = SqliteStagingGraphRepository(str(path))
+    assert repo.counts()["edges"] == 1
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT source_table FROM edges").fetchone()[0] == ""
 
 
 def test_pending_status_does_not_create_sqlite_file(tmp_path):
