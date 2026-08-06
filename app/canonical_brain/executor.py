@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .orchestration import AgentAssignment, ExecutionReceipt
+from .orchestration import BuildAssignment, ExecutionReceipt
 
 
 class StrictModel(BaseModel):
@@ -14,10 +15,11 @@ class StrictModel(BaseModel):
 
 
 class ExecutionRequest(StrictModel):
-    assignment: AgentAssignment
+    assignment: BuildAssignment
     capability: str = Field(min_length=3)
     input_payload: dict[str, object]
     evidence_uris: list[str] = Field(min_length=1)
+    recorded_at: datetime
     timeout_seconds: int = Field(default=300, ge=1, le=3600)
 
 
@@ -63,12 +65,16 @@ class DeterministicDryRunExecutor:
             "mode": "dry-run",
         }
         output_checksum = _checksum(output_payload)
+        receipt_id = hashlib.sha256(
+            f"{request.assignment.assignment_id}:completed:dry-run".encode("utf-8")
+        ).hexdigest()
         receipt = ExecutionReceipt(
-            receipt_id=f"receipt:{request.assignment.assignment_id}",
+            receipt_id=receipt_id,
             assignment_id=request.assignment.assignment_id,
             build_id=request.assignment.build_id,
             agent_id=request.assignment.agent_id,
-            status="completed",
+            outcome="completed",
+            recorded_at=request.recorded_at,
             evidence_uris=sorted(set(request.evidence_uris)),
             output_checksum=output_checksum,
         )
