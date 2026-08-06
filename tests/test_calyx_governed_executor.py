@@ -9,6 +9,11 @@ from app.calyx_orchestrator.executor import (
     GovernedAssignment,
     canonical_checksum,
 )
+from app.calyx_orchestrator.program_core import (
+    EngineeringProgram,
+    ProgramJobSpec,
+    ProgramJobStatus,
+)
 
 
 def assignment(**overrides):
@@ -40,14 +45,60 @@ def test_dry_run_receipt_is_deterministic_and_verifiable():
     first.verify()
 
 
+def test_receipt_completes_program_job_and_releases_dependency():
+    program = EngineeringProgram.create(
+        program_id="program-1",
+        owner="owner-1",
+        title="Executor integration",
+        jobs=(
+            ProgramJobSpec(
+                job_key="brain-108",
+                role_key="brain_engineer",
+                title="Governed executor",
+                repository="jsp1440/orchid-calyx-backend",
+            ),
+            ProgramJobSpec(
+                job_key="brain-109",
+                role_key="brain_engineer",
+                title="Lease recovery",
+                repository="jsp1440/orchid-calyx-backend",
+                depends_on=("brain-108",),
+            ),
+        ),
+    )
+    program.start()
+    program.mark_running("brain-108")
+
+    receipt = DeterministicDryRunExecutor().execute(assignment())
+    released = program.complete_job(
+        receipt.job_key,
+        outcome=receipt.outcome,
+        evidence=receipt.evidence_uris,
+    )
+
+    assert released == ("brain-109",)
+    assert program.jobs["brain-109"].status == ProgramJobStatus.READY
+    assert program.jobs["brain-108"].evidence == receipt.evidence_uris
+
+
 def test_input_checksum_mismatch_fails_closed():
     with pytest.raises(ValueError, match="ASSIGNMENT_INPUT_CHECKSUM_MISMATCH"):
-        DeterministicDryRunExecutor().execute(assignment(input_checksum="not-the-checksum"))
+        DeterministicDryRunExecutor().execute(
+            assignment(input_checksum="not-the-checksum")
+        )
 
 
 @pytest.mark.parametrize(
     "capability",
-    ["shell", "network", "merge", "deploy", "publish", "credential_access", "production_graph_mutation"],
+    [
+        "shell",
+        "network",
+        "merge",
+        "deploy",
+        "publish",
+        "credential_access",
+        "production_graph_mutation",
+    ],
 )
 def test_prohibited_capabilities_are_blocked(capability):
     receipt = DeterministicDryRunExecutor().execute(
@@ -84,11 +135,19 @@ def test_nonpositive_timeout_fails_closed():
 
 def test_evidence_uris_are_deduplicated_in_order():
     receipt = DeterministicDryRunExecutor().execute(
-        assignment(evidence_uris=("github:issue/437", "github:issue/437", "brain:build/108"))
+        assignment(
+            evidence_uris=(
+                "github:issue/437",
+                "github:issue/437",
+                "brain:build/108",
+            )
+        )
     )
     assert receipt.evidence_uris == ("github:issue/437", "brain:build/108")
 
 
 def test_invalid_evidence_uri_is_rejected():
     with pytest.raises(ValueError, match="INVALID_EVIDENCE_URI"):
-        DeterministicDryRunExecutor().execute(assignment(evidence_uris=("not-a-uri",)))
+        DeterministicDryRunExecutor().execute(
+            assignment(evidence_uris=("not-a-uri",))
+        )
