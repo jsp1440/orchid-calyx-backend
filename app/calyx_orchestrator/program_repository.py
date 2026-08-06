@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .models import utcnow
 from .program_models import CalyxProgram, CalyxProgramDependency, CalyxProgramJob
 from .programs import SUCCESSFUL_OUTCOMES, TERMINAL_OUTCOMES
-from .models import utcnow
 
 
 @dataclass(frozen=True)
