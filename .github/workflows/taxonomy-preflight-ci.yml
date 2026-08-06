@@ -5,10 +5,13 @@ on:
     paths:
       - "runtime/taxonomy_preflight.py"
       - "runtime/taxonomy_preflight_governance.py"
+      - "runtime/taxonomy_preflight_release_gate.py"
       - "tests/test_taxonomy_preflight.py"
       - "tests/test_taxonomy_preflight_governance.py"
+      - "tests/test_taxonomy_preflight_release_gate.py"
       - "config/taxonomy-preflight-policy.json"
       - "config/taxonomy-preflight-governance.json"
+      - "config/taxonomy-release-gate-policy.json"
       - "docs/azure/taxonomy-preflight-runbook.md"
       - ".github/workflows/taxonomy-preflight-ci.yml"
   workflow_dispatch:
@@ -29,20 +32,26 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Compile validator and governance wrapper
+      - name: Compile validator, governance, and release gate
         run: |
           python -m py_compile runtime/taxonomy_preflight.py
           python -m py_compile runtime/taxonomy_preflight_governance.py
+          python -m py_compile runtime/taxonomy_preflight_release_gate.py
 
       - name: Run focused unit tests
-        run: python -m unittest tests.test_taxonomy_preflight tests.test_taxonomy_preflight_governance -v
+        run: |
+          python -m unittest \
+            tests.test_taxonomy_preflight \
+            tests.test_taxonomy_preflight_governance \
+            tests.test_taxonomy_preflight_release_gate -v
 
-      - name: Run governed CLI smoke validation
+      - name: Run governed release-gate smoke validation
         shell: bash
         env:
           SOURCE_DATE_EPOCH: "0"
         run: |
           mkdir -p artifacts
+          chmod 700 artifacts
           cat > artifacts/baseline.csv <<'CSV'
           taxon_id,scientific_name,status
           1,Cattleya labiata,accepted
@@ -70,28 +79,52 @@ jobs:
             "require_private_output_directory": false
           }
           JSON
-          python -m runtime.taxonomy_preflight_governance run artifacts/candidate.csv \
+          cp config/taxonomy-release-gate-policy.json artifacts/ci-release.json
+          python -m runtime.taxonomy_preflight_release_gate plan artifacts/candidate.csv \
             --baseline artifacts/baseline.csv \
             --validator-policy artifacts/ci-policy.json \
             --governance-policy artifacts/ci-governance.json \
-            --output-dir artifacts/governed-bundle
-          python -m runtime.taxonomy_preflight_governance verify artifacts/governed-bundle
+            --release-policy artifacts/ci-release.json \
+            --review-reference CI-REVIEW-459 \
+            --output-dir artifacts/release-bundle > artifacts/release-plan.json
+          test ! -e artifacts/release-bundle
+          python -m runtime.taxonomy_preflight_release_gate run artifacts/candidate.csv \
+            --baseline artifacts/baseline.csv \
+            --validator-policy artifacts/ci-policy.json \
+            --governance-policy artifacts/ci-governance.json \
+            --release-policy artifacts/ci-release.json \
+            --review-reference CI-REVIEW-459 \
+            --output-dir artifacts/release-bundle
+          python -m runtime.taxonomy_preflight_release_gate verify artifacts/release-bundle \
+            --release-policy artifacts/ci-release.json
+          python -m runtime.taxonomy_preflight_release_gate azure-spec \
+            --image ghcr.io/fcos/taxonomy@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            > artifacts/azure-execution-spec.json
           python - <<'PY'
           import json
           from pathlib import Path
-          bundle = Path('artifacts/governed-bundle')
+          bundle = Path('artifacts/release-bundle')
           report = json.loads((bundle / 'report.json').read_text())
           receipt = json.loads((bundle / 'receipt.json').read_text())
+          complete = json.loads((bundle / 'COMPLETE.json').read_text())
+          spec = json.loads(Path('artifacts/azure-execution-spec.json').read_text())
           assert report['status'] == 'PASS'
           assert report['generated_at'] == '1970-01-01T00:00:00+00:00'
-          assert receipt['run_id'] == report['run_id']
+          assert receipt['review_reference'] == 'CI-REVIEW-459'
           assert receipt['publication_authorized'] is False
           assert receipt['database_mutation_authorized'] is False
+          assert receipt['azure_resources_created'] is False
+          assert complete['run_id'] == report['run_id']
+          assert spec['provision'] is False
+          assert spec['public_ingress'] is False
           PY
 
       - name: Upload governed smoke-test evidence
         uses: actions/upload-artifact@v4
         with:
-          name: taxonomy-preflight-governed-ci-evidence
-          path: artifacts/governed-bundle/
+          name: taxonomy-preflight-release-gate-ci-evidence
+          path: |
+            artifacts/release-plan.json
+            artifacts/release-bundle/
+            artifacts/azure-execution-spec.json
           retention-days: 7
