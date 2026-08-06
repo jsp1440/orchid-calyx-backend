@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from hashlib import sha256
 import json
-from typing import Any
+from typing import Any, Protocol
 from uuid import uuid4
 
 from .contracts import (
@@ -16,6 +18,26 @@ from .contracts import (
 from .engine import matrix_observations_from_vision, rank_matrix_candidates
 
 
+class MultimodalError(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewDecision:
+    decision: str
+    rationale: str
+    reviewer: str
+    decided_at: str
+
+    def validate(self) -> None:
+        if self.decision not in {"approve", "request_revision", "reject"}:
+            raise MultimodalError("REVIEW_DECISION_INVALID", "Unsupported review decision.")
+        if not self.rationale.strip() or not self.reviewer.strip():
+            raise MultimodalError("REVIEW_RATIONALE_REQUIRED", "Reviewer and rationale are required.")
+
+
 @dataclass(frozen=True, slots=True)
 class OperationRecord:
     operation_id: str
@@ -23,18 +45,67 @@ class OperationRecord:
     request_hash: str
     state: str
     result: dict[str, Any]
+    created_at: str
+    provenance: dict[str, Any]
     human_review_required: bool = True
+    review: ReviewDecision | None = None
+    errors: tuple[dict[str, str], ...] = field(default_factory=tuple)
+
+
+class OperationRepository(Protocol):
+    def get_by_hash(self, request_hash: str) -> OperationRecord | None: ...
+
+    def get(self, operation_id: str) -> OperationRecord | None: ...
+
+    def save(self, record: OperationRecord) -> OperationRecord: ...
+
+    def replace(self, record: OperationRecord) -> OperationRecord: ...
+
+    def list_records(self) -> tuple[OperationRecord, ...]: ...
+
+
+class InMemoryOperationRepository:
+    """Deterministic repository used until governed Postgres persistence is activated."""
+
+    def __init__(self) -> None:
+        self._by_id: dict[str, OperationRecord] = {}
+        self._by_hash: dict[str, str] = {}
+        self._order: list[str] = []
+
+    def get_by_hash(self, request_hash: str) -> OperationRecord | None:
+        operation_id = self._by_hash.get(request_hash)
+        return self._by_id.get(operation_id) if operation_id else None
+
+    def get(self, operation_id: str) -> OperationRecord | None:
+        return self._by_id.get(operation_id)
+
+    def save(self, record: OperationRecord) -> OperationRecord:
+        existing = self.get_by_hash(record.request_hash)
+        if existing is not None:
+            return existing
+        self._by_id[record.operation_id] = record
+        self._by_hash[record.request_hash] = record.operation_id
+        self._order.append(record.operation_id)
+        return record
+
+    def replace(self, record: OperationRecord) -> OperationRecord:
+        if record.operation_id not in self._by_id:
+            raise MultimodalError("OPERATION_NOT_FOUND", "Operation does not exist.")
+        self._by_id[record.operation_id] = record
+        return record
+
+    def list_records(self) -> tuple[OperationRecord, ...]:
+        return tuple(self._by_id[operation_id] for operation_id in self._order)
 
 
 class MultimodalOperatorService:
-    """Deterministic, process-local operator layer; production persistence remains disabled."""
+    """Governed operator service with a swappable persistence repository."""
 
-    def __init__(self) -> None:
-        self._by_hash: dict[str, OperationRecord] = {}
-        self._records: list[OperationRecord] = []
+    def __init__(self, repository: OperationRepository | None = None) -> None:
+        self.repository = repository or InMemoryOperationRepository()
 
     @staticmethod
-    def request_hash(operation_type: str, payload: dict[str, Any]) -> str:
+    def request_hash(operation_type: str, payload: Mapping[str, Any]) -> str:
         canonical = json.dumps(
             {"operation_type": operation_type, "payload": payload},
             sort_keys=True,
@@ -43,9 +114,20 @@ class MultimodalOperatorService:
         )
         return sha256(canonical.encode()).hexdigest()
 
+    @staticmethod
+    def _provenance(operation_type: str, request_hash: str) -> dict[str, Any]:
+        return {
+            "operation_type": operation_type,
+            "request_hash": request_hash,
+            "engine": "multimodal_intelligence",
+            "engine_version": "0.3.0",
+            "live_provider_calls": 0,
+            "production_mutation": False,
+        }
+
     def _record(self, operation_type: str, payload: dict[str, Any], result: dict[str, Any]) -> OperationRecord:
         fingerprint = self.request_hash(operation_type, payload)
-        existing = self._by_hash.get(fingerprint)
+        existing = self.repository.get_by_hash(fingerprint)
         if existing is not None:
             return existing
         record = OperationRecord(
@@ -54,10 +136,10 @@ class MultimodalOperatorService:
             request_hash=fingerprint,
             state="human_review_required",
             result=result,
+            created_at=datetime.now(UTC).isoformat(),
+            provenance=self._provenance(operation_type, fingerprint),
         )
-        self._by_hash[fingerprint] = record
-        self._records.append(record)
-        return record
+        return self.repository.save(record)
 
     def validate_literature_claim(self, claim: LiteratureClaim) -> OperationRecord:
         claim.validate()
@@ -115,6 +197,8 @@ class MultimodalOperatorService:
         profiles: tuple[MatrixProfile, ...],
         minimum_margin: float = 0.15,
     ) -> OperationRecord:
+        if not 0.0 <= minimum_margin <= 1.0:
+            raise MultimodalError("MINIMUM_MARGIN_INVALID", "Minimum margin must be between zero and one.")
         observations = matrix_observations_from_vision(analysis)
         candidates = rank_matrix_candidates(
             definitions=definitions,
@@ -144,13 +228,14 @@ class MultimodalOperatorService:
     def batch(self, operations: tuple[tuple[str, dict[str, Any]], ...]) -> dict[str, Any]:
         accepted = []
         rejected = []
+        supported = {
+            "literature_validation",
+            "matrix_ranking",
+            "vision_conversion",
+            "integrated_identification",
+        }
         for index, (operation_type, payload) in enumerate(operations):
-            if operation_type not in {
-                "literature_validation",
-                "matrix_ranking",
-                "vision_conversion",
-                "integrated_identification",
-            }:
+            if operation_type not in supported:
                 rejected.append({"index": index, "reason": "UNSUPPORTED_OPERATION"})
                 continue
             accepted.append(
@@ -162,25 +247,116 @@ class MultimodalOperatorService:
             )
         return {"accepted": accepted, "rejected": rejected, "execution_enabled": False}
 
-    def review_queue(self) -> tuple[OperationRecord, ...]:
-        return tuple(record for record in self._records if record.human_review_required)
+    def get_operation(self, operation_id: str) -> OperationRecord:
+        record = self.repository.get(operation_id)
+        if record is None:
+            raise MultimodalError("OPERATION_NOT_FOUND", "Operation does not exist.")
+        return record
+
+    def decide_review(
+        self,
+        operation_id: str,
+        *,
+        decision: str,
+        rationale: str,
+        reviewer: str,
+    ) -> OperationRecord:
+        record = self.get_operation(operation_id)
+        review = ReviewDecision(
+            decision=decision,
+            rationale=rationale,
+            reviewer=reviewer,
+            decided_at=datetime.now(UTC).isoformat(),
+        )
+        review.validate()
+        state_by_decision = {
+            "approve": "review_approved",
+            "request_revision": "revision_requested",
+            "reject": "review_rejected",
+        }
+        updated = OperationRecord(
+            operation_id=record.operation_id,
+            operation_type=record.operation_type,
+            request_hash=record.request_hash,
+            state=state_by_decision[decision],
+            result=record.result,
+            created_at=record.created_at,
+            provenance=record.provenance,
+            human_review_required=False,
+            review=review,
+            errors=record.errors,
+        )
+        return self.repository.replace(updated)
+
+    def review_queue(
+        self,
+        *,
+        operation_type: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        if offset < 0 or not 1 <= limit <= 100:
+            raise MultimodalError("PAGINATION_INVALID", "Offset and limit are outside allowed bounds.")
+        records = [
+            record
+            for record in self.repository.list_records()
+            if record.human_review_required
+            and (operation_type is None or record.operation_type == operation_type)
+        ]
+        return {
+            "items": tuple(records[offset : offset + limit]),
+            "total": len(records),
+            "offset": offset,
+            "limit": limit,
+        }
+
+    def provenance_bundle(self, operation_id: str) -> dict[str, Any]:
+        record = self.get_operation(operation_id)
+        return {
+            "operation_id": record.operation_id,
+            "request_hash": record.request_hash,
+            "created_at": record.created_at,
+            "provenance": record.provenance,
+            "review": asdict(record.review) if record.review else None,
+            "result_hash": sha256(
+                json.dumps(record.result, sort_keys=True, separators=(",", ":"), default=str).encode()
+            ).hexdigest(),
+        }
 
     def export_audit(self) -> dict[str, Any]:
+        records = self.repository.list_records()
         return {
-            "records": [asdict(record) for record in self._records],
-            "record_count": len(self._records),
+            "records": [asdict(record) for record in records],
+            "record_count": len(records),
             "production_persistence": False,
+            "repository": type(self.repository).__name__,
         }
 
     def benchmark(self) -> dict[str, Any]:
+        cases = (
+            {"case_id": "literature-provenance", "expected": "pass"},
+            {"case_id": "matrix-explainability", "expected": "pass"},
+            {"case_id": "vision-license", "expected": "pass"},
+            {"case_id": "identification-abstention", "expected": "pass"},
+        )
         return {
-            "suite": "fixture_multimodal_v1",
-            "literature_provenance_checks": True,
-            "matrix_explainability_checks": True,
-            "vision_license_checks": True,
-            "abstention_checks": True,
+            "suite": "fixture_multimodal_v2",
+            "case_count": len(cases),
+            "cases": cases,
             "live_provider_calls": 0,
             "state": "deterministic_fixture_ready",
+        }
+
+    def configuration(self) -> dict[str, Any]:
+        return {
+            "persistence_backend": type(self.repository).__name__,
+            "production_persistence_enabled": False,
+            "live_vision_provider_enabled": False,
+            "ocr_provider_enabled": False,
+            "automatic_publication_enabled": False,
+            "taxonomy_activation_enabled": False,
+            "maximum_page_size": 100,
+            "human_review_required": True,
         }
 
 
