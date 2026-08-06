@@ -1,6 +1,7 @@
 """Canonical, storage-agnostic institutional memory for Orchid Continuum architecture."""
 
 from .api import create_brain_router
+from .build_queue import BuildQueueItem, BuildQueueSnapshot, GovernedBuildQueue
 from .constitution import (
     CONSTITUTION_VERSION,
     AdmissionFinding,
@@ -26,8 +27,11 @@ __all__ = [
     "BrainSnapshotRepository",
     "BuildAdmissionDecision",
     "BuildAdmissionRequest",
+    "BuildQueueItem",
+    "BuildQueueSnapshot",
     "CONSTITUTION_VERSION",
     "CanonicalBrainRegistry",
+    "GovernedBuildQueue",
     "JsonBrainSnapshotRepository",
     "SearchHit",
     "build_canonical_brain_fixture",
