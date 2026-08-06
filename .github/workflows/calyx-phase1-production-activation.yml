@@ -1,0 +1,145 @@
+name: CALYX Phase 1 Production Activation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type APPLY CALYX PHASE 1 MIGRATION'
+        required: true
+        type: string
+      run_smoke_test:
+        description: 'Verify protected program endpoints after deployment'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calyx-phase1-production-activation
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply idempotent program migration
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Validate explicit confirmation
+        shell: bash
+        run: |
+          if [[ "${{ inputs.confirmation }}" != "APPLY CALYX PHASE 1 MIGRATION" ]]; then
+            echo "Exact confirmation is required."
+            exit 1
+          fi
+
+      - name: Check required database secret
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          test -n "$DATABASE_URL" || { echo "DATABASE_URL secret is not configured"; exit 1; }
+
+      - name: Check out merged main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Apply Phase 1 migration transactionally
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          psql "$DATABASE_URL" \
+            --set=ON_ERROR_STOP=1 \
+            --single-transaction \
+            --file=migrations/20260805_calyx_autonomous_engineering_core.sql
+
+      - name: Verify program tables exist
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --tuples-only --no-align <<'SQL'
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_name IN (
+              'calyx_engineering_programs',
+              'calyx_engineering_program_jobs',
+              'calyx_engineering_program_dependencies'
+            )
+          ORDER BY table_name;
+          SQL
+
+  smoke:
+    name: Verify deployed protected endpoints
+    if: ${{ inputs.run_smoke_test }}
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check required endpoint secrets
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+          CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
+        run: |
+          test -n "$CALYX_BACKEND_URL" || { echo "CALYX_BACKEND_URL secret is not configured"; exit 1; }
+          test -n "$CALYX_API_KEY" || { echo "CALYX_API_KEY secret is not configured"; exit 1; }
+
+      - name: Wait for deployed main to become healthy
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+        run: |
+          base="${CALYX_BACKEND_URL%/}"
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "$base/" >/dev/null; then
+              exit 0
+            fi
+            echo "Backend not ready yet (attempt $attempt/30)"
+            sleep 10
+          done
+          echo "Backend did not become healthy in time"
+          exit 1
+
+      - name: Verify protected orchestrator status
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+          CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
+        run: |
+          base="${CALYX_BACKEND_URL%/}"
+          curl --fail --silent --show-error \
+            -H "X-API-Key: $CALYX_API_KEY" \
+            "$base/orchestrator/status" \
+            | python -m json.tool
+
+      - name: Verify program route is mounted without creating work
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+          CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
+        run: |
+          base="${CALYX_BACKEND_URL%/}"
+          status=$(curl --silent --output /tmp/program-response.json --write-out '%{http_code}' \
+            -H "X-API-Key: $CALYX_API_KEY" \
+            "$base/orchestrator/programs/00000000-0000-0000-0000-000000000000")
+          cat /tmp/program-response.json | python -m json.tool
+          test "$status" = "404"
+
+      - name: Record safety boundary
+        shell: bash
+        run: |
+          echo "Migration and read-only smoke verification completed."
+          echo "No engineering program was created."
+          echo "No worker was activated."
+          echo "No merge, deployment, taxonomy activation, graph mutation, or scientific publication was initiated by this workflow."
