@@ -21,7 +21,7 @@ class SpatialExtent(StrictModel):
     north: float = Field(ge=-90, le=90)
 
     @model_validator(mode="after")
-    def validate_bounds(self) -> "SpatialExtent":
+    def validate_bounds(self) -> SpatialExtent:
         if self.west >= self.east:
             raise ValueError("west must be less than east")
         if self.south >= self.north:
@@ -34,7 +34,7 @@ class TemporalExtent(StrictModel):
     end: datetime | None = None
 
     @model_validator(mode="after")
-    def validate_order(self) -> "TemporalExtent":
+    def validate_order(self) -> TemporalExtent:
         if self.start and self.end and self.start > self.end:
             raise ValueError("temporal start must not follow end")
         return self
@@ -62,7 +62,7 @@ class SpatialDataset(StrictModel):
     publication_state: PublicationState = "candidate"
 
     @model_validator(mode="after")
-    def validate_state(self) -> "SpatialDataset":
+    def validate_state(self) -> SpatialDataset:
         if self.publication_state == "published" and self.lineage.license.lower() in {"unknown", "none"}:
             raise ValueError("published datasets require an explicit usable license")
         return self
@@ -125,7 +125,7 @@ class ReasoningStatement(StrictModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
 
     @model_validator(mode="after")
-    def protect_inferences(self) -> "ReasoningStatement":
+    def protect_inferences(self) -> ReasoningStatement:
         if self.category == "inference" and not self.supporting_layer_ids:
             raise ValueError("inferences require supporting layers")
         if self.category in {"observation", "inference"} and self.confidence is None:
@@ -140,7 +140,7 @@ class AtlasReasoningResponse(StrictModel):
     causal_claims_allowed: bool = False
 
     @model_validator(mode="after")
-    def reject_unsupported_causality(self) -> "AtlasReasoningResponse":
+    def reject_unsupported_causality(self) -> AtlasReasoningResponse:
         causal_terms = ("causes", "caused by", "proves", "determines")
         if not self.causal_claims_allowed:
             for statement in self.statements:

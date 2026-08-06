@@ -1,6 +1,10 @@
 """Governed Atlas planetary-intelligence contracts and deterministic assembly."""
 
-from .assembler import assemble_brain_records, assemble_map_manifest, build_reasoning_response
+from .assembler import (
+    assemble_brain_records,
+    assemble_map_manifest,
+    build_reasoning_response,
+)
 from .fixtures import build_vertical_slice
 from .models import (
     AtlasLayer,
