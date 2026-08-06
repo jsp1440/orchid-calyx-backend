@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from .program_models import CalyxProgramJob
 from .program_repository import PersistentProgramRepository, ProgramJobSpec
 from .program_worker import PersistentProgramWorker
 from .scientific_agents import SCIENTIFIC_ROLE_REGISTRY, ScientificAgentRole, ScientificResult
@@ -68,10 +69,10 @@ def validate_scientific_payload(*, role_key: str, evidence: dict[str, Any]) -> S
     if role not in SCIENTIFIC_ROLE_REGISTRY:
         raise ValueError("SCIENTIFIC_ROLE_REQUIRED")
     provenance_raw = evidence.get("provenance")
-    if not isinstance(provenance_raw, list | tuple) or not provenance_raw:
+    if not isinstance(provenance_raw, (list, tuple)) or not provenance_raw:
         raise ValueError("PROVENANCE_REQUIRED")
     contradictions_raw = evidence.get("contradictions", ())
-    if not isinstance(contradictions_raw, list | tuple):
+    if not isinstance(contradictions_raw, (list, tuple)):
         raise ValueError("CONTRADICTIONS_INVALID")
     confidence = evidence.get("confidence")
     result = ScientificResult(
@@ -97,15 +98,15 @@ def complete_scientific_job(
     evidence: dict[str, Any],
     blocker: str | None = None,
     human_action: str | None = None,
-):
+) -> CalyxProgramJob:
     worker = PersistentProgramWorker(db)
-    job = db.get(__import__("app.calyx_orchestrator.program_models", fromlist=["CalyxProgramJob"]).CalyxProgramJob, program_job_id)
+    job = db.get(CalyxProgramJob, program_job_id)
     if job is None:
         raise LookupError("PROGRAM_JOB_NOT_FOUND")
     if outcome in {"DELIVERED", "NO_OP"}:
         validate_scientific_payload(role_key=job.role_key, evidence=evidence)
-    evidence = dict(evidence)
-    evidence["scientific_payload_hash"] = hashlib.sha256(
+    persisted_evidence = dict(evidence)
+    persisted_evidence["scientific_payload_hash"] = hashlib.sha256(
         json.dumps(evidence, sort_keys=True, default=str).encode()
     ).hexdigest()
     return worker.complete(
@@ -113,7 +114,7 @@ def complete_scientific_job(
         worker_id=worker_id,
         lease_token=lease_token,
         outcome=outcome,
-        evidence=evidence,
+        evidence=persisted_evidence,
         blocker=blocker,
         human_action=human_action,
     )
