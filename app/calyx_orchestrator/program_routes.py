@@ -10,6 +10,7 @@ from app.database import get_db
 from app.security import verify_owner_or_api_key
 
 from .program_repository import PersistentProgramRepository, ProgramJobSpec
+from .program_worker import PersistentProgramWorker
 
 router = APIRouter(prefix="/programs", tags=["calyx-engineering-programs"])
 
@@ -19,7 +20,6 @@ AuthDependency = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
 
 class ProgramJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     job_key: str = Field(min_length=1, max_length=120)
     role_key: str = Field(min_length=1, max_length=80)
     title: str = Field(min_length=1, max_length=240)
@@ -30,14 +30,12 @@ class ProgramJobRequest(BaseModel):
 
 class DependencyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     upstream: str = Field(min_length=1, max_length=120)
     downstream: str = Field(min_length=1, max_length=120)
 
 
 class ProgramRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     title: str = Field(min_length=1, max_length=240)
     objective: str = Field(min_length=1, max_length=12000)
     jobs: list[ProgramJobRequest] = Field(min_length=1, max_length=50)
@@ -48,13 +46,34 @@ class ProgramRequest(BaseModel):
 
 class CancelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     reason: str = Field(min_length=1, max_length=2000)
 
 
 class OutcomeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    outcome: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    blocker: str | None = Field(default=None, max_length=4000)
+    human_action: str | None = Field(default=None, max_length=4000)
 
+
+class WorkerClaimRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    worker_id: str = Field(min_length=1, max_length=240)
+    lease_seconds: int = Field(default=300, ge=60, le=3600)
+
+
+class WorkerLeaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    worker_id: str = Field(min_length=1, max_length=240)
+    lease_token: str = Field(min_length=1, max_length=36)
+    lease_seconds: int = Field(default=300, ge=60, le=3600)
+
+
+class WorkerCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    worker_id: str = Field(min_length=1, max_length=240)
+    lease_token: str = Field(min_length=1, max_length=36)
     outcome: str
     evidence: dict[str, Any] = Field(default_factory=dict)
     blocker: str | None = Field(default=None, max_length=4000)
@@ -71,7 +90,77 @@ def _owner(auth: dict[str, Any]) -> str:
 def _translate_error(exc: Exception) -> HTTPException:
     if isinstance(exc, LookupError):
         return HTTPException(404, detail={"code": str(exc)})
+    if isinstance(exc, PermissionError):
+        return HTTPException(409, detail={"code": str(exc)})
     return HTTPException(409, detail={"code": str(exc)})
+
+
+def _worker_job(job) -> dict:
+    return {
+        "program_job_id": job.program_job_id,
+        "program_id": job.program_id,
+        "job_key": job.job_key,
+        "role_key": job.role_key,
+        "title": job.title,
+        "repository": job.repository,
+        "branch": job.branch,
+        "mutating": job.mutating,
+        "status": job.status,
+        "attempt_count": job.attempt_count,
+        "lease_owner": job.lease_owner,
+        "lease_token": job.lease_token,
+        "lease_expires_at": job.lease_expires_at.isoformat() if job.lease_expires_at else None,
+    }
+
+
+@router.post("/workers/claim")
+def claim_program_job(payload: WorkerClaimRequest, auth: AuthDependency, db: DbDependency) -> dict:
+    _owner(auth)
+    job = PersistentProgramWorker(db).claim(worker_id=payload.worker_id, lease_seconds=payload.lease_seconds)
+    return {"claimed": job is not None, "job": _worker_job(job) if job else None}
+
+
+@router.post("/workers/jobs/{program_job_id}/heartbeat")
+def heartbeat_program_job(
+    program_job_id: str,
+    payload: WorkerLeaseRequest,
+    auth: AuthDependency,
+    db: DbDependency,
+) -> dict:
+    _owner(auth)
+    try:
+        job = PersistentProgramWorker(db).heartbeat(
+            program_job_id=program_job_id,
+            worker_id=payload.worker_id,
+            lease_token=payload.lease_token,
+            lease_seconds=payload.lease_seconds,
+        )
+        return _worker_job(job)
+    except (LookupError, PermissionError) as exc:
+        raise _translate_error(exc) from exc
+
+
+@router.post("/workers/jobs/{program_job_id}/complete")
+def complete_program_job(
+    program_job_id: str,
+    payload: WorkerCompleteRequest,
+    auth: AuthDependency,
+    db: DbDependency,
+) -> dict:
+    _owner(auth)
+    try:
+        job = PersistentProgramWorker(db).complete(
+            program_job_id=program_job_id,
+            worker_id=payload.worker_id,
+            lease_token=payload.lease_token,
+            outcome=payload.outcome,
+            evidence=payload.evidence,
+            blocker=payload.blocker,
+            human_action=payload.human_action,
+        )
+        return {"completed": True, "program_job_id": job.program_job_id, "outcome": job.outcome}
+    except (LookupError, PermissionError, ValueError) as exc:
+        raise _translate_error(exc) from exc
 
 
 @router.post("", status_code=201)
@@ -132,12 +221,7 @@ def resume_program(program_id: str, auth: AuthDependency, db: DbDependency) -> d
 
 
 @router.post("/{program_id}/cancel")
-def cancel_program(
-    program_id: str,
-    payload: CancelRequest,
-    auth: AuthDependency,
-    db: DbDependency,
-) -> dict:
+def cancel_program(program_id: str, payload: CancelRequest, auth: AuthDependency, db: DbDependency) -> dict:
     repository = PersistentProgramRepository(db)
     try:
         repository.cancel(owner=_owner(auth), program_id=program_id, reason=payload.reason)
