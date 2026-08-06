@@ -12,6 +12,7 @@ from app.security import verify_owner_or_api_key
 
 from .models import CalyxJob
 from .operations import operational_status, renew_lease, seed_approved_tasks
+from .program_routes import router as program_router
 from .service import (
     AUTONOMY_POLICY_CLASSES,
     READ_ONLY_JOB_TYPES,
@@ -142,3 +143,6 @@ def requeue_dead_letter(job_id: str, auth: AuthDependency, db: DbDependency) -> 
     except ValueError as exc:
         raise HTTPException(409, detail={"code": str(exc)}) from exc
     return CalyxOrchestrator.job_dict(job)
+
+
+router.include_router(program_router)
