@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - "app/canonical_brain/**"
-      - "tests/test_canonical_brain_registry.py"
+      - "tests/test_canonical_brain_*.py"
       - "docs/architecture/BUILD-BRAIN-100-*"
       - ".github/workflows/canonical-brain-validation.yml"
   workflow_dispatch:
@@ -25,10 +25,10 @@ jobs:
       - name: Install focused dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pydantic pytest ruff
+          python -m pip install pydantic fastapi httpx pytest ruff
       - name: Compile
         run: python -m compileall -q app/canonical_brain
       - name: Lint
-        run: ruff check app/canonical_brain tests/test_canonical_brain_registry.py
+        run: ruff check app/canonical_brain tests/test_canonical_brain_*.py
       - name: Test
-        run: pytest -q tests/test_canonical_brain_registry.py
+        run: pytest -q tests/test_canonical_brain_*.py
