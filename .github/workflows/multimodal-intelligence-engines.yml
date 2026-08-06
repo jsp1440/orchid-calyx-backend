@@ -5,6 +5,7 @@ on:
     paths:
       - "app/multimodal_intelligence/**"
       - "tests/test_multimodal_intelligence_engines.py"
+      - "tests/test_multimodal_intelligence_status.py"
       - ".github/workflows/multimodal-intelligence-engines.yml"
   workflow_dispatch:
 
@@ -30,6 +31,17 @@ jobs:
       - name: Compile
         run: python -m compileall -q app/multimodal_intelligence
       - name: Ruff
-        run: ruff check app/multimodal_intelligence tests/test_multimodal_intelligence_engines.py
+        run: ruff check app/multimodal_intelligence tests/test_multimodal_intelligence_engines.py tests/test_multimodal_intelligence_status.py
       - name: Focused tests
-        run: pytest -q tests/test_multimodal_intelligence_engines.py
+        run: pytest -q tests/test_multimodal_intelligence_engines.py tests/test_multimodal_intelligence_status.py
+      - name: Route smoke
+        run: |
+          python - <<'PY'
+          from fastapi import FastAPI
+          from app.multimodal_intelligence.routes import router
+
+          app = FastAPI()
+          app.include_router(router)
+          paths = {route.path for route in app.routes}
+          assert "/api/mission-control/multimodal-intelligence/status" in paths
+          PY
