@@ -8,9 +8,15 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .engineering_core import TerminalOutcome
 from .models import utcnow
 from .program_models import CalyxProgram, CalyxProgramDependency, CalyxProgramJob
-from .programs import SUCCESSFUL_OUTCOMES, TERMINAL_OUTCOMES
+
+TERMINAL_OUTCOMES = {outcome.value for outcome in TerminalOutcome}
+SUCCESSFUL_OUTCOMES = {
+    TerminalOutcome.DELIVERED.value,
+    TerminalOutcome.NO_OP.value,
+}
 
 
 @dataclass(frozen=True)
