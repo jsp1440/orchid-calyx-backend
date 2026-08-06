@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install pytest ruff fastapi python-multipart httpx2
+      - run: python -m pip install pytest ruff fastapi python-multipart httpx2 qrcode
       - run: python -m ruff check runtime/conservatory_store.py app/routers/conservatory.py tests/test_conservatory_mvp_001.py
       - run: python -m ruff format --check runtime/conservatory_store.py app/routers/conservatory.py tests/test_conservatory_mvp_001.py
       - run: python -m pytest -q tests/test_conservatory_mvp_001.py
