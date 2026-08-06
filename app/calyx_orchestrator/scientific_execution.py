@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session
 from .program_models import CalyxProgramJob
 from .program_repository import PersistentProgramRepository, ProgramJobSpec
 from .program_worker import PersistentProgramWorker
-from .scientific_agents import SCIENTIFIC_ROLE_REGISTRY, ScientificAgentRole, ScientificResult
+from .scientific_agents import (
+    SCIENTIFIC_ROLE_REGISTRY,
+    ScientificAgentRole,
+    ScientificResult,
+)
 from .scientific_program import CHIEF_SCIENTIST_JOB, SCIENTIFIC_JOB_TEMPLATES
 
 SCIENTIFIC_REPOSITORY = "jsp1440/orchid-calyx-backend"
@@ -73,7 +77,7 @@ def validate_scientific_payload(*, role_key: str, evidence: dict[str, Any]) -> S
         raise ValueError("PROVENANCE_REQUIRED")
     contradictions_raw = evidence.get("contradictions", ())
     if not isinstance(contradictions_raw, (list, tuple)):
-        raise ValueError("CONTRADICTIONS_INVALID")
+        raise TypeError("CONTRADICTIONS_INVALID")
     confidence = evidence.get("confidence")
     result = ScientificResult(
         role=role,
