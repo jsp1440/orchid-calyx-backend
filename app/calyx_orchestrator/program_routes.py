@@ -11,7 +11,7 @@ from app.security import verify_owner_or_api_key
 
 from .program_repository import PersistentProgramRepository, ProgramJobSpec
 
-router = APIRouter(prefix="/orchestrator/programs", tags=["calyx-engineering-programs"])
+router = APIRouter(prefix="/programs", tags=["calyx-engineering-programs"])
 
 DbDependency = Annotated[Session, Depends(get_db)]
 AuthDependency = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
