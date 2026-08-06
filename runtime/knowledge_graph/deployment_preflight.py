@@ -12,6 +12,7 @@ REQUIRED_PLATFORM_ROUTES = {
     "/api/platform/knowledge-graph/dry-runs/{run_id}/resume",
     "/api/platform/knowledge-graph/dry-runs/{run_id}/cancel",
     "/api/platform/knowledge-graph/persisted-audit",
+    "/api/platform/brain/candidate-knowledge",
 }
 
 
@@ -107,8 +108,9 @@ def deployment_preflight(
         elif not directory["writable"]:
             blockers.append("dry_run_directory_not_writable")
 
+    reasoning_handoff_ready = "/api/platform/brain/candidate-knowledge" not in missing_routes
     return {
-        "contract": "calyx-graph-deployment-preflight-v2",
+        "contract": "calyx-graph-deployment-preflight-v3",
         "graph_mutation": False,
         "filesystem_mutation": False,
         "deployment": _commit_metadata(environment),
@@ -116,6 +118,11 @@ def deployment_preflight(
             "required": sorted(REQUIRED_PLATFORM_ROUTES),
             "missing": missing_routes,
             "ready": not missing_routes,
+        },
+        "reasoning_center": {
+            "candidate_knowledge_handoff_mounted": reasoning_handoff_ready,
+            "automatic_publication": False,
+            "human_review_required": True,
         },
         "database": {"reachable": database_ok, "error": database_error},
         "staging_directory": directory,
