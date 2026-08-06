@@ -1,0 +1,53 @@
+import os
+import time
+
+import pytest
+
+from runtime.knowledge_graph.models import Edge, Node
+from runtime.knowledge_graph.resumable_dry_run import DryRunSession
+from runtime.knowledge_graph.resumable_executor import (
+    LOCK_STALE_SECONDS,
+    lock_path,
+    session_report,
+    session_resume_lock,
+    staging_path,
+)
+from runtime.knowledge_graph.sqlite_staging import SqliteStagingGraphRepository
+
+
+def test_null_source_edge_is_idempotent(tmp_path):
+    path = str(tmp_path / "staging.sqlite3")
+    repo = SqliteStagingGraphRepository(path)
+    taxon = repo.upsert_node(Node(0, "taxon", "taxon:1", "Test orchid", "taxonomy", "1", None, None, None, {}))
+    image = repo.upsert_node(Node(0, "image", "image:1", "Image", None, "1", None, None, None, {}))
+    edge = Edge(0, "has_image", taxon.kg_node_id, image.kg_node_id, None, "1", None, None, None, None, {})
+    repo.upsert_edge(edge)
+    repo.upsert_edge(edge)
+    assert repo.counts()["edges"] == 1
+
+
+def test_pending_status_does_not_create_sqlite_file(tmp_path):
+    session = DryRunSession.create(["media"], batch_size=10, max_batches_per_step=1)
+    path = staging_path(str(tmp_path), session.run_id)
+    report = session_report(session, str(tmp_path))
+    assert report["staging_started"] is False
+    assert report["progress"]["next_action"] == "resume"
+    assert not os.path.exists(path)
+
+
+def test_resume_lock_rejects_concurrent_call(tmp_path):
+    with session_resume_lock(str(tmp_path), "run-1"):
+        with pytest.raises(RuntimeError, match="resume_already_in_progress"):
+            with session_resume_lock(str(tmp_path), "run-1"):
+                pass
+
+
+def test_stale_resume_lock_is_recovered(tmp_path):
+    target = lock_path(str(tmp_path), "run-2")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("stale", encoding="utf-8")
+    old = time.time() - LOCK_STALE_SECONDS - 5
+    os.utime(target, (old, old))
+    with session_resume_lock(str(tmp_path), "run-2"):
+        assert target.exists()
+    assert not target.exists()
