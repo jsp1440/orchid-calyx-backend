@@ -11,13 +11,13 @@ from typing import Any
 from .publisher import DomainAdapter, canonical_key, publish_domain
 from .repository import GraphRepository
 from .resumable_dry_run import (
-    DryRunSession,
-    JsonSessionStore,
     RUN_CANCELLED,
     RUN_COMPLETED,
     RUN_FAILED,
     RUN_PENDING,
     RUN_RUNNING,
+    DryRunSession,
+    JsonSessionStore,
 )
 from .sources import SourceProvider
 from .sqlite_staging import SqliteStagingGraphRepository
@@ -162,7 +162,7 @@ def _resume_locked(store: JsonSessionStore, staging_directory: str, graph_repo: 
                 store.save(session)
                 if state.status == RUN_COMPLETED:
                     break
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - session failures are captured in dry-run state
         state.status = RUN_FAILED
         state.error = str(exc)
     session.refresh_status()

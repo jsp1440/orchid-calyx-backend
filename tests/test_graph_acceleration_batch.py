@@ -50,10 +50,10 @@ def test_pending_status_does_not_create_sqlite_file(tmp_path):
 
 
 def test_resume_lock_rejects_concurrent_call(tmp_path):
-    with session_resume_lock(str(tmp_path), "run-1"):
-        with pytest.raises(RuntimeError, match="resume_already_in_progress"):
-            with session_resume_lock(str(tmp_path), "run-1"):
-                pass
+    with session_resume_lock(str(tmp_path), "run-1"), pytest.raises(
+        RuntimeError, match="resume_already_in_progress"
+    ), session_resume_lock(str(tmp_path), "run-1"):
+        pass
 
 
 def test_stale_resume_lock_is_recovered(tmp_path):

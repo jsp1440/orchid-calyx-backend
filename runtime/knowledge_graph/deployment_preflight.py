@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
-
+from typing import Any
 
 REQUIRED_PLATFORM_ROUTES = {
     "/api/platform/knowledge-graph/dry-runs",
@@ -84,7 +84,7 @@ def deployment_preflight(*, route_paths: set[str], database_probe: Callable[[], 
     try:
         database_probe()
         database_ok = True
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - probe failures are reported as readiness blockers
         database_error = str(exc)
     directory = _directory_check(environment.get("CALYX_DRY_RUN_DIRECTORY"), environment.get("CALYX_DRY_RUN_PERSISTENT_MOUNT"))
     blockers: list[str] = []
