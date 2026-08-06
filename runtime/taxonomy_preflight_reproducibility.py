@@ -16,7 +16,7 @@ from pathlib import Path
 
 from runtime.taxonomy_preflight import Policy, sha256_file
 from runtime.taxonomy_preflight_governance import GovernancePolicy
-from runtime.taxonomy_preflight_release_gate import ReleaseGatePolicy, execute_release_bundle
+from runtime.taxonomy_preflight_release_gate import ReleaseGatePolicy, execute_release
 
 ARTIFACTS = ("report.json", "summary.md", "manifest.json", "receipt.json", "COMPLETE.json")
 
@@ -43,8 +43,16 @@ def verify_reproducibility(
     try:
         first = root / "first"
         second = root / "second"
-        execute_release_bundle(candidate, baseline, first, validator_policy, governance_policy, release_policy, review_reference)
-        execute_release_bundle(candidate, baseline, second, validator_policy, governance_policy, release_policy, review_reference)
+        for output in (first, second):
+            execute_release(
+                candidate,
+                baseline,
+                output,
+                review_reference,
+                validator_policy,
+                governance_policy,
+                release_policy,
+            )
         first_digests = _digest_map(first)
         second_digests = _digest_map(second)
         mismatches = sorted(name for name in ARTIFACTS if first_digests[name] != second_digests[name])
