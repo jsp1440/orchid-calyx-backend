@@ -3,6 +3,7 @@
 from .api import create_brain_router
 from .fixtures import build_canonical_brain_fixture
 from .handoff import BrainCaptureBundle, BrainCaptureResult, capture_build_bundle
+from .mission_control import BrainMissionControlStatus, build_mission_control_status
 from .models import BrainObject, BrainRelationship, BrainSnapshot, SearchHit
 from .persistence import BrainSnapshotRepository, JsonBrainSnapshotRepository
 from .registry import CanonicalBrainRegistry
@@ -10,6 +11,7 @@ from .registry import CanonicalBrainRegistry
 __all__ = [
     "BrainCaptureBundle",
     "BrainCaptureResult",
+    "BrainMissionControlStatus",
     "BrainObject",
     "BrainRelationship",
     "BrainSnapshot",
@@ -18,6 +20,7 @@ __all__ = [
     "JsonBrainSnapshotRepository",
     "SearchHit",
     "build_canonical_brain_fixture",
+    "build_mission_control_status",
     "capture_build_bundle",
     "create_brain_router",
 ]
