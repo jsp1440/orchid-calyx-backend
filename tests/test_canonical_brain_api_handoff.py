@@ -15,6 +15,8 @@ from app.canonical_brain import (
     capture_build_bundle,
     create_brain_router,
 )
+from app.brain.routes import router as protected_brain_router
+from app.security import verify_owner_or_api_key
 
 
 def _checksum(value: str) -> str:
@@ -56,6 +58,19 @@ def test_read_only_api_is_searchable_and_discoverable() -> None:
 
     missing = client.get("/brain/canonical/objects/architecture:missing")
     assert missing.status_code == 404
+
+
+def test_canonical_brain_routes_are_mounted_on_protected_brain_router() -> None:
+    app = FastAPI()
+    app.include_router(protected_brain_router)
+
+    unauthorized = TestClient(app).get("/brain/canonical/status")
+    assert unauthorized.status_code == 401
+
+    app.dependency_overrides[verify_owner_or_api_key] = lambda: {"actor": "owner"}
+    authorized = TestClient(app).get("/brain/canonical/status")
+    assert authorized.status_code == 200
+    assert authorized.json()["write_enabled"] is False
 
 
 def test_capture_bundle_is_atomic_and_repeatable() -> None:
