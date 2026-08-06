@@ -3,16 +3,21 @@ name: Taxonomy Preflight CI
 on:
   pull_request:
     paths:
-      - "runtime/taxonomy_preflight.py"
-      - "runtime/taxonomy_preflight_governance.py"
-      - "runtime/taxonomy_preflight_release_gate.py"
-      - "tests/test_taxonomy_preflight.py"
-      - "tests/test_taxonomy_preflight_governance.py"
-      - "tests/test_taxonomy_preflight_release_gate.py"
-      - "config/taxonomy-preflight-policy.json"
-      - "config/taxonomy-preflight-governance.json"
-      - "config/taxonomy-release-gate-policy.json"
-      - "docs/azure/taxonomy-preflight-runbook.md"
+      - "runtime/taxonomy_preflight*.py"
+      - "tests/test_taxonomy_preflight*.py"
+      - "config/taxonomy-*.json"
+      - "docs/azure/taxonomy-*.md"
+      - "docs/brain/AZURE-001-*.json"
+      - ".github/workflows/taxonomy-preflight-ci.yml"
+  push:
+    branches:
+      - "feature/azure-001-*"
+    paths:
+      - "runtime/taxonomy_preflight*.py"
+      - "tests/test_taxonomy_preflight*.py"
+      - "config/taxonomy-*.json"
+      - "docs/azure/taxonomy-*.md"
+      - "docs/brain/AZURE-001-*.json"
       - ".github/workflows/taxonomy-preflight-ci.yml"
   workflow_dispatch:
 
@@ -32,18 +37,20 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Compile validator, governance, and release gate
+      - name: Compile governed taxonomy modules
         run: |
           python -m py_compile runtime/taxonomy_preflight.py
           python -m py_compile runtime/taxonomy_preflight_governance.py
           python -m py_compile runtime/taxonomy_preflight_release_gate.py
+          python -m py_compile runtime/taxonomy_preflight_readiness.py
 
       - name: Run focused unit tests
         run: |
           python -m unittest \
             tests.test_taxonomy_preflight \
             tests.test_taxonomy_preflight_governance \
-            tests.test_taxonomy_preflight_release_gate -v
+            tests.test_taxonomy_preflight_release_gate \
+            tests.test_taxonomy_preflight_readiness -v
 
       - name: Run governed release-gate smoke validation
         shell: bash
@@ -100,6 +107,13 @@ jobs:
           python -m runtime.taxonomy_preflight_release_gate azure-spec \
             --image ghcr.io/fcos/taxonomy@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             > artifacts/azure-execution-spec.json
+          set +e
+          python -m runtime.taxonomy_preflight_readiness artifacts/release-bundle \
+            --ci-validated \
+            --output artifacts/readiness.json
+          readiness_exit=$?
+          set -e
+          test "$readiness_exit" -eq 2
           python - <<'PY'
           import json
           from pathlib import Path
@@ -108,6 +122,7 @@ jobs:
           receipt = json.loads((bundle / 'receipt.json').read_text())
           complete = json.loads((bundle / 'COMPLETE.json').read_text())
           spec = json.loads(Path('artifacts/azure-execution-spec.json').read_text())
+          readiness = json.loads(Path('artifacts/readiness.json').read_text())
           assert report['status'] == 'PASS'
           assert report['generated_at'] == '1970-01-01T00:00:00+00:00'
           assert receipt['review_reference'] == 'CI-REVIEW-459'
@@ -117,6 +132,8 @@ jobs:
           assert complete['run_id'] == report['run_id']
           assert spec['provision'] is False
           assert spec['public_ingress'] is False
+          assert readiness['decision'] == 'HOLD'
+          assert readiness['azure_provisioning_authorized'] is False
           PY
 
       - name: Upload governed smoke-test evidence
@@ -127,4 +144,5 @@ jobs:
             artifacts/release-plan.json
             artifacts/release-bundle/
             artifacts/azure-execution-spec.json
+            artifacts/readiness.json
           retention-days: 7
