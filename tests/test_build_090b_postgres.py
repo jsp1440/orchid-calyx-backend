@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 DATABASE_URL = os.getenv("BUILD_090B_DATABASE_URL")
 pytestmark = pytest.mark.skipif(
     not DATABASE_URL, reason="BUILD_090B_DATABASE_URL unavailable"

@@ -25,7 +25,6 @@ from .models import (
 )
 from .repository import MemoryDesignPlanningRepository
 
-
 ALLOWED_TRANSITIONS = {
     LifecycleState.REQUEST_DRAFT: {LifecycleState.REQUEST_VALIDATED},
     LifecycleState.REQUEST_VALIDATED: {LifecycleState.CONTEXT_RESOLVED},
