@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0.0",
+  "build_id": "BUILD-BRAIN-104",
+  "architecture_count": 9,
+  "intent_count": 5,
+  "aligned_architecture_count": 9,
+  "intent_coverage_ratio": 1.0,
+  "decision_coverage_ratio": 1.0,
+  "unresolved_governance_gaps": [],
+  "architectures": {
+    "architecture:brain": {
+      "intent_ids": ["intent:enable-governed-autonomy"],
+      "decision_ids": ["decision:brain-canonical-memory"]
+    },
+    "architecture:mission-control": {
+      "intent_ids": ["intent:enable-governed-autonomy"],
+      "decision_ids": ["decision:mission-control-command"]
+    },
+    "architecture:knowledge-explorer": {
+      "intent_ids": ["intent:educate-public"],
+      "decision_ids": ["decision:knowledge-explorer"]
+    },
+    "architecture:atlas": {
+      "intent_ids": ["intent:preserve-biodiversity"],
+      "decision_ids": ["decision:atlas-earth-systems"]
+    },
+    "architecture:research-station": {
+      "intent_ids": ["intent:accelerate-discovery"],
+      "decision_ids": ["decision:research-station-reproducible"]
+    },
+    "architecture:conservatory": {
+      "intent_ids": ["intent:support-living-collections"],
+      "decision_ids": ["decision:conservatory-living-record"]
+    },
+    "architecture:matrix": {
+      "intent_ids": ["intent:accelerate-discovery"],
+      "decision_ids": ["decision:matrix-explainable-identification"]
+    },
+    "architecture:ai-vision": {
+      "intent_ids": ["intent:accelerate-discovery"],
+      "decision_ids": ["decision:vision-candidate-observations"]
+    },
+    "architecture:publishing": {
+      "intent_ids": ["intent:educate-public"],
+      "decision_ids": ["decision:publishing-evidence-backed"]
+    }
+  },
+  "publication_enabled": false,
+  "production_activation": false
+}
