@@ -4,8 +4,11 @@ on:
   pull_request:
     paths:
       - "runtime/taxonomy_preflight.py"
+      - "runtime/taxonomy_preflight_governance.py"
       - "tests/test_taxonomy_preflight.py"
+      - "tests/test_taxonomy_preflight_governance.py"
       - "config/taxonomy-preflight-policy.json"
+      - "config/taxonomy-preflight-governance.json"
       - "docs/azure/taxonomy-preflight-runbook.md"
       - ".github/workflows/taxonomy-preflight-ci.yml"
   workflow_dispatch:
@@ -26,14 +29,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Compile validator
-        run: python -m py_compile runtime/taxonomy_preflight.py
+      - name: Compile validator and governance wrapper
+        run: |
+          python -m py_compile runtime/taxonomy_preflight.py
+          python -m py_compile runtime/taxonomy_preflight_governance.py
 
       - name: Run focused unit tests
-        run: python -m unittest tests.test_taxonomy_preflight -v
+        run: python -m unittest tests.test_taxonomy_preflight tests.test_taxonomy_preflight_governance -v
 
-      - name: Run CLI smoke validation
+      - name: Run governed CLI smoke validation
         shell: bash
+        env:
+          SOURCE_DATE_EPOCH: "0"
         run: |
           mkdir -p artifacts
           cat > artifacts/baseline.csv <<'CSV'
@@ -52,30 +59,39 @@ jobs:
             "finding_sample_limit": 25
           }
           JSON
-          python -m runtime.taxonomy_preflight artifacts/candidate.csv \
+          cat > artifacts/ci-governance.json <<'JSON'
+          {
+            "require_baseline": true,
+            "allowed_input_shapes": ["headered"],
+            "allowed_suffixes": [".csv"],
+            "maximum_candidate_bytes": 1000000,
+            "maximum_columns": 10,
+            "maximum_overall_null_ratio": 0.5,
+            "require_private_output_directory": false
+          }
+          JSON
+          python -m runtime.taxonomy_preflight_governance run artifacts/candidate.csv \
             --baseline artifacts/baseline.csv \
-            --policy artifacts/ci-policy.json \
-            --json-output artifacts/taxonomy-preflight-report.json \
-            --summary-output artifacts/taxonomy-preflight-summary.md \
-            --manifest-output artifacts/taxonomy-preflight-manifest.json
+            --validator-policy artifacts/ci-policy.json \
+            --governance-policy artifacts/ci-governance.json \
+            --output-dir artifacts/governed-bundle
+          python -m runtime.taxonomy_preflight_governance verify artifacts/governed-bundle
           python - <<'PY'
           import json
           from pathlib import Path
-          report = json.loads(Path('artifacts/taxonomy-preflight-report.json').read_text())
-          manifest = json.loads(Path('artifacts/taxonomy-preflight-manifest.json').read_text())
+          bundle = Path('artifacts/governed-bundle')
+          report = json.loads((bundle / 'report.json').read_text())
+          receipt = json.loads((bundle / 'receipt.json').read_text())
           assert report['status'] == 'PASS'
-          assert report['report_schema_version'] == '1.0.0'
-          assert manifest['run_id'] == report['run_id']
-          assert manifest['artifacts']['report']['sha256']
-          assert manifest['artifacts']['summary']['sha256']
+          assert report['generated_at'] == '1970-01-01T00:00:00+00:00'
+          assert receipt['run_id'] == report['run_id']
+          assert receipt['publication_authorized'] is False
+          assert receipt['database_mutation_authorized'] is False
           PY
 
-      - name: Upload smoke-test evidence
+      - name: Upload governed smoke-test evidence
         uses: actions/upload-artifact@v4
         with:
-          name: taxonomy-preflight-ci-evidence
-          path: |
-            artifacts/taxonomy-preflight-report.json
-            artifacts/taxonomy-preflight-summary.md
-            artifacts/taxonomy-preflight-manifest.json
+          name: taxonomy-preflight-governed-ci-evidence
+          path: artifacts/governed-bundle/
           retention-days: 7
