@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "object_id": "brain.build.azure-001.taxonomy-preflight",
+  "object_type": "implementation_build",
+  "title": "AZURE-001 Taxonomy Preflight and Azure Pilot Guardrails",
+  "lifecycle": "candidate",
+  "recorded_at": "2026-08-06",
+  "repository": "jsp1440/orchid-calyx-backend",
+  "pull_request": 459,
+  "branch": "feature/azure-001-taxonomy-preflight",
+  "intent": "Create a deterministic, reversible and non-publishing validation path for World Orchids taxonomy updates before any Azure pilot or production import.",
+  "capabilities": [
+    "legacy World Plants pipe-export recognition",
+    "headered CSV and TSV validation",
+    "candidate-to-baseline deterministic comparison",
+    "policy-driven PASS WARN FAIL gates",
+    "checksummed evidence bundles",
+    "offline bundle verification",
+    "release and readiness evaluation",
+    "non-provisioning Azure job specification"
+  ],
+  "authorities_explicitly_not_granted": [
+    "taxonomy publication",
+    "database mutation",
+    "Azure resource provisioning",
+    "Render or Neon decommissioning",
+    "production cutover"
+  ],
+  "current_gates": {
+    "github_actions_ci": "pending_no_registered_run",
+    "exact_world_orchids_26_08_validation": "pending_source_file",
+    "azure_credit_billing_linkage": "pending_final_confirmation",
+    "subscription_budget_alerts": "pending",
+    "microsoft_partner_review": "pending"
+  },
+  "decision": "HOLD",
+  "next_action": "Obtain and validate the exact August 2026 World Orchids file, establish CI evidence, then conduct an explicit go/no-go review before any Azure provisioning.",
+  "relationships": [
+    {"type": "implements", "target": "github.issue.457"},
+    {"type": "constrained_by", "target": "architecture.azure.hybrid-migration"},
+    {"type": "protects", "target": "taxonomy.approved-backbone"},
+    {"type": "feeds", "target": "mission-control.taxonomy-upload"}
+  ]
+}
