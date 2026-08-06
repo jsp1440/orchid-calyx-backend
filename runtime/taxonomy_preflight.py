@@ -44,7 +44,7 @@ class Policy:
     finding_sample_limit: int = 100
 
     @classmethod
-    def from_path(cls, path: Path | None) -> "Policy":
+    def from_path(cls, path: Path | None) -> Policy:
         if path is None:
             return cls()
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -152,6 +152,13 @@ def _looks_like_header(first_row: list[str]) -> bool:
     return bool({normalize(value).casefold() for value in first_row} & HEADER_TOKENS)
 
 
+def _trim_trailing_empty_cells(row: list[str]) -> list[str]:
+    trimmed = list(row)
+    while trimmed and not normalize(trimmed[-1]):
+        trimmed.pop()
+    return trimmed
+
+
 def _legacy_columns(width: int) -> list[str]:
     columns = list(LEGACY_WORLD_PLANTS_COLUMNS)
     if width > len(columns):
@@ -168,7 +175,11 @@ def load_csv(path: Path) -> tuple[list[str], list[dict[str, str]], str, str, str
     except UnicodeDecodeError as exc:
         raise ValueError(f"unsupported or invalid text encoding: {exc}") from exc
     delimiter = _detect_delimiter(text)
-    parsed = [row for row in csv.reader(text.splitlines(), delimiter=delimiter) if any(normalize(v) for v in row)]
+    parsed = [
+        row
+        for row in (_trim_trailing_empty_cells(raw) for raw in csv.reader(text.splitlines(), delimiter=delimiter))
+        if any(normalize(v) for v in row)
+    ]
     if not parsed:
         return [], [], encoding, delimiter, "empty", 0
 

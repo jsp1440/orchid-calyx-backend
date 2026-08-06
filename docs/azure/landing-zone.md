@@ -1,6 +1,6 @@
 # Orchid Continuum Azure Landing Zone
 
-Status: **specification only — no production provisioning authorized**  
+Status: **specification only — no production provisioning authorized**
 Date: 2026-08-06
 
 ## Purpose
