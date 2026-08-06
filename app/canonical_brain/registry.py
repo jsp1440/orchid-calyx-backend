@@ -33,6 +33,13 @@ class CanonicalBrainRegistry:
     def search(self, query: str) -> list[SearchHit]:
         terms = [term for term in query.casefold().split() if term]
         hits: list[SearchHit] = []
+        weights = {
+            "title": 4,
+            "summary": 2,
+            "aliases": 3,
+            "tags": 2,
+            "type": 1,
+        }
         for record in self._objects.values():
             fields = {
                 "title": record.title.casefold(),
@@ -41,9 +48,18 @@ class CanonicalBrainRegistry:
                 "tags": " ".join(record.tags).casefold(),
                 "type": record.object_type.casefold(),
             }
-            matched = [name for name, value in fields.items() if any(term in value for term in terms)]
+            matched_terms: set[str] = set()
+            matched: list[str] = []
+            score = 0
+            for name, value in fields.items():
+                field_hits = {term for term in terms if term in value}
+                if not field_hits:
+                    continue
+                matched.append(name)
+                matched_terms.update(field_hits)
+                score += len(field_hits) * weights[name]
             if matched:
-                score = sum(4 if name == "title" else 3 if name == "aliases" else 1 for name in matched)
+                score += len(matched_terms) * 10
                 hits.append(SearchHit(
                     object_id=record.object_id,
                     title=record.title,

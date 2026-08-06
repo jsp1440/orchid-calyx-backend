@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.brain.routes import router as protected_brain_router
 from app.canonical_brain import (
     BrainCaptureBundle,
     BrainObject,
@@ -15,7 +16,6 @@ from app.canonical_brain import (
     capture_build_bundle,
     create_brain_router,
 )
-from app.brain.routes import router as protected_brain_router
 from app.security import verify_owner_or_api_key
 
 
@@ -43,20 +43,20 @@ def test_read_only_api_is_searchable_and_discoverable() -> None:
     app.include_router(create_brain_router())
     client = TestClient(app)
 
-    status = client.get("/brain/canonical/status")
+    status = client.get("/canonical/status")
     assert status.status_code == 200
     assert status.json()["write_enabled"] is False
     assert status.json()["publication_enabled"] is False
 
-    search = client.get("/brain/canonical/search", params={"q": "FigureLabs glossary"})
+    search = client.get("/canonical/search", params={"q": "FigureLabs glossary"})
     assert search.status_code == 200
     assert search.json()[0]["object_id"] == "architecture:knowledge-explorer"
 
-    intents = client.get("/brain/canonical/objects/architecture:atlas/intents")
+    intents = client.get("/canonical/objects/architecture:atlas/intents")
     assert intents.status_code == 200
     assert intents.json()[0]["object_id"] == "intent:preserve-biodiversity"
 
-    missing = client.get("/brain/canonical/objects/architecture:missing")
+    missing = client.get("/canonical/objects/architecture:missing")
     assert missing.status_code == 404
 
 

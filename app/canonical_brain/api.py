@@ -9,7 +9,7 @@ from .registry import CanonicalBrainRegistry
 
 def create_brain_router(registry: CanonicalBrainRegistry | None = None) -> APIRouter:
     brain = registry or build_canonical_brain_fixture()
-    router = APIRouter(prefix="/brain/canonical", tags=["canonical-brain"])
+    router = APIRouter(prefix="/canonical", tags=["canonical-brain"])
 
     @router.get("/status")
     def status() -> dict[str, object]:
