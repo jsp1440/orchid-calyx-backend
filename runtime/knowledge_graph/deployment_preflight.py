@@ -12,6 +12,7 @@ REQUIRED_PLATFORM_ROUTES = {
     "/api/platform/knowledge-graph/dry-runs/{run_id}/resume",
     "/api/platform/knowledge-graph/dry-runs/{run_id}/cancel",
     "/api/platform/knowledge-graph/persisted-audit",
+    "/api/platform/brain/candidate-knowledge",
 }
 
 
@@ -32,12 +33,6 @@ def _inside_mount(path: Path, mount: Path) -> bool:
 
 
 def initialize_dry_run_directory(env: dict[str, str] | None = None) -> dict[str, Any]:
-    """Create the configured dry-run directory only inside its declared mount.
-
-    Missing configuration is a no-op so local/test imports remain safe. Invalid
-    production configuration fails closed rather than creating a directory in an
-    unintended location.
-    """
     environment = dict(os.environ if env is None else env)
     path_value = environment.get("CALYX_DRY_RUN_DIRECTORY")
     mount_value = environment.get("CALYX_DRY_RUN_PERSISTENT_MOUNT")
@@ -45,14 +40,12 @@ def initialize_dry_run_directory(env: dict[str, str] | None = None) -> dict[str,
         return {"initialized": False, "reason": "directory_not_configured", "path": None}
     if not mount_value or not mount_value.strip():
         raise RuntimeError("CALYX_DRY_RUN_PERSISTENT_MOUNT is required before directory initialization")
-
     path = Path(path_value.strip())
     mount = Path(mount_value.strip())
     if not _inside_mount(path, mount):
         raise RuntimeError("CALYX_DRY_RUN_DIRECTORY must be inside CALYX_DRY_RUN_PERSISTENT_MOUNT")
     if not mount.exists() or not mount.is_dir():
         raise RuntimeError("CALYX_DRY_RUN_PERSISTENT_MOUNT does not exist or is not a directory")
-
     path.mkdir(parents=True, exist_ok=True)
     if not path.is_dir():
         raise RuntimeError("CALYX_DRY_RUN_DIRECTORY could not be initialized as a directory")
@@ -65,45 +58,25 @@ def _directory_check(path_value: str | None, mount_value: str | None) -> dict[st
     configured = bool(path_value and path_value.strip())
     mount_configured = bool(mount_value and mount_value.strip())
     if not configured:
-        return {
-            "configured": False,
-            "path": None,
-            "exists": False,
-            "is_directory": False,
-            "writable": False,
-            "persistent_mount_configured": mount_configured,
-            "persistent_mount": mount_value.strip() if mount_configured else None,
-            "inside_persistent_mount": False,
-            "error": None,
-        }
-
+        return {"configured": False, "path": None, "exists": False, "is_directory": False, "writable": False, "persistent_mount_configured": mount_configured, "persistent_mount": mount_value.strip() if mount_configured else None, "inside_persistent_mount": False, "error": None}
     path = Path(path_value.strip())
     mount = Path(mount_value.strip()) if mount_configured else None
     exists = path.exists()
     is_directory = path.is_dir() if exists else False
-    writable = bool(is_directory and os.access(path, os.W_OK | os.X_OK))
-    inside_mount = bool(mount and _inside_mount(path, mount))
-
     return {
         "configured": True,
         "path": str(path),
         "exists": exists,
         "is_directory": is_directory,
-        "writable": writable,
+        "writable": bool(is_directory and os.access(path, os.W_OK | os.X_OK)),
         "persistent_mount_configured": mount_configured,
         "persistent_mount": str(mount) if mount else None,
-        "inside_persistent_mount": inside_mount,
+        "inside_persistent_mount": bool(mount and _inside_mount(path, mount)),
         "error": None,
     }
 
 
-def deployment_preflight(
-    *,
-    route_paths: set[str],
-    database_probe: Callable[[], None],
-    env: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    """Evaluate deployment readiness without graph, source, or filesystem writes."""
+def deployment_preflight(*, route_paths: set[str], database_probe: Callable[[], None], env: dict[str, str] | None = None) -> dict[str, Any]:
     environment = dict(os.environ if env is None else env)
     missing_routes = sorted(REQUIRED_PLATFORM_ROUTES - route_paths)
     database_ok = False
@@ -113,11 +86,7 @@ def deployment_preflight(
         database_ok = True
     except Exception as exc:
         database_error = str(exc)
-
-    directory = _directory_check(
-        environment.get("CALYX_DRY_RUN_DIRECTORY"),
-        environment.get("CALYX_DRY_RUN_PERSISTENT_MOUNT"),
-    )
+    directory = _directory_check(environment.get("CALYX_DRY_RUN_DIRECTORY"), environment.get("CALYX_DRY_RUN_PERSISTENT_MOUNT"))
     blockers: list[str] = []
     if missing_routes:
         blockers.append("missing_routes:" + ",".join(missing_routes))
@@ -136,17 +105,14 @@ def deployment_preflight(
             blockers.append("dry_run_path_is_not_directory")
         elif not directory["writable"]:
             blockers.append("dry_run_directory_not_writable")
-
+    reasoning_ready = "/api/platform/brain/candidate-knowledge" not in missing_routes
     return {
-        "contract": "calyx-graph-deployment-preflight-v2",
+        "contract": "calyx-graph-deployment-preflight-v3",
         "graph_mutation": False,
         "filesystem_mutation": False,
         "deployment": _commit_metadata(environment),
-        "routes": {
-            "required": sorted(REQUIRED_PLATFORM_ROUTES),
-            "missing": missing_routes,
-            "ready": not missing_routes,
-        },
+        "routes": {"required": sorted(REQUIRED_PLATFORM_ROUTES), "missing": missing_routes, "ready": not missing_routes},
+        "reasoning_center": {"candidate_knowledge_handoff_mounted": reasoning_ready, "automatic_publication": False, "human_review_required": True},
         "database": {"reachable": database_ok, "error": database_error},
         "staging_directory": directory,
         "ready_for_live_resumable_dry_run": not blockers,
