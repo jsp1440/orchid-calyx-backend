@@ -1,7 +1,8 @@
-"""Deterministic, non-publishing taxonomy CSV preflight validator.
+"""Deterministic, non-publishing taxonomy file preflight validator.
 
-This module intentionally uses only the Python standard library so it can run
-locally, in CI, or as an Azure Container Apps Job without cloud lock-in.
+Supports ordinary headered CSV/TSV files and the legacy headerless, pipe-delimited
+World Plants/World Orchids export shape used by Orchid Continuum. The module uses
+only the Python standard library and never imports or publishes taxonomy data.
 """
 from __future__ import annotations
 
@@ -16,9 +17,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-VALIDATOR_VERSION = "0.1.0"
-DEFAULT_REQUIRED_FIELDS = ("genus", "species")
-TAXON_RE = re.compile(r"^[A-Z][A-Za-z-]+(?:\s+[a-z][a-z-]+)?$")
+VALIDATOR_VERSION = "0.2.0"
+HEADER_TOKENS = {
+    "taxon_id", "taxonid", "id", "scientific_name", "scientificname",
+    "taxon_name", "name", "genus", "species", "specific_epithet",
+    "specificepithet", "status", "rank",
+}
+# Historical World Plants exports observed in Orchid Continuum use pipes and put
+# the full taxon string in the third field: S||Maxillaria ...|publication|...
+LEGACY_WORLD_PLANTS_COLUMNS = (
+    "record_type", "legacy_id", "scientific_name", "publication",
+    "legacy_field_5", "distribution", "synonymy",
+)
+BINOMIAL_RE = re.compile(r"^[A-Z][A-Za-z-]+\s+(?:×\s*)?[a-z][a-z-]+")
 
 
 @dataclass(frozen=True)
@@ -39,6 +50,7 @@ class Report:
     encoding: str
     delimiter: str
     columns: list[str]
+    input_shape: str
     metrics: dict[str, Any] = field(default_factory=dict)
     diff: dict[str, Any] | None = None
     findings: list[Finding] = field(default_factory=list)
@@ -70,22 +82,59 @@ def normalize(value: str | None) -> str:
     return " ".join((value or "").strip().split())
 
 
-def load_csv(path: Path) -> tuple[list[str], list[dict[str, str]], str, str]:
+def _detect_delimiter(text: str) -> str:
+    sample = text[:8192]
+    try:
+        return csv.Sniffer().sniff(sample, delimiters=",\t;|").delimiter
+    except csv.Error:
+        counts = {item: sample.count(item) for item in ("|", "\t", ",", ";")}
+        return max(counts, key=counts.get) if max(counts.values(), default=0) else ","
+
+
+def _looks_like_header(first_row: list[str]) -> bool:
+    folded = {normalize(value).casefold() for value in first_row}
+    return bool(folded & HEADER_TOKENS)
+
+
+def _legacy_columns(width: int) -> list[str]:
+    columns = list(LEGACY_WORLD_PLANTS_COLUMNS)
+    if width > len(columns):
+        columns.extend(f"legacy_field_{index}" for index in range(len(columns) + 1, width + 1))
+    return columns[:width]
+
+
+def load_csv(path: Path) -> tuple[list[str], list[dict[str, str]], str, str, str]:
     encoding = detect_encoding(path)
     try:
         text = path.read_text(encoding=encoding)
     except UnicodeDecodeError as exc:
         raise ValueError(f"unsupported or invalid text encoding: {exc}") from exc
-    sample = text[:8192]
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",\t;|")
-        delimiter = dialect.delimiter
-    except csv.Error:
-        delimiter = ","
-    reader = csv.DictReader(text.splitlines(), delimiter=delimiter)
-    columns = [normalize(c) for c in (reader.fieldnames or []) if normalize(c)]
-    rows = [{normalize(k): normalize(v) for k, v in row.items() if k is not None} for row in reader]
-    return columns, rows, encoding, delimiter
+    delimiter = _detect_delimiter(text)
+    parsed = list(csv.reader(text.splitlines(), delimiter=delimiter))
+    parsed = [row for row in parsed if any(normalize(value) for value in row)]
+    if not parsed:
+        return [], [], encoding, delimiter, "empty"
+
+    if _looks_like_header(parsed[0]):
+        columns = [normalize(value) or f"unnamed_{index}" for index, value in enumerate(parsed[0], start=1)]
+        data_rows = parsed[1:]
+        input_shape = "headered"
+    elif delimiter == "|" and len(parsed[0]) >= 3:
+        width = max(len(row) for row in parsed)
+        columns = _legacy_columns(width)
+        data_rows = parsed
+        input_shape = "legacy_world_plants_headerless"
+    else:
+        width = max(len(row) for row in parsed)
+        columns = [f"column_{index}" for index in range(1, width + 1)]
+        data_rows = parsed
+        input_shape = "headerless_unknown"
+
+    rows: list[dict[str, str]] = []
+    for raw in data_rows:
+        padded = raw + [""] * (len(columns) - len(raw))
+        rows.append({column: normalize(value) for column, value in zip(columns, padded)})
+    return columns, rows, encoding, delimiter, input_shape
 
 
 def first_present(row: dict[str, str], names: Iterable[str]) -> str:
@@ -97,16 +146,20 @@ def first_present(row: dict[str, str], names: Iterable[str]) -> str:
     return ""
 
 
+def scientific_name(row: dict[str, str]) -> str:
+    direct = first_present(row, ("scientific_name", "scientificname", "taxon_name", "name"))
+    if direct:
+        return direct
+    genus = first_present(row, ("genus",))
+    species = first_present(row, ("species", "specific_epithet", "specificepithet"))
+    return normalize(f"{genus} {species}")
+
+
 def taxon_key(row: dict[str, str]) -> str:
-    identifier = first_present(row, ("taxon_id", "taxonid", "id", "ipni_id", "accepted_name_id"))
+    identifier = first_present(row, ("taxon_id", "taxonid", "id", "ipni_id", "accepted_name_id", "legacy_id"))
     if identifier:
         return f"id:{identifier.casefold()}"
-    scientific = first_present(row, ("scientific_name", "scientificname", "taxon_name", "name"))
-    if not scientific:
-        genus = first_present(row, ("genus",))
-        species = first_present(row, ("species", "specific_epithet", "specificepithet"))
-        scientific = normalize(f"{genus} {species}")
-    return f"name:{scientific.casefold()}"
+    return f"name:{scientific_name(row).casefold()}"
 
 
 def canonical_row(row: dict[str, str]) -> str:
@@ -131,19 +184,27 @@ def compare_rows(candidate: list[dict[str, str]], baseline: list[dict[str, str]]
     }
 
 
-def validate(path: Path, baseline_path: Path | None = None, required_fields: tuple[str, ...] = DEFAULT_REQUIRED_FIELDS) -> Report:
-    columns, rows, encoding, delimiter = load_csv(path)
+def _has_identity_columns(columns: list[str]) -> bool:
+    folded = {column.casefold() for column in columns}
+    direct = bool(folded & {"scientific_name", "scientificname", "taxon_name", "name"})
+    split = "genus" in folded and bool(folded & {"species", "specific_epithet", "specificepithet"})
+    return direct or split
+
+
+def validate(path: Path, baseline_path: Path | None = None) -> Report:
+    columns, rows, encoding, delimiter, input_shape = load_csv(path)
     findings: list[Finding] = []
-    folded_columns = {column.casefold() for column in columns}
-    missing_required = [field for field in required_fields if field.casefold() not in folded_columns]
-    if missing_required:
-        findings.append(Finding("FAIL", "missing_required_columns", f"Missing required columns: {', '.join(missing_required)}"))
+    if input_shape == "headerless_unknown":
+        findings.append(Finding("FAIL", "unknown_headerless_shape", "Headerless file is not a recognized World Plants pipe export"))
+    if columns and not _has_identity_columns(columns):
+        findings.append(Finding("FAIL", "missing_taxon_identity_columns", "Expected scientific_name or genus plus species columns"))
 
     keys: list[str] = []
     null_counts: Counter[str] = Counter()
     malformed_taxa = 0
     empty_identity = 0
-    for index, row in enumerate(rows, start=2):
+    row_width_anomalies = 0
+    for index, row in enumerate(rows, start=1 if input_shape.startswith("legacy_") else 2):
         for column in columns:
             if not normalize(row.get(column)):
                 null_counts[column] += 1
@@ -152,22 +213,27 @@ def validate(path: Path, baseline_path: Path | None = None, required_fields: tup
         if key == "name:":
             empty_identity += 1
             findings.append(Finding("FAIL", "missing_taxon_identity", "Row has no usable identifier or taxon name", index))
-        scientific = first_present(row, ("scientific_name", "scientificname", "taxon_name", "name"))
-        if not scientific:
-            scientific = normalize(f"{first_present(row, ('genus',))} {first_present(row, ('species', 'specific_epithet', 'specificepithet'))}")
-        if scientific and not TAXON_RE.match(scientific):
+        name = scientific_name(row)
+        record_type = first_present(row, ("record_type", "rank"))
+        species_like = record_type.casefold() in {"s", "species", "subspecies", "variety", "form"} or not record_type
+        if name and species_like and not BINOMIAL_RE.match(name):
             malformed_taxa += 1
-            findings.append(Finding("WARN", "malformed_taxon_name", f"Taxon name may be malformed: {scientific}", index))
+            if malformed_taxa <= 100:
+                findings.append(Finding("WARN", "malformed_taxon_name", f"Taxon name may be malformed: {name}", index))
+        if any(key.startswith("unnamed_") for key in row):
+            row_width_anomalies += 1
 
     duplicate_counts = {key: count for key, count in Counter(keys).items() if key != "name:" and count > 1}
     if duplicate_counts:
         findings.append(Finding("WARN", "duplicate_taxa", f"Detected {len(duplicate_counts)} duplicated taxon keys"))
+    if malformed_taxa > 100:
+        findings.append(Finding("WARN", "malformed_taxon_findings_truncated", f"Only the first 100 of {malformed_taxa} malformed-name findings are listed"))
     if not rows:
-        findings.append(Finding("FAIL", "empty_file", "CSV contains no data rows"))
+        findings.append(Finding("FAIL", "empty_file", "File contains no data rows"))
 
     diff = None
     if baseline_path:
-        _, baseline_rows, _, _ = load_csv(baseline_path)
+        _, baseline_rows, _, _, _ = load_csv(baseline_path)
         diff = compare_rows(rows, baseline_rows)
 
     status = "FAIL" if any(item.level == "FAIL" for item in findings) else "WARN" if findings else "PASS"
@@ -180,6 +246,7 @@ def validate(path: Path, baseline_path: Path | None = None, required_fields: tup
         encoding=encoding,
         delimiter=delimiter,
         columns=columns,
+        input_shape=input_shape,
         metrics={
             "row_count": len(rows),
             "column_count": len(columns),
@@ -187,6 +254,7 @@ def validate(path: Path, baseline_path: Path | None = None, required_fields: tup
             "duplicate_row_count": sum(duplicate_counts.values()),
             "missing_taxon_identity_count": empty_identity,
             "malformed_taxon_name_count": malformed_taxa,
+            "row_width_anomaly_count": row_width_anomalies,
             "null_counts": dict(sorted(null_counts.items())),
         },
         diff=diff,
@@ -196,11 +264,12 @@ def validate(path: Path, baseline_path: Path | None = None, required_fields: tup
 
 def write_human_summary(report: Report, output: Path) -> None:
     lines = [
-        f"# Taxonomy Preflight: {report.status}",
-        "",
+        f"# Taxonomy Preflight: {report.status}", "",
         f"- Source: `{report.source_filename}`",
         f"- SHA-256: `{report.source_sha256}`",
         f"- Validator: `{report.validator_version}`",
+        f"- Input shape: `{report.input_shape}`",
+        f"- Delimiter: `{report.delimiter}`",
         f"- Rows: {report.metrics['row_count']}",
         f"- Columns: {report.metrics['column_count']}",
         f"- Duplicate taxon keys: {report.metrics['duplicate_taxon_key_count']}",
@@ -217,7 +286,7 @@ def write_human_summary(report: Report, output: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate a taxonomy CSV without importing or publishing it.")
+    parser = argparse.ArgumentParser(description="Validate a taxonomy file without importing or publishing it.")
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--json-output", type=Path, default=Path("taxonomy-preflight-report.json"))
