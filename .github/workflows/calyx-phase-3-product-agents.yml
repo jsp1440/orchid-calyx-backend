@@ -5,7 +5,13 @@ on:
     paths:
       - "app/calyx_orchestrator/product_agents.py"
       - "app/calyx_orchestrator/product_program.py"
+      - "app/calyx_orchestrator/product_execution.py"
+      - "app/calyx_orchestrator/product_routes.py"
+      - "app/calyx_orchestrator/product_mission_control.py"
+      - "app/calyx_orchestrator/routes.py"
       - "tests/test_calyx_product_agents_phase_3.py"
+      - "tests/test_calyx_product_execution_phase_3.py"
+      - "tests/test_calyx_product_routes_phase_3.py"
       - ".github/workflows/calyx-phase-3-product-agents.yml"
   workflow_dispatch:
 
@@ -17,6 +23,8 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       PYTHONPATH: .
+      CALYX_API_KEY: test-key
+      CALYX_OWNER_SESSION_SECRET: test-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,10 +35,39 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest ruff
+          pip install pytest ruff httpx
       - name: Compile
         run: python -m compileall -q app/calyx_orchestrator
       - name: Ruff
-        run: ruff check app/calyx_orchestrator/product_agents.py app/calyx_orchestrator/product_program.py tests/test_calyx_product_agents_phase_3.py
+        run: >-
+          ruff check
+          app/calyx_orchestrator/product_agents.py
+          app/calyx_orchestrator/product_program.py
+          app/calyx_orchestrator/product_execution.py
+          app/calyx_orchestrator/product_routes.py
+          app/calyx_orchestrator/product_mission_control.py
+          app/calyx_orchestrator/routes.py
+          tests/test_calyx_product_agents_phase_3.py
+          tests/test_calyx_product_execution_phase_3.py
+          tests/test_calyx_product_routes_phase_3.py
       - name: Focused tests
-        run: pytest -q tests/test_calyx_product_agents_phase_3.py
+        run: >-
+          pytest -q
+          tests/test_calyx_product_agents_phase_3.py
+          tests/test_calyx_product_execution_phase_3.py
+          tests/test_calyx_product_routes_phase_3.py
+      - name: Route smoke
+        run: |
+          python - <<'PY'
+          from app.main import app
+          paths = {route.path for route in app.routes}
+          required = {
+              "/brain/orchestrator/product/status",
+              "/brain/orchestrator/product/programs/phase-3-demo",
+              "/brain/orchestrator/product/workers/jobs/{program_job_id}/complete",
+          }
+          missing = required - paths
+          if missing:
+              raise SystemExit(f"Missing routes: {sorted(missing)}")
+          print("CALYX Phase 3 product routes registered")
+          PY
