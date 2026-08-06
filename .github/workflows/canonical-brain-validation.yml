@@ -1,11 +1,19 @@
 name: Canonical Brain Validation
 
 on:
+  push:
+    branches:
+      - "feature/brain-canonical-architecture-registry"
+    paths:
+      - "app/canonical_brain/**"
+      - "tests/test_canonical_brain_*.py"
+      - "docs/architecture/**"
+      - ".github/workflows/canonical-brain-validation.yml"
   pull_request:
     paths:
       - "app/canonical_brain/**"
       - "tests/test_canonical_brain_*.py"
-      - "docs/architecture/BUILD-BRAIN-100-*"
+      - "docs/architecture/**"
       - ".github/workflows/canonical-brain-validation.yml"
   workflow_dispatch:
 
