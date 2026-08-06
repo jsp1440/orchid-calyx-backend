@@ -12,6 +12,7 @@ from app.security import verify_owner_or_api_key
 
 from .models import CalyxJob
 from .operations import operational_status, renew_lease, seed_approved_tasks
+from .product_routes import router as product_router
 from .program_routes import router as program_router
 from .scientific_program import scientific_mission_control_snapshot
 from .scientific_routes import router as scientific_router
@@ -155,3 +156,4 @@ def requeue_dead_letter(job_id: str, auth: AuthDependency, db: DbDependency) -> 
 
 router.include_router(program_router)
 router.include_router(scientific_router)
+router.include_router(product_router)
