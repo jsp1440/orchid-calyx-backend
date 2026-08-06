@@ -12,10 +12,11 @@ import hashlib
 import json
 import re
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 VALIDATOR_VERSION = "0.2.0"
 HEADER_TOKENS = {
