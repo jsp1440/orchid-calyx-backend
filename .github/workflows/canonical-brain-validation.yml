@@ -8,17 +8,23 @@ on:
       - "app/canonical_brain/**"
       - "tests/test_canonical_brain_*.py"
       - "docs/architecture/**"
+      - "scripts/validate_canonical_brain.sh"
       - ".github/workflows/canonical-brain-validation.yml"
   pull_request:
     paths:
       - "app/canonical_brain/**"
       - "tests/test_canonical_brain_*.py"
       - "docs/architecture/**"
+      - "scripts/validate_canonical_brain.sh"
       - ".github/workflows/canonical-brain-validation.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: canonical-brain-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   canonical-brain-validation:
@@ -35,9 +41,5 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install pytest ruff
-      - name: Compile
-        run: python -m compileall -q app/canonical_brain
-      - name: Lint
-        run: ruff check app/canonical_brain tests/test_canonical_brain_*.py
-      - name: Test
-        run: pytest -q tests/test_canonical_brain_*.py
+      - name: Run canonical Brain validation
+        run: bash scripts/validate_canonical_brain.sh
