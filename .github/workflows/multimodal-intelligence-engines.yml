@@ -6,6 +6,7 @@ on:
       - "app/multimodal_intelligence/**"
       - "tests/test_multimodal_intelligence_engines.py"
       - "tests/test_multimodal_intelligence_status.py"
+      - "tests/test_multimodal_intelligence_priority_10.py"
       - ".github/workflows/multimodal-intelligence-engines.yml"
   workflow_dispatch:
 
@@ -31,9 +32,17 @@ jobs:
       - name: Compile
         run: python -m compileall -q app/multimodal_intelligence
       - name: Ruff
-        run: ruff check app/multimodal_intelligence tests/test_multimodal_intelligence_engines.py tests/test_multimodal_intelligence_status.py
+        run: >-
+          ruff check app/multimodal_intelligence
+          tests/test_multimodal_intelligence_engines.py
+          tests/test_multimodal_intelligence_status.py
+          tests/test_multimodal_intelligence_priority_10.py
       - name: Focused tests
-        run: pytest -q tests/test_multimodal_intelligence_engines.py tests/test_multimodal_intelligence_status.py
+        run: >-
+          pytest -q
+          tests/test_multimodal_intelligence_engines.py
+          tests/test_multimodal_intelligence_status.py
+          tests/test_multimodal_intelligence_priority_10.py
       - name: Route smoke
         run: |
           python - <<'PY'
