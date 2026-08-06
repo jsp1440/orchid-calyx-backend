@@ -30,10 +30,19 @@ Move the Knowledge Graph and Brain integration from structurally connected code 
 - Taxonomy promotion: not authorized.
 - Live dry run: not started by this implementation.
 
+## Validation history
+
+- Dedicated Knowledge Graph integration tests passed on the implementation head.
+- BUILD-088E publication-pipeline and readiness validation passed.
+- Live preflight evidence validation passed.
+- A manual code review identified and corrected a legacy migration edge case involving duplicate null-source edges before sentinel normalization.
+- The migration regression test now constructs an older nullable-edge schema, inserts duplicate null-source identities, and verifies safe deduplication and normalization.
+- A later Ruff-only cleanup commit was automation-authored; its workflow runs were held at `action_required` without creating jobs. This owner-authored documentation commit retriggers full validation on the resulting code state.
+
 ## Operational next gate
 
-The exact PR head must pass both the dedicated Knowledge Graph workflow and the broad validation workflow. After merge and deployment, the owner-authenticated deployment preflight must report `ready_for_live_resumable_dry_run: true` before a bounded live dry run begins.
+The exact final PR head must pass the dedicated Knowledge Graph workflow, broad validation workflow, and live-preflight evidence workflow. After merge and deployment, the owner-authenticated deployment preflight must report `ready_for_live_resumable_dry_run: true` before a bounded live dry run begins.
 
 ## Completion evidence
 
-Implementation is contained in PR #460. This record is intentionally committed with the implementation so the Brain has a durable account of what changed, what remains prohibited, and the next operational gate.
+Implementation is contained in PR #460. This record is intentionally committed with the implementation so the Brain has a durable account of what changed, what remains prohibited, the validation performed, and the next operational gate.
