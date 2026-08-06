@@ -1,0 +1,8 @@
+{
+  "minimum_rows": 30000,
+  "maximum_removed_ratio": 0.02,
+  "maximum_changed_ratio": 0.20,
+  "maximum_missing_identity_ratio": 0.0001,
+  "maximum_duplicate_key_ratio": 0.005,
+  "finding_sample_limit": 100
+}
