@@ -28,10 +28,40 @@ jobs:
           : "${CALYX_OWNER_ACCESS_CODE:?Repository secret CALYX_OWNER_ACCESS_CODE is required}"
 
       - name: Run read-only deployed preflight
+        id: preflight
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
+          set +e
           python scripts/smoke_graph_deployment_preflight.py 2>&1 | tee calyx-deployed-preflight.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=${status}" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Summarize preflight result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="${{ steps.preflight.outputs.exit_code }}"
+          {
+            echo "## CALYX deployed preflight"
+            case "$code" in
+              0) echo "✅ Deployment is ready for a bounded resumable dry run." ;;
+              2) echo "⚠️ Deployment is reachable, but readiness blockers were reported." ;;
+              1|"") echo "❌ Connectivity, authentication, or request processing failed." ;;
+              *) echo "❌ Unexpected smoke-test exit code: $code" ;;
+            esac
+            echo
+            echo '```text'
+            if [[ -f calyx-deployed-preflight.txt ]]; then
+              tail -n 80 calyx-deployed-preflight.txt
+            else
+              echo "No report file was produced."
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload preflight report
         if: always()
