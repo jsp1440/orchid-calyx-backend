@@ -11,13 +11,9 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-BASE_URL = os.environ.get(
-    "CALYX_BACKEND_URL", "https://orchid-calyx-backend.onrender.com"
-).rstrip("/")
+BASE_URL = os.environ.get("CALYX_BACKEND_URL", "https://orchid-calyx-backend.onrender.com").rstrip("/")
 ACCESS_CODE = os.environ.get("CALYX_OWNER_ACCESS_CODE", "")
-EVIDENCE_PATH = Path(
-    os.environ.get("CALYX_PREFLIGHT_EVIDENCE_PATH", "calyx-deployed-preflight-evidence.json")
-)
+EVIDENCE_PATH = Path(os.environ.get("CALYX_PREFLIGHT_EVIDENCE_PATH", "calyx-deployed-preflight-evidence.json"))
 COMMIT_SHA = os.environ.get("GITHUB_SHA", "")
 
 
@@ -32,6 +28,18 @@ def request(path: str, *, method: str = "GET", payload: dict | None = None, toke
         return response.status, json.loads(body) if body else {}
 
 
+def step_request(step: str, path: str, **kwargs):
+    try:
+        return request(path, **kwargs)
+    except HTTPError as exc:
+        body = exc.read().decode(errors="replace")
+        print(f"FAIL {step}: HTTP {exc.code} {body}".rstrip())
+        raise
+    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        print(f"FAIL {step}: {exc!r}")
+        raise
+
+
 def evaluate_preflight(report: dict) -> tuple[bool, list[str]]:
     ready = report.get("ready_for_live_resumable_dry_run") is True
     blockers = [str(item) for item in report.get("blockers", [])]
@@ -40,17 +48,9 @@ def evaluate_preflight(report: dict) -> tuple[bool, list[str]]:
     return ready, sorted(set(blockers))
 
 
-def build_evidence(
-    *,
-    report: dict[str, Any],
-    ready: bool,
-    blockers: list[str],
-    health_status: int,
-    owner_session_status: int,
-    preflight_status: int,
-) -> dict[str, Any]:
+def build_evidence(*, report: dict[str, Any], ready: bool, blockers: list[str], health_status: int, owner_session_status: int, preflight_status: int) -> dict[str, Any]:
     evidence = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "backend_url": BASE_URL,
         "deployed_commit_sha": COMMIT_SHA,
@@ -69,72 +69,52 @@ def build_evidence(
 
 
 def write_evidence(evidence: dict[str, Any]) -> None:
-    EVIDENCE_PATH.write_text(
-        json.dumps(evidence, indent=2, sort_keys=True, default=str) + "\n",
-        encoding="utf-8",
-    )
+    EVIDENCE_PATH.write_text(json.dumps(evidence, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
 
 
 def main() -> int:
-    health_status = 0
-    owner_session_status = 0
-    preflight_status = 0
+    health_status = owner_session_status = preflight_status = 0
     report: dict[str, Any] = {}
     blockers: list[str] = []
-
-    if not ACCESS_CODE:
-        blockers.append("missing:CALYX_OWNER_ACCESS_CODE")
-        write_evidence(
-            build_evidence(
-                report=report,
-                ready=False,
-                blockers=blockers,
-                health_status=health_status,
-                owner_session_status=owner_session_status,
-                preflight_status=preflight_status,
-            )
-        )
-        print("FAIL owner_session: CALYX_OWNER_ACCESS_CODE not set")
-        return 1
-
+    ready = False
     try:
-        health_status, _ = request("/health")
+        health_status, _ = step_request("health", "/health")
         print(f"{'PASS' if health_status == 200 else 'FAIL'} health: {health_status}")
         if health_status != 200:
             blockers.append("health_check_failed")
             return_code = 1
+        elif not ACCESS_CODE:
+            blockers.append("missing:CALYX_OWNER_ACCESS_CODE")
+            print("FAIL owner_session: CALYX_OWNER_ACCESS_CODE not set")
+            return_code = 1
         else:
             return_code = 0
 
+        token = ""
         if return_code == 0:
-            owner_session_status, session = request(
+            owner_session_status, session = step_request(
+                "owner_session",
                 "/api/mission-control/owner/session-token",
                 method="POST",
-                payload={"access_code": ACCESS_CODE},
+                payload={"access_code": ACCESS_CODE, "owner": "owner"},
             )
             token = session.get("token") or session.get("access_token") or ""
-            print(
-                f"{'PASS' if owner_session_status == 200 and token else 'FAIL'} "
-                f"owner_session: {owner_session_status}"
-            )
-            if owner_session_status != 200 or not token:
+            print(f"{'PASS' if owner_session_status == 200 and token and token != 'cookie' else 'FAIL'} owner_session: {owner_session_status}")
+            if owner_session_status != 200 or not token or token == "cookie":
                 blockers.append("owner_session_failed")
                 return_code = 1
 
         if return_code == 0:
-            preflight_status, report = request(
+            preflight_status, report = step_request(
+                "deployment_preflight",
                 "/api/platform/knowledge-graph/deployment-preflight",
                 token=token,
             )
-            print(
-                f"{'PASS' if preflight_status == 200 else 'FAIL'} "
-                f"deployment_preflight: {preflight_status}"
-            )
+            print(f"{'PASS' if preflight_status == 200 else 'FAIL'} deployment_preflight: {preflight_status}")
             if preflight_status != 200:
                 blockers.append("deployment_preflight_failed")
                 return_code = 1
 
-        ready = False
         if return_code == 0:
             ready, report_blockers = evaluate_preflight(report)
             blockers.extend(report_blockers)
@@ -147,30 +127,11 @@ def main() -> int:
                 print("PASS ready_for_live_resumable_dry_run: true")
                 print("SAFE STOP: no dry run was started")
 
-        write_evidence(
-            build_evidence(
-                report=report,
-                ready=ready,
-                blockers=blockers,
-                health_status=health_status,
-                owner_session_status=owner_session_status,
-                preflight_status=preflight_status,
-            )
-        )
+        write_evidence(build_evidence(report=report, ready=ready, blockers=blockers, health_status=health_status, owner_session_status=owner_session_status, preflight_status=preflight_status))
         return return_code
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
         blockers.append(f"request_failed:{type(exc).__name__}")
-        write_evidence(
-            build_evidence(
-                report=report,
-                ready=False,
-                blockers=blockers,
-                health_status=health_status,
-                owner_session_status=owner_session_status,
-                preflight_status=preflight_status,
-            )
-        )
-        print(f"FAIL request: {exc!r}")
+        write_evidence(build_evidence(report=report, ready=False, blockers=blockers, health_status=health_status, owner_session_status=owner_session_status, preflight_status=preflight_status))
         return 1
 
 

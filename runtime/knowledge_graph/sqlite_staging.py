@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from .models import Edge, Node
 
@@ -31,15 +31,30 @@ class _CountedEdgeView:
 
 
 class SqliteStagingGraphRepository:
-    def __init__(self, path: str):
+    def __init__(self, path: str, *, initialize: bool = True):
         self.path = path
+        if not initialize:
+            if not Path(path).is_file():
+                raise FileNotFoundError(path)
+            return
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path) as conn:
+        with sqlite3.connect(self.path, timeout=30) as conn:
             conn.execute("CREATE TABLE IF NOT EXISTS nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, node_type TEXT NOT NULL, canonical_key TEXT NOT NULL UNIQUE, display_label TEXT, source_table TEXT, source_pk TEXT, evidence_class TEXT, confidence_score REAL, confidence_label TEXT, payload TEXT NOT NULL)")
-            conn.execute("CREATE TABLE IF NOT EXISTS edges (id INTEGER PRIMARY KEY AUTOINCREMENT, edge_type TEXT NOT NULL, from_node_id INTEGER NOT NULL, to_node_id INTEGER NOT NULL, source_table TEXT, source_pk TEXT, evidence_class TEXT, confidence_score REAL, confidence_label TEXT, rule_name TEXT, payload TEXT NOT NULL, UNIQUE(edge_type, from_node_id, to_node_id, source_table))")
+            conn.execute("CREATE TABLE IF NOT EXISTS edges (id INTEGER PRIMARY KEY AUTOINCREMENT, edge_type TEXT NOT NULL, from_node_id INTEGER NOT NULL, to_node_id INTEGER NOT NULL, source_table TEXT NOT NULL DEFAULT '', source_pk TEXT, evidence_class TEXT, confidence_score REAL, confidence_label TEXT, rule_name TEXT, payload TEXT NOT NULL, UNIQUE(edge_type, from_node_id, to_node_id, source_table))")
+            # Older staging databases allowed NULL source_table values, and SQLite
+            # treats NULLs as distinct in UNIQUE constraints. Deduplicate by the
+            # normalized identity before replacing NULL with the empty sentinel.
+            conn.execute(
+                "DELETE FROM edges WHERE id NOT IN ("
+                "SELECT MIN(id) FROM edges "
+                "GROUP BY edge_type, from_node_id, to_node_id, COALESCE(source_table, '')"
+                ")"
+            )
+            conn.execute("UPDATE edges SET source_table = '' WHERE source_table IS NULL")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS edges_identity_unique ON edges(edge_type, from_node_id, to_node_id, source_table)")
 
     def _connect(self):
-        return sqlite3.connect(self.path)
+        return sqlite3.connect(self.path, timeout=30)
 
     @staticmethod
     def _node(row) -> Node:
@@ -47,7 +62,7 @@ class SqliteStagingGraphRepository:
 
     @staticmethod
     def _edge(row) -> Edge:
-        return Edge(kg_edge_id=row[0], edge_type=row[1], from_node_id=row[2], to_node_id=row[3], source_table=row[4], source_pk=row[5], evidence_class=row[6], confidence_score=row[7], confidence_label=row[8], rule_name=row[9], payload=json.loads(row[10] or "{}"))
+        return Edge(kg_edge_id=row[0], edge_type=row[1], from_node_id=row[2], to_node_id=row[3], source_table=row[4] or None, source_pk=row[5], evidence_class=row[6], confidence_score=row[7], confidence_label=row[8], rule_name=row[9], payload=json.loads(row[10] or "{}"))
 
     def get_node(self, node_id: int) -> Node | None:
         with self._connect() as conn:
@@ -114,10 +129,11 @@ class SqliteStagingGraphRepository:
 
     def upsert_edge(self, edge: Edge) -> Edge:
         payload = json.dumps(edge.payload or {}, default=str)
-        values = (edge.edge_type, edge.from_node_id, edge.to_node_id, edge.source_table, str(edge.source_pk) if edge.source_pk is not None else None, edge.evidence_class, edge.confidence_score, edge.confidence_label, edge.rule_name, payload)
+        source_table = edge.source_table or ""
+        values = (edge.edge_type, edge.from_node_id, edge.to_node_id, source_table, str(edge.source_pk) if edge.source_pk is not None else None, edge.evidence_class, edge.confidence_score, edge.confidence_label, edge.rule_name, payload)
         with self._connect() as conn:
             conn.execute("INSERT OR IGNORE INTO edges(edge_type, from_node_id, to_node_id, source_table, source_pk, evidence_class, confidence_score, confidence_label, rule_name, payload) VALUES(?,?,?,?,?,?,?,?,?,?)", values)
-            row = conn.execute("SELECT * FROM edges WHERE edge_type = ? AND from_node_id = ? AND to_node_id = ? AND source_table IS ?", (edge.edge_type, edge.from_node_id, edge.to_node_id, edge.source_table)).fetchone()
+            row = conn.execute("SELECT * FROM edges WHERE edge_type = ? AND from_node_id = ? AND to_node_id = ? AND source_table = ?", (edge.edge_type, edge.from_node_id, edge.to_node_id, source_table)).fetchone()
         return self._edge(row)
 
     def counts(self) -> dict[str, int]:
