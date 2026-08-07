@@ -38,7 +38,7 @@ def _persisted_job_inputs(job: CalyxProgramJob) -> dict[str, object]:
     except json.JSONDecodeError as exc:
         raise ValueError("PROGRAM_JOB_INPUT_JSON_INVALID") from exc
     if not isinstance(value, dict):
-        raise ValueError("PROGRAM_JOB_INPUT_JSON_OBJECT_REQUIRED")
+        raise TypeError("PROGRAM_JOB_INPUT_JSON_OBJECT_REQUIRED")
     if any(not isinstance(key, str) or not key.strip() for key in value):
         raise ValueError("PROGRAM_JOB_INPUT_KEY_INVALID")
     reserved = sorted(set(value) & RESERVED_JOB_INPUT_KEYS)
