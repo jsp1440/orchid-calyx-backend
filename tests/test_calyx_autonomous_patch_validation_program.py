@@ -198,7 +198,7 @@ def test_program_job_inputs_affect_fingerprint_and_are_bounded():
 
     oversized = "x" * (MAX_JOB_INPUT_BYTES + 1)
     with pytest.raises(ValueError, match="INPUTS_TOO_LARGE"):
-        ProgramJobSpec(
+        _ = ProgramJobSpec(
             "job",
             "role",
             "Title",
@@ -211,7 +211,7 @@ def test_program_job_inputs_affect_fingerprint_and_are_bounded():
 
 def test_program_job_inputs_require_canonical_json_object():
     with pytest.raises(ValueError, match="NOT_CANONICAL_JSON"):
-        ProgramJobSpec(
+        _ = ProgramJobSpec(
             "job",
             "role",
             "Title",
