@@ -30,7 +30,14 @@ Regression tests cover both behaviors.
 
 The stale #530 head was rerun after GitHub Actions recovered. Its compile step and all five focused functional tests passed, and BUILD-088E passed. The sole failure was one Ruff `I001` import-format violation in the old certification module.
 
-The initial #560 head then passed its focused validation and BUILD-088E. Post-validation review identified the two issues above, so that head was not merged. The corrected exact head must pass the focused workflow and BUILD-088E again before merge.
+The initial #560 head then passed its focused validation and BUILD-088E. Post-validation review identified the two issues above, so that head was not merged.
+
+The corrected exact head `4c753410184e6adaa8bced97dd94d44ad139e887` passed both required executable validation lanes:
+
+- `CALYX-CORE-REBASE-002A Validation` — success;
+- `BUILD-088E Validation` — success.
+
+PR #560 merged to `main` as `0763bdf8a789c68059b75010dd73ba6b6257a49e`.
 
 ## Governance
 
