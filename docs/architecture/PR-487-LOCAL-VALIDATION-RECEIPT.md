@@ -27,6 +27,13 @@ The compact slice was reconstructed from GitHub connector reads because the exec
 
 Ruff could not be executed in the local reconstruction environment because the module is not installed there. Earlier GitHub Actions runs executed Ruff and identified specific formatting defects; those defects were corrected on the current head. The latest GitHub workflows are marked `action_required` with no jobs. The connector cannot retry or approve that state, so repository-side workflow approval is still required for authoritative Ruff and pytest receipts on the current head.
 
+## Required reviewer action
+
+1. Open PR #487 in GitHub.
+2. Open its Checks or Actions view.
+3. Approve the pending workflows.
+4. Confirm that Canonical Brain Validation completes successfully before considering the slice for merge.
+
 ## Safety boundary
 
 This is a validation receipt only. It does not authorize merge, deployment, publication, production database migration, external delivery, or production Knowledge Graph mutation.
