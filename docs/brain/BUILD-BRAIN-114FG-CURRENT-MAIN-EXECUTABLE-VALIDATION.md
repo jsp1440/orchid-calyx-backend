@@ -23,7 +23,7 @@ The assignment factory grants `repository_code_execution` only to this role. `wo
 
 ## Validation scope
 
-The BUILD-BRAIN-114F aggregate workflow now compiles and lints the complete current-main autonomy surface and runs the repository-evidence, patch, static-validation, persisted-input, integrated patch→static-validation, and sandboxed executable-validation regression suites.
+The BUILD-BRAIN-114F aggregate workflow compiles and lints the complete current-main autonomy surface and runs the repository-evidence, patch, static-validation, persisted-input, integrated patch→static-validation, and sandboxed executable-validation regression suites.
 
 Focused executable-validation tests cover:
 - marker-only rejection;
@@ -35,6 +35,22 @@ Focused executable-validation tests cover:
 - default-registry non-eligibility and durable queued/zero-attempt behavior;
 - explicit eligibility only when a supervisor is supplied.
 
+## Authoritative CI evidence
+
+Current-main-derived head `f14c4f2a77f186cc53a5eaddbba99eea999a1cee` received real GitHub-hosted validation on 2026-08-07.
+
+- BUILD-BRAIN-114F run `31211627055`: success. Checkout, setup, dependency install, compile, Ruff, focused autonomy regressions, migration compatibility, and diff hygiene all executed and passed.
+- BUILD-BRAIN-114E run `31211626799`: success.
+- BUILD-BRAIN-114D run `31211627433`: success.
+- BUILD-BRAIN-114C run `31211626841`: success.
+- BUILD-BRAIN-114B run `31211626509`: success.
+- BUILD-BRAIN-114A run `31211627451`: success.
+- BUILD-BRAIN-108-113A run `31211626750`: success.
+- CALYX-AGENT-003 run `31211626515`: success.
+- BUILD-088E run `31211626547`: success.
+
+This is executable validation evidence, not a zero-step infrastructure result.
+
 ## Remaining operational boundary
 
 Repository code does not itself create Linux namespaces, seccomp, network namespaces, read-only mounts, or another OS sandbox. Production activation requires a trusted external supervisor that actually enforces network isolation, credential removal, subprocess confinement, and read-only repository access before issuing authorization.
@@ -43,4 +59,4 @@ Still unauthorized: arbitrary caller-supplied shell or argv, package installatio
 
 ## Disposition
 
-Implementation is staged on PR #551. Keep the PR draft until real GitHub Actions validation succeeds on the resulting current-main-derived head. Merge remains an explicit governance boundary.
+Implementation and validation are complete on PR #551. The PR remains draft because merge is an explicit governance/release boundary, not routine autonomous implementation authority.
