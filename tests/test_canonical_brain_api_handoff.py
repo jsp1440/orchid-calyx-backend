@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.brain.routes import router as deployed_brain_router
 from app.canonical_brain import (
     BrainCaptureBundle,
     BrainObject,
@@ -58,7 +59,14 @@ def test_read_only_api_is_searchable_and_discoverable() -> None:
     assert missing.status_code == 404
 
 
-def test_capture_bundle_is_atomic_and_repeatable() -> None:
+def test_deployed_authenticated_brain_router_mounts_canonical_endpoints() -> None:
+    paths = {route.path for route in deployed_brain_router.routes}
+    assert "/brain/canonical/status" in paths
+    assert "/brain/canonical/search" in paths
+    assert "/brain/canonical/admission/evaluate" in paths
+
+
+def test_capture_bundle_is_atomic_and_repeatable_for_operational_metadata() -> None:
     registry = build_canonical_brain_fixture()
     record = _build_record()
     relation = BrainRelationship(
@@ -81,6 +89,30 @@ def test_capture_bundle_is_atomic_and_repeatable() -> None:
     second = capture_build_bundle(registry, bundle)
     assert first.snapshot_checksum == second.snapshot_checksum
     assert registry.get(record.object_id) == record
+
+
+def test_direct_capture_rejects_reviewed_or_scientific_authority() -> None:
+    registry = build_canonical_brain_fixture()
+    record = BrainObject(
+        object_id="decision:unreviewed-scientific-claim",
+        object_type="decision",
+        title="Unreviewed scientific claim",
+        summary="Must not enter canonical memory through the operational handoff.",
+        lifecycle="approved",
+        source_uri="candidate://decision/unreviewed-scientific-claim",
+        content_checksum=_checksum("decision:unreviewed-scientific-claim"),
+        created_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+    )
+    bundle = BrainCaptureBundle(
+        build_id="BUILD-BRAIN-REVIEW-GATE",
+        objects=[record],
+        submitted_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+        source_uri=record.source_uri,
+    )
+
+    with pytest.raises(PermissionError, match="DIRECT_CAPTURE_REQUIRES_REVIEWED_CANDIDATE_PATH"):
+        capture_build_bundle(registry, bundle)
+    assert registry.get(record.object_id) is None
 
 
 def test_capture_bundle_rolls_back_on_broken_relationship() -> None:
