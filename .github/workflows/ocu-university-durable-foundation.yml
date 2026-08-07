@@ -1,0 +1,28 @@
+name: OCU University Durable Foundation
+
+on:
+  pull_request:
+    paths:
+      - 'app/university/durable_*.py'
+      - 'migrations/ocu_sci_008_durable_sessions.sql'
+      - 'scripts/validate_university_durable_migration.py'
+      - 'tests/test_university_durable_foundation.py'
+      - '.github/workflows/ocu-university-durable-foundation.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project dependencies
+        run: pip install -r requirements.txt
+      - name: Validate migration invariants
+        run: python scripts/validate_university_durable_migration.py
+      - name: Run durable gate tests
+        run: python -m unittest tests/test_university_durable_foundation.py
+      - name: Compile durable modules
+        run: python -m py_compile app/university/durable_config.py app/university/durable_repository.py
