@@ -13,10 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      PYTHONPATH: .
       CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
       CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
-      CALYX_BOUNDED_DRY_RUN_EVIDENCE_PATH: calyx-bounded-dry-run-evidence.json
+      CALYX_EXISTING_RUN_ID: ec96f45e-b6c4-4214-92e1-3c56c72d5c61
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,23 +27,79 @@ jobs:
           set -euo pipefail
           : "${CALYX_BACKEND_URL:?Repository variable CALYX_BACKEND_URL is required}"
           : "${CALYX_OWNER_ACCESS_CODE:?Repository secret CALYX_OWNER_ACCESS_CODE is required}"
-      - name: Validate bounded operator
-        run: |
-          python -m pip install pytest
-          pytest -q tests/test_run_bounded_resumable_graph_dry_run.py
-          python -m compileall -q scripts/run_bounded_resumable_graph_dry_run.py
-      - name: Run one bounded live staging step
+          : "${CALYX_EXISTING_RUN_ID:?Existing bounded run id is required}"
+      - name: Resume the existing staging run exactly once
         shell: bash
         run: |
-          set -o pipefail
-          python scripts/run_bounded_resumable_graph_dry_run.py 2>&1 | tee calyx-bounded-dry-run.txt
-      - name: Upload bounded dry-run evidence
+          set -euo pipefail
+          python - <<'PY' 2>&1 | tee calyx-bounded-dry-run-resume.txt
+          import json
+          import os
+          from urllib.request import Request, urlopen
+
+          base = os.environ["CALYX_BACKEND_URL"].strip().rstrip("/")
+          access_code = os.environ["CALYX_OWNER_ACCESS_CODE"]
+          run_id = os.environ["CALYX_EXISTING_RUN_ID"]
+
+          def call(path, method="GET", payload=None, token=""):
+              data = json.dumps(payload).encode() if payload is not None else None
+              headers = {"Content-Type": "application/json"}
+              if token:
+                  headers["Authorization"] = f"Bearer {token}"
+              request = Request(base + path, data=data, headers=headers, method=method)
+              with urlopen(request, timeout=120) as response:
+                  raw = response.read().decode()
+                  return response.status, json.loads(raw) if raw else {}
+
+          status, login = call(
+              "/api/mission-control/owner/session-token",
+              method="POST",
+              payload={"access_code": access_code},
+          )
+          assert status == 200 and login.get("token"), "owner authentication failed"
+          token = login["token"]
+
+          status, before = call(
+              f"/api/platform/knowledge-graph/dry-runs/{run_id}", token=token
+          )
+          assert status == 200, "pre-resume status failed"
+          assert before.get("production_graph_mutation") is False
+
+          status, resume = call(
+              f"/api/platform/knowledge-graph/dry-runs/{run_id}/resume",
+              method="POST",
+              token=token,
+          )
+          assert status == 200, "bounded resume failed"
+          assert resume.get("production_graph_mutation") is False
+
+          status, report = call(
+              f"/api/platform/knowledge-graph/dry-runs/{run_id}", token=token
+          )
+          assert status == 200, "post-resume status failed"
+          assert report.get("production_graph_mutation") is False
+
+          evidence = {
+              "run_id": run_id,
+              "before": before,
+              "resume": resume,
+              "report": report,
+              "production_graph_mutation": False,
+              "publication_endpoint_invoked": False,
+          }
+          with open("calyx-bounded-dry-run-resume-evidence.json", "w", encoding="utf-8") as handle:
+              json.dump(evidence, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+          print("SAFE STOP: same run resumed exactly once; no publication endpoint invoked")
+          PY
+      - name: Upload bounded resume evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: temp-calyx-bounded-live-dry-run-${{ github.run_id }}
+          name: temp-calyx-bounded-live-resume-${{ github.run_id }}
           path: |
-            calyx-bounded-dry-run.txt
-            calyx-bounded-dry-run-evidence.json
-          if-no-files-found: warn
+            calyx-bounded-dry-run-resume.txt
+            calyx-bounded-dry-run-resume-evidence.json
+          if-no-files-found: error
           retention-days: 7
