@@ -14,6 +14,8 @@ class UniversityReleaseReadinessTests(unittest.TestCase):
         self.assertFalse(result["university_enabled"])
         self.assertFalse(result["read_only_ready"])
         self.assertFalse(result["session_writes_enabled"])
+        self.assertFalse(result["durable_sessions_enabled"])
+        self.assertEqual(result["persistence"], "process_local_memory")
 
     def test_safe_read_only_configuration_is_ready(self) -> None:
         with patch.dict(
@@ -27,6 +29,8 @@ class UniversityReleaseReadinessTests(unittest.TestCase):
             result = release_readiness()
         self.assertTrue(result["read_only_ready"])
         self.assertFalse(result["session_writes_enabled"])
+        self.assertFalse(result["durable_sessions_enabled"])
+        self.assertEqual(result["persistence"], "process_local_memory")
         self.assertFalse(result["publication_enabled"])
         self.assertFalse(result["candidate_knowledge_writes_enabled"])
         self.assertFalse(result["calyx_model_calls_enabled"])
@@ -44,6 +48,39 @@ class UniversityReleaseReadinessTests(unittest.TestCase):
             result = release_readiness()
         self.assertFalse(result["read_only_ready"])
         self.assertTrue(result["session_writes_enabled"])
+
+    def test_verified_durable_gate_reports_postgres_without_weakening_safety_flags(self) -> None:
+        durable_state = {
+            "session_writes_enabled": True,
+            "durable_flag_enabled": True,
+            "read_only_release_verified": True,
+            "release_evidence_present": True,
+            "release_evidence_valid": True,
+            "release_evidence_id": "sha256:" + "a" * 64,
+            "durable_sessions_enabled": True,
+        }
+        with patch.dict(
+            os.environ,
+            {
+                "OCU_UNIVERSITY_ENABLED": "true",
+                "OCU_UNIVERSITY_SESSION_WRITES_ENABLED": "true",
+            },
+            clear=True,
+        ), patch(
+            "app.university.release.durable_sessions_enabled", return_value=True
+        ), patch(
+            "app.university.release.durable_gate_state", return_value=durable_state
+        ):
+            result = release_readiness()
+        self.assertFalse(result["read_only_ready"])
+        self.assertTrue(result["session_writes_enabled"])
+        self.assertTrue(result["durable_sessions_enabled"])
+        self.assertEqual(result["persistence"], "postgres_durable")
+        self.assertEqual(result["durable_gate"], durable_state)
+        self.assertFalse(result["publication_enabled"])
+        self.assertFalse(result["candidate_knowledge_writes_enabled"])
+        self.assertFalse(result["calyx_model_calls_enabled"])
+        self.assertTrue(result["human_review_required"])
 
 
 if __name__ == "__main__":
