@@ -41,6 +41,16 @@ Focused contract tests cover unavailable-state semantics, binomial/authorship se
 
 A dedicated workflow validates compile, Ruff, focused pytest, and diff hygiene on current main.
 
+### Executable release validation — 2026-08-07
+
+Exact implementation/workflow head `87d016963d62c9e7287a21bfd883086ce59eed07` passed all release gates with real hosted-runner execution:
+
+- CALYX-SPECIES-KNOWLEDGE-001 Validation `31221628327` — success;
+- CALYX Workflow Governance Audit `31221628800` — success;
+- BUILD-088E Validation `31221629569` — success.
+
+The focused workflow is restored to strict, non-mutating Ruff validation after using a temporary diagnostic run to identify the sole import-formatting delta. The final strict run executed compile, Ruff, focused contract tests, and diff hygiene successfully. This documentation-only update does not alter the validated implementation or workflow semantics.
+
 ## Governance
 
 No taxonomy activation, scientific publication, Knowledge Graph mutation, production deployment, credential exposure, browser-side scientific scoring, or automatic identity verification is introduced. Human/scientific review boundaries remain intact.
