@@ -50,7 +50,7 @@ def test_portfolio_projects_authoritative_program_scheduler_and_governance_state
         assert result["summary"]["job_count"] == 2
         assert result["summary"]["dependency_count"] == 1
         assert result["summary"]["job_status_counts"] == {"queued": 1, "waiting": 1}
-        assert result["scheduler"]["runnable_program_job_ids"]
+        assert result["scheduler"]["runnable_order"]
         assert result["programs"][0]["program_id"] == program.program_id
         assert result["governance"]["read_only"] is True
         assert result["governance"]["automatic_merge"] is False
@@ -113,4 +113,4 @@ def test_portfolio_program_filter_fails_closed_for_unknown_or_other_owner_progra
 def test_portfolio_route_is_mounted():
     from app.main import app
 
-    assert "/orchestrator/portfolio" in {route.path for route in app.routes}
+    assert "/brain/orchestrator/portfolio" in {route.path for route in app.routes}
