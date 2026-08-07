@@ -4,17 +4,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from app.routers.health import add_mission_control_cors_headers
-
 from .durable_repository import DurableUniversityError
 from .learner_auth import verify_university_actor
 from .session_discovery import list_owned_session_summaries
 
-router = APIRouter(
-    prefix="/learning",
-    tags=["orchid-continuum-university"],
-    dependencies=[Depends(add_mission_control_cors_headers)],
-)
+router = APIRouter(tags=["orchid-continuum-university"])
 LearnerAuth = Annotated[dict, Depends(verify_university_actor)]
 
 
