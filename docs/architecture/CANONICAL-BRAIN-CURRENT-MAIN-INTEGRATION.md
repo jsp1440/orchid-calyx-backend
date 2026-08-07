@@ -52,10 +52,11 @@ The bridge now accepts the current Calyx `ExecutionReceipt` and an executor role
 4. `receipt.verify()` passes its output-checksum and state/outcome invariants;
 5. state is `DELIVERED` and terminal outcome is `DELIVERED`;
 6. evidence URI(s), input checksum, and output checksum are present;
-7. Brain build and agent identities are explicit;
-8. review requester and producer are distinct.
+7. review requester identity is explicit and distinct from the verified executor producer.
 
 Callers cannot pass a fabricated `RegisteredExecutor(authoritative=True)` object into this boundary. Authority is resolved inside the bridge from the current Calyx allowlist.
+
+The bridge also no longer accepts caller-supplied Brain build, agent, or producer identities. `build_id` is derived from the verified receipt `job_key`; producer identity is derived as `executor:<executor_key>`; executor role identity comes from the authoritative registry. This prevents a valid receipt from being relabeled as evidence for another Brain build or producer.
 
 Even after all execution checks pass, the result remains a candidate-only artifact. Existing Calyx review eligibility and `BrainCandidateStore` gates remain authoritative, and the generated record is explicitly `published=false`.
 
@@ -67,13 +68,16 @@ At the current `main` revision, the only allowlisted autonomous authoritative ro
 - deterministic preflight cannot complete a real job;
 - non-allowlisted or mismatched executors cannot become Brain execution evidence;
 - external-side-effect executor authority is rejected by the Brain evidence bridge;
+- build and producer identity cannot be supplied independently of the verified receipt/executor;
 - completed execution receipts require evidence URI(s) and checksums before evidence packaging;
-- review requester and producer must be distinct;
+- review requester and verified executor producer must be distinct;
 - candidate capture remains unpublished and subject to the existing Calyx review gates;
 - scheduler and evidence bridges are projections/translation boundaries, not new authorities.
 
 ## Validation lineage
 
 Earlier clean slices established passing compile, Ruff, and focused pytest evidence for the registry, governance, queue/orchestration, executor/lease, and scheduler-bridge layers. The current-main integration must pass the complete `tests/test_canonical_brain_*.py` suite against the latest repository before it supersedes those drafts.
+
+The two files changed for the authoritative evidence hardening were independently compiled with `python -m py_compile` in the implementation environment and passed syntax compilation. Ruff is not installed in that environment, so lint is not claimed as locally validated.
 
 At the current GitHub head, Actions is creating workflow runs but terminating them before any job step is instantiated, including the unrelated legacy BUILD-088E workflow. That state is recorded as an external validation-execution blocker rather than a passing or failing code result.
