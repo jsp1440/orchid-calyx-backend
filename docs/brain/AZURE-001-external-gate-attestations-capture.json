@@ -5,7 +5,8 @@
   "project": "Orchid Continuum",
   "workstream": "Azure taxonomy preflight pilot",
   "captured_at": "2026-08-07T00:54:00Z",
-  "status": "implemented_pending_ci",
+  "validated_at": "2026-08-07T01:03:00Z",
+  "status": "implemented_and_ci_validated",
   "problem": "External readiness gates were representable as free-form CLI booleans without durable evidence provenance.",
   "decision": "Introduce typed, checksummed, gate-specific attestations and allow readiness to derive gate state from the attestation register.",
   "implementation": {
@@ -16,7 +17,26 @@
       "tests/test_taxonomy_preflight_readiness.py"
     ],
     "workflow": ".github/workflows/taxonomy-preflight-ci.yml",
-    "documentation": "docs/azure/AZURE-001-EXTERNAL-GATE-ATTESTATIONS.md"
+    "documentation": "docs/azure/AZURE-001-EXTERNAL-GATE-ATTESTATIONS.md",
+    "schema": "config/taxonomy-gate-attestations.schema.json",
+    "template": "config/taxonomy-gate-attestations.template.json"
+  },
+  "validation": {
+    "commit_sha": "5e612481cc90af07a473803b5a72832cd6fbd8ee",
+    "workflow_run_id": 31136729381,
+    "workflow_conclusion": "success",
+    "artifact_id": 8978219467,
+    "artifact_digest": "sha256:453f6f66a4298e7c536934f0770fb2788657d67d0d64fe57b925aa463a2825b9",
+    "validated_steps": [
+      "compile governed taxonomy modules",
+      "focused unit tests",
+      "governed release-gate smoke validation",
+      "typed attestation evaluation",
+      "attestation-driven readiness evaluation",
+      "reproducibility verification",
+      "acceptance packet evaluation",
+      "evidence artifact upload"
+    ]
   },
   "gates": [
     "ci_validation",
@@ -41,5 +61,5 @@
     "Configured Azure budget alerts",
     "Microsoft or partner architecture review evidence"
   ],
-  "next_action": "Run CI, repair any failures, then create real evidence attestations as external gates are completed."
+  "next_action": "Create real evidence attestations as external gates are completed; do not authorize Azure provisioning or production migration."
 }
