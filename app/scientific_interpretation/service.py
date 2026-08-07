@@ -6,9 +6,9 @@ from dataclasses import asdict
 from typing import Any
 
 from .models import (
+    CONTEXT_DIMENSIONS,
     AssertionRequest,
     CompletenessState,
-    CONTEXT_DIMENSIONS,
     ContextForm,
     InterpretationRequest,
     PromotionPath,

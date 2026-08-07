@@ -12,7 +12,6 @@ from app.security import verify_owner_or_api_key
 from .models import LifecycleState
 from .service import Build089EvidenceAdapter, DesignPlanningService, PlanningError
 
-
 router = APIRouter(
     prefix="/api/design-planning",
     tags=["design-planning"],
@@ -68,13 +67,13 @@ def call(method, *args):
 
 
 @router.post("/product-requests", status_code=201)
-def create_product_request(payload: dict = Body(...), identity: str = Depends(actor)):
+def create_product_request(payload: dict = Body(...), identity: str = Depends(actor)):  # noqa: B008
     return call(SERVICE.create_product_request, safe(payload), identity)
 
 
 @router.post("/product-requests/{request_id}/versions", status_code=201)
 def create_product_request_version(
-    request_id: str, payload: dict = Body(...), identity: str = Depends(actor)
+    request_id: str, payload: dict = Body(...), identity: str = Depends(actor)  # noqa: B008
 ):
     prior = SERVICE.repository.get("product_request", request_id)
     if prior is None:
@@ -91,14 +90,14 @@ def read_product_request(request_id: str):
 
 @router.post("/product-requests/{request_id}/contexts", status_code=201)
 def create_context(
-    request_id: str, payload: dict = Body(...), identity: str = Depends(actor)
+    request_id: str, payload: dict = Body(...), identity: str = Depends(actor)  # noqa: B008
 ):
     return call(SERVICE.create_context, request_id, safe(payload), identity)
 
 
 @router.post("/product-requests/{request_id}/evidence-packages", status_code=201)
 def build_evidence(
-    request_id: str, payload: dict = Body(...), identity: str = Depends(actor)
+    request_id: str, payload: dict = Body(...), identity: str = Depends(actor)  # noqa: B008
 ):
     context_id = payload.pop("context_snapshot_id", None)
     if not context_id:
@@ -107,17 +106,17 @@ def build_evidence(
 
 
 @router.post("/reasoning-records", status_code=201)
-def create_reasoning(payload: dict = Body(...), identity: str = Depends(actor)):
+def create_reasoning(payload: dict = Body(...), identity: str = Depends(actor)):  # noqa: B008
     return call(SERVICE.create_reasoning, safe(payload), identity)
 
 
 @router.post("/conflicts", status_code=201)
-def create_conflict(payload: dict = Body(...), identity: str = Depends(actor)):
+def create_conflict(payload: dict = Body(...), identity: str = Depends(actor)):  # noqa: B008
     return call(SERVICE.create_conflict, safe(payload), identity)
 
 
 @router.post("/interface-plans", status_code=201)
-def create_plan(payload: dict = Body(...), identity: str = Depends(actor)):
+def create_plan(payload: dict = Body(...), identity: str = Depends(actor)):  # noqa: B008
     return call(SERVICE.create_plan, safe(payload), identity)
 
 
@@ -131,9 +130,9 @@ def submit_plan(plan_id: str, identity: str = Depends(actor)):
 @router.post("/interface-plans/{plan_id}/reviews", status_code=201)
 def review_plan(
     plan_id: str,
-    payload: dict = Body(...),
+    payload: dict = Body(...),  # noqa: B008
     identity: str = Depends(actor),
-    reviewer_roles: set[str] = Depends(roles),
+    reviewer_roles: set[str] = Depends(roles),  # noqa: B008
 ):
     return call(SERVICE.review, plan_id, safe(payload), identity, reviewer_roles)
 

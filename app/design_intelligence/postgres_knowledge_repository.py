@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict
-from typing import Iterable
 
 import psycopg
 from psycopg.rows import dict_row

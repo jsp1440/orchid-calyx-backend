@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import psycopg
 from psycopg.rows import dict_row
@@ -10,8 +10,7 @@ from psycopg.types.json import Jsonb
 class PostgresInterpretationRepository:
     """Append-only PostgreSQL repository for BUILD-087 scientific artifacts."""
 
-    TABLES = {
-        "packet": ("evidence_packets", "packet_id", "packet_key"),
+    TABLES: ClassVar[dict[str, tuple[str, str, str]]] = {
         "interpretation": ("machine_interpretations", "interpretation_id", "interpretation_key"),
         "assertion": ("canonical_assertions", "assertion_id", "assertion_key"),
         "correction": ("correction_records", "correction_id", "correction_key"),
@@ -45,9 +44,9 @@ class PostgresInterpretationRepository:
             return self._record(cursor.fetchone())
 
     def _save(self, kind: str, record: dict[str, Any]) -> dict[str, Any]:
-        table, id_field, key_field = self.TABLES[kind]
+        table, _id_field, key_field = self.TABLES[kind]
         logical_key = record[key_field]
-        fingerprint = record["fingerprint"] if "fingerprint" in record else None
+        fingerprint = record.get("fingerprint")
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 87))", (f"{kind}:{logical_key}",))
             if fingerprint:
