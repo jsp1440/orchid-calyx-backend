@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "app/canonical_brain/**"
+      - "app/brain/routes.py"
       - "tests/test_canonical_brain_*.py"
       - "scripts/validate_canonical_brain.py"
       - "docs/architecture/BUILD-BRAIN-100-*"
@@ -18,17 +19,18 @@ permissions:
 jobs:
   canonical-brain-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install focused dependencies
+      - name: Install repository validation dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pydantic fastapi httpx pytest ruff
+          python -m pip install -r requirements.txt
+          python -m pip install pytest ruff
       - name: Run portable Canonical Brain validation
         run: python scripts/validate_canonical_brain.py
       - name: Emit validation receipt
