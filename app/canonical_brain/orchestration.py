@@ -5,13 +5,13 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
-from app.calyx_orchestrator.executor import (
-    ExecutionReceipt as CalyxExecutionReceipt,
-)
-from app.calyx_orchestrator.executor import ExecutionState
+from app.calyx_orchestrator.execution_bridge import decode_receipt_evidence
+from app.calyx_orchestrator.executor import ExecutionState, canonical_checksum
 from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
+from app.calyx_orchestrator.program_models import CalyxProgramJob
 
 from .build_queue import GovernedBuildQueue
 
@@ -80,6 +80,13 @@ class GovernedOrchestrator:
         )
 
     def assign(self, build_id: str, assigned_at: datetime) -> BuildAssignment:
+        existing = next(
+            (assignment for assignment in self._assignments.values() if assignment.build_id == build_id),
+            None,
+        )
+        if existing is not None:
+            return existing
+
         item = self._queue.get(build_id)
         if item is None:
             raise KeyError(build_id)
@@ -90,9 +97,6 @@ class GovernedOrchestrator:
             raise ValueError(f"no enabled agent supports {item.architecture_id}")
         agent = agents[0]
         assignment_id = self._stable_id(build_id, agent.agent_id, item.architecture_id)
-        existing = self._assignments.get(assignment_id)
-        if existing:
-            return existing
         self._queue.transition(build_id, "scheduled")
         assignment = BuildAssignment(
             assignment_id=assignment_id,
@@ -119,32 +123,64 @@ class GovernedOrchestrator:
         self,
         assignment_id: str,
         recorded_at: datetime,
-        receipt: CalyxExecutionReceipt,
+        db: Session,
         *,
+        program_job_id: str,
         executor_role_key: str,
     ) -> ExecutionReceipt:
+        """Complete only from receipt evidence durably recorded by Calyx's lease bridge."""
         assignment = self._assignments.get(assignment_id)
         if assignment is None:
             raise KeyError(assignment_id)
         if assignment.status != "running":
             raise ValueError("only running assignments may complete")
 
-        receipt.verify()
+        job = db.get(CalyxProgramJob, program_job_id)
+        if job is None:
+            raise LookupError("PROGRAM_JOB_NOT_FOUND")
+        if job.job_key != assignment.build_id:
+            raise ValueError("COMPLETION_BUILD_MISMATCH")
+        if job.role_key != executor_role_key:
+            raise ValueError("COMPLETION_ROLE_MISMATCH")
+        if job.status != "completed" or job.outcome != TerminalOutcome.DELIVERED.value:
+            raise ValueError("ONLY_DURABLY_DELIVERED_JOBS_MAY_COMPLETE")
+        if job.completed_at is None:
+            raise ValueError("DURABLE_COMPLETION_TIMESTAMP_REQUIRED")
+
+        evidence = decode_receipt_evidence(job)
+        if evidence.get("receipt_type") != "execution":
+            raise ValueError("DURABLE_EXECUTION_RECEIPT_REQUIRED")
+        if evidence.get("state") != ExecutionState.DELIVERED.value:
+            raise ValueError("ONLY_DURABLY_DELIVERED_JOBS_MAY_COMPLETE")
+
         registered = AuthoritativeExecutorRegistry().require_authoritative(executor_role_key)
         if registered.external_side_effects:
             raise PermissionError("EXTERNAL_SIDE_EFFECT_EXECUTOR_COMPLETION_PROHIBITED")
-        if receipt.executor_key != registered.executor.executor_key:
+        executor_key = str(evidence.get("executor_key") or "")
+        if executor_key != registered.executor.executor_key:
             raise ValueError("COMPLETION_EXECUTOR_MISMATCH")
         if self._role_key(assignment.agent_id) != registered.role_key:
             raise PermissionError("COMPLETION_AGENT_ROLE_MISMATCH")
-        if receipt.state != ExecutionState.DELIVERED or receipt.outcome != TerminalOutcome.DELIVERED:
-            raise ValueError("ONLY_AUTHORITATIVE_DELIVERED_RECEIPTS_MAY_COMPLETE")
-        if receipt.assignment_id != assignment.assignment_id:
-            raise ValueError("COMPLETION_ASSIGNMENT_MISMATCH")
-        if receipt.job_key != assignment.build_id:
-            raise ValueError("COMPLETION_BUILD_MISMATCH")
-        if not receipt.evidence_uris or len(receipt.output_checksum) != 64:
-            raise ValueError("completion requires evidence and an output checksum")
+
+        output = evidence.get("output")
+        output_checksum = str(evidence.get("output_checksum") or "")
+        input_checksum = str(evidence.get("input_checksum") or "")
+        evidence_uris = evidence.get("evidence_uris")
+        if not isinstance(output, dict):
+            raise TypeError("DURABLE_EXECUTION_OUTPUT_INVALID")
+        if len(output_checksum) != 64 or canonical_checksum(output) != output_checksum:
+            raise ValueError("DURABLE_EXECUTION_OUTPUT_CHECKSUM_INVALID")
+        if len(input_checksum) != 64:
+            raise ValueError("DURABLE_EXECUTION_INPUT_CHECKSUM_INVALID")
+        if not isinstance(evidence_uris, list) or not all(
+            isinstance(uri, str) and uri.strip() for uri in evidence_uris
+        ):
+            raise ValueError("DURABLE_EXECUTION_EVIDENCE_REQUIRED")
+        if not evidence_uris:
+            raise ValueError("DURABLE_EXECUTION_EVIDENCE_REQUIRED")
+        durable_job_uri = f"calyx:program-job/{job.program_job_id}"
+        if durable_job_uri not in evidence_uris:
+            raise ValueError("DURABLE_PROGRAM_JOB_EVIDENCE_REQUIRED")
 
         self._queue.transition(assignment.build_id, "completed")
         updated = assignment.model_copy(update={"status": "completed"})
@@ -153,9 +189,9 @@ class GovernedOrchestrator:
             updated,
             "completed",
             recorded_at,
-            list(receipt.evidence_uris),
-            receipt.output_checksum,
-            executor_key=receipt.executor_key,
+            list(evidence_uris),
+            output_checksum,
+            executor_key=executor_key,
             authoritative=True,
         )
 
