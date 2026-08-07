@@ -25,6 +25,7 @@ from .schemas import (
     UniversityCapability,
 )
 from .service import UniversityServiceError, UniversitySessionService
+from .session_discovery_routes import router as session_discovery_router
 
 router = APIRouter(
     prefix="/learning",
@@ -212,3 +213,6 @@ def review_session(
             session_id, principal, payload
         ),
     )
+
+
+router.include_router(session_discovery_router)
