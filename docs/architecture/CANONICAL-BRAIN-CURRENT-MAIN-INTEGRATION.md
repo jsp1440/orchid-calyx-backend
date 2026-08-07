@@ -118,3 +118,14 @@ This rules out Canonical Brain application code, Python version, package install
 The remaining boundary is GitHub-hosted runner allocation or repository/account Actions policy. Because the repository is private and the incident began after substantial successful Actions activity, Actions minutes/spending/billing is a plausible explanation, but it is not proven by the available API. Runner policy or account-level Actions restrictions remain possible alternatives.
 
 The incident is tracked in GitHub issue #533. PR #525 must remain draft and unmerged until GitHub-hosted runner execution is restored and authoritative compile/Ruff/pytest can execute on the current head.
+
+### Administrative resolution checklist
+
+A repository/account administrator should inspect GitHub and record the result in issue #533:
+
+1. repository **Settings → Actions → General**: Actions enabled and runner/action policy permits GitHub-hosted workflows;
+2. account **Billing / Plans & usage**: private-repository Actions minutes, spending limit, payment/billing state, and any usage suspension;
+3. any account/organization runner restrictions or Actions suspension notices;
+4. after correcting the administrative condition, rerun PR #525 Canonical Brain Validation and BUILD-088E and require actual job steps plus passing conclusions before changing PR disposition.
+
+No application-code workaround should be introduced for this incident.
