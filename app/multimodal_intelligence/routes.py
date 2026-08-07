@@ -8,6 +8,12 @@ from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
 
+from .api_models import (
+    IntegratedIdentificationRequest,
+    LiteratureValidationRequest,
+    MatrixRankingRequest,
+    VisionAnalysisRequest,
+)
 from .operator import MultimodalError, operator_service
 from .promotion import build_candidate_knowledge_promotion_plan
 from .status import capability_status
@@ -40,6 +46,13 @@ def _http_error(error: MultimodalError) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": error.code, "message": str(error)})
 
 
+def _validation_error(error: ValueError) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={"code": "MULTIMODAL_VALIDATION_ERROR", "message": str(error)},
+    )
+
+
 @router.get("/status")
 def status(auth: AuthDependency) -> dict:
     del auth
@@ -50,6 +63,65 @@ def status(auth: AuthDependency) -> dict:
 def configuration(auth: AuthDependency) -> dict:
     del auth
     return operator_service.configuration()
+
+
+@router.post("/literature/validate")
+def validate_literature(request: LiteratureValidationRequest, auth: AuthDependency) -> dict:
+    del auth
+    try:
+        return asdict(operator_service.validate_literature_claim(request.contract()))
+    except MultimodalError as error:
+        raise _http_error(error) from error
+    except ValueError as error:
+        raise _validation_error(error) from error
+
+
+@router.post("/matrix/rank")
+def rank_matrix(request: MatrixRankingRequest, auth: AuthDependency) -> dict:
+    del auth
+    try:
+        definitions, observations, profiles = request.contracts()
+        return asdict(
+            operator_service.rank_matrix(
+                definitions=definitions,
+                observations=observations,
+                profiles=profiles,
+            )
+        )
+    except MultimodalError as error:
+        raise _http_error(error) from error
+    except ValueError as error:
+        raise _validation_error(error) from error
+
+
+@router.post("/vision/convert")
+def convert_vision(request: VisionAnalysisRequest, auth: AuthDependency) -> dict:
+    del auth
+    try:
+        return asdict(operator_service.convert_vision(request.contract()))
+    except MultimodalError as error:
+        raise _http_error(error) from error
+    except (PermissionError, ValueError) as error:
+        raise _validation_error(error) from error
+
+
+@router.post("/identify")
+def identify(request: IntegratedIdentificationRequest, auth: AuthDependency) -> dict:
+    del auth
+    try:
+        analysis, definitions, profiles, minimum_margin = request.contracts()
+        return asdict(
+            operator_service.integrated_identification(
+                analysis=analysis,
+                definitions=definitions,
+                profiles=profiles,
+                minimum_margin=minimum_margin,
+            )
+        )
+    except MultimodalError as error:
+        raise _http_error(error) from error
+    except (PermissionError, ValueError) as error:
+        raise _validation_error(error) from error
 
 
 @router.post("/batch/plan")
