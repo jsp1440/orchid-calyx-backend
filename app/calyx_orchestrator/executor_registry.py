@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from .engineering_core import TerminalOutcome
 from .executor import (
@@ -9,6 +10,10 @@ from .executor import (
     ExecutorAdapter,
     GovernedAssignment,
     canonical_checksum,
+)
+from .repository_evidence_executor import (
+    REPOSITORY_EVIDENCE_ROLE,
+    RepositoryEvidenceExecutor,
 )
 
 AUTONOMY_PROBE_ROLE = "autonomy_probe"
@@ -62,15 +67,30 @@ class RegisteredExecutor:
 class AuthoritativeExecutorRegistry:
     """Explicit allowlist of job roles that autonomous workers may complete."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        workspace_root: Path | None = None,
+        repository_name: str | None = None,
+    ) -> None:
         probe = AutonomyProbeExecutor()
+        repository_reader = RepositoryEvidenceExecutor(
+            workspace_root=workspace_root,
+            repository_name=repository_name,
+        )
         self._by_role = {
             AUTONOMY_PROBE_ROLE: RegisteredExecutor(
                 role_key=AUTONOMY_PROBE_ROLE,
                 executor=probe,
                 authoritative=True,
                 external_side_effects=False,
-            )
+            ),
+            REPOSITORY_EVIDENCE_ROLE: RegisteredExecutor(
+                role_key=REPOSITORY_EVIDENCE_ROLE,
+                executor=repository_reader,
+                authoritative=True,
+                external_side_effects=False,
+            ),
         }
 
     @property
