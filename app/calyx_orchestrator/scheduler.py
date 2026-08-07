@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 
@@ -35,15 +35,21 @@ class SchedulerLimits:
     max_architecture_running: int = 3
     max_role_running: int = 2
     max_repository_running: int = 2
+    architecture_limits: dict[str, int] = field(default_factory=dict)
 
     def validate(self) -> None:
-        if min(
+        values = (
             self.max_global_running,
             self.max_architecture_running,
             self.max_role_running,
             self.max_repository_running,
-        ) < 1:
+            *self.architecture_limits.values(),
+        )
+        if min(values) < 1:
             raise ValueError("SCHEDULER_LIMITS_MUST_BE_POSITIVE")
+
+    def architecture_limit(self, architecture: str) -> int:
+        return self.architecture_limits.get(architecture, self.max_architecture_running)
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,7 +169,7 @@ class DependencyScheduler:
             if global_count >= limits.max_global_running:
                 runnable = False
                 code = "GLOBAL_CAPACITY_REACHED"
-            elif architecture_counts.get(job.architecture, 0) >= limits.max_architecture_running:
+            elif architecture_counts.get(job.architecture, 0) >= limits.architecture_limit(job.architecture):
                 runnable = False
                 code = "ARCHITECTURE_CAPACITY_REACHED"
             elif role_counts.get(job.role_key, 0) >= limits.max_role_running:
