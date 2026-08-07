@@ -1,0 +1,69 @@
+name: Calyx Program Autonomy
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calyx-program-autonomy
+  cancel-in-progress: false
+
+jobs:
+  deterministic-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CALYX_PROGRAM_AUTONOMY_ENABLED: ${{ vars.CALYX_PROGRAM_AUTONOMY_ENABLED }}
+      CALYX_PROGRAM_AUTONOMY_OWNER: ${{ vars.CALYX_PROGRAM_AUTONOMY_OWNER }}
+      CALYX_PROGRAM_AUTONOMY_WORKER_ID: github-actions-program-autonomy
+      CALYX_PROGRAM_AUTONOMY_POLL_SECONDS: "900"
+      CALYX_PROGRAM_AUTONOMY_MAX_JOBS_PER_CYCLE: ${{ vars.CALYX_PROGRAM_AUTONOMY_MAX_JOBS_PER_CYCLE || '10' }}
+      CALYX_PROGRAM_AUTONOMY_LEASE_SECONDS: "300"
+      CALYX_PROGRAM_AUTONOMY_TIMEOUT_SECONDS: "300"
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PGHOST: ${{ secrets.PGHOST }}
+      PGUSER: ${{ secrets.PGUSER }}
+      PGPASSWORD: ${{ secrets.PGPASSWORD }}
+      PGDATABASE: ${{ secrets.PGDATABASE }}
+      PGPORT: ${{ secrets.PGPORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Evaluate autonomy gate
+        id: gate
+        shell: bash
+        run: |
+          if [[ "${CALYX_PROGRAM_AUTONOMY_ENABLED,,}" != "true" && "${CALYX_PROGRAM_AUTONOMY_ENABLED}" != "1" ]]; then
+            echo "run_cycle=false" >> "$GITHUB_OUTPUT"
+            echo "Calyx program autonomy is disabled; no database work will run."
+          elif [[ -z "${CALYX_PROGRAM_AUTONOMY_OWNER}" ]]; then
+            echo "run_cycle=false" >> "$GITHUB_OUTPUT"
+            echo "Calyx program autonomy owner is not configured; failing closed."
+          elif [[ -z "${PGHOST}" && -z "${DATABASE_URL}" ]]; then
+            echo "run_cycle=false" >> "$GITHUB_OUTPUT"
+            echo "No production database connection secret is available; failing closed."
+          else
+            echo "run_cycle=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install runtime dependencies
+        if: steps.gate.outputs.run_cycle == 'true'
+        run: pip install -r requirements.txt
+      - name: Run one bounded deterministic autonomy cycle
+        if: steps.gate.outputs.run_cycle == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          from runtime.program_autonomy_worker import run_once
+
+          result = run_once()
+          print(json.dumps(result, sort_keys=True, default=str))
+          if result.get("executed") and result.get("cycle", {}).get("stop_reason") == "error":
+              raise SystemExit(1)
+          PY
