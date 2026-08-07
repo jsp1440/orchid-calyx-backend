@@ -58,8 +58,6 @@ def _canonical_receipt_payload(
     receipt: ExecutionReceipt,
     *,
     receipt_id: str,
-    build_id: str,
-    agent_id: str,
     registered_executor: RegisteredExecutor,
 ) -> dict[str, object]:
     return {
@@ -67,8 +65,7 @@ def _canonical_receipt_payload(
         "assignment_id": receipt.assignment_id,
         "program_id": receipt.program_id,
         "job_key": receipt.job_key,
-        "build_id": build_id,
-        "agent_id": agent_id,
+        "build_id": receipt.job_key,
         "executor_key": receipt.executor_key,
         "executor_role_key": registered_executor.role_key,
         "state": receipt.state.value,
@@ -86,10 +83,7 @@ def build_execution_evidence_package(
     receipt: ExecutionReceipt,
     *,
     executor_role_key: str,
-    build_id: str,
-    agent_id: str,
     requested_by: str,
-    producer_id: str,
     required_review_classes: tuple[ReviewClass, ...] = (ReviewClass.OPERATIONAL,),
 ) -> ExecutionEvidencePackage:
     """Translate allowlisted authoritative Calyx execution into reviewed Brain evidence."""
@@ -102,10 +96,12 @@ def build_execution_evidence_package(
         raise ValueError("EXECUTION_EVIDENCE_URI_REQUIRED")
     if len(receipt.input_checksum) != 64 or len(receipt.output_checksum) != 64:
         raise ValueError("EXECUTION_CHECKSUM_REQUIRED")
-    if not build_id.strip() or not agent_id.strip():
-        raise ValueError("EXECUTION_BRAIN_IDENTITY_REQUIRED")
-    if not requested_by.strip() or not producer_id.strip():
+    if not receipt.job_key.strip():
+        raise ValueError("EXECUTION_JOB_KEY_REQUIRED")
+    if not requested_by.strip():
         raise ValueError("EXECUTION_REVIEW_ACTOR_REQUIRED")
+
+    producer_id = f"executor:{receipt.executor_key}"
     if requested_by == producer_id:
         raise PermissionError("EXECUTION_REVIEW_SELF_REQUEST_PROHIBITED")
     if not required_review_classes:
@@ -117,8 +113,6 @@ def build_execution_evidence_package(
     payload = _canonical_receipt_payload(
         receipt,
         receipt_id=receipt_id,
-        build_id=build_id,
-        agent_id=agent_id,
         registered_executor=registered_executor,
     )
     content = json.dumps(
@@ -137,12 +131,12 @@ def build_execution_evidence_package(
         producer_assignment_id=receipt.assignment_id,
         evidence_uris=tuple(sorted(set(receipt.evidence_uris))),
         metadata={
-            "build_id": build_id,
-            "agent_id": agent_id,
+            "build_id": receipt.job_key,
             "program_id": receipt.program_id,
             "job_key": receipt.job_key,
             "executor_key": receipt.executor_key,
             "executor_role_key": registered_executor.role_key,
+            "producer_id": producer_id,
             "canonical_output_checksum": receipt.output_checksum,
             "authoritative": True,
             "candidate_only": True,
@@ -169,17 +163,17 @@ def build_execution_evidence_package(
         record_id=f"validation:execution:{receipt_id}",
         record_type=BrainRecordType.VALIDATION,
         source_artifact_id=artifact_id,
-        source_path=f"execution/{build_id}/{receipt_id}",
+        source_path=f"execution/{receipt.job_key}/{receipt_id}",
         source_checksum=artifact.checksum,
         payload={
-            "build_id": build_id,
+            "build_id": receipt.job_key,
             "assignment_id": receipt.assignment_id,
             "program_id": receipt.program_id,
             "job_key": receipt.job_key,
-            "agent_id": agent_id,
             "receipt_id": receipt_id,
             "executor_key": receipt.executor_key,
             "executor_role_key": registered_executor.role_key,
+            "producer_id": producer_id,
             "outcome": receipt.outcome.value,
             "output_checksum": receipt.output_checksum,
             "evidence_uris": list(artifact.evidence_uris),
