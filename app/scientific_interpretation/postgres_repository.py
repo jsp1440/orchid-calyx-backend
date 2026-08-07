@@ -11,6 +11,7 @@ class PostgresInterpretationRepository:
     """Append-only PostgreSQL repository for BUILD-087 scientific artifacts."""
 
     TABLES: ClassVar[dict[str, tuple[str, str, str]]] = {
+        "packet": ("evidence_packets", "packet_id", "packet_key"),
         "interpretation": ("machine_interpretations", "interpretation_id", "interpretation_key"),
         "assertion": ("canonical_assertions", "assertion_id", "assertion_key"),
         "correction": ("correction_records", "correction_id", "correction_key"),

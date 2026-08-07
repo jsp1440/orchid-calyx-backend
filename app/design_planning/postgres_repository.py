@@ -33,6 +33,7 @@ class PostgresDesignPlanningRepository:
     """PostgreSQL-authoritative append-only planning repository."""
 
     TABLES: ClassVar[dict[str, str]] = {
+        "product_request": "product_requests",
         "context": "project_context_snapshots",
         "evidence": "design_evidence_packages",
         "reasoning": "design_reasoning_records",
