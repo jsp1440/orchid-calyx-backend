@@ -1,0 +1,49 @@
+name: CALYX-SPECIES-KNOWLEDGE-001 Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/species_exhibit/**"
+      - "tests/test_calyx_species_exhibit_contract.py"
+      - "docs/contracts/CALYX_SPECIES_EXHIBIT_V1.md"
+      - "docs/brain/CALYX-SPECIES-KNOWLEDGE-001.md"
+      - ".github/workflows/calyx-species-knowledge-001.yml"
+  push:
+    branches: [feature/calyx-species-knowledge-001-current-main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile
+        run: |
+          python -m py_compile \
+            app/species_exhibit/service.py \
+            app/species_exhibit/routes.py \
+            tests/test_calyx_species_exhibit_contract.py
+      - name: Ruff
+        run: |
+          python -m ruff check \
+            app/species_exhibit/service.py \
+            app/species_exhibit/routes.py \
+            tests/test_calyx_species_exhibit_contract.py
+      - name: Focused contract tests
+        run: python -m pytest -q tests/test_calyx_species_exhibit_contract.py
+      - name: Diff hygiene
+        run: git diff --check
