@@ -68,6 +68,7 @@ def _event_to_api(event: dict[str, Any]) -> dict[str, Any]:
         "stage": event["stage"],
         "payload": event.get("payload") or {},
         "actor": event["actor"],
+        "session_revision": int(event["session_revision"]),
         "created_at": event["created_at"],
     }
 

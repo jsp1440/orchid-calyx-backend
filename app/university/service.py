@@ -113,19 +113,21 @@ class UniversitySessionService:
                     409,
                     "Events may remain in the current stage or advance exactly one stage",
                 )
+            next_revision = session.revision + 1
             event = SessionEvent(
                 event_id=f"OCU-EVENT-{uuid4()}",
                 event_type=payload.event_type,
                 stage=payload.stage,
                 payload=payload.payload,
                 actor=actor,
+                session_revision=next_revision,
                 created_at=datetime.now(timezone.utc),
             )
             session.events.append(event)
             session.current_stage = payload.stage
             session.status = _STAGE_STATUS[payload.stage]
             session.updated_at = event.created_at
-            session.revision += 1
+            session.revision = next_revision
             cls._sessions[session_id] = session
             return session.model_copy(deep=True)
 
