@@ -21,10 +21,12 @@ on:
       - 'scripts/validate_university_durable_migration.py'
       - 'scripts/validate_university_release_evidence.py'
       - 'scripts/preflight_university_activation.py'
+      - 'scripts/generate_university_cutover_manifest.py'
       - 'tests/test_university_durable_foundation.py'
       - 'tests/test_university_release_evidence.py'
       - 'tests/test_university_activation_service.py'
       - 'tests/test_university_activation_preflight.py'
+      - 'tests/test_university_cutover_manifest.py'
       - 'tests/test_university_event_revision_contract.py'
       - 'tests/test_university_learner_auth.py'
       - 'tests/test_university_session_discovery.py'
@@ -45,13 +47,14 @@ jobs:
         run: pip install -r requirements.txt
       - name: Validate migration invariants
         run: python scripts/validate_university_durable_migration.py
-      - name: Run durable University identity, discovery, reviewer, preflight, and activation tests
+      - name: Run durable University identity, discovery, reviewer, preflight, cutover-manifest, and activation tests
         run: >-
           python -m unittest
           tests/test_university_durable_foundation.py
           tests/test_university_release_evidence.py
           tests/test_university_activation_service.py
           tests/test_university_activation_preflight.py
+          tests/test_university_cutover_manifest.py
           tests/test_university_release_readiness.py
           tests/test_university_event_revision_contract.py
           tests/test_university_learner_auth.py
@@ -78,3 +81,4 @@ jobs:
           app/university/release.py
           scripts/validate_university_release_evidence.py
           scripts/preflight_university_activation.py
+          scripts/generate_university_cutover_manifest.py
