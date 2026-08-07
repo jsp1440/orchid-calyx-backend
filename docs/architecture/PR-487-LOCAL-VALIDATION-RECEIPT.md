@@ -25,7 +25,7 @@ The compact slice was reconstructed from GitHub connector reads because the exec
 
 ## Ruff status
 
-Ruff could not be executed in the local reconstruction environment because the module is not installed there. Earlier GitHub Actions runs executed Ruff and identified specific formatting defects; those defects were corrected on the current head. The latest GitHub workflow is marked `action_required` with no jobs, so a GitHub-side workflow approval is still needed for an authoritative Ruff receipt on the current head.
+Ruff could not be executed in the local reconstruction environment because the module is not installed there. Earlier GitHub Actions runs executed Ruff and identified specific formatting defects; those defects were corrected on the current head. The latest GitHub workflows are marked `action_required` with no jobs. The connector cannot retry or approve that state, so repository-side workflow approval is still required for authoritative Ruff and pytest receipts on the current head.
 
 ## Safety boundary
 
@@ -33,4 +33,4 @@ This is a validation receipt only. It does not authorize merge, deployment, publ
 
 ## Disposition
 
-PR #487 remains draft. Compile and focused behavior are locally validated. Authoritative GitHub Ruff and pytest checks remain gated by workflow approval.
+PR #487 remains draft. Compile and focused behavior are locally validated. Authoritative GitHub checks remain gated by workflow approval.
