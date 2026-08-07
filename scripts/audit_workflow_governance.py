@@ -77,6 +77,37 @@ def _triggers(text: str) -> set[str]:
     return found
 
 
+def _has_dispatch_gated_production(text: str) -> bool:
+    """Return True when a production job or step is guarded to run only on workflow_dispatch.
+
+    This detects the pattern where a workflow has automatic triggers (e.g. pull_request)
+    for validation but reserves production execution for manual dispatch only.  The
+    heuristic accepts either:
+      - a job/step `if:` guard containing `github.event_name == 'workflow_dispatch'`, or
+      - a `production-` job name or `environment: production` combined with any dispatch guard.
+    """
+    has_dispatch_if = bool(
+        re.search(r"github\.event_name\s*==\s*['\"]workflow_dispatch['\"]", text)
+    )
+    if not has_dispatch_if:
+        return False
+    production_signals = bool(
+        re.search(r"environment\s*:\s*production\b", text, re.IGNORECASE)
+        or re.search(r"CALYX_OWNER_ACCESS_CODE|DATABASE_URL", text)
+        or re.search(r"(?i)(production|publish|activate|deploy)", text)
+    )
+    return production_signals
+
+
+def _has_required_dispatch_inputs(text: str) -> bool:
+    """Return True when workflow_dispatch defines at least one required input.
+
+    Any required dispatch input that gates a production job constitutes a
+    human-confirmation gate even if no specific keyword phrase is used.
+    """
+    return bool(re.search(r"required\s*:\s*true", text, re.IGNORECASE))
+
+
 def classify(path: Path, text: str) -> WorkflowFinding:
     name_match = re.search(r"^name\s*:\s*(.+?)\s*$", text, re.MULTILINE)
     name = name_match.group(1).strip(" '\"") if name_match else path.stem
@@ -84,7 +115,10 @@ def classify(path: Path, text: str) -> WorkflowFinding:
     manual = "workflow_dispatch" in triggers
     automatic = sorted(triggers & AUTO_TRIGGERS)
     production = bool(re.search(r"environment\s*:\s*production\b", text, re.IGNORECASE))
-    confirmation = bool(re.search(r"confirmation|type\s+APPLY|exact confirmation", text, re.IGNORECASE))
+    confirmation = bool(
+        re.search(r"confirmation|type\s+APPLY|exact confirmation", text, re.IGNORECASE)
+        or _has_required_dispatch_inputs(text)
+    )
 
     if manual and not automatic:
         classification = "DESTRUCTIVE_GATED" if production and confirmation else "OWNER_BOTTLENECK"
@@ -92,8 +126,15 @@ def classify(path: Path, text: str) -> WorkflowFinding:
             "Retain manual-only operation only if destructive or irreversible; otherwise add an event, dependency, or schedule trigger."
         )
     elif manual and automatic:
-        classification = "AUTOMATIC_WITH_RECOVERY"
-        recommendation = "No owner action is required in the normal path; keep manual dispatch only for recovery."
+        if _has_dispatch_gated_production(text):
+            classification = "PRODUCTION_GATED"
+            recommendation = (
+                "Production execution is intentionally restricted to owner-authorized workflow_dispatch; "
+                "the automatic trigger path covers only validation. Retain this gate."
+            )
+        else:
+            classification = "AUTOMATIC_WITH_RECOVERY"
+            recommendation = "No owner action is required in the normal path; keep manual dispatch only for recovery."
     elif automatic:
         classification = "AUTOMATIC"
         recommendation = "No trigger change required."
