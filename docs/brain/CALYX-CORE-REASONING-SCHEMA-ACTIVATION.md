@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation prepared for issue #580, parent epic #384. Production activation has **not** occurred.
+Implementation prepared and validated for issue #580, parent epic #384. Production activation has **not** occurred.
 
 ## Live evidence that triggered this work
 
@@ -42,18 +42,28 @@ After successful activation, the workflow performs only one additional action: t
 
 ## Validation
 
-The PR validation workflow uses disposable PostgreSQL 16. It runs:
+PR #582 validation run `31225997703` passed on disposable PostgreSQL 16 after one lint-only corrective commit.
 
-- Ruff and compile checks for the activation script;
-- fail-closed unit tests;
-- the existing CALYX-BRAIN-003 migration dependency/reapplication test;
-- read-only activation preflight;
-- 103→105 application on the disposable database;
-- a second application proving idempotent replay;
-- machine-readable receipt upload.
+Passing evidence:
+
+- Ruff and compile: passed;
+- fail-closed activation tests: **4 passed**;
+- existing CALYX-BRAIN-003 migration dependency/reapplication tests: **4 passed**;
+- read-only preflight: passed with no blockers and `production_database_mutation_authorized=false`;
+- migration identities matched the reviewed files:
+  - 103 Git blob `b69fb53bf0771aa3730fb8a1b1c0d7a73a7a2153`, SHA-256 `00f56be05ee977e2d6a22eaad5cd2bddf9ae6c914f1650bdd7e531a4e322953e`;
+  - 105 Git blob `d3a2fa44103a2f45f8b23a816b88496d0c88bf1e`, SHA-256 `c5ed3a2f40008018bf13e917ab4f0302dfcf0a5680a12fb7c74c79c1645cf178`;
+- disposable 103→105 apply: passed, all five target tables present;
+- second apply: passed with `activation_required=false`, proving idempotent replay;
+- final disposable evidence artifact hash: `6fa759a9de7459839e4fd0943f418a1ef8d743f7a59b0b8b9103d10ea56534d3`;
+- GitHub artifact ID `9012110913`, uploaded ZIP SHA-256 `5e0ef4a6b0be35b36ce54d61f71f488a6f678e9c4196cd0feafa19ab8bfac2da`;
+- CALYX Workflow Governance Audit #71: passed;
+- BUILD-088E #1021: passed.
+
+The disposable preflight deliberately began with migration 103 already present and migration 105 absent because the existing CALYX-BRAIN-003 dependency test rolls back only the publication adapter. This exercised partial-state recovery: the gate correctly reported 103 present, 105 absent, then safely reapplied 103 and created 105 before verifying a no-op/idempotent second application.
 
 ## Governance boundary
 
 Merging this implementation does not authorize production migration. Running the production workflow with `apply_migrations=true` changes the production database schema and therefore requires an explicit owner decision. The later supervised publication of any reviewed ledger is a separate production Knowledge Graph governance decision.
 
-No deployment, publication, taxonomy activation, production schema mutation, or Knowledge Graph mutation was performed while creating this gate.
+No deployment, publication, taxonomy activation, production schema mutation, or Knowledge Graph mutation was performed while creating or validating this gate.
