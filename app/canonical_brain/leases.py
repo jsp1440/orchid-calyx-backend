@@ -45,7 +45,7 @@ class CancellationReceipt(StrictModel):
 
 
 class ExecutionLeaseManager:
-    """Coordinates candidate execution ownership without performing execution."""
+    """Coordinates bounded candidate execution ownership without performing execution."""
 
     def __init__(self, lease_seconds: int = 300, max_attempts: int = 3) -> None:
         if lease_seconds < 1 or max_attempts < 1:
@@ -71,11 +71,11 @@ class ExecutionLeaseManager:
         assignment: BuildAssignment,
         worker_id: str,
         acquired_at: datetime,
-        attempt: int = 1,
     ) -> ExecutionLease:
         if assignment.status not in {"scheduled", "running"}:
             raise ValueError("only scheduled or running assignments may be leased")
         now = self._utc(acquired_at)
+        attempt = 1
         current_id = self._by_assignment.get(assignment.assignment_id)
         if current_id:
             current = self._leases[current_id]
@@ -83,6 +83,16 @@ class ExecutionLeaseManager:
                 if current.worker_id != worker_id:
                     raise ValueError("assignment already has an active worker lease")
                 return current
+            if current.status == "active":
+                current = current.model_copy(update={"status": "expired"})
+                self._leases[current_id] = current
+            if current.status != "expired":
+                raise ValueError("terminal lease cannot be reacquired")
+            attempt = current.attempt + 1
+
+        if attempt > self._max_attempts:
+            raise ValueError("maximum lease attempts reached")
+
         lease_id = self._stable_id(assignment.assignment_id, worker_id, str(attempt))
         lease = ExecutionLease(
             lease_id=lease_id,
