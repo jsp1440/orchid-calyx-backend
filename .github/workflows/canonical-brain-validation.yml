@@ -1,5 +1,6 @@
 name: Canonical Brain Validation
 
+# Current-main integration gate; commands intentionally match the validated slice lineage.
 on:
   pull_request:
     paths:
