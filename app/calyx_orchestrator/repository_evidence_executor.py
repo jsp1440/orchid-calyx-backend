@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from .engineering_core import TerminalOutcome
-from .executor import ExecutionReceipt, ExecutionState, GovernedAssignment, canonical_checksum
+from .executor import (
+    ExecutionReceipt,
+    ExecutionState,
+    GovernedAssignment,
+    canonical_checksum,
+)
 
 REPOSITORY_EVIDENCE_ROLE = "repository_evidence_reader"
 DEFAULT_REPOSITORY = "jsp1440/orchid-calyx-backend"
@@ -141,12 +146,10 @@ class RepositoryEvidenceExecutor:
             input_checksum=input_checksum,
             output_checksum=canonical_checksum(output),
             output=output,
-            evidence_uris=tuple(
-                [
-                    *assignment.evidence_uris,
-                    f"repo-commit:{self.repository_name}@{checkout.commit_sha}",
-                    *[f"repo-file:{item['path']}#{item['sha256']}" for item in files],
-                ]
+            evidence_uris=(
+                *assignment.evidence_uris,
+                f"repo-commit:{self.repository_name}@{checkout.commit_sha}",
+                *(f"repo-file:{item['path']}#{item['sha256']}" for item in files),
             ),
         )
         receipt.verify()
@@ -187,7 +190,7 @@ class RepositoryEvidenceExecutor:
                 raise RuntimeError("REPOSITORY_EVIDENCE_GIT_REF_INVALID") from exc
             for raw_line in packed_refs.splitlines():
                 line = raw_line.strip()
-                if not line or line.startswith("#") or line.startswith("^"):
+                if not line or line.startswith(("#", "^")):
                     continue
                 sha, separator, name = line.partition(" ")
                 if separator and name == ref_name:
@@ -201,13 +204,17 @@ class RepositoryEvidenceExecutor:
     @staticmethod
     def _validate_commit_sha(value: str) -> str:
         normalized = value.strip().lower()
-        if len(normalized) != 40 or any(character not in "0123456789abcdef" for character in normalized):
+        if len(normalized) != 40 or any(
+            character not in "0123456789abcdef" for character in normalized
+        ):
             raise RuntimeError("REPOSITORY_EVIDENCE_GIT_SHA_INVALID")
         return normalized
 
     def _read_workspace_file(self, relative_path: str, max_bytes: int) -> tuple[bytes, int]:
         path = PurePosixPath(relative_path)
-        if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+        if path.is_absolute() or not path.parts or any(
+            part in {"", ".", ".."} for part in path.parts
+        ):
             raise PermissionError("REPOSITORY_EVIDENCE_PATH_ESCAPE")
 
         nofollow = getattr(os, "O_NOFOLLOW", 0)
