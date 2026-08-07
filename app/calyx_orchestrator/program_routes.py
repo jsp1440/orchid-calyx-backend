@@ -10,6 +10,7 @@ from app.database import get_db
 from app.security import verify_owner_or_api_key
 
 from .assignment_factory import assignment_payload, governed_assignment_from_claimed_job
+from .dry_run_service import execute_deterministic_dry_run, require_owned_program_job
 from .program_repository import PersistentProgramRepository, ProgramJobSpec
 from .program_worker import PersistentProgramWorker
 
@@ -69,6 +70,13 @@ class WorkerLeaseRequest(BaseModel):
     worker_id: str = Field(min_length=1, max_length=240)
     lease_token: str = Field(min_length=1, max_length=36)
     lease_seconds: int = Field(default=300, ge=60, le=3600)
+
+
+class WorkerDryRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    worker_id: str = Field(min_length=1, max_length=240)
+    lease_token: str = Field(min_length=1, max_length=36)
+    timeout_seconds: int = Field(default=300, ge=1, le=3600)
 
 
 class WorkerCompleteRequest(BaseModel):
@@ -133,11 +141,7 @@ def claim_program_job(payload: WorkerClaimRequest, auth: AuthDependency, db: DbD
         )
     except (LookupError, PermissionError, ValueError) as exc:
         raise _translate_error(exc) from exc
-    return {
-        "claimed": True,
-        "job": _worker_job(job),
-        "assignment": assignment_payload(assignment),
-    }
+    return {"claimed": True, "job": _worker_job(job), "assignment": assignment_payload(assignment)}
 
 
 @router.post("/workers/jobs/{program_job_id}/heartbeat")
@@ -147,8 +151,9 @@ def heartbeat_program_job(
     auth: AuthDependency,
     db: DbDependency,
 ) -> dict:
-    _owner(auth)
+    owner = _owner(auth)
     try:
+        require_owned_program_job(db, owner=owner, program_job_id=program_job_id)
         job = PersistentProgramWorker(db).heartbeat(
             program_job_id=program_job_id,
             worker_id=payload.worker_id,
@@ -160,6 +165,34 @@ def heartbeat_program_job(
         raise _translate_error(exc) from exc
 
 
+@router.post("/workers/jobs/{program_job_id}/execute-dry-run")
+def execute_program_job_dry_run(
+    program_job_id: str,
+    payload: WorkerDryRunRequest,
+    auth: AuthDependency,
+    db: DbDependency,
+) -> dict:
+    try:
+        result = execute_deterministic_dry_run(
+            db,
+            owner=_owner(auth),
+            program_job_id=program_job_id,
+            worker_id=payload.worker_id,
+            lease_token=payload.lease_token,
+            timeout_seconds=payload.timeout_seconds,
+        )
+        return {
+            "executed": True,
+            "mode": "deterministic_dry_run",
+            "assignment": result.assignment,
+            "receipt": result.receipt,
+            "completed_job": result.completed_job,
+            "external_side_effects": [],
+        }
+    except (LookupError, PermissionError, ValueError) as exc:
+        raise _translate_error(exc) from exc
+
+
 @router.post("/workers/jobs/{program_job_id}/complete")
 def complete_program_job(
     program_job_id: str,
@@ -167,8 +200,9 @@ def complete_program_job(
     auth: AuthDependency,
     db: DbDependency,
 ) -> dict:
-    _owner(auth)
+    owner = _owner(auth)
     try:
+        require_owned_program_job(db, owner=owner, program_job_id=program_job_id)
         job = PersistentProgramWorker(db).complete(
             program_job_id=program_job_id,
             worker_id=payload.worker_id,
