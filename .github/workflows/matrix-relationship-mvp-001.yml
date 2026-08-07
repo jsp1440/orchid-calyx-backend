@@ -1,0 +1,26 @@
+name: MATRIX-RELATIONSHIP-MVP-001
+
+on:
+  pull_request:
+    paths:
+      - "runtime/matrix_relationship.py"
+      - "app/routers/matrix_relationship.py"
+      - "app/routers/health.py"
+      - "tests/test_matrix_relationship_mvp_001.py"
+      - ".github/workflows/matrix-relationship-mvp-001.yml"
+      - "docs/MATRIX-RELATIONSHIP-MVP-001.md"
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff fastapi python-multipart httpx2
+      - run: python -m ruff check runtime/matrix_relationship.py app/routers/matrix_relationship.py tests/test_matrix_relationship_mvp_001.py
+      - run: python -m ruff format --check runtime/matrix_relationship.py app/routers/matrix_relationship.py tests/test_matrix_relationship_mvp_001.py
+      - run: python -m pytest -q tests/test_matrix_relationship_mvp_001.py
+      - run: python -m compileall -q runtime/matrix_relationship.py app/routers/matrix_relationship.py
+      - run: git diff --check
