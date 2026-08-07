@@ -95,6 +95,7 @@ class SessionEvent(BaseModel):
     stage: InquiryStage
     payload: dict[str, Any]
     actor: str
+    session_revision: int = Field(ge=1)
     created_at: datetime
 
 
