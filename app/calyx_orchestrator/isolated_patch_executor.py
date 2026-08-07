@@ -125,9 +125,6 @@ class IsolatedWorkspacePatchExecutor:
         if total_bytes > MAX_TOTAL_BYTES:
             raise ValueError("ISOLATED_PATCH_TOTAL_BYTES_EXCEEDED")
 
-        # All paths, isolation metadata, preimages and payloads are validated before
-        # the first mutation. This guarantees that a multi-file validation failure
-        # cannot partially mutate the workspace.
         self._apply_prepared(prepared)
 
         checkout_after = self._reader._checkout_identity()
@@ -162,13 +159,13 @@ class IsolatedWorkspacePatchExecutor:
             "side_effects": ["isolated_workspace_files_modified"],
         }
         evidence_uris = (
-                *assignment.evidence_uris,
-                f"repo-commit:{repository}@{checkout.commit_sha}",
-                *[
-                    f"workspace-file:{change['path']}#{change['after_sha256']}"
-                    for change in changes
-                ],
-            )
+            *assignment.evidence_uris,
+            f"repo-commit:{repository}@{checkout.commit_sha}",
+            *(
+                f"workspace-file:{change['path']}#{change['after_sha256']}"
+                for change in changes
+            ),
+        )
         receipt = ExecutionReceipt(
             assignment_id=assignment.assignment_id,
             program_id=assignment.program_id,
