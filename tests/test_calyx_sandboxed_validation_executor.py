@@ -36,22 +36,34 @@ POLICY_DIGEST = "b" * 64
 
 
 class AllowingAuthorizer:
-    def authorize(self, *, workspace_root, repository, branch, marker):
+    def authorize(self, *, workspace_root, repository, branch, marker, request_digest):
         assert workspace_root.is_dir()
         assert repository == REPOSITORY
         assert branch == BRANCH
         assert marker["network_disabled"] is True
         assert marker["repository_read_only_during_validation"] is True
+        assert len(request_digest) == 64
         return SandboxAuthorization(
             authorization_id="auth-1",
             evidence_uri="sandbox-supervisor:auth-1",
             policy_digest=POLICY_DIGEST,
+            request_digest=request_digest,
         )
 
 
 class RejectingAuthorizer:
     def authorize(self, **kwargs):
         raise PermissionError("sandbox not enforced")
+
+
+class StaleAuthorizer:
+    def authorize(self, **kwargs):
+        return SandboxAuthorization(
+            authorization_id="stale-auth",
+            evidence_uri="sandbox-supervisor:stale-auth",
+            policy_digest=POLICY_DIGEST,
+            request_digest="c" * 64,
+        )
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -171,6 +183,9 @@ def test_supervisor_authorized_success_uses_fixed_argv_and_scrubbed_env(
     assert receipt.output["supervisor_authorized"] is True
     assert receipt.output["supervisor_authorization_id"] == "auth-1"
     assert receipt.output["sandbox_policy_digest"] == POLICY_DIGEST
+    request_digest = receipt.output["supervisor_request_digest"]
+    assert isinstance(request_digest, str) and len(request_digest) == 64
+    assert f"sandbox-request:{request_digest}" in receipt.evidence_uris
     assert "sandbox-supervisor:auth-1" in receipt.evidence_uris
     assert captured["shell"] is False
     assert captured["stdin"] == subprocess.DEVNULL
@@ -179,7 +194,7 @@ def test_supervisor_authorized_success_uses_fixed_argv_and_scrubbed_env(
     receipt.verify()
 
 
-def test_rejected_supervisor_and_stale_hash_fail_before_subprocess(
+def test_rejected_or_stale_supervisor_authorization_fails_before_subprocess(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     root = _workspace(tmp_path)
@@ -199,11 +214,34 @@ def test_rejected_supervisor_and_stale_hash_fail_before_subprocess(
     with pytest.raises(PermissionError, match="SANDBOX_VALIDATION_SUPERVISOR_REJECTED"):
         rejecting.execute(_assignment("tests/test_example.py", _sha(target)))
 
-    allowing = SandboxedExecutableValidationExecutor(
-        workspace_root=root, repository_name=REPOSITORY, authorizer=AllowingAuthorizer()
+    stale = SandboxedExecutableValidationExecutor(
+        workspace_root=root, repository_name=REPOSITORY, authorizer=StaleAuthorizer()
+    )
+    with pytest.raises(PermissionError, match="SANDBOX_VALIDATION_SUPERVISOR_REJECTED"):
+        stale.execute(_assignment("tests/test_example.py", _sha(target)))
+    assert called is False
+
+
+def test_stale_target_hash_fails_before_supervisor_or_subprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = _workspace(tmp_path)
+    target = root / "tests" / "test_example.py"
+    target.write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    called = False
+
+    class ShouldNotAuthorize:
+        def authorize(self, **kwargs):
+            nonlocal called
+            called = True
+            raise AssertionError("supervisor must not be called")
+
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    executor = SandboxedExecutableValidationExecutor(
+        workspace_root=root, repository_name=REPOSITORY, authorizer=ShouldNotAuthorize()
     )
     with pytest.raises(ValueError, match="SANDBOX_VALIDATION_TARGET_HASH_MISMATCH"):
-        allowing.execute(_assignment("tests/test_example.py", "0" * 64))
+        executor.execute(_assignment("tests/test_example.py", "0" * 64))
     assert called is False
 
 
