@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Audit GitHub Actions triggers for owner-operated bottlenecks.
 
 This is intentionally dependency-free so it can run in CI and locally.
@@ -70,9 +69,16 @@ def _triggers(text: str) -> set[str]:
     block = _top_level_on_block(text)
     found: set[str] = set()
     for trigger in AUTO_TRIGGERS | {"workflow_dispatch"}:
-        if re.search(rf"(^|[\s\[,{{]){re.escape(trigger)}\s*:", block, re.MULTILINE):
-            found.add(trigger)
-        elif re.search(rf"(^|[\s\[,]){re.escape(trigger)}([\s\],}}]|$)", block):
+        mapping_form = re.search(
+            rf"(^|[\s\[,{{]){re.escape(trigger)}\s*:",
+            block,
+            re.MULTILINE,
+        )
+        sequence_form = re.search(
+            rf"(^|[\s\[,]){re.escape(trigger)}([\s\],}}]|$)",
+            block,
+        )
+        if mapping_form or sequence_form:
             found.add(trigger)
     return found
 
