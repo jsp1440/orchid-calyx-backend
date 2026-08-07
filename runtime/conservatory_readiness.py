@@ -30,6 +30,10 @@ def _flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _is_non_ephemeral(root: Path) -> bool:
+    return not str(root.resolve()).startswith("/tmp/")
+
+
 def _read_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
@@ -89,7 +93,7 @@ def build_conservatory_readiness(root: Path) -> dict[str, Any]:
     root_exists = root.exists() and root.is_dir()
     writable = root_exists and os.access(root, os.W_OK)
     persistent_flag = _flag("CALYX_CONSERVATORY_STORAGE_PERSISTENT")
-    non_ephemeral_path = not str(root.resolve()).startswith("/tmp/")
+    non_ephemeral_path = _is_non_ephemeral(root)
     certification = _read_json(root / _CERTIFICATION_FILE)
     restart_verified = bool(
         certification
