@@ -16,6 +16,10 @@ from .repository_evidence_executor import (
     REPOSITORY_EVIDENCE_ROLE,
     RepositoryEvidenceExecutor,
 )
+from .static_validation_executor import (
+    STATIC_VALIDATION_ROLE,
+    IsolatedWorkspaceStaticValidationExecutor,
+)
 
 AUTONOMY_PROBE_ROLE = "autonomy_probe"
 
@@ -85,6 +89,10 @@ class AuthoritativeExecutorRegistry:
             workspace_root=workspace_root,
             repository_name=repository_name,
         )
+        static_validator = IsolatedWorkspaceStaticValidationExecutor(
+            workspace_root=workspace_root,
+            repository_name=repository_name,
+        )
         self._by_role = {
             AUTONOMY_PROBE_ROLE: RegisteredExecutor(
                 role_key=AUTONOMY_PROBE_ROLE,
@@ -104,6 +112,12 @@ class AuthoritativeExecutorRegistry:
                 authoritative=True,
                 external_side_effects=False,
                 workspace_mutation=True,
+            ),
+            STATIC_VALIDATION_ROLE: RegisteredExecutor(
+                role_key=STATIC_VALIDATION_ROLE,
+                executor=static_validator,
+                authoritative=True,
+                external_side_effects=False,
             ),
         }
 
