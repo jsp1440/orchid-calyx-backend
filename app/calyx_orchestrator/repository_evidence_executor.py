@@ -147,10 +147,10 @@ class RepositoryEvidenceExecutor:
             output_checksum=canonical_checksum(output),
             output=output,
             evidence_uris=(
-                    *assignment.evidence_uris,
-                    f"repo-commit:{self.repository_name}@{checkout.commit_sha}",
-                    *[f"repo-file:{item['path']}#{item['sha256']}" for item in files],
-                ),
+                *assignment.evidence_uris,
+                f"repo-commit:{self.repository_name}@{checkout.commit_sha}",
+                *(f"repo-file:{item['path']}#{item['sha256']}" for item in files),
+            ),
         )
         receipt.verify()
         return receipt
@@ -204,13 +204,17 @@ class RepositoryEvidenceExecutor:
     @staticmethod
     def _validate_commit_sha(value: str) -> str:
         normalized = value.strip().lower()
-        if len(normalized) != 40 or any(character not in "0123456789abcdef" for character in normalized):
+        if len(normalized) != 40 or any(
+            character not in "0123456789abcdef" for character in normalized
+        ):
             raise RuntimeError("REPOSITORY_EVIDENCE_GIT_SHA_INVALID")
         return normalized
 
     def _read_workspace_file(self, relative_path: str, max_bytes: int) -> tuple[bytes, int]:
         path = PurePosixPath(relative_path)
-        if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+        if path.is_absolute() or not path.parts or any(
+            part in {"", ".", ".."} for part in path.parts
+        ):
             raise PermissionError("REPOSITORY_EVIDENCE_PATH_ESCAPE")
 
         nofollow = getattr(os, "O_NOFOLLOW", 0)
@@ -240,7 +244,9 @@ class RepositoryEvidenceExecutor:
                 if not stat.S_ISREG(descriptor_stat.st_mode):
                     raise PermissionError("REPOSITORY_EVIDENCE_NON_REGULAR_FILE")
                 if descriptor_stat.st_size > max_bytes:
-                    raise RuntimeError(f"REPOSITORY_EVIDENCE_FILE_TOO_LARGE:{relative_path}")
+                    raise RuntimeError(
+                        f"REPOSITORY_EVIDENCE_FILE_TOO_LARGE:{relative_path}"
+                    )
                 chunks: list[bytes] = []
                 remaining = max_bytes + 1
                 while remaining > 0:
@@ -251,7 +257,9 @@ class RepositoryEvidenceExecutor:
                     remaining -= len(chunk)
                 data = b"".join(chunks)
                 if len(data) > max_bytes:
-                    raise RuntimeError(f"REPOSITORY_EVIDENCE_FILE_TOO_LARGE:{relative_path}")
+                    raise RuntimeError(
+                        f"REPOSITORY_EVIDENCE_FILE_TOO_LARGE:{relative_path}"
+                    )
                 return data, len(data)
             finally:
                 os.close(file_fd)
