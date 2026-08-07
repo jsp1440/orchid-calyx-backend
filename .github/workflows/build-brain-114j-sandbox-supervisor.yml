@@ -1,0 +1,44 @@
+name: BUILD-BRAIN-114J Sandbox Supervisor Validation
+
+on:
+  pull_request:
+    paths:
+      - "scripts/verify_calyx_sandbox_runtime.py"
+      - ".github/workflows/build-brain-114j-sandbox-supervisor.yml"
+      - "docs/brain/BUILD-BRAIN-114J-EXTERNAL-SANDBOX-SUPERVISOR.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox-supervisor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile supervisor verifier
+        run: python -m py_compile scripts/verify_calyx_sandbox_runtime.py
+      - name: Verify isolated runtime controls
+        env:
+          CALYX_SANDBOX_EXPECT_NETWORK_DISABLED: "1"
+          CALYX_SANDBOX_EXPECT_REPOSITORY_READ_ONLY: "1"
+          CALYX_SANDBOX_EXPECT_CREDENTIALS_ABSENT: "1"
+        run: |
+          docker run --rm \
+            --network=none \
+            --read-only \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges:true \
+            --user 65534:65534 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m \
+            -e CALYX_SANDBOX_WORKSPACE=/workspace \
+            -e CALYX_SANDBOX_EXPECT_NETWORK_DISABLED=1 \
+            -e CALYX_SANDBOX_EXPECT_REPOSITORY_READ_ONLY=1 \
+            -e CALYX_SANDBOX_EXPECT_CREDENTIALS_ABSENT=1 \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" \
+            -w /workspace \
+            python:3.12-slim \
+            python scripts/verify_calyx_sandbox_runtime.py
+      - name: Diff hygiene
+        run: git diff --check
