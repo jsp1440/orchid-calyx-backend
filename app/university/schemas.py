@@ -33,6 +33,7 @@ SessionStatus = Literal[
 class UniversityCapability(BaseModel):
     enabled: bool
     session_writes_enabled: bool
+    learner_auth_enabled: bool = False
     persistence: Literal["process_local_memory", "postgres_durable"] = "process_local_memory"
     durable_sessions_enabled: bool = False
     publication_enabled: Literal[False] = False
