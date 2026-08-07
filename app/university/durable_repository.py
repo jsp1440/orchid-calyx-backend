@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from typing import Any
+from typing import Any, Iterable
 
 import psycopg
 from psycopg.rows import dict_row
@@ -28,6 +28,24 @@ _STAGE_STATUS = {
     "communicate": "communicating",
     "contribute": "submitted",
 }
+_EVENT_STAGE = {
+    "observation_added": "observe",
+    "question_set": "question",
+    "hypothesis_added": "investigate",
+    "evidence_examined": "investigate",
+    "analysis_recorded": "analyze",
+    "interpretation_recorded": "interpret",
+    "conclusion_drafted": "communicate",
+    "uncertainty_recorded": "communicate",
+}
+_STAGE_EXIT_REQUIREMENTS: dict[str, frozenset[str]] = {
+    "observe": frozenset({"observation_added"}),
+    "question": frozenset({"question_set"}),
+    "investigate": frozenset({"hypothesis_added", "evidence_examined"}),
+    "analyze": frozenset({"analysis_recorded"}),
+    "interpret": frozenset({"interpretation_recorded"}),
+    "communicate": frozenset({"conclusion_drafted", "uncertainty_recorded"}),
+}
 
 
 class DurableUniversityError(RuntimeError):
@@ -35,6 +53,31 @@ class DurableUniversityError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def missing_stage_requirements(stage: str, event_types: Iterable[str]) -> tuple[str, ...]:
+    required = _STAGE_EXIT_REQUIREMENTS.get(stage, frozenset())
+    present = set(event_types)
+    return tuple(sorted(required - present))
+
+
+def validate_event_stage(event_type: str, requested_stage: str, current_stage: str) -> None:
+    if event_type == "stage_advanced":
+        expected_index = _STAGE_ORDER[current_stage] + 1
+        if expected_index >= len(_STAGE_ORDER) or _STAGE_ORDER[requested_stage] != expected_index:
+            raise DurableUniversityError(
+                "INVALID_STAGE_TRANSITION",
+                "stage_advanced must advance exactly one inquiry stage",
+            )
+        return
+    expected_stage = _EVENT_STAGE.get(event_type)
+    if expected_stage is None:
+        raise DurableUniversityError("INVALID_EVENT_TYPE", "Unsupported learner event type")
+    if requested_stage != current_stage or expected_stage != current_stage:
+        raise DurableUniversityError(
+            "EVENT_STAGE_MISMATCH",
+            f"{event_type} belongs to {expected_stage}, not {requested_stage}",
+        )
 
 
 def database_url() -> str:
@@ -54,6 +97,30 @@ def _require_gate() -> None:
 
 def _connect():
     return psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=10)
+
+
+def _event_types_for_stage(cur, session_id: str, stage: str, *, after_revision: int = 0) -> set[str]:
+    cur.execute(
+        """
+        SELECT event_type
+        FROM oc_university.session_events
+        WHERE session_id=%s AND stage=%s AND session_revision>%s
+        """,
+        (session_id, stage, after_revision),
+    )
+    return {str(row["event_type"]) for row in cur.fetchall()}
+
+
+def _require_stage_complete(cur, session_id: str, stage: str, *, after_revision: int = 0) -> None:
+    missing = missing_stage_requirements(
+        stage,
+        _event_types_for_stage(cur, session_id, stage, after_revision=after_revision),
+    )
+    if missing:
+        raise DurableUniversityError(
+            "STAGE_EXIT_REQUIREMENTS_UNMET",
+            f"{stage} is missing required learner records: {', '.join(missing)}",
+        )
 
 
 def create_session(*, laboratory_id: str, chapter_id: str, learner_actor: str) -> dict[str, Any]:
@@ -102,7 +169,7 @@ def append_event(
     stage: str,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """Append one learner event with stage checks and optimistic concurrency."""
+    """Append one learner event with semantic stage gates and optimistic concurrency."""
     _require_gate()
     event_id = uuid.uuid4()
     with _connect() as conn, conn.cursor() as cur:
@@ -127,18 +194,15 @@ def append_event(
                 "REVISION_CONFLICT",
                 f"Expected revision {expected_revision}, found {current['revision']}",
             )
-        current_index = _STAGE_ORDER[current["current_stage"]]
-        requested_index = _STAGE_ORDER[stage]
-        if requested_index < current_index or requested_index > current_index + 1:
-            raise DurableUniversityError(
-                "INVALID_STAGE_TRANSITION",
-                "Events may remain in the current stage or advance exactly one stage",
-            )
         if stage == "contribute":
             raise DurableUniversityError(
                 "SUBMISSION_ENDPOINT_REQUIRED",
                 "The contribute transition must use the explicit submission endpoint",
             )
+
+        validate_event_stage(event_type, stage, current["current_stage"])
+        if event_type == "stage_advanced":
+            _require_stage_complete(cur, session_id, current["current_stage"])
 
         next_revision = expected_revision + 1
         cur.execute(
@@ -170,7 +234,7 @@ def append_event(
 
 
 def submit_session(*, session_id: str, actor: str, expected_revision: int) -> dict[str, Any]:
-    """Submit a learner session for human review as an atomic revisioned event."""
+    """Submit a complete communicate stage for human review as a revisioned event."""
     _require_gate()
     event_id = uuid.uuid4()
     with _connect() as conn, conn.cursor() as cur:
@@ -191,11 +255,34 @@ def submit_session(*, session_id: str, actor: str, expected_revision: int) -> di
             raise DurableUniversityError("REVISION_CONFLICT", "Submission revision is stale")
         if current["status"] in {"submitted", "under_review", "approved_for_learning", "archived"}:
             raise DurableUniversityError("SESSION_LOCKED", "Session has already left learner editing")
-        if _STAGE_ORDER[current["current_stage"]] < _STAGE_ORDER["communicate"]:
+        if current["current_stage"] != "communicate":
             raise DurableUniversityError(
                 "SUBMISSION_NOT_READY",
-                "A session must reach communicate before it can be submitted",
+                "A session must be in communicate before it can be submitted",
             )
+
+        cur.execute(
+            """
+            SELECT decision, reviewed_revision
+            FROM oc_university.session_reviews
+            WHERE session_id=%s
+            ORDER BY created_at DESC, review_id DESC
+            LIMIT 1
+            """,
+            (session_id,),
+        )
+        latest_review = cur.fetchone()
+        after_revision = 0
+        if latest_review and latest_review["decision"] == "changes_requested":
+            after_revision = int(latest_review["reviewed_revision"])
+            if current["revision"] <= after_revision:
+                raise DurableUniversityError(
+                    "CHANGES_NOT_ADDRESSED",
+                    "A changes-requested session must contain a new learner revision before resubmission",
+                )
+
+        _require_stage_complete(cur, session_id, "communicate", after_revision=after_revision)
+
         next_revision = expected_revision + 1
         cur.execute(
             "SELECT COALESCE(MAX(sequence_no), 0) + 1 AS next_sequence FROM oc_university.session_events WHERE session_id=%s",
