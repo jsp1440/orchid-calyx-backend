@@ -11,6 +11,7 @@ from psycopg.types.json import Jsonb
 from app.routers import (
     awards,
     calyx_core,
+    calyx_operator_workflow,
     entries,
     feedback,
     harvesters,
@@ -388,6 +389,7 @@ def shutdown_event():
 
 app.include_router(health.router)
 app.include_router(calyx_core.router)
+app.include_router(calyx_operator_workflow.router)
 app.include_router(awards.router)
 app.include_router(entries.router)
 app.include_router(feedback.router)
@@ -434,6 +436,10 @@ app.include_router(planner_router)
 from app.brain_mission.routes import router as brain_mission_router
 
 app.include_router(brain_mission_router)
+
+from runtime.calyx_core_certification import create_certification_router
+
+app.include_router(create_certification_router())
 
 from app.routers import orchid_widgets
 
