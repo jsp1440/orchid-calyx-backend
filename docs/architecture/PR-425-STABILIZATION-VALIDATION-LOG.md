@@ -10,7 +10,7 @@ Record the evidence-driven stabilization of the canonical Brain integration umbr
 - PR #425 must not be merged directly.
 - Feature expansion remains paused while core slices are validated.
 - Decomposition tracker: issue #486.
-- The former repository-wide CI blocker, issue #481, is closed because fresh PR events proved GitHub Actions is operational.
+- Former issue #481 is closed: fresh pull-request events proved GitHub Actions is operational.
 
 ## Stacked review slices
 
@@ -27,19 +27,18 @@ Scope:
 Validation findings and corrections:
 
 1. Ruff identified an unsorted import and unnecessary `dict()` constructor in registry tests.
-2. Direct `pytest` invocation failed to resolve the repository `app` package; workflow changed to `python -m pytest` and `python -m ruff`.
-3. Behavioral tests showed that the query `FigureLabs glossary` ranked a decision record above the architecture record.
+2. Direct `pytest` invocation failed to resolve the repository `app` package; workflows were changed to `python -m pytest` and `python -m ruff`.
+3. Behavioral tests showed that `FigureLabs glossary` ranked a decision record above the architecture record.
 4. Search ranking was corrected to prefer architecture records when relevance is otherwise tied.
-5. Ruff import grouping was normalized in `registry.py`.
-6. BUILD-088E passed on the repaired branch heads while focused Canonical Brain validation exposed the defects above.
+5. Import grouping was normalized.
+6. Exact connector-backed reconstruction of head `0d5dcb78350cb585096daee3d9e404dd030c587c` passed Python compilation and seven focused tests locally.
 
 Current state:
 
-- draft
-- unmerged
-- mergeable
-- latest workflow conclusion: `action_required`
-- the current workflow run contains no jobs and requires GitHub-side approval before validation can execute
+- draft and unmerged
+- mergeable against `main`
+- local compile and focused pytest evidence exists
+- latest GitHub workflow runs are `action_required` with no jobs; repository-side approval is required before authoritative Ruff and pytest execution
 
 ### PR #488 — Slice 2: Governance and Persistence
 
@@ -52,17 +51,16 @@ Scope:
 
 Validation findings and corrections:
 
-1. Broader CALYX Agent, Journalism, Brain Integration, Education Design, and End-to-End checks passed.
-2. Focused Canonical Brain lint identified a sorted `__all__` requirement and three multiline import-format corrections.
-3. The branch now contains those deterministic formatting corrections.
-4. A fresh focused validation run is required for the current head after Slice 1 is approved and stabilized.
+1. Broader CALYX Agent, Journalism, Brain Integration, Education Design, and End-to-End checks passed on an earlier head.
+2. Focused Canonical Brain lint identified sorted-export and multiline-import requirements; the current branch contains those formatting corrections.
+3. The branch contains architecture-first search behavior and updated Mission Control fixture assertions.
+4. Direct comparison with repaired Slice 1 shows Slice 2 is 26 commits ahead and 7 commits behind, with merge base `03243574afd053104b7edb9ad8c8a605cfc809a7`.
 
 Current state:
 
-- draft
-- stacked on Slice 1
-- unmerged
-- validation pending for current head
+- draft and unmerged
+- temporarily non-mergeable because the stacked base advanced during Slice 1 repairs
+- do not force-rewrite; reconcile by a reviewed restack or clean replacement branch after Slice 1 CI approval
 
 ### PR #489 — Slice 3: Governed Orchestration
 
@@ -75,21 +73,18 @@ Scope:
 
 Current state:
 
-- draft
-- stacked on Slice 2
-- unmerged
+- draft and unmerged
+- temporarily non-mergeable because Slices 1 and 2 advanced
 - workflow invocation standardized to the active Python environment
-- independent failure inspection remains after Slices 1 and 2 stabilize
+- independent validation remains after lower slices are reconciled
 
 ## CI conclusion
 
-GitHub Actions is enabled and functional. The absence of statuses on the umbrella branch did not indicate a repository-wide administrative policy failure. Fresh stacked PRs produced workflow runs and exposed real, actionable failures. Issue #481 was therefore closed after evidence disproved its original diagnosis.
-
-The latest Slice 1 head is now held at a GitHub workflow-approval gate: both workflows report `action_required`, and the Actions API returns no jobs. This is a governance boundary, not a passing or failing code result.
+GitHub Actions is enabled and functional. Fresh stacked pull requests produced workflow runs and exposed actionable lint, import-path, and behavioral failures. The newest Slice 1 runs are not code failures: GitHub reports `action_required` and creates no jobs until repository-side approval is granted.
 
 ## Governance boundary
 
-No slice may merge until its latest head has compile, Ruff, and focused pytest evidence. The current Slice 1 workflow approval must be granted in GitHub before the latest validation can execute. No auto-merge, deployment, publication, production database migration, external delivery, or production Knowledge Graph mutation is authorized.
+No slice may merge until its latest head has compile, Ruff, and focused pytest evidence. The connected API cannot approve an `action_required` workflow and cannot safely merge/rebase one draft branch into another. No force-push, auto-merge, deployment, publication, production database migration, external delivery, or production Knowledge Graph mutation is authorized.
 
 ## Standing lesson
 
