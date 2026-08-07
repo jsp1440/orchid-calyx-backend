@@ -29,7 +29,7 @@ class CancellationReceipt:
 
 
 class LeaseExecutionBridge:
-    """Connects verifiable executor receipts to durable program-job leases."""
+    """Connects verifiable authoritative executor receipts to durable program-job leases."""
 
     def __init__(self, db: Session) -> None:
         self.db = db

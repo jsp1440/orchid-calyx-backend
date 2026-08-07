@@ -183,10 +183,11 @@ def execute_program_job_dry_run(
         )
         return {
             "executed": True,
-            "mode": "deterministic_dry_run",
+            "authoritative": False,
+            "mode": "deterministic_dry_run_preflight",
             "assignment": result.assignment,
             "receipt": result.receipt,
-            "completed_job": result.completed_job,
+            "released_job": result.released_job,
             "external_side_effects": [],
         }
     except (LookupError, PermissionError, ValueError) as exc:
