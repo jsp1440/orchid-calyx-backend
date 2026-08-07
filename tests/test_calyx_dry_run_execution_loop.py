@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.dry_run_service import execute_deterministic_dry_run
 from app.calyx_orchestrator.execution_bridge import decode_receipt_evidence
+from app.calyx_orchestrator.models import utcnow
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
     CalyxProgramDependency,
@@ -99,6 +102,45 @@ def test_dry_run_rejects_cross_owner_and_stale_lease_without_consuming_job():
             assert str(exc) == "STALE_PROGRAM_JOB_LEASE"
         else:
             raise AssertionError("stale lease was accepted")
+
+        db.refresh(job)
+        assert job.status == "running"
+        assert job.outcome is None
+        assert job.lease_token == token
+
+
+def test_dry_run_rejects_expired_lease_before_execution_and_completion():
+    with _db() as db:
+        _, job = _claimed(db)
+        token = job.lease_token
+        job.lease_expires_at = utcnow() - timedelta(seconds=1)
+        db.commit()
+
+        try:
+            execute_deterministic_dry_run(
+                db,
+                owner="owner",
+                program_job_id=job.program_job_id,
+                worker_id="worker",
+                lease_token=token,
+            )
+        except PermissionError as exc:
+            assert str(exc) == "STALE_PROGRAM_JOB_LEASE"
+        else:
+            raise AssertionError("expired dry-run lease was accepted")
+
+        try:
+            PersistentProgramWorker(db).complete(
+                program_job_id=job.program_job_id,
+                worker_id="worker",
+                lease_token=token,
+                outcome="DELIVERED",
+                evidence={"unexpected": True},
+            )
+        except PermissionError as exc:
+            assert str(exc) == "STALE_PROGRAM_JOB_LEASE"
+        else:
+            raise AssertionError("expired completion lease was accepted")
 
         db.refresh(job)
         assert job.status == "running"
