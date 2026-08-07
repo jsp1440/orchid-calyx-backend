@@ -5,11 +5,14 @@ on:
     paths:
       - "app/multimodal_intelligence/**"
       - "app/routers/health.py"
+      - "migrations/20260807_multimodal_intelligence_operations.sql"
+      - "docs/brain/CALYX-MULTIMODAL-INTELLIGENCE-2026-08-07.md"
       - "tests/test_multimodal_intelligence_engines.py"
       - "tests/test_multimodal_intelligence_status.py"
       - "tests/test_multimodal_intelligence_priority_10.py"
       - "tests/test_multimodal_operator_priority_10.py"
       - "tests/test_multimodal_operator_priority_20.py"
+      - "tests/test_multimodal_promotion.py"
       - ".github/workflows/multimodal-intelligence-engines.yml"
   workflow_dispatch:
 
@@ -42,6 +45,7 @@ jobs:
           tests/test_multimodal_intelligence_priority_10.py
           tests/test_multimodal_operator_priority_10.py
           tests/test_multimodal_operator_priority_20.py
+          tests/test_multimodal_promotion.py
       - name: Focused tests
         run: >-
           pytest -q
@@ -50,6 +54,26 @@ jobs:
           tests/test_multimodal_intelligence_priority_10.py
           tests/test_multimodal_operator_priority_10.py
           tests/test_multimodal_operator_priority_20.py
+          tests/test_multimodal_promotion.py
+      - name: Persistence schema smoke
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          sql = Path("migrations/20260807_multimodal_intelligence_operations.sql").read_text()
+          assert "CREATE TABLE IF NOT EXISTS calyx_multimodal_operations" in sql
+          assert "request_hash TEXT NOT NULL UNIQUE" in sql
+          assert "automatic publication" in sql.lower()
+          PY
+      - name: Brain record smoke
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          text = Path("docs/brain/CALYX-MULTIMODAL-INTELLIGENCE-2026-08-07.md").read_text()
+          assert "Human review remains the mandatory boundary" in text
+          assert "PR: #417" in text
+          PY
       - name: Route smoke
         run: |
           python - <<'PY'
