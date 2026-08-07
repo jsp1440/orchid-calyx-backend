@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from .executor import ExecutorCapability, GovernedAssignment
 from .isolated_patch_executor import ISOLATED_PATCH_ROLE
 from .program_models import CalyxProgram, CalyxProgramJob
+from .sandboxed_validation_executor import SANDBOXED_VALIDATION_ROLE
 
 SAFE_ASSIGNMENT_CAPABILITIES = (
     ExecutorCapability.VALIDATE_INPUT.value,
@@ -15,6 +16,7 @@ SAFE_ASSIGNMENT_CAPABILITIES = (
 )
 ROLE_ADDITIONAL_CAPABILITIES: dict[str, tuple[str, ...]] = {
     ISOLATED_PATCH_ROLE: ("workspace_write",),
+    SANDBOXED_VALIDATION_ROLE: ("repository_code_execution",),
 }
 RESERVED_JOB_INPUT_KEYS = frozenset(
     {
@@ -83,6 +85,9 @@ def governed_assignment_from_claimed_job(
         *ROLE_ADDITIONAL_CAPABILITIES.get(job.role_key, ()),
     )
     workspace_write_authorized = "workspace_write" in requested_capabilities
+    repository_code_execution_authorized = (
+        "repository_code_execution" in requested_capabilities
+    )
     inputs = {
         "program": {
             "program_id": program.program_id,
@@ -94,6 +99,7 @@ def governed_assignment_from_claimed_job(
             "mode": "bounded_authoritative_adapter",
             "external_execution_authorized": False,
             "workspace_write_authorized": workspace_write_authorized,
+            "repository_code_execution_authorized": repository_code_execution_authorized,
             "automatic_merge_authorized": False,
             "deployment_authorized": False,
             "publication_authorized": False,
@@ -123,6 +129,10 @@ def assignment_payload(assignment: GovernedAssignment) -> dict[str, object]:
     workspace_write_authorized = bool(
         isinstance(governance, dict) and governance.get("workspace_write_authorized")
     )
+    repository_code_execution_authorized = bool(
+        isinstance(governance, dict)
+        and governance.get("repository_code_execution_authorized")
+    )
     return {
         "assignment_id": assignment.assignment_id,
         "program_id": assignment.program_id,
@@ -137,4 +147,5 @@ def assignment_payload(assignment: GovernedAssignment) -> dict[str, object]:
         "input_checksum": assignment.verified_input_checksum(),
         "external_execution_authorized": False,
         "workspace_write_authorized": workspace_write_authorized,
+        "repository_code_execution_authorized": repository_code_execution_authorized,
     }
