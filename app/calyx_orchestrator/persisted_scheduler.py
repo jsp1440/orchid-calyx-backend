@@ -58,7 +58,11 @@ def project_persisted_schedule(db: Session, *, owner: str | None = None) -> Pers
     jobs = db.scalars(
         select(CalyxProgramJob)
         .where(CalyxProgramJob.program_id.in_(program_ids))
-        .order_by(CalyxProgramJob.created_at.asc(), CalyxProgramJob.program_job_id.asc())
+        .order_by(
+            CalyxProgramJob.created_at.asc(),
+            CalyxProgramJob.program_id.asc(),
+            CalyxProgramJob.job_key.asc(),
+        )
     ).all()
     dependencies = db.scalars(
         select(CalyxProgramDependency)
