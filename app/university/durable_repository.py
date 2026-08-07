@@ -266,13 +266,22 @@ def record_review(
         review = cur.fetchone()
         if review is None:
             raise DurableUniversityError("REVIEW_CREATE_FAILED", "Review insert returned no row")
-        next_status = "changes_requested" if decision == "changes_requested" else "approved_for_learning"
-        cur.execute(
-            """
-            UPDATE oc_university.lab_sessions
-            SET status=%s, updated_at=NOW()
-            WHERE session_id=%s
-            """,
-            (next_status, session_id),
-        )
+        if decision == "changes_requested":
+            cur.execute(
+                """
+                UPDATE oc_university.lab_sessions
+                SET status='changes_requested', current_stage='communicate', updated_at=NOW()
+                WHERE session_id=%s
+                """,
+                (session_id,),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE oc_university.lab_sessions
+                SET status='approved_for_learning', updated_at=NOW()
+                WHERE session_id=%s
+                """,
+                (session_id,),
+            )
         return dict(review)
