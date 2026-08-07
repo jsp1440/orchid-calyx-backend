@@ -18,6 +18,7 @@ from app.schemas import (
     IntegrationCreate, IntegrationOut,
 )
 from app.university.routes import router as university_router
+from runtime.calyx_core_certification import create_certification_router
 
 router = APIRouter(prefix="/api", tags=["calyx-core"])
 
@@ -42,7 +43,7 @@ def list_org_shows(org_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/organizations/{org_id}/shows", response_model=ShowOut)
-def create_org_show(org_id: str, payload: ShowCreate, db: Session = Depends(get_db)):
+def create_org_show(org_id: str, payload: OrganizationCreate, db: Session = Depends(get_db)):
     org = db.execute(select(Organization).where(Organization.id == org_id)).scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -58,12 +59,7 @@ def list_show_contacts(show_id: str, db: Session = Depends(get_db)):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
-    query = select(Contact).where(
-        or_(
-            Contact.show_id == show_id,
-            (Contact.organization_id == show.organization_id) & (Contact.show_id == None)
-        )
-    )
+    query = select(Contact).where(or_(Contact.show_id == show_id, (Contact.organization_id == show.organization_id) & (Contact.show_id == None)))
     return db.execute(query).scalars().all()
 
 
@@ -84,17 +80,10 @@ def list_show_templates(show_id: str, db: Session = Depends(get_db)):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
-    org_templates = db.execute(
-        select(MessageTemplate).where(
-            (MessageTemplate.organization_id == show.organization_id) & (MessageTemplate.show_id == None)
-        )
-    ).scalars().all()
-    show_templates = db.execute(
-        select(MessageTemplate).where(MessageTemplate.show_id == show_id)
-    ).scalars().all()
+    org_templates = db.execute(select(MessageTemplate).where((MessageTemplate.organization_id == show.organization_id) & (MessageTemplate.show_id == None))).scalars().all()
+    show_templates = db.execute(select(MessageTemplate).where(MessageTemplate.show_id == show_id)).scalars().all()
     show_names = {t.name for t in show_templates}
-    merged = list(show_templates) + [t for t in org_templates if t.name not in show_names]
-    return merged
+    return list(show_templates) + [t for t in org_templates if t.name not in show_names]
 
 
 @router.post("/shows/{show_id}/templates", response_model=MessageTemplateOut)
@@ -142,9 +131,7 @@ def export_events_ics(show_id: str, db: Session = Depends(get_db)):
     events = db.execute(select(Event).where(Event.show_id == show_id)).scalars().all()
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Calyx//Orchid Show//EN"]
     for ev in events:
-        lines.append("BEGIN:VEVENT")
-        lines.append(f"UID:{ev.id}@calyx")
-        lines.append(f"DTSTART:{ev.starts_at.strftime('%Y%m%dT%H%M%S')}")
+        lines.extend(["BEGIN:VEVENT", f"UID:{ev.id}@calyx", f"DTSTART:{ev.starts_at.strftime('%Y%m%dT%H%M%S')}"])
         if ev.ends_at:
             lines.append(f"DTEND:{ev.ends_at.strftime('%Y%m%dT%H%M%S')}")
         lines.append(f"SUMMARY:{ev.title}")
@@ -179,12 +166,7 @@ def list_show_integrations(show_id: str, db: Session = Depends(get_db)):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
-    query = select(IntegrationConnection).where(
-        or_(
-            IntegrationConnection.show_id == show_id,
-            (IntegrationConnection.organization_id == show.organization_id) & (IntegrationConnection.show_id == None)
-        )
-    )
+    query = select(IntegrationConnection).where(or_(IntegrationConnection.show_id == show_id, (IntegrationConnection.organization_id == show.organization_id) & (IntegrationConnection.show_id == None)))
     return db.execute(query).scalars().all()
 
 
@@ -201,3 +183,4 @@ def create_show_integration(show_id: str, payload: IntegrationCreate, db: Sessio
 
 
 router.include_router(university_router)
+router.include_router(create_certification_router())
