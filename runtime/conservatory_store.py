@@ -44,7 +44,7 @@ class ConservatoryStore:
             return []
         payload = json.loads(self.path.read_text(encoding="utf-8"))
         if not isinstance(payload, list):
-            raise ValueError("conservatory store is malformed")
+            raise TypeError("conservatory store is malformed")
         return payload
 
     def _write(self, rows: list[dict[str, Any]]) -> None:
