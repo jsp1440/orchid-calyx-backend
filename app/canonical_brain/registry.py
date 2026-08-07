@@ -5,7 +5,6 @@ import json
 
 from .models import BrainObject, BrainRelationship, BrainSnapshot, SearchHit
 
-
 _SEARCH_TYPE_PRIORITY = {
     "architecture": 0,
     "intent": 1,
@@ -48,9 +47,25 @@ class CanonicalBrainRegistry:
                 "tags": " ".join(record.tags).casefold(),
                 "type": record.object_type.casefold(),
             }
-            matched = [name for name, value in fields.items() if any(term in value for term in terms)]
+            matched_fields: set[str] = set()
+            terms_matched: set[str] = set()
+            score = 0
+            for term in terms:
+                best_score = 0
+                best_field: str | None = None
+                for name, value in fields.items():
+                    if term in value:
+                        field_score = 4 if name == "title" else 3 if name == "aliases" else 1
+                        if field_score > best_score:
+                            best_score = field_score
+                            best_field = name
+                if best_field is not None:
+                    score += best_score
+                    matched_fields.add(best_field)
+                    terms_matched.add(term)
+            score += len(terms_matched) * 3
+            matched = sorted(matched_fields)
             if matched:
-                score = sum(4 if name == "title" else 3 if name == "aliases" else 1 for name in matched)
                 hits.append(
                     SearchHit(
                         object_id=record.object_id,
