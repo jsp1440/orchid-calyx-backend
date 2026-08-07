@@ -2,8 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .assembler import assemble_brain_records, assemble_map_manifest, build_reasoning_response
-from .models import AtlasLayer, SourceLineage, SpatialDataset, SpatialExtent, TemporalExtent, ThematicMapRequest
+from .assembler import (
+    assemble_brain_records,
+    assemble_map_manifest,
+    build_reasoning_response,
+)
+from .models import (
+    AtlasLayer,
+    SourceLineage,
+    SpatialDataset,
+    SpatialExtent,
+    TemporalExtent,
+    ThematicMapRequest,
+)
 
 
 def _lineage(source_id: str, checksum_char: str, license_name: str = "CC BY 4.0") -> SourceLineage:
