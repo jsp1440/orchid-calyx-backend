@@ -9,6 +9,7 @@ from app.security import verify_owner_or_api_key
 
 from .config import session_writes_enabled, university_enabled
 from .fixtures import CHAPTER, LABORATORY
+from .release import release_readiness
 from .schemas import (
     CatalogItem,
     CatalogResponse,
@@ -81,6 +82,11 @@ def invoke(request: Request, operation):
 @router.get("/capabilities", response_model=UniversityCapability)
 def capabilities() -> UniversityCapability:
     return capability()
+
+
+@router.get("/release-readiness")
+def release_readiness_endpoint() -> dict[str, object]:
+    return release_readiness()
 
 
 @router.get("/catalog", response_model=CatalogResponse)
