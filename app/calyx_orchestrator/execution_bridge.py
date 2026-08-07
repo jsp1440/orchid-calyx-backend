@@ -5,9 +5,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from .executor import ExecutionReceipt, ExecutionState, TerminalOutcome
-
-_DRY_RUN_EXECUTOR_KEY = "deterministic_dry_run_v1"
+from .executor import ExecutionReceipt, ExecutionState
 from .program_models import CalyxProgram, CalyxProgramJob
 from .program_worker import PersistentProgramWorker
 
@@ -31,7 +29,7 @@ class CancellationReceipt:
 
 
 class LeaseExecutionBridge:
-    """Connects verifiable executor receipts to durable program-job leases."""
+    """Connects verifiable authoritative executor receipts to durable program-job leases."""
 
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -68,38 +66,20 @@ class LeaseExecutionBridge:
             "evidence_uris": list(receipt.evidence_uris),
             "blocker_code": receipt.blocker_code,
         }
-
-        # Dry-run receipts are non-authoritative: a DELIVERED result from the
-        # deterministic dry-run executor does not constitute real work and must
-        # not propagate program completion.  Reclassify it as BLOCKED so that
-        # the job remains open pending genuine human-verified execution.
-        effective_state = receipt.state
-        effective_outcome = receipt.outcome
-        effective_blocker = receipt.blocker_code
-        if (
-            receipt.executor_key == _DRY_RUN_EXECUTOR_KEY
-            and receipt.state == ExecutionState.DELIVERED
-        ):
-            effective_state = ExecutionState.BLOCKED
-            effective_outcome = TerminalOutcome.BLOCKED
-            effective_blocker = "DRY_RUN_REQUIRES_HUMAN_REVIEW"
-            evidence["dry_run_reclassified"] = True
-            evidence["dry_run_blocker_code"] = effective_blocker
-
-        blocker = effective_blocker if effective_state != ExecutionState.DELIVERED else None
+        blocker = receipt.blocker_code if receipt.state != ExecutionState.DELIVERED else None
         human_action = None
-        if effective_state == ExecutionState.TIMED_OUT:
+        if receipt.state == ExecutionState.TIMED_OUT:
             human_action = "Inspect timeout evidence and submit a bounded governed retry."
-        elif effective_state == ExecutionState.BLOCKED:
+        elif receipt.state == ExecutionState.BLOCKED:
             human_action = "Resolve the recorded executor blocker before retrying this job."
-        elif effective_state == ExecutionState.CANCELLED:
+        elif receipt.state == ExecutionState.CANCELLED:
             human_action = "Confirm whether the cancelled job should remain closed or be revised and retried."
 
         completed = self.worker.complete(
             program_job_id=program_job_id,
             worker_id=worker_id,
             lease_token=lease_token,
-            outcome=effective_outcome.value,
+            outcome=receipt.outcome.value,
             evidence=evidence,
             blocker=blocker,
             human_action=human_action,
