@@ -90,11 +90,18 @@ The following remain disabled by design:
 - production Knowledge Graph mutation;
 - automatic merge and deployment.
 
-## Validation strategy
+## Validation strategy and recovery evidence
 
 The lane uses fixture-backed deterministic tests and CI covering compile, Ruff, scientific contracts, typed API contracts, Matrix scoring, Vision licensing, abstention, operator review behavior, route mounting, provenance, promotion gates, persistence construction, and the Document Intelligence bridge. The full Mission Control router is mounted in `app.main` through the health router.
 
-GitHub Actions experienced runner-level failures on 2026-08-07 in which multiple unrelated workflows ended with zero executable steps and no retrievable job log. The same zero-step condition was reconfirmed on the protected execution API commits. These are treated as external CI infrastructure failures, not passing or failing code evidence. The lane must obtain a normal executable CI run before being described as CI-green.
+GitHub-hosted runners experienced a repository-wide allocation incident earlier on 2026-08-07. Once runner execution resumed, the focused workflow exposed real code and contract defects that had previously been hidden by the infrastructure failure. The recovery work corrected:
+
+- Python 3.13 compatibility by importing `Protocol` from `typing` rather than `collections.abc`;
+- the older priority-10 review-queue assertion to the current paginated review-queue contract;
+- the abstention test so it exercises genuine candidate ambiguity rather than an invalid threshold outside the API contract;
+- the benchmark assertion so it verifies the explicit `identification-abstention` fixture case exposed by the current benchmark contract.
+
+Executable validation run `31216240089` completed successfully on 2026-08-07 for implementation head `2f6d202501d8f1d2eb39d571291f3f642c92fbd3`. It passed dependency installation, compile, Ruff, all 41 focused tests, persistence-schema smoke, Brain-record smoke, real-app route smoke, and job cleanup. The earlier runner outage is therefore no longer a validation blocker for this lane.
 
 ## Remaining production dependencies
 
@@ -107,7 +114,6 @@ GitHub Actions experienced runner-level failures on 2026-08-07 in which multiple
 7. Mission Control frontend panels for execution, review, provenance, and candidate comparisons.
 8. Explicit owner approval before Candidate Knowledge handoff execution.
 9. Separate publication approval before any Knowledge Graph mutation.
-10. Normal GitHub Actions runner execution proving the complete focused suite and route smoke.
 
 ## Governance conclusion
 
