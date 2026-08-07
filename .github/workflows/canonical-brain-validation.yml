@@ -1,12 +1,14 @@
 name: Canonical Brain Validation
 
-# Current-main integration gate; commands intentionally match the validated slice lineage.
+# Current-main integration gate; one portable runner owns compile, lint, and focused tests.
 on:
   pull_request:
     paths:
       - "app/canonical_brain/**"
       - "tests/test_canonical_brain_*.py"
+      - "scripts/validate_canonical_brain.py"
       - "docs/architecture/BUILD-BRAIN-100-*"
+      - "docs/architecture/CANONICAL-BRAIN-*"
       - ".github/workflows/canonical-brain-validation.yml"
   workflow_dispatch:
 
@@ -27,9 +29,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pydantic fastapi httpx pytest ruff
-      - name: Compile
-        run: python -m compileall -q app/canonical_brain
-      - name: Lint
-        run: python -m ruff check app/canonical_brain tests/test_canonical_brain_*.py
-      - name: Test
-        run: python -m pytest -q tests/test_canonical_brain_*.py
+      - name: Run portable Canonical Brain validation
+        run: python scripts/validate_canonical_brain.py
+      - name: Emit validation receipt
+        if: always()
+        run: |
+          if [ -f artifacts/validation/canonical-brain-validation.json ]; then
+            cat artifacts/validation/canonical-brain-validation.json
+          else
+            echo "Validation receipt was not created."
+          fi
