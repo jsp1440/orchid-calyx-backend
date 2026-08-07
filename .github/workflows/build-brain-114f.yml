@@ -8,6 +8,7 @@ on:
       - "app/calyx_orchestrator/assignment_factory.py"
       - "tests/test_calyx_sandboxed_validation_executor.py"
       - "tests/test_calyx_sandboxed_validation_program.py"
+      - "tests/test_calyx_autonomous_patch_executable_validation_program.py"
       - ".github/workflows/build-brain-114f.yml"
       - "docs/brain/BUILD-BRAIN-114F-SANDBOXED-EXECUTABLE-VALIDATOR.md"
   workflow_dispatch:
@@ -39,7 +40,8 @@ jobs:
             app/calyx_orchestrator/executor_registry.py \
             app/calyx_orchestrator/assignment_factory.py \
             tests/test_calyx_sandboxed_validation_executor.py \
-            tests/test_calyx_sandboxed_validation_program.py
+            tests/test_calyx_sandboxed_validation_program.py \
+            tests/test_calyx_autonomous_patch_executable_validation_program.py
       - name: Ruff
         run: |
           ruff check \
@@ -47,12 +49,14 @@ jobs:
             app/calyx_orchestrator/executor_registry.py \
             app/calyx_orchestrator/assignment_factory.py \
             tests/test_calyx_sandboxed_validation_executor.py \
-            tests/test_calyx_sandboxed_validation_program.py
+            tests/test_calyx_sandboxed_validation_program.py \
+            tests/test_calyx_autonomous_patch_executable_validation_program.py
       - name: Focused tests
         run: |
           pytest -q \
             tests/test_calyx_sandboxed_validation_executor.py \
             tests/test_calyx_sandboxed_validation_program.py \
+            tests/test_calyx_autonomous_patch_executable_validation_program.py \
             tests/test_calyx_autonomous_patch_validation_program.py \
             tests/test_calyx_static_validation_executor.py \
             tests/test_calyx_isolated_patch_executor.py \
