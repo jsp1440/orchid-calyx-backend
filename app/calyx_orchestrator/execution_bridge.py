@@ -149,5 +149,5 @@ def decode_receipt_evidence(job: CalyxProgramJob) -> dict[str, object]:
         return {}
     payload = json.loads(job.evidence_json)
     if not isinstance(payload, dict):
-        raise ValueError("INVALID_RECEIPT_EVIDENCE")
+        raise TypeError("INVALID_RECEIPT_EVIDENCE")
     return payload
