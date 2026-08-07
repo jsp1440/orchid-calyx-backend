@@ -2,7 +2,8 @@
 
 Date: 2026-08-07
 Original PR: #420
-Current-main release branch: `feature/atlas-earth-systems-current-main-release`
+Current-main release PR: #567
+Branch: `feature/atlas-earth-systems-current-main-release`
 
 ## Purpose
 
@@ -25,9 +26,22 @@ Atlas Planetary Intelligence Validation run `31216798996` then completed success
 
 ## Current-main release recovery
 
-By the time release authority was granted, original PR #420 had drifted far behind active `main` and GitHub reported it non-mergeable. A compare against current `main` showed the Atlas paths remained additive rather than conflicting with newly released operator/governance work. The validated Atlas files were therefore rebuilt on a fresh branch from current `main` rather than forcing the stale branch.
+By the time release authority was granted, original PR #420 had drifted far behind active `main` and GitHub reported it non-mergeable. Comparison against current `main` showed the Atlas paths remained additive rather than conflicting with newly released operator/governance work. The validated Atlas files were therefore rebuilt on a fresh branch from current `main` rather than forcing the stale branch.
 
-The replacement preserves the tested contracts and CI corrections while updating the build record to the current release context. A fresh hosted CI run on the exact replacement head is required before merge; that run will be recorded here when available.
+Replacement PR #567 preserves the tested contracts and CI corrections while updating the build record to the current release context.
+
+Fresh Atlas Planetary Intelligence Validation run `31219396372` completed successfully on implementation head `1a3c98a3050d313bd76558d6facf1c66121cfa7e`:
+
+- runner setup: pass;
+- repository checkout: pass;
+- Python setup: pass;
+- focused dependency installation: pass;
+- Atlas package compilation: pass;
+- Ruff validation: pass;
+- complete focused Atlas pytest suite: pass;
+- cleanup: pass.
+
+This documentation-only commit records the exact current-main release evidence and does not alter Atlas runtime behavior.
 
 ## Governance boundaries
 
