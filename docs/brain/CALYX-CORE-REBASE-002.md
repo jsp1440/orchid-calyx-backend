@@ -29,13 +29,15 @@ Recover the still-missing additive functionality from stale PR #399 onto current
   - no publication or graph mutation.
 - `runtime/calyx_core_certification.py`
   - read-only certification contract `calyx-core-certification-v2`;
-  - current module import/readiness checks;
+  - current module import/readiness checks that fail closed into report blockers rather than crashing the endpoint;
   - configuration-presence reporting without secret values;
+  - current authentication configuration names: `CALYX_API_KEY`, `CALYX_OWNER_ACCESS_CODE`, and `CALYX_OWNER_SESSION_SECRET`;
   - taxonomy, literature, occurrence, and image pipeline status;
   - Reasoning Ledger gate and publication-safeguard reporting;
   - automatic publication remains false.
-- Existing `app.routers.calyx_core.router` now mounts the owner-protected endpoint:
+- Existing `app.routers.calyx_core.router` now mounts the protected endpoint:
   - `GET /api/mission-control/calyx-core/certification`
+  - protection uses the current `verify_owner_or_api_key` contract (owner session or configured backend API key).
 
 ## Validation contract
 
@@ -45,8 +47,14 @@ Focused tests must demonstrate:
 2. image license allowlist enforcement before staging;
 3. literature evidence-span/content-hash/provenance preservation;
 4. certification is read-only and reports current pipeline modules;
-5. certification endpoint invokes owner authentication and is actually present on the already-mounted Calyx Core router;
+5. certification endpoint invokes authentication and is actually present on the already-mounted Calyx Core router;
 6. compile, Ruff, and `git diff --check` pass for the new slice.
+
+## Validation state — 2026-08-07
+
+A dedicated workflow, `CALYX-CORE-REBASE-002 Validation`, exists on PR #530. Multiple owner-authored exact heads triggered the workflow, but GitHub Actions created failed jobs with `steps: null` and no downloadable job logs. BUILD-088E exhibited the same zero-step failure pattern on the same heads. Therefore no repository code executed and these runs are classified as Actions runner/startup failures, not test failures.
+
+The local execution environment also cannot resolve `github.com`, so it cannot clone the repository as a fallback validation path. PR #530 must remain unmerged until an executable validation run completes on an unchanged head.
 
 ## Relationship to stale PR #399
 
