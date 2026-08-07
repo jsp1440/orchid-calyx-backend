@@ -36,10 +36,14 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Install focused validation dependencies
+        run: python -m pip install pytest
+
       - name: Run focused tests
         run: python -m pytest -q tests/test_workflow_governance_audit.py
 
       - name: Generate governance inventory
+        if: always()
         run: |
           python scripts/audit_workflow_governance.py \
             --json workflow-governance-report.json \
@@ -47,7 +51,12 @@ jobs:
 
       - name: Publish report to job summary
         if: always()
-        run: cat workflow-governance-report.md >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          if [ -f workflow-governance-report.md ]; then
+            cat workflow-governance-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Workflow governance report was not generated.' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload machine-readable and human-readable reports
         if: always()
@@ -57,7 +66,7 @@ jobs:
           path: |
             workflow-governance-report.json
             workflow-governance-report.md
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Record operating boundary
