@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
@@ -138,6 +139,8 @@ class GovernedOrchestrator:
         job = db.get(CalyxProgramJob, program_job_id)
         if job is None:
             raise LookupError("PROGRAM_JOB_NOT_FOUND")
+        if not inspect(job).persistent:
+            raise PermissionError("PERSISTED_PROGRAM_JOB_REQUIRED")
         if job.job_key != assignment.build_id:
             raise ValueError("COMPLETION_BUILD_MISMATCH")
         if job.role_key != executor_role_key:
