@@ -23,6 +23,7 @@ class DurableUniversityGateTests(unittest.TestCase):
             self.assertFalse(durable_sessions_enabled())
             state = durable_gate_state()
             self.assertFalse(state["durable_sessions_enabled"])
+            self.assertFalse(state["learner_auth_enabled"])
             self.assertFalse(state["release_evidence_present"])
             self.assertFalse(state["release_evidence_valid"])
 
@@ -30,16 +31,30 @@ class DurableUniversityGateTests(unittest.TestCase):
         env = {
             "OCU_UNIVERSITY_ENABLED": "true",
             "OCU_UNIVERSITY_SESSION_WRITES_ENABLED": "true",
+            "OCU_UNIVERSITY_LEARNER_AUTH_ENABLED": "true",
             "OCU_UNIVERSITY_DURABLE_SESSIONS_ENABLED": "true",
             "OCU_UNIVERSITY_READ_ONLY_RELEASE_VERIFIED": "true",
         }
         with patch.dict(os.environ, env, clear=True):
             self.assertFalse(durable_sessions_enabled())
 
+    def test_valid_release_evidence_cannot_bypass_missing_learner_auth(self) -> None:
+        env = {
+            "OCU_UNIVERSITY_ENABLED": "true",
+            "OCU_UNIVERSITY_SESSION_WRITES_ENABLED": "true",
+            "OCU_UNIVERSITY_DURABLE_SESSIONS_ENABLED": "true",
+            "OCU_UNIVERSITY_READ_ONLY_RELEASE_VERIFIED": "true",
+            "OCU_UNIVERSITY_RELEASE_EVIDENCE_ID": "sha256:" + ("a" * 64),
+        }
+        with patch.dict(os.environ, env, clear=True):
+            self.assertFalse(durable_sessions_enabled())
+            self.assertFalse(durable_gate_state()["learner_auth_enabled"])
+
     def test_arbitrary_evidence_label_does_not_open_gate(self) -> None:
         env = {
             "OCU_UNIVERSITY_ENABLED": "true",
             "OCU_UNIVERSITY_SESSION_WRITES_ENABLED": "true",
+            "OCU_UNIVERSITY_LEARNER_AUTH_ENABLED": "true",
             "OCU_UNIVERSITY_DURABLE_SESSIONS_ENABLED": "true",
             "OCU_UNIVERSITY_READ_ONLY_RELEASE_VERIFIED": "true",
             "OCU_UNIVERSITY_RELEASE_EVIDENCE_ID": "github-actions:example-artifact-id",
@@ -48,17 +63,19 @@ class DurableUniversityGateTests(unittest.TestCase):
             self.assertFalse(durable_sessions_enabled())
             self.assertFalse(durable_gate_state()["release_evidence_valid"])
 
-    def test_durable_gate_opens_only_with_sha256_evidence_reference(self) -> None:
+    def test_durable_gate_opens_only_with_identity_and_sha256_evidence_reference(self) -> None:
         evidence_id = "sha256:" + ("a" * 64)
         env = {
             "OCU_UNIVERSITY_ENABLED": "true",
             "OCU_UNIVERSITY_SESSION_WRITES_ENABLED": "true",
+            "OCU_UNIVERSITY_LEARNER_AUTH_ENABLED": "true",
             "OCU_UNIVERSITY_DURABLE_SESSIONS_ENABLED": "true",
             "OCU_UNIVERSITY_READ_ONLY_RELEASE_VERIFIED": "true",
             "OCU_UNIVERSITY_RELEASE_EVIDENCE_ID": evidence_id,
         }
         with patch.dict(os.environ, env, clear=True):
             self.assertTrue(durable_sessions_enabled())
+            self.assertTrue(durable_gate_state()["learner_auth_enabled"])
             self.assertEqual(durable_gate_state()["release_evidence_id"], evidence_id)
             self.assertTrue(durable_gate_state()["release_evidence_valid"])
 
