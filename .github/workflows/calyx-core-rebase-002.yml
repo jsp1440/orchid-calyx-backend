@@ -1,0 +1,54 @@
+name: CALYX-CORE-REBASE-002 Validation
+
+on:
+  pull_request:
+    paths:
+      - "runtime/occurrence_staging.py"
+      - "runtime/image_staging.py"
+      - "runtime/literature_staging.py"
+      - "runtime/calyx_core_certification.py"
+      - "app/routers/calyx_core.py"
+      - "tests/test_calyx_core_rebase_002.py"
+      - "docs/brain/CALYX-CORE-REBASE-002.md"
+      - ".github/workflows/calyx-core-rebase-002.yml"
+  push:
+    branches: [feature/calyx-core-rebase-002]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile recovered slice
+        run: >-
+          python -m py_compile
+          runtime/occurrence_staging.py
+          runtime/image_staging.py
+          runtime/literature_staging.py
+          runtime/calyx_core_certification.py
+          app/routers/calyx_core.py
+          tests/test_calyx_core_rebase_002.py
+      - name: Focused staging and certification tests
+        run: python -m pytest -q tests/test_calyx_core_rebase_002.py
+      - name: Ruff recovered runtime slice and focused tests
+        run: >-
+          python -m ruff check
+          runtime/occurrence_staging.py
+          runtime/image_staging.py
+          runtime/literature_staging.py
+          runtime/calyx_core_certification.py
+          tests/test_calyx_core_rebase_002.py
+      - name: Diff hygiene
+        run: git diff --check
