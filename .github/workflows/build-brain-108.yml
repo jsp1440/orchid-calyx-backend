@@ -1,4 +1,4 @@
-name: BUILD-BRAIN-108-111 Validation
+name: BUILD-BRAIN-108-112 Validation
 
 on:
   pull_request:
@@ -7,6 +7,7 @@ on:
       - "app/calyx_orchestrator/execution_bridge.py"
       - "app/calyx_orchestrator/scheduler.py"
       - "app/calyx_orchestrator/artifact_registry.py"
+      - "app/calyx_orchestrator/review_eligibility.py"
       - "app/calyx_orchestrator/program_core.py"
       - "app/calyx_orchestrator/program_worker.py"
       - "app/calyx_orchestrator/program_models.py"
@@ -15,6 +16,7 @@ on:
       - "tests/test_calyx_execution_bridge.py"
       - "tests/test_calyx_dependency_scheduler.py"
       - "tests/test_calyx_artifact_registry.py"
+      - "tests/test_calyx_review_eligibility.py"
       - "tests/test_calyx_engineering_program_worker.py"
       - ".github/workflows/build-brain-108.yml"
   workflow_dispatch:
@@ -44,13 +46,15 @@ jobs:
             app/calyx_orchestrator/execution_bridge.py \
             app/calyx_orchestrator/scheduler.py \
             app/calyx_orchestrator/artifact_registry.py \
+            app/calyx_orchestrator/review_eligibility.py \
             app/calyx_orchestrator/program_core.py \
             app/calyx_orchestrator/program_worker.py \
             app/calyx_orchestrator/engineering_core.py \
             tests/test_calyx_governed_executor.py \
             tests/test_calyx_execution_bridge.py \
             tests/test_calyx_dependency_scheduler.py \
-            tests/test_calyx_artifact_registry.py
+            tests/test_calyx_artifact_registry.py \
+            tests/test_calyx_review_eligibility.py
       - name: Ruff
         run: |
           ruff check \
@@ -58,10 +62,12 @@ jobs:
             app/calyx_orchestrator/execution_bridge.py \
             app/calyx_orchestrator/scheduler.py \
             app/calyx_orchestrator/artifact_registry.py \
+            app/calyx_orchestrator/review_eligibility.py \
             tests/test_calyx_governed_executor.py \
             tests/test_calyx_execution_bridge.py \
             tests/test_calyx_dependency_scheduler.py \
-            tests/test_calyx_artifact_registry.py
+            tests/test_calyx_artifact_registry.py \
+            tests/test_calyx_review_eligibility.py
       - name: Focused tests
         run: |
           pytest -q \
@@ -69,5 +75,6 @@ jobs:
             tests/test_calyx_execution_bridge.py \
             tests/test_calyx_dependency_scheduler.py \
             tests/test_calyx_artifact_registry.py \
+            tests/test_calyx_review_eligibility.py \
             tests/test_calyx_engineering_program_worker.py \
             tests/test_calyx_autonomous_program_core.py
