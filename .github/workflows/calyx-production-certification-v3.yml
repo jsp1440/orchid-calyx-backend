@@ -1,0 +1,52 @@
+name: CALYX Production Certification V3
+
+on:
+  pull_request:
+    paths:
+      - "runtime/calyx_core_certification.py"
+      - "tests/test_calyx_production_certification.py"
+      - ".github/workflows/calyx-production-certification-v3.yml"
+      - "docs/brain/CALYX-PRODUCTION-CERTIFICATION-V3.md"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install validation dependencies
+        run: python -m pip install -r requirements.txt pytest ruff
+      - name: Compile and lint
+        run: |
+          python -m py_compile runtime/calyx_core_certification.py tests/test_calyx_production_certification.py
+          ruff check runtime/calyx_core_certification.py tests/test_calyx_production_certification.py
+      - name: Focused certification tests
+        run: pytest -q tests/test_calyx_production_certification.py tests/test_calyx_core_rebase_002a.py tests/test_calyx_core_rebase_004.py
+      - name: Read-only governance smoke
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('runtime/calyx_core_certification.py').read_text()
+          for marker in (
+              'secret_values_returned',
+              'production_database_mutation',
+              'production_knowledge_graph_mutation',
+              'automatic_publication',
+              'remediations',
+          ):
+              assert marker in source
+          assert 'verify_owner_or_api_key' in source
+          PY
+      - name: Brain smoke
+        run: |
+          test -f docs/brain/CALYX-PRODUCTION-CERTIFICATION-V3.md
+          grep -q "issue #469" docs/brain/CALYX-PRODUCTION-CERTIFICATION-V3.md
+          grep -q "No production mutation" docs/brain/CALYX-PRODUCTION-CERTIFICATION-V3.md
+      - name: Diff hygiene
+        run: git diff --check
