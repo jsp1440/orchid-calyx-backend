@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .engineering_core import EngineeringAdmissionPolicy, EngineeringWorkIdentity
 from .models import utcnow
+from .persisted_scheduler import project_persisted_schedule
 from .program_models import CalyxProgram, CalyxProgramJob
 from .program_repository import PersistentProgramRepository
 
@@ -23,6 +24,17 @@ class PersistentProgramWorker:
     def claim(self, *, worker_id: str, lease_seconds: int = 300) -> CalyxProgramJob | None:
         now = utcnow()
         self.recover_expired_leases(now=now)
+        try:
+            persisted_schedule = project_persisted_schedule(self.db)
+        except ValueError:
+            return None
+        runnable_rank = {
+            program_job_id: rank
+            for rank, program_job_id in enumerate(persisted_schedule.runnable_program_job_ids)
+        }
+        if not runnable_rank:
+            return None
+
         candidates = self.db.scalars(
             select(CalyxProgramJob)
             .join(CalyxProgram, CalyxProgram.program_id == CalyxProgramJob.program_id)
@@ -32,10 +44,11 @@ class PersistentProgramWorker:
                 CalyxProgramJob.status == "queued",
                 CalyxProgramJob.outcome.is_(None),
                 CalyxProgramJob.attempt_count < CalyxProgramJob.max_attempts,
+                CalyxProgramJob.program_job_id.in_(tuple(runnable_rank)),
             )
-            .order_by(CalyxProgramJob.created_at.asc())
             .limit(50)
         ).all()
+        candidates.sort(key=lambda item: runnable_rank[item.program_job_id])
         active_rows = self.db.scalars(
             select(CalyxProgramJob).where(CalyxProgramJob.status == "running")
         ).all()
