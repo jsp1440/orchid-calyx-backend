@@ -1,0 +1,1 @@
+Merge authority remains outside BUILD-BRAIN-114F. This file exists to make that boundary explicit in repository evidence until current-main CI is green.
