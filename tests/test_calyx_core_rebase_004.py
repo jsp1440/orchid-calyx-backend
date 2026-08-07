@@ -71,6 +71,7 @@ def test_start_mission_derives_tenant_actor_and_persists_ledger(monkeypatch):
         return SimpleNamespace(version=mission["reasoning_ledger"]["version"])
 
     monkeypatch.setattr(operator.BRAIN_MISSION_SERVICE, "start", fake_start)
+    monkeypatch.setattr(operator, "_persist_mission_ledger", lambda db, owner, mission: None)
     monkeypatch.setattr(operator, "_persist_mission_ledger", fake_persist)
     response = _client().post(
         "/api/mission-control/calyx-operator/missions",
