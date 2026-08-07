@@ -58,9 +58,10 @@ class UniversitySessionDiscoveryTests(unittest.TestCase):
         self.assertEqual(decoded[1], session_id)
 
     def test_invalid_cursor_fails_closed(self) -> None:
-        with self.assertRaises(DurableUniversityError) as ctx:
-            _decode_cursor("not-a-valid-cursor")
-        self.assertEqual(ctx.exception.code, "INVALID_SESSION_CURSOR")
+        for cursor in ("not-a-valid-cursor", "%%%%", "eyJ1cGRhdGVkX2F0Ijoibm90LWEtdGltZSJ9"):
+            with self.subTest(cursor=cursor), self.assertRaises(DurableUniversityError) as ctx:
+                _decode_cursor(cursor)
+            self.assertEqual(ctx.exception.code, "INVALID_SESSION_CURSOR")
 
     def test_query_filters_by_actor_in_sql_and_returns_summary_only(self) -> None:
         actor = "supabase:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
