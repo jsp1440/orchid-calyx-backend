@@ -68,7 +68,9 @@ def discover_eligible_ledgers(db: Session, owner: str) -> dict[str, Any]:
             "project_id": str(row["project_id"]),
             "title": str(payload.get("title") or ""),
             "version": int(row["current_version"]),
-            "review_content_hash": str(payload.get("review_content_hash") or "").lower(),
+            "review_content_hash": str(
+                payload.get("review_content_hash") or ""
+            ).lower(),
             "current_content_hash": str(row["current_content_hash"]),
             "updated_at": row["updated_at"].isoformat(),
         }
@@ -84,7 +86,9 @@ def discover_eligible_ledgers(db: Session, owner: str) -> dict[str, Any]:
         "read_only": True,
         "eligible_count": len(eligible),
         "eligible_ledgers": eligible,
-        "approved_but_not_currently_reviewed_count": len(approved_without_current_review),
+        "approved_but_not_currently_reviewed_count": len(
+            approved_without_current_review
+        ),
         "approved_but_not_currently_reviewed": approved_without_current_review,
         "production_mutation": False,
         "publication_endpoint_invoked": False,
