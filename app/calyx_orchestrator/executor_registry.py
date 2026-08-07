@@ -16,6 +16,10 @@ from .repository_evidence_executor import (
     REPOSITORY_EVIDENCE_ROLE,
     RepositoryEvidenceExecutor,
 )
+from .sandboxed_validation_executor import (
+    SANDBOXED_VALIDATION_ROLE,
+    SandboxedExecutableValidationExecutor,
+)
 from .static_validation_executor import (
     STATIC_VALIDATION_ROLE,
     IsolatedWorkspaceStaticValidationExecutor,
@@ -93,6 +97,10 @@ class AuthoritativeExecutorRegistry:
             workspace_root=workspace_root,
             repository_name=repository_name,
         )
+        sandboxed_validator = SandboxedExecutableValidationExecutor(
+            workspace_root=workspace_root,
+            repository_name=repository_name,
+        )
         self._by_role = {
             AUTONOMY_PROBE_ROLE: RegisteredExecutor(
                 role_key=AUTONOMY_PROBE_ROLE,
@@ -120,6 +128,14 @@ class AuthoritativeExecutorRegistry:
                 external_side_effects=False,
                 workspace_mutation=False,
                 repository_code_execution=False,
+            ),
+            SANDBOXED_VALIDATION_ROLE: RegisteredExecutor(
+                role_key=SANDBOXED_VALIDATION_ROLE,
+                executor=sandboxed_validator,
+                authoritative=True,
+                external_side_effects=False,
+                workspace_mutation=False,
+                repository_code_execution=True,
             ),
         }
 
