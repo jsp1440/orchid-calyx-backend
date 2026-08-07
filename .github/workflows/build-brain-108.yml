@@ -1,4 +1,4 @@
-name: BUILD-BRAIN-108-112A Validation
+name: BUILD-BRAIN-108-113A Validation
 
 on:
   pull_request:
@@ -6,6 +6,7 @@ on:
       - "app/calyx_orchestrator/executor.py"
       - "app/calyx_orchestrator/execution_bridge.py"
       - "app/calyx_orchestrator/assignment_factory.py"
+      - "app/calyx_orchestrator/dry_run_service.py"
       - "app/calyx_orchestrator/scheduler.py"
       - "app/calyx_orchestrator/persisted_scheduler.py"
       - "app/calyx_orchestrator/program_core.py"
@@ -17,6 +18,7 @@ on:
       - "tests/test_calyx_governed_executor.py"
       - "tests/test_calyx_execution_bridge.py"
       - "tests/test_calyx_governed_assignment_factory.py"
+      - "tests/test_calyx_dry_run_execution_loop.py"
       - "tests/test_calyx_dependency_scheduler.py"
       - "tests/test_calyx_persisted_scheduler.py"
       - "tests/test_calyx_engineering_program_worker.py"
@@ -49,6 +51,7 @@ jobs:
             app/calyx_orchestrator/executor.py \
             app/calyx_orchestrator/execution_bridge.py \
             app/calyx_orchestrator/assignment_factory.py \
+            app/calyx_orchestrator/dry_run_service.py \
             app/calyx_orchestrator/scheduler.py \
             app/calyx_orchestrator/persisted_scheduler.py \
             app/calyx_orchestrator/program_core.py \
@@ -59,6 +62,7 @@ jobs:
             tests/test_calyx_governed_executor.py \
             tests/test_calyx_execution_bridge.py \
             tests/test_calyx_governed_assignment_factory.py \
+            tests/test_calyx_dry_run_execution_loop.py \
             tests/test_calyx_dependency_scheduler.py \
             tests/test_calyx_persisted_scheduler.py
       - name: Ruff
@@ -67,6 +71,7 @@ jobs:
             app/calyx_orchestrator/executor.py \
             app/calyx_orchestrator/execution_bridge.py \
             app/calyx_orchestrator/assignment_factory.py \
+            app/calyx_orchestrator/dry_run_service.py \
             app/calyx_orchestrator/scheduler.py \
             app/calyx_orchestrator/persisted_scheduler.py \
             app/calyx_orchestrator/program_worker.py \
@@ -75,6 +80,7 @@ jobs:
             tests/test_calyx_governed_executor.py \
             tests/test_calyx_execution_bridge.py \
             tests/test_calyx_governed_assignment_factory.py \
+            tests/test_calyx_dry_run_execution_loop.py \
             tests/test_calyx_dependency_scheduler.py \
             tests/test_calyx_persisted_scheduler.py
       - name: Focused tests
@@ -83,6 +89,7 @@ jobs:
             tests/test_calyx_governed_executor.py \
             tests/test_calyx_execution_bridge.py \
             tests/test_calyx_governed_assignment_factory.py \
+            tests/test_calyx_dry_run_execution_loop.py \
             tests/test_calyx_dependency_scheduler.py \
             tests/test_calyx_persisted_scheduler.py \
             tests/test_calyx_engineering_program_worker.py \
