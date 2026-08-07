@@ -21,11 +21,17 @@ class PersistentProgramWorker:
         self.db = db
         self.policy = policy or EngineeringAdmissionPolicy()
 
-    def claim(self, *, worker_id: str, lease_seconds: int = 300) -> CalyxProgramJob | None:
+    def claim(
+        self,
+        *,
+        worker_id: str,
+        lease_seconds: int = 300,
+        owner: str | None = None,
+    ) -> CalyxProgramJob | None:
         now = utcnow()
-        self.recover_expired_leases(now=now)
+        self.recover_expired_leases(now=now, owner=owner)
         try:
-            persisted_schedule = project_persisted_schedule(self.db)
+            persisted_schedule = project_persisted_schedule(self.db, owner=owner)
         except ValueError:
             return None
         runnable_rank = {
@@ -35,7 +41,7 @@ class PersistentProgramWorker:
         if not runnable_rank:
             return None
 
-        candidates = self.db.scalars(
+        query = (
             select(CalyxProgramJob)
             .join(CalyxProgram, CalyxProgram.program_id == CalyxProgramJob.program_id)
             .where(
@@ -47,24 +53,36 @@ class PersistentProgramWorker:
                 CalyxProgramJob.program_job_id.in_(tuple(runnable_rank)),
             )
             .limit(50)
-        ).all()
+        )
+        if owner is not None:
+            query = query.where(CalyxProgram.owner == owner)
+        candidates = self.db.scalars(query).all()
         candidates.sort(key=lambda item: runnable_rank[item.program_job_id])
-        active_rows = self.db.scalars(
-            select(CalyxProgramJob).where(CalyxProgramJob.status == "running")
-        ).all()
+
+        active_query = select(CalyxProgramJob).join(
+            CalyxProgram, CalyxProgram.program_id == CalyxProgramJob.program_id
+        ).where(CalyxProgramJob.status == "running")
+        if owner is not None:
+            active_query = active_query.where(CalyxProgram.owner == owner)
+        active_rows = self.db.scalars(active_query).all()
         active = [self._identity(item) for item in active_rows]
+
         for candidate in candidates:
             decision = self.policy.evaluate(self._identity(candidate), active)
             if not decision.admitted:
                 continue
             token = str(uuid4())
+            filters = [
+                CalyxProgramJob.program_job_id == candidate.program_job_id,
+                CalyxProgramJob.status == "queued",
+                CalyxProgramJob.outcome.is_(None),
+            ]
+            if owner is not None:
+                owned_program_ids = select(CalyxProgram.program_id).where(CalyxProgram.owner == owner)
+                filters.append(CalyxProgramJob.program_id.in_(owned_program_ids))
             updated = (
                 self.db.query(CalyxProgramJob)
-                .filter(
-                    CalyxProgramJob.program_job_id == candidate.program_job_id,
-                    CalyxProgramJob.status == "queued",
-                    CalyxProgramJob.outcome.is_(None),
-                )
+                .filter(*filters)
                 .update(
                     {
                         CalyxProgramJob.status: "running",
@@ -145,16 +163,21 @@ class PersistentProgramWorker:
         self.db.refresh(completed)
         return completed
 
-    def recover_expired_leases(self, *, now=None) -> int:
+    def recover_expired_leases(self, *, now=None, owner: str | None = None) -> int:
         now = now or utcnow()
-        expired = self.db.scalars(
-            select(CalyxProgramJob).where(
+        query = (
+            select(CalyxProgramJob)
+            .join(CalyxProgram, CalyxProgram.program_id == CalyxProgramJob.program_id)
+            .where(
                 CalyxProgramJob.status == "running",
                 CalyxProgramJob.outcome.is_(None),
                 CalyxProgramJob.lease_expires_at.is_not(None),
                 CalyxProgramJob.lease_expires_at <= now,
             )
-        ).all()
+        )
+        if owner is not None:
+            query = query.where(CalyxProgram.owner == owner)
+        expired = self.db.scalars(query).all()
         recovered = 0
         for job in expired:
             job.lease_owner = None

@@ -1,19 +1,22 @@
-name: BUILD-BRAIN-108-111A Validation
+name: BUILD-BRAIN-108-112A Validation
 
 on:
   pull_request:
     paths:
       - "app/calyx_orchestrator/executor.py"
       - "app/calyx_orchestrator/execution_bridge.py"
+      - "app/calyx_orchestrator/assignment_factory.py"
       - "app/calyx_orchestrator/scheduler.py"
       - "app/calyx_orchestrator/persisted_scheduler.py"
       - "app/calyx_orchestrator/program_core.py"
       - "app/calyx_orchestrator/program_worker.py"
+      - "app/calyx_orchestrator/program_routes.py"
       - "app/calyx_orchestrator/program_models.py"
       - "app/calyx_orchestrator/operations.py"
       - "app/calyx_orchestrator/engineering_core.py"
       - "tests/test_calyx_governed_executor.py"
       - "tests/test_calyx_execution_bridge.py"
+      - "tests/test_calyx_governed_assignment_factory.py"
       - "tests/test_calyx_dependency_scheduler.py"
       - "tests/test_calyx_persisted_scheduler.py"
       - "tests/test_calyx_engineering_program_worker.py"
@@ -45,14 +48,17 @@ jobs:
           python -m py_compile \
             app/calyx_orchestrator/executor.py \
             app/calyx_orchestrator/execution_bridge.py \
+            app/calyx_orchestrator/assignment_factory.py \
             app/calyx_orchestrator/scheduler.py \
             app/calyx_orchestrator/persisted_scheduler.py \
             app/calyx_orchestrator/program_core.py \
             app/calyx_orchestrator/program_worker.py \
+            app/calyx_orchestrator/program_routes.py \
             app/calyx_orchestrator/operations.py \
             app/calyx_orchestrator/engineering_core.py \
             tests/test_calyx_governed_executor.py \
             tests/test_calyx_execution_bridge.py \
+            tests/test_calyx_governed_assignment_factory.py \
             tests/test_calyx_dependency_scheduler.py \
             tests/test_calyx_persisted_scheduler.py
       - name: Ruff
@@ -60,12 +66,15 @@ jobs:
           ruff check \
             app/calyx_orchestrator/executor.py \
             app/calyx_orchestrator/execution_bridge.py \
+            app/calyx_orchestrator/assignment_factory.py \
             app/calyx_orchestrator/scheduler.py \
             app/calyx_orchestrator/persisted_scheduler.py \
             app/calyx_orchestrator/program_worker.py \
+            app/calyx_orchestrator/program_routes.py \
             app/calyx_orchestrator/operations.py \
             tests/test_calyx_governed_executor.py \
             tests/test_calyx_execution_bridge.py \
+            tests/test_calyx_governed_assignment_factory.py \
             tests/test_calyx_dependency_scheduler.py \
             tests/test_calyx_persisted_scheduler.py
       - name: Focused tests
@@ -73,6 +82,7 @@ jobs:
           pytest -q \
             tests/test_calyx_governed_executor.py \
             tests/test_calyx_execution_bridge.py \
+            tests/test_calyx_governed_assignment_factory.py \
             tests/test_calyx_dependency_scheduler.py \
             tests/test_calyx_persisted_scheduler.py \
             tests/test_calyx_engineering_program_worker.py \
