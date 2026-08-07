@@ -16,6 +16,10 @@ REQUIRED_FRAGMENTS = (
     "human_review_required BOOLEAN NOT NULL DEFAULT TRUE CHECK (human_review_required = TRUE)",
     "candidate_knowledge_promoted BOOLEAN NOT NULL DEFAULT FALSE CHECK (candidate_knowledge_promoted = FALSE)",
     "publication_performed BOOLEAN NOT NULL DEFAULT FALSE CHECK (publication_performed = FALSE)",
+    "reviewer_capability TEXT NOT NULL",
+    "reviewer_roles JSONB NOT NULL DEFAULT '[]'::jsonb",
+    "reviewer_qualifications JSONB NOT NULL DEFAULT '[]'::jsonb",
+    "reviewer_capability IN ('review.science','review.expert','review.publish')",
     "UNIQUE (session_id, sequence_no)",
     "UNIQUE (session_id, session_revision)",
 )
@@ -47,7 +51,7 @@ def main() -> int:
             print(f"ERROR: {error}")
         return 1
     print(f"VALID: {MIGRATION}")
-    print("Durable University migration preserves review and publication safeguards.")
+    print("Durable University migration preserves review authorization and publication safeguards.")
     return 0
 
 
