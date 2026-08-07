@@ -1,0 +1,53 @@
+name: CALYX-CORE-REBASE-004 Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/routers/calyx_operator_workflow.py"
+      - "app/routers/calyx_core.py"
+      - "app/reasoning_publication/eligibility.py"
+      - "app/reasoning_publication/routes.py"
+      - "tests/test_calyx_core_rebase_004.py"
+      - "docs/brain/CALYX-CORE-REBASE-004.md"
+      - ".github/workflows/calyx-core-rebase-004.yml"
+  push:
+    branches: [feature/calyx-core-rebase-004]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile operator facade
+        run: >-
+          python -m py_compile
+          app/routers/calyx_operator_workflow.py
+          app/reasoning_publication/eligibility.py
+          app/reasoning_publication/routes.py
+          app/routers/calyx_core.py
+          tests/test_calyx_core_rebase_004.py
+      - name: Focused operator tests
+        run: python -m pytest -q tests/test_calyx_core_rebase_004.py
+      - name: Reasoning publication regression
+        run: python -m pytest -q tests/test_calyx_brain_003_migration.py tests/test_build_088e_publication_operational_readiness.py
+      - name: Ruff operator slice
+        run: >-
+          python -m ruff check
+          app/routers/calyx_operator_workflow.py
+          app/reasoning_publication/eligibility.py
+          app/reasoning_publication/routes.py
+          tests/test_calyx_core_rebase_004.py
+      - name: Diff hygiene
+        run: git diff --check
