@@ -1,0 +1,49 @@
+name: CALYX-CORE-REBASE-003 Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/brain_mission/**"
+      - "app/brain/routes.py"
+      - "tests/test_calyx_core_rebase_003.py"
+      - "docs/brain/CALYX-CORE-REBASE-003.md"
+      - ".github/workflows/calyx-core-rebase-003.yml"
+  push:
+    branches: [feature/calyx-core-rebase-003]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile Brain mission slice
+        run: >-
+          python -m py_compile
+          app/brain_mission/service.py
+          app/brain_mission/routes.py
+          app/brain_mission/api.py
+          app/brain/routes.py
+          tests/test_calyx_core_rebase_003.py
+      - name: Focused Brain mission tests
+        run: python -m pytest -q tests/test_calyx_core_rebase_003.py
+      - name: Ruff Brain mission slice
+        run: >-
+          python -m ruff check
+          app/brain_mission/service.py
+          app/brain_mission/routes.py
+          app/brain_mission/api.py
+          tests/test_calyx_core_rebase_003.py
+      - name: Diff hygiene
+        run: git diff --check
