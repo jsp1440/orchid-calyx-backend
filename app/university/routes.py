@@ -7,7 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.routers.health import add_mission_control_cors_headers
 from app.security import verify_owner_or_api_key
 
+from .activation_service import UniversityActivationService
 from .config import session_writes_enabled, university_enabled
+from .durable_config import durable_sessions_enabled
 from .fixtures import CHAPTER, LABORATORY
 from .release import release_readiness
 from .schemas import (
@@ -16,6 +18,8 @@ from .schemas import (
     InvestigationEventCreate,
     LabSession,
     SessionCreate,
+    SessionReviewCreate,
+    SessionSubmit,
     UniversityCapability,
 )
 from .service import UniversityServiceError, UniversitySessionService
@@ -29,9 +33,12 @@ Auth = Annotated[dict, Depends(verify_owner_or_api_key)]
 
 
 def capability() -> UniversityCapability:
+    durable = durable_sessions_enabled()
     return UniversityCapability(
         enabled=university_enabled(),
         session_writes_enabled=session_writes_enabled(),
+        persistence="postgres_durable" if durable else "process_local_memory",
+        durable_sessions_enabled=durable,
     )
 
 
@@ -54,6 +61,18 @@ def require_session_writes() -> None:
             detail={
                 "code": "UNIVERSITY_SESSION_WRITES_DISABLED",
                 "message": "Prototype session writes are disabled",
+            },
+        )
+
+
+def require_durable_sessions() -> None:
+    require_session_writes()
+    if not durable_sessions_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "DURABLE_UNIVERSITY_DISABLED",
+                "message": "Durable University activation requires verified production release evidence",
             },
         )
 
@@ -125,7 +144,7 @@ def laboratory(laboratory_id: str, request: Request):
 def create_session(payload: SessionCreate, request: Request, auth: Auth):
     require_session_writes()
     actor, _ = actor_identity(auth)
-    return invoke(request, lambda: UniversitySessionService.create_session(actor, payload))
+    return invoke(request, lambda: UniversityActivationService.create_session(actor, payload))
 
 
 @router.get("/sessions/{session_id}", response_model=LabSession)
@@ -134,7 +153,7 @@ def get_session(session_id: str, request: Request, auth: Auth):
     actor, privileged = actor_identity(auth)
     return invoke(
         request,
-        lambda: UniversitySessionService.get_session(session_id, actor, privileged),
+        lambda: UniversityActivationService.get_session(session_id, actor, privileged),
     )
 
 
@@ -149,7 +168,44 @@ def append_event(
     actor, privileged = actor_identity(auth)
     return invoke(
         request,
-        lambda: UniversitySessionService.append_event(
+        lambda: UniversityActivationService.append_event(
+            session_id, actor, privileged, payload
+        ),
+    )
+
+
+@router.post("/sessions/{session_id}/submit", response_model=LabSession)
+def submit_session(
+    session_id: str,
+    payload: SessionSubmit,
+    request: Request,
+    auth: Auth,
+):
+    require_durable_sessions()
+    actor, privileged = actor_identity(auth)
+    if privileged:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "LEARNER_SUBMISSION_ACTOR_REQUIRED"},
+        )
+    return invoke(
+        request,
+        lambda: UniversityActivationService.submit_session(session_id, actor, payload),
+    )
+
+
+@router.post("/sessions/{session_id}/reviews")
+def review_session(
+    session_id: str,
+    payload: SessionReviewCreate,
+    request: Request,
+    auth: Auth,
+):
+    require_durable_sessions()
+    actor, privileged = actor_identity(auth)
+    return invoke(
+        request,
+        lambda: UniversityActivationService.review_session(
             session_id, actor, privileged, payload
         ),
     )
