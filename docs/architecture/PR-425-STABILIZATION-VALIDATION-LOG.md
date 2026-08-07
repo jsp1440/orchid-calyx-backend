@@ -40,6 +40,11 @@ Current state:
 - local compile and focused pytest evidence exists
 - latest GitHub workflow runs are `action_required` with no jobs; repository-side approval is required before authoritative Ruff and pytest execution
 
+Reviewer next action:
+
+- approve the pending GitHub Actions workflows for PR #487
+- do not merge until the approved run completes successfully
+
 ### PR #488 — Slice 2: Governance and Persistence
 
 Scope:
@@ -62,6 +67,11 @@ Current state:
 - temporarily non-mergeable because the stacked base advanced during Slice 1 repairs
 - do not force-rewrite; reconcile by a reviewed restack or clean replacement branch after Slice 1 CI approval
 
+Reviewer next action:
+
+- complete Slice 1 workflow approval first
+- then restack Slice 2 onto the accepted Slice 1 head and rerun focused validation
+
 ### PR #489 — Slice 3: Governed Orchestration
 
 Scope:
@@ -77,6 +87,10 @@ Current state:
 - temporarily non-mergeable because Slices 1 and 2 advanced
 - workflow invocation standardized to the active Python environment
 - independent validation remains after lower slices are reconciled
+
+Reviewer next action:
+
+- do not restack or validate Slice 3 until Slice 2 has a stable accepted head
 
 ## CI conclusion
 
