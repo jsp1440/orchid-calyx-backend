@@ -2,8 +2,9 @@
 
 Date: 2026-08-07
 Authoritative issue: #416
-Authoritative PR: #417
-Branch: `feature/literature-matrix-vision-engines`
+Authoritative PR: #571
+Superseded PR: #417
+Branch: `feature/literature-matrix-vision-current-main-release`
 
 ## Purpose
 
@@ -52,7 +53,7 @@ Record the implemented state of the Literature Intelligence, Matrix Identificati
 
 ## Protected execution API
 
-All execution routes require owner/API-key authentication and create governed operation records that enter human review:
+Deterministic execution routes require owner/API-key authentication and create governed operation records that enter human review:
 
 - `POST /api/mission-control/multimodal-intelligence/literature/validate`
 - `POST /api/mission-control/multimodal-intelligence/matrix/rank`
@@ -60,6 +61,8 @@ All execution routes require owner/API-key authentication and create governed op
 - `POST /api/mission-control/multimodal-intelligence/identify`
 
 These endpoints execute deterministic engine logic only. They do not activate live providers, publish scientific knowledge, mutate taxonomy, or write the production Knowledge Graph.
+
+Human review is stricter than execution authentication: `POST /operations/{operation_id}/review` requires a signed owner session. Backend API-key authentication cannot approve review. The reviewer identity is derived from the signed owner-session actor and is not accepted from caller-controlled request data.
 
 ## Operator, persistence, and governance layer
 
@@ -72,6 +75,7 @@ These endpoints execute deterministic engine logic only. They do not activate li
 - inactive Postgres schema supplied for later governed migration;
 - human-review queue with pagination and filtering;
 - approve/request-revision/reject transitions;
+- signed owner-session-derived reviewer identity;
 - audit export and per-operation provenance bundles;
 - deterministic benchmark case registry;
 - non-executing Candidate Knowledge promotion plans;
@@ -94,14 +98,32 @@ The following remain disabled by design:
 
 The lane uses fixture-backed deterministic tests and CI covering compile, Ruff, scientific contracts, typed API contracts, Matrix scoring, Vision licensing, abstention, operator review behavior, route mounting, provenance, promotion gates, persistence construction, and the Document Intelligence bridge. The full Mission Control router is mounted in `app.main` through the health router.
 
-GitHub-hosted runners experienced a repository-wide allocation incident earlier on 2026-08-07. Once runner execution resumed, the focused workflow exposed real code and contract defects that had previously been hidden by the infrastructure failure. The recovery work corrected:
+The original #417 implementation passed executable run `31216240089` on implementation head `2f6d202501d8f1d2eb39d571291f3f642c92fbd3`: dependency installation, compile, Ruff, 41 focused tests, persistence-schema smoke, Brain-record smoke, real-app route smoke, and cleanup all succeeded.
 
-- Python 3.13 compatibility by importing `Protocol` from `typing` rather than `collections.abc`;
-- the older priority-10 review-queue assertion to the current paginated review-queue contract;
-- the abstention test so it exercises genuine candidate ambiguity rather than an invalid threshold outside the API contract;
-- the benchmark assertion so it verifies the explicit `identification-abstention` fixture case exposed by the current benchmark contract.
+## Current-main release recovery
 
-Executable validation run `31216240089` completed successfully on 2026-08-07 for implementation head `2f6d202501d8f1d2eb39d571291f3f642c92fbd3`. It passed dependency installation, compile, Ruff, all 41 focused tests, persistence-schema smoke, Brain-record smoke, real-app route smoke, and job cleanup. The earlier runner outage is therefore no longer a validation blocker for this lane.
+PR #417 later became non-mergeable after substantial mainline advancement. PR #571 was rebuilt directly from authoritative main `3e617d644cefc9a106ebb9cb604b428d3bf63bb2` rather than forcing the stale branch.
+
+The rebuild preserved the 23 additive multimodal source/workflow/test/migration/Brain blobs from the validated implementation byte-for-byte. The only shared application file, `app/routers/health.py`, was reconciled against current main so all newer Conservatory, Matrix Identification, Matrix Relationship, telemetry, archive, platform, and governance routes remain mounted while the multimodal router is added.
+
+During current-main review, a governance defect was found and corrected before release: the old review request accepted a caller-supplied `reviewer` string despite authenticated access. PR #571 removes that trusted field, requires `auth_type=owner_session` for review decisions, derives the reviewer from the signed authentication principal, rejects API-key review with `HUMAN_REVIEW_OWNER_SESSION_REQUIRED`, and rejects missing owner identity with `HUMAN_REVIEW_IDENTITY_REQUIRED`. Focused tests cover both allowed and fail-closed paths.
+
+Exact implementation head `a4785a0f68a65f61c7d0a2540e0cf3ee578c0662` passed all 12 triggered workflows:
+
+- Literature Matrix Vision Engines Validation `31223893116` — success;
+- CALYX Workflow Governance Audit `31223893175` — success;
+- BUILD-088E Validation `31223893201` — success;
+- CALYX-AUTONOMY-DEPLOYMENT-001 `31223893128` — success;
+- WORLD-PLANTS-UPLOAD-001 `31223893167` — success;
+- CONSERVATORY-MVP-001 `31223893182` — success;
+- MATRIX-IDENTIFICATION-MVP-001 `31223893178` — success;
+- MATRIX-RELATIONSHIP-MVP-001 `31223893155` — success;
+- OC-PARALLEL-PLATFORM-001 Validation `31223893230` — success;
+- BUILD-080 Archive Validation `31223893212` — success;
+- BUILD-074 validation `31223893226` — success;
+- BUILD-070 Validation `31223893197` — success.
+
+The dedicated multimodal workflow passed dependency installation, compile, Ruff, the expanded focused test set, persistence-schema smoke, Brain-record smoke, real-app route smoke, and cleanup. The cross-platform matrix establishes that the current-main health-router reconciliation does not regress the newer routed systems.
 
 ## Remaining production dependencies
 
