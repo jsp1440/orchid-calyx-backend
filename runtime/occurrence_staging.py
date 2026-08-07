@@ -146,12 +146,12 @@ def stage_occurrence_batch(
         seen.add(checksum)
 
         canonical_taxon_id, reconciliation_state = _reconcile_taxon(record, canonical_lookup)
-        if reconciliation_state == "unresolved":
+        if reconciliation_state != "resolved":
             review_queue.append(OccurrenceReviewItem(
                 source=source,
                 source_record_id=src_id,
                 scientific_name=sci_name,
-                reason="No canonical taxon match for accepted_name or scientific_name.",
+                reason=f"Canonical taxon resolution required ({reconciliation_state}).",
             ))
 
         event_date = record.get("event_date")
