@@ -101,4 +101,20 @@ Earlier clean slices established passing compile, Ruff, and focused pytest evide
 
 The authoritative evidence bridge/test files and the authoritative Canonical completion module were independently compiled with `python -m py_compile` in the implementation environment and passed syntax compilation. Ruff is not installed in that environment, so lint is not claimed as locally validated.
 
-At the current GitHub head, Actions is creating workflow runs but terminating them before any job step is instantiated, including the unrelated legacy BUILD-088E workflow. That state is recorded as an external validation-execution blocker rather than a passing or failing code result.
+## GitHub-hosted runner incident — 2026-08-07
+
+The CI failure mode has been isolated beyond the Canonical Brain code path.
+
+Evidence:
+
+- PR #516 head `65d6de2c157d755751f94a8a1b08386ca37d94a1` successfully completed seven GitHub Actions workflows immediately before the incident window, including BUILD-088E Validation.
+- PR #525 then began producing `failure` conclusions where the job object contained `steps=null` and never reached checkout or any validation command.
+- unrelated PR #527 exhibits the same zero-step failure across multiple existing workflows.
+- a temporary `Actions Runner Smoke` workflow containing only one `ubuntu-latest` job and one `echo` step was added to PR #525. The workflow was parsed and queued, but the job completed with `failure` and `steps=null`; its only echo step never instantiated.
+- the temporary smoke workflow was removed after the diagnostic result was captured.
+
+This rules out Canonical Brain application code, Python version, package installation, cache behavior, checkout, secrets, pytest, and Ruff as causes of the **zero-step** termination.
+
+The remaining boundary is GitHub-hosted runner allocation or repository/account Actions policy. Because the repository is private and the incident began after substantial successful Actions activity, Actions minutes/spending/billing is a plausible explanation, but it is not proven by the available API. Runner policy or account-level Actions restrictions remain possible alternatives.
+
+The incident is tracked in GitHub issue #533. PR #525 must remain draft and unmerged until GitHub-hosted runner execution is restored and authoritative compile/Ruff/pytest can execute on the current head.
