@@ -1,14 +1,14 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.database import Base
-from app.calyx_orchestrator.models import CalyxJob
+from app.calyx_orchestrator.models import CalyxFinding, CalyxJob
 from app.calyx_orchestrator.operations import operational_status
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
     CalyxProgramDependency,
     CalyxProgramJob,
 )
+from app.database import Base
 
 
 def _session() -> Session:
@@ -17,6 +17,7 @@ def _session() -> Session:
         engine,
         tables=[
             CalyxJob.__table__,
+            CalyxFinding.__table__,
             CalyxProgram.__table__,
             CalyxProgramJob.__table__,
             CalyxProgramDependency.__table__,
