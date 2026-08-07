@@ -17,7 +17,7 @@ def assignment(status: str = "running") -> BuildAssignment:
     )
 
 
-def test_dry_run_executor_is_deterministic() -> None:
+def test_dry_run_executor_is_deterministic_non_authoritative_preflight() -> None:
     executor = DeterministicDryRunExecutor({"brain.executor.dry-run"})
     request = ExecutionRequest(
         assignment=assignment(),
@@ -30,10 +30,14 @@ def test_dry_run_executor_is_deterministic() -> None:
     second = executor.execute(request)
     assert first == second
     assert first.dry_run is True
-    assert first.receipt.outcome == "completed"
-    assert first.receipt.evidence_uris == ["brain://builds/108"]
+    assert first.authoritative is False
+    assert first.state == "delivered"
+    assert first.outcome == "DELIVERED"
+    assert first.evidence_uris == ["brain://builds/108"]
+    assert first.output["mode"] == "dry_run"
+    assert first.output["side_effects"] == []
     assert len(first.input_checksum) == 64
-    assert len(first.receipt.output_checksum or "") == 64
+    assert len(first.output_checksum) == 64
 
 
 def test_executor_rejects_unsupported_capability() -> None:
