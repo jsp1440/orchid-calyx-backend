@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.security import verify_owner_or_api_key
 
+from .assignment_factory import assignment_payload, governed_assignment_from_claimed_job
 from .program_repository import PersistentProgramRepository, ProgramJobSpec
 from .program_worker import PersistentProgramWorker
 
@@ -115,9 +116,28 @@ def _worker_job(job) -> dict:
 
 @router.post("/workers/claim")
 def claim_program_job(payload: WorkerClaimRequest, auth: AuthDependency, db: DbDependency) -> dict:
-    _owner(auth)
-    job = PersistentProgramWorker(db).claim(worker_id=payload.worker_id, lease_seconds=payload.lease_seconds)
-    return {"claimed": job is not None, "job": _worker_job(job) if job else None}
+    owner = _owner(auth)
+    job = PersistentProgramWorker(db).claim(
+        worker_id=payload.worker_id,
+        lease_seconds=payload.lease_seconds,
+        owner=owner,
+    )
+    if job is None:
+        return {"claimed": False, "job": None, "assignment": None}
+    try:
+        assignment = governed_assignment_from_claimed_job(
+            db,
+            owner=owner,
+            job=job,
+            timeout_seconds=payload.lease_seconds,
+        )
+    except (LookupError, PermissionError, ValueError) as exc:
+        raise _translate_error(exc) from exc
+    return {
+        "claimed": True,
+        "job": _worker_job(job),
+        "assignment": assignment_payload(assignment),
+    }
 
 
 @router.post("/workers/jobs/{program_job_id}/heartbeat")
