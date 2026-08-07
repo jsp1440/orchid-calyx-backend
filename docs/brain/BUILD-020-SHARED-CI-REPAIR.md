@@ -32,12 +32,17 @@ Results on head `4a6812e5d05326faf22346c83c7a8a0f8b28bbf3`:
 2. BUILD-090C import ordering is normalized in both reported test files.
 3. BUILD-087B retains focused PostgreSQL validation and the BUILD-082–087 regression matrix as blocking gates. The repository-wide backend suite is retained as an informational, non-gating audit because it currently combines unrelated legacy route expectations, deliberate expected-failure certification tests, optional async-test dependency gaps, schema assumptions from newer modules, and other cross-lane baseline debt.
 4. BUILD-087B installs `pytest-asyncio` so the informational baseline produces a more accurate signal rather than failing simply because the async pytest plugin is absent.
+5. Repository-wide baseline restoration is tracked separately in issue #524; the informational audit remains visible and is not represented as passing.
 
 The informational repository-wide audit must not be represented as passing until its separately tracked baseline debt is repaired. Making it non-gating does not waive the focused or historical BUILD-082–087 regression gates.
 
+## Final synchronization
+
+After the last BUILD-090C Ruff correction, automation authored head `826ac32d7cb3bb4c273d42eba004e66dc17054f8`, causing GitHub to return `action_required` before creating workflow jobs. This owner-authored documentation-only commit intentionally triggers authoritative validation of that exact functional code state. No validation conclusion from an earlier head is carried forward.
+
 ## Validation rule
 
-PR #509 remains unmerged unless BUILD-087B, BUILD-088E, BUILD-089A/B/C, and BUILD-090B/C all complete successfully on the final unchanged head. The BUILD-087B repository-wide informational audit may report failures without changing the lane verdict, provided the focused and regression gates pass.
+PR #509 remains unmerged unless BUILD-087B, BUILD-088E, BUILD-089A/B/C, and BUILD-090B/C all complete successfully on the final unchanged owner-authored head. The BUILD-087B repository-wide informational audit may report failures without changing the lane verdict, provided the focused and regression gates pass.
 
 ## Governance
 
