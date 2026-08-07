@@ -16,6 +16,10 @@ from .repository_evidence_executor import (
     REPOSITORY_EVIDENCE_ROLE,
     RepositoryEvidenceExecutor,
 )
+from .static_validation_executor import (
+    STATIC_VALIDATION_ROLE,
+    IsolatedWorkspaceStaticValidationExecutor,
+)
 
 AUTONOMY_PROBE_ROLE = "autonomy_probe"
 
@@ -64,6 +68,7 @@ class RegisteredExecutor:
     authoritative: bool
     external_side_effects: bool
     workspace_mutation: bool = False
+    repository_code_execution: bool = False
 
 
 class AuthoritativeExecutorRegistry:
@@ -81,6 +86,10 @@ class AuthoritativeExecutorRegistry:
             repository_name=repository_name,
         )
         isolated_patcher = IsolatedWorkspacePatchExecutor(
+            workspace_root=workspace_root,
+            repository_name=repository_name,
+        )
+        static_validator = IsolatedWorkspaceStaticValidationExecutor(
             workspace_root=workspace_root,
             repository_name=repository_name,
         )
@@ -103,6 +112,14 @@ class AuthoritativeExecutorRegistry:
                 authoritative=True,
                 external_side_effects=False,
                 workspace_mutation=True,
+            ),
+            STATIC_VALIDATION_ROLE: RegisteredExecutor(
+                role_key=STATIC_VALIDATION_ROLE,
+                executor=static_validator,
+                authoritative=True,
+                external_side_effects=False,
+                workspace_mutation=False,
+                repository_code_execution=False,
             ),
         }
 
@@ -132,6 +149,7 @@ class AuthoritativeExecutorRegistry:
                     "authoritative": registered.authoritative,
                     "external_side_effects": registered.external_side_effects,
                     "workspace_mutation": registered.workspace_mutation,
+                    "repository_code_execution": registered.repository_code_execution,
                 }
                 for registered in sorted(self._by_role.values(), key=lambda item: item.role_key)
             ],
