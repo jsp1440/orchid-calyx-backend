@@ -12,7 +12,10 @@ from app.calyx_orchestrator.brain_capture import (
 )
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
 from app.calyx_orchestrator.executor import ExecutionReceipt, ExecutionState
-from app.calyx_orchestrator.executor_registry import RegisteredExecutor
+from app.calyx_orchestrator.executor_registry import (
+    AuthoritativeExecutorRegistry,
+    RegisteredExecutor,
+)
 from app.calyx_orchestrator.review_eligibility import ReviewClass, ReviewRequest
 
 
@@ -37,6 +40,18 @@ def _receipt_id(receipt: ExecutionReceipt) -> str:
         receipt.input_checksum,
         receipt.output_checksum,
     )
+
+
+def _require_authoritative_executor(
+    receipt: ExecutionReceipt,
+    executor_role_key: str,
+) -> RegisteredExecutor:
+    registered = AuthoritativeExecutorRegistry().require_authoritative(executor_role_key)
+    if registered.external_side_effects:
+        raise PermissionError("EXTERNAL_SIDE_EFFECT_EXECUTOR_EVIDENCE_PROHIBITED")
+    if receipt.executor_key != registered.executor.executor_key:
+        raise ValueError("EXECUTION_RECEIPT_EXECUTOR_MISMATCH")
+    return registered
 
 
 def _canonical_receipt_payload(
@@ -70,22 +85,17 @@ def _canonical_receipt_payload(
 def build_execution_evidence_package(
     receipt: ExecutionReceipt,
     *,
-    registered_executor: RegisteredExecutor,
+    executor_role_key: str,
     build_id: str,
     agent_id: str,
     requested_by: str,
     producer_id: str,
     required_review_classes: tuple[ReviewClass, ...] = (ReviewClass.OPERATIONAL,),
 ) -> ExecutionEvidencePackage:
-    """Translate verified authoritative Calyx execution into reviewed Brain candidate evidence."""
+    """Translate allowlisted authoritative Calyx execution into reviewed Brain evidence."""
 
     receipt.verify()
-    if not registered_executor.authoritative:
-        raise PermissionError("NON_AUTHORITATIVE_EXECUTOR_EVIDENCE_PROHIBITED")
-    if registered_executor.external_side_effects:
-        raise PermissionError("EXTERNAL_SIDE_EFFECT_EXECUTOR_EVIDENCE_PROHIBITED")
-    if receipt.executor_key != registered_executor.executor.executor_key:
-        raise ValueError("EXECUTION_RECEIPT_EXECUTOR_MISMATCH")
+    registered_executor = _require_authoritative_executor(receipt, executor_role_key)
     if receipt.state != ExecutionState.DELIVERED or receipt.outcome != TerminalOutcome.DELIVERED:
         raise ValueError("ONLY_AUTHORITATIVE_DELIVERED_RECEIPTS_ARE_EVIDENCE_ELIGIBLE")
     if not receipt.evidence_uris:
