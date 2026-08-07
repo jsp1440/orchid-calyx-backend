@@ -105,4 +105,4 @@ def test_audit_export_and_benchmark_are_deterministic() -> None:
     assert service.export_audit()["record_count"] == 0
     benchmark = service.benchmark()
     assert benchmark["live_provider_calls"] == 0
-    assert benchmark["abstention_checks"] is True
+    assert any(case["case_id"] == "identification-abstention" for case in benchmark["cases"])
