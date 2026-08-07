@@ -1,0 +1,1 @@
+This consolidation intentionally follows current `main` rather than merging stale stacked history. The next change must not begin until the current branch receives executable CI evidence.
