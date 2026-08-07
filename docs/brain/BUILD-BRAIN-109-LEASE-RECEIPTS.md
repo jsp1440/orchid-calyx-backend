@@ -23,6 +23,8 @@ Reuse the existing durable `CalyxProgramJob` lease fields and `PersistentProgram
 
 Focused tests cover delivered receipt completion, dependency release, receipt identity mismatch, cancellation receipt persistence, stale replay rejection, and timeout classification. The BUILD-BRAIN-108 workflow was expanded to install project dependencies and validate BUILD-BRAIN-108 and BUILD-BRAIN-109 together.
 
+Validation synchronization on 2026-08-06: PR #484 was retargeted to current `main` after BUILD-BRAIN-108 merged, and this owner-authored Brain update triggers validation of the exact receipt-bridge head without an automation-origin approval gate.
+
 ## Dependencies and next work
 
 BUILD-BRAIN-110 may consume terminal receipt outcomes and durable dependency states to compute deterministic runnable order and critical-path projections. Production activation remains gated by review, merge, migration, and deployment policy.
