@@ -11,7 +11,10 @@ from app.calyx_orchestrator.brain_capture import (
     BrainRecordType,
 )
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
-from app.calyx_orchestrator.executor import ExecutionReceipt, ExecutionState
+from app.calyx_orchestrator.executor import (
+    ExecutionReceipt as CalyxAuthoritativeExecutionReceipt,
+)
+from app.calyx_orchestrator.executor import ExecutionState
 from app.calyx_orchestrator.executor_registry import (
     AuthoritativeExecutorRegistry,
     RegisteredExecutor,
@@ -30,7 +33,7 @@ def _stable_id(*parts: str) -> str:
     return hashlib.sha256(":".join(parts).encode("utf-8")).hexdigest()
 
 
-def _receipt_id(receipt: ExecutionReceipt) -> str:
+def _receipt_id(receipt: CalyxAuthoritativeExecutionReceipt) -> str:
     return _stable_id(
         "authoritative-execution",
         receipt.assignment_id,
@@ -43,7 +46,7 @@ def _receipt_id(receipt: ExecutionReceipt) -> str:
 
 
 def _require_authoritative_executor(
-    receipt: ExecutionReceipt,
+    receipt: CalyxAuthoritativeExecutionReceipt,
     executor_role_key: str,
 ) -> RegisteredExecutor:
     registered = AuthoritativeExecutorRegistry().require_authoritative(executor_role_key)
@@ -55,7 +58,7 @@ def _require_authoritative_executor(
 
 
 def _canonical_receipt_payload(
-    receipt: ExecutionReceipt,
+    receipt: CalyxAuthoritativeExecutionReceipt,
     *,
     receipt_id: str,
     registered_executor: RegisteredExecutor,
@@ -80,7 +83,7 @@ def _canonical_receipt_payload(
 
 
 def build_execution_evidence_package(
-    receipt: ExecutionReceipt,
+    receipt: CalyxAuthoritativeExecutionReceipt,
     *,
     executor_role_key: str,
     requested_by: str,
