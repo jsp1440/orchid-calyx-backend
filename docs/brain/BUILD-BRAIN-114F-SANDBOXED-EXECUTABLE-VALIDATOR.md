@@ -8,15 +8,15 @@ Advance Calyx from static post-patch validation to bounded executable validation
 
 - Added the authoritative `isolated_workspace_executable_validator` role.
 - Added a fail-closed sandbox marker contract bound to the exact repository and `autonomy/*` branch.
-- The marker must assert that the external runtime has disabled network access, removed credentials, disabled shell access and package installation, and enforced subprocess confinement.
-- Caller-supplied command strings are never executed. The only command sources are internal argv presets.
+- The marker must assert that the external runtime has disabled network access, removed credentials, disabled shell access and package installation, enforced subprocess confinement, and mounted/enforced the repository read-only during executable validation.
+- Caller-supplied command strings and argv are never executed. The only command sources are internal presets.
 - Current presets are:
   - `pytest`: `python -m pytest -q -p no:cacheprovider <explicit test paths>`;
   - `ruff`: `python -m ruff check --no-cache <explicit app/test paths>`.
 - Validation targets are limited to `app/` and `tests/`, bounded by file count and byte ceilings, and bound to exact SHA-256 post-patch hashes.
 - Targets are rehashed after command completion; any change aborts authoritative validation.
 - Checkout branch/commit identity is verified before and after execution.
-- Environment inheritance is disabled. The child receives only a minimal explicit Python validation environment.
+- Environment inheritance is disabled. The child receives only a minimal explicit Python validation environment; pytest plugin autoloading and Python bytecode writes are disabled.
 - Stdin is closed, `shell=False`, execution timeout is capped, and captured stdout/stderr are bounded and represented by hashes/byte counts in the receipt rather than copied into durable evidence.
 - A non-zero validator result becomes an authoritative `BLOCKED` receipt rather than an exception masquerading as infrastructure failure.
 - Timeout becomes an authoritative blocked/timed-out receipt.
@@ -34,6 +34,20 @@ BUILD-BRAIN-114E already persists bounded per-job input manifests. BUILD-BRAIN-1
 
 The validation role is therefore claimable through the same lease-governed autonomous program cycle as the earlier read/patch/static-validation roles.
 
+An end-to-end focused test now encodes this durable sequence:
+
+1. claim a bounded patch job;
+2. apply one exact preimage-bound change in the isolated worktree;
+3. persist its authoritative receipt and release the dependency;
+4. statically validate the exact postimage and Python syntax;
+5. persist that receipt and release the executable-validation dependency;
+6. invoke the internally selected fixed pytest preset in the trusted sandbox boundary;
+7. persist the executable-validation receipt;
+8. complete the governed program when validation succeeds;
+9. block the program when the executable validator returns non-zero.
+
+No merge, deployment, or publication authority is introduced by completion of that program.
+
 ## Validation surface
 
 Focused tests cover:
@@ -50,11 +64,13 @@ Focused tests cover:
 - mutating-job rejection;
 - missing execution-capability rejection;
 - registry capability truthfulness;
-- persisted-program assignment grants execution authority only to the sandboxed validator.
+- persisted-program assignment grants execution authority only to the sandboxed validator;
+- patch → static validation → executable validation dependency release and completion;
+- executable validation failure → governed program blocked.
 
 ## Important trust boundary
 
-This Python adapter **does not create an OS/network sandbox by itself**. It is authoritative only when launched in a pre-created trusted sandbox whose marker truthfully represents enforcement outside the process. A marker without actual runtime enforcement is not sufficient operationally. Production activation must therefore bind marker creation to the sandbox supervisor rather than user-controlled workspace content.
+This Python adapter **does not create an OS/network/filesystem sandbox by itself**. It is authoritative only when launched in a pre-created trusted sandbox whose marker truthfully represents enforcement outside the process. A marker without actual runtime enforcement is not sufficient operationally. Production activation must bind marker creation to the sandbox supervisor rather than user-controlled workspace content.
 
 Until that supervisor exists and is independently validated, this capability remains draft engineering infrastructure.
 
@@ -71,6 +87,7 @@ Still unauthorized:
 - package installation;
 - network access;
 - credential access;
+- repository writes during executable validation;
 - Git branch creation/switching/commit/push;
 - PR creation by Calyx;
 - merge;
