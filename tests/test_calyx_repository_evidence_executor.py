@@ -14,11 +14,14 @@ from app.calyx_orchestrator.program_models import (
     CalyxProgramDependency,
     CalyxProgramJob,
 )
-from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
 from app.calyx_orchestrator.repository_evidence_executor import (
+    REPOSITORY_EVIDENCE_ROLE,
     CheckoutIdentity,
     EvidenceTarget,
-    REPOSITORY_EVIDENCE_ROLE,
     RepositoryEvidenceExecutor,
 )
 from app.database import Base
