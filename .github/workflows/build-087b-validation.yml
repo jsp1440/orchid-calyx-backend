@@ -7,6 +7,7 @@ on:
       - "app/main.py"
       - "migrations/087b_context_preserving_interpretation.sql"
       - "tests/test_build_087b_scientific_interpretation.py"
+      - "tests/test_ci_baseline_001.py"
       - "docs/BUILD-087B-IMPLEMENTATION-REPORT.md"
       - ".github/workflows/build-087b-validation.yml"
   push:
@@ -35,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: pip install -r requirements.txt pytest httpx ruff
+      - run: pip install -r requirements.txt pytest pytest-asyncio httpx ruff
       - name: Provision isolated validation databases
         run: |
           createdb "$BUILD087_FOCUSED_DATABASE"
