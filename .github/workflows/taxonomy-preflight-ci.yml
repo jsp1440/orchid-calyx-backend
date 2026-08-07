@@ -44,6 +44,7 @@ jobs:
           python -m py_compile runtime/taxonomy_preflight_release_gate.py
           python -m py_compile runtime/taxonomy_preflight_readiness.py
           python -m py_compile runtime/taxonomy_preflight_reproducibility.py
+          python -m py_compile runtime/taxonomy_preflight_acceptance.py
 
       - name: Run focused unit tests
         run: |
@@ -52,7 +53,8 @@ jobs:
             tests.test_taxonomy_preflight_governance \
             tests.test_taxonomy_preflight_release_gate \
             tests.test_taxonomy_preflight_readiness \
-            tests.test_taxonomy_preflight_reproducibility -v
+            tests.test_taxonomy_preflight_reproducibility \
+            tests.test_taxonomy_preflight_acceptance -v
 
       - name: Run governed release-gate smoke validation
         shell: bash
@@ -121,8 +123,15 @@ jobs:
             --ci-validated \
             --output artifacts/readiness.json
           readiness_exit=$?
+          python -m runtime.taxonomy_preflight_acceptance artifacts/release-bundle \
+            --readiness artifacts/readiness.json \
+            --reproducibility artifacts/reproducibility.json \
+            --release-policy artifacts/ci-release.json \
+            --output artifacts/acceptance.json
+          acceptance_exit=$?
           set -e
           test "$readiness_exit" -eq 2
+          test "$acceptance_exit" -eq 2
           python - <<'PY'
           import json
           from pathlib import Path
@@ -133,6 +142,7 @@ jobs:
           spec = json.loads(Path('artifacts/azure-execution-spec.json').read_text())
           readiness = json.loads(Path('artifacts/readiness.json').read_text())
           reproducibility = json.loads(Path('artifacts/reproducibility.json').read_text())
+          acceptance = json.loads(Path('artifacts/acceptance.json').read_text())
           assert report['status'] == 'PASS'
           assert report['generated_at'] == '1970-01-01T00:00:00+00:00'
           assert receipt['review_reference'] == 'CI-REVIEW-459'
@@ -146,6 +156,13 @@ jobs:
           assert readiness['azure_provisioning_authorized'] is False
           assert reproducibility['reproducible'] is True
           assert reproducibility['publication_authorized'] is False
+          assert acceptance['decision'] == 'REVIEW_ONLY'
+          assert acceptance['release_bundle_verified'] is True
+          assert acceptance['reproducibility_verified'] is True
+          assert acceptance['azure_provisioning_authorized'] is False
+          assert acceptance['taxonomy_publication_authorized'] is False
+          assert acceptance['database_mutation_authorized'] is False
+          assert acceptance['production_migration_authorized'] is False
           PY
 
       - name: Upload governed smoke-test evidence
@@ -158,4 +175,5 @@ jobs:
             artifacts/azure-execution-spec.json
             artifacts/readiness.json
             artifacts/reproducibility.json
+            artifacts/acceptance.json
           retention-days: 7
