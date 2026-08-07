@@ -96,3 +96,24 @@ class ProgramAutonomyPolicy:
             "credential_access": False,
             "production_knowledge_graph_mutation": False,
         }
+
+
+def program_autonomy_status(environ: Mapping[str, str] | None = None) -> dict[str, object]:
+    try:
+        return {"valid": True, "error": None, **ProgramAutonomyPolicy.from_environ(environ).status()}
+    except ValueError as exc:
+        return {
+            "valid": False,
+            "error": str(exc),
+            "enabled": False,
+            "authorized": False,
+            "mode": "deterministic_dry_run_only",
+            "automatic_claim": False,
+            "automatic_execution": False,
+            "automatic_merge": False,
+            "automatic_deployment": False,
+            "automatic_publication": False,
+            "external_execution": False,
+            "credential_access": False,
+            "production_knowledge_graph_mutation": False,
+        }
