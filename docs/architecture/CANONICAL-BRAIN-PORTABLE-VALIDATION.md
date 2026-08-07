@@ -2,86 +2,96 @@
 
 ## Purpose
 
-Provide one deterministic validation entry point for the Canonical Brain integration that can run from GitHub Actions, Codespaces, Linux/macOS terminals, or Windows Python environments without maintaining separate compile/lint/test command sets.
+Provide one deterministic validation entry point for Canonical Brain across GitHub Actions, Codespaces, Linux/macOS, and Windows Python environments.
 
 ## Authoritative command
 
-```text
-python scripts/validate_canonical_brain.py
-```
+`python scripts/validate_canonical_brain.py`
 
-The GitHub Actions workflow delegates to this same command after installing its focused dependencies.
+GitHub Actions delegates to this same command after installing focused dependencies.
 
 ## Validation sequence
 
-The runner performs these gates in order and stops on the first failure:
+The validator fails closed and runs, in order:
 
-1. discovers every `tests/test_canonical_brain_*.py` file and fails closed if none exist;
-2. compiles `app/canonical_brain` recursively with the active Python interpreter;
-3. runs Ruff through the same interpreter with `python -m ruff`;
-4. runs the complete focused Canonical Brain test set through the same interpreter with `python -m pytest`.
+1. focused test discovery (`tests/test_canonical_brain_*.py`);
+2. validation-input existence checks;
+3. SHA-256 fingerprinting of every Canonical Brain source, focused test, validator script, and validation workflow;
+4. recursive compilation of `app/canonical_brain`;
+5. Ruff through `python -m ruff`;
+6. focused pytest through `python -m pytest`.
 
-Using `python -m ...` prevents accidental use of a different Ruff or pytest installation from another environment.
+Using `python -m ...` keeps compile, lint, and tests bound to the same Python environment.
 
 ## Machine-readable receipt
 
-By default the validator writes:
+Default path:
 
 `artifacts/validation/canonical-brain-validation.json`
 
-The destination can be overridden with `CANONICAL_BRAIN_VALIDATION_RECEIPT`.
+Override:
 
-The receipt records:
+`CANONICAL_BRAIN_VALIDATION_RECEIPT`
 
-- validator schema version;
+Receipt schema `1.1` records:
+
 - Python executable and version;
 - repository root;
-- exact discovered test files;
-- exact command arguments for every validation step;
-- start/completion timestamps;
-- per-step pass/fail state and return code;
-- the first failed step;
-- overall validation state;
-- explicit authority flags showing that validation cannot merge, deploy, publish, access credentials, mutate a production database, or mutate the production Knowledge Graph.
+- discovered focused tests;
+- every validated file's path, byte length, and SHA-256;
+- deterministic aggregate `validated_tree_sha256`;
+- exact validation command arguments;
+- step timestamps, return codes, and pass/fail state;
+- first failed step;
+- overall validation status;
+- explicit no-merge/no-deploy/no-publication/no-production-mutation authority flags.
 
-The receipt is evidence of validation execution only. It is not publication, deployment, scientific approval, or merge authority.
+A receipt is validation evidence only. It is not merge, publication, deployment, or scientific approval authority.
 
-## Current GitHub Actions incident
+## Authoritative passing receipt
 
-Repository-wide GitHub-hosted runner allocation is currently blocked and tracked in issue #533. A zero-dependency workflow containing only one `ubuntu-latest` echo step was accepted and queued but terminated before the first step was instantiated. Unrelated workflows and PRs show the same zero-step behavior, while PR #516 successfully executed multiple hosted-runner workflows immediately before the incident window.
+PR #525 code head:
 
-Therefore zero-step workflow conclusions during incident #533 are not interpreted as application test failures.
+`5511fa059657b8b87e6031b048a79362bfef46b1`
 
-When GitHub-hosted runner execution is restored, `Canonical Brain Validation` must run this portable validator against the then-current PR head. A passing receipt plus the workflow result is required before PR #525 can progress beyond draft validation status.
+Canonical Brain Validation run #109 / Actions run `31209013612` completed successfully against GitHub's merge ref with then-current `main`.
 
-## Branch reconciliation policy during incident #533
+Results:
 
-`main` may continue advancing while hosted-runner execution is unavailable. Do not repeatedly restack or merge `main` into PR #525 merely to keep the branch numerically current when the new base changes do not overlap Canonical Brain or its Calyx authority dependencies.
+- compile: passed;
+- Ruff: passed;
+- pytest: **52 passed**;
+- receipt emission: passed;
+- `validated_tree_sha256`: `1e1429a09fac210e88dd7a03f8484d8ad3e40fcc2563089972c1049f5a023837`.
 
-At the latest check, `main` advanced by 19 commits containing OCU University durable-session work and did not modify the Canonical Brain or Calyx executor/evidence contracts used by PR #525. The resulting branch divergence is therefore mechanical, but PR #525 is correctly left draft and non-mergeable until validation can run.
+Independent BUILD-088E run #887 also passed.
 
-Recovery order is deterministic:
+The authoritative evidence is recorded in `PR-525-AUTHORITATIVE-VALIDATION-RECEIPT.md`.
 
-1. resolve issue #533 and confirm GitHub-hosted jobs can reach their first step;
-2. inspect the then-current `main` diff for Canonical Brain, Calyx scheduler/executor, artifact/review/capture, Mission Control, or shared API changes;
-3. reconcile PR #525 to that latest base only after the dependency audit;
-4. run `python scripts/validate_canonical_brain.py` through GitHub Actions and retain the machine-readable receipt;
-5. fix any real compile, Ruff, or pytest failures before changing draft/review status;
-6. keep merge, deployment, publication, production writes, and Knowledge Graph mutation outside the validator's authority.
+## Runner incident #533
 
-This policy avoids repeatedly rebuilding the same integration branch while its only authoritative validation channel is unavailable.
+The earlier repository-wide zero-step GitHub Actions incident is recovered and issue #533 is closed. Its exact external cause remains unconfirmed.
+
+If a future workflow fails with no instantiated steps, first diagnose runner/account infrastructure with a zero-dependency probe. Do not modify application code until a real validation step executes and produces a code-level failure.
+
+## Base-branch policy
+
+`main` may advance after a passing receipt. Before merge:
+
+1. inspect new base changes for Canonical Brain and Calyx authority dependencies;
+2. if those dependencies changed materially, require a fresh merge-ref validation receipt;
+3. if new commits are unrelated and GitHub's merge ref remains conflict-free, avoid churn-only restacking;
+4. never interpret a stale receipt as authorization to merge after a material authority-contract change.
 
 ## Public execution-receipt types
 
-Canonical Brain now exposes explicit receipt names to prevent confusion between two different trust domains:
+Canonical Brain exposes explicit names:
 
-- `CanonicalExecutionReceipt` — Canonical Brain queue/orchestration state receipt;
-- `CalyxAuthoritativeExecutionReceipt` — current Calyx executor receipt accepted by the authoritative evidence bridge.
+- `CanonicalExecutionReceipt` — Canonical queue/orchestration state;
+- `CalyxAuthoritativeExecutionReceipt` — authoritative Calyx executor evidence.
 
-The legacy package-level `ExecutionReceipt` name remains as a compatibility alias for `CanonicalExecutionReceipt`, but new integrations should use the explicit names.
+`ExecutionReceipt` remains a compatibility alias for the Canonical state receipt.
 
-## Local validation status during incident
+## Safety
 
-The portable validator source itself has been syntax-compiled in the implementation environment. Earlier Canonical Brain slices separately achieved authoritative passing compile/Ruff/focused-pytest evidence before the runner incident. Files changed during the later current-main authority hardening have also been syntax-compiled locally where reported.
-
-No claim is made that the complete current PR #525 test set has passed until the portable validator executes successfully in an environment containing all repository dependencies.
+The validator cannot merge, deploy, publish, access production credentials, mutate production databases, activate taxonomy, or mutate the production Knowledge Graph.
