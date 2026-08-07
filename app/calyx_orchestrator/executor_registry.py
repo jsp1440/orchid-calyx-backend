@@ -22,7 +22,7 @@ class AutonomyProbeExecutor:
     def execute(self, assignment: GovernedAssignment) -> ExecutionReceipt:
         job = assignment.inputs.get("job")
         if not isinstance(job, dict):
-            raise ValueError("AUTONOMY_PROBE_JOB_INPUT_REQUIRED")
+            raise TypeError("AUTONOMY_PROBE_JOB_INPUT_REQUIRED")
         if assignment.role_key != AUTONOMY_PROBE_ROLE:
             raise PermissionError("AUTONOMY_PROBE_ROLE_REQUIRED")
         if bool(job.get("mutating_intent")):
