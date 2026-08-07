@@ -33,7 +33,8 @@ SessionStatus = Literal[
 class UniversityCapability(BaseModel):
     enabled: bool
     session_writes_enabled: bool
-    persistence: Literal["process_local_memory"] = "process_local_memory"
+    persistence: Literal["process_local_memory", "postgres_durable"] = "process_local_memory"
+    durable_sessions_enabled: bool = False
     publication_enabled: Literal[False] = False
     candidate_knowledge_writes_enabled: Literal[False] = False
     calyx_model_calls_enabled: Literal[False] = False
@@ -71,6 +72,21 @@ class InvestigationEventCreate(BaseModel):
     ]
     stage: InquiryStage
     payload: dict[str, Any] = Field(default_factory=dict)
+    expected_revision: int | None = Field(default=None, ge=1)
+
+
+class SessionSubmit(BaseModel):
+    expected_revision: int = Field(ge=1)
+
+
+class SessionReviewCreate(BaseModel):
+    reviewed_revision: int = Field(ge=1)
+    decision: Literal[
+        "changes_requested",
+        "approved_for_learning",
+        "approved_for_candidate_knowledge_consideration",
+    ]
+    notes: str | None = Field(default=None, max_length=10000)
 
 
 class SessionEvent(BaseModel):
