@@ -8,16 +8,24 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.calyx_orchestrator.assignment_factory import governed_assignment_from_claimed_job
+from app.calyx_orchestrator.assignment_factory import (
+    governed_assignment_from_claimed_job,
+)
 from app.calyx_orchestrator.executor import GovernedAssignment
 from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
-from app.calyx_orchestrator.isolated_patch_executor import ISOLATION_MARKER, ISOLATION_SCHEMA
+from app.calyx_orchestrator.isolated_patch_executor import (
+    ISOLATION_MARKER,
+    ISOLATION_SCHEMA,
+)
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
     CalyxProgramDependency,
     CalyxProgramJob,
 )
-from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
 from app.calyx_orchestrator.static_validation_executor import (
     STATIC_VALIDATION_ROLE,
@@ -104,7 +112,9 @@ def test_inputs_change_fingerprint_and_invalid_json_values_fail_closed() -> None
     changed = ProgramJobSpec("job", "role", "Title", REPOSITORY, inputs={"x": 2})
     assert base.fingerprint != changed.fingerprint
     with pytest.raises(ValueError, match="PROGRAM_JOB_INPUTS_NOT_CANONICAL_JSON"):
-        ProgramJobSpec("job", "role", "Title", REPOSITORY, inputs={"x": float("nan")}).serialized_inputs
+        _ = ProgramJobSpec(
+            "job", "role", "Title", REPOSITORY, inputs={"x": float("nan")}
+        ).serialized_inputs
 
 
 def test_claimed_assignment_projects_inputs_but_reserved_keys_fail_closed() -> None:
