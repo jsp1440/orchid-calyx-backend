@@ -2,130 +2,121 @@
 
 ## Purpose
 
-Rebuild the validated Canonical Brain surface directly on current `main` so it integrates with the repository's newer Calyx orchestration runtime without replaying stale stacked ancestry.
-
-## Why this replacement was required
-
-The earlier stabilization slices were individually validated, but `main` continued advancing and added authoritative Calyx runtime components including governed assignment, dry-run execution, artifact registration, review eligibility, Brain candidate capture, Mission Control portfolio infrastructure, and an authoritative-executor boundary. Extending the old stack would have required copying newer runtime modules backward and would have created parallel or stale implementations.
-
-This integration therefore transfers the validated Canonical Brain surface onto current `main` and uses the current Calyx runtime as the authoritative execution/evidence layer. The initial transfer was applied atomically as a single Git tree/commit so file identity was preserved without replaying stale branch history.
+Integrate Canonical Brain with the repository's authoritative Calyx runtime without duplicating scheduler, executor, evidence, review, capture, or Mission Control infrastructure.
 
 ## Canonical Brain responsibilities
+
+Canonical Brain owns:
 
 - canonical architecture, intent, decision, relationship, and search registry;
 - deterministic snapshots and candidate persistence;
 - constitutional build-admission rules;
 - governed build queue and deterministic assignment records;
-- non-authoritative preflight boundary;
+- non-authoritative preflight projection;
 - leases, heartbeat, timeout classification, bounded recovery candidates, and cancellation receipts;
-- bridge from governed queue state to the existing Calyx dependency scheduler;
+- translation from governed queue state into existing Calyx scheduling contracts;
 - authoritative-receipt-gated Canonical completion recording;
-- translation of verified, allowlisted authoritative Calyx execution receipts into Calyx artifact, review, and Brain candidate-capture contracts.
+- translation of verified authoritative Calyx execution into artifact, review, and candidate-Brain contracts.
 
-## Existing Calyx responsibilities reused
+## Existing Calyx authorities reused
 
-Canonical Brain does not duplicate the following current-main components:
+Canonical Brain does not replace:
 
 - `app/calyx_orchestrator/scheduler.py` — dependency, critical-path, and capacity scheduling;
-- `app/calyx_orchestrator/executor.py` — capability enforcement, deterministic preflight receipts, and executor contracts;
-- `app/calyx_orchestrator/dry_run_service.py` — release-after-preflight semantics so dry runs cannot complete real jobs;
-- `app/calyx_orchestrator/executor_registry.py` — the authoritative executor allowlist;
-- `app/calyx_orchestrator/artifact_registry.py` — immutable artifact provenance, checksum, evidence, and lineage;
-- `app/calyx_orchestrator/review_eligibility.py` — review classes, self-approval prevention, and release eligibility;
-- `app/calyx_orchestrator/brain_capture.py` — reviewed evidence-backed candidate Brain capture;
-- current Calyx assignment, authoritative execution, and Mission Control portfolio infrastructure.
+- `app/calyx_orchestrator/executor.py` — capability enforcement and execution receipts;
+- `app/calyx_orchestrator/dry_run_service.py` — nonterminal dry-run/preflight semantics;
+- `app/calyx_orchestrator/executor_registry.py` — authoritative executor allowlist;
+- `app/calyx_orchestrator/artifact_registry.py` — immutable artifact provenance and lineage;
+- `app/calyx_orchestrator/review_eligibility.py` — review eligibility and self-approval prevention;
+- `app/calyx_orchestrator/brain_capture.py` — reviewed candidate Brain capture;
+- existing Calyx Mission Control and program-worker runtime.
 
-## Non-authoritative preflight correction
+## Governance corrections
 
-Current `main` explicitly distinguishes deterministic dry-run validation from authoritative execution. The inherited Canonical Brain adapter previously returned a Canonical `completed` receipt from a dry run. That path is removed in this integration.
+### Dry-run completion
 
-`app/canonical_brain/executor.py` now wraps the current Calyx deterministic executor and returns an `ExecutionResult` with `dry_run=true` and `authoritative=false`. It does not create a Canonical completion receipt.
+Canonical preflight delegates to the Calyx deterministic executor and returns `dry_run=true`, `authoritative=false`. It cannot create a Canonical completion receipt.
 
-## Canonical completion correction
+### Canonical completion
 
-A second promotion path existed after the preflight fix: `GovernedOrchestrator.record_completed()` still accepted raw evidence URI(s) and an output checksum. A caller could therefore take checksum/evidence values from a non-authoritative preflight result and manually advance a Canonical queue item to `completed`.
+`GovernedOrchestrator.record_completed()` no longer accepts caller-supplied evidence URI(s) and checksum as sufficient proof of completion.
 
-That API has been replaced with authoritative receipt completion. A Canonical assignment may now transition from `running` to `completed` only when all of these conditions hold:
+Completion now requires:
 
-1. a current Calyx `ExecutionReceipt` passes `receipt.verify()`;
-2. the supplied executor role resolves through the current `AuthoritativeExecutorRegistry`;
-3. the registered executor is not authorized for external side effects;
-4. receipt `executor_key` matches the allowlisted executor exactly;
-5. the Canonical assignment agent ID normalizes to the same role key (for example `agent:autonomy-probe` → `autonomy_probe`);
-6. receipt state and terminal outcome are both delivered;
-7. receipt assignment ID equals the Canonical assignment ID;
-8. receipt job key equals the Canonical build ID;
-9. receipt evidence URI(s) and a full output checksum are present.
+1. a current Calyx `ExecutionReceipt` that passes `verify()`;
+2. an executor role resolved through `AuthoritativeExecutorRegistry`;
+3. no external-side-effect authority;
+4. exact executor-key match;
+5. Canonical assignment agent-role match;
+6. delivered state and delivered terminal outcome;
+7. exact assignment-ID match;
+8. exact receipt `job_key` to Canonical build-ID match;
+9. evidence URI(s) and full checksums.
 
-A successful Canonical completion receipt is marked `authoritative=true` and records the verified executor key. Started receipts remain non-authoritative.
+Ordinary architecture agents therefore do not gain autonomous completion authority through Canonical Brain alone.
 
-This role binding is deliberately restrictive. At the current `main` revision the only autonomous authoritative role is `autonomy_probe`, so ordinary architecture agents such as `agent:brain-engineer` and `agent:atlas-engineer` cannot be automatically marked completed. Expanding autonomous engineering completion therefore requires an explicit future change to the Calyx authoritative executor registry rather than a change in Canonical Brain alone.
+### Execution evidence provenance
 
-## Authoritative evidence correction
+The evidence bridge accepts the current Calyx authoritative receipt rather than trusting a Canonical state receipt.
 
-The first current-main evidence bridge accepted a Canonical `ExecutionReceipt` that had a completed outcome, evidence URI(s), and checksum. That was insufficient because the Canonical receipt itself did not prove which executor produced the completion.
+It derives:
 
-The bridge now accepts the current Calyx `ExecutionReceipt` and an executor role key. It resolves that role internally through a fresh `AuthoritativeExecutorRegistry` and requires all of the following before constructing any artifact or Brain candidate record:
+- executor authority from `AuthoritativeExecutorRegistry`;
+- build identity from receipt `job_key`;
+- producer identity from verified executor key;
+- executor role from the registry.
 
-1. the role is currently registered as authoritative;
-2. the registered executor is not authorized for external side effects;
-3. the receipt `executor_key` exactly matches the allowlisted executor;
-4. `receipt.verify()` passes its output-checksum and state/outcome invariants;
-5. state is `DELIVERED` and terminal outcome is `DELIVERED`;
-6. evidence URI(s), input checksum, and output checksum are present;
-7. review requester identity is explicit and distinct from the verified executor producer.
+Caller-supplied executor authority, build identity, agent identity, and producer identity are not accepted as independent trust claims.
 
-Callers cannot pass a fabricated `RegisteredExecutor(authoritative=True)` object into this boundary. Authority is resolved inside the bridge from the current Calyx allowlist.
+Even valid execution evidence remains candidate-only and `published=false` until existing Calyx review eligibility permits candidate capture.
 
-The bridge also no longer accepts caller-supplied Brain build, agent, or producer identities. `build_id` is derived from the verified receipt `job_key`; producer identity is derived as `executor:<executor_key>`; executor role identity comes from the authoritative registry. This prevents a valid receipt from being relabeled as evidence for another Brain build or producer.
+## Public receipt types
 
-Even after all execution checks pass, the result remains a candidate-only artifact. Existing Calyx review eligibility and `BrainCandidateStore` gates remain authoritative, and the generated record is explicitly `published=false`.
+Package exports distinguish the two trust domains:
+
+- `CanonicalExecutionReceipt` — Canonical queue/orchestration state;
+- `CalyxAuthoritativeExecutionReceipt` — Calyx authoritative executor evidence.
+
+`ExecutionReceipt` remains a compatibility alias for `CanonicalExecutionReceipt`.
+
+## Validation
+
+Authoritative GitHub validation recovered after runner incident #533.
+
+Validated code head:
+
+`5511fa059657b8b87e6031b048a79362bfef46b1`
+
+Canonical Brain Validation run #109 / Actions run `31209013612` checked GitHub's PR merge ref against then-current `main` (`7eb323e764f7447431b1c7d90bed11bbe5fba53e`).
+
+Results:
+
+- compile: passed;
+- Ruff: passed;
+- pytest: **52 passed**;
+- validation receipt emission: passed;
+- `validated_tree_sha256`: `1e1429a09fac210e88dd7a03f8484d8ad3e40fcc2563089972c1049f5a023837`.
+
+Independent BUILD-088E Validation run #887 also passed.
+
+The receipt is recorded in `PR-525-AUTHORITATIVE-VALIDATION-RECEIPT.md`.
+
+## Runner incident #533
+
+Issue #533 is closed as recovered. During the incident, unrelated GitHub-hosted jobs terminated with `steps=null`, including a zero-dependency echo probe. Runner execution later resumed and real validation steps completed successfully. The exact GitHub-side cause was not observable and is intentionally not attributed to billing or policy without evidence.
+
+Future zero-step failures should be diagnosed as runner/infrastructure failures before application code is modified.
 
 ## Safety boundaries
 
-- autonomous merge, deployment, publication, credential access, and production Knowledge Graph mutation remain prohibited;
-- deterministic preflight cannot complete a real job;
-- raw evidence/checksum values cannot complete a Canonical build;
-- non-allowlisted or mismatched executors cannot complete Canonical builds or become Brain execution evidence;
-- Canonical assignment agent role must match the allowlisted authoritative executor role before completion;
-- external-side-effect executor authority is rejected by both Canonical completion and evidence capture;
-- build and producer identity cannot be supplied independently of the verified receipt/executor;
-- completed execution receipts require evidence URI(s) and checksums before evidence packaging;
-- review requester and verified executor producer must be distinct;
-- candidate capture remains unpublished and subject to the existing Calyx review gates;
-- scheduler and evidence bridges are projections/translation boundaries, not new authorities.
+- no autonomous merge;
+- no deployment;
+- no publication;
+- no credential access by Canonical validation or preflight;
+- no production database mutation;
+- no taxonomy activation;
+- no production Knowledge Graph mutation;
+- no external-side-effect executor may be promoted through these bridges;
+- candidate capture remains review-gated and unpublished.
 
-## Validation lineage
-
-Earlier clean slices established passing compile, Ruff, and focused pytest evidence for the registry, governance, queue/orchestration, executor/lease, and scheduler-bridge layers. The current-main integration must pass the complete `tests/test_canonical_brain_*.py` suite against the latest repository before it supersedes those drafts.
-
-The authoritative evidence bridge/test files and the authoritative Canonical completion module were independently compiled with `python -m py_compile` in the implementation environment and passed syntax compilation. Ruff is not installed in that environment, so lint is not claimed as locally validated.
-
-## GitHub-hosted runner incident — 2026-08-07
-
-The CI failure mode has been isolated beyond the Canonical Brain code path.
-
-Evidence:
-
-- PR #516 head `65d6de2c157d755751f94a8a1b08386ca37d94a1` successfully completed seven GitHub Actions workflows immediately before the incident window, including BUILD-088E Validation.
-- PR #525 then began producing `failure` conclusions where the job object contained `steps=null` and never reached checkout or any validation command.
-- unrelated PR #527 exhibits the same zero-step failure across multiple existing workflows.
-- a temporary `Actions Runner Smoke` workflow containing only one `ubuntu-latest` job and one `echo` step was added to PR #525. The workflow was parsed and queued, but the job completed with `failure` and `steps=null`; its only echo step never instantiated.
-- the temporary smoke workflow was removed after the diagnostic result was captured.
-
-This rules out Canonical Brain application code, Python version, package installation, cache behavior, checkout, secrets, pytest, and Ruff as causes of the **zero-step** termination.
-
-The remaining boundary is GitHub-hosted runner allocation or repository/account Actions policy. Because the repository is private and the incident began after substantial successful Actions activity, Actions minutes/spending/billing is a plausible explanation, but it is not proven by the available API. Runner policy or account-level Actions restrictions remain possible alternatives.
-
-The incident is tracked in GitHub issue #533. PR #525 must remain draft and unmerged until GitHub-hosted runner execution is restored and authoritative compile/Ruff/pytest can execute on the current head.
-
-### Administrative resolution checklist
-
-A repository/account administrator should inspect GitHub and record the result in issue #533:
-
-1. repository **Settings → Actions → General**: Actions enabled and runner/action policy permits GitHub-hosted workflows;
-2. account **Billing / Plans & usage**: private-repository Actions minutes, spending limit, payment/billing state, and any usage suspension;
-3. any account/organization runner restrictions or Actions suspension notices;
-4. after correcting the administrative condition, rerun PR #525 Canonical Brain Validation and BUILD-088E and require actual job steps plus passing conclusions before changing PR disposition.
-
-No application-code workaround should be introduced for this incident.
+PR #525 is review-ready but unmerged. Any material change to Canonical Brain or its Calyx authority dependencies before merge requires validation against the new merge ref.
