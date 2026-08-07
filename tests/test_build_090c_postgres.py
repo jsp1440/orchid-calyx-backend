@@ -8,7 +8,6 @@ import pytest
 from app.design_planning.my_conservatory import MyConservatoryPlanningDemonstration
 from app.design_planning.postgres_repository import PostgresDesignPlanningRepository
 from app.design_planning.service import DesignPlanningService
-
 from tests.test_build_090c_my_conservatory_planning import build_089_adapter
 
 DATABASE_URL = os.getenv("BUILD_090C_DATABASE_URL")
