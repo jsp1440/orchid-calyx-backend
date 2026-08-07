@@ -19,6 +19,7 @@ This integration therefore transfers the validated Canonical Brain surface onto 
 - non-authoritative preflight boundary;
 - leases, heartbeat, timeout classification, bounded recovery candidates, and cancellation receipts;
 - bridge from governed queue state to the existing Calyx dependency scheduler;
+- authoritative-receipt-gated Canonical completion recording;
 - translation of verified, allowlisted authoritative Calyx execution receipts into Calyx artifact, review, and Brain candidate-capture contracts.
 
 ## Existing Calyx responsibilities reused
@@ -38,7 +39,27 @@ Canonical Brain does not duplicate the following current-main components:
 
 Current `main` explicitly distinguishes deterministic dry-run validation from authoritative execution. The inherited Canonical Brain adapter previously returned a Canonical `completed` receipt from a dry run. That path is removed in this integration.
 
-`app/canonical_brain/executor.py` now wraps the current Calyx deterministic executor and returns an `ExecutionResult` with `dry_run=true` and `authoritative=false`. It does not create a Canonical completion receipt. A real completion still requires a separate authoritative execution/evidence path.
+`app/canonical_brain/executor.py` now wraps the current Calyx deterministic executor and returns an `ExecutionResult` with `dry_run=true` and `authoritative=false`. It does not create a Canonical completion receipt.
+
+## Canonical completion correction
+
+A second promotion path existed after the preflight fix: `GovernedOrchestrator.record_completed()` still accepted raw evidence URI(s) and an output checksum. A caller could therefore take checksum/evidence values from a non-authoritative preflight result and manually advance a Canonical queue item to `completed`.
+
+That API has been replaced with authoritative receipt completion. A Canonical assignment may now transition from `running` to `completed` only when all of these conditions hold:
+
+1. a current Calyx `ExecutionReceipt` passes `receipt.verify()`;
+2. the supplied executor role resolves through the current `AuthoritativeExecutorRegistry`;
+3. the registered executor is not authorized for external side effects;
+4. receipt `executor_key` matches the allowlisted executor exactly;
+5. the Canonical assignment agent ID normalizes to the same role key (for example `agent:autonomy-probe` → `autonomy_probe`);
+6. receipt state and terminal outcome are both delivered;
+7. receipt assignment ID equals the Canonical assignment ID;
+8. receipt job key equals the Canonical build ID;
+9. receipt evidence URI(s) and a full output checksum are present.
+
+A successful Canonical completion receipt is marked `authoritative=true` and records the verified executor key. Started receipts remain non-authoritative.
+
+This role binding is deliberately restrictive. At the current `main` revision the only autonomous authoritative role is `autonomy_probe`, so ordinary architecture agents such as `agent:brain-engineer` and `agent:atlas-engineer` cannot be automatically marked completed. Expanding autonomous engineering completion therefore requires an explicit future change to the Calyx authoritative executor registry rather than a change in Canonical Brain alone.
 
 ## Authoritative evidence correction
 
@@ -60,14 +81,14 @@ The bridge also no longer accepts caller-supplied Brain build, agent, or produce
 
 Even after all execution checks pass, the result remains a candidate-only artifact. Existing Calyx review eligibility and `BrainCandidateStore` gates remain authoritative, and the generated record is explicitly `published=false`.
 
-At the current `main` revision, the only allowlisted autonomous authoritative role is the bounded non-mutating autonomy probe. No mutating engineering role is granted autonomous completion authority by this integration.
-
 ## Safety boundaries
 
 - autonomous merge, deployment, publication, credential access, and production Knowledge Graph mutation remain prohibited;
 - deterministic preflight cannot complete a real job;
-- non-allowlisted or mismatched executors cannot become Brain execution evidence;
-- external-side-effect executor authority is rejected by the Brain evidence bridge;
+- raw evidence/checksum values cannot complete a Canonical build;
+- non-allowlisted or mismatched executors cannot complete Canonical builds or become Brain execution evidence;
+- Canonical assignment agent role must match the allowlisted authoritative executor role before completion;
+- external-side-effect executor authority is rejected by both Canonical completion and evidence capture;
 - build and producer identity cannot be supplied independently of the verified receipt/executor;
 - completed execution receipts require evidence URI(s) and checksums before evidence packaging;
 - review requester and verified executor producer must be distinct;
@@ -78,6 +99,6 @@ At the current `main` revision, the only allowlisted autonomous authoritative ro
 
 Earlier clean slices established passing compile, Ruff, and focused pytest evidence for the registry, governance, queue/orchestration, executor/lease, and scheduler-bridge layers. The current-main integration must pass the complete `tests/test_canonical_brain_*.py` suite against the latest repository before it supersedes those drafts.
 
-The two files changed for the authoritative evidence hardening were independently compiled with `python -m py_compile` in the implementation environment and passed syntax compilation. Ruff is not installed in that environment, so lint is not claimed as locally validated.
+The authoritative evidence bridge/test files and the authoritative Canonical completion module were independently compiled with `python -m py_compile` in the implementation environment and passed syntax compilation. Ruff is not installed in that environment, so lint is not claimed as locally validated.
 
 At the current GitHub head, Actions is creating workflow runs but terminating them before any job step is instantiated, including the unrelated legacy BUILD-088E workflow. That state is recorded as an external validation-execution blocker rather than a passing or failing code result.
