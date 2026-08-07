@@ -53,8 +53,8 @@ class SandboxedExecutableValidationExecutor:
 
     The repository marker is necessary but never sufficient. A trusted runtime
     authorizer must independently confirm that the external sandbox controls are
-    actually enforced for this exact workspace/repository/branch before any repository
-    code can execute.
+    actually enforced for this exact workspace/repository/branch and exact validation
+    request before any repository code can execute.
     """
 
     executor_key = "isolated_workspace_executable_validator_v1"
@@ -108,14 +108,23 @@ class SandboxedExecutableValidationExecutor:
         if checkout.branch != branch:
             raise PermissionError("SANDBOX_VALIDATION_REVISION_MISMATCH")
         marker = self._verify_sandbox_marker(repository=repository, branch=branch)
+        request = self._parse_request(job.get("validation"), assignment.timeout_seconds)
+        before = self._verify_targets(request)
+        request_digest = self._authorization_request_digest(
+            repository=repository,
+            branch=branch,
+            commit_sha=checkout.commit_sha,
+            marker=marker,
+            request=request,
+            target_hashes=before,
+        )
         authorization = self._require_supervisor_authorization(
             repository=repository,
             branch=branch,
             marker=marker,
+            request_digest=request_digest,
         )
 
-        request = self._parse_request(job.get("validation"), assignment.timeout_seconds)
-        before = self._verify_targets(request)
         argv = self._argv_for(request)
         env = self._scrubbed_environment()
 
@@ -176,6 +185,7 @@ class SandboxedExecutableValidationExecutor:
             "supervisor_authorized": True,
             "supervisor_authorization_id": authorization.authorization_id,
             "sandbox_policy_digest": authorization.policy_digest,
+            "supervisor_request_digest": request_digest,
             "repository_read_only_during_validation": True,
             "preset": request.preset,
             "targets": [
@@ -211,6 +221,7 @@ class SandboxedExecutableValidationExecutor:
             evidence_uris=(
                 *assignment.evidence_uris,
                 authorization.evidence_uri,
+                f"sandbox-request:{request_digest}",
                 f"repo-commit:{repository}@{checkout.commit_sha}",
                 *(
                     f"validation-input:{path}#{before[path]}"
@@ -255,6 +266,7 @@ class SandboxedExecutableValidationExecutor:
         repository: str,
         branch: str,
         marker: Mapping[str, object],
+        request_digest: str,
     ) -> SandboxAuthorization:
         if self._authorizer is None:
             raise PermissionError("SANDBOX_VALIDATION_SUPERVISOR_REQUIRED")
@@ -264,11 +276,42 @@ class SandboxedExecutableValidationExecutor:
                 repository=repository,
                 branch=branch,
                 marker=marker,
+                request_digest=request_digest,
             )
-            authorization.verify()
+            authorization.verify(expected_request_digest=request_digest)
         except (LookupError, PermissionError, RuntimeError, TypeError, ValueError) as exc:
             raise PermissionError("SANDBOX_VALIDATION_SUPERVISOR_REJECTED") from exc
         return authorization
+
+    @staticmethod
+    def _authorization_request_digest(
+        *,
+        repository: str,
+        branch: str,
+        commit_sha: str,
+        marker: Mapping[str, object],
+        request: ValidationRequest,
+        target_hashes: Mapping[str, str],
+    ) -> str:
+        payload = {
+            "schema": "calyx-sandbox-authorization-request-v1",
+            "repository": repository,
+            "branch": branch,
+            "commit_sha": commit_sha,
+            "marker": dict(marker),
+            "preset": request.preset,
+            "targets": list(request.targets),
+            "expected_sha256": dict(sorted(target_hashes.items())),
+            "timeout_seconds": request.timeout_seconds,
+        }
+        canonical = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
 
     @staticmethod
     def _parse_request(value: Any, assignment_timeout: int) -> ValidationRequest:
