@@ -79,7 +79,11 @@ def test_api_is_owner_gated_and_returns_explanations():
         json={
             "observations": [{"character": "color", "value": "white"}],
             "candidates": [
-                {"taxon_id": "t1", "scientific_name": "Taxon alpha", "states": {"color": "white"}}
+                {
+                    "taxon_id": "t1",
+                    "scientific_name": "Taxon alpha",
+                    "states": {"color": "white"},
+                }
             ],
         },
     )
