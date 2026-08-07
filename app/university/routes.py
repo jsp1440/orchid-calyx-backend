@@ -14,6 +14,7 @@ from .durable_config import durable_sessions_enabled
 from .fixtures import CHAPTER, LABORATORY
 from .learner_auth import verify_university_actor
 from .release import release_readiness
+from .reviewer_routes import router as reviewer_router
 from .schemas import (
     CatalogItem,
     CatalogResponse,
@@ -216,3 +217,4 @@ def review_session(
 
 
 router.include_router(session_discovery_router)
+router.include_router(reviewer_router)
