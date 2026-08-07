@@ -2,7 +2,7 @@
 
 ## Status
 
-Current-main replacement for stale PR #582. Production activation has **not** occurred.
+Current-main replacement PR #589 for stale PR #582. Production activation has **not** occurred.
 
 ## Live evidence that triggered this work
 
@@ -58,25 +58,34 @@ The receipt distinguishes:
 
 These fields prevent an interrupted or partially committed production migration from being represented as a clean no-mutation failure.
 
-## Validation plan
+## Validation evidence
 
-The current-main release is validated on disposable PostgreSQL 16 with:
+The first #589 validation attempt correctly stopped in the focused unit suite because the simulated partial-migration fixture wrote SQL files outside the script's expected `ROOT/migrations` path. No migration apply step ran in that failed attempt. The fixture was corrected before expansion.
+
+Hardened implementation head `eab6def02bf213b5b7ad699f9588a6ca6685ae9f` then passed the complete current-main matrix:
+
+- CALYX Reasoning Schema Activation Validation — run `31227176795`: **success**;
+- CALYX Workflow Governance Audit — run `31227176871`: **success**;
+- BUILD-088E Validation — run `31227176819`: **success**.
+
+The activation validation passed:
 
 - Ruff and Python compilation;
-- fail-closed unit coverage;
-- a simulated 103-success/105-failure test proving completed work is retained in migration evidence;
-- existing CALYX-BRAIN-003 migration dependency/reapplication tests;
-- read-only preflight;
-- 103→105 disposable apply;
-- explicit assertions that the full schema contract, mutation evidence semantics, required `snapshot` column, guard functions, and guard triggers are complete;
-- idempotent second apply;
-- workflow governance audit;
-- BUILD-088E publication-control regression.
+- **6** focused fail-closed/schema-evidence tests, including simulated 103-success/105-failure retention;
+- existing CALYX-BRAIN-003 migration dependency/reapplication suite;
+- read-only activation preflight;
+- disposable PostgreSQL 16 application of 103 then 105;
+- full post-apply schema-contract verification, including required publication `snapshot`, required indexes, guard functions, and guard triggers;
+- explicit mutation-evidence assertions;
+- idempotent second application;
+- evidence artifact upload.
 
-Exact current-main run identifiers will be added before release.
+Validation artifact ID `9012513903`, digest `sha256:271a5315f1e243f2db79ed797da069982a58c8b8f153fbc2d8a3872ad70063e2`.
+
+The final Brain/documentation head must re-pass the triggered release gates before merge; implementation-head evidence is not reused as final-head evidence.
 
 ## Governance boundary
 
 Merging this implementation installs the protected gate only. It does **not** authorize production migration. Running the production workflow with `apply_migrations=true` changes the production database schema and therefore requires an explicit owner decision. Any later supervised publication of a reviewed ledger is a separate production Knowledge Graph governance decision.
 
-No deployment, publication, taxonomy activation, production schema mutation, or Knowledge Graph mutation was performed while creating this gate.
+No deployment, publication, taxonomy activation, production schema mutation, or Knowledge Graph mutation was performed while creating or validating this gate.
