@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from .engineering_core import TerminalOutcome
-from .executor import ExecutionReceipt, ExecutionState, GovernedAssignment, canonical_checksum
+from .executor import (
+    ExecutionReceipt,
+    ExecutionState,
+    GovernedAssignment,
+    canonical_checksum,
+)
 
 REPOSITORY_EVIDENCE_ROLE = "repository_evidence_reader"
 DEFAULT_REPOSITORY = "jsp1440/orchid-calyx-backend"
@@ -141,13 +146,11 @@ class RepositoryEvidenceExecutor:
             input_checksum=input_checksum,
             output_checksum=canonical_checksum(output),
             output=output,
-            evidence_uris=tuple(
-                [
+            evidence_uris=(
                     *assignment.evidence_uris,
                     f"repo-commit:{self.repository_name}@{checkout.commit_sha}",
                     *[f"repo-file:{item['path']}#{item['sha256']}" for item in files],
-                ]
-            ),
+                ),
         )
         receipt.verify()
         return receipt
@@ -187,7 +190,7 @@ class RepositoryEvidenceExecutor:
                 raise RuntimeError("REPOSITORY_EVIDENCE_GIT_REF_INVALID") from exc
             for raw_line in packed_refs.splitlines():
                 line = raw_line.strip()
-                if not line or line.startswith("#") or line.startswith("^"):
+                if not line or line.startswith(("#", "^")):
                     continue
                 sha, separator, name = line.partition(" ")
                 if separator and name == ref_name:
