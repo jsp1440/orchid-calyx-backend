@@ -21,6 +21,7 @@ Record the implemented state of the Literature Intelligence, Matrix Identificati
 - fail-closed OCR adapter boundary;
 - accepted-name and synonym-aware taxonomy resolution contract;
 - Candidate Knowledge payload planning;
+- protected literature-validation execution endpoint;
 - protected non-executing Candidate Knowledge promotion-plan endpoint;
 - human-review approval required before a promotion plan can become eligible;
 - publication remains disabled.
@@ -33,7 +34,8 @@ Record the implemented state of the Literature Intelligence, Matrix Identificati
 - per-character explainability;
 - geography and flowering-month filters;
 - accepted-name binding;
-- confidence-margin abstention.
+- confidence-margin abstention;
+- protected Matrix-ranking execution endpoint.
 
 ### AI.Vision
 
@@ -43,12 +45,26 @@ Record the implemented state of the Literature Intelligence, Matrix Identificati
 - governed image-to-Matrix conversion;
 - label/tag token extraction;
 - provider-neutral inference boundary;
+- protected Vision-conversion endpoint;
+- protected integrated identification endpoint;
 - unsupported near-certain confidence rejected;
 - autonomous species publication disabled.
+
+## Protected execution API
+
+All execution routes require owner/API-key authentication and create governed operation records that enter human review:
+
+- `POST /api/mission-control/multimodal-intelligence/literature/validate`
+- `POST /api/mission-control/multimodal-intelligence/matrix/rank`
+- `POST /api/mission-control/multimodal-intelligence/vision/convert`
+- `POST /api/mission-control/multimodal-intelligence/identify`
+
+These endpoints execute deterministic engine logic only. They do not activate live providers, publish scientific knowledge, mutate taxonomy, or write the production Knowledge Graph.
 
 ## Operator, persistence, and governance layer
 
 - protected Mission Control status and configuration routes;
+- typed Pydantic request contracts for literature, Matrix, Vision, and integrated identification;
 - deterministic idempotent operation fingerprints;
 - swappable operation repository contract;
 - in-memory repository for deterministic validation;
@@ -76,9 +92,9 @@ The following remain disabled by design:
 
 ## Validation strategy
 
-The lane uses fixture-backed deterministic tests and CI covering compile, Ruff, scientific contracts, Matrix scoring, Vision licensing, abstention, operator review behavior, route mounting, provenance, promotion gates, persistence construction, and the Document Intelligence bridge. The full Mission Control router is mounted in `app.main` through the health router.
+The lane uses fixture-backed deterministic tests and CI covering compile, Ruff, scientific contracts, typed API contracts, Matrix scoring, Vision licensing, abstention, operator review behavior, route mounting, provenance, promotion gates, persistence construction, and the Document Intelligence bridge. The full Mission Control router is mounted in `app.main` through the health router.
 
-GitHub Actions experienced runner-level failures on 2026-08-07 in which multiple unrelated workflows ended with zero executable steps and no retrievable job log. These are treated as external CI infrastructure failures, not passing or failing code evidence. The lane must obtain a normal executable CI run before being described as CI-green.
+GitHub Actions experienced runner-level failures on 2026-08-07 in which multiple unrelated workflows ended with zero executable steps and no retrievable job log. The same zero-step condition was reconfirmed on the protected execution API commits. These are treated as external CI infrastructure failures, not passing or failing code evidence. The lane must obtain a normal executable CI run before being described as CI-green.
 
 ## Remaining production dependencies
 
@@ -88,7 +104,7 @@ GitHub Actions experienced runner-level failures on 2026-08-07 in which multiple
 4. Live AI.Vision provider selection and benchmark certification.
 5. Curated, version-controlled orchid character matrices at useful taxonomic breadth.
 6. Real-world orchid image and literature benchmark sets.
-7. Mission Control frontend panels for review, provenance, and candidate comparisons.
+7. Mission Control frontend panels for execution, review, provenance, and candidate comparisons.
 8. Explicit owner approval before Candidate Knowledge handoff execution.
 9. Separate publication approval before any Knowledge Graph mutation.
 10. Normal GitHub Actions runner execution proving the complete focused suite and route smoke.
