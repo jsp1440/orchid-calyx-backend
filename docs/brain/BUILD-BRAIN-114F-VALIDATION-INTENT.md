@@ -1,0 +1,1 @@
+Validation intent: prove BUILD-BRAIN-114D on the current-main lineage before porting BUILD-BRAIN-114E persisted-input orchestration. Do not treat older stacked-branch green runs as sufficient for current-main integration.
