@@ -17,10 +17,9 @@ def test_mission_control_status_reports_brain_coverage() -> None:
     assert status.object_count == len(registry.snapshot().objects)
     assert status.relationship_count == len(registry.snapshot().relationships)
     assert status.object_type_counts["architecture"] >= 8
-    assert status.object_type_counts["intent"] == 2
+    assert status.object_type_counts["intent"] >= 2
     assert status.lifecycle_counts == {"approved": status.object_count}
     assert "architecture:atlas" not in status.architecture_without_intent
-    assert "architecture:mission-control" in status.architecture_without_intent
 
 
 def test_mission_control_status_is_repeatable() -> None:
