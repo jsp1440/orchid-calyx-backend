@@ -6,12 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from app.brain_mission.routes import ADAPTER as BRAIN_MISSION_ADAPTER
 from app.brain_mission.routes import SERVICE as BRAIN_MISSION_SERVICE
 from app.database import get_db
 from app.reasoning_ledger.models import ReviewDecision, ReviewOutcome
 from app.reasoning_ledger.operational_service import OperationalReasoningLedgerService
 from app.reasoning_ledger.routes import _invoke, _subject
 from app.reasoning_ledger.serialization import ledger_to_dict
+from app.reasoning_ledger.service import LedgerNotFoundError, LedgerValidationError
 from app.reasoning_publication.eligibility import discover_eligible_ledgers
 from app.reasoning_publication.gateway import ExistingKnowledgeGraphPublicationGate
 from app.reasoning_publication.service import ReasoningLedgerPublicationService
@@ -88,8 +90,70 @@ def _mission_summary(mission: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _persist_mission_ledger(db: Session, owner: str, mission: dict[str, Any]):
+    """Synchronize the immutable mission-ledger snapshot into durable governance.
+
+    Mission execution currently builds its governed Reasoning Ledger in the
+    Brain adapter's in-memory service. The operator review/publication path is
+    intentionally backed by the operational SQL repository. Before exposing a
+    ledger ID to an operator, copy only the exact missing immutable revisions
+    into that repository. Existing durable entries must be a fingerprint-identical
+    prefix of the mission ledger; any divergence fails closed.
+    """
+
+    reference = mission.get("reasoning_ledger") or {}
+    ledger_id = str(reference.get("ledger_id") or "")
+    if not ledger_id:
+        raise LedgerValidationError("MISSION_LEDGER_ID_REQUIRED")
+
+    source = BRAIN_MISSION_ADAPTER.ledgers.current(ledger_id, tenant_id=owner)
+    service = OperationalReasoningLedgerService(db)
+    try:
+        current = service.current(ledger_id, owner)
+    except LedgerNotFoundError:
+        current, _ = service.create(
+            owner=owner,
+            project_id=source.project_id,
+            title=source.title,
+            description=source.description,
+        )
+
+    if str(current.ledger_id) != str(source.ledger_id):
+        raise LedgerValidationError("MISSION_LEDGER_IDENTITY_MISMATCH")
+    if (
+        current.tenant_id != source.tenant_id
+        or current.project_id != source.project_id
+        or current.title != source.title
+        or current.description != source.description
+    ):
+        raise LedgerValidationError("MISSION_LEDGER_SCOPE_MISMATCH")
+    if len(current.entries) > len(source.entries):
+        raise LedgerValidationError("MISSION_LEDGER_DIVERGED")
+
+    for index, durable_entry in enumerate(current.entries):
+        if durable_entry.fingerprint != source.entries[index].fingerprint:
+            raise LedgerValidationError("MISSION_LEDGER_DIVERGED")
+
+    while len(current.entries) < len(source.entries):
+        current = service.append(
+            ledger_id,
+            source.entries[len(current.entries)],
+            owner=owner,
+            expected_version=current.version,
+        )
+
+    if current.version != source.version:
+        raise LedgerValidationError("MISSION_LEDGER_VERSION_MISMATCH")
+    return current
+
+
 @router.post("/missions", status_code=201)
-def start_mission(payload: StartMissionRequest, auth: Auth) -> dict[str, Any]:
+def start_mission(
+    payload: StartMissionRequest,
+    request: Request,
+    auth: Auth,
+    db: Db,
+) -> dict[str, Any]:
     owner = _subject(auth)
     try:
         mission = BRAIN_MISSION_SERVICE.start(
@@ -103,6 +167,7 @@ def start_mission(payload: StartMissionRequest, auth: Auth) -> dict[str, Any]:
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(422, detail={"code": str(exc)}) from exc
+    _invoke(db, request, lambda: _persist_mission_ledger(db, owner, mission))
     return _mission_summary(mission)
 
 
