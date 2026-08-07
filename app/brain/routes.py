@@ -6,6 +6,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from app.brain_mission.api import router as brain_mission_router
 from app.calyx_agent.routes import router as calyx_agent_router
 from app.calyx_engineering.routes import router as calyx_engineering_router
 from app.calyx_journalism.routes import router as calyx_journalism_router
@@ -197,6 +198,7 @@ def connect(
         raise
 
 
+router.include_router(brain_mission_router)
 router.include_router(create_brain_router(prefix="/canonical"))
 router.include_router(calyx_agent_router)
 router.include_router(calyx_journalism_router)
