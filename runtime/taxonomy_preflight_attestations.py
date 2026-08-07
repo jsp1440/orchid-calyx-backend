@@ -24,6 +24,7 @@ GATES = (
     "microsoft_architecture_review",
 )
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$|^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -79,8 +80,8 @@ def _validate_gate_metadata(item: GateAttestation) -> None:
         for key in ("repository", "commit_sha", "workflow_run_id"):
             if not str(metadata.get(key, "")).strip():
                 raise ValueError(f"ci_validation metadata requires {key}")
-        if not SHA256_RE.fullmatch(str(metadata["commit_sha"]).casefold()):
-            raise ValueError("ci_validation commit_sha must be 64 lowercase hex characters")
+        if not GIT_COMMIT_RE.fullmatch(str(metadata["commit_sha"]).casefold()):
+            raise ValueError("ci_validation commit_sha must be a 40- or 64-character hex digest")
     elif item.gate == "real_dataset_validation":
         for key in ("source_filename", "source_sha256", "validator_run_id"):
             if not str(metadata.get(key, "")).strip():
