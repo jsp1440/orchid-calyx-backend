@@ -125,7 +125,9 @@ def rank_candidates(
         }
 
     active = [item for item in observations if _CERTAINTY_FACTOR[item.certainty] > 0]
-    possible_weight = sum(max(item.weight, 0.0) * _CERTAINTY_FACTOR[item.certainty] for item in active)
+    possible_weight = sum(
+        max(item.weight, 0.0) * _CERTAINTY_FACTOR[item.certainty] for item in active
+    )
     results: list[CandidateResult] = []
 
     for candidate in candidates:
@@ -171,7 +173,11 @@ def rank_candidates(
                     effective_weight=round(effective_weight, 6),
                     similarity=round(similarity, 6),
                     contribution=round(contribution, 6),
-                    status="matched" if similarity == 1 else "partial" if similarity > 0 else "conflict",
+                    status="matched"
+                    if similarity == 1
+                    else "partial"
+                    if similarity > 0
+                    else "conflict",
                 )
             explanations.append(asdict(explanation))
 
@@ -192,7 +198,12 @@ def rank_candidates(
 
     ordered = sorted(
         results,
-        key=lambda item: (-item.score, -item.coverage, item.scientific_name.casefold(), item.taxon_id),
+        key=lambda item: (
+            -item.score,
+            -item.coverage,
+            item.scientific_name.casefold(),
+            item.taxon_id,
+        ),
     )[:limit]
     return {
         "candidates": [item.as_dict() for item in ordered],
