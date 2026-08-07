@@ -9,6 +9,7 @@ on:
       - "app/calyx_orchestrator/program_repository.py"
       - "app/calyx_orchestrator/program_routes.py"
       - "migrations/20260805_calyx_autonomous_engineering_core.sql"
+      - "migrations/20260807_calyx_program_job_inputs.sql"
       - "tests/test_calyx_autonomous_patch_validation_program.py"
       - ".github/workflows/build-brain-114e.yml"
       - "docs/brain/BUILD-BRAIN-114E-PROGRAM-INPUT-INTEGRATION.md"
@@ -62,6 +63,8 @@ jobs:
             tests/test_calyx_governed_assignment_factory.py \
             tests/test_calyx_autonomous_program_cycle.py
       - name: Migration contains compatible input manifest column
-        run: grep -q "ADD COLUMN IF NOT EXISTS input_json TEXT NULL" migrations/20260805_calyx_autonomous_engineering_core.sql
+        run: |
+          grep -q "ADD COLUMN IF NOT EXISTS input_json TEXT NULL" migrations/20260805_calyx_autonomous_engineering_core.sql
+          grep -q "ADD COLUMN IF NOT EXISTS input_json TEXT NULL" migrations/20260807_calyx_program_job_inputs.sql
       - name: Diff hygiene
         run: git diff --check
