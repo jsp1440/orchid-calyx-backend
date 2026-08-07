@@ -1,0 +1,36 @@
+name: OCU University Release Contract
+
+on:
+  pull_request:
+    paths:
+      - "app/university/**"
+      - "scripts/smoke_university_release.py"
+      - "tests/test_university_release_readiness.py"
+      - ".github/workflows/ocu-university-release-contract.yml"
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Optional deployed API base URL, for example https://host.example/api"
+        required: false
+        type: string
+
+jobs:
+  contract-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install application dependencies
+        run: pip install -r requirements.txt
+      - name: Run University contract tests
+        run: |
+          python -m unittest \
+            tests/test_university_session_service.py \
+            tests/test_university_release_readiness.py
+      - name: Compile smoke checker
+        run: python -m py_compile scripts/smoke_university_release.py
+      - name: Smoke deployed read-only University backend
+        if: ${{ inputs.api_base_url != '' }}
+        run: python scripts/smoke_university_release.py "${{ inputs.api_base_url }}"
