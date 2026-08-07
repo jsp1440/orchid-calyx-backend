@@ -25,11 +25,29 @@ BUILD-BRAIN-114E persists bounded per-job input manifests. The assignment factor
 
 Focused tests cover marker-only rejection, supervisor rejection, fixed argv, scrubbed environment, secret non-inheritance, stale hashes, arbitrary-command rejection, nonzero/timeout receipts, default-registry non-eligibility, durable queued state with zero attempts when no supervisor exists, and explicit eligibility when a supervisor is injected.
 
-## Current validation status
+## Authoritative validation evidence
 
-GitHub-hosted backend runners recovered during this work. A prior BUILD-BRAIN-114F run executed real checkout/setup/install/compile/Ruff/pytest/diff-hygiene steps successfully after correcting a Ruff import issue. The inherited BUILD-BRAIN-114B/114C/114D/114E workflows then exposed ordinary lint defects, proving the former `steps=null` runner-allocation incident was no longer masking code validation. Those inherited lint corrections were incorporated into the current BUILD-BRAIN-114E base before this clean consolidation branch was created.
+On clean current-base PR #550 head `b18d49925dd6bae037910ad154506b610a5c50c1`, GitHub Actions BUILD-BRAIN-114FG run `31210470220` executed every real step successfully:
 
-This clean branch is based on the current BUILD-BRAIN-114E head rather than the earlier diverged 114F branch.
+- checkout: success;
+- Python 3.13 setup: success;
+- dependency installation: success;
+- compile: success;
+- Ruff: success;
+- focused autonomous executable-validation tests plus inherited 114B/114C/114D/114E regression surface: success;
+- diff hygiene: success.
+
+The same head also produced successful independent inherited workflows:
+
+- BUILD-BRAIN-108-113A run `31210470257`;
+- BUILD-BRAIN-114B run `31210470893`;
+- BUILD-BRAIN-114C run `31210470303`;
+- BUILD-BRAIN-114D run `31210470877`;
+- BUILD-BRAIN-114E run `31210470250`.
+
+This confirms the earlier repository-wide `steps=null` hosted-runner incident is no longer active and that the corrected autonomy stack executes successfully under multiple independent validation workflows.
+
+The earlier diverged PR #545 was closed unmerged and replaced by clean current-base PR #550 rather than force-rewriting history.
 
 ## Remaining operational boundary
 
