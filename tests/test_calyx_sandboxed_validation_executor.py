@@ -11,8 +11,8 @@ from app.calyx_orchestrator.executor import GovernedAssignment
 from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
 from app.calyx_orchestrator.sandbox_authorization import SandboxAuthorization
 from app.calyx_orchestrator.sandboxed_validation_executor import (
-    SANDBOXED_VALIDATION_ROLE,
     SANDBOX_MARKER,
+    SANDBOXED_VALIDATION_ROLE,
     SandboxedExecutableValidationExecutor,
 )
 

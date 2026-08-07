@@ -17,9 +17,14 @@ from app.calyx_orchestrator.program_models import (
     CalyxProgramDependency,
     CalyxProgramJob,
 )
-from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
 from app.calyx_orchestrator.sandbox_authorization import SandboxAuthorization
-from app.calyx_orchestrator.sandboxed_validation_executor import SANDBOXED_VALIDATION_ROLE
+from app.calyx_orchestrator.sandboxed_validation_executor import (
+    SANDBOXED_VALIDATION_ROLE,
+)
 from app.calyx_orchestrator.static_validation_executor import STATIC_VALIDATION_ROLE
 from app.database import Base
 
