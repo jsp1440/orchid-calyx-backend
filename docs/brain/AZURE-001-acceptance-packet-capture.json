@@ -1,0 +1,48 @@
+{
+  "object_id": "brain:build:azure-001-acceptance-packet",
+  "object_type": "build_capture",
+  "title": "AZURE-001 Governed Acceptance Packet",
+  "lifecycle": "candidate",
+  "version": "0.1.0",
+  "summary": "Consolidates release-bundle verification, readiness evidence, and reproducibility evidence into a review-only acceptance packet without granting Azure, publication, database, or production-migration authority.",
+  "repository": "jsp1440/orchid-calyx-backend",
+  "pull_request": 459,
+  "branch": "feature/azure-001-taxonomy-preflight",
+  "capabilities": [
+    "cross-evidence run_id consistency",
+    "release-bundle verification",
+    "readiness-decision integration",
+    "reproducibility-evidence integration",
+    "aggregate evidence digest",
+    "fail-closed safety-flag validation",
+    "review-only acceptance decision"
+  ],
+  "decisions": [
+    "ACCEPTANCE_REVIEW_ONLY is not deployment authorization",
+    "Any release-bundle verification failure produces BLOCK",
+    "Incomplete external gates produce REVIEW_ONLY",
+    "Azure provisioning, taxonomy publication, database mutation, and production migration remain permanently false in the packet"
+  ],
+  "relationships": [
+    {"type": "extends", "target": "brain:build:azure-001-taxonomy-preflight"},
+    {"type": "verifies", "target": "runtime/taxonomy_preflight_release_gate.py"},
+    {"type": "consumes", "target": "runtime/taxonomy_preflight_readiness.py"},
+    {"type": "consumes", "target": "runtime/taxonomy_preflight_reproducibility.py"},
+    {"type": "validated_by", "target": "tests/test_taxonomy_preflight_acceptance.py"},
+    {"type": "integrated_by", "target": ".github/workflows/taxonomy-preflight-ci.yml"}
+  ],
+  "unresolved_gates": [
+    "GitHub Actions run must register and pass",
+    "Exact WorldOrchids 26-08 source must pass governed real-data validation",
+    "Azure nonprofit credit linkage must be verified",
+    "Subscription budget alerts must be configured",
+    "Microsoft or assigned partner architecture review must be completed"
+  ],
+  "authority": {
+    "azure_provisioning": false,
+    "taxonomy_publication": false,
+    "database_mutation": false,
+    "production_migration": false,
+    "merge": false
+  }
+}
