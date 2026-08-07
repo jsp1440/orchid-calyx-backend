@@ -26,3 +26,7 @@ This adapter does not use shell commands, network access, GitHub APIs, credentia
 ## Operational value
 
 The autonomous engine can now perform one real evidence-producing task rather than merely exercising internal orchestration plumbing. This establishes the pattern for additional reviewed read-only adapters such as CI-result inspection, repository-state analysis, literature metadata acquisition, and Knowledge Graph preflight evidence.
+
+## Validation note
+
+The first PR validation batch failed before GitHub created any workflow steps across multiple unrelated workflows. No code-level failure evidence was produced. A fresh owner-authored documentation commit was used to retrigger validation rather than changing implementation behavior without evidence.
