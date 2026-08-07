@@ -5,7 +5,6 @@ from app.scientific_interpretation.postgres_repository import (
     PostgresInterpretationRepository,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
