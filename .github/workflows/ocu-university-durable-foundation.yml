@@ -6,7 +6,9 @@ on:
       - 'app/university/durable_*.py'
       - 'migrations/ocu_sci_008_durable_sessions.sql'
       - 'scripts/validate_university_durable_migration.py'
+      - 'scripts/validate_university_release_evidence.py'
       - 'tests/test_university_durable_foundation.py'
+      - 'tests/test_university_release_evidence.py'
       - '.github/workflows/ocu-university-durable-foundation.yml'
   workflow_dispatch:
 
@@ -22,7 +24,14 @@ jobs:
         run: pip install -r requirements.txt
       - name: Validate migration invariants
         run: python scripts/validate_university_durable_migration.py
-      - name: Run durable gate tests
-        run: python -m unittest tests/test_university_durable_foundation.py
-      - name: Compile durable modules
-        run: python -m py_compile app/university/durable_config.py app/university/durable_repository.py
+      - name: Run durable foundation tests
+        run: >-
+          python -m unittest
+          tests/test_university_durable_foundation.py
+          tests/test_university_release_evidence.py
+      - name: Compile durable and evidence modules
+        run: >-
+          python -m py_compile
+          app/university/durable_config.py
+          app/university/durable_repository.py
+          scripts/validate_university_release_evidence.py
