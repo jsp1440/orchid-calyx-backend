@@ -1,0 +1,29 @@
+name: MATRIX-IDENTIFICATION-MVP-001
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/matrix_identification.py'
+      - 'app/routers/matrix_identification.py'
+      - 'app/routers/health.py'
+      - 'tests/test_matrix_identification_mvp_001.py'
+      - 'docs/MATRIX-IDENTIFICATION-MVP-001.md'
+      - '.github/workflows/matrix-identification-mvp-001.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest ruff fastapi python-multipart httpx2
+      - run: python -m ruff check runtime/matrix_identification.py app/routers/matrix_identification.py tests/test_matrix_identification_mvp_001.py
+      - run: python -m ruff format --check runtime/matrix_identification.py app/routers/matrix_identification.py tests/test_matrix_identification_mvp_001.py
+      - run: python -m pytest -q tests/test_matrix_identification_mvp_001.py
+      - run: python -m compileall -q runtime/matrix_identification.py app/routers/matrix_identification.py
+      - run: git diff --check
