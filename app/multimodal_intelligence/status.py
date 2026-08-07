@@ -4,7 +4,7 @@ from __future__ import annotations
 def capability_status() -> dict:
     return {
         "capability": "literature_matrix_vision",
-        "state": "functional_integration_slice",
+        "state": "governed_functional_integration",
         "production_ready": False,
         "priority_10": {
             "completed": [
@@ -21,25 +21,35 @@ def capability_status() -> dict:
             ],
             "count": 10,
         },
+        "integration_depth": {
+            "document_intelligence_bridge": True,
+            "candidate_knowledge_promotion_plan": True,
+            "postgres_repository_implementation": True,
+            "postgres_schema_supplied": True,
+            "postgres_schema_activated": False,
+            "promotion_execution_enabled": False,
+        },
         "lanes": {
             "literature": {
-                "state": "deterministic_integration_ready",
+                "state": "document_intelligence_bridge_ready",
                 "available": [
                     "canonical_source_identity",
                     "content_hash",
                     "evidence_spans",
                     "document_page_adapter",
+                    "document_intelligence_read_only_bridge",
                     "taxon_identity_resolution",
                     "confidence",
                     "contradictions",
                     "candidate_knowledge_payload",
+                    "candidate_knowledge_promotion_plan",
                     "disabled_ocr_fail_closed",
                 ],
                 "remaining": [
-                    "production_pdf_adapter",
                     "configured_ocr_provider",
-                    "hassler_database_adapter",
+                    "production_hassler_taxonomy_adapter",
                     "real_paper_validation_set",
+                    "owner_approved_candidate_handoff_execution",
                 ],
             },
             "matrix": {
@@ -58,7 +68,7 @@ def capability_status() -> dict:
                 ],
                 "remaining": [
                     "curated_orchid_matrices",
-                    "database_persistence",
+                    "governed_postgres_activation",
                     "field_validation_dataset",
                 ],
             },
@@ -86,11 +96,12 @@ def capability_status() -> dict:
         "safety": {
             "live_inference_enabled": False,
             "automatic_species_identification": False,
+            "automatic_candidate_promotion": False,
             "automatic_publication": False,
             "taxonomy_activation": False,
             "production_graph_mutation": False,
             "unlicensed_media_promotion": False,
             "human_review_required": True,
         },
-        "next_human_action": "Review the ten deterministic integration components before configuring live providers or production datasets.",
+        "next_human_action": "Owner approval is required before activating Postgres persistence, live providers, Candidate Knowledge execution, or publication.",
     }
