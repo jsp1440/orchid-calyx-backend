@@ -62,7 +62,9 @@ def evaluate(
     _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     try:
-        observations = [Observation(**item.model_dump()) for item in payload.observations]
+        observations = [
+            Observation(**item.model_dump()) for item in payload.observations
+        ]
         candidates = [Candidate(**item.model_dump()) for item in payload.candidates]
         return rank_candidates(observations, candidates, limit=payload.limit)
     except ValueError as exc:
