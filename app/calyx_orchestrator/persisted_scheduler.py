@@ -87,6 +87,8 @@ def project_persisted_schedule(db: Session, *, owner: str | None = None) -> Pers
                 created_order=created_order,
                 state=_scheduled_state(job.status),
                 outcome=job.outcome,
+                branch=job.branch,
+                mutating=job.mutating,
             )
         )
 
