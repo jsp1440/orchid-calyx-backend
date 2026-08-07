@@ -1,9 +1,10 @@
 # CALYX Eligible-Ledger Discovery Observability
 
 Date: 2026-08-07
-Base main: `4a580214b7b502eea5b5237ebaaf3f70b1d163ec`
+Base main: `0cebe8f84b58cf0129954991bfe9785ac0eafb18`
 Repair PR: #584
 Source diagnostic: temporary PR #578
+Implementation head: `329bdc9f67105282bd19a97c455682b01ba23c4a`
 
 ## Demonstrated failure
 
@@ -26,17 +27,32 @@ The read-only discovery utility now:
 - exits nonzero on discovery failure while still writing the evidence file;
 - preserves the distinction between a successful discovery with zero eligible ledgers and an unavailable backend.
 
-## Compatibility preservation
+## Compatibility preservation and repair sequence
 
 The first repair head compiled successfully but Ruff exposed two focused style defects (`UP035` and `PYI034`); both were corrected before expanding scope.
 
-The existing `CALYX Eligible Ledger Discovery` regression then exposed a real compatibility issue in the refactor: established operator tests monkeypatch module-level `ACCESS_CODE` and the historical two-value `call()` seam. The repair now deliberately preserves:
+The existing `CALYX Eligible Ledger Discovery` regression then exposed a compatibility issue in the refactor: established operator tests monkeypatch module-level `ACCESS_CODE` and the historical two-value `call()` seam. The repair deliberately preserves:
 
 - module-level `BASE_URL` and `ACCESS_CODE` configuration seams;
 - `call(path, method="GET", payload=None, token="") -> (status, body)` for existing operators/tests;
 - optional dependency injection for focused retry testing without changing the legacy call shape.
 
+A subsequent contents-API branch-write race temporarily combined the updated two-value test with the earlier three-value script implementation. Rather than layering further writes onto an inconsistent history, #584 was rebuilt atomically as one commit directly on then-current main `0cebe8f84b58cf0129954991bfe9785ac0eafb18`. That atomic rebuild is the authoritative implementation candidate.
+
 Retries remain internal to `call()`, while terminal failures carry their attempt count in `DiscoveryFailure` and the persisted failure receipt.
+
+## Executable validation evidence
+
+Atomic implementation head `329bdc9f67105282bd19a97c455682b01ba23c4a` passed all triggered release gates:
+
+- Eligible Ledger Discovery Observability `31226292116` — success;
+- CALYX Workflow Governance Audit `31226292233` — success;
+- BUILD-088E Validation `31226292150` — success;
+- CALYX Eligible Ledger Discovery `31226292154` — success for operator validation/regression.
+
+The focused observability workflow passed Python 3.13 compile, Ruff, all focused retry/failure-receipt/redaction tests, read-only contract smoke, Brain smoke, and diff hygiene.
+
+The repository-standard CALYX Eligible Ledger Discovery PR workflow passed its operator validation and existing `tests/test_eligible_ledger_discovery.py` regression. Its live protected-backend discovery and artifact-upload steps were correctly skipped because that workflow intentionally executes those steps only for non-pull-request events. Therefore this PR evidence does **not** establish that the earlier backend HTTP 503 has cleared, that a live eligible ledger exists, or that no eligible ledger exists.
 
 ## Governance
 
@@ -44,8 +60,6 @@ This utility remains read-only. It requests an owner session and queries the eli
 
 A backend HTTP 503 is not evidence that no eligible ledger exists. It is recorded as backend-unavailable evidence and must not be converted into a publication target or eligibility conclusion.
 
-## Validation plan
+## Release requirement
 
-Focused CI validates Python 3.13 compilation, Ruff, transient retry behavior, terminal HTTP/network receipts, access-code/token redaction, read-only success behavior, canonical receipt hashing, missing-configuration typing, source-level no-publication checks, the existing eligible-ledger discovery regression suite, Brain smoke, and diff hygiene.
-
-Exact final-head run identifiers will be added before release.
+The final documentation head must rerun the focused observability gate and relevant governance/publication regressions before merge. The next actual live backend discovery must occur through the existing non-PR workflow path after this repair is on main; its result must be treated as evidence only, not as authority to publish.
