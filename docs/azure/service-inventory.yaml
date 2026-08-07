@@ -1,0 +1,105 @@
+version: 0.1.0
+status: draft
+last_updated: 2026-08-06
+principles:
+  - unknowns_are_tbd_not_guesses
+  - no_production_migration_without_explicit_go_no_go
+  - preserve_provenance_and_rollback
+services:
+  - id: calyx-api
+    owner: Five Cities Orchid Society
+    purpose: Calyx orchestration and governed knowledge services
+    runtime: FastAPI/Uvicorn
+    current_deployment: Render
+    production_status: verify
+    database: Neon PostgreSQL
+    proposed_azure_disposition: pilot
+    proposed_target: Azure Container Apps
+    dependencies:
+      - PostgreSQL
+      - external AI providers
+      - document and knowledge services
+    unknowns:
+      - authoritative public endpoint
+      - current autoscaling and worker topology
+  - id: taxonomy-preflight-validator
+    owner: Five Cities Orchid Society
+    purpose: deterministic validation and comparison of candidate taxonomy CSV files
+    runtime: Python standard library CLI
+    current_deployment: local_and_ci
+    production_status: non_production_pilot
+    database: none
+    proposed_azure_disposition: pilot
+    proposed_target: Azure Container Apps Jobs
+    storage: Azure Blob Storage adapter planned
+    mutation_policy: no_import_no_publish
+  - id: orchid-continuum-public-api
+    owner: Five Cities Orchid Society
+    purpose: public species, graph, image, and research endpoints
+    runtime: TBD_multiple_services
+    current_deployment: Render_and_other
+    production_status: verify
+    proposed_azure_disposition: migrate_later
+    proposed_target: Azure Container Apps or App Service after benchmark
+  - id: ingestion-harvesters
+    owner: Five Cities Orchid Society
+    purpose: scheduled ingestion from biodiversity and literature sources
+    runtime: Python_jobs
+    current_deployment: Render_GitHub_Actions_and_TBD
+    production_status: mixed_verify
+    proposed_azure_disposition: pilot
+    proposed_target: Azure Container Apps Jobs
+    unknowns:
+      - canonical scheduler
+      - complete job list
+      - replay and idempotency guarantees
+  - id: knowledge-database
+    owner: Five Cities Orchid Society
+    purpose: operational and evidence-centered PostgreSQL data store
+    runtime: PostgreSQL_PostGIS
+    current_deployment: Neon
+    production_status: production
+    proposed_azure_disposition: keep
+    proposed_target: evaluate Azure Database for PostgreSQL Flexible Server
+    migration_gate: separate benchmark_and_go_no_go
+  - id: durable-document-storage
+    owner: Five Cities Orchid Society
+    purpose: owned taxonomy files, literature inputs, evidence artifacts, exports, backups
+    runtime: object_storage
+    current_deployment: distributed_TBD
+    production_status: mixed
+    proposed_azure_disposition: pilot
+    proposed_target: Azure Blob Storage or ADLS Gen2
+  - id: image-federation
+    owner: Five Cities Orchid Society
+    purpose: federated access to orchid images and metadata
+    runtime: external_references_and_selected_owned_derivatives
+    current_deployment: distributed
+    production_status: production_and_development
+    proposed_azure_disposition: keep
+    proposed_target: store only OC-owned files and derivatives in Blob Storage
+    guardrail: do_not_copy_entire_external_image_corpus
+  - id: secrets-and-identity
+    owner: Five Cities Orchid Society
+    purpose: secrets, workload identity, and service authorization
+    runtime: environment_variables_and_TBD
+    current_deployment: fragmented
+    production_status: verify
+    proposed_azure_disposition: pilot
+    proposed_target: Azure Key Vault plus managed identities and GitHub OIDC
+  - id: observability
+    owner: Five Cities Orchid Society
+    purpose: logs, traces, metrics, alerts, and cost visibility
+    runtime: fragmented
+    current_deployment: mixed
+    production_status: incomplete
+    proposed_azure_disposition: pilot
+    proposed_target: Azure Monitor and Application Insights
+  - id: frontends
+    owner: Five Cities Orchid Society
+    purpose: public site, Mission Control, Conservatory, Research Station, Atlas interfaces
+    runtime: React_Vite_and_TBD
+    current_deployment: multiple
+    production_status: mixed
+    proposed_azure_disposition: migrate_later
+    proposed_target: Static Web Apps or current hosting after evaluation

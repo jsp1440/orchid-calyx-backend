@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0.0",
+  "attestations": [
+    {
+      "gate": "ci_validation",
+      "status": "pending",
+      "evidence_id": "TBD-ci-evidence",
+      "issuer": "TBD",
+      "issued_at": "2026-08-06T00:00:00+00:00",
+      "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "scope": "AZURE-001",
+      "metadata": {
+        "repository": "jsp1440/orchid-calyx-backend",
+        "commit_sha": "0000000000000000000000000000000000000000",
+        "workflow_run_id": "TBD"
+      }
+    },
+    {
+      "gate": "real_dataset_validation",
+      "status": "pending",
+      "evidence_id": "TBD-real-dataset-evidence",
+      "issuer": "TBD",
+      "issued_at": "2026-08-06T00:00:00+00:00",
+      "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "scope": "Exact WorldOrchids 26-08 validation",
+      "metadata": {
+        "source_filename": "WorldOrchids 26-08.csv",
+        "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "validator_run_id": "TBD"
+      }
+    },
+    {
+      "gate": "billing_credit_linkage",
+      "status": "pending",
+      "evidence_id": "TBD-billing-evidence",
+      "issuer": "TBD",
+      "issued_at": "2026-08-06T00:00:00+00:00",
+      "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "scope": "Azure nonprofit credit linkage",
+      "metadata": {
+        "subscription_id": "TBD",
+        "billing_profile": "Jeffery Parham",
+        "credit_expiration": "2027-08-04T00:00:00+00:00"
+      }
+    },
+    {
+      "gate": "budget_alerts",
+      "status": "pending",
+      "evidence_id": "TBD-budget-alert-evidence",
+      "issuer": "TBD",
+      "issued_at": "2026-08-06T00:00:00+00:00",
+      "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "scope": "AZURE-001 subscription cost control",
+      "metadata": {
+        "thresholds_percent": [50, 75, 90, 100]
+      }
+    },
+    {
+      "gate": "microsoft_architecture_review",
+      "status": "pending",
+      "evidence_id": "TBD-architecture-review-evidence",
+      "issuer": "TBD",
+      "issued_at": "2026-08-06T00:00:00+00:00",
+      "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "scope": "AZURE-001 architecture review",
+      "metadata": {
+        "review_reference": "TBD",
+        "reviewer_organization": "Microsoft or assigned partner",
+        "review_outcome": "accepted_with_actions"
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchidcontinuum.org/schemas/taxonomy-preflight-governance.schema.json",
+  "title": "Taxonomy Preflight Governance Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "require_baseline": {"type": "boolean"},
+    "allowed_input_shapes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["headered", "legacy_world_plants_headerless"]}
+    },
+    "allowed_suffixes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^\\.[A-Za-z0-9]+$"}
+    },
+    "maximum_candidate_bytes": {"type": "integer", "minimum": 1},
+    "maximum_columns": {"type": "integer", "minimum": 1},
+    "maximum_overall_null_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "require_private_output_directory": {"type": "boolean"}
+  }
+}

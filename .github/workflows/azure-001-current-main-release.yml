@@ -1,0 +1,55 @@
+name: AZURE-001 Current-Main Release
+
+on:
+  pull_request:
+    paths:
+      - "runtime/taxonomy_preflight*.py"
+      - "tests/test_taxonomy_preflight*.py"
+      - "config/taxonomy-*.json"
+      - "docs/azure/**"
+      - "docs/brain/AZURE-001-CURRENT-MAIN.md"
+      - ".github/workflows/taxonomy-preflight-ci.yml"
+      - ".github/workflows/taxonomy-attestation-register-ci.yml"
+      - ".github/workflows/azure-001-current-main-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile current-main guardrail surface
+        run: python -m compileall -q runtime/taxonomy_preflight*.py tests/test_taxonomy_preflight*.py
+      - name: Run complete focused guardrail suite
+        run: >-
+          python -m unittest
+          tests.test_taxonomy_preflight
+          tests.test_taxonomy_preflight_governance
+          tests.test_taxonomy_preflight_release_gate
+          tests.test_taxonomy_preflight_readiness
+          tests.test_taxonomy_preflight_reproducibility
+          tests.test_taxonomy_preflight_acceptance
+          tests.test_taxonomy_preflight_attestations
+          tests.test_taxonomy_preflight_attestation_register -v
+      - name: Validate current-main Brain evidence
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path("docs/brain/AZURE-001-CURRENT-MAIN.md").read_text()
+          assert "PR: #572" in text
+          assert "31224661143" in text
+          assert "31224661211" in text
+          assert "31224661191" in text
+          assert "31224661151" in text
+          assert "Azure provisioning" in text
+          assert "remain false/unverified" in text
+          PY
+      - name: Diff hygiene
+        run: git diff --check

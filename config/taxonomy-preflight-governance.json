@@ -1,0 +1,16 @@
+{
+  "require_baseline": true,
+  "allowed_input_shapes": [
+    "headered",
+    "legacy_world_plants_headerless"
+  ],
+  "allowed_suffixes": [
+    ".csv",
+    ".tsv",
+    ".txt"
+  ],
+  "maximum_candidate_bytes": 250000000,
+  "maximum_columns": 256,
+  "maximum_overall_null_ratio": 0.95,
+  "require_private_output_directory": true
+}
