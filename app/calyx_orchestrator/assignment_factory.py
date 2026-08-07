@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+
 from sqlalchemy.orm import Session
 
 from .executor import ExecutorCapability, GovernedAssignment
+from .isolated_patch_executor import ISOLATED_PATCH_ROLE
 from .program_models import CalyxProgram, CalyxProgramJob
 
 SAFE_ASSIGNMENT_CAPABILITIES = (
@@ -10,6 +13,40 @@ SAFE_ASSIGNMENT_CAPABILITIES = (
     ExecutorCapability.PRODUCE_RECEIPT.value,
     ExecutorCapability.COLLECT_EVIDENCE_URIS.value,
 )
+ROLE_ADDITIONAL_CAPABILITIES: dict[str, tuple[str, ...]] = {
+    ISOLATED_PATCH_ROLE: ("workspace_write",),
+}
+RESERVED_JOB_INPUT_KEYS = frozenset(
+    {
+        "program_job_id",
+        "job_key",
+        "role_key",
+        "title",
+        "repository",
+        "branch",
+        "mutating_intent",
+        "attempt_count",
+    }
+)
+
+
+def _persisted_job_inputs(job: CalyxProgramJob) -> dict[str, object]:
+    if not job.input_json:
+        return {}
+    try:
+        value = json.loads(job.input_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError("PROGRAM_JOB_INPUT_JSON_INVALID") from exc
+    if not isinstance(value, dict):
+        raise TypeError("PROGRAM_JOB_INPUT_JSON_OBJECT_REQUIRED")
+    if any(not isinstance(key, str) or not key.strip() for key in value):
+        raise ValueError("PROGRAM_JOB_INPUT_KEY_INVALID")
+    reserved = sorted(set(value) & RESERVED_JOB_INPUT_KEYS)
+    if reserved:
+        raise PermissionError(
+            f"PROGRAM_JOB_INPUT_RESERVED_KEY:{','.join(reserved)}"
+        )
+    return value
 
 
 def governed_assignment_from_claimed_job(
@@ -29,25 +66,34 @@ def governed_assignment_from_claimed_job(
     if timeout_seconds <= 0:
         raise ValueError("ASSIGNMENT_TIMEOUT_INVALID")
 
+    persisted_inputs = _persisted_job_inputs(job)
+    job_payload: dict[str, object] = {
+        "program_job_id": job.program_job_id,
+        "job_key": job.job_key,
+        "role_key": job.role_key,
+        "title": job.title,
+        "repository": job.repository,
+        "branch": job.branch,
+        "mutating_intent": bool(job.mutating),
+        "attempt_count": job.attempt_count,
+        **persisted_inputs,
+    }
+    requested_capabilities = (
+        *SAFE_ASSIGNMENT_CAPABILITIES,
+        *ROLE_ADDITIONAL_CAPABILITIES.get(job.role_key, ()),
+    )
+    workspace_write_authorized = "workspace_write" in requested_capabilities
     inputs = {
         "program": {
             "program_id": program.program_id,
             "title": program.title,
             "objective": program.objective,
         },
-        "job": {
-            "program_job_id": job.program_job_id,
-            "job_key": job.job_key,
-            "role_key": job.role_key,
-            "title": job.title,
-            "repository": job.repository,
-            "branch": job.branch,
-            "mutating_intent": bool(job.mutating),
-            "attempt_count": job.attempt_count,
-        },
+        "job": job_payload,
         "governance": {
-            "mode": "bounded_dry_run",
+            "mode": "bounded_authoritative_adapter",
             "external_execution_authorized": False,
+            "workspace_write_authorized": workspace_write_authorized,
             "automatic_merge_authorized": False,
             "deployment_authorized": False,
             "publication_authorized": False,
@@ -61,7 +107,7 @@ def governed_assignment_from_claimed_job(
         role_key=job.role_key,
         objective=job.title,
         inputs=inputs,
-        requested_capabilities=SAFE_ASSIGNMENT_CAPABILITIES,
+        requested_capabilities=requested_capabilities,
         evidence_uris=(
             f"calyx:program/{program.program_id}",
             f"calyx:program-job/{job.program_job_id}",
@@ -73,6 +119,10 @@ def governed_assignment_from_claimed_job(
 
 
 def assignment_payload(assignment: GovernedAssignment) -> dict[str, object]:
+    governance = assignment.inputs.get("governance")
+    workspace_write_authorized = bool(
+        isinstance(governance, dict) and governance.get("workspace_write_authorized")
+    )
     return {
         "assignment_id": assignment.assignment_id,
         "program_id": assignment.program_id,
@@ -86,4 +136,5 @@ def assignment_payload(assignment: GovernedAssignment) -> dict[str, object]:
         "cancelled": assignment.cancelled,
         "input_checksum": assignment.verified_input_checksum(),
         "external_execution_authorized": False,
+        "workspace_write_authorized": workspace_write_authorized,
     }
