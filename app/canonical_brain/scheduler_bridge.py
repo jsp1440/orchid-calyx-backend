@@ -27,8 +27,7 @@ class SchedulerJobMetadata(StrictModel):
 
 
 def _architecture_key(architecture_id: str) -> str:
-    prefix = "architecture:"
-    return architecture_id[len(prefix) :] if architecture_id.startswith(prefix) else architecture_id
+    return architecture_id.removeprefix("architecture:")
 
 
 def _state_and_outcome(item: BuildQueueItem) -> tuple[ScheduledState, str | None]:
