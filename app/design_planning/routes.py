@@ -12,7 +12,6 @@ from app.security import verify_owner_or_api_key
 from .models import LifecycleState
 from .service import Build089EvidenceAdapter, DesignPlanningService, PlanningError
 
-
 router = APIRouter(
     prefix="/api/design-planning",
     tags=["design-planning"],
