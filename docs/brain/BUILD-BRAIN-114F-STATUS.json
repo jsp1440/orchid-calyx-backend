@@ -1,0 +1,20 @@
+{
+  "build": "BUILD-BRAIN-114F",
+  "branch": "feature/brain-114f-current-main-consolidation",
+  "base": "main",
+  "purpose": "current-main autonomy consolidation",
+  "included": [
+    "BUILD-BRAIN-114B repository evidence already on main",
+    "BUILD-BRAIN-114C isolated patching already on main",
+    "BUILD-BRAIN-114D static validation integrated on branch"
+  ],
+  "next": "validate current-main consolidation before adding BUILD-BRAIN-114E persisted input orchestration",
+  "authority": {
+    "automatic_merge": false,
+    "deployment": false,
+    "publication": false,
+    "taxonomy_activation": false,
+    "production_database_mutation": false,
+    "production_knowledge_graph_mutation": false
+  }
+}
