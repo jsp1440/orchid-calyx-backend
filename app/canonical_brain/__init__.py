@@ -16,6 +16,7 @@ from .persistence import BrainSnapshotRepository, JsonBrainSnapshotRepository
 from .registry import CanonicalBrainRegistry
 
 __all__ = [
+    "CONSTITUTION_VERSION",
     "AdmissionFinding",
     "BrainCaptureBundle",
     "BrainCaptureResult",
@@ -26,7 +27,6 @@ __all__ = [
     "BrainSnapshotRepository",
     "BuildAdmissionDecision",
     "BuildAdmissionRequest",
-    "CONSTITUTION_VERSION",
     "CanonicalBrainRegistry",
     "JsonBrainSnapshotRepository",
     "SearchHit",
