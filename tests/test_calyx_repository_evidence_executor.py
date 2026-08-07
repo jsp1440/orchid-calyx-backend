@@ -23,21 +23,37 @@ from app.calyx_orchestrator.repository_evidence_executor import (
 from app.database import Base
 
 REPOSITORY = "jsp1440/orchid-calyx-backend"
+COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
 
 
-def _workspace(root: Path) -> None:
+def _workspace(root: Path, *, branch: str = "main") -> None:
     (root / "AGENTS.md").write_text("governance\n", encoding="utf-8")
     (root / "requirements.txt").write_text("fastapi\n", encoding="utf-8")
+    ref = root / ".git" / "refs" / "heads" / branch
+    ref.parent.mkdir(parents=True, exist_ok=True)
+    (root / ".git" / "HEAD").write_text(f"ref: refs/heads/{branch}\n", encoding="ascii")
+    ref.write_text(f"{COMMIT_SHA}\n", encoding="ascii")
 
 
-def _assignment(*, mutating: bool = False, repository: str = REPOSITORY) -> GovernedAssignment:
+def _assignment(
+    *,
+    mutating: bool = False,
+    repository: str = REPOSITORY,
+    branch: str = "main",
+) -> GovernedAssignment:
     return GovernedAssignment(
         assignment_id="job-1",
         program_id="program-1",
         job_key="evidence",
         role_key=REPOSITORY_EVIDENCE_ROLE,
         objective="Capture repository control-file evidence",
-        inputs={"job": {"repository": repository, "mutating_intent": mutating}},
+        inputs={
+            "job": {
+                "repository": repository,
+                "branch": branch,
+                "mutating_intent": mutating,
+            }
+        },
         evidence_uris=("calyx:program/program-1",),
     )
 
@@ -59,21 +75,27 @@ def test_reader_returns_deterministic_hash_metadata_without_contents(tmp_path: P
     assert first.output_checksum == second.output_checksum
     assert first.output["contents_included"] is False
     assert first.output["side_effects"] == []
+    assert first.output["requested_branch"] == "main"
+    assert first.output["checkout_branch"] == "main"
+    assert first.output["checkout_commit_sha"] == COMMIT_SHA
     files = first.output["files"]
     assert isinstance(files, list)
     assert [item["path"] for item in files] == ["AGENTS.md", "requirements.txt"]
     assert all(len(str(item["sha256"])) == 64 for item in files)
     assert all("content" not in item for item in files)
     assert first.executor_key == "repository_evidence_reader_v1"
+    assert f"repo-commit:{REPOSITORY}@{COMMIT_SHA}" in first.evidence_uris
 
 
-def test_reader_rejects_mutation_repository_mismatch_and_path_escape(tmp_path: Path):
+def test_reader_rejects_mutation_repository_mismatch_revision_mismatch_and_path_escape(tmp_path: Path):
     _workspace(tmp_path)
     executor = RepositoryEvidenceExecutor(workspace_root=tmp_path, repository_name=REPOSITORY)
     with pytest.raises(PermissionError, match="REPOSITORY_EVIDENCE_MUTATION_PROHIBITED"):
         executor.execute(_assignment(mutating=True))
     with pytest.raises(PermissionError, match="REPOSITORY_EVIDENCE_REPOSITORY_MISMATCH"):
         executor.execute(_assignment(repository="other/repo"))
+    with pytest.raises(PermissionError, match="REPOSITORY_EVIDENCE_REVISION_MISMATCH"):
+        executor.execute(_assignment(branch="feature/not-checked-out"))
 
     outside = tmp_path.parent / "outside.txt"
     outside.write_text("outside", encoding="utf-8")
@@ -93,13 +115,36 @@ def test_reader_rejects_symlink_and_reports_missing_optional(tmp_path: Path):
     (tmp_path / "AGENTS.md").unlink()
     (tmp_path / "AGENTS.md").symlink_to(outside)
     executor = RepositoryEvidenceExecutor(workspace_root=tmp_path, repository_name=REPOSITORY)
-    with pytest.raises(PermissionError):
+    with pytest.raises(PermissionError, match="REPOSITORY_EVIDENCE_SYMLINK_PROHIBITED"):
         executor.execute(_assignment())
 
     (tmp_path / "AGENTS.md").unlink()
     (tmp_path / "AGENTS.md").write_text("governance\n", encoding="utf-8")
     receipt = executor.execute(_assignment())
     assert "README.md" in receipt.output["missing_optional"]
+
+
+def test_reader_rejects_parent_directory_symlink_escape(tmp_path: Path):
+    _workspace(tmp_path)
+    outside = tmp_path.parent / "outside-dir"
+    outside.mkdir()
+    (outside / "control.txt").write_text("secret", encoding="utf-8")
+    (tmp_path / "linked").symlink_to(outside, target_is_directory=True)
+    executor = RepositoryEvidenceExecutor(
+        workspace_root=tmp_path,
+        repository_name=REPOSITORY,
+        targets=(EvidenceTarget("linked/control.txt", required=True),),
+    )
+    with pytest.raises(PermissionError, match="REPOSITORY_EVIDENCE_PATH_ESCAPE"):
+        executor.execute(_assignment())
+
+
+def test_reader_fails_closed_for_detached_checkout_when_branch_requested(tmp_path: Path):
+    _workspace(tmp_path)
+    (tmp_path / ".git" / "HEAD").write_text(f"{COMMIT_SHA}\n", encoding="ascii")
+    executor = RepositoryEvidenceExecutor(workspace_root=tmp_path, repository_name=REPOSITORY)
+    with pytest.raises(PermissionError, match="REPOSITORY_EVIDENCE_REVISION_MISMATCH"):
+        executor.execute(_assignment(branch="main"))
 
 
 def test_autonomous_cycle_completes_registered_repository_evidence_job(tmp_path: Path):
@@ -139,3 +184,4 @@ def test_autonomous_cycle_completes_registered_repository_evidence_job(tmp_path:
         assert job.status == "completed"
         assert job.outcome == "DELIVERED"
         assert job.evidence_json and "repository_evidence_reader_v1" in job.evidence_json
+        assert COMMIT_SHA in job.evidence_json
