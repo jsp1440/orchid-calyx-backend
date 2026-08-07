@@ -33,8 +33,12 @@ _DURABLE_ERROR_STATUS = {
     "REVISION_REQUIRED": 422,
     "REVISION_CONFLICT": 409,
     "INVALID_STAGE_TRANSITION": 409,
+    "INVALID_EVENT_TYPE": 422,
+    "EVENT_STAGE_MISMATCH": 409,
+    "STAGE_EXIT_REQUIREMENTS_UNMET": 409,
     "SUBMISSION_ENDPOINT_REQUIRED": 409,
     "SUBMISSION_NOT_READY": 409,
+    "CHANGES_NOT_ADDRESSED": 409,
     "INVALID_REVIEW_STATE": 409,
     "REVIEW_CREATE_FAILED": 500,
     "SESSION_CREATE_FAILED": 500,
@@ -93,12 +97,7 @@ def qualified_reviewer_context(
     principal: AccessPrincipal,
     decision: str,
 ) -> dict[str, object]:
-    """Return auditable reviewer authorization or fail closed.
-
-    Administrative/API-key status is intentionally insufficient. The principal must
-    hold an active scientific-review qualification and the capability appropriate to
-    the requested decision.
-    """
+    """Return auditable reviewer authorization or fail closed."""
     required_capability = _required_review_capability(decision)
     scientific_qualifications = tuple(
         qualification
@@ -121,12 +120,7 @@ def qualified_reviewer_context(
 
 
 class UniversityActivationService:
-    """Dispatch session operations without weakening the verified-release gate.
-
-    OCU-SCI-009A keeps the original process-local prototype intact when the durable
-    gate is closed. The Postgres repository is used only when every OCU-SCI-008A
-    activation prerequisite is true.
-    """
+    """Dispatch session operations without weakening the verified-release gate."""
 
     @staticmethod
     def persistence_mode() -> str:
