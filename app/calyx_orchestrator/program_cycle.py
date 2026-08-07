@@ -5,7 +5,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from .dry_run_service import execute_deterministic_dry_run
+from .assignment_factory import governed_assignment_from_claimed_job
+from .execution_bridge import LeaseExecutionBridge
+from .executor_registry import AuthoritativeExecutorRegistry
 from .program_worker import PersistentProgramWorker
 
 
@@ -38,7 +40,7 @@ class AutonomousCycleResult:
             "stop_reason": self.stop_reason,
             "jobs": [asdict(item) for item in self.jobs],
             "error": self.error,
-            "mode": "deterministic_dry_run_only",
+            "mode": "registered_authoritative_adapters_only",
             "external_side_effects": [],
             "automatic_merge": False,
             "automatic_deployment": False,
@@ -55,6 +57,7 @@ def run_deterministic_program_cycle(
     max_jobs: int = 10,
     lease_seconds: int = 300,
     timeout_seconds: int = 300,
+    registry: AuthoritativeExecutorRegistry | None = None,
 ) -> AutonomousCycleResult:
     normalized_owner = owner.strip()
     normalized_worker = worker_id.strip()
@@ -69,6 +72,7 @@ def run_deterministic_program_cycle(
     if not 1 <= timeout_seconds <= 3600:
         raise ValueError("AUTONOMY_TIMEOUT_SECONDS_OUT_OF_RANGE")
 
+    executor_registry = registry or AuthoritativeExecutorRegistry()
     worker = PersistentProgramWorker(db)
     completed: list[CycleJobResult] = []
     attempted = 0
@@ -77,6 +81,7 @@ def run_deterministic_program_cycle(
             worker_id=normalized_worker,
             lease_seconds=lease_seconds,
             owner=normalized_owner,
+            allowed_role_keys=executor_registry.eligible_role_keys,
         )
         if job is None:
             return AutonomousCycleResult(
@@ -104,13 +109,20 @@ def run_deterministic_program_cycle(
                 },
             )
         try:
-            result = execute_deterministic_dry_run(
+            registered = executor_registry.require_authoritative(job.role_key)
+            assignment = governed_assignment_from_claimed_job(
                 db,
                 owner=normalized_owner,
+                job=job,
+                timeout_seconds=timeout_seconds,
+            )
+            receipt = registered.executor.execute(assignment)
+            receipt.verify()
+            completed_job = LeaseExecutionBridge(db).complete_from_receipt(
                 program_job_id=job.program_job_id,
                 worker_id=normalized_worker,
                 lease_token=token,
-                timeout_seconds=timeout_seconds,
+                receipt=receipt,
             )
         except (LookupError, PermissionError, RuntimeError, ValueError) as exc:
             db.rollback()
@@ -134,9 +146,9 @@ def run_deterministic_program_cycle(
                 program_job_id=job.program_job_id,
                 program_id=job.program_id,
                 job_key=job.job_key,
-                outcome=str(result.completed_job.get("outcome") or "") or None,
-                receipt_state=str(result.completed_job.get("status") or ""),
-                executor_key=str(result.receipt.get("executor_key") or ""),
+                outcome=completed_job.outcome,
+                receipt_state=receipt.state.value,
+                executor_key=receipt.executor_key,
             )
         )
 
