@@ -16,6 +16,11 @@ from .repository_evidence_executor import (
     REPOSITORY_EVIDENCE_ROLE,
     RepositoryEvidenceExecutor,
 )
+from .sandbox_authorization import SandboxValidationAuthorizer
+from .sandboxed_validation_executor import (
+    SANDBOXED_VALIDATION_ROLE,
+    SandboxedExecutableValidationExecutor,
+)
 from .static_validation_executor import (
     STATIC_VALIDATION_ROLE,
     IsolatedWorkspaceStaticValidationExecutor,
@@ -72,13 +77,14 @@ class RegisteredExecutor:
 
 
 class AuthoritativeExecutorRegistry:
-    """Explicit allowlist of job roles that autonomous workers may complete."""
+    """Explicit allowlist of roles autonomous workers may complete authoritatively."""
 
     def __init__(
         self,
         *,
         workspace_root: Path | None = None,
         repository_name: str | None = None,
+        sandbox_validation_authorizer: SandboxValidationAuthorizer | None = None,
     ) -> None:
         probe = AutonomyProbeExecutor()
         repository_reader = RepositoryEvidenceExecutor(
@@ -93,7 +99,8 @@ class AuthoritativeExecutorRegistry:
             workspace_root=workspace_root,
             repository_name=repository_name,
         )
-        self._by_role = {
+        self._sandbox_validation_authorized = sandbox_validation_authorizer is not None
+        self._by_role: dict[str, RegisteredExecutor] = {
             AUTONOMY_PROBE_ROLE: RegisteredExecutor(
                 role_key=AUTONOMY_PROBE_ROLE,
                 executor=probe,
@@ -122,6 +129,20 @@ class AuthoritativeExecutorRegistry:
                 repository_code_execution=False,
             ),
         }
+        if sandbox_validation_authorizer is not None:
+            sandboxed_validator = SandboxedExecutableValidationExecutor(
+                workspace_root=workspace_root,
+                repository_name=repository_name,
+                authorizer=sandbox_validation_authorizer,
+            )
+            self._by_role[SANDBOXED_VALIDATION_ROLE] = RegisteredExecutor(
+                role_key=SANDBOXED_VALIDATION_ROLE,
+                executor=sandboxed_validator,
+                authoritative=True,
+                external_side_effects=False,
+                workspace_mutation=False,
+                repository_code_execution=True,
+            )
 
     @property
     def eligible_role_keys(self) -> frozenset[str]:
@@ -142,6 +163,7 @@ class AuthoritativeExecutorRegistry:
     def status(self) -> dict[str, object]:
         return {
             "authoritative_roles": sorted(self.eligible_role_keys),
+            "sandboxed_repository_code_execution_authorized": self._sandbox_validation_authorized,
             "executors": [
                 {
                     "role_key": registered.role_key,
