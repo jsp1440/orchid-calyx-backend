@@ -59,7 +59,9 @@ def test_accessions_increment_and_store_persists(tmp_path: Path):
     second = store.create(display_name="Dendrobium kingianum")
 
     assert first["accession_number"][:-4] == second["accession_number"][:-4]
-    assert int(second["accession_number"][-4:]) == int(first["accession_number"][-4:]) + 1
+    assert (
+        int(second["accession_number"][-4:]) == int(first["accession_number"][-4:]) + 1
+    )
     assert ConservatoryStore(tmp_path).get(first["id"]) == first
 
 

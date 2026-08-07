@@ -91,7 +91,8 @@ class ConservatoryStore:
                 id=plant_id,
                 accession_number=self._next_accession(rows, now.year),
                 display_name=normalized_name,
-                accepted_scientific_name=(accepted_scientific_name or "").strip() or None,
+                accepted_scientific_name=(accepted_scientific_name or "").strip()
+                or None,
                 location=(location or "").strip() or None,
                 notes=(notes or "").strip() or None,
                 qr_identifier=f"calyx:plant:{plant_id}",
