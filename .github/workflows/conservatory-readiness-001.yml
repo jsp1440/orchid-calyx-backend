@@ -1,0 +1,28 @@
+name: CONSERVATORY-READINESS-001
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/conservatory_readiness.py'
+      - 'app/routers/conservatory.py'
+      - 'tests/test_conservatory_readiness_001.py'
+      - '.github/workflows/conservatory-readiness-001.yml'
+      - 'docs/CONSERVATORY-READINESS-001.md'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest ruff fastapi python-multipart httpx2 qrcode
+      - run: python -m ruff check runtime/conservatory_readiness.py app/routers/conservatory.py tests/test_conservatory_readiness_001.py
+      - run: python -m ruff format --check runtime/conservatory_readiness.py app/routers/conservatory.py tests/test_conservatory_readiness_001.py
+      - run: python -m pytest -q tests/test_conservatory_readiness_001.py tests/test_conservatory_mvp_001.py
+      - run: python -m compileall -q runtime/conservatory_readiness.py app/routers/conservatory.py
+      - run: git diff --check
