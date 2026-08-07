@@ -164,10 +164,13 @@ class IsolatedWorkspaceStaticValidationExecutor:
             "side_effects": [],
         }
         evidence_uris = (
-                *assignment.evidence_uris,
-                f"repo-commit:{repository}@{checkout.commit_sha}",
-                *[f"validated-file:{item['path']}#{item['sha256']}" for item in results],
-            )
+            *assignment.evidence_uris,
+            f"repo-commit:{repository}@{checkout.commit_sha}",
+            *(
+                f"validated-file:{item['path']}#{item['sha256']}"
+                for item in results
+            ),
+        )
         receipt = ExecutionReceipt(
             assignment_id=assignment.assignment_id,
             program_id=assignment.program_id,
