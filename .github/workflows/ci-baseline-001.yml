@@ -1,0 +1,48 @@
+name: CI-BASELINE-001 Validation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/build-087b-validation.yml"
+      - ".github/workflows/ci-baseline-001.yml"
+      - "app/scientific_interpretation/postgres_repository.py"
+      - "app/design_planning/postgres_repository.py"
+      - "tests/test_ci_baseline_001.py"
+      - "docs/brain/CI-BASELINE-001-CURRENT-MAIN.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile changed baseline surface
+        run: |
+          python -m py_compile \
+            app/scientific_interpretation/postgres_repository.py \
+            app/design_planning/postgres_repository.py \
+            tests/test_ci_baseline_001.py
+      - name: Ruff changed baseline surface
+        run: |
+          python -m ruff check \
+            app/scientific_interpretation/postgres_repository.py \
+            app/design_planning/postgres_repository.py \
+            tests/test_ci_baseline_001.py
+      - name: Focused regression tests
+        run: python -m pytest -q tests/test_ci_baseline_001.py
+      - name: Diff hygiene
+        run: git diff --check
