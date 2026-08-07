@@ -5,7 +5,6 @@ from app.calyx_orchestrator.executor import GovernedAssignment
 from app.calyx_orchestrator.executor_registry import (
     AUTONOMY_PROBE_ROLE,
     AuthoritativeExecutorRegistry,
-    RegisteredExecutor,
 )
 from app.calyx_orchestrator.review_eligibility import (
     ReviewClass,
@@ -28,21 +27,19 @@ def authoritative_execution():
         inputs={"job": {"mutating_intent": False}},
         evidence_uris=("github://commit/example", "ci://run/example"),
     )
-    receipt = registered.executor.execute(assignment)
-    return receipt, registered
+    return registered.executor.execute(assignment)
 
 
 def package(**overrides):
-    receipt, registered = authoritative_execution()
     values = {
-        "registered_executor": registered,
+        "executor_role_key": AUTONOMY_PROBE_ROLE,
         "build_id": "BUILD-BRAIN-TEST",
         "agent_id": "agent:brain-engineer",
         "requested_by": "operator:mission-control",
         "producer_id": "agent:brain-engineer",
     }
     values.update(overrides)
-    return build_execution_evidence_package(receipt, **values)
+    return build_execution_evidence_package(authoritative_execution(), **values)
 
 
 def test_authoritative_receipt_builds_deterministic_existing_contracts() -> None:
@@ -58,59 +55,30 @@ def test_authoritative_receipt_builds_deterministic_existing_contracts() -> None
     assert first.capture.records[0].payload["candidate_only"] is True
 
 
-def test_non_authoritative_executor_fails_closed() -> None:
-    receipt, registered = authoritative_execution()
-    non_authoritative = RegisteredExecutor(
-        role_key=registered.role_key,
-        executor=registered.executor,
-        authoritative=False,
-        external_side_effects=False,
-    )
-    with pytest.raises(PermissionError, match="NON_AUTHORITATIVE_EXECUTOR"):
-        build_execution_evidence_package(
-            receipt,
-            registered_executor=non_authoritative,
-            build_id="BUILD-BRAIN-TEST",
-            agent_id="agent:brain-engineer",
-            requested_by="operator:mission-control",
-            producer_id="agent:brain-engineer",
-        )
+def test_unregistered_executor_role_fails_closed() -> None:
+    with pytest.raises(LookupError, match="AUTHORITATIVE_EXECUTOR_NOT_REGISTERED"):
+        package(executor_role_key="brain_engineer")
 
 
-def test_executor_identity_and_side_effect_authority_fail_closed() -> None:
-    receipt, registered = authoritative_execution()
-    external = RegisteredExecutor(
-        role_key=registered.role_key,
-        executor=registered.executor,
-        authoritative=True,
-        external_side_effects=True,
-    )
-    with pytest.raises(PermissionError, match="EXTERNAL_SIDE_EFFECT_EXECUTOR"):
-        build_execution_evidence_package(
-            receipt,
-            registered_executor=external,
-            build_id="BUILD-BRAIN-TEST",
-            agent_id="agent:brain-engineer",
-            requested_by="operator:mission-control",
-            producer_id="agent:brain-engineer",
-        )
-
-    class DifferentExecutor:
-        executor_key = "different_executor_v1"
-
-        def execute(self, assignment):  # pragma: no cover - never invoked
-            raise AssertionError(assignment)
-
-    mismatch = RegisteredExecutor(
-        role_key=registered.role_key,
-        executor=DifferentExecutor(),
-        authoritative=True,
-        external_side_effects=False,
+def test_executor_identity_mismatch_fails_closed() -> None:
+    receipt = authoritative_execution()
+    mismatched = receipt.__class__(
+        assignment_id=receipt.assignment_id,
+        program_id=receipt.program_id,
+        job_key=receipt.job_key,
+        executor_key="different_executor_v1",
+        state=receipt.state,
+        outcome=receipt.outcome,
+        input_checksum=receipt.input_checksum,
+        output_checksum=receipt.output_checksum,
+        output=receipt.output,
+        evidence_uris=receipt.evidence_uris,
+        blocker_code=receipt.blocker_code,
     )
     with pytest.raises(ValueError, match="EXECUTOR_MISMATCH"):
         build_execution_evidence_package(
-            receipt,
-            registered_executor=mismatch,
+            mismatched,
+            executor_role_key=AUTONOMY_PROBE_ROLE,
             build_id="BUILD-BRAIN-TEST",
             agent_id="agent:brain-engineer",
             requested_by="operator:mission-control",
@@ -118,8 +86,8 @@ def test_executor_identity_and_side_effect_authority_fail_closed() -> None:
         )
 
 
-def test_incomplete_or_non_delivered_receipts_fail_closed() -> None:
-    receipt, registered = authoritative_execution()
+def test_missing_evidence_fails_closed() -> None:
+    receipt = authoritative_execution()
     empty_evidence = receipt.__class__(
         assignment_id=receipt.assignment_id,
         program_id=receipt.program_id,
@@ -131,11 +99,12 @@ def test_incomplete_or_non_delivered_receipts_fail_closed() -> None:
         output_checksum=receipt.output_checksum,
         output=receipt.output,
         evidence_uris=(),
+        blocker_code=receipt.blocker_code,
     )
     with pytest.raises(ValueError, match="EVIDENCE_URI_REQUIRED"):
         build_execution_evidence_package(
             empty_evidence,
-            registered_executor=registered,
+            executor_role_key=AUTONOMY_PROBE_ROLE,
             build_id="BUILD-BRAIN-TEST",
             agent_id="agent:brain-engineer",
             requested_by="operator:mission-control",
