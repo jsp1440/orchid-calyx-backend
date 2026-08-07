@@ -1,20 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Protocol
+import re
+from collections.abc import Mapping, Protocol
 from dataclasses import dataclass, field
 from hashlib import sha256
-import re
 
 from .contracts import (
     CharacterDefinition,
-    CharacterObservation,
     EvidenceSpan,
     ImageAnalysisResult,
     LiteratureClaim,
     MatrixCandidate,
     MatrixProfile,
-    ModelProvenance,
-    PlantPartDetection,
     SourceIdentity,
 )
 from .engine import matrix_observations_from_vision, rank_matrix_candidates
