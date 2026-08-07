@@ -44,11 +44,12 @@ class ValidationRequest:
 class SandboxedExecutableValidationExecutor:
     """Run fixed validation presets only inside an externally enforced sandbox.
 
-    This adapter does not establish an OS/network sandbox by itself. It fails closed
-    unless the pre-created workspace contains a trusted marker asserting that network,
-    credential access, shell access, and package installation are disabled by the
-    runtime boundary. Commands are internal argv presets; caller-supplied command text
-    is never executed.
+    This adapter does not establish an OS/network/filesystem sandbox by itself. It
+    fails closed unless the pre-created workspace contains a trusted marker asserting
+    that network and credential access are disabled, shell/package installation are
+    disabled, subprocess confinement is enforced, and the repository is read-only for
+    the validator process. Commands are internal argv presets; caller-supplied command
+    text is never executed.
     """
 
     executor_key = "isolated_workspace_executable_validator_v1"
@@ -161,6 +162,7 @@ class SandboxedExecutableValidationExecutor:
             "branch": branch,
             "checkout_commit_sha": checkout.commit_sha,
             "sandbox_attested": True,
+            "repository_read_only_during_validation": True,
             "preset": request.preset,
             "targets": [
                 {"path": path, "sha256": before[path]} for path in sorted(before)
@@ -171,8 +173,8 @@ class SandboxedExecutableValidationExecutor:
             "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
             "stdout_bytes_captured": len(stdout),
             "stderr_bytes_captured": len(stderr),
-            "stdout_truncated": len(stdout) == MAX_CAPTURE_BYTES,
-            "stderr_truncated": len(stderr) == MAX_CAPTURE_BYTES,
+            "stdout_capture_limit": MAX_CAPTURE_BYTES,
+            "stderr_capture_limit": MAX_CAPTURE_BYTES,
             "command_source": "internal_preset",
             "shell": False,
             "environment_inherited": False,
@@ -226,6 +228,7 @@ class SandboxedExecutableValidationExecutor:
             "shell_disabled": True,
             "package_installation_disabled": True,
             "subprocess_confinement_enforced": True,
+            "repository_read_only_during_validation": True,
         }
         if not isinstance(marker, dict) or any(
             marker.get(key) != value for key, value in expected.items()
