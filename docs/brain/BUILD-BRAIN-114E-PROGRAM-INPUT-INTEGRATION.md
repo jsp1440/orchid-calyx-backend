@@ -51,8 +51,27 @@ Dedicated workflow: `.github/workflows/build-brain-114e.yml`.
 
 The workflow compiles and lints the changed integration surface, runs the end-to-end patch→validate program test plus the prior 114B/114C/114D and assignment/cycle regressions, checks migration compatibility, and runs diff hygiene.
 
-Backend GitHub-hosted runner incident #533 remains active at implementation time. Any workflow result with zero instantiated steps is infrastructure evidence only and must not be represented as executable code validation.
+### 2026-08-07 runner recovery and corrective validation
+
+The earlier repository-wide zero-step Actions condition is no longer blocking validation. GitHub account billing inspection showed the Actions product budget at `$0` with **Stop usage when budget limit is reached** enabled. The owner raised the Actions budget to `$25/month` while retaining the hard stop and threshold alerts. Hosted jobs then began instantiating real runner steps again.
+
+Once real CI resumed, ordinary code-quality findings were exposed and fixed before further expansion:
+
+- 114E corrected non-object persisted JSON to raise `TypeError` and fixed two Ruff B018 test expressions.
+- 114B normalized imports, tuple construction, packed-ref prefix checks, and focused test imports.
+- 114C normalized executor import ordering and evidence URI construction.
+- 114D normalized executor imports and evidence URI construction.
+- Corrected 114B/114C/114D implementations were synchronized into the 114E integration head so broad orchestrator validation sees the same code as focused validation.
+
+Authoritative successful runs obtained during recovery include:
+
+- BUILD-BRAIN-114E run `31209622678`: compile, Ruff, focused integration tests, migration compatibility, and diff hygiene passed.
+- BUILD-BRAIN-114C run `31209801405`: passed.
+- BUILD-BRAIN-114D run `31209921587`: passed.
+- BUILD-BRAIN-114A and BUILD-BRAIN-108-113A also passed on the integration lineage during recovery.
+
+A final synchronized validation wave is required on the current 114E head. Merge, deployment, publication, taxonomy activation, production database mutation, and production Knowledge Graph mutation remain unauthorized.
 
 ## Next milestone
 
-The next safe autonomy milestone is a sandboxed executable validation adapter with a fixed command profile, network isolation, no credentials, output/time/resource ceilings, and explicit repository-code-execution receipts. Only after that validator is proven should Calyx gain a separate governed commit/PR-proposal capability. Merge and deployment authority remain human-governed.
+First reconcile this now-validated autonomy surface with current `main` without overwriting newer mainline work. After that consolidation is green, the next safe autonomy milestone is a sandboxed executable validation adapter with a fixed command profile, network isolation, no credentials, output/time/resource ceilings, and explicit repository-code-execution receipts. Only after that validator is proven should Calyx gain a separate governed commit/PR-proposal capability. Merge and deployment authority remain human-governed.
