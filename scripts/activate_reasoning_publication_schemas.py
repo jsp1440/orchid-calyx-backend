@@ -49,7 +49,7 @@ TARGETS = (
 def _git_blob_sha(path: Path) -> str:
     content = path.read_bytes()
     header = f"blob {len(content)}\0".encode()
-    return hashlib.sha1(header + content).hexdigest()  # noqa: S324 - Git object identity
+    return hashlib.sha1(header + content).hexdigest()
 
 
 def migration_identity_report() -> dict[str, dict[str, Any]]:
@@ -110,7 +110,13 @@ def run(*, apply_requested: bool) -> int:
     database_url = os.environ.get("DATABASE_URL", "").strip()
     if not database_url:
         blockers.append("DATABASE_URL_MISSING")
-        report.update({"blockers": blockers, "status": "blocked"})
+        report.update(
+            {
+                "blockers": blockers,
+                "status": "blocked",
+                "production_database_mutation_authorized": False,
+            }
+        )
         _write(report)
         return 2
 
@@ -153,9 +159,10 @@ def run(*, apply_requested: bool) -> int:
 
             if apply_requested and not blockers and not report["activation_complete"]:
                 blockers.append("POST_APPLY_SCHEMA_VERIFICATION_FAILED")
-    except Exception as exc:  # fail closed and preserve a machine-readable receipt
+    except psycopg.Error as exc:
         blockers.append(f"DATABASE_OPERATION_FAILED:{type(exc).__name__}")
         report["database_error"] = str(exc)
+        report["production_database_mutation_authorized"] = False
 
     report["blockers"] = sorted(set(blockers))
     report["status"] = "passed" if not blockers else "blocked"
