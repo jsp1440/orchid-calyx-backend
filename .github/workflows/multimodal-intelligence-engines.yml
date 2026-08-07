@@ -1,0 +1,110 @@
+name: Literature Matrix Vision Engines Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/multimodal_intelligence/**"
+      - "app/routers/health.py"
+      - "migrations/20260807_multimodal_intelligence_operations.sql"
+      - "docs/brain/CALYX-MULTIMODAL-INTELLIGENCE-2026-08-07.md"
+      - "tests/test_multimodal_intelligence_engines.py"
+      - "tests/test_multimodal_intelligence_status.py"
+      - "tests/test_multimodal_intelligence_priority_10.py"
+      - "tests/test_multimodal_operator_priority_10.py"
+      - "tests/test_multimodal_operator_priority_20.py"
+      - "tests/test_multimodal_promotion.py"
+      - "tests/test_multimodal_persistence.py"
+      - "tests/test_multimodal_document_adapter.py"
+      - "tests/test_multimodal_api_models.py"
+      - ".github/workflows/multimodal-intelligence-engines.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile
+        run: python -m compileall -q app/multimodal_intelligence app/routers/health.py
+      - name: Ruff
+        run: >-
+          ruff check app/multimodal_intelligence app/routers/health.py
+          tests/test_multimodal_intelligence_engines.py
+          tests/test_multimodal_intelligence_status.py
+          tests/test_multimodal_intelligence_priority_10.py
+          tests/test_multimodal_operator_priority_10.py
+          tests/test_multimodal_operator_priority_20.py
+          tests/test_multimodal_promotion.py
+          tests/test_multimodal_persistence.py
+          tests/test_multimodal_document_adapter.py
+          tests/test_multimodal_api_models.py
+      - name: Focused tests
+        run: >-
+          pytest -q
+          tests/test_multimodal_intelligence_engines.py
+          tests/test_multimodal_intelligence_status.py
+          tests/test_multimodal_intelligence_priority_10.py
+          tests/test_multimodal_operator_priority_10.py
+          tests/test_multimodal_operator_priority_20.py
+          tests/test_multimodal_promotion.py
+          tests/test_multimodal_persistence.py
+          tests/test_multimodal_document_adapter.py
+          tests/test_multimodal_api_models.py
+      - name: Persistence schema smoke
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          sql = Path("migrations/20260807_multimodal_intelligence_operations.sql").read_text()
+          assert "CREATE TABLE IF NOT EXISTS calyx_multimodal_operations" in sql
+          assert "request_hash TEXT NOT NULL UNIQUE" in sql
+          assert "automatic publication" in sql.lower()
+          PY
+      - name: Brain record smoke
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          text = Path("docs/brain/CALYX-MULTIMODAL-INTELLIGENCE-2026-08-07.md").read_text()
+          assert "Human review remains the mandatory boundary" in text
+          assert "PR: #571" in text
+          assert "HUMAN_REVIEW_OWNER_SESSION_REQUIRED" in text
+          PY
+      - name: Route smoke
+        run: |
+          python - <<'PY'
+          from app.main import app
+
+          paths = {route.path for route in app.routes}
+          required = {
+              "/api/mission-control/multimodal-intelligence/status",
+              "/api/mission-control/multimodal-intelligence/configuration",
+              "/api/mission-control/multimodal-intelligence/literature/validate",
+              "/api/mission-control/multimodal-intelligence/matrix/rank",
+              "/api/mission-control/multimodal-intelligence/vision/convert",
+              "/api/mission-control/multimodal-intelligence/identify",
+              "/api/mission-control/multimodal-intelligence/batch/plan",
+              "/api/mission-control/multimodal-intelligence/review-queue",
+              "/api/mission-control/multimodal-intelligence/operations/{operation_id}",
+              "/api/mission-control/multimodal-intelligence/operations/{operation_id}/review",
+              "/api/mission-control/multimodal-intelligence/operations/{operation_id}/provenance",
+              "/api/mission-control/multimodal-intelligence/operations/{operation_id}/candidate-knowledge-plan",
+              "/api/mission-control/multimodal-intelligence/audit/export",
+              "/api/mission-control/multimodal-intelligence/benchmark",
+          }
+          assert required <= paths
+          PY
