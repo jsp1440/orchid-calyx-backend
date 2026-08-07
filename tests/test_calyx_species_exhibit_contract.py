@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from app.species_exhibit.service import (
     CONTRACT,
     _build_card,
@@ -84,8 +86,8 @@ def test_confidence_uses_only_explicit_persisted_scores():
 
     available = _confidence(
         [
-            {"confidence_score": 0.42, "confidence_label": "low"},
-            {"confidence_score": 0.88, "confidence_label": "high"},
+            {"confidence_score": Decimal("0.42"), "confidence_label": "low"},
+            {"confidence_score": Decimal("0.88"), "confidence_label": "high"},
         ]
     )
     assert available["state"] == "available"
@@ -118,7 +120,8 @@ def test_card_preserves_unavailable_domains_instead_of_inventing_caption():
     assert card["evidence_state"] == "provisional"
     assert "media" in card["unavailable_domains"]
     assert "knowledge_graph" in card["unavailable_domains"]
-    assert card["publication_authority"] if "publication_authority" in card else True
+    assert card["confidence"]["state"] == "unavailable"
+    assert any("No species-specific caption" in caveat for caveat in card["caveats"])
 
 
 def test_card_is_available_when_unique_media_and_graph_fact_are_present():
@@ -146,7 +149,7 @@ def test_card_is_available_when_unique_media_and_graph_fact_are_present():
             "source_table": "occurrences",
             "source_pk": "123",
             "evidence_class": "direct",
-            "confidence_score": 0.9,
+            "confidence_score": Decimal("0.9"),
             "confidence_label": "high",
         }
     ]
