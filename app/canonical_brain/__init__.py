@@ -9,6 +9,7 @@ from .constitution import (
     BuildAdmissionRequest,
     evaluate_build_admission,
 )
+from .evidence_bridge import ExecutionEvidencePackage, build_execution_evidence_package
 from .executor import (
     DeterministicDryRunExecutor,
     ExecutionRequest,
@@ -58,6 +59,7 @@ __all__ = [
     "CancellationReceipt",
     "CanonicalBrainRegistry",
     "DeterministicDryRunExecutor",
+    "ExecutionEvidencePackage",
     "ExecutionLease",
     "ExecutionLeaseManager",
     "ExecutionReceipt",
@@ -71,6 +73,7 @@ __all__ = [
     "SchedulerJobMetadata",
     "SearchHit",
     "build_canonical_brain_fixture",
+    "build_execution_evidence_package",
     "build_mission_control_status",
     "capture_build_bundle",
     "create_brain_router",
