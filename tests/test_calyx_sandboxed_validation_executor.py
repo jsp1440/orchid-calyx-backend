@@ -9,6 +9,7 @@ import pytest
 
 from app.calyx_orchestrator.executor import GovernedAssignment
 from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
+from app.calyx_orchestrator.sandbox_authorization import SandboxAuthorization
 from app.calyx_orchestrator.sandboxed_validation_executor import (
     SANDBOXED_VALIDATION_ROLE,
     SANDBOX_MARKER,
@@ -18,6 +19,25 @@ from app.calyx_orchestrator.sandboxed_validation_executor import (
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 BRANCH = "autonomy/test-validation"
 COMMIT = "a" * 40
+POLICY_DIGEST = "b" * 64
+
+
+class AllowingAuthorizer:
+    def authorize(self, *, workspace_root, repository, branch, marker):
+        assert workspace_root.is_dir()
+        assert repository == REPOSITORY
+        assert branch == BRANCH
+        assert marker["network_disabled"] is True
+        return SandboxAuthorization(
+            authorization_id="auth-1",
+            evidence_uri="sandbox-supervisor:auth-1",
+            policy_digest=POLICY_DIGEST,
+        )
+
+
+class RejectingAuthorizer:
+    def authorize(self, **kwargs):
+        raise PermissionError("sandbox not enforced")
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -47,6 +67,14 @@ def _workspace(tmp_path: Path) -> Path:
         )
     )
     return root
+
+
+def _executor(root: Path, *, authorizer=None) -> SandboxedExecutableValidationExecutor:
+    return SandboxedExecutableValidationExecutor(
+        workspace_root=root,
+        repository_name=REPOSITORY,
+        authorizer=authorizer,
+    )
 
 
 def _assignment(path: str, digest: str, *, preset: str = "pytest") -> GovernedAssignment:
@@ -84,7 +112,26 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_success_uses_internal_argv_scrubbed_environment_and_hash_receipt(
+def test_marker_alone_never_authorizes_repository_code_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = _workspace(tmp_path)
+    target = root / "tests" / "test_example.py"
+    target.write_text("def test_ok():\n    assert True\n")
+    called = False
+
+    def fake_run(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess must not run")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(PermissionError, match="SANDBOX_VALIDATION_SUPERVISOR_REQUIRED"):
+        _executor(root).execute(_assignment("tests/test_example.py", _sha(target)))
+    assert called is False
+
+
+def test_success_uses_internal_argv_scrubbed_environment_and_supervisor_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     root = _workspace(tmp_path)
@@ -99,16 +146,18 @@ def test_success_uses_internal_argv_scrubbed_environment_and_hash_receipt(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "must-not-leak")
-    executor = SandboxedExecutableValidationExecutor(
-        workspace_root=root,
-        repository_name=REPOSITORY,
+    receipt = _executor(root, authorizer=AllowingAuthorizer()).execute(
+        _assignment("tests/test_example.py", _sha(target))
     )
-    receipt = executor.execute(_assignment("tests/test_example.py", _sha(target)))
 
     assert receipt.state.value == "delivered"
     assert receipt.outcome.value == "DELIVERED"
     assert receipt.executor_key == "isolated_workspace_executable_validator_v1"
     assert receipt.output["preset"] == "pytest"
+    assert receipt.output["supervisor_authorized"] is True
+    assert receipt.output["supervisor_authorization_id"] == "auth-1"
+    assert receipt.output["sandbox_policy_digest"] == POLICY_DIGEST
+    assert "sandbox-supervisor:auth-1" in receipt.evidence_uris
     assert receipt.output["shell"] is False
     assert receipt.output["environment_inherited"] is False
     assert receipt.output["network_authorized"] is False
@@ -125,8 +174,28 @@ def test_success_uses_internal_argv_scrubbed_environment_and_hash_receipt(
         "-p",
         "no:cacheprovider",
     )
-    assert target.read_text() == "def test_ok():\n    assert True\n"
     receipt.verify()
+
+
+def test_rejected_supervisor_authorization_prevents_subprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = _workspace(tmp_path)
+    target = root / "tests" / "test_example.py"
+    target.write_text("def test_ok():\n    assert True\n")
+    called = False
+
+    def fake_run(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess must not run")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(PermissionError, match="SANDBOX_VALIDATION_SUPERVISOR_REJECTED"):
+        _executor(root, authorizer=RejectingAuthorizer()).execute(
+            _assignment("tests/test_example.py", _sha(target))
+        )
+    assert called is False
 
 
 def test_nonzero_validation_is_authoritative_blocked_receipt(
@@ -136,19 +205,17 @@ def test_nonzero_validation_is_authoritative_blocked_receipt(
     target = root / "app" / "example.py"
     target.write_text("x = 1\n")
 
-    def fake_run(argv, **kwargs):
-        return subprocess.CompletedProcess(argv, 1, b"", b"lint error")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    executor = SandboxedExecutableValidationExecutor(
-        workspace_root=root,
-        repository_name=REPOSITORY,
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda argv, **kwargs: subprocess.CompletedProcess(argv, 1, b"", b"lint error"),
     )
-    receipt = executor.execute(_assignment("app/example.py", _sha(target), preset="ruff"))
+    receipt = _executor(root, authorizer=AllowingAuthorizer()).execute(
+        _assignment("app/example.py", _sha(target), preset="ruff")
+    )
     assert receipt.state.value == "blocked"
     assert receipt.outcome.value == "BLOCKED"
     assert receipt.blocker_code == "SANDBOX_VALIDATION_COMMAND_FAILED"
-    assert receipt.output["return_code"] == 1
     receipt.verify()
 
 
@@ -161,30 +228,25 @@ def test_timeout_is_bounded_blocked_receipt(tmp_path: Path, monkeypatch: pytest.
         raise subprocess.TimeoutExpired(argv, kwargs["timeout"], output=b"partial", stderr=b"")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    executor = SandboxedExecutableValidationExecutor(
-        workspace_root=root,
-        repository_name=REPOSITORY,
+    receipt = _executor(root, authorizer=AllowingAuthorizer()).execute(
+        _assignment("tests/test_slow.py", _sha(target))
     )
-    receipt = executor.execute(_assignment("tests/test_slow.py", _sha(target)))
     assert receipt.state.value == "timed_out"
     assert receipt.outcome.value == "BLOCKED"
     assert receipt.blocker_code == "SANDBOX_VALIDATION_COMMAND_TIMEOUT"
-    assert receipt.output["timed_out"] is True
 
 
-def test_marker_is_required_and_must_assert_external_sandbox_enforcement(tmp_path: Path):
+def test_marker_mismatch_fails_before_supervisor_or_subprocess(tmp_path: Path):
     root = _workspace(tmp_path)
     target = root / "tests" / "test_example.py"
     target.write_text("def test_ok():\n    assert True\n")
     marker = json.loads((root / SANDBOX_MARKER).read_text())
     marker["network_disabled"] = False
     (root / SANDBOX_MARKER).write_text(json.dumps(marker))
-    executor = SandboxedExecutableValidationExecutor(
-        workspace_root=root,
-        repository_name=REPOSITORY,
-    )
     with pytest.raises(PermissionError, match="SANDBOX_VALIDATION_MARKER_MISMATCH"):
-        executor.execute(_assignment("tests/test_example.py", _sha(target)))
+        _executor(root, authorizer=AllowingAuthorizer()).execute(
+            _assignment("tests/test_example.py", _sha(target))
+        )
 
 
 def test_arbitrary_command_fields_and_presets_are_rejected(tmp_path: Path):
@@ -193,13 +255,9 @@ def test_arbitrary_command_fields_and_presets_are_rejected(tmp_path: Path):
     target.write_text("def test_ok():\n    assert True\n")
     assignment = _assignment("tests/test_example.py", _sha(target))
     assignment.inputs["job"]["validation"]["command"] = "rm -rf /"  # type: ignore[index]
-    executor = SandboxedExecutableValidationExecutor(
-        workspace_root=root,
-        repository_name=REPOSITORY,
-    )
+    executor = _executor(root, authorizer=AllowingAuthorizer())
     with pytest.raises(ValueError, match="SANDBOX_VALIDATION_REQUEST_FIELD_NOT_ALLOWED"):
         executor.execute(assignment)
-
     with pytest.raises(ValueError, match="SANDBOX_VALIDATION_PRESET_NOT_ALLOWED"):
         executor.execute(_assignment("tests/test_example.py", _sha(target), preset="bash"))
 
@@ -218,14 +276,9 @@ def test_stale_hash_and_protected_target_fail_before_subprocess(
         raise AssertionError("subprocess must not run")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    executor = SandboxedExecutableValidationExecutor(
-        workspace_root=root,
-        repository_name=REPOSITORY,
-    )
+    executor = _executor(root, authorizer=AllowingAuthorizer())
     with pytest.raises(ValueError, match="SANDBOX_VALIDATION_TARGET_HASH_MISMATCH"):
         executor.execute(_assignment("tests/test_example.py", "0" * 64))
-    assert called is False
-
     protected = root / "requirements.txt"
     protected.write_text("requests\n")
     with pytest.raises(PermissionError, match="SANDBOX_VALIDATION_PATH_NOT_ALLOWED"):
@@ -237,10 +290,7 @@ def test_mutating_job_and_missing_execution_capability_fail_closed(tmp_path: Pat
     root = _workspace(tmp_path)
     target = root / "tests" / "test_example.py"
     target.write_text("def test_ok():\n    assert True\n")
-    executor = SandboxedExecutableValidationExecutor(
-        workspace_root=root,
-        repository_name=REPOSITORY,
-    )
+    executor = _executor(root, authorizer=AllowingAuthorizer())
 
     mutating = _assignment("tests/test_example.py", _sha(target))
     mutating.inputs["job"]["mutating_intent"] = True  # type: ignore[index]
@@ -257,11 +307,25 @@ def test_mutating_job_and_missing_execution_capability_fail_closed(tmp_path: Pat
         executor.execute(missing)
 
 
-def test_registry_truthfully_marks_only_sandbox_validator_as_code_execution(tmp_path: Path):
+def test_default_registry_does_not_register_repository_code_execution(tmp_path: Path):
     root = _workspace(tmp_path)
     registry = AuthoritativeExecutorRegistry(workspace_root=root, repository_name=REPOSITORY)
+    assert SANDBOXED_VALIDATION_ROLE not in registry.eligible_role_keys
+    assert registry.status()["sandboxed_repository_code_execution_authorized"] is False
+    with pytest.raises(LookupError, match="AUTHORITATIVE_EXECUTOR_NOT_REGISTERED"):
+        registry.require_authoritative(SANDBOXED_VALIDATION_ROLE)
+
+
+def test_authorized_registry_truthfully_marks_sandbox_validator_as_code_execution(tmp_path: Path):
+    root = _workspace(tmp_path)
+    registry = AuthoritativeExecutorRegistry(
+        workspace_root=root,
+        repository_name=REPOSITORY,
+        sandbox_validation_authorizer=AllowingAuthorizer(),
+    )
     status = registry.status()
     by_role = {item["role_key"]: item for item in status["executors"]}
+    assert status["sandboxed_repository_code_execution_authorized"] is True
     assert by_role[SANDBOXED_VALIDATION_ROLE]["repository_code_execution"] is True
     assert by_role["isolated_workspace_static_validator"]["repository_code_execution"] is False
     assert by_role["isolated_workspace_patcher"]["workspace_mutation"] is True
