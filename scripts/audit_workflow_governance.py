@@ -83,14 +83,28 @@ def _triggers(text: str) -> set[str]:
     return found
 
 
+def _destructive_dispatch_input(on_block: str) -> bool:
+    """Detect the known production-mutation dispatch switch without broad name guessing."""
+    return bool(
+        re.search(
+            r"^\s+apply_migration\s*:",
+            on_block,
+            re.IGNORECASE | re.MULTILINE,
+        )
+    )
+
+
 def classify(path: Path, text: str) -> WorkflowFinding:
     name_match = re.search(r"^name\s*:\s*(.+?)\s*$", text, re.MULTILINE)
     name = name_match.group(1).strip(" '\"") if name_match else path.stem
+    on_block = _top_level_on_block(text)
     triggers = _triggers(text)
     manual = "workflow_dispatch" in triggers
     automatic = sorted(triggers & AUTO_TRIGGERS)
     production = bool(re.search(r"environment\s*:\s*production\b", text, re.IGNORECASE))
-    confirmation = bool(re.search(r"confirmation|type\s+APPLY|exact confirmation", text, re.IGNORECASE))
+    confirmation = bool(
+        re.search(r"confirmation|type\s+APPLY|exact confirmation", text, re.IGNORECASE)
+    ) or _destructive_dispatch_input(on_block)
 
     if manual and not automatic:
         classification = "DESTRUCTIVE_GATED" if production and confirmation else "OWNER_BOTTLENECK"
