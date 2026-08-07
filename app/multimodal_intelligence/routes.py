@@ -38,7 +38,6 @@ class BatchRequest(BaseModel):
 class ReviewDecisionRequest(BaseModel):
     decision: str
     rationale: str = Field(min_length=1, max_length=4000)
-    reviewer: str = Field(min_length=1, max_length=200)
 
 
 def _http_error(error: MultimodalError) -> HTTPException:
@@ -51,6 +50,21 @@ def _validation_error(error: ValueError) -> HTTPException:
         status_code=422,
         detail={"code": "MULTIMODAL_VALIDATION_ERROR", "message": str(error)},
     )
+
+
+def _reviewer_from_auth(auth: dict[str, Any]) -> str:
+    if auth.get("auth_type") != "owner_session":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "HUMAN_REVIEW_OWNER_SESSION_REQUIRED"},
+        )
+    reviewer = str(auth.get("actor") or "").strip()
+    if not reviewer:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "HUMAN_REVIEW_IDENTITY_REQUIRED"},
+        )
+    return reviewer
 
 
 @router.get("/status")
@@ -172,14 +186,14 @@ def review_operation(
     request: ReviewDecisionRequest,
     auth: AuthDependency,
 ) -> dict:
-    del auth
+    reviewer = _reviewer_from_auth(auth)
     try:
         return asdict(
             operator_service.decide_review(
                 operation_id,
                 decision=request.decision,
                 rationale=request.rationale,
-                reviewer=request.reviewer,
+                reviewer=reviewer,
             )
         )
     except MultimodalError as error:
