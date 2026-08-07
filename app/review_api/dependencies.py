@@ -15,6 +15,10 @@ from app.mission_control_access import (
     PrincipalResolutionError,
     PrincipalResolver,
 )
+from app.mission_control_access.qualification_registry import (
+    QualificationRegistryError,
+    reviewer_qualification_claims,
+)
 from app.review_tasks.postgres_repository import PostgresReviewTaskRepository
 from app.review_tasks.service import GovernedReviewTaskService
 from app.security import OWNER_SESSION_COOKIE, _decode_owner_token, get_api_key
@@ -63,11 +67,27 @@ def _identity_from_owner_session(request: Request) -> AuthenticatedIdentity | No
     if not token:
         return None
     auth = _decode_owner_token(token)
+    subject_id = str(auth["actor"])
+    auth_source = str(auth["auth_type"])
+    try:
+        claims = reviewer_qualification_claims(subject_id, auth_source=auth_source)
+    except QualificationRegistryError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": exc.code,
+                "details": exc.details,
+                "message": "Reviewer qualification registry is invalid; scientific authority is unavailable",
+            },
+        ) from exc
     return AuthenticatedIdentity(
-        subject_id=str(auth["actor"]),
+        subject_id=subject_id,
         authenticated=True,
         role_names=("ADMINISTRATOR",),
-        metadata={"auth_source": str(auth["auth_type"])},
+        qualifications=claims.qualifications,
+        qualification_expires_at=claims.qualification_expires_at,
+        specialties=claims.specialties,
+        metadata={"auth_source": auth_source},
     )
 
 
@@ -80,6 +100,7 @@ async def authenticated_principal(
         expected = get_api_key()
         if not expected or api_key != expected:
             raise HTTPException(status_code=401, detail="Invalid API key")
+        # API-key identity intentionally receives no scientific qualifications.
         identity = AuthenticatedIdentity(
             subject_id="backend_api_key",
             authenticated=True,
