@@ -5,7 +5,7 @@
   "project": "Orchid Continuum",
   "workstream": "Azure taxonomy preflight pilot",
   "captured_at": "2026-08-07T01:14:00Z",
-  "status": "implemented_pending_ci",
+  "status": "implemented_ci_validated",
   "problem": "External-gate attestations existed as independent files but lacked a canonical, atomic accumulation mechanism.",
   "decision": "Add a deterministic attestation register manager with explicit replacement semantics and canonical pre-write validation.",
   "implementation": {
@@ -23,6 +23,14 @@
     "evaluate through the canonical attestation validator",
     "emit a deterministic evidence digest"
   ],
+  "validation": {
+    "workflow_run_id": 31137483079,
+    "workflow_name": "Taxonomy Attestation Register CI",
+    "conclusion": "success",
+    "validated_commit": "eeac83b2aff272f20fab364a73110b05b421875b",
+    "artifact_id": 8978509523,
+    "artifact_digest": "sha256:f91efe248a3a44e60e0840889d17616a797dc7070999551a421579ec9c24d741"
+  },
   "safety_properties": {
     "azure_provisioning_authorized": false,
     "taxonomy_publication_authorized": false,
@@ -36,5 +44,5 @@
     "searched_surfaces": ["conversation", "library"],
     "located": false
   },
-  "next_action": "Validate the register manager in CI, then ingest durable gate evidence as it becomes available."
+  "next_action": "Ingest durable gate evidence as external dependencies are completed; the exact WorldOrchids source file remains the highest-priority missing input."
 }
