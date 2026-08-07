@@ -33,10 +33,7 @@ def authoritative_execution():
 def package(**overrides):
     values = {
         "executor_role_key": AUTONOMY_PROBE_ROLE,
-        "build_id": "BUILD-BRAIN-TEST",
-        "agent_id": "agent:brain-engineer",
         "requested_by": "operator:mission-control",
-        "producer_id": "agent:brain-engineer",
     }
     values.update(overrides)
     return build_execution_evidence_package(authoritative_execution(), **values)
@@ -48,9 +45,13 @@ def test_authoritative_receipt_builds_deterministic_existing_contracts() -> None
 
     assert first == second
     assert first.artifact.producer_assignment_id == "a" * 64
+    assert first.artifact.metadata["build_id"] == "BUILD-BRAIN-TEST"
+    assert first.artifact.metadata["producer_id"] == "executor:autonomy_probe_v1"
     assert first.artifact.metadata["authoritative"] is True
     assert first.artifact.metadata["published"] is False
+    assert first.review.producer_id == "executor:autonomy_probe_v1"
     assert first.capture.records[0].source_checksum == first.artifact.checksum
+    assert first.capture.records[0].payload["build_id"] == "BUILD-BRAIN-TEST"
     assert first.capture.records[0].payload["authoritative"] is True
     assert first.capture.records[0].payload["candidate_only"] is True
 
@@ -79,10 +80,7 @@ def test_executor_identity_mismatch_fails_closed() -> None:
         build_execution_evidence_package(
             mismatched,
             executor_role_key=AUTONOMY_PROBE_ROLE,
-            build_id="BUILD-BRAIN-TEST",
-            agent_id="agent:brain-engineer",
             requested_by="operator:mission-control",
-            producer_id="agent:brain-engineer",
         )
 
 
@@ -105,19 +103,13 @@ def test_missing_evidence_fails_closed() -> None:
         build_execution_evidence_package(
             empty_evidence,
             executor_role_key=AUTONOMY_PROBE_ROLE,
-            build_id="BUILD-BRAIN-TEST",
-            agent_id="agent:brain-engineer",
             requested_by="operator:mission-control",
-            producer_id="agent:brain-engineer",
         )
 
 
 def test_self_request_and_duplicate_review_classes_fail_closed() -> None:
     with pytest.raises(PermissionError, match="SELF_REQUEST"):
-        package(
-            requested_by="agent:brain-engineer",
-            producer_id="agent:brain-engineer",
-        )
+        package(requested_by="executor:autonomy_probe_v1")
 
     with pytest.raises(ValueError, match="DUPLICATE_EXECUTION_REVIEW_CLASS"):
         package(required_review_classes=(ReviewClass.OPERATIONAL, ReviewClass.OPERATIONAL))
