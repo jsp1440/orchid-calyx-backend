@@ -1,4 +1,7 @@
-from app.canonical_brain import build_canonical_brain_fixture, build_mission_control_status
+from app.canonical_brain import (
+    build_canonical_brain_fixture,
+    build_mission_control_status,
+)
 
 
 def test_mission_control_status_reports_full_coverage() -> None:
