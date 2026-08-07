@@ -30,12 +30,8 @@ from .leases import (
 )
 from .mission_control import BrainMissionControlStatus, build_mission_control_status
 from .models import BrainObject, BrainRelationship, BrainSnapshot, SearchHit
-from .orchestration import (
-    AgentDescriptor,
-    BuildAssignment,
-    ExecutionReceipt as CanonicalExecutionReceipt,
-    GovernedOrchestrator,
-)
+from .orchestration import AgentDescriptor, BuildAssignment, GovernedOrchestrator
+from .orchestration import ExecutionReceipt as CanonicalExecutionReceipt
 from .persistence import BrainSnapshotRepository, JsonBrainSnapshotRepository
 from .registry import CanonicalBrainRegistry
 from .scheduler_bridge import (
