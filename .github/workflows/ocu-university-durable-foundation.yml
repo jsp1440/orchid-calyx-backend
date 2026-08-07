@@ -7,6 +7,7 @@ on:
       - 'app/university/activation_service.py'
       - 'app/university/routes.py'
       - 'app/university/schemas.py'
+      - 'app/university/service.py'
       - 'app/university/release.py'
       - 'migrations/ocu_sci_008_durable_sessions.sql'
       - 'scripts/validate_university_durable_migration.py'
@@ -14,6 +15,7 @@ on:
       - 'tests/test_university_durable_foundation.py'
       - 'tests/test_university_release_evidence.py'
       - 'tests/test_university_activation_service.py'
+      - 'tests/test_university_event_revision_contract.py'
       - '.github/workflows/ocu-university-durable-foundation.yml'
   workflow_dispatch:
 
@@ -36,6 +38,7 @@ jobs:
           tests/test_university_release_evidence.py
           tests/test_university_activation_service.py
           tests/test_university_release_readiness.py
+          tests/test_university_event_revision_contract.py
       - name: Compile durable activation modules
         run: >-
           python -m py_compile
@@ -44,5 +47,6 @@ jobs:
           app/university/activation_service.py
           app/university/routes.py
           app/university/schemas.py
+          app/university/service.py
           app/university/release.py
           scripts/validate_university_release_evidence.py
