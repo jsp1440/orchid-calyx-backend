@@ -98,8 +98,14 @@ def build_relationship_matrix(
 
     subject_labels = {item.subject_id: item.subject_label for item in selected}
     object_labels = {item.object_id: item.object_label for item in selected}
-    subjects = sorted(set(subject_ids or subject_labels), key=lambda value: (subject_labels.get(value, value).casefold(), value))
-    objects = sorted(set(object_ids or object_labels), key=lambda value: (object_labels.get(value, value).casefold(), value))
+    subjects = sorted(
+        set(subject_ids or subject_labels),
+        key=lambda value: (subject_labels.get(value, value).casefold(), value),
+    )
+    objects = sorted(
+        set(object_ids or object_labels),
+        key=lambda value: (object_labels.get(value, value).casefold(), value),
+    )
 
     grouped: dict[tuple[str, str], list[RelationshipAssertion]] = defaultdict(list)
     for assertion in selected:
@@ -110,9 +116,13 @@ def build_relationship_matrix(
     for subject_id in subjects:
         for object_id in objects:
             evidence = grouped.get((subject_id, object_id), [])
-            state: RelationshipState = _collapse_states(evidence) if evidence else "not_recorded"
+            state: RelationshipState = (
+                _collapse_states(evidence) if evidence else "not_recorded"
+            )
             state_counts[state] += 1
-            provenance = [item.provenance for item in evidence if item.provenance is not None]
+            provenance = [
+                item.provenance for item in evidence if item.provenance is not None
+            ]
             cells.append(
                 MatrixCell(
                     subject_id=subject_id,
@@ -145,7 +155,9 @@ def build_relationship_matrix(
     }
 
 
-def compare_subjects(matrix: dict[str, Any], left_subject_id: str, right_subject_id: str) -> dict[str, Any]:
+def compare_subjects(
+    matrix: dict[str, Any], left_subject_id: str, right_subject_id: str
+) -> dict[str, Any]:
     """Compare two matrix rows without collapsing epistemic states."""
     by_pair = {
         (cell["subject_id"], cell["object_id"]): cell
