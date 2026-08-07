@@ -1,0 +1,40 @@
+{
+  "record_type": "engineering_implementation_capture",
+  "record_version": "1.0.0",
+  "record_id": "AZURE-001-attestation-register",
+  "project": "Orchid Continuum",
+  "workstream": "Azure taxonomy preflight pilot",
+  "captured_at": "2026-08-07T01:14:00Z",
+  "status": "implemented_pending_ci",
+  "problem": "External-gate attestations existed as independent files but lacked a canonical, atomic accumulation mechanism.",
+  "decision": "Add a deterministic attestation register manager with explicit replacement semantics and canonical pre-write validation.",
+  "implementation": {
+    "module": "runtime/taxonomy_preflight_attestation_register.py",
+    "tests": "tests/test_taxonomy_preflight_attestation_register.py",
+    "workflow": ".github/workflows/taxonomy-attestation-register-ci.yml",
+    "documentation": "docs/azure/AZURE-001-ATTESTATION-REGISTER.md"
+  },
+  "capabilities": [
+    "initialize an empty schema-versioned register",
+    "atomically upsert one gate attestation",
+    "reject accidental replacement",
+    "explicitly replace stale evidence",
+    "sort gate evidence deterministically",
+    "evaluate through the canonical attestation validator",
+    "emit a deterministic evidence digest"
+  ],
+  "safety_properties": {
+    "azure_provisioning_authorized": false,
+    "taxonomy_publication_authorized": false,
+    "database_mutation_authorized": false,
+    "production_migration_authorized": false,
+    "real_dataset_validation_claimed": false,
+    "billing_evidence_reconstructed_without_source": false
+  },
+  "file_search_result": {
+    "target": "WorldOrchids 26-08 (Aug 2 2026).csv",
+    "searched_surfaces": ["conversation", "library"],
+    "located": false
+  },
+  "next_action": "Validate the register manager in CI, then ingest durable gate evidence as it becomes available."
+}
