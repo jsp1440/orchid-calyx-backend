@@ -20,6 +20,10 @@ def _env_present(name: str) -> bool:
     return bool(os.getenv(name, "").strip())
 
 
+def _probe_failure(exc: Exception) -> str:
+    return f"import_error:{type(exc).__name__}: {exc}"
+
+
 def _check_route_mounts() -> dict[str, str]:
     checks: dict[str, str] = {}
     for module_path in (
@@ -34,8 +38,8 @@ def _check_route_mounts() -> dict[str, str]:
         try:
             __import__(module_path)
             checks[module_path] = "importable"
-        except ImportError as exc:
-            checks[module_path] = f"import_error: {exc}"
+        except Exception as exc:  # noqa: BLE001 - readiness probe must fail closed
+            checks[module_path] = _probe_failure(exc)
     return checks
 
 
@@ -105,14 +109,17 @@ def _check_pipeline_readiness(
 
 
 def _check_reasoning_ledger() -> dict[str, Any]:
+    error: str | None = None
     try:
         from app.reasoning_ledger.gate import ReasoningLedgerGate  # noqa: F401
 
         gate_importable = True
-    except ImportError:
+    except Exception as exc:  # noqa: BLE001 - readiness probe must fail closed
         gate_importable = False
+        error = _probe_failure(exc)
     return {
         "gate_module_importable": gate_importable,
+        "probe_error": error,
         "eligible_ledger_discovery": "requires_db_connection",
         "publication_eligibility": "false_until_explicit_owner_approval",
         "automatic_publication": False,
@@ -121,14 +128,17 @@ def _check_reasoning_ledger() -> dict[str, Any]:
 
 
 def _check_publication_safeguards() -> dict[str, Any]:
+    error: str | None = None
     try:
         from app.knowledge_publication import models as _publication_models  # noqa: F401
 
         publication_importable = True
-    except ImportError:
+    except Exception as exc:  # noqa: BLE001 - readiness probe must fail closed
         publication_importable = False
+        error = _probe_failure(exc)
     return {
         "publication_module_importable": publication_importable,
+        "probe_error": error,
         "automatic_publication": False,
         "production_mutation_without_owner_confirmation": False,
         "idempotent_replay": "enforced",
