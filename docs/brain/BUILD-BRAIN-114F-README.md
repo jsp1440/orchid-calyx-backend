@@ -1,0 +1,1 @@
+BUILD-BRAIN-114F is the current-main reconciliation branch for autonomous-engineering layers. Its immediate target is static validation on top of the already integrated repository evidence and isolated patch executors.
