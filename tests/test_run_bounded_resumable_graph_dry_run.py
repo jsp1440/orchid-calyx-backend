@@ -8,6 +8,15 @@ from scripts.run_bounded_resumable_graph_dry_run import (
     require_staging_only,
 )
 
+PREFLIGHT = {
+    "contract": "calyx-graph-deployment-preflight-v3",
+    "graph_mutation": False,
+    "filesystem_mutation": False,
+    "ready_for_live_resumable_dry_run": True,
+    "blockers": [],
+    "deployment": {"commit": "abc123"},
+}
+
 
 def test_choose_domain_prefers_taxonomy():
     assert choose_domain(["media", "taxonomy", "traits"]) == "taxonomy"
@@ -26,30 +35,42 @@ def test_choose_domain_rejects_explicit_unready_domain():
         choose_domain(["occurrences", "literature"], "media")
 
 
-def test_preflight_gate_requires_ready_and_staging_only():
-    require_preflight_ready(
-        {
-            "production_graph_mutation": False,
-            "ready_for_live_resumable_dry_run": True,
-            "blockers": [],
-        }
-    )
+def test_preflight_gate_accepts_exact_v3_contract():
+    require_preflight_ready(dict(PREFLIGHT))
+
+
+def test_preflight_gate_rejects_contract_mismatch():
+    preflight = dict(PREFLIGHT)
+    preflight["contract"] = "calyx-graph-deployment-preflight-v2"
+    with pytest.raises(RuntimeError, match="deployment_preflight_contract_mismatch"):
+        require_preflight_ready(preflight)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("graph_mutation", True, "graph_mutation_not_explicitly_false"),
+        ("graph_mutation", None, "graph_mutation_not_explicitly_false"),
+        ("filesystem_mutation", True, "filesystem_mutation_not_explicitly_false"),
+        ("filesystem_mutation", None, "filesystem_mutation_not_explicitly_false"),
+    ],
+)
+def test_preflight_gate_rejects_mutation_capability(field, value, message):
+    preflight = dict(PREFLIGHT)
+    if value is None:
+        preflight.pop(field)
+    else:
+        preflight[field] = value
+    with pytest.raises(RuntimeError, match=message):
+        require_preflight_ready(preflight)
+
+
+def test_preflight_gate_rejects_not_ready_with_blockers():
+    preflight = dict(PREFLIGHT)
+    preflight["ready_for_live_resumable_dry_run"] = False
+    preflight["blockers"] = ["persistent_mount_missing"]
     with pytest.raises(RuntimeError, match="deployment_preflight_blocked"):
-        require_preflight_ready(
-            {
-                "production_graph_mutation": False,
-                "ready_for_live_resumable_dry_run": False,
-                "blockers": ["persistent_mount_missing"],
-            }
-        )
-    with pytest.raises(RuntimeError, match="production_graph_mutation"):
-        require_preflight_ready(
-            {
-                "production_graph_mutation": True,
-                "ready_for_live_resumable_dry_run": True,
-                "blockers": [],
-            }
-        )
+        require_preflight_ready(preflight)
 
 
 def test_staging_gate_fails_closed_when_mutation_flag_missing():
@@ -63,11 +84,7 @@ def test_build_evidence_fails_closed_on_publication():
         session={"run_id": "RUN-1"},
         resume={"status": "paused"},
         report={"status": "paused"},
-        preflight={
-            "contract": "calyx-graph-deployment-preflight-v3",
-            "ready_for_live_resumable_dry_run": True,
-            "deployment": {"commit": "abc123"},
-        },
+        preflight=PREFLIGHT,
         ready_domains=["taxonomy"],
     )
     assert evidence["schema_version"] == "2.0"
@@ -125,10 +142,7 @@ def test_resume_existing_advances_exactly_once_without_mutation_retry(monkeypatc
     monkeypatch.setattr(operator, "SELECTED_DOMAIN", "occurrences")
     evidence = operator._resume_existing(
         token="token",
-        preflight={
-            "production_graph_mutation": False,
-            "ready_for_live_resumable_dry_run": True,
-        },
+        preflight=PREFLIGHT,
         run_id="RUN-1",
     )
     assert evidence["action"] == "resume_existing"
@@ -157,10 +171,7 @@ def test_resume_existing_rejects_completed_run_without_post(monkeypatch):
     with pytest.raises(RuntimeError, match="existing_run_already_completed"):
         operator._resume_existing(
             token="token",
-            preflight={
-                "production_graph_mutation": False,
-                "ready_for_live_resumable_dry_run": True,
-            },
+            preflight=PREFLIGHT,
             run_id="RUN-1",
         )
     assert len(calls) == 1
