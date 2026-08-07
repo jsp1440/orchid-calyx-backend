@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -43,12 +44,11 @@ def execute_deterministic_dry_run(
     timeout_seconds: int = 300,
 ) -> DryRunExecutionResult:
     job = require_owned_program_job(db, owner=owner, program_job_id=program_job_id)
-    lease_expired = job.lease_expires_at is None or job.lease_expires_at <= utcnow()
     if (
         job.status != "running"
         or job.lease_owner != worker_id
         or job.lease_token != lease_token
-        or lease_expired
+        or _lease_is_expired(job.lease_expires_at)
     ):
         raise PermissionError("STALE_PROGRAM_JOB_LEASE")
 
@@ -79,6 +79,17 @@ def execute_deterministic_dry_run(
             "human_action": completed.human_action,
         },
     )
+
+
+def _lease_is_expired(expires_at: datetime | None) -> bool:
+    if expires_at is None:
+        return True
+    now = utcnow()
+    if expires_at.tzinfo is None and now.tzinfo is not None:
+        now = now.replace(tzinfo=None)
+    elif expires_at.tzinfo is not None and now.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=None)
+    return expires_at <= now
 
 
 def _receipt_payload(receipt: ExecutionReceipt) -> dict[str, object]:
