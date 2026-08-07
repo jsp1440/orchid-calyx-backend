@@ -46,7 +46,18 @@ Focused contract tests cover:
 - unavailable-domain preservation;
 - fully available cards with media and graph evidence.
 
-A dedicated GitHub Actions workflow validates compilation, Ruff, focused pytest, and diff hygiene. Because repository-wide Actions have recently shown zero-step infrastructure failures, a workflow failure with no executed steps must not be misclassified as a code failure.
+A dedicated GitHub Actions workflow validates compilation, Ruff, focused pytest, and diff hygiene.
+
+### Validation evidence — 2026-08-07
+
+Backend PR #531 workflow run `31203912347` was invoked for the implementation head, but GitHub terminated the `validate` job before instantiating any steps (`steps: null`). A failed-job retry was not accepted as scientific/code validation because no compile, Ruff, or pytest command executed. This matches the contemporaneous zero-step Actions failure affecting unrelated backend workflows and remains an infrastructure validation blocker, not evidence of a code defect or a successful test run.
+
+The paired frontend implementation in `jsp1440/orchid-continuum-frontend` PR #86 received executable validation:
+- Frontend CI run `31204240608`: build and repository lint passed on implementation head `9901fdbf37c2edc6ff0bd3de45974271f6d4dd02`.
+- CALYX-SPECIES-EXHIBIT-001 run `31204361071`: dependency install, focused Vitest contract tests, production build, changed-surface ESLint, and diff hygiene all passed on head `49e6e3f8042bb48e459e4c8588d81c1fc36d7431`.
+- Frontend CI run `31204361003`: repository production build and repository lint also passed on that final frontend head.
+
+Therefore the browser-side consumer is executable and validated, while backend PR #531 remains draft pending a real backend Actions execution. Zero-step backend failures must not be treated as either pass or application failure.
 
 ## Governance
 
