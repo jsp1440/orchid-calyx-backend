@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from sqlalchemy.orm import Session
 
 from .executor import ExecutorCapability, GovernedAssignment
@@ -10,6 +12,37 @@ SAFE_ASSIGNMENT_CAPABILITIES = (
     ExecutorCapability.PRODUCE_RECEIPT.value,
     ExecutorCapability.COLLECT_EVIDENCE_URIS.value,
 )
+RESERVED_JOB_INPUT_KEYS = frozenset(
+    {
+        "program_job_id",
+        "job_key",
+        "role_key",
+        "title",
+        "repository",
+        "branch",
+        "mutating_intent",
+        "attempt_count",
+    }
+)
+
+
+def _persisted_job_inputs(job: CalyxProgramJob) -> dict[str, object]:
+    if not job.input_json:
+        return {}
+    try:
+        value = json.loads(job.input_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError("PROGRAM_JOB_INPUT_JSON_INVALID") from exc
+    if not isinstance(value, dict):
+        raise TypeError("PROGRAM_JOB_INPUT_JSON_OBJECT_REQUIRED")
+    if any(not isinstance(key, str) or not key.strip() for key in value):
+        raise ValueError("PROGRAM_JOB_INPUT_KEY_INVALID")
+    reserved = sorted(set(value) & RESERVED_JOB_INPUT_KEYS)
+    if reserved:
+        raise PermissionError(
+            f"PROGRAM_JOB_INPUT_RESERVED_KEY:{','.join(reserved)}"
+        )
+    return value
 
 
 def governed_assignment_from_claimed_job(
@@ -29,6 +62,7 @@ def governed_assignment_from_claimed_job(
     if timeout_seconds <= 0:
         raise ValueError("ASSIGNMENT_TIMEOUT_INVALID")
 
+    persisted_inputs = _persisted_job_inputs(job)
     inputs = {
         "program": {
             "program_id": program.program_id,
@@ -44,10 +78,12 @@ def governed_assignment_from_claimed_job(
             "branch": job.branch,
             "mutating_intent": bool(job.mutating),
             "attempt_count": job.attempt_count,
+            **persisted_inputs,
         },
         "governance": {
             "mode": "bounded_dry_run",
             "external_execution_authorized": False,
+            "repository_code_execution_authorized": False,
             "automatic_merge_authorized": False,
             "deployment_authorized": False,
             "publication_authorized": False,
@@ -86,4 +122,5 @@ def assignment_payload(assignment: GovernedAssignment) -> dict[str, object]:
         "cancelled": assignment.cancelled,
         "input_checksum": assignment.verified_input_checksum(),
         "external_execution_authorized": False,
+        "repository_code_execution_authorized": False,
     }
