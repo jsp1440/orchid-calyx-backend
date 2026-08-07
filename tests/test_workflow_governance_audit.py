@@ -32,3 +32,14 @@ def test_confirmed_production_manual_workflow_is_destructive_gated(tmp_path: Pat
     )
     finding = classify(path, path.read_text(encoding="utf-8"))
     assert finding.classification == "DESTRUCTIVE_GATED"
+
+
+def test_production_migration_switch_is_destructive_gated(tmp_path: Path) -> None:
+    path = tmp_path / "migration.yml"
+    path.write_text(
+        "name: Production migration\non:\n  workflow_dispatch:\n    inputs:\n      apply_migration:\n        required: true\n        type: boolean\njobs:\n  migrate:\n    environment: production\n",
+        encoding="utf-8",
+    )
+    finding = classify(path, path.read_text(encoding="utf-8"))
+    assert finding.classification == "DESTRUCTIVE_GATED"
+    assert finding.requires_confirmation is True
