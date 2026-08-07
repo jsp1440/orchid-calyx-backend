@@ -5,15 +5,22 @@ import hashlib
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.calyx_orchestrator.assignment_factory import governed_assignment_from_claimed_job
+from app.calyx_orchestrator.assignment_factory import (
+    governed_assignment_from_claimed_job,
+)
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
     CalyxProgramDependency,
     CalyxProgramJob,
 )
-from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
-from app.calyx_orchestrator.sandboxed_validation_executor import SANDBOXED_VALIDATION_ROLE
+from app.calyx_orchestrator.sandboxed_validation_executor import (
+    SANDBOXED_VALIDATION_ROLE,
+)
 from app.database import Base
 
 

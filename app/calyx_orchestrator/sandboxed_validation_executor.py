@@ -5,12 +5,18 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any, Mapping
+from typing import Any
 
 from .engineering_core import TerminalOutcome
-from .executor import ExecutionReceipt, ExecutionState, GovernedAssignment, canonical_checksum
+from .executor import (
+    ExecutionReceipt,
+    ExecutionState,
+    GovernedAssignment,
+    canonical_checksum,
+)
 from .repository_evidence_executor import RepositoryEvidenceExecutor
 from .sandbox_authorization import SandboxAuthorization, SandboxValidationAuthorizer
 
@@ -119,8 +125,7 @@ class SandboxedExecutableValidationExecutor:
                 cwd=self.workspace_root,
                 env=env,
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 timeout=request.timeout_seconds,
                 check=False,
                 shell=False,
@@ -203,16 +208,14 @@ class SandboxedExecutableValidationExecutor:
             input_checksum=input_checksum,
             output_checksum=canonical_checksum(output),
             output=output,
-            evidence_uris=tuple(
-                [
-                    *assignment.evidence_uris,
-                    authorization.evidence_uri,
-                    f"repo-commit:{repository}@{checkout.commit_sha}",
-                    *[
-                        f"validation-input:{path}#{before[path]}"
-                        for path in sorted(before)
-                    ],
-                ]
+            evidence_uris=(
+                *assignment.evidence_uris,
+                authorization.evidence_uri,
+                f"repo-commit:{repository}@{checkout.commit_sha}",
+                *(
+                    f"validation-input:{path}#{before[path]}"
+                    for path in sorted(before)
+                ),
             ),
             blocker_code=blocker_code,
         )
