@@ -53,6 +53,11 @@ CREATE TABLE IF NOT EXISTS oc_university.session_reviews (
     review_id UUID PRIMARY KEY,
     session_id UUID NOT NULL REFERENCES oc_university.lab_sessions(session_id) ON DELETE CASCADE,
     reviewer_actor TEXT NOT NULL CHECK (length(trim(reviewer_actor)) > 0),
+    reviewer_capability TEXT NOT NULL CHECK (
+        reviewer_capability IN ('review.science','review.expert','review.publish')
+    ),
+    reviewer_roles JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(reviewer_roles) = 'array'),
+    reviewer_qualifications JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(reviewer_qualifications) = 'array'),
     decision TEXT NOT NULL CHECK (decision IN (
         'changes_requested','approved_for_learning','approved_for_candidate_knowledge_consideration'
     )),
@@ -72,4 +77,4 @@ COMMENT ON SCHEMA oc_university IS
 COMMENT ON TABLE oc_university.lab_sessions IS
     'Durable scientific-inquiry sessions. Publication and automatic Candidate Knowledge promotion are structurally prohibited.';
 COMMENT ON TABLE oc_university.session_reviews IS
-    'Human review decisions only. Approval for Candidate Knowledge consideration is not Candidate Knowledge promotion.';
+    'Qualified human review decisions with authorization provenance. Candidate Knowledge consideration is not promotion.';
