@@ -73,7 +73,7 @@ class CanonicalBrainRegistry:
                         object_type=record.object_type,
                         lifecycle=record.lifecycle,
                         score=score,
-                        matched_fields=sorted(matched),
+                        matched_fields=matched,
                     )
                 )
         return sorted(
