@@ -4,6 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from app.mission_control_access import AccessPrincipal
+from app.review_api.dependencies import authenticated_principal
 from app.routers.health import add_mission_control_cors_headers
 from app.security import verify_owner_or_api_key
 
@@ -30,6 +32,7 @@ router = APIRouter(
     dependencies=[Depends(add_mission_control_cors_headers)],
 )
 Auth = Annotated[dict, Depends(verify_owner_or_api_key)]
+ReviewerPrincipal = Annotated[AccessPrincipal, Depends(authenticated_principal)]
 
 
 def capability() -> UniversityCapability:
@@ -199,13 +202,12 @@ def review_session(
     session_id: str,
     payload: SessionReviewCreate,
     request: Request,
-    auth: Auth,
+    principal: ReviewerPrincipal,
 ):
     require_durable_sessions()
-    actor, privileged = actor_identity(auth)
     return invoke(
         request,
         lambda: UniversityActivationService.review_session(
-            session_id, actor, privileged, payload
+            session_id, principal, payload
         ),
     )
