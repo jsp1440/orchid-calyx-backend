@@ -9,7 +9,12 @@ from app.university.durable_config import (
     durable_sessions_enabled,
     valid_release_evidence_id,
 )
-from app.university.durable_repository import DurableUniversityError, create_session
+from app.university.durable_repository import (
+    DurableUniversityError,
+    create_session,
+    missing_stage_requirements,
+    validate_event_stage,
+)
 
 
 class DurableUniversityGateTests(unittest.TestCase):
@@ -72,6 +77,39 @@ class DurableUniversityGateTests(unittest.TestCase):
                     learner_actor="learner-1",
                 )
         self.assertEqual(ctx.exception.code, "DURABLE_UNIVERSITY_DISABLED")
+
+
+class DurableUniversityInquiryPolicyTests(unittest.TestCase):
+    def test_each_stage_has_explicit_substantive_exit_requirements(self) -> None:
+        self.assertEqual(missing_stage_requirements("observe", []), ("observation_added",))
+        self.assertEqual(missing_stage_requirements("question", []), ("question_set",))
+        self.assertEqual(
+            missing_stage_requirements("investigate", ["hypothesis_added"]),
+            ("evidence_examined",),
+        )
+        self.assertEqual(missing_stage_requirements("analyze", ["analysis_recorded"]), ())
+        self.assertEqual(missing_stage_requirements("interpret", ["interpretation_recorded"]), ())
+        self.assertEqual(
+            missing_stage_requirements("communicate", ["conclusion_drafted"]),
+            ("uncertainty_recorded",),
+        )
+        self.assertEqual(
+            missing_stage_requirements(
+                "communicate", ["conclusion_drafted", "uncertainty_recorded"]
+            ),
+            (),
+        )
+
+    def test_event_types_are_bound_to_scientific_stage(self) -> None:
+        validate_event_stage("observation_added", "observe", "observe")
+        validate_event_stage("evidence_examined", "investigate", "investigate")
+        validate_event_stage("stage_advanced", "question", "observe")
+        with self.assertRaises(DurableUniversityError) as ctx:
+            validate_event_stage("observation_added", "question", "question")
+        self.assertEqual(ctx.exception.code, "EVENT_STAGE_MISMATCH")
+        with self.assertRaises(DurableUniversityError) as ctx:
+            validate_event_stage("stage_advanced", "analyze", "question")
+        self.assertEqual(ctx.exception.code, "INVALID_STAGE_TRANSITION")
 
 
 if __name__ == "__main__":
