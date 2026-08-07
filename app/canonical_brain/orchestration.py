@@ -6,6 +6,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.calyx_orchestrator.engineering_core import TerminalOutcome
+from app.calyx_orchestrator.executor import (
+    ExecutionReceipt as CalyxExecutionReceipt,
+)
+from app.calyx_orchestrator.executor import ExecutionState
+from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
+
 from .build_queue import GovernedBuildQueue
 
 
@@ -38,10 +45,12 @@ class ExecutionReceipt(StrictModel):
     recorded_at: datetime
     evidence_uris: list[str] = Field(default_factory=list)
     output_checksum: str | None = None
+    executor_key: str | None = None
+    authoritative: bool = False
 
 
 class GovernedOrchestrator:
-    """Assigns admitted builds and records execution state without launching agents."""
+    """Assigns admitted builds and records governed state without launching agents."""
 
     def __init__(self, queue: GovernedBuildQueue, agents: list[AgentDescriptor]) -> None:
         self._queue = queue
@@ -52,6 +61,13 @@ class GovernedOrchestrator:
     @staticmethod
     def _stable_id(*parts: str) -> str:
         return hashlib.sha256(":".join(parts).encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _role_key(agent_id: str) -> str:
+        normalized = agent_id.strip().removeprefix("agent:").replace("-", "_")
+        if not normalized:
+            raise ValueError("CANONICAL_AGENT_ROLE_INVALID")
+        return normalized
 
     def eligible_agents(self, architecture_id: str) -> list[AgentDescriptor]:
         return sorted(
@@ -103,20 +119,45 @@ class GovernedOrchestrator:
         self,
         assignment_id: str,
         recorded_at: datetime,
-        evidence_uris: list[str],
-        output_checksum: str,
+        receipt: CalyxExecutionReceipt,
+        *,
+        executor_role_key: str,
     ) -> ExecutionReceipt:
         assignment = self._assignments.get(assignment_id)
         if assignment is None:
             raise KeyError(assignment_id)
         if assignment.status != "running":
             raise ValueError("only running assignments may complete")
-        if not evidence_uris or len(output_checksum) < 16:
+
+        receipt.verify()
+        registered = AuthoritativeExecutorRegistry().require_authoritative(executor_role_key)
+        if registered.external_side_effects:
+            raise PermissionError("EXTERNAL_SIDE_EFFECT_EXECUTOR_COMPLETION_PROHIBITED")
+        if receipt.executor_key != registered.executor.executor_key:
+            raise ValueError("COMPLETION_EXECUTOR_MISMATCH")
+        if self._role_key(assignment.agent_id) != registered.role_key:
+            raise PermissionError("COMPLETION_AGENT_ROLE_MISMATCH")
+        if receipt.state != ExecutionState.DELIVERED or receipt.outcome != TerminalOutcome.DELIVERED:
+            raise ValueError("ONLY_AUTHORITATIVE_DELIVERED_RECEIPTS_MAY_COMPLETE")
+        if receipt.assignment_id != assignment.assignment_id:
+            raise ValueError("COMPLETION_ASSIGNMENT_MISMATCH")
+        if receipt.job_key != assignment.build_id:
+            raise ValueError("COMPLETION_BUILD_MISMATCH")
+        if not receipt.evidence_uris or len(receipt.output_checksum) != 64:
             raise ValueError("completion requires evidence and an output checksum")
+
         self._queue.transition(assignment.build_id, "completed")
         updated = assignment.model_copy(update={"status": "completed"})
         self._assignments[assignment_id] = updated
-        return self._record(updated, "completed", recorded_at, evidence_uris, output_checksum)
+        return self._record(
+            updated,
+            "completed",
+            recorded_at,
+            list(receipt.evidence_uris),
+            receipt.output_checksum,
+            executor_key=receipt.executor_key,
+            authoritative=True,
+        )
 
     def _record(
         self,
@@ -125,6 +166,9 @@ class GovernedOrchestrator:
         recorded_at: datetime,
         evidence_uris: list[str],
         output_checksum: str | None,
+        *,
+        executor_key: str | None = None,
+        authoritative: bool = False,
     ) -> ExecutionReceipt:
         receipt_id = self._stable_id(assignment.assignment_id, outcome)
         candidate = ExecutionReceipt(
@@ -136,6 +180,8 @@ class GovernedOrchestrator:
             recorded_at=recorded_at,
             evidence_uris=evidence_uris,
             output_checksum=output_checksum,
+            executor_key=executor_key,
+            authoritative=authoritative,
         )
         existing = self._receipts.get(receipt_id)
         if existing and existing != candidate:
