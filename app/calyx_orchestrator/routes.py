@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.security import verify_owner_or_api_key
 
+from .autonomy_routes import router as autonomy_router
 from .models import CalyxJob
 from .operations import operational_status, renew_lease, seed_approved_tasks
 from .portfolio_routes import router as portfolio_router
@@ -147,4 +148,5 @@ def requeue_dead_letter(job_id: str, auth: AuthDependency, db: DbDependency) -> 
 
 
 router.include_router(program_router)
+router.include_router(autonomy_router)
 router.include_router(portfolio_router)
