@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from psycopg.types.json import Jsonb
 
@@ -32,7 +32,7 @@ from .repository import ImmutableConflictError
 class PostgresDesignPlanningRepository:
     """PostgreSQL-authoritative append-only planning repository."""
 
-    TABLES = {
+    TABLES: ClassVar[dict[str, str]] = {
         "product_request": "product_requests",
         "context": "project_context_snapshots",
         "evidence": "design_evidence_packages",
@@ -64,6 +64,12 @@ class PostgresDesignPlanningRepository:
             if existing := cur.fetchone():
                 return self._hydrate(kind, existing[0])
             try:
+                cur.execute(
+                    f"SELECT payload FROM design_planning.{table} WHERE integrity_hash=%s",
+                    (digest,),
+                )
+                if existing := cur.fetchone():
+                    return self._hydrate(kind, existing[0])
                 cur.execute(
                     f"INSERT INTO design_planning.{table} (artifact_id, logical_key, version, integrity_hash, payload) VALUES (%s,%s,%s,%s,%s)",
                     (
