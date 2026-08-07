@@ -1,5 +1,6 @@
 name: TEMP Calyx Core Deployed Preflight
 
+# Second evidence capture after additional mainline merges; still read-only.
 on:
   pull_request:
     paths:
