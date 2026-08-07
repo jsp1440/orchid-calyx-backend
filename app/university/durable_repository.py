@@ -229,11 +229,14 @@ def record_review(
     *,
     session_id: str,
     reviewer_actor: str,
+    reviewer_capability: str,
+    reviewer_roles: tuple[str, ...],
+    reviewer_qualifications: tuple[str, ...],
     reviewed_revision: int,
     decision: str,
     notes: str | None,
 ) -> dict[str, Any]:
-    """Record human review without performing publication or Candidate Knowledge writes."""
+    """Record qualified human review without publication or Candidate Knowledge writes."""
     _require_gate()
     review_id = uuid.uuid4()
     with _connect() as conn, conn.cursor() as cur:
@@ -257,11 +260,22 @@ def record_review(
         cur.execute(
             """
             INSERT INTO oc_university.session_reviews
-                (review_id, session_id, reviewer_actor, decision, notes, reviewed_revision)
-            VALUES (%s,%s,%s,%s,%s,%s)
+                (review_id, session_id, reviewer_actor, reviewer_capability,
+                 reviewer_roles, reviewer_qualifications, decision, notes, reviewed_revision)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING *
             """,
-            (review_id, session_id, reviewer_actor, decision, notes, reviewed_revision),
+            (
+                review_id,
+                session_id,
+                reviewer_actor,
+                reviewer_capability,
+                Jsonb(list(reviewer_roles)),
+                Jsonb(list(reviewer_qualifications)),
+                decision,
+                notes,
+                reviewed_revision,
+            ),
         )
         review = cur.fetchone()
         if review is None:
