@@ -10,7 +10,6 @@ from app.mission_control_access import AccessPrincipal, Capability, CapabilitySe
 from .activation_service import qualified_reviewer_context
 from .durable_config import durable_sessions_enabled
 from .durable_repository import DurableUniversityError, database_url
-from .service import UniversityServiceError
 from .session_discovery import _decode_cursor, _encode_cursor
 
 _SCIENTIFIC_QUALIFICATIONS = frozenset(
