@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from .models import BrainObject, BrainRelationship
 from .registry import CanonicalBrainRegistry
 
+DIRECT_CAPTURE_OBJECT_TYPES = frozenset({"build", "validation", "reproducibility", "risk"})
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -27,13 +29,27 @@ class BrainCaptureResult(StrictModel):
     snapshot_checksum: str
 
 
+def _require_direct_capture_eligible(record: BrainObject) -> None:
+    if record.object_type not in DIRECT_CAPTURE_OBJECT_TYPES or record.lifecycle == "approved":
+        raise PermissionError("DIRECT_CAPTURE_REQUIRES_REVIEWED_CANDIDATE_PATH")
+
+
 def capture_build_bundle(
     registry: CanonicalBrainRegistry,
     bundle: BrainCaptureBundle,
 ) -> BrainCaptureResult:
+    """Atomically capture operational build metadata, never reviewed scientific authority.
+
+    Scientific/design objects and any object already claiming an ``approved`` lifecycle
+    must enter through the existing reviewed candidate-capture path before they can be
+    represented as canonical institutional memory.
+    """
     object_ids = [record.object_id for record in bundle.objects]
     if len(object_ids) != len(set(object_ids)):
         raise ValueError("capture bundle contains duplicate Brain object IDs")
+
+    for record in bundle.objects:
+        _require_direct_capture_eligible(record)
 
     relationship_ids = [relation.relationship_id for relation in bundle.relationships]
     if len(relationship_ids) != len(set(relationship_ids)):
