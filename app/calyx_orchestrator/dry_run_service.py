@@ -6,17 +6,17 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from .assignment_factory import assignment_payload, governed_assignment_from_claimed_job
-from .execution_bridge import LeaseExecutionBridge
 from .executor import DeterministicDryRunExecutor, ExecutionReceipt
 from .models import utcnow
 from .program_models import CalyxProgram, CalyxProgramJob
+from .program_worker import PersistentProgramWorker
 
 
 @dataclass(frozen=True, slots=True)
 class DryRunExecutionResult:
     assignment: dict[str, object]
     receipt: dict[str, object]
-    completed_job: dict[str, object]
+    released_job: dict[str, object]
 
 
 def require_owned_program_job(
@@ -43,6 +43,7 @@ def execute_deterministic_dry_run(
     lease_token: str,
     timeout_seconds: int = 300,
 ) -> DryRunExecutionResult:
+    """Execute a non-authoritative preflight and return the job to the runnable queue."""
     job = require_owned_program_job(db, owner=owner, program_job_id=program_job_id)
     if (
         job.status != "running"
@@ -60,23 +61,23 @@ def execute_deterministic_dry_run(
     )
     receipt = DeterministicDryRunExecutor().execute(assignment)
     receipt.verify()
-    completed = LeaseExecutionBridge(db).complete_from_receipt(
+    released = PersistentProgramWorker(db).release_preflight(
         program_job_id=program_job_id,
         worker_id=worker_id,
         lease_token=lease_token,
-        receipt=receipt,
     )
     return DryRunExecutionResult(
         assignment=assignment_payload(assignment),
         receipt=_receipt_payload(receipt),
-        completed_job={
-            "program_job_id": completed.program_job_id,
-            "program_id": completed.program_id,
-            "job_key": completed.job_key,
-            "status": completed.status,
-            "outcome": completed.outcome,
-            "blocker": completed.blocker,
-            "human_action": completed.human_action,
+        released_job={
+            "program_job_id": released.program_job_id,
+            "program_id": released.program_id,
+            "job_key": released.job_key,
+            "status": released.status,
+            "outcome": released.outcome,
+            "attempt_count": released.attempt_count,
+            "blocker": released.blocker,
+            "human_action": released.human_action,
         },
     )
 
@@ -105,4 +106,5 @@ def _receipt_payload(receipt: ExecutionReceipt) -> dict[str, object]:
         "output": dict(receipt.output),
         "evidence_uris": list(receipt.evidence_uris),
         "blocker_code": receipt.blocker_code,
+        "authoritative": False,
     }
