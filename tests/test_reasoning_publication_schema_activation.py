@@ -67,8 +67,10 @@ def test_apply_requires_separate_explicit_confirmation(monkeypatch, tmp_path):
 
 
 def test_apply_migrations_records_completed_work_before_later_failure(monkeypatch, tmp_path):
-    first = tmp_path / "103_reasoning_ledger.sql"
-    second = tmp_path / "105_reasoning_ledger_publication_adapter.sql"
+    migrations_dir = tmp_path / "migrations"
+    migrations_dir.mkdir()
+    first = migrations_dir / "103_reasoning_ledger.sql"
+    second = migrations_dir / "105_reasoning_ledger_publication_adapter.sql"
     first.write_text("SELECT 103;", encoding="utf-8")
     second.write_text("SELECT 105;", encoding="utf-8")
     monkeypatch.setattr(activation, "ROOT", tmp_path)
