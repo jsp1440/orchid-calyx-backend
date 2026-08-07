@@ -1,16 +1,18 @@
-name: BUILD-BRAIN-108-109 Validation
+name: BUILD-BRAIN-108-110 Validation
 
 on:
   pull_request:
     paths:
       - "app/calyx_orchestrator/executor.py"
       - "app/calyx_orchestrator/execution_bridge.py"
+      - "app/calyx_orchestrator/scheduler.py"
       - "app/calyx_orchestrator/program_core.py"
       - "app/calyx_orchestrator/program_worker.py"
       - "app/calyx_orchestrator/program_models.py"
       - "app/calyx_orchestrator/engineering_core.py"
       - "tests/test_calyx_governed_executor.py"
       - "tests/test_calyx_execution_bridge.py"
+      - "tests/test_calyx_dependency_scheduler.py"
       - "tests/test_calyx_engineering_program_worker.py"
       - ".github/workflows/build-brain-108.yml"
   workflow_dispatch:
@@ -40,22 +42,27 @@ jobs:
           python -m py_compile \
             app/calyx_orchestrator/executor.py \
             app/calyx_orchestrator/execution_bridge.py \
+            app/calyx_orchestrator/scheduler.py \
             app/calyx_orchestrator/program_core.py \
             app/calyx_orchestrator/program_worker.py \
             app/calyx_orchestrator/engineering_core.py \
             tests/test_calyx_governed_executor.py \
-            tests/test_calyx_execution_bridge.py
+            tests/test_calyx_execution_bridge.py \
+            tests/test_calyx_dependency_scheduler.py
       - name: Ruff
         run: |
           ruff check \
             app/calyx_orchestrator/executor.py \
             app/calyx_orchestrator/execution_bridge.py \
+            app/calyx_orchestrator/scheduler.py \
             tests/test_calyx_governed_executor.py \
-            tests/test_calyx_execution_bridge.py
+            tests/test_calyx_execution_bridge.py \
+            tests/test_calyx_dependency_scheduler.py
       - name: Focused tests
         run: |
           pytest -q \
             tests/test_calyx_governed_executor.py \
             tests/test_calyx_execution_bridge.py \
+            tests/test_calyx_dependency_scheduler.py \
             tests/test_calyx_engineering_program_worker.py \
             tests/test_calyx_autonomous_program_core.py
