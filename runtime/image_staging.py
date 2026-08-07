@@ -169,12 +169,12 @@ def stage_image_batch(
             str(taxon_name) if taxon_name is not None else None,
             canonical_lookup,
         )
-        if reconciliation_state == "unresolved":
+        if reconciliation_state != "resolved":
             review_queue.append(ImageReviewItem(
                 source=source,
                 source_record_id=src_id,
                 taxon_name=str(taxon_name) if taxon_name is not None else None,
-                reason="No canonical taxon match for supplied taxon name.",
+                reason=f"Canonical taxon resolution required ({reconciliation_state}).",
             ))
 
         normalized_license = _normalise_license(license_text)
