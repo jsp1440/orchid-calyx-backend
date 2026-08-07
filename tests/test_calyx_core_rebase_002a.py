@@ -31,6 +31,32 @@ def test_occurrence_staging_reconciles_reviews_and_is_idempotent():
     assert second.idempotent is True
 
 
+def test_all_non_resolved_taxon_states_enter_review_queues():
+    occurrence = stage_occurrence_batch(
+        [{"source_record_id": "gbif-no-map", "scientific_name": "Laelia anceps"}],
+        source="gbif",
+        canonical_lookup=None,
+    )
+    assert occurrence.staged[0].reconciliation_state == "reconciliation_unavailable"
+    assert len(occurrence.review_queue) == 1
+
+    image = stage_image_batch(
+        [{"source_record_id": "inat-no-taxon", "url": "https://example.test/a.jpg", "license": "CC-BY"}],
+        source="inaturalist",
+        canonical_lookup={"Laelia anceps": "taxon:laelia-anceps"},
+    )
+    assert image.staged[0].reconciliation_state == "review_required"
+    assert len(image.review_queue) == 1
+
+    literature = stage_literature_batch(
+        [{"source_record_id": "paper-no-map", "title": "Unmapped orchid record"}],
+        source="manual",
+        canonical_lookup=None,
+    )
+    assert literature.staged[0].reconciliation_state == "reconciliation_unavailable"
+    assert len(literature.review_queue) == 1
+
+
 def test_image_staging_enforces_license_allowlist():
     result = stage_image_batch(
         [
@@ -71,7 +97,7 @@ def test_literature_staging_preserves_evidence_and_provenance():
     assert result.summary()["candidate_knowledge_governance_intact"] is True
 
 
-def test_certification_is_read_only_and_reports_current_auth_contract(tmp_path: Path):
+def test_certification_reports_operational_readiness_without_overstatement(tmp_path: Path):
     taxonomy_root = tmp_path / "taxonomy"
     literature_root = tmp_path / "literature"
     taxonomy_root.mkdir()
@@ -80,8 +106,13 @@ def test_certification_is_read_only_and_reports_current_auth_contract(tmp_path: 
     assert report["contract"] == CONTRACT
     assert report["deployed_commit"] == "test-commit"
     assert report["no_production_mutation"] is True
-    assert report["pipeline_domains"]["occurrences"]["state"] == "staging_pipeline_ready"
+    assert report["overall_status"] == "partial_operational_readiness"
+    assert report["pipeline_domains"]["occurrences"]["state"] == "staging_module_available"
+    assert report["pipeline_domains"]["occurrences"]["operational_status"] == "partial"
+    assert report["pipeline_domains"]["occurrences"]["operational_blockers"]
     assert report["pipeline_domains"]["licensed_images"]["license_enforcement"] == "allowlist_active"
+    assert report["pipeline_domains"]["licensed_images"]["operational_status"] == "partial"
+    assert report["pipeline_domains"]["licensed_images"]["operational_blockers"]
     assert report["publication_safeguards"]["automatic_publication"] is False
     assert "CALYX_OWNER_ACCESS_CODE" in report["configuration_presence"]
     assert "CALYX_OWNER_SESSION_SECRET" in report["configuration_presence"]
