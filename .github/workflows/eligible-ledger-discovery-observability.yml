@@ -1,0 +1,49 @@
+name: Eligible Ledger Discovery Observability
+
+on:
+  pull_request:
+    paths:
+      - "scripts/discover_eligible_reasoning_ledgers.py"
+      - "tests/test_eligible_ledger_discovery_observability.py"
+      - "docs/brain/CALYX-ELIGIBLE-LEDGER-DISCOVERY-OBSERVABILITY.md"
+      - ".github/workflows/eligible-ledger-discovery-observability.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install test tools
+        run: pip install pytest ruff
+      - name: Compile
+        run: |
+          python -m py_compile scripts/discover_eligible_reasoning_ledgers.py
+          python -m py_compile tests/test_eligible_ledger_discovery_observability.py
+      - name: Ruff
+        run: |
+          ruff check \
+            scripts/discover_eligible_reasoning_ledgers.py \
+            tests/test_eligible_ledger_discovery_observability.py
+      - name: Focused tests
+        run: pytest -q tests/test_eligible_ledger_discovery_observability.py
+      - name: Read-only contract smoke
+        run: |
+          grep -q '"publication_endpoint_invoked": False' scripts/discover_eligible_reasoning_ledgers.py
+          grep -q '"production_mutation": False' scripts/discover_eligible_reasoning_ledgers.py
+          ! grep -q '/publish' scripts/discover_eligible_reasoning_ledgers.py
+      - name: Brain smoke
+        run: |
+          grep -q "HTTP 503" docs/brain/CALYX-ELIGIBLE-LEDGER-DISCOVERY-OBSERVABILITY.md
+          grep -q "read-only" docs/brain/CALYX-ELIGIBLE-LEDGER-DISCOVERY-OBSERVABILITY.md
+      - name: Diff hygiene
+        run: git diff --check
