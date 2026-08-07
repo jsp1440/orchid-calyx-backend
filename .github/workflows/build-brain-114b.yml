@@ -6,6 +6,7 @@ on:
       - "app/calyx_orchestrator/repository_evidence_executor.py"
       - "app/calyx_orchestrator/executor_registry.py"
       - "tests/test_calyx_repository_evidence_executor.py"
+      - "scripts/validate_repository_evidence_executor.py"
       - ".github/workflows/build-brain-114b.yml"
       - "docs/brain/BUILD-BRAIN-114B-REPOSITORY-EVIDENCE-EXECUTOR.md"
 
@@ -29,21 +30,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest ruff
-      - name: Compile
+      - name: Run portable BUILD-BRAIN-114B validation
+        run: python scripts/validate_repository_evidence_executor.py
+      - name: Emit validation receipt
+        if: always()
         run: |
-          python -m py_compile \
-            app/calyx_orchestrator/repository_evidence_executor.py \
-            app/calyx_orchestrator/executor_registry.py \
-            tests/test_calyx_repository_evidence_executor.py
-      - name: Ruff
-        run: |
-          ruff check \
-            app/calyx_orchestrator/repository_evidence_executor.py \
-            app/calyx_orchestrator/executor_registry.py \
-            tests/test_calyx_repository_evidence_executor.py
-      - name: Focused tests
-        run: |
-          pytest -q \
-            tests/test_calyx_repository_evidence_executor.py \
-            tests/test_calyx_autonomous_program_cycle.py \
-            tests/test_calyx_dry_run_execution_loop.py
+          if [ -f artifacts/validation/repository-evidence-executor.json ]; then
+            cat artifacts/validation/repository-evidence-executor.json
+          else
+            echo "Validation runner did not start or did not create a receipt."
+          fi
