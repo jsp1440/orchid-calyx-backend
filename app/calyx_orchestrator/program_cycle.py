@@ -19,6 +19,8 @@ class CycleJobResult:
     outcome: str | None
     receipt_state: str
     executor_key: str
+    workspace_mutation: bool = False
+    repository_code_execution: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +43,10 @@ class AutonomousCycleResult:
             "jobs": [asdict(item) for item in self.jobs],
             "error": self.error,
             "mode": "registered_authoritative_adapters_only",
+            "workspace_mutation_performed": any(item.workspace_mutation for item in self.jobs),
+            "repository_code_execution_performed": any(
+                item.repository_code_execution for item in self.jobs
+            ),
             "external_side_effects": [],
             "automatic_merge": False,
             "automatic_deployment": False,
@@ -149,6 +155,8 @@ def run_deterministic_program_cycle(
                 outcome=completed_job.outcome,
                 receipt_state=receipt.state.value,
                 executor_key=receipt.executor_key,
+                workspace_mutation=registered.workspace_mutation,
+                repository_code_execution=registered.repository_code_execution,
             )
         )
 
