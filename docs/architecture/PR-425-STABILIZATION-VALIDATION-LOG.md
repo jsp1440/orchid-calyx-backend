@@ -106,3 +106,7 @@ No slice may merge until its latest head has compile, Ruff, and focused pytest e
 ## Standing lesson
 
 Large integration branches can obscure validation state. Dependency-ordered slices improve failure isolation, reviewability, rollback, and truthful reporting. Build count is not completion; validated integration is completion.
+
+## Turn disposition
+
+No further implementation should expand feature scope until PR #487 receives repository-side workflow approval and authoritative CI evidence. The correct next action is administrative approval, followed by Slice 1 CI review and a controlled restack of Slice 2.
