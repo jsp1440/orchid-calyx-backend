@@ -27,6 +27,7 @@ class PersistentProgramWorker:
         worker_id: str,
         lease_seconds: int = 300,
         owner: str | None = None,
+        allowed_role_keys: frozenset[str] | None = None,
     ) -> CalyxProgramJob | None:
         now = utcnow()
         self.recover_expired_leases(now=now, owner=owner)
@@ -56,6 +57,10 @@ class PersistentProgramWorker:
         )
         if owner is not None:
             query = query.where(CalyxProgram.owner == owner)
+        if allowed_role_keys is not None:
+            if not allowed_role_keys:
+                return None
+            query = query.where(CalyxProgramJob.role_key.in_(tuple(sorted(allowed_role_keys))))
         candidates = self.db.scalars(query).all()
         candidates.sort(key=lambda item: runnable_rank[item.program_job_id])
 
@@ -80,6 +85,8 @@ class PersistentProgramWorker:
             if owner is not None:
                 owned_program_ids = select(CalyxProgram.program_id).where(CalyxProgram.owner == owner)
                 filters.append(CalyxProgramJob.program_id.in_(owned_program_ids))
+            if allowed_role_keys is not None:
+                filters.append(CalyxProgramJob.role_key.in_(tuple(sorted(allowed_role_keys))))
             updated = (
                 self.db.query(CalyxProgramJob)
                 .filter(*filters)
@@ -125,6 +132,47 @@ class PersistentProgramWorker:
             )
             .update(
                 {CalyxProgramJob.lease_expires_at: now + timedelta(seconds=lease_seconds)},
+                synchronize_session=False,
+            )
+        )
+        if not updated:
+            self.db.rollback()
+            raise PermissionError("STALE_PROGRAM_JOB_LEASE")
+        self.db.commit()
+        job = self.db.get(CalyxProgramJob, program_job_id)
+        if job is None:
+            raise LookupError("PROGRAM_JOB_NOT_FOUND")
+        self.db.refresh(job)
+        return job
+
+    def release_preflight(
+        self,
+        *,
+        program_job_id: str,
+        worker_id: str,
+        lease_token: str,
+    ) -> CalyxProgramJob:
+        """Release a dry-run lease without creating an authoritative outcome or consuming an attempt."""
+        now = utcnow()
+        updated = (
+            self.db.query(CalyxProgramJob)
+            .filter(
+                CalyxProgramJob.program_job_id == program_job_id,
+                CalyxProgramJob.status == "running",
+                CalyxProgramJob.outcome.is_(None),
+                CalyxProgramJob.lease_owner == worker_id,
+                CalyxProgramJob.lease_token == lease_token,
+                CalyxProgramJob.lease_expires_at.is_not(None),
+                CalyxProgramJob.lease_expires_at > now,
+            )
+            .update(
+                {
+                    CalyxProgramJob.status: "queued",
+                    CalyxProgramJob.lease_owner: None,
+                    CalyxProgramJob.lease_token: None,
+                    CalyxProgramJob.lease_expires_at: None,
+                    CalyxProgramJob.attempt_count: CalyxProgramJob.attempt_count - 1,
+                },
                 synchronize_session=False,
             )
         )
