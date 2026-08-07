@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RECEIPT = ROOT / "artifacts" / "validation" / "canonical-brain-validation.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "canonical-brain-validation.yml"
+DEPLOYED_BRAIN_ROUTER = ROOT / "app" / "brain" / "routes.py"
 
 
 def _utc_now() -> str:
@@ -48,8 +49,16 @@ def _test_files() -> list[str]:
 
 
 def _validated_files(tests: list[str]) -> list[Path]:
-    sources = sorted(path for path in (ROOT / "app" / "canonical_brain").rglob("*.py") if path.is_file())
-    paths = [*sources, *(ROOT / test for test in tests), Path(__file__).resolve(), WORKFLOW_PATH]
+    sources = sorted(
+        path for path in (ROOT / "app" / "canonical_brain").rglob("*.py") if path.is_file()
+    )
+    paths = [
+        *sources,
+        DEPLOYED_BRAIN_ROUTER,
+        *(ROOT / test for test in tests),
+        Path(__file__).resolve(),
+        WORKFLOW_PATH,
+    ]
     missing = [str(path.relative_to(ROOT)) for path in paths if not path.is_file()]
     if missing:
         raise RuntimeError(f"CANONICAL_BRAIN_VALIDATION_INPUT_MISSING:{','.join(sorted(missing))}")
@@ -81,7 +90,7 @@ def _write_receipt(path: Path, receipt: dict[str, object]) -> None:
 def main() -> int:
     receipt_path = _receipt_path()
     receipt: dict[str, object] = {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "validator": "canonical-brain",
         "started_at": _utc_now(),
         "completed_at": None,
@@ -111,8 +120,16 @@ def main() -> int:
         fingerprints, tree_digest = _fingerprint_files(files)
         receipt["validated_files"] = fingerprints
         receipt["validated_tree_sha256"] = tree_digest
-        _run("compile", ["-m", "compileall", "-q", "app/canonical_brain"], receipt)
-        _run("ruff", ["-m", "ruff", "check", "app/canonical_brain", *tests], receipt)
+        _run(
+            "compile",
+            ["-m", "compileall", "-q", "app/canonical_brain", "app/brain/routes.py"],
+            receipt,
+        )
+        _run(
+            "ruff",
+            ["-m", "ruff", "check", "app/canonical_brain", "app/brain/routes.py", *tests],
+            receipt,
+        )
         _run("pytest", ["-m", "pytest", "-q", *tests], receipt)
     except (RuntimeError, subprocess.CalledProcessError) as exc:
         if receipt["status"] != "failed":
