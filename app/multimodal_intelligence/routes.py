@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.security import verify_owner_or_api_key
 
 from .operator import MultimodalError, operator_service
+from .promotion import build_candidate_knowledge_promotion_plan
 from .status import capability_status
 
 router = APIRouter(
@@ -118,6 +119,16 @@ def operation_provenance(operation_id: str, auth: AuthDependency) -> dict:
     del auth
     try:
         return operator_service.provenance_bundle(operation_id)
+    except MultimodalError as error:
+        raise _http_error(error) from error
+
+
+@router.get("/operations/{operation_id}/candidate-knowledge-plan")
+def candidate_knowledge_plan(operation_id: str, auth: AuthDependency) -> dict:
+    del auth
+    try:
+        record = operator_service.get_operation(operation_id)
+        return asdict(build_candidate_knowledge_promotion_plan(record))
     except MultimodalError as error:
         raise _http_error(error) from error
 
