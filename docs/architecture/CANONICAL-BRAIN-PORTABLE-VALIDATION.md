@@ -54,6 +54,32 @@ Therefore zero-step workflow conclusions during incident #533 are not interprete
 
 When GitHub-hosted runner execution is restored, `Canonical Brain Validation` must run this portable validator against the then-current PR head. A passing receipt plus the workflow result is required before PR #525 can progress beyond draft validation status.
 
+## Branch reconciliation policy during incident #533
+
+`main` may continue advancing while hosted-runner execution is unavailable. Do not repeatedly restack or merge `main` into PR #525 merely to keep the branch numerically current when the new base changes do not overlap Canonical Brain or its Calyx authority dependencies.
+
+At the latest check, `main` advanced by 19 commits containing OCU University durable-session work and did not modify the Canonical Brain or Calyx executor/evidence contracts used by PR #525. The resulting branch divergence is therefore mechanical, but PR #525 is correctly left draft and non-mergeable until validation can run.
+
+Recovery order is deterministic:
+
+1. resolve issue #533 and confirm GitHub-hosted jobs can reach their first step;
+2. inspect the then-current `main` diff for Canonical Brain, Calyx scheduler/executor, artifact/review/capture, Mission Control, or shared API changes;
+3. reconcile PR #525 to that latest base only after the dependency audit;
+4. run `python scripts/validate_canonical_brain.py` through GitHub Actions and retain the machine-readable receipt;
+5. fix any real compile, Ruff, or pytest failures before changing draft/review status;
+6. keep merge, deployment, publication, production writes, and Knowledge Graph mutation outside the validator's authority.
+
+This policy avoids repeatedly rebuilding the same integration branch while its only authoritative validation channel is unavailable.
+
+## Public execution-receipt types
+
+Canonical Brain now exposes explicit receipt names to prevent confusion between two different trust domains:
+
+- `CanonicalExecutionReceipt` — Canonical Brain queue/orchestration state receipt;
+- `CalyxAuthoritativeExecutionReceipt` — current Calyx executor receipt accepted by the authoritative evidence bridge.
+
+The legacy package-level `ExecutionReceipt` name remains as a compatibility alias for `CanonicalExecutionReceipt`, but new integrations should use the explicit names.
+
 ## Local validation status during incident
 
 The portable validator source itself has been syntax-compiled in the implementation environment. Earlier Canonical Brain slices separately achieved authoritative passing compile/Ruff/focused-pytest evidence before the runner incident. Files changed during the later current-main authority hardening have also been syntax-compiled locally where reported.
