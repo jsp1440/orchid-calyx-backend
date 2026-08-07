@@ -24,10 +24,10 @@ GOOD_DATABASE = {
     "missing_constraint_fragments": [],
 }
 GOOD_REGISTRY = {
-    "configured": False,
+    "configured": True,
     "valid": True,
-    "subject_count": 0,
-    "science_grant_count": 0,
+    "subject_count": 1,
+    "science_grant_count": 1,
     "expert_grant_count": 0,
     "publication_grant_count": 0,
 }
@@ -46,18 +46,18 @@ class UniversityActivationPreflightTests(unittest.TestCase):
             "OCU_SUPABASE_ANON_KEY": "public-anon-key",
         }
 
-    def test_ready_only_while_mutating_flags_remain_off(self) -> None:
-        with patch.dict(os.environ, self._env(), clear=True), patch(
-            "scripts.preflight_university_activation._release_evidence_state",
-            return_value=GOOD_EVIDENCE,
+    def _run(self, *, env: dict[str, str] | None = None, evidence=GOOD_EVIDENCE, database=GOOD_DATABASE, registry=GOOD_REGISTRY):
+        with patch.dict(os.environ, env or self._env(), clear=True), patch(
+            "scripts.preflight_university_activation._release_evidence_state", return_value=evidence
         ), patch(
-            "scripts.preflight_university_activation._database_state",
-            return_value=GOOD_DATABASE,
+            "scripts.preflight_university_activation._database_state", return_value=database
         ), patch(
-            "scripts.preflight_university_activation._reviewer_registry_state",
-            return_value=GOOD_REGISTRY,
+            "scripts.preflight_university_activation._reviewer_registry_state", return_value=registry
         ):
-            result = preflight(release_evidence=Path("evidence.json"), database_url="postgresql://example")
+            return preflight(release_evidence=Path("evidence.json"), database_url="postgresql://example")
+
+    def test_ready_only_while_mutating_flags_remain_off_and_reviewer_exists(self) -> None:
+        result = self._run()
         self.assertTrue(result["ready_to_enable_durable"])
         self.assertEqual(result["blockers"], [])
         self.assertFalse(result["mutations_performed"])
@@ -65,17 +65,7 @@ class UniversityActivationPreflightTests(unittest.TestCase):
     def test_preflight_blocks_if_session_writes_are_already_enabled(self) -> None:
         env = self._env()
         env["OCU_UNIVERSITY_SESSION_WRITES_ENABLED"] = "true"
-        with patch.dict(os.environ, env, clear=True), patch(
-            "scripts.preflight_university_activation._release_evidence_state",
-            return_value=GOOD_EVIDENCE,
-        ), patch(
-            "scripts.preflight_university_activation._database_state",
-            return_value=GOOD_DATABASE,
-        ), patch(
-            "scripts.preflight_university_activation._reviewer_registry_state",
-            return_value=GOOD_REGISTRY,
-        ):
-            result = preflight(release_evidence=Path("evidence.json"), database_url="postgresql://example")
+        result = self._run(env=env)
         self.assertFalse(result["ready_to_enable_durable"])
         self.assertIn(
             "preflight requires session writes and durable mode to remain disabled",
@@ -83,18 +73,7 @@ class UniversityActivationPreflightTests(unittest.TestCase):
         )
 
     def test_preflight_blocks_mismatched_release_evidence(self) -> None:
-        evidence = {**GOOD_EVIDENCE, "artifact_matches_configured_id": False}
-        with patch.dict(os.environ, self._env(), clear=True), patch(
-            "scripts.preflight_university_activation._release_evidence_state",
-            return_value=evidence,
-        ), patch(
-            "scripts.preflight_university_activation._database_state",
-            return_value=GOOD_DATABASE,
-        ), patch(
-            "scripts.preflight_university_activation._reviewer_registry_state",
-            return_value=GOOD_REGISTRY,
-        ):
-            result = preflight(release_evidence=Path("evidence.json"), database_url="postgresql://example")
+        result = self._run(evidence={**GOOD_EVIDENCE, "artifact_matches_configured_id": False})
         self.assertIn(
             "release evidence artifact does not match configured SHA-256 evidence ID",
             result["blockers"],
@@ -106,33 +85,37 @@ class UniversityActivationPreflightTests(unittest.TestCase):
             "schema_valid": False,
             "missing_columns": {"session_reviews": ["reviewer_qualifications"]},
         }
-        with patch.dict(os.environ, self._env(), clear=True), patch(
-            "scripts.preflight_university_activation._release_evidence_state",
-            return_value=GOOD_EVIDENCE,
-        ), patch(
-            "scripts.preflight_university_activation._database_state",
-            return_value=database,
-        ), patch(
-            "scripts.preflight_university_activation._reviewer_registry_state",
-            return_value=GOOD_REGISTRY,
-        ):
-            result = preflight(release_evidence=Path("evidence.json"), database_url="postgresql://example")
+        result = self._run(database=database)
         self.assertIn("oc_university durable schema is incomplete or unsafe", result["blockers"])
 
-    def test_preflight_blocks_invalid_reviewer_registry_without_requiring_a_grant(self) -> None:
-        registry = {"configured": True, "valid": False, "subject_count": 0, "error": "INVALID"}
-        with patch.dict(os.environ, self._env(), clear=True), patch(
-            "scripts.preflight_university_activation._release_evidence_state",
-            return_value=GOOD_EVIDENCE,
-        ), patch(
-            "scripts.preflight_university_activation._database_state",
-            return_value=GOOD_DATABASE,
-        ), patch(
-            "scripts.preflight_university_activation._reviewer_registry_state",
-            return_value=registry,
-        ):
-            result = preflight(release_evidence=Path("evidence.json"), database_url="postgresql://example")
+    def test_preflight_blocks_invalid_reviewer_registry(self) -> None:
+        registry = {
+            "configured": True,
+            "valid": False,
+            "subject_count": 0,
+            "science_grant_count": 0,
+            "expert_grant_count": 0,
+            "publication_grant_count": 0,
+            "error": "INVALID",
+        }
+        result = self._run(registry=registry)
         self.assertIn("reviewer qualification registry is invalid", result["blockers"])
+        self.assertFalse(result["ready_to_enable_durable"])
+
+    def test_preflight_blocks_until_governance_assigns_a_science_reviewer(self) -> None:
+        registry = {
+            "configured": False,
+            "valid": True,
+            "subject_count": 0,
+            "science_grant_count": 0,
+            "expert_grant_count": 0,
+            "publication_grant_count": 0,
+        }
+        result = self._run(registry=registry)
+        self.assertIn(
+            "no qualified scientific reviewer is assigned for learner submissions",
+            result["blockers"],
+        )
         self.assertFalse(result["ready_to_enable_durable"])
 
 
