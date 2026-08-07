@@ -7,6 +7,7 @@ from app.calyx_orchestrator.autonomy_policy import (
     ProgramAutonomyPolicy,
     program_autonomy_status,
 )
+from app.calyx_orchestrator.executor_registry import AUTONOMY_PROBE_ROLE
 from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
@@ -30,11 +31,17 @@ def _db() -> Session:
     return Session(engine)
 
 
-def _program(db: Session, *, owner: str = "owner", jobs: int = 2) -> CalyxProgram:
+def _program(
+    db: Session,
+    *,
+    owner: str = "owner",
+    jobs: int = 2,
+    role_key: str = AUTONOMY_PROBE_ROLE,
+) -> CalyxProgram:
     specs = [
         ProgramJobSpec(
             f"job-{index}",
-            "brain_engineer",
+            role_key,
             f"Autonomous job {index}",
             "jsp1440/orchid-calyx-backend",
             f"autonomy-{index}",
@@ -48,8 +55,8 @@ def _program(db: Session, *, owner: str = "owner", jobs: int = 2) -> CalyxProgra
     repository = PersistentProgramRepository(db)
     program = repository.create_program(
         owner=owner,
-        title="Autonomous deterministic cycle",
-        objective="Prove automatic claim, execution, receipt completion, and dependency release.",
+        title="Autonomous authoritative probe cycle",
+        objective="Prove automatic claim, authoritative receipt completion, and dependency release.",
         jobs=specs,
         dependencies=dependencies,
     )
@@ -57,7 +64,7 @@ def _program(db: Session, *, owner: str = "owner", jobs: int = 2) -> CalyxProgra
     return program
 
 
-def test_cycle_runs_dependency_chain_to_completion_without_manual_claim_or_execute():
+def test_cycle_runs_registered_authoritative_dependency_chain_without_manual_claim():
     with _db() as db:
         program = _program(db, jobs=3)
         result = run_deterministic_program_cycle(
@@ -66,34 +73,26 @@ def test_cycle_runs_dependency_chain_to_completion_without_manual_claim_or_execu
             worker_id="autonomy-worker",
             max_jobs=10,
         )
-        # The dry-run executor is non-authoritative: its DELIVERED receipt is
-        # reclassified as BLOCKED so that real engineering tasks are never
-        # reported as delivered without genuine work.  Only job-0 is claimed;
-        # the dependent jobs cascade to blocked via release_ready_jobs.
         assert result.stop_reason == "idle"
-        assert result.attempted_jobs == 1
-        assert result.completed_jobs == 1
-        assert result.jobs[0].job_key == "job-0"
-        assert result.jobs[0].outcome == "BLOCKED"
-        assert result.jobs[0].receipt_state == "blocked"
-        assert result.jobs[0].executor_key == "deterministic_dry_run_v1"
+        assert result.attempted_jobs == 3
+        assert result.completed_jobs == 3
+        assert [item.job_key for item in result.jobs] == ["job-0", "job-1", "job-2"]
+        assert all(item.outcome == "DELIVERED" for item in result.jobs)
+        assert all(item.receipt_state == "delivered" for item in result.jobs)
+        assert all(item.executor_key == "autonomy_probe_v1" for item in result.jobs)
 
         db.refresh(program)
-        assert program.status == "blocked"
+        assert program.status == "completed"
         persisted = db.query(CalyxProgramJob).filter(CalyxProgramJob.program_id == program.program_id).all()
-        by_key = {job.job_key: job for job in persisted}
-        # job-0 was executed and reclassified; downstream jobs cascade via dependency resolution
-        assert by_key["job-0"].status == "blocked"
-        assert by_key["job-0"].outcome == "BLOCKED"
-        assert by_key["job-0"].evidence_json and "deterministic_dry_run_v1" in by_key["job-0"].evidence_json
-        assert by_key["job-0"].evidence_json and "DRY_RUN_REQUIRES_HUMAN_REVIEW" in by_key["job-0"].evidence_json
+        assert all(job.status == "completed" for job in persisted)
+        assert all(job.outcome == "DELIVERED" for job in persisted)
+        assert all(job.lease_token is None for job in persisted)
+        assert all(job.evidence_json and "autonomy_probe_v1" in job.evidence_json for job in persisted)
 
 
-def test_dry_run_receipt_is_never_recorded_as_authoritative_delivered():
-    """Confirm that a dry-run DELIVERED receipt is reclassified as BLOCKED and
-    does NOT complete the program or release downstream jobs as if real work was done."""
+def test_cycle_does_not_claim_unregistered_real_engineering_roles():
     with _db() as db:
-        program = _program(db, jobs=2)
+        program = _program(db, jobs=2, role_key="brain_engineer")
         result = run_deterministic_program_cycle(
             db,
             owner="owner",
@@ -101,16 +100,20 @@ def test_dry_run_receipt_is_never_recorded_as_authoritative_delivered():
             max_jobs=10,
         )
         assert result.stop_reason == "idle"
-        # Only job-0 is attempted; downstream job-1 cascades to blocked
-        assert result.attempted_jobs == 1
-        job0 = result.jobs[0]
-        assert job0.outcome == "BLOCKED"
-        assert job0.receipt_state == "blocked"
+        assert result.attempted_jobs == 0
+        assert result.completed_jobs == 0
         db.refresh(program)
-        assert program.status == "blocked"
+        assert program.status == "running"
+        persisted = db.query(CalyxProgramJob).filter(CalyxProgramJob.program_id == program.program_id).all()
+        by_key = {job.job_key: job for job in persisted}
+        assert by_key["job-0"].status == "queued"
+        assert by_key["job-0"].outcome is None
+        assert by_key["job-0"].attempt_count == 0
+        assert by_key["job-1"].status == "waiting"
+        assert by_key["job-1"].outcome is None
 
 
-def test_cycle_enforces_job_budget_and_leaves_downstream_work_blocked_pending_human_review():
+def test_cycle_enforces_job_budget_and_releases_downstream_probe_for_next_cycle():
     with _db() as db:
         program = _program(db, jobs=2)
         first = run_deterministic_program_cycle(
@@ -123,19 +126,17 @@ def test_cycle_enforces_job_budget_and_leaves_downstream_work_blocked_pending_hu
         assert first.completed_jobs == 1
         snapshot = PersistentProgramRepository(db).snapshot(owner="owner", program_id=program.program_id)
         by_key = {job["job_key"]: job for job in snapshot["jobs"]}
-        # job-0 was reclassified as BLOCKED; job-1 cascades to blocked
-        assert by_key["job-0"]["status"] == "blocked"
-        assert by_key["job-1"]["status"] == "blocked"
+        assert by_key["job-0"]["status"] == "completed"
+        assert by_key["job-1"]["status"] == "queued"
 
-        # A second cycle finds no claimable work because both jobs are already terminal
         second = run_deterministic_program_cycle(
             db,
             owner="owner",
             worker_id="autonomy-worker",
             max_jobs=1,
         )
-        assert second.stop_reason == "idle"
-        assert second.completed_jobs == 0
+        assert second.completed_jobs == 1
+        assert second.jobs[0].job_key == "job-1"
 
 
 def test_cycle_is_owner_scoped_and_does_not_claim_other_owner_programs():
@@ -152,7 +153,7 @@ def test_cycle_is_owner_scoped_and_does_not_claim_other_owner_programs():
         assert result.jobs[0].program_id == own.program_id
         own_job = db.query(CalyxProgramJob).filter(CalyxProgramJob.program_id == own.program_id).one()
         other_job = db.query(CalyxProgramJob).filter(CalyxProgramJob.program_id == other.program_id).one()
-        assert own_job.status == "blocked"
+        assert own_job.status == "completed"
         assert other_job.status == "queued"
         assert other_job.attempt_count == 0
 
@@ -200,12 +201,8 @@ def test_continuous_worker_policy_fails_closed_until_enabled_with_owner():
 
 
 def test_from_environ_empty_mapping_is_not_ambient_environment(monkeypatch):
-    """from_environ({}) must use the explicit empty mapping, not os.environ.
-    Even if the ambient environment has autonomy variables set, an explicit
-    empty mapping must produce a disabled, fail-closed policy."""
     monkeypatch.setenv("CALYX_PROGRAM_AUTONOMY_ENABLED", "true")
     monkeypatch.setenv("CALYX_PROGRAM_AUTONOMY_OWNER", "injected-owner")
-    # Passing {} explicitly: must NOT inherit the ambient env vars above
     policy = ProgramAutonomyPolicy.from_environ({})
     assert policy.enabled is False
     assert policy.owner == ""
