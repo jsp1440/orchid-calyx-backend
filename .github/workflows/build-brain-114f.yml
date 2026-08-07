@@ -3,6 +3,7 @@ name: BUILD-BRAIN-114F Validation
 on:
   pull_request:
     paths:
+      - "app/calyx_orchestrator/sandbox_authorization.py"
       - "app/calyx_orchestrator/sandboxed_validation_executor.py"
       - "app/calyx_orchestrator/executor_registry.py"
       - "app/calyx_orchestrator/assignment_factory.py"
@@ -36,6 +37,7 @@ jobs:
       - name: Compile
         run: |
           python -m py_compile \
+            app/calyx_orchestrator/sandbox_authorization.py \
             app/calyx_orchestrator/sandboxed_validation_executor.py \
             app/calyx_orchestrator/executor_registry.py \
             app/calyx_orchestrator/assignment_factory.py \
@@ -45,6 +47,7 @@ jobs:
       - name: Ruff
         run: |
           ruff check \
+            app/calyx_orchestrator/sandbox_authorization.py \
             app/calyx_orchestrator/sandboxed_validation_executor.py \
             app/calyx_orchestrator/executor_registry.py \
             app/calyx_orchestrator/assignment_factory.py \
