@@ -1,5 +1,9 @@
 """Canonical, storage-agnostic institutional memory for Orchid Continuum architecture."""
 
+from app.calyx_orchestrator.executor import (
+    ExecutionReceipt as CalyxAuthoritativeExecutionReceipt,
+)
+
 from .api import create_brain_router
 from .build_queue import BuildQueueItem, BuildQueueSnapshot, GovernedBuildQueue
 from .constitution import (
@@ -29,7 +33,7 @@ from .models import BrainObject, BrainRelationship, BrainSnapshot, SearchHit
 from .orchestration import (
     AgentDescriptor,
     BuildAssignment,
-    ExecutionReceipt,
+    ExecutionReceipt as CanonicalExecutionReceipt,
     GovernedOrchestrator,
 )
 from .persistence import BrainSnapshotRepository, JsonBrainSnapshotRepository
@@ -39,6 +43,10 @@ from .scheduler_bridge import (
     project_governed_queue,
     to_scheduled_job,
 )
+
+# Backward-compatible package alias. New code should use the explicit
+# CanonicalExecutionReceipt or CalyxAuthoritativeExecutionReceipt name.
+ExecutionReceipt = CanonicalExecutionReceipt
 
 __all__ = [
     "CONSTITUTION_VERSION",
@@ -56,8 +64,10 @@ __all__ = [
     "BuildAssignment",
     "BuildQueueItem",
     "BuildQueueSnapshot",
+    "CalyxAuthoritativeExecutionReceipt",
     "CancellationReceipt",
     "CanonicalBrainRegistry",
+    "CanonicalExecutionReceipt",
     "DeterministicDryRunExecutor",
     "ExecutionEvidencePackage",
     "ExecutionLease",
