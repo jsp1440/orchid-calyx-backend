@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 from datetime import datetime
 from typing import Any
@@ -30,7 +31,14 @@ def _decode_cursor(cursor: str | None) -> tuple[datetime, UUID] | None:
         payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
         updated_at = datetime.fromisoformat(str(payload["updated_at"]))
         session_id = UUID(str(payload["session_id"]))
-    except (ValueError, TypeError, KeyError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        binascii.Error,
+    ) as exc:
         raise DurableUniversityError("INVALID_SESSION_CURSOR", "Session discovery cursor is invalid") from exc
     if updated_at.tzinfo is None:
         raise DurableUniversityError("INVALID_SESSION_CURSOR", "Session discovery cursor must include timezone")
