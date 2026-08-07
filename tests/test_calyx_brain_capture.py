@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.calyx_orchestrator.artifact_registry import ArtifactRegistration, ImmutableArtifactRegistry
+from app.calyx_orchestrator.artifact_registry import (
+    ArtifactRegistration,
+    ImmutableArtifactRegistry,
+)
 from app.calyx_orchestrator.brain_capture import (
     BrainCandidateRecord,
     BrainCandidateStore,
