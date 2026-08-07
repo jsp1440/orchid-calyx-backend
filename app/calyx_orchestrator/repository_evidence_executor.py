@@ -109,6 +109,10 @@ class RepositoryEvidenceExecutor:
                 }
             )
 
+        checkout_after_scan = self._checkout_identity()
+        if checkout_after_scan != checkout:
+            raise RuntimeError("REPOSITORY_EVIDENCE_CHECKOUT_CHANGED_DURING_SCAN")
+
         input_checksum = assignment.verified_input_checksum()
         output = {
             "status": "delivered",
@@ -118,6 +122,8 @@ class RepositoryEvidenceExecutor:
             "requested_branch": requested_branch,
             "checkout_branch": checkout.branch,
             "checkout_commit_sha": checkout.commit_sha,
+            "checkout_stable_during_scan": True,
+            "worktree_provenance": "local_worktree_observation",
             "files": files,
             "missing_optional": missing_optional,
             "file_count": len(files),
@@ -175,7 +181,11 @@ class RepositoryEvidenceExecutor:
                 )
             except FileNotFoundError as exc:
                 raise RuntimeError("REPOSITORY_EVIDENCE_GIT_REF_MISSING") from exc
-            for raw_line in packed_bytes.decode("ascii", errors="strict").splitlines():
+            try:
+                packed_refs = packed_bytes.decode("ascii", errors="strict")
+            except UnicodeDecodeError as exc:
+                raise RuntimeError("REPOSITORY_EVIDENCE_GIT_REF_INVALID") from exc
+            for raw_line in packed_refs.splitlines():
                 line = raw_line.strip()
                 if not line or line.startswith("#") or line.startswith("^"):
                     continue
