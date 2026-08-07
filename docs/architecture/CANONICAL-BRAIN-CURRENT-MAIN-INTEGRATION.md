@@ -19,7 +19,7 @@ This integration therefore transfers the validated Canonical Brain surface onto 
 - non-authoritative preflight boundary;
 - leases, heartbeat, timeout classification, bounded recovery candidates, and cancellation receipts;
 - bridge from governed queue state to the existing Calyx dependency scheduler;
-- bridge from completed authoritative Canonical Brain receipts to existing Calyx artifact, review, and Brain candidate-capture contracts.
+- translation of verified, allowlisted authoritative Calyx execution receipts into Calyx artifact, review, and Brain candidate-capture contracts.
 
 ## Existing Calyx responsibilities reused
 
@@ -28,10 +28,11 @@ Canonical Brain does not duplicate the following current-main components:
 - `app/calyx_orchestrator/scheduler.py` — dependency, critical-path, and capacity scheduling;
 - `app/calyx_orchestrator/executor.py` — capability enforcement, deterministic preflight receipts, and executor contracts;
 - `app/calyx_orchestrator/dry_run_service.py` — release-after-preflight semantics so dry runs cannot complete real jobs;
+- `app/calyx_orchestrator/executor_registry.py` — the authoritative executor allowlist;
 - `app/calyx_orchestrator/artifact_registry.py` — immutable artifact provenance, checksum, evidence, and lineage;
 - `app/calyx_orchestrator/review_eligibility.py` — review classes, self-approval prevention, and release eligibility;
 - `app/calyx_orchestrator/brain_capture.py` — reviewed evidence-backed candidate Brain capture;
-- current Calyx assignment, authoritative-executor, and Mission Control portfolio infrastructure.
+- current Calyx assignment, authoritative execution, and Mission Control portfolio infrastructure.
 
 ## Non-authoritative preflight correction
 
@@ -39,10 +40,33 @@ Current `main` explicitly distinguishes deterministic dry-run validation from au
 
 `app/canonical_brain/executor.py` now wraps the current Calyx deterministic executor and returns an `ExecutionResult` with `dry_run=true` and `authoritative=false`. It does not create a Canonical completion receipt. A real completion still requires a separate authoritative execution/evidence path.
 
+## Authoritative evidence correction
+
+The first current-main evidence bridge accepted a Canonical `ExecutionReceipt` that had a completed outcome, evidence URI(s), and checksum. That was insufficient because the Canonical receipt itself did not prove which executor produced the completion.
+
+The bridge now accepts the current Calyx `ExecutionReceipt` and an executor role key. It resolves that role internally through a fresh `AuthoritativeExecutorRegistry` and requires all of the following before constructing any artifact or Brain candidate record:
+
+1. the role is currently registered as authoritative;
+2. the registered executor is not authorized for external side effects;
+3. the receipt `executor_key` exactly matches the allowlisted executor;
+4. `receipt.verify()` passes its output-checksum and state/outcome invariants;
+5. state is `DELIVERED` and terminal outcome is `DELIVERED`;
+6. evidence URI(s), input checksum, and output checksum are present;
+7. Brain build and agent identities are explicit;
+8. review requester and producer are distinct.
+
+Callers cannot pass a fabricated `RegisteredExecutor(authoritative=True)` object into this boundary. Authority is resolved inside the bridge from the current Calyx allowlist.
+
+Even after all execution checks pass, the result remains a candidate-only artifact. Existing Calyx review eligibility and `BrainCandidateStore` gates remain authoritative, and the generated record is explicitly `published=false`.
+
+At the current `main` revision, the only allowlisted autonomous authoritative role is the bounded non-mutating autonomy probe. No mutating engineering role is granted autonomous completion authority by this integration.
+
 ## Safety boundaries
 
 - autonomous merge, deployment, publication, credential access, and production Knowledge Graph mutation remain prohibited;
 - deterministic preflight cannot complete a real job;
+- non-allowlisted or mismatched executors cannot become Brain execution evidence;
+- external-side-effect executor authority is rejected by the Brain evidence bridge;
 - completed execution receipts require evidence URI(s) and checksums before evidence packaging;
 - review requester and producer must be distinct;
 - candidate capture remains unpublished and subject to the existing Calyx review gates;
