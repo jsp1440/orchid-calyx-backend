@@ -5,6 +5,7 @@ from uuid import UUID
 import requests
 from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
+from starlette.concurrency import run_in_threadpool
 
 from app.security import verify_owner_or_api_key
 
@@ -115,4 +116,4 @@ async def verify_university_actor(
             status_code=401,
             detail={"code": "LEARNER_SESSION_REQUIRED", "message": "A signed-in learner session is required"},
         )
-    return verify_supabase_access_token(token)
+    return await run_in_threadpool(verify_supabase_access_token, token)
