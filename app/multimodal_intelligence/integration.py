@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Protocol
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from hashlib import sha256
+from typing import Protocol
 
 from .contracts import (
     CharacterDefinition,
