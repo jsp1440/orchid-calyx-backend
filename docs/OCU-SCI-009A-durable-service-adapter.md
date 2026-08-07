@@ -25,7 +25,7 @@ The current approved read-only release continues to report `process_local_memory
 
 Durable event appends require `expected_revision`. A stale value fails with `REVISION_CONFLICT`; no last-write-wins overwrite is permitted.
 
-Privileged reviewer/API-key actors may inspect sessions but may not author learner events.
+Backend API-key actors may inspect durable sessions operationally but may not author learner events.
 
 ## Submission
 
@@ -42,30 +42,46 @@ Submission requires:
 
 Submission appends an immutable `session_submitted` event, advances the revision, moves the inquiry to `contribute`, and locks ordinary learner-event editing.
 
+When a qualified reviewer requests changes, the session reopens at `communicate` so the learner can revise and resubmit rather than becoming trapped at `contribute`.
+
 ## Human review
 
 A new gated review contract is prepared:
 
 `POST /api/learning/sessions/{session_id}/reviews`
 
-Review requires privileged authorization and an exact reviewed revision. Allowed decisions remain:
+The review route uses the canonical Mission Control governed `AccessPrincipal` and capability system. Generic administrator status or possession of the shared backend API key is **not** sufficient scientific-review authority.
 
-- `changes_requested`
-- `approved_for_learning`
-- `approved_for_candidate_knowledge_consideration`
+Review decisions require an active scientific-review qualification plus the capability appropriate to the decision:
 
-The final option means only that the reviewed work may later be considered by the separate Candidate Knowledge governance process. The University transaction cannot promote Candidate Knowledge or publish anything.
+- `changes_requested` → `review.science`
+- `approved_for_learning` → `review.science`
+- `approved_for_candidate_knowledge_consideration` → `review.expert`
+
+Accepted scientific-review qualifications are bounded to the governed reviewer qualifications already recognized by Mission Control. The service performs this check itself in addition to route authentication, so a route-level mistake cannot silently bypass reviewer governance.
+
+Each persisted review records authorization provenance:
+
+- reviewer principal ID;
+- required reviewer capability;
+- reviewer roles;
+- active scientific-review qualifications;
+- exact reviewed learner revision.
+
+The Candidate Knowledge consideration decision means only that the reviewed work may later enter the separate Candidate Knowledge governance process. The University transaction cannot promote Candidate Knowledge or publish anything.
 
 ## Structural scientific safeguards
 
-OCU-SCI-009A preserves all OCU-SCI-008 database constraints:
+OCU-SCI-009A preserves and strengthens the OCU-SCI-008 database constraints:
 
 - publication remains false;
 - automatic Candidate Knowledge remains false;
 - human review remains required;
 - event sequence/revision uniqueness is retained;
 - review records cannot claim publication;
-- review records cannot claim Candidate Knowledge promotion.
+- review records cannot claim Candidate Knowledge promotion;
+- review records must carry an approved reviewer capability;
+- reviewer roles and qualifications are retained as JSON provenance arrays.
 
 ## Activation boundary
 
