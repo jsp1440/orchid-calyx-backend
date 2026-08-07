@@ -77,7 +77,7 @@ def _pipeline_readiness(taxonomy_root: Path, literature_root: Path) -> dict[str,
             **operational_state("literature"),
         },
         "occurrences": {
-            "state": "staging_module_available",
+            "state": "staging_pipeline_ready",
             "module": "runtime.occurrence_staging",
             "supported_sources": ["gbif", "inaturalist"],
             "idempotency": "checksum-deduplicated",

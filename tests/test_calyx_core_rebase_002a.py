@@ -107,7 +107,7 @@ def test_certification_reports_operational_readiness_without_overstatement(tmp_p
     assert report["deployed_commit"] == "test-commit"
     assert report["no_production_mutation"] is True
     assert report["overall_status"] == "partial_operational_readiness"
-    assert report["pipeline_domains"]["occurrences"]["state"] == "staging_module_available"
+    assert report["pipeline_domains"]["occurrences"]["state"] == "staging_pipeline_ready"
     assert report["pipeline_domains"]["occurrences"]["operational_status"] == "partial"
     assert report["pipeline_domains"]["occurrences"]["operational_blockers"]
     assert report["pipeline_domains"]["licensed_images"]["license_enforcement"] == "allowlist_active"
