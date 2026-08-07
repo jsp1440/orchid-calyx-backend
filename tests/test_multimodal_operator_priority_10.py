@@ -53,7 +53,7 @@ def test_literature_validation_is_idempotent_and_review_gated() -> None:
     second = service.validate_literature_claim(claim)
     assert first.operation_id == second.operation_id
     assert first.result["publication_allowed"] is False
-    assert len(service.review_queue()) == 1
+    assert service.review_queue()["total"] == 1
 
 
 def test_matrix_and_vision_operator_paths_preserve_explanations() -> None:
@@ -82,7 +82,7 @@ def test_integrated_identification_and_abstention() -> None:
         analysis=_analysis(),
         definitions=_definitions(),
         profiles=_profiles(),
-        minimum_margin=1.1,
+        minimum_margin=0.9,
     )
     assert cautious.result["abstained"] is True
 
