@@ -41,7 +41,8 @@ jobs:
             tests/test_calyx_isolated_patch_executor.py \
             tests/test_calyx_static_validation_executor.py \
             tests/test_calyx_governed_assignment_factory.py \
-            tests/test_calyx_autonomous_patch_validation_program.py
+            tests/test_calyx_autonomous_patch_validation_program.py \
+            tests/test_calyx_sandboxed_validation_executor.py
       - name: Focused current-main autonomy regressions
         run: |
           pytest -q \
@@ -50,7 +51,8 @@ jobs:
             tests/test_calyx_isolated_patch_executor.py \
             tests/test_calyx_static_validation_executor.py \
             tests/test_calyx_governed_assignment_factory.py \
-            tests/test_calyx_autonomous_patch_validation_program.py
+            tests/test_calyx_autonomous_patch_validation_program.py \
+            tests/test_calyx_sandboxed_validation_executor.py
       - name: Migration compatibility
         run: |
           grep -q "ADD COLUMN IF NOT EXISTS input_json TEXT NULL" migrations/20260805_calyx_autonomous_engineering_core.sql
