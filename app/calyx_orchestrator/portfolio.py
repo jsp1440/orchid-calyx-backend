@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .autonomy_policy import program_autonomy_status
 from .persisted_scheduler import persisted_schedule_status
 from .program_models import CalyxProgram, CalyxProgramDependency, CalyxProgramJob
 
@@ -158,6 +159,7 @@ def orchestration_portfolio(
             "active": [_job_summary(job) for job in active_jobs],
             "receipt_type_counts": dict(sorted(receipt_types.items())),
             "executor_counts": dict(sorted(executor_keys.items())),
+            "continuous_worker": program_autonomy_status(),
         },
         "evidence": {
             "artifact_like_receipts": artifact_like_receipts,
