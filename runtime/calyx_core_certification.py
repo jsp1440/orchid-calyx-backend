@@ -166,8 +166,8 @@ def _production_observability(env: dict[str, str] | None = None) -> dict[str, An
 
     from sqlalchemy import text
 
-    from app.database import get_engine
     from app.calyx_orchestrator.autonomy_policy import program_autonomy_status
+    from app.database import get_engine
 
     environment = dict(os.environ if env is None else env)
     deployed_commit = (
