@@ -73,7 +73,9 @@ def verify_restart_probe(root: Path, token: str) -> dict[str, Any]:
     if probe.get("root") != str(root.resolve()):
         raise ValueError("restart probe storage path does not match")
     if probe.get("boot_id") == _BOOT_ID:
-        raise ValueError("backend restart has not occurred since this probe was created")
+        raise ValueError(
+            "backend restart has not occurred since this probe was created"
+        )
 
     certification = {
         "verified": True,
@@ -111,19 +113,25 @@ def build_conservatory_readiness(root: Path) -> dict[str, Any]:
             "storage_directory",
             root_exists and writable,
             f"path={root}; exists={root_exists}; writable={writable}",
-            None if root_exists and writable else "Configure a writable CALYX_CONSERVATORY_DIR.",
+            None
+            if root_exists and writable
+            else "Configure a writable CALYX_CONSERVATORY_DIR.",
         ),
         ConservatoryGate(
             "non_ephemeral_path",
             non_ephemeral_path,
             f"resolved_path={root.resolve()}",
-            None if non_ephemeral_path else "Move Conservatory storage off the temporary filesystem.",
+            None
+            if non_ephemeral_path
+            else "Move Conservatory storage off the temporary filesystem.",
         ),
         ConservatoryGate(
             "persistent_volume_declared",
             persistent_flag,
             "CALYX_CONSERVATORY_STORAGE_PERSISTENT deployment flag checked.",
-            None if persistent_flag else "Mount persistent storage and set CALYX_CONSERVATORY_STORAGE_PERSISTENT=true.",
+            None
+            if persistent_flag
+            else "Mount persistent storage and set CALYX_CONSERVATORY_STORAGE_PERSISTENT=true.",
         ),
         ConservatoryGate(
             "restart_survival",
@@ -131,7 +139,9 @@ def build_conservatory_readiness(root: Path) -> dict[str, Any]:
             "A persisted probe was read and certified after a different backend process boot."
             if restart_verified
             else "No valid post-restart certification receipt is present.",
-            None if restart_verified else "Create a restart probe, restart the backend, and verify the probe token.",
+            None
+            if restart_verified
+            else "Create a restart probe, restart the backend, and verify the probe token.",
         ),
     )
     ready = all(gate.passed for gate in gates)
