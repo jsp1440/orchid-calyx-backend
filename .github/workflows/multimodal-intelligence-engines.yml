@@ -15,6 +15,7 @@ on:
       - "tests/test_multimodal_promotion.py"
       - "tests/test_multimodal_persistence.py"
       - "tests/test_multimodal_document_adapter.py"
+      - "tests/test_multimodal_api_models.py"
       - ".github/workflows/multimodal-intelligence-engines.yml"
   workflow_dispatch:
 
@@ -50,6 +51,7 @@ jobs:
           tests/test_multimodal_promotion.py
           tests/test_multimodal_persistence.py
           tests/test_multimodal_document_adapter.py
+          tests/test_multimodal_api_models.py
       - name: Focused tests
         run: >-
           pytest -q
@@ -61,6 +63,7 @@ jobs:
           tests/test_multimodal_promotion.py
           tests/test_multimodal_persistence.py
           tests/test_multimodal_document_adapter.py
+          tests/test_multimodal_api_models.py
       - name: Persistence schema smoke
         run: |
           python - <<'PY'
@@ -89,6 +92,10 @@ jobs:
           required = {
               "/api/mission-control/multimodal-intelligence/status",
               "/api/mission-control/multimodal-intelligence/configuration",
+              "/api/mission-control/multimodal-intelligence/literature/validate",
+              "/api/mission-control/multimodal-intelligence/matrix/rank",
+              "/api/mission-control/multimodal-intelligence/vision/convert",
+              "/api/mission-control/multimodal-intelligence/identify",
               "/api/mission-control/multimodal-intelligence/batch/plan",
               "/api/mission-control/multimodal-intelligence/review-queue",
               "/api/mission-control/multimodal-intelligence/operations/{operation_id}",
