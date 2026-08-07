@@ -8,7 +8,6 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
-
 CONTRACT = "calyx-species-exhibit-v1"
 EVIDENCE_DOMAINS = (
     "identity",
