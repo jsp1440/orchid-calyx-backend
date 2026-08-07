@@ -1,0 +1,43 @@
+name: Canonical Brain Validation
+
+# Current-main integration gate; one portable runner owns compile, lint, and focused tests.
+on:
+  pull_request:
+    paths:
+      - "app/canonical_brain/**"
+      - "app/brain/routes.py"
+      - "tests/test_canonical_brain_*.py"
+      - "scripts/validate_canonical_brain.py"
+      - "docs/architecture/BUILD-BRAIN-100-*"
+      - "docs/architecture/CANONICAL-BRAIN-*"
+      - ".github/workflows/canonical-brain-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-brain-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install repository validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest ruff
+      - name: Run portable Canonical Brain validation
+        run: python scripts/validate_canonical_brain.py
+      - name: Emit validation receipt
+        if: always()
+        run: |
+          if [ -f artifacts/validation/canonical-brain-validation.json ]; then
+            cat artifacts/validation/canonical-brain-validation.json
+          else
+            echo "Validation receipt was not created."
+          fi
