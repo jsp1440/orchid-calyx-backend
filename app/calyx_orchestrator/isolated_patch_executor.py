@@ -10,10 +10,10 @@ from typing import Any
 
 from .engineering_core import TerminalOutcome
 from .executor import (
+    PROHIBITED_CAPABILITIES,
     ExecutionReceipt,
     ExecutionState,
     GovernedAssignment,
-    PROHIBITED_CAPABILITIES,
     canonical_checksum,
 )
 from .repository_evidence_executor import RepositoryEvidenceExecutor
@@ -125,9 +125,6 @@ class IsolatedWorkspacePatchExecutor:
         if total_bytes > MAX_TOTAL_BYTES:
             raise ValueError("ISOLATED_PATCH_TOTAL_BYTES_EXCEEDED")
 
-        # All paths, isolation metadata, preimages and payloads are validated before
-        # the first mutation. This guarantees that a multi-file validation failure
-        # cannot partially mutate the workspace.
         self._apply_prepared(prepared)
 
         checkout_after = self._reader._checkout_identity()
@@ -161,15 +158,13 @@ class IsolatedWorkspacePatchExecutor:
             "validation_commands_run": False,
             "side_effects": ["isolated_workspace_files_modified"],
         }
-        evidence_uris = tuple(
-            [
-                *assignment.evidence_uris,
-                f"repo-commit:{repository}@{checkout.commit_sha}",
-                *[
-                    f"workspace-file:{change['path']}#{change['after_sha256']}"
-                    for change in changes
-                ],
-            ]
+        evidence_uris = (
+            *assignment.evidence_uris,
+            f"repo-commit:{repository}@{checkout.commit_sha}",
+            *(
+                f"workspace-file:{change['path']}#{change['after_sha256']}"
+                for change in changes
+            ),
         )
         receipt = ExecutionReceipt(
             assignment_id=assignment.assignment_id,
