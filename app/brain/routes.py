@@ -10,6 +10,7 @@ from app.calyx_agent.routes import router as calyx_agent_router
 from app.calyx_engineering.routes import router as calyx_engineering_router
 from app.calyx_journalism.routes import router as calyx_journalism_router
 from app.calyx_orchestrator.routes import router as calyx_orchestrator_router
+from app.canonical_brain.api import create_brain_router
 from app.database import get_db
 from app.reasoning_ledger.routes import _invoke
 from app.reasoning_ledger.serialization import ledger_to_dict
@@ -196,6 +197,7 @@ def connect(
         raise
 
 
+router.include_router(create_brain_router(prefix="/canonical"))
 router.include_router(calyx_agent_router)
 router.include_router(calyx_journalism_router)
 router.include_router(calyx_orchestrator_router)
