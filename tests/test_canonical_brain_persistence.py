@@ -2,7 +2,10 @@ import json
 
 import pytest
 
-from app.canonical_brain import JsonBrainSnapshotRepository, build_canonical_brain_fixture
+from app.canonical_brain import (
+    JsonBrainSnapshotRepository,
+    build_canonical_brain_fixture,
+)
 
 
 def test_json_repository_round_trip_preserves_snapshot(tmp_path) -> None:
