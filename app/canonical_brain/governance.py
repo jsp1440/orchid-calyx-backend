@@ -35,17 +35,47 @@ def build_governance_report(registry: CanonicalBrainRegistry) -> GovernanceRepor
     for relation in snapshot.relationships:
         subject = registry.get(relation.subject_id)
         target = registry.get(relation.object_id)
-        if relation.relationship_type == "aligned_to" and subject and target:
-            if subject.object_type == "architecture" and target.object_type == "intent":
-                aligned.add(subject.object_id)
-        if relation.relationship_type == "documents" and subject and target:
-            if subject.object_type == "decision" and target.object_type == "architecture":
-                incoming_decisions[target.object_id] += 1
+        if (
+            relation.relationship_type == "aligned_to"
+            and subject
+            and target
+            and subject.object_type == "architecture"
+            and target.object_type == "intent"
+        ):
+            aligned.add(subject.object_id)
+        if (
+            relation.relationship_type == "documents"
+            and subject
+            and target
+            and subject.object_type == "decision"
+            and target.object_type == "architecture"
+        ):
+            incoming_decisions[target.object_id] += 1
     gaps: list[GovernanceGap] = []
     for architecture in sorted(architectures, key=lambda item: item.object_id):
         if architecture.object_id not in aligned:
-            gaps.append(GovernanceGap(object_id=architecture.object_id, gap_type="missing_intent_alignment", message=f"{architecture.title} is not aligned to a registered intent.", severity="error"))
+            gaps.append(
+                GovernanceGap(
+                    object_id=architecture.object_id,
+                    gap_type="missing_intent_alignment",
+                    message=f"{architecture.title} is not aligned to a registered intent.",
+                    severity="error",
+                )
+            )
         if incoming_decisions[architecture.object_id] == 0:
-            gaps.append(GovernanceGap(object_id=architecture.object_id, gap_type="missing_decision_record", message=f"{architecture.title} has no decision record documenting its approved scope.", severity="warning"))
+            gaps.append(
+                GovernanceGap(
+                    object_id=architecture.object_id,
+                    gap_type="missing_decision_record",
+                    message=f"{architecture.title} has no decision record documenting its approved scope.",
+                    severity="warning",
+                )
+            )
     ratio = 1.0 if not architectures else len(aligned) / len(architectures)
-    return GovernanceReport(architecture_count=len(architectures), intent_count=len(intents), aligned_architecture_count=len(aligned), intent_coverage_ratio=ratio, gaps=gaps)
+    return GovernanceReport(
+        architecture_count=len(architectures),
+        intent_count=len(intents),
+        aligned_architecture_count=len(aligned),
+        intent_coverage_ratio=ratio,
+        gaps=gaps,
+    )
