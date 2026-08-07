@@ -9,6 +9,7 @@ from app.routers.executive import router as executive_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
 from app.routers.live_mission_control import router as live_mission_control_router
 from app.routers.matrix_identification import router as matrix_identification_router
+from app.routers.matrix_relationship import router as matrix_relationship_router
 from app.routers.mission_control import router as mission_control_router
 from app.routers.owner_operations import router as owner_operations_router
 from app.routers.owner_session_token import router as owner_session_token_router
@@ -64,6 +65,12 @@ def conservatory_options(full_path: str, request: Request, response: Response):
 
 @router.options("/api/matrix-identification/{full_path:path}")
 def matrix_identification_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
+@router.options("/api/matrix-relationship/{full_path:path}")
+def matrix_relationship_options(full_path: str, request: Request, response: Response):
     add_mission_control_cors_headers(request, response)
     return {"status": "ok", "path": full_path}
 
@@ -143,6 +150,7 @@ router.include_router(taxonomy_releases_router, dependencies=[Depends(add_missio
 router.include_router(graph_pipeline_readiness_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(conservatory_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(matrix_identification_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(matrix_relationship_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(executive_telemetry_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(executive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(scientific_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
