@@ -13,9 +13,13 @@ from .models import BrainObject, BrainSnapshot, SearchHit
 from .registry import CanonicalBrainRegistry
 
 
-def create_brain_router(registry: CanonicalBrainRegistry | None = None) -> APIRouter:
+def create_brain_router(
+    registry: CanonicalBrainRegistry | None = None,
+    *,
+    prefix: str = "/brain/canonical",
+) -> APIRouter:
     brain = registry or build_canonical_brain_fixture()
-    router = APIRouter(prefix="/brain/canonical", tags=["canonical-brain"])
+    router = APIRouter(prefix=prefix, tags=["canonical-brain"])
 
     @router.get("/status")
     def status() -> dict[str, object]:
