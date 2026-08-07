@@ -1,0 +1,73 @@
+name: CALYX Reasoning Schema Production Activation
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_migrations:
+        description: "Apply additive Reasoning Ledger migrations 103 then 105"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  preflight-or-activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Verify exact current main checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+
+      - name: Install activation dependencies
+        run: python -m pip install "psycopg[binary]"
+
+      - name: Read-only production preflight
+        if: ${{ !inputs.apply_migrations }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/activate_reasoning_publication_schemas.py
+
+      - name: Explicitly activate migrations 103 then 105
+        if: ${{ inputs.apply_migrations }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CALYX_REASONING_MIGRATION_CONFIRM=APPLY_103_105
+          python scripts/activate_reasoning_publication_schemas.py --apply
+
+      - name: Discover eligible ledger after activation
+        if: ${{ inputs.apply_migrations && success() }}
+        env:
+          CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+          CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
+        run: python scripts/discover_eligible_reasoning_ledgers.py
+
+      - name: Upload activation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-reasoning-schema-activation-${{ github.sha }}
+          path: |
+            calyx-reasoning-publication-schema-activation.json
+            calyx-eligible-ledger-discovery.json
+          if-no-files-found: warn
+          retention-days: 30
