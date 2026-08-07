@@ -73,6 +73,13 @@ class BrainCandidateStore:
     ) -> BrainCaptureBundle:
         if not bundle.bundle_id.strip() or not bundle.records:
             raise ValueError("CAPTURE_BUNDLE_INVALID")
+
+        existing_bundle = self._bundles.get(bundle.bundle_id)
+        if existing_bundle is not None:
+            if existing_bundle != bundle:
+                raise ValueError("IMMUTABLE_CAPTURE_BUNDLE_CONFLICT")
+            return existing_bundle
+
         eligibility = reviews.eligibility(bundle.review_request_id)
         if not eligibility.eligible:
             raise PermissionError("CAPTURE_REVIEW_NOT_ELIGIBLE")
@@ -92,12 +99,6 @@ class BrainCandidateStore:
             if existing is not None and existing != record.checksum:
                 raise ValueError("IMMUTABLE_BRAIN_RECORD_CONFLICT")
             staged[record.record_id] = record.checksum
-
-        existing_bundle = self._bundles.get(bundle.bundle_id)
-        if existing_bundle is not None:
-            if existing_bundle != bundle:
-                raise ValueError("IMMUTABLE_CAPTURE_BUNDLE_CONFLICT")
-            return existing_bundle
 
         self._record_checksums.update(staged)
         self._bundles[bundle.bundle_id] = bundle
