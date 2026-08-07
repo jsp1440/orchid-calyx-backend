@@ -3,11 +3,15 @@ name: OCU University Durable Foundation
 on:
   pull_request:
     paths:
+      - 'app/mission_control_access/qualification_registry.py'
+      - 'app/review_api/dependencies.py'
       - 'app/university/config.py'
       - 'app/university/durable_*.py'
       - 'app/university/learner_auth.py'
       - 'app/university/session_discovery.py'
       - 'app/university/session_discovery_routes.py'
+      - 'app/university/reviewer_workspace.py'
+      - 'app/university/reviewer_routes.py'
       - 'app/university/activation_service.py'
       - 'app/university/routes.py'
       - 'app/university/schemas.py'
@@ -22,6 +26,8 @@ on:
       - 'tests/test_university_event_revision_contract.py'
       - 'tests/test_university_learner_auth.py'
       - 'tests/test_university_session_discovery.py'
+      - 'tests/test_university_reviewer_qualification_registry.py'
+      - 'tests/test_university_reviewer_workspace.py'
       - '.github/workflows/ocu-university-durable-foundation.yml'
   workflow_dispatch:
 
@@ -37,7 +43,7 @@ jobs:
         run: pip install -r requirements.txt
       - name: Validate migration invariants
         run: python scripts/validate_university_durable_migration.py
-      - name: Run durable foundation, identity, discovery, and activation tests
+      - name: Run durable University identity, discovery, reviewer, and activation tests
         run: >-
           python -m unittest
           tests/test_university_durable_foundation.py
@@ -47,15 +53,21 @@ jobs:
           tests/test_university_event_revision_contract.py
           tests/test_university_learner_auth.py
           tests/test_university_session_discovery.py
+          tests/test_university_reviewer_qualification_registry.py
+          tests/test_university_reviewer_workspace.py
       - name: Compile durable activation modules
         run: >-
           python -m py_compile
+          app/mission_control_access/qualification_registry.py
+          app/review_api/dependencies.py
           app/university/config.py
           app/university/durable_config.py
           app/university/durable_repository.py
           app/university/learner_auth.py
           app/university/session_discovery.py
           app/university/session_discovery_routes.py
+          app/university/reviewer_workspace.py
+          app/university/reviewer_routes.py
           app/university/activation_service.py
           app/university/routes.py
           app/university/schemas.py
