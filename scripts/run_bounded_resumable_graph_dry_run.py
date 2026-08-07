@@ -38,6 +38,7 @@ PREFERRED_DOMAINS = (
     "media",
 )
 TRANSIENT_HTTP_CODES = frozenset({502, 503, 504})
+PREFLIGHT_CONTRACT = "calyx-graph-deployment-preflight-v3"
 
 
 def request(
@@ -96,7 +97,14 @@ def require_staging_only(label: str, response: dict[str, Any]) -> None:
 
 
 def require_preflight_ready(preflight: dict[str, Any]) -> None:
-    require_staging_only("deployment_preflight", preflight)
+    if preflight.get("contract") != PREFLIGHT_CONTRACT:
+        raise RuntimeError(
+            f"deployment_preflight_contract_mismatch:{preflight.get('contract')}"
+        )
+    if preflight.get("graph_mutation") is not False:
+        raise RuntimeError("deployment_preflight:graph_mutation_not_explicitly_false")
+    if preflight.get("filesystem_mutation") is not False:
+        raise RuntimeError("deployment_preflight:filesystem_mutation_not_explicitly_false")
     if preflight.get("ready_for_live_resumable_dry_run") is not True:
         blockers = preflight.get("blockers") or ["preflight_not_ready"]
         raise RuntimeError(f"deployment_preflight_blocked:{blockers}")
