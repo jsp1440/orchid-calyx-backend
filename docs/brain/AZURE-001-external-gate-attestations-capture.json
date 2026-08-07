@@ -1,0 +1,45 @@
+{
+  "record_type": "engineering_implementation_capture",
+  "record_version": "1.0.0",
+  "record_id": "AZURE-001-external-gate-attestations",
+  "project": "Orchid Continuum",
+  "workstream": "Azure taxonomy preflight pilot",
+  "captured_at": "2026-08-07T00:54:00Z",
+  "status": "implemented_pending_ci",
+  "problem": "External readiness gates were representable as free-form CLI booleans without durable evidence provenance.",
+  "decision": "Introduce typed, checksummed, gate-specific attestations and allow readiness to derive gate state from the attestation register.",
+  "implementation": {
+    "module": "runtime/taxonomy_preflight_attestations.py",
+    "readiness_integration": "runtime/taxonomy_preflight_readiness.py",
+    "tests": [
+      "tests/test_taxonomy_preflight_attestations.py",
+      "tests/test_taxonomy_preflight_readiness.py"
+    ],
+    "workflow": ".github/workflows/taxonomy-preflight-ci.yml",
+    "documentation": "docs/azure/AZURE-001-EXTERNAL-GATE-ATTESTATIONS.md"
+  },
+  "gates": [
+    "ci_validation",
+    "real_dataset_validation",
+    "billing_credit_linkage",
+    "budget_alerts",
+    "microsoft_architecture_review"
+  ],
+  "safety_properties": {
+    "azure_provisioning_authorized": false,
+    "taxonomy_publication_authorized": false,
+    "database_mutation_authorized": false,
+    "production_migration_authorized": false,
+    "duplicate_attestations_fail_closed": true,
+    "future_dated_attestations_fail_closed": true,
+    "expired_attestations_do_not_pass": true,
+    "evidence_digest_required": true
+  },
+  "known_external_dependencies": [
+    "Exact WorldOrchids 26-08 source file",
+    "Durable Azure billing-credit evidence export or checksum",
+    "Configured Azure budget alerts",
+    "Microsoft or partner architecture review evidence"
+  ],
+  "next_action": "Run CI, repair any failures, then create real evidence attestations as external gates are completed."
+}
