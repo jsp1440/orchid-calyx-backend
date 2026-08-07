@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-
 from .models import BrainObject, BrainRelationship, BrainSnapshot, SearchHit
 
 _SEARCH_TYPE_PRIORITY = {
