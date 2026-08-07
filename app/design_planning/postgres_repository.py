@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from psycopg.types.json import Jsonb
 
@@ -32,8 +32,7 @@ from .repository import ImmutableConflictError
 class PostgresDesignPlanningRepository:
     """PostgreSQL-authoritative append-only planning repository."""
 
-    TABLES = {
-        "product_request": "product_requests",
+    TABLES: ClassVar[dict[str, str]] = {
         "context": "project_context_snapshots",
         "evidence": "design_evidence_packages",
         "reasoning": "design_reasoning_records",
