@@ -3,7 +3,10 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.calyx_orchestrator.autonomy_policy import ProgramAutonomyPolicy, program_autonomy_status
+from app.calyx_orchestrator.autonomy_policy import (
+    ProgramAutonomyPolicy,
+    program_autonomy_status,
+)
 from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
