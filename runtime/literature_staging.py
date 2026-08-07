@@ -144,12 +144,12 @@ def stage_literature_batch(
         seen.add(acq_checksum)
 
         canonical_taxon_id, reconciliation_state = _reconcile_taxon(taxon_name, canonical_lookup)
-        if reconciliation_state == "unresolved":
+        if reconciliation_state != "resolved":
             review_queue.append(LiteratureReviewItem(
                 source=source,
                 source_record_id=src_id,
                 taxon_name=taxon_name,
-                reason="No canonical taxon match for supplied taxon name.",
+                reason=f"Canonical taxon resolution required ({reconciliation_state}).",
             ))
 
         raw_text = record.get("raw_text")
