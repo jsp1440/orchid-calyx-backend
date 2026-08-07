@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchidcontinuum.org/schemas/taxonomy-release-gate-policy.schema.json",
+  "title": "Orchid Continuum Taxonomy Release Gate Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "require_review_reference": {"type": "boolean"},
+    "reject_symlinks": {"type": "boolean"},
+    "maximum_bundle_bytes": {"type": "integer", "minimum": 1},
+    "require_safety_flags": {"type": "boolean"},
+    "require_policy_hashes": {"type": "boolean"},
+    "require_complete_marker": {"type": "boolean"}
+  },
+  "required": [
+    "require_review_reference",
+    "reject_symlinks",
+    "maximum_bundle_bytes",
+    "require_safety_flags",
+    "require_policy_hashes",
+    "require_complete_marker"
+  ]
+}

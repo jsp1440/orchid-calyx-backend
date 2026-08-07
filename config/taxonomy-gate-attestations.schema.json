@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchidcontinuum.org/schemas/taxonomy-gate-attestations-1.0.0.json",
+  "title": "AZURE-001 External Gate Attestation Register",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "attestations"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "attestations": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gate", "status", "evidence_id", "issuer", "issued_at",
+          "evidence_sha256", "scope"
+        ],
+        "properties": {
+          "gate": {
+            "enum": [
+              "ci_validation",
+              "real_dataset_validation",
+              "billing_credit_linkage",
+              "budget_alerts",
+              "microsoft_architecture_review"
+            ]
+          },
+          "status": {"enum": ["verified", "pending", "rejected"]},
+          "evidence_id": {"type": "string", "minLength": 1},
+          "issuer": {"type": "string", "minLength": 1},
+          "issued_at": {"type": "string", "format": "date-time"},
+          "expires_at": {"type": ["string", "null"], "format": "date-time"},
+          "evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "scope": {"type": "string", "minLength": 1},
+          "metadata": {"type": ["object", "null"]}
+        }
+      }
+    }
+  }
+}

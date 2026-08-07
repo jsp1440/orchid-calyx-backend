@@ -1,0 +1,81 @@
+name: Taxonomy Attestation Register CI
+
+on:
+  pull_request:
+    paths:
+      - "runtime/taxonomy_preflight_attestation_register.py"
+      - "runtime/taxonomy_preflight_attestations.py"
+      - "tests/test_taxonomy_preflight_attestation_register.py"
+      - ".github/workflows/taxonomy-attestation-register-ci.yml"
+  push:
+    branches:
+      - "feature/azure-001-*"
+    paths:
+      - "runtime/taxonomy_preflight_attestation_register.py"
+      - "runtime/taxonomy_preflight_attestations.py"
+      - "tests/test_taxonomy_preflight_attestation_register.py"
+      - ".github/workflows/taxonomy-attestation-register-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile register manager
+        run: python -m py_compile runtime/taxonomy_preflight_attestation_register.py runtime/taxonomy_preflight_attestations.py
+      - name: Run register tests
+        run: python -m unittest tests.test_taxonomy_preflight_attestation_register -v
+      - name: Exercise canonical CI attestation path
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          python -m runtime.taxonomy_preflight_attestation_register init artifacts/register.json
+          cat > artifacts/ci-attestation.json <<JSON
+          {
+            "gate": "ci_validation",
+            "status": "verified",
+            "evidence_id": "github-actions-${GITHUB_RUN_ID}",
+            "issuer": "GitHub Actions",
+            "issued_at": "2026-08-06T20:00:00+00:00",
+            "evidence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "scope": "AZURE-001 register-manager CI",
+            "metadata": {
+              "repository": "${GITHUB_REPOSITORY}",
+              "commit_sha": "${GITHUB_SHA}",
+              "workflow_run_id": "${GITHUB_RUN_ID}"
+            }
+          }
+          JSON
+          python -m runtime.taxonomy_preflight_attestation_register upsert artifacts/register.json artifacts/ci-attestation.json > artifacts/upsert-result.json
+          set +e
+          python -m runtime.taxonomy_preflight_attestation_register evaluate artifacts/register.json > artifacts/evaluation.json
+          evaluation_exit=$?
+          set -e
+          test "$evaluation_exit" -eq 2
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          register = json.loads(Path('artifacts/register.json').read_text())
+          result = json.loads(Path('artifacts/upsert-result.json').read_text())
+          evaluation = json.loads(Path('artifacts/evaluation.json').read_text())
+          assert [item['gate'] for item in register['attestations']] == ['ci_validation']
+          assert result['gates']['ci_validation'] is True
+          assert result['azure_provisioning_authorized'] is False
+          assert evaluation['valid'] is False
+          assert evaluation['gates']['ci_validation'] is True
+          assert evaluation['taxonomy_publication_authorized'] is False
+          PY
+      - name: Upload register evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: taxonomy-attestation-register-ci-evidence
+          path: artifacts/
+          retention-days: 7
