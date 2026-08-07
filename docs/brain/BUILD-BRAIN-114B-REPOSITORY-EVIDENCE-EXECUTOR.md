@@ -18,6 +18,9 @@ Add the first genuinely useful authoritative autonomous adapter while preserving
 - The adapter is registered in `AuthoritativeExecutorRegistry` and therefore becomes eligible for the bounded autonomous worker cycle.
 - The adapter is authoritative only for read-only repository evidence collection and has no external side effects.
 - Focused tests cover deterministic hashes, content exclusion, mutation rejection, repository mismatch, revision mismatch, detached-checkout rejection, checkout-change rejection, path traversal, final and parent-directory symlink rejection, optional-file reporting, and end-to-end program completion.
+- Added `scripts/validate_repository_evidence_executor.py`, a single portable validation contract for required-file inventory, Python compilation, Ruff, and the complete focused pytest surface.
+- The validator writes `artifacts/validation/repository-evidence-executor.json` with exact commands, timestamps, return codes, bounded stdout/stderr tails, Python/platform metadata, failure stage, and explicit no-merge/no-deploy/no-publication/no-production-write authority.
+- BUILD-BRAIN-114B GitHub Actions now delegates to that validator and emits the machine-readable receipt when the runner actually starts.
 
 ## Execution chain
 
@@ -43,4 +46,6 @@ The autonomous engine can now perform one real evidence-producing task rather th
 
 ## Validation note
 
-GitHub Actions validation is currently failing before any workflow steps are instantiated, including pre-existing unrelated workflows. No compile, Ruff, pytest, or application step has run on the affected attempts, so these runs do not provide code-level failure evidence. The implementation is therefore being held unmerged while static review findings are corrected and Actions availability is rechecked.
+GitHub Actions validation is currently failing before any workflow steps are instantiated, including pre-existing unrelated workflows. A repository-wide zero-dependency smoke workflow also fails before its single `echo` step. GitHub's public status history confirms an Actions incident on August 7, 2026 in which runners were assigned invalid jobs and some push/pull-request events could not be replayed automatically. A close/reopen of PR #527 generated fresh runs, but they still terminated with `steps=null`, so the remaining blocker is hosted-runner/account policy or residual Actions infrastructure rather than demonstrated application code failure.
+
+No compile, Ruff, pytest, or application step has run on the affected attempts, so success is not claimed and the PR remains unmerged.
