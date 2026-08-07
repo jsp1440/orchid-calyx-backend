@@ -8,7 +8,7 @@ Rebuild the validated Canonical Brain surface directly on current `main` so it i
 
 The earlier stabilization slices were individually validated, but `main` continued advancing and added authoritative Calyx runtime components including governed assignment, dry-run execution, artifact registration, review eligibility, Brain candidate capture, and Mission Control portfolio infrastructure. Extending the old stack would have required copying newer runtime modules backward and would have created parallel or stale implementations.
 
-This integration therefore transfers the already validated Canonical Brain files byte-for-byte onto current `main` and uses the current Calyx runtime as the authoritative execution/evidence layer.
+This integration therefore transfers the already validated Canonical Brain files byte-for-byte onto current `main` and uses the current Calyx runtime as the authoritative execution/evidence layer. The initial transfer was applied atomically as a single Git tree/commit so file identity was preserved without replaying stale branch history.
 
 ## Canonical Brain responsibilities
 
