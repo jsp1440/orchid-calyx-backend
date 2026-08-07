@@ -30,13 +30,16 @@ Validation findings and corrections:
 2. Direct `pytest` invocation failed to resolve the repository `app` package; workflow changed to `python -m pytest` and `python -m ruff`.
 3. Behavioral tests showed that the query `FigureLabs glossary` ranked a decision record above the architecture record.
 4. Search ranking was corrected to prefer architecture records when relevance is otherwise tied.
-5. A final Ruff import-group correction was applied to `registry.py`.
+5. Ruff import grouping was normalized in `registry.py`.
+6. BUILD-088E passed on the repaired branch heads while focused Canonical Brain validation exposed the defects above.
 
 Current state:
 
 - draft
 - unmerged
-- latest validation run pending for the most recent formatting correction
+- mergeable
+- latest workflow conclusion: `action_required`
+- the current workflow run contains no jobs and requires GitHub-side approval before validation can execute
 
 ### PR #488 — Slice 2: Governance and Persistence
 
@@ -52,7 +55,7 @@ Validation findings and corrections:
 1. Broader CALYX Agent, Journalism, Brain Integration, Education Design, and End-to-End checks passed.
 2. Focused Canonical Brain lint identified a sorted `__all__` requirement and three multiline import-format corrections.
 3. The branch now contains those deterministic formatting corrections.
-4. A fresh focused validation run is required for the current head.
+4. A fresh focused validation run is required for the current head after Slice 1 is approved and stabilized.
 
 Current state:
 
@@ -82,9 +85,11 @@ Current state:
 
 GitHub Actions is enabled and functional. The absence of statuses on the umbrella branch did not indicate a repository-wide administrative policy failure. Fresh stacked PRs produced workflow runs and exposed real, actionable failures. Issue #481 was therefore closed after evidence disproved its original diagnosis.
 
+The latest Slice 1 head is now held at a GitHub workflow-approval gate: both workflows report `action_required`, and the Actions API returns no jobs. This is a governance boundary, not a passing or failing code result.
+
 ## Governance boundary
 
-No slice may merge until its latest head has compile, Ruff, and focused pytest evidence. No auto-merge, deployment, publication, production database migration, external delivery, or production Knowledge Graph mutation is authorized.
+No slice may merge until its latest head has compile, Ruff, and focused pytest evidence. The current Slice 1 workflow approval must be granted in GitHub before the latest validation can execute. No auto-merge, deployment, publication, production database migration, external delivery, or production Knowledge Graph mutation is authorized.
 
 ## Standing lesson
 
