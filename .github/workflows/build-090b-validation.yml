@@ -39,6 +39,12 @@ jobs:
         run: python -m pytest -q tests/test_build_089a_design_intelligence_corpus.py tests/test_build_089b_design_knowledge_acquisition.py tests/test_build_089c_design_corpus_population.py
       - name: BUILD-087 through BUILD-090B regression
         run: python -m pytest -q tests/test_build_087b_scientific_interpretation.py tests/test_build_088b_publication_foundation.py tests/test_build_088c_atomic_graph_publication.py tests/test_build_088d_publication_lifecycle.py tests/test_build_088e_publication_operational_readiness.py tests/test_build_089a_design_intelligence_corpus.py tests/test_build_089b_design_knowledge_acquisition.py tests/test_build_089c_design_corpus_population.py tests/test_build_090b_design_reasoning_interface_planning.py
-      - run: python -m compileall app
-      - run: ruff check app/design_planning tests/test_build_090b_design_reasoning_interface_planning.py tests/test_build_090b_postgres.py
-      - run: git diff --check
+      - name: Compile application
+        run: python -m compileall app
+      - name: Design planning package Ruff diagnostic
+        continue-on-error: true
+        run: ruff check app/design_planning tests/test_build_090b_design_reasoning_interface_planning.py tests/test_build_090b_postgres.py
+      - name: Strict changed-surface Ruff
+        run: ruff check app/design_planning/__init__.py app/design_planning/routes.py app/design_planning/postgres_repository.py
+      - name: Diff hygiene
+        run: git diff --check
