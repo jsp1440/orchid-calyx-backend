@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 
@@ -27,6 +27,8 @@ class ScheduledJob:
     created_order: int = 0
     state: ScheduledState = ScheduledState.WAITING
     outcome: str | None = None
+    branch: str | None = None
+    mutating: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,15 +37,21 @@ class SchedulerLimits:
     max_architecture_running: int = 3
     max_role_running: int = 2
     max_repository_running: int = 2
+    architecture_limits: dict[str, int] = field(default_factory=dict)
 
     def validate(self) -> None:
-        if min(
+        values = (
             self.max_global_running,
             self.max_architecture_running,
             self.max_role_running,
             self.max_repository_running,
-        ) < 1:
+            *self.architecture_limits.values(),
+        )
+        if min(values) < 1:
             raise ValueError("SCHEDULER_LIMITS_MUST_BE_POSITIVE")
+
+    def architecture_limit(self, architecture: str) -> int:
+        return self.architecture_limits.get(architecture, self.max_architecture_running)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +103,11 @@ class DependencyScheduler:
         architecture_counts = self._count(running, "architecture")
         role_counts = self._count(running, "role_key")
         repository_counts = self._count(running, "repository")
+        mutating_branches = {
+            (job.repository, job.branch)
+            for job in running
+            if job.mutating and job.branch
+        }
 
         candidates: list[ScheduledJob] = []
         preliminary: dict[str, ScheduledDecision] = {}
@@ -160,15 +173,19 @@ class DependencyScheduler:
         for job in candidates:
             code = "RUNNABLE"
             runnable = True
+            branch_key = (job.repository, job.branch)
             if global_count >= limits.max_global_running:
                 runnable = False
                 code = "GLOBAL_CAPACITY_REACHED"
-            elif architecture_counts.get(job.architecture, 0) >= limits.max_architecture_running:
+            elif architecture_counts.get(job.architecture, 0) >= limits.architecture_limit(job.architecture):
                 runnable = False
                 code = "ARCHITECTURE_CAPACITY_REACHED"
             elif role_counts.get(job.role_key, 0) >= limits.max_role_running:
                 runnable = False
                 code = "ROLE_CAPACITY_REACHED"
+            elif job.mutating and job.branch and branch_key in mutating_branches:
+                runnable = False
+                code = "MUTATING_BRANCH_CAPACITY_REACHED"
             elif repository_counts.get(job.repository, 0) >= limits.max_repository_running:
                 runnable = False
                 code = "REPOSITORY_CAPACITY_REACHED"
@@ -178,6 +195,8 @@ class DependencyScheduler:
                 architecture_counts[job.architecture] = architecture_counts.get(job.architecture, 0) + 1
                 role_counts[job.role_key] = role_counts.get(job.role_key, 0) + 1
                 repository_counts[job.repository] = repository_counts.get(job.repository, 0) + 1
+                if job.mutating and job.branch:
+                    mutating_branches.add(branch_key)
                 admitted.append(job.job_key)
             preliminary[job.job_key] = ScheduledDecision(
                 job_key=job.job_key,
@@ -197,6 +216,7 @@ class DependencyScheduler:
                 "architecture": self._count(running, "architecture"),
                 "role": self._count(running, "role_key"),
                 "repository": self._count(running, "repository"),
+                "mutating_branches": sorted(f"{repository}:{branch}" for repository, branch in mutating_branches),
             },
         )
 
