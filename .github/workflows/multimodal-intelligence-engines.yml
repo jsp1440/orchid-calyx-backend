@@ -14,6 +14,7 @@ on:
       - "tests/test_multimodal_operator_priority_20.py"
       - "tests/test_multimodal_promotion.py"
       - "tests/test_multimodal_persistence.py"
+      - "tests/test_multimodal_document_adapter.py"
       - ".github/workflows/multimodal-intelligence-engines.yml"
   workflow_dispatch:
 
@@ -48,6 +49,7 @@ jobs:
           tests/test_multimodal_operator_priority_20.py
           tests/test_multimodal_promotion.py
           tests/test_multimodal_persistence.py
+          tests/test_multimodal_document_adapter.py
       - name: Focused tests
         run: >-
           pytest -q
@@ -58,6 +60,7 @@ jobs:
           tests/test_multimodal_operator_priority_20.py
           tests/test_multimodal_promotion.py
           tests/test_multimodal_persistence.py
+          tests/test_multimodal_document_adapter.py
       - name: Persistence schema smoke
         run: |
           python - <<'PY'
