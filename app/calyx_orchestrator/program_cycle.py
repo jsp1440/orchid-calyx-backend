@@ -135,7 +135,7 @@ def run_deterministic_program_cycle(
                 program_id=job.program_id,
                 job_key=job.job_key,
                 outcome=str(result.completed_job.get("outcome") or "") or None,
-                receipt_state=str(result.receipt.get("state") or ""),
+                receipt_state=str(result.completed_job.get("status") or ""),
                 executor_key=str(result.receipt.get("executor_key") or ""),
             )
         )

@@ -39,7 +39,7 @@ class ProgramAutonomyPolicy:
 
     @classmethod
     def from_environ(cls, environ: Mapping[str, str] | None = None) -> ProgramAutonomyPolicy:
-        source = environ or os.environ
+        source = os.environ if environ is None else environ
         policy = cls(
             enabled=_enabled(source.get("CALYX_PROGRAM_AUTONOMY_ENABLED")),
             owner=str(source.get("CALYX_PROGRAM_AUTONOMY_OWNER", "")).strip(),
