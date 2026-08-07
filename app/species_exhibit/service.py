@@ -8,6 +8,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
+
 CONTRACT = "calyx-species-exhibit-v1"
 EVIDENCE_DOMAINS = (
     "identity",
@@ -282,9 +283,7 @@ def _build_card(
         ),
     }
     unavailable_domains = [
-        domain
-        for domain in EVIDENCE_DOMAINS
-        if evidence_states[domain]["state"] == "unavailable"
+        domain for domain in EVIDENCE_DOMAINS if evidence_states[domain]["state"] == "unavailable"
     ]
     contradictions = _contradictions(graph)
     caveats: list[str] = []
