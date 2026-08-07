@@ -7,11 +7,12 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, Mapping
 
 from .engineering_core import TerminalOutcome
 from .executor import ExecutionReceipt, ExecutionState, GovernedAssignment, canonical_checksum
 from .repository_evidence_executor import RepositoryEvidenceExecutor
+from .sandbox_authorization import SandboxAuthorization, SandboxValidationAuthorizer
 
 SANDBOXED_VALIDATION_ROLE = "isolated_workspace_executable_validator"
 SANDBOX_MARKER = ".calyx-validation-sandbox.json"
@@ -42,14 +43,12 @@ class ValidationRequest:
 
 
 class SandboxedExecutableValidationExecutor:
-    """Run fixed validation presets only inside an externally enforced sandbox.
+    """Run fixed validation presets only inside a supervisor-authorized sandbox.
 
-    This adapter does not establish an OS/network/filesystem sandbox by itself. It
-    fails closed unless the pre-created workspace contains a trusted marker asserting
-    that network and credential access are disabled, shell/package installation are
-    disabled, subprocess confinement is enforced, and the repository is read-only for
-    the validator process. Commands are internal argv presets; caller-supplied command
-    text is never executed.
+    The repository marker is necessary but never sufficient. A trusted runtime
+    authorizer must independently confirm that the external sandbox controls are
+    actually enforced for this exact workspace/repository/branch before any repository
+    code can execute.
     """
 
     executor_key = "isolated_workspace_executable_validator_v1"
@@ -59,6 +58,7 @@ class SandboxedExecutableValidationExecutor:
         *,
         workspace_root=None,
         repository_name: str | None = None,
+        authorizer: SandboxValidationAuthorizer | None = None,
     ) -> None:
         self._reader = RepositoryEvidenceExecutor(
             workspace_root=workspace_root,
@@ -66,6 +66,7 @@ class SandboxedExecutableValidationExecutor:
         )
         self.workspace_root = self._reader.workspace_root
         self.repository_name = self._reader.repository_name
+        self._authorizer = authorizer
 
     def execute(self, assignment: GovernedAssignment) -> ExecutionReceipt:
         if assignment.role_key != SANDBOXED_VALIDATION_ROLE:
@@ -100,7 +101,12 @@ class SandboxedExecutableValidationExecutor:
         checkout = self._reader._checkout_identity()
         if checkout.branch != branch:
             raise PermissionError("SANDBOX_VALIDATION_REVISION_MISMATCH")
-        self._verify_sandbox_marker(repository=repository, branch=branch)
+        marker = self._verify_sandbox_marker(repository=repository, branch=branch)
+        authorization = self._require_supervisor_authorization(
+            repository=repository,
+            branch=branch,
+            marker=marker,
+        )
 
         request = self._parse_request(job.get("validation"), assignment.timeout_seconds)
         before = self._verify_targets(request)
@@ -161,7 +167,10 @@ class SandboxedExecutableValidationExecutor:
             "repository": repository,
             "branch": branch,
             "checkout_commit_sha": checkout.commit_sha,
-            "sandbox_attested": True,
+            "sandbox_marker_verified": True,
+            "supervisor_authorized": True,
+            "supervisor_authorization_id": authorization.authorization_id,
+            "sandbox_policy_digest": authorization.policy_digest,
             "repository_read_only_during_validation": True,
             "preset": request.preset,
             "targets": [
@@ -197,6 +206,7 @@ class SandboxedExecutableValidationExecutor:
             evidence_uris=tuple(
                 [
                     *assignment.evidence_uris,
+                    authorization.evidence_uri,
                     f"repo-commit:{repository}@{checkout.commit_sha}",
                     *[
                         f"validation-input:{path}#{before[path]}"
@@ -209,7 +219,7 @@ class SandboxedExecutableValidationExecutor:
         receipt.verify()
         return receipt
 
-    def _verify_sandbox_marker(self, *, repository: str, branch: str) -> None:
+    def _verify_sandbox_marker(self, *, repository: str, branch: str) -> Mapping[str, object]:
         try:
             raw, _ = self._reader._read_workspace_file(SANDBOX_MARKER, 32_768)
         except FileNotFoundError as exc:
@@ -234,6 +244,28 @@ class SandboxedExecutableValidationExecutor:
             marker.get(key) != value for key, value in expected.items()
         ):
             raise PermissionError("SANDBOX_VALIDATION_MARKER_MISMATCH")
+        return marker
+
+    def _require_supervisor_authorization(
+        self,
+        *,
+        repository: str,
+        branch: str,
+        marker: Mapping[str, object],
+    ) -> SandboxAuthorization:
+        if self._authorizer is None:
+            raise PermissionError("SANDBOX_VALIDATION_SUPERVISOR_REQUIRED")
+        try:
+            authorization = self._authorizer.authorize(
+                workspace_root=self.workspace_root,
+                repository=repository,
+                branch=branch,
+                marker=marker,
+            )
+            authorization.verify()
+        except (LookupError, PermissionError, RuntimeError, TypeError, ValueError) as exc:
+            raise PermissionError("SANDBOX_VALIDATION_SUPERVISOR_REJECTED") from exc
+        return authorization
 
     @staticmethod
     def _parse_request(value: Any, assignment_timeout: int) -> ValidationRequest:
