@@ -53,16 +53,7 @@ def test_readiness_passes_after_persistent_restart_certification(
     monkeypatch.setattr(readiness, "_BOOT_ID", "different-process-boot")
     verify_restart_probe(persistent_root, probe["token"])
     monkeypatch.setenv("CALYX_CONSERVATORY_STORAGE_PERSISTENT", "true")
-    monkeypatch.setattr(
-        readiness,
-        "_flag",
-        lambda name: name == "CALYX_CONSERVATORY_STORAGE_PERSISTENT",
-    )
-    monkeypatch.setattr(
-        Path,
-        "resolve",
-        lambda self: Path("/var/lib/calyx/conservatory"),
-    )
+    monkeypatch.setattr(readiness, "_is_non_ephemeral", lambda root: True)
 
     report = build_conservatory_readiness(persistent_root)
 
