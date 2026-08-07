@@ -431,6 +431,10 @@ app.include_router(kernel_router)
 app.include_router(orchestrator_router)
 app.include_router(planner_router)
 
+from app.brain_mission.routes import router as brain_mission_router
+
+app.include_router(brain_mission_router)
+
 from app.routers import orchid_widgets
 
 app.include_router(orchid_widgets.router)
