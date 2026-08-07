@@ -1,7 +1,9 @@
 from pathlib import Path
 
 from app.design_planning.postgres_repository import PostgresDesignPlanningRepository
-from app.scientific_interpretation.postgres_repository import PostgresInterpretationRepository
+from app.scientific_interpretation.postgres_repository import (
+    PostgresInterpretationRepository,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
