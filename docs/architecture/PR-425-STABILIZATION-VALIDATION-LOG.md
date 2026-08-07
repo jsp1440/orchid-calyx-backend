@@ -60,12 +60,14 @@ Validation findings and corrections:
 2. Focused Canonical Brain lint identified sorted-export and multiline-import requirements; the current branch contains those formatting corrections.
 3. The branch contains architecture-first search behavior and updated Mission Control fixture assertions.
 4. Direct comparison with repaired Slice 1 shows Slice 2 is 26 commits ahead and 7 commits behind, with merge base `03243574afd053104b7edb9ad8c8a605cfc809a7`.
+5. Connector inspection confirmed that no safe merge/rebase operation is available; force-rewriting the draft branch was deliberately rejected.
 
 Current state:
 
 - draft and unmerged
 - temporarily non-mergeable because the stacked base advanced during Slice 1 repairs
-- do not force-rewrite; reconcile by a reviewed restack or clean replacement branch after Slice 1 CI approval
+- preserve the current branch as evidence
+- reconcile by a reviewed restack or clean replacement branch after Slice 1 CI approval
 
 Reviewer next action:
 
@@ -86,6 +88,7 @@ Current state:
 - draft and unmerged
 - temporarily non-mergeable because Slices 1 and 2 advanced
 - workflow invocation standardized to the active Python environment
+- preserve the current branch as evidence
 - independent validation remains after lower slices are reconciled
 
 Reviewer next action:
