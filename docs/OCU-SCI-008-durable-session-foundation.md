@@ -38,11 +38,7 @@ Approval for Candidate Knowledge **consideration** is represented separately fro
 
 `app/university/durable_repository.py` requires every event append to present the learner session revision last observed by the caller.
 
-A stale revision raises:
-
-`REVISION_CONFLICT`
-
-and no event is committed. This protects a learner notebook from silent last-write-wins overwrites across browser tabs, retries, or concurrent clients.
+A stale revision raises `REVISION_CONFLICT` and no event is committed. This protects a learner notebook from silent last-write-wins overwrites across browser tabs, retries, or concurrent clients.
 
 ## Ownership isolation
 
@@ -59,23 +55,54 @@ OCU_UNIVERSITY_ENABLED=true
 OCU_UNIVERSITY_SESSION_WRITES_ENABLED=true
 OCU_UNIVERSITY_DURABLE_SESSIONS_ENABLED=true
 OCU_UNIVERSITY_READ_ONLY_RELEASE_VERIFIED=true
-OCU_UNIVERSITY_RELEASE_EVIDENCE_ID=<non-empty evidence identifier>
+OCU_UNIVERSITY_RELEASE_EVIDENCE_ID=sha256:<64 lowercase hex characters>
 ```
 
-The final two controls encode the sequencing requirement established by OCU-SCI-007: durable sessions must not be activated until the read-only production release has been verified and its evidence artifact recorded.
+OCU-SCI-008A tightens the final value so an arbitrary label cannot satisfy the gate. The evidence ID must be the SHA-256 digest of a passing OCU-SCI-007 production evidence artifact.
 
-The existence of these environment variables does not itself prove verification. Operational activation still requires a reviewed production evidence artifact.
+Generate and validate that value with:
+
+```bash
+python scripts/validate_university_release_evidence.py university-production-evidence.json
+```
+
+A valid artifact prints:
+
+```text
+VALID: OCU-SCI-007 production evidence
+OCU_UNIVERSITY_RELEASE_EVIDENCE_ID=sha256:<digest>
+```
+
+The validator independently rechecks the critical release facts before emitting the digest:
+
+- OCU-SCI-007 schema and `result=pass`
+- HTTPS frontend and API origins
+- canonical React application shell
+- HTTP 200 University route
+- University enabled in read-only mode
+- session writes disabled
+- publication disabled
+- Candidate Knowledge writes disabled
+- Calyx model calls disabled
+- human review required
+- expected Book in the Brain chapter
+- expected Failure-to-Bloom laboratory
+- non-empty chapter and laboratory evidence content
+
+This makes the activation control traceable to a specific immutable evidence file rather than merely to a manually entered statement that verification occurred.
 
 ## Migration application boundary
 
-This build adds the SQL migration file but does not apply it to Neon or any other database.
+The SQL migration file exists in source control but is not applied to Neon or any other database by this build.
 
 Applying the migration is a separate operational action because it changes persistent infrastructure. That action should occur only after:
 
 1. the read-only production deployment has passed OCU-SCI-007;
-2. the database target is confirmed;
-3. migration backup/rollback expectations are reviewed; and
-4. the activation build wires the repository behind authenticated routes.
+2. the evidence artifact passes `validate_university_release_evidence.py`;
+3. its SHA-256 evidence ID is recorded;
+4. the database target is confirmed;
+5. migration backup/rollback expectations are reviewed; and
+6. the activation build wires the repository behind authenticated routes.
 
 ## Validation
 
@@ -83,19 +110,22 @@ Deterministic validation is provided by:
 
 ```bash
 python scripts/validate_university_durable_migration.py
-python -m unittest tests/test_university_durable_foundation.py
-python -m py_compile app/university/durable_config.py app/university/durable_repository.py
+python -m unittest \
+  tests/test_university_durable_foundation.py \
+  tests/test_university_release_evidence.py
+python -m py_compile \
+  app/university/durable_config.py \
+  app/university/durable_repository.py \
+  scripts/validate_university_release_evidence.py
 ```
 
-GitHub Actions workflow:
+GitHub Actions workflow: `OCU University Durable Foundation`.
 
-`OCU University Durable Foundation`
-
-The migration validator checks that the database-level scientific and publication safeguards remain present.
+The migration validator checks that database-level scientific and publication safeguards remain present. The release-evidence tests verify that failed, write-enabled, or noncanonical deployment artifacts cannot satisfy the activation chain.
 
 ## Deliberately not implemented
 
-OCU-SCI-008 does not:
+OCU-SCI-008/008A does not:
 
 - apply the migration;
 - alter the current release-readiness endpoint;
@@ -110,7 +140,7 @@ OCU-SCI-008 does not:
 
 ## Next activation build
 
-After a passing OCU-SCI-007 production evidence artifact exists, the next build may implement **OCU-SCI-009 — Durable Session Activation and Instructor Review API**.
+After a passing OCU-SCI-007 production evidence artifact exists and is cryptographically bound, the next build may implement **OCU-SCI-009 — Durable Session Activation and Instructor Review API**.
 
 That build should:
 
@@ -119,5 +149,5 @@ That build should:
 3. require `expected_revision` on every mutation;
 4. add authenticated submit/review endpoints;
 5. maintain learner ownership isolation;
-6. keep publication and Candidate Knowledge promotion outside the University transaction;
+6. keep publication and Candidate Knowledge promotion outside the University transaction; and
 7. update release-readiness and frontend capability reporting only after database validation passes.
