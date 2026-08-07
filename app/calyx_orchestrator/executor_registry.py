@@ -11,6 +11,7 @@ from .executor import (
     GovernedAssignment,
     canonical_checksum,
 )
+from .isolated_patch_executor import ISOLATED_PATCH_ROLE, IsolatedWorkspacePatchExecutor
 from .repository_evidence_executor import (
     REPOSITORY_EVIDENCE_ROLE,
     RepositoryEvidenceExecutor,
@@ -62,6 +63,7 @@ class RegisteredExecutor:
     executor: ExecutorAdapter
     authoritative: bool
     external_side_effects: bool
+    workspace_mutation: bool = False
 
 
 class AuthoritativeExecutorRegistry:
@@ -78,6 +80,10 @@ class AuthoritativeExecutorRegistry:
             workspace_root=workspace_root,
             repository_name=repository_name,
         )
+        isolated_patcher = IsolatedWorkspacePatchExecutor(
+            workspace_root=workspace_root,
+            repository_name=repository_name,
+        )
         self._by_role = {
             AUTONOMY_PROBE_ROLE: RegisteredExecutor(
                 role_key=AUTONOMY_PROBE_ROLE,
@@ -90,6 +96,13 @@ class AuthoritativeExecutorRegistry:
                 executor=repository_reader,
                 authoritative=True,
                 external_side_effects=False,
+            ),
+            ISOLATED_PATCH_ROLE: RegisteredExecutor(
+                role_key=ISOLATED_PATCH_ROLE,
+                executor=isolated_patcher,
+                authoritative=True,
+                external_side_effects=False,
+                workspace_mutation=True,
             ),
         }
 
@@ -118,6 +131,7 @@ class AuthoritativeExecutorRegistry:
                     "executor_key": registered.executor.executor_key,
                     "authoritative": registered.authoritative,
                     "external_side_effects": registered.external_side_effects,
+                    "workspace_mutation": registered.workspace_mutation,
                 }
                 for registered in sorted(self._by_role.values(), key=lambda item: item.role_key)
             ],
