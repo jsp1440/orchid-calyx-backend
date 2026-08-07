@@ -14,6 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
+from runtime.conservatory_readiness import (
+    build_conservatory_readiness,
+    create_restart_probe,
+    verify_restart_probe,
+)
 from runtime.conservatory_store import ConservatoryStore
 
 
@@ -28,9 +33,16 @@ class LabelRequest(BaseModel):
     plant_ids: list[str] | None = None
 
 
+class RestartProbeVerification(BaseModel):
+    token: str = Field(min_length=10, max_length=100)
+
+
+def _conservatory_root() -> Path:
+    return Path(os.getenv("CALYX_CONSERVATORY_DIR", "/tmp/calyx/conservatory"))
+
+
 def _default_store() -> ConservatoryStore:
-    root = Path(os.getenv("CALYX_CONSERVATORY_DIR", "/tmp/calyx/conservatory"))
-    return ConservatoryStore(root)
+    return ConservatoryStore(_conservatory_root())
 
 
 def _qr_svg(payload: str) -> bytes:
@@ -43,8 +55,29 @@ def _qr_svg(payload: str) -> bytes:
 def create_conservatory_router(
     get_store: Callable[[], ConservatoryStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
+    get_root: Callable[[], Path] = _conservatory_root,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/conservatory", tags=["conservatory"])
+
+    @router.get("/readiness")
+    def readiness(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
+        return build_conservatory_readiness(get_root())
+
+    @router.post("/readiness/restart-probe")
+    def start_restart_probe(
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        return create_restart_probe(get_root())
+
+    @router.post("/readiness/restart-probe/verify")
+    def certify_restart_probe(
+        payload: RestartProbeVerification,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        try:
+            return verify_restart_probe(get_root(), payload.token)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @router.get("/plants")
     def list_plants(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
