@@ -39,6 +39,13 @@ def _profiles() -> tuple[MatrixProfile, ...]:
     )
 
 
+def _ambiguous_profiles() -> tuple[MatrixProfile, ...]:
+    return (
+        MatrixProfile("t1", "Orchis alpha", {"lip_shape": frozenset({"lobed"})}, ("matrix:v1",)),
+        MatrixProfile("t2", "Orchis beta", {"lip_shape": frozenset({"lobed"})}, ("matrix:v1",)),
+    )
+
+
 def test_literature_validation_is_idempotent_and_review_gated() -> None:
     service = MultimodalOperatorService()
     claim = LiteratureClaim(
@@ -81,8 +88,8 @@ def test_integrated_identification_and_abstention() -> None:
     cautious = service.integrated_identification(
         analysis=_analysis(),
         definitions=_definitions(),
-        profiles=_profiles(),
-        minimum_margin=0.9,
+        profiles=_ambiguous_profiles(),
+        minimum_margin=0.1,
     )
     assert cautious.result["abstained"] is True
 
