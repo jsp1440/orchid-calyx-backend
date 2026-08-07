@@ -1,0 +1,105 @@
+name: CALYX Reasoning Schema Activation Validation
+
+on:
+  pull_request:
+    paths:
+      - "scripts/activate_reasoning_publication_schemas.py"
+      - "tests/test_reasoning_publication_schema_activation.py"
+      - "migrations/103_reasoning_ledger.sql"
+      - "migrations/105_reasoning_ledger_publication_adapter.sql"
+      - ".github/workflows/calyx-reasoning-schema-production-activation.yml"
+      - ".github/workflows/calyx-reasoning-schema-activation-validation.yml"
+      - "docs/brain/CALYX-CORE-REASONING-SCHEMA-ACTIVATION.md"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-activation-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: calyx_activation
+          POSTGRES_PASSWORD: calyx_activation_test
+          POSTGRES_DB: calyx_activation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U calyx_activation -d calyx_activation_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://calyx_activation:calyx_activation_test@localhost:5432/calyx_activation_test
+      DATABASE_URL: postgresql://calyx_activation:calyx_activation_test@localhost:5432/calyx_activation_test
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install validation dependencies
+        run: python -m pip install -r requirements.txt pytest ruff
+
+      - name: Ruff and compile
+        run: |
+          python -m ruff check scripts/activate_reasoning_publication_schemas.py tests/test_reasoning_publication_schema_activation.py
+          python -m compileall -q scripts/activate_reasoning_publication_schemas.py
+
+      - name: Fail-closed unit tests
+        run: python -m pytest -q tests/test_reasoning_publication_schema_activation.py
+
+      - name: Validate migration dependency chain on PostgreSQL 16
+        run: python -m pytest -q tests/test_calyx_brain_003_migration.py
+
+      - name: Read-only activation preflight
+        run: python scripts/activate_reasoning_publication_schemas.py
+
+      - name: Apply 103 then 105 on disposable PostgreSQL
+        env:
+          CALYX_REASONING_MIGRATION_CONFIRM: APPLY_103_105
+        run: python scripts/activate_reasoning_publication_schemas.py --apply
+
+      - name: Verify full post-apply contract and evidence semantics
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          receipt = json.loads(Path('calyx-reasoning-publication-schema-activation.json').read_text())
+          assert receipt['status'] == 'passed'
+          assert receipt['activation_complete'] is True
+          assert receipt['schema_contract_after']['complete'] is True
+          assert receipt['production_database_mutation_authorized'] is True
+          assert receipt['production_database_mutation_attempted'] is True
+          assert receipt['production_database_mutation_observed'] is True
+          assert receipt['partial_application'] is False
+          assert receipt['applied'] is True
+          assert receipt['applied_migrations'] == [
+              '103_reasoning_ledger.sql',
+              '105_reasoning_ledger_publication_adapter.sql',
+          ]
+          assert receipt['schema_contract_after']['tables'][
+              'reasoning_publication.publication_artifacts'
+          ]['missing_columns'] == []
+          assert receipt['schema_contract_after']['missing_functions'] == []
+          assert receipt['schema_contract_after']['missing_triggers'] == []
+          PY
+
+      - name: Verify idempotent reapplication
+        env:
+          CALYX_REASONING_MIGRATION_CONFIRM: APPLY_103_105
+        run: python scripts/activate_reasoning_publication_schemas.py --apply
+
+      - name: Upload disposable validation receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-reasoning-schema-activation-validation-${{ github.sha }}
+          path: calyx-reasoning-publication-schema-activation.json
+          if-no-files-found: error
+          retention-days: 14
