@@ -6,6 +6,13 @@ import json
 from .models import BrainObject, BrainRelationship, BrainSnapshot, SearchHit
 
 
+_SEARCH_TYPE_PRIORITY = {
+    "architecture": 0,
+    "intent": 1,
+    "decision": 2,
+}
+
+
 class CanonicalBrainRegistry:
     def __init__(self) -> None:
         self._objects: dict[str, BrainObject] = {}
@@ -44,15 +51,25 @@ class CanonicalBrainRegistry:
             matched = [name for name, value in fields.items() if any(term in value for term in terms)]
             if matched:
                 score = sum(4 if name == "title" else 3 if name == "aliases" else 1 for name in matched)
-                hits.append(SearchHit(
-                    object_id=record.object_id,
-                    title=record.title,
-                    object_type=record.object_type,
-                    lifecycle=record.lifecycle,
-                    score=score,
-                    matched_fields=sorted(matched),
-                ))
-        return sorted(hits, key=lambda item: (-item.score, item.title.casefold(), item.object_id))
+                hits.append(
+                    SearchHit(
+                        object_id=record.object_id,
+                        title=record.title,
+                        object_type=record.object_type,
+                        lifecycle=record.lifecycle,
+                        score=score,
+                        matched_fields=sorted(matched),
+                    )
+                )
+        return sorted(
+            hits,
+            key=lambda item: (
+                -item.score,
+                _SEARCH_TYPE_PRIORITY.get(item.object_type, 10),
+                item.title.casefold(),
+                item.object_id,
+            ),
+        )
 
     def related(self, object_id: str, relationship_type: str | None = None) -> list[BrainObject]:
         related_ids: set[str] = set()
@@ -67,7 +84,8 @@ class CanonicalBrainRegistry:
 
     def aligned_intents(self, object_id: str) -> list[BrainObject]:
         return [
-            record for record in self.related(object_id, "aligned_to")
+            record
+            for record in self.related(object_id, "aligned_to")
             if record.object_type == "intent"
         ]
 
