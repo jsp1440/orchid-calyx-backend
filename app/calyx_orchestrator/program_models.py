@@ -55,6 +55,7 @@ class CalyxProgramJob(Base):
     repository: Mapped[str] = mapped_column(String(240), index=True)
     branch: Mapped[str | None] = mapped_column(String(240), nullable=True, index=True)
     mutating: Mapped[bool] = mapped_column(Boolean, default=False)
+    input_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     work_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(40), default="waiting", index=True)
     outcome: Mapped[str | None] = mapped_column(String(40), nullable=True)

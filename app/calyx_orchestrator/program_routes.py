@@ -28,6 +28,7 @@ class ProgramJobRequest(BaseModel):
     repository: str = Field(min_length=1, max_length=240)
     branch: str | None = Field(default=None, max_length=240)
     mutating: bool = False
+    inputs: dict[str, Any] = Field(default_factory=dict)
 
 
 class DependencyRequest(BaseModel):
@@ -139,7 +140,7 @@ def claim_program_job(payload: WorkerClaimRequest, auth: AuthDependency, db: DbD
             job=job,
             timeout_seconds=payload.lease_seconds,
         )
-    except (LookupError, PermissionError, ValueError) as exc:
+    except (LookupError, PermissionError, TypeError, ValueError) as exc:
         raise _translate_error(exc) from exc
     return {"claimed": True, "job": _worker_job(job), "assignment": assignment_payload(assignment)}
 
@@ -233,7 +234,7 @@ def create_program(payload: ProgramRequest, auth: AuthDependency, db: DbDependen
         if payload.start_immediately:
             repository.start(owner=_owner(auth), program_id=program.program_id)
         return repository.snapshot(owner=_owner(auth), program_id=program.program_id)
-    except (LookupError, ValueError) as exc:
+    except (LookupError, TypeError, ValueError) as exc:
         raise _translate_error(exc) from exc
 
 

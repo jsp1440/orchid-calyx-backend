@@ -1,0 +1,84 @@
+name: BUILD-BRAIN-114I Safe Subset
+
+on:
+  pull_request:
+    paths:
+      - "app/calyx_orchestrator/assignment_factory.py"
+      - "app/calyx_orchestrator/executor_registry.py"
+      - "app/calyx_orchestrator/program_cycle.py"
+      - "app/calyx_orchestrator/program_models.py"
+      - "app/calyx_orchestrator/program_repository.py"
+      - "app/calyx_orchestrator/program_routes.py"
+      - "app/calyx_orchestrator/static_validation_executor.py"
+      - "migrations/20260805_calyx_autonomous_engineering_core.sql"
+      - "migrations/20260807_calyx_program_job_inputs.sql"
+      - "tests/test_calyx_safe_autonomy_inputs_static_validation.py"
+      - "docs/brain/BUILD-BRAIN-114I-SAFE-SUBSET-CURRENT-MAIN.md"
+      - ".github/workflows/build-brain-114i-safe-subset.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile safe autonomy surface
+        run: |
+          python -m py_compile \
+            app/calyx_orchestrator/assignment_factory.py \
+            app/calyx_orchestrator/executor_registry.py \
+            app/calyx_orchestrator/program_cycle.py \
+            app/calyx_orchestrator/program_models.py \
+            app/calyx_orchestrator/program_repository.py \
+            app/calyx_orchestrator/program_routes.py \
+            app/calyx_orchestrator/static_validation_executor.py \
+            tests/test_calyx_safe_autonomy_inputs_static_validation.py
+      - name: Ruff safe autonomy surface
+        run: |
+          ruff check \
+            app/calyx_orchestrator/assignment_factory.py \
+            app/calyx_orchestrator/executor_registry.py \
+            app/calyx_orchestrator/program_cycle.py \
+            app/calyx_orchestrator/program_models.py \
+            app/calyx_orchestrator/program_repository.py \
+            app/calyx_orchestrator/program_routes.py \
+            app/calyx_orchestrator/static_validation_executor.py \
+            tests/test_calyx_safe_autonomy_inputs_static_validation.py
+      - name: Focused safe-subset regressions
+        run: |
+          pytest -q \
+            tests/test_calyx_safe_autonomy_inputs_static_validation.py \
+            tests/test_calyx_autonomous_program_cycle.py \
+            tests/test_calyx_repository_evidence_executor.py \
+            tests/test_calyx_isolated_patch_executor.py
+      - name: Migration compatibility
+        run: |
+          grep -q "ADD COLUMN IF NOT EXISTS input_json TEXT NULL" migrations/20260805_calyx_autonomous_engineering_core.sql
+          grep -q "ADD COLUMN IF NOT EXISTS input_json TEXT NULL" migrations/20260807_calyx_program_job_inputs.sql
+      - name: Enforce executable-validation exclusion
+        run: |
+          test ! -e app/calyx_orchestrator/sandboxed_validation_executor.py
+          test ! -e app/calyx_orchestrator/sandbox_authorization.py
+          ! grep -q "repository_code_execution.*True" app/calyx_orchestrator/executor_registry.py
+          grep -q '"sandboxed_repository_code_execution_authorized": False' app/calyx_orchestrator/executor_registry.py
+      - name: Brain boundary smoke
+        run: |
+          grep -q "Executable repository validation remains excluded" docs/brain/BUILD-BRAIN-114I-SAFE-SUBSET-CURRENT-MAIN.md
+          grep -q "repository_code_execution_authorized: false" docs/brain/BUILD-BRAIN-114I-SAFE-SUBSET-CURRENT-MAIN.md
+      - name: Diff hygiene
+        run: git diff --check
