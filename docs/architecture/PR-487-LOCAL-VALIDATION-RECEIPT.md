@@ -41,3 +41,5 @@ This is a validation receipt only. It does not authorize merge, deployment, publ
 ## Disposition
 
 PR #487 remains draft. Compile and focused behavior are locally validated. Authoritative GitHub checks remain gated by workflow approval. The lower stacked PRs remain frozen until this gate is cleared.
+
+See also `docs/architecture/PR-425-STABILIZATION-VALIDATION-LOG.md` for the complete stacked-PR state.
