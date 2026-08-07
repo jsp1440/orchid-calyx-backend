@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from .assignment_factory import assignment_payload, governed_assignment_from_claimed_job
 from .execution_bridge import LeaseExecutionBridge
 from .executor import DeterministicDryRunExecutor, ExecutionReceipt
+from .models import utcnow
 from .program_models import CalyxProgram, CalyxProgramJob
 
 
@@ -42,7 +43,13 @@ def execute_deterministic_dry_run(
     timeout_seconds: int = 300,
 ) -> DryRunExecutionResult:
     job = require_owned_program_job(db, owner=owner, program_job_id=program_job_id)
-    if job.status != "running" or job.lease_owner != worker_id or job.lease_token != lease_token:
+    lease_expired = job.lease_expires_at is None or job.lease_expires_at <= utcnow()
+    if (
+        job.status != "running"
+        or job.lease_owner != worker_id
+        or job.lease_token != lease_token
+        or lease_expired
+    ):
         raise PermissionError("STALE_PROGRAM_JOB_LEASE")
 
     assignment = governed_assignment_from_claimed_job(
