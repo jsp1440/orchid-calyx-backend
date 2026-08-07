@@ -23,6 +23,10 @@ GATES = (
     "budget_alerts",
     "microsoft_architecture_review",
 )
+REQUIRED_ATTESTATION_FIELDS = {
+    "gate", "status", "evidence_id", "issuer", "issued_at",
+    "evidence_sha256", "scope",
+}
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$|^[0-9a-f]{64}$")
 
@@ -111,11 +115,10 @@ def _validate_gate_metadata(item: GateAttestation) -> None:
 
 def _construct_attestation(raw: dict[str, Any]) -> GateAttestation:
     fields = set(GateAttestation.__dataclass_fields__)
-    required = {name for name, item in GateAttestation.__dataclass_fields__.items() if item.default is item.default_factory}
     unknown = sorted(set(raw) - fields)
     if unknown:
         raise ValueError(f"unknown attestation fields: {', '.join(unknown)}")
-    missing = sorted(required - set(raw))
+    missing = sorted(REQUIRED_ATTESTATION_FIELDS - set(raw))
     if missing:
         raise ValueError(f"missing attestation fields: {', '.join(missing)}")
     try:
