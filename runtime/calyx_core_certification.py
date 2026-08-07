@@ -48,8 +48,10 @@ def _check_configuration() -> dict[str, str]:
         "DATABASE_URL",
         "CALYX_TAXONOMY_INTAKE_DIR",
         "LITERATURE_EXTRACTION_ROOT",
-        "CALYX_CORE_OWNER_CODE",
         "CALYX_TAXONOMY_STORAGE_PERSISTENT",
+        "CALYX_API_KEY",
+        "CALYX_OWNER_ACCESS_CODE",
+        "CALYX_OWNER_SESSION_SECRET",
     )
     return {name: "present" if _env_present(name) else "absent" for name in variables}
 
