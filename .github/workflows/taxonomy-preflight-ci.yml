@@ -45,6 +45,7 @@ jobs:
           python -m py_compile runtime/taxonomy_preflight_readiness.py
           python -m py_compile runtime/taxonomy_preflight_reproducibility.py
           python -m py_compile runtime/taxonomy_preflight_acceptance.py
+          python -m py_compile runtime/taxonomy_preflight_attestations.py
 
       - name: Run focused unit tests
         run: |
@@ -54,7 +55,8 @@ jobs:
             tests.test_taxonomy_preflight_release_gate \
             tests.test_taxonomy_preflight_readiness \
             tests.test_taxonomy_preflight_reproducibility \
-            tests.test_taxonomy_preflight_acceptance -v
+            tests.test_taxonomy_preflight_acceptance \
+            tests.test_taxonomy_preflight_attestations -v
 
       - name: Run governed release-gate smoke validation
         shell: bash
@@ -118,9 +120,33 @@ jobs:
           python -m runtime.taxonomy_preflight_release_gate azure-spec \
             --image ghcr.io/fcos/taxonomy@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             > artifacts/azure-execution-spec.json
+          cat > artifacts/gate-attestations.json <<JSON
+          {
+            "schema_version": "1.0.0",
+            "attestations": [
+              {
+                "gate": "ci_validation",
+                "status": "verified",
+                "evidence_id": "github-actions-${GITHUB_RUN_ID}",
+                "issuer": "GitHub Actions",
+                "issued_at": "2026-08-06T20:00:00+00:00",
+                "evidence_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "scope": "AZURE-001 synthetic CI",
+                "metadata": {
+                  "repository": "${GITHUB_REPOSITORY}",
+                  "commit_sha": "${GITHUB_SHA}",
+                  "workflow_run_id": "${GITHUB_RUN_ID}"
+                }
+              }
+            ]
+          }
+          JSON
           set +e
+          python -m runtime.taxonomy_preflight_attestations artifacts/gate-attestations.json \
+            --output artifacts/attestation-evaluation.json
+          attestation_exit=$?
           python -m runtime.taxonomy_preflight_readiness artifacts/release-bundle \
-            --ci-validated \
+            --attestations artifacts/gate-attestations.json \
             --output artifacts/readiness.json
           readiness_exit=$?
           python -m runtime.taxonomy_preflight_acceptance artifacts/release-bundle \
@@ -130,6 +156,7 @@ jobs:
             --output artifacts/acceptance.json
           acceptance_exit=$?
           set -e
+          test "$attestation_exit" -eq 2
           test "$readiness_exit" -eq 2
           test "$acceptance_exit" -eq 2
           python - <<'PY'
@@ -140,6 +167,7 @@ jobs:
           receipt = json.loads((bundle / 'receipt.json').read_text())
           complete = json.loads((bundle / 'COMPLETE.json').read_text())
           spec = json.loads(Path('artifacts/azure-execution-spec.json').read_text())
+          attestations = json.loads(Path('artifacts/attestation-evaluation.json').read_text())
           readiness = json.loads(Path('artifacts/readiness.json').read_text())
           reproducibility = json.loads(Path('artifacts/reproducibility.json').read_text())
           acceptance = json.loads(Path('artifacts/acceptance.json').read_text())
@@ -152,7 +180,12 @@ jobs:
           assert complete['run_id'] == report['run_id']
           assert spec['provision'] is False
           assert spec['public_ingress'] is False
+          assert attestations['valid'] is False
+          assert attestations['gates']['ci_validation'] is True
+          assert attestations['azure_provisioning_authorized'] is False
           assert readiness['decision'] == 'HOLD'
+          assert readiness['evidence_mode'] == 'typed_attestations'
+          assert len(readiness['evidence_digest']) == 64
           assert readiness['azure_provisioning_authorized'] is False
           assert reproducibility['reproducible'] is True
           assert reproducibility['publication_authorized'] is False
@@ -173,6 +206,8 @@ jobs:
             artifacts/release-plan.json
             artifacts/release-bundle/
             artifacts/azure-execution-spec.json
+            artifacts/gate-attestations.json
+            artifacts/attestation-evaluation.json
             artifacts/readiness.json
             artifacts/reproducibility.json
             artifacts/acceptance.json
