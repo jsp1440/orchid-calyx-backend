@@ -1,0 +1,107 @@
+from __future__ import annotations
+
+
+def capability_status() -> dict:
+    return {
+        "capability": "literature_matrix_vision",
+        "state": "governed_functional_integration",
+        "production_ready": False,
+        "priority_10": {
+            "completed": [
+                "document_text_adapter",
+                "ocr_fallback_contract",
+                "canonical_taxonomy_resolver",
+                "candidate_knowledge_payload_adapter",
+                "versioned_matrix_registry",
+                "geography_filter",
+                "phenology_filter",
+                "accepted_name_binding",
+                "vision_provider_adapter",
+                "label_token_extraction_and_abstention",
+            ],
+            "count": 10,
+        },
+        "integration_depth": {
+            "document_intelligence_bridge": True,
+            "candidate_knowledge_promotion_plan": True,
+            "postgres_repository_implementation": True,
+            "postgres_schema_supplied": True,
+            "postgres_schema_activated": False,
+            "promotion_execution_enabled": False,
+        },
+        "lanes": {
+            "literature": {
+                "state": "document_intelligence_bridge_ready",
+                "available": [
+                    "canonical_source_identity",
+                    "content_hash",
+                    "evidence_spans",
+                    "document_page_adapter",
+                    "document_intelligence_read_only_bridge",
+                    "taxon_identity_resolution",
+                    "confidence",
+                    "contradictions",
+                    "candidate_knowledge_payload",
+                    "candidate_knowledge_promotion_plan",
+                    "disabled_ocr_fail_closed",
+                ],
+                "remaining": [
+                    "configured_ocr_provider",
+                    "production_hassler_taxonomy_adapter",
+                    "real_paper_validation_set",
+                    "owner_approved_candidate_handoff_execution",
+                ],
+            },
+            "matrix": {
+                "state": "versioned_deterministic_engine_ready",
+                "available": [
+                    "versioned_matrix_registry",
+                    "versionable_characters",
+                    "taxon_profiles",
+                    "weighted_scoring",
+                    "missing_data_accounting",
+                    "geography_filter",
+                    "phenology_filter",
+                    "accepted_name_binding",
+                    "per_character_explanations",
+                    "confidence_abstention",
+                ],
+                "remaining": [
+                    "curated_orchid_matrices",
+                    "governed_postgres_activation",
+                    "field_validation_dataset",
+                ],
+            },
+            "vision": {
+                "state": "provider_adapter_and_fixture_pipeline_ready",
+                "available": [
+                    "image_identity",
+                    "license_and_attribution",
+                    "model_provenance",
+                    "plant_part_detections",
+                    "vision_provider_protocol",
+                    "fixture_provider",
+                    "image_to_matrix_observations",
+                    "label_token_extraction",
+                    "confidence_abstention",
+                ],
+                "remaining": [
+                    "configured_live_model_provider",
+                    "flower_structure_model",
+                    "configured_label_ocr",
+                    "verified_image_benchmark",
+                ],
+            },
+        },
+        "safety": {
+            "live_inference_enabled": False,
+            "automatic_species_identification": False,
+            "automatic_candidate_promotion": False,
+            "automatic_publication": False,
+            "taxonomy_activation": False,
+            "production_graph_mutation": False,
+            "unlicensed_media_promotion": False,
+            "human_review_required": True,
+        },
+        "next_human_action": "Owner approval is required before activating Postgres persistence, live providers, Candidate Knowledge execution, or publication.",
+    }
