@@ -18,6 +18,7 @@ from app.calyx_orchestrator.program_models import (
     CalyxProgramJob,
 )
 from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
+from app.calyx_orchestrator.sandbox_authorization import SandboxAuthorization
 from app.calyx_orchestrator.sandboxed_validation_executor import SANDBOXED_VALIDATION_ROLE
 from app.calyx_orchestrator.static_validation_executor import STATIC_VALIDATION_ROLE
 from app.database import Base
@@ -25,6 +26,20 @@ from app.database import Base
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 BRANCH = "autonomy/patch-exec-validation"
 COMMIT = "d" * 40
+POLICY_DIGEST = "e" * 64
+
+
+class TestSandboxSupervisor:
+    def authorize(self, *, workspace_root, repository, branch, marker):
+        assert workspace_root.is_dir()
+        assert repository == REPOSITORY
+        assert branch == BRANCH
+        assert marker["repository_read_only_during_validation"] is True
+        return SandboxAuthorization(
+            authorization_id="integration-auth",
+            evidence_uri="sandbox-supervisor:integration-auth",
+            policy_digest=POLICY_DIGEST,
+        )
 
 
 def _sha(value: bytes) -> str:
@@ -87,6 +102,14 @@ def _workspace(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def _registry(root: Path) -> AuthoritativeExecutorRegistry:
+    return AuthoritativeExecutorRegistry(
+        workspace_root=root,
+        repository_name=REPOSITORY,
+        sandbox_validation_authorizer=TestSandboxSupervisor(),
+    )
 
 
 def test_program_cycle_patch_static_validate_then_run_fixed_pytest_preset(
@@ -176,10 +199,7 @@ def test_program_cycle_patch_static_validate_then_run_fixed_pytest_preset(
             owner="owner",
             worker_id="autonomy-worker",
             max_jobs=6,
-            registry=AuthoritativeExecutorRegistry(
-                workspace_root=root,
-                repository_name=REPOSITORY,
-            ),
+            registry=_registry(root),
         )
 
         assert result.stop_reason == "idle"
@@ -213,18 +233,18 @@ def test_program_cycle_patch_static_validate_then_run_fixed_pytest_preset(
         ]
 
 
-def test_failed_executable_validation_blocks_program_and_does_not_release_success(
+def test_failed_executable_validation_blocks_program(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     root = _workspace(tmp_path)
     target = root / "tests" / "test_autonomous_example.py"
     content = b"def test_value():\n    assert False\n"
     target.write_bytes(content)
-
-    def fake_run(argv, **kwargs):
-        return subprocess.CompletedProcess(argv, 1, b"failed\n", b"")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda argv, **kwargs: subprocess.CompletedProcess(argv, 1, b"failed\n", b""),
+    )
 
     with _db() as db:
         repository = PersistentProgramRepository(db)
@@ -260,12 +280,62 @@ def test_failed_executable_validation_blocks_program_and_does_not_release_succes
             owner="owner",
             worker_id="autonomy-worker",
             max_jobs=2,
-            registry=AuthoritativeExecutorRegistry(
-                workspace_root=root,
-                repository_name=REPOSITORY,
-            ),
+            registry=_registry(root),
         )
         assert result.completed_jobs == 1
         assert result.jobs[0].outcome == "BLOCKED"
         db.refresh(program)
         assert program.status == "blocked"
+
+
+def test_default_registry_will_not_claim_executable_validation_job(tmp_path: Path):
+    root = _workspace(tmp_path)
+    target = root / "tests" / "test_autonomous_example.py"
+    content = b"def test_value():\n    assert True\n"
+    target.write_bytes(content)
+
+    with _db() as db:
+        repository = PersistentProgramRepository(db)
+        program = repository.create_program(
+            owner="owner",
+            title="No supervisor",
+            objective="Executable validation must stay queued without a trusted supervisor.",
+            jobs=(
+                ProgramJobSpec(
+                    "execute-tests",
+                    SANDBOXED_VALIDATION_ROLE,
+                    "Run bounded fixed pytest preset",
+                    REPOSITORY,
+                    BRANCH,
+                    False,
+                    {
+                        "validation": {
+                            "preset": "pytest",
+                            "targets": ["tests/test_autonomous_example.py"],
+                            "expected_sha256": {
+                                "tests/test_autonomous_example.py": _sha(content)
+                            },
+                        }
+                    },
+                ),
+            ),
+            dependencies=(),
+        )
+        repository.start(owner="owner", program_id=program.program_id)
+        result = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="autonomy-worker",
+            max_jobs=2,
+            registry=AuthoritativeExecutorRegistry(
+                workspace_root=root,
+                repository_name=REPOSITORY,
+            ),
+        )
+        assert result.completed_jobs == 0
+        assert result.stop_reason == "idle"
+        job = db.query(CalyxProgramJob).filter(
+            CalyxProgramJob.program_id == program.program_id
+        ).one()
+        assert job.status == "queued"
+        assert job.attempt_count == 0
