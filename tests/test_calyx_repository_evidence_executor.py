@@ -16,6 +16,7 @@ from app.calyx_orchestrator.program_models import (
 )
 from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
 from app.calyx_orchestrator.repository_evidence_executor import (
+    CheckoutIdentity,
     EvidenceTarget,
     REPOSITORY_EVIDENCE_ROLE,
     RepositoryEvidenceExecutor,
@@ -24,6 +25,7 @@ from app.database import Base
 
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
+SECOND_COMMIT_SHA = "89abcdef0123456789abcdef0123456789abcdef"
 
 
 def _workspace(root: Path, *, branch: str = "main") -> None:
@@ -78,6 +80,8 @@ def test_reader_returns_deterministic_hash_metadata_without_contents(tmp_path: P
     assert first.output["requested_branch"] == "main"
     assert first.output["checkout_branch"] == "main"
     assert first.output["checkout_commit_sha"] == COMMIT_SHA
+    assert first.output["checkout_stable_during_scan"] is True
+    assert first.output["worktree_provenance"] == "local_worktree_observation"
     files = first.output["files"]
     assert isinstance(files, list)
     assert [item["path"] for item in files] == ["AGENTS.md", "requirements.txt"]
@@ -145,6 +149,20 @@ def test_reader_fails_closed_for_detached_checkout_when_branch_requested(tmp_pat
     executor = RepositoryEvidenceExecutor(workspace_root=tmp_path, repository_name=REPOSITORY)
     with pytest.raises(PermissionError, match="REPOSITORY_EVIDENCE_REVISION_MISMATCH"):
         executor.execute(_assignment(branch="main"))
+
+
+def test_reader_rejects_checkout_change_during_scan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _workspace(tmp_path)
+    executor = RepositoryEvidenceExecutor(workspace_root=tmp_path, repository_name=REPOSITORY)
+    identities = iter(
+        [
+            CheckoutIdentity(branch="main", commit_sha=COMMIT_SHA),
+            CheckoutIdentity(branch="main", commit_sha=SECOND_COMMIT_SHA),
+        ]
+    )
+    monkeypatch.setattr(executor, "_checkout_identity", lambda: next(identities))
+    with pytest.raises(RuntimeError, match="REPOSITORY_EVIDENCE_CHECKOUT_CHANGED_DURING_SCAN"):
+        executor.execute(_assignment())
 
 
 def test_autonomous_cycle_completes_registered_repository_evidence_job(tmp_path: Path):
