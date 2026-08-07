@@ -1,7 +1,8 @@
 from runtime.brain_gap_diagnostics import BrainGapDiagnostics
 
 
-def test_brain_gap_diagnostics_degrades_without_database():
+def test_brain_gap_diagnostics_degrades_without_database(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     diagnostics = BrainGapDiagnostics(database_url=None)
     payload = diagnostics.status()
 
@@ -36,7 +37,8 @@ def test_brain_gap_coverage_from_tables():
     assert coverage["Images"]["status"] == "not_connected"
 
 
-def test_brain_gap_queue_degraded_mode():
+def test_brain_gap_queue_degraded_mode(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     diagnostics = BrainGapDiagnostics(database_url=None)
     queue = diagnostics.queue(limit=5)
 
