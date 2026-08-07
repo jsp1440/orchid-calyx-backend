@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS calyx_engineering_program_jobs (
     repository VARCHAR(240) NOT NULL,
     branch VARCHAR(240) NULL,
     mutating BOOLEAN NOT NULL DEFAULT FALSE,
+    input_json TEXT NULL,
     work_fingerprint VARCHAR(64) NOT NULL,
     status VARCHAR(40) NOT NULL DEFAULT 'waiting',
     outcome VARCHAR(40) NULL,
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS calyx_engineering_program_jobs (
 );
 
 ALTER TABLE calyx_engineering_program_jobs
+    ADD COLUMN IF NOT EXISTS input_json TEXT NULL,
     ADD COLUMN IF NOT EXISTS lease_owner VARCHAR(240) NULL,
     ADD COLUMN IF NOT EXISTS lease_token VARCHAR(36) NULL,
     ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ NULL,
