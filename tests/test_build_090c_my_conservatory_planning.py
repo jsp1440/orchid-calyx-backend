@@ -20,8 +20,8 @@ from app.design_planning.my_conservatory import (
     SCREEN_NAMES,
     MyConservatoryPlanningDemonstration,
 )
-from app.design_planning.repository import MemoryDesignPlanningRepository
 from app.design_planning.postgres_repository import PostgresDesignPlanningRepository
+from app.design_planning.repository import MemoryDesignPlanningRepository
 from app.design_planning.service import Build089EvidenceAdapter, DesignPlanningService
 
 
