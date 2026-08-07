@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import hashlib
 import json
-from datetime import datetime, timezone
 from typing import Any
 
 import psycopg
@@ -344,56 +344,58 @@ def build_species_exhibit(dsn: str, genus: str, limit: int = 9) -> dict[str, Any
     limit = max(1, min(limit, 24))
     accepted_genus = " ".join(genus.strip().split())
     candidate_limit = min(limit * 4, 96)
-    with psycopg.connect(dsn, row_factory=dict_row, connect_timeout=8) as conn:
-        with conn.cursor() as cur:
+    with (
+        psycopg.connect(dsn, row_factory=dict_row, connect_timeout=8) as conn,
+        conn.cursor() as cur,
+    ):
+        cur.execute(
+            """
+            SELECT t.id, t.scientific_name, t.genus,
+                   COUNT(i.id) AS image_count
+            FROM public.orchid_taxonomy t
+            LEFT JOIN public.orchid_images i
+              ON i.taxonomy_id = t.id
+             AND i.image_url IS NOT NULL
+             AND COALESCE(i.is_duplicate, false) = false
+            WHERE lower(t.genus) = lower(%s)
+            GROUP BY t.id, t.scientific_name, t.genus
+            ORDER BY COUNT(i.id) DESC, t.scientific_name
+            LIMIT %s
+            """,
+            (accepted_genus, candidate_limit),
+        )
+        taxa = [dict(row) for row in cur.fetchall()]
+        items: list[dict[str, Any]] = []
+        seen_taxa: set[str] = set()
+        seen_names: set[str] = set()
+        used_media_urls: set[str] = set()
+        for taxon in taxa:
+            taxon_id = str(taxon["id"])
+            display_name, _ = _split_scientific_name(str(taxon["scientific_name"]))
+            normalized_name = _normalized_name(display_name)
+            if taxon_id in seen_taxa or not normalized_name or normalized_name in seen_names:
+                continue
             cur.execute(
                 """
-                SELECT t.id, t.scientific_name, t.genus,
-                       COUNT(i.id) AS image_count
-                FROM public.orchid_taxonomy t
-                LEFT JOIN public.orchid_images i
-                  ON i.taxonomy_id = t.id
-                 AND i.image_url IS NOT NULL
-                 AND COALESCE(i.is_duplicate, false) = false
-                WHERE lower(t.genus) = lower(%s)
-                GROUP BY t.id, t.scientific_name, t.genus
-                ORDER BY COUNT(i.id) DESC, t.scientific_name
-                LIMIT %s
+                SELECT id, image_url, image_source, image_license,
+                       image_rights_holder, observer_name, gbif_occurrence_key
+                FROM public.orchid_images
+                WHERE taxonomy_id = %s
+                  AND image_url IS NOT NULL
+                  AND COALESCE(is_duplicate, false) = false
+                ORDER BY id
+                LIMIT 5
                 """,
-                (accepted_genus, candidate_limit),
+                (taxon["id"],),
             )
-            taxa = [dict(row) for row in cur.fetchall()]
-            items: list[dict[str, Any]] = []
-            seen_taxa: set[str] = set()
-            seen_names: set[str] = set()
-            used_media_urls: set[str] = set()
-            for taxon in taxa:
-                taxon_id = str(taxon["id"])
-                display_name, _ = _split_scientific_name(str(taxon["scientific_name"]))
-                normalized_name = _normalized_name(display_name)
-                if taxon_id in seen_taxa or not normalized_name or normalized_name in seen_names:
-                    continue
-                cur.execute(
-                    """
-                    SELECT id, image_url, image_source, image_license,
-                           image_rights_holder, observer_name, gbif_occurrence_key
-                    FROM public.orchid_images
-                    WHERE taxonomy_id = %s
-                      AND image_url IS NOT NULL
-                      AND COALESCE(is_duplicate, false) = false
-                    ORDER BY id
-                    LIMIT 5
-                    """,
-                    (taxon["id"],),
-                )
-                media = [dict(row) for row in cur.fetchall()]
-                graph = _graph_rows(cur, taxon_id)
-                item = _build_card(taxon, media, graph, used_media_urls)
-                items.append(item)
-                seen_taxa.add(taxon_id)
-                seen_names.add(normalized_name)
-                if len(items) >= limit:
-                    break
+            media = [dict(row) for row in cur.fetchall()]
+            graph = _graph_rows(cur, taxon_id)
+            item = _build_card(taxon, media, graph, used_media_urls)
+            items.append(item)
+            seen_taxa.add(taxon_id)
+            seen_names.add(normalized_name)
+            if len(items) >= limit:
+                break
     return {
         "contract": CONTRACT,
         "generated_at": datetime.now(timezone.utc).isoformat(),
