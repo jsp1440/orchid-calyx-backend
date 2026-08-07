@@ -28,7 +28,8 @@ def test_build_087b_full_suite_is_explicit_non_blocking_diagnostic_with_database
         "- name: Full backend suite diagnostic (non-blocking baseline debt)", 1
     )[1].split("- name: Scientific interpretation package Ruff diagnostic", 1)[0]
     assert "continue-on-error: true" in diagnostic
-    assert "run: env -u TEST_DATABASE_URL python -m pytest -q" in diagnostic
+    assert "env -u TEST_DATABASE_URL python -m pytest -q" in diagnostic
+    assert "--ignore=tests/calyx_certification/test_deterministic_failure_round2.py" in diagnostic
     assert (
         "DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/"
         "build087_validation"
