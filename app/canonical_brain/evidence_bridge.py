@@ -4,12 +4,13 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from app.calyx_orchestrator.artifact_registry import ArtifactRegistration
 from app.calyx_orchestrator.brain_capture import (
     BrainCandidateRecord,
     BrainCaptureBundle,
     BrainRecordType,
 )
+
+from app.calyx_orchestrator.artifact_registry import ArtifactRegistration
 from app.calyx_orchestrator.review_eligibility import ReviewClass, ReviewRequest
 
 from .orchestration import ExecutionReceipt
