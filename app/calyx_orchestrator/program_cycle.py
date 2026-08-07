@@ -130,7 +130,7 @@ def run_deterministic_program_cycle(
                 lease_token=token,
                 receipt=receipt,
             )
-        except (LookupError, PermissionError, RuntimeError, ValueError) as exc:
+        except (LookupError, PermissionError, RuntimeError, TypeError, ValueError) as exc:
             db.rollback()
             return AutonomousCycleResult(
                 owner=normalized_owner,
