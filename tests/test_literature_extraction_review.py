@@ -2,12 +2,67 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.literature_extraction.models import ReviewDecision
+import pytest
+
+from app.literature_extraction.models import (
+    AnalysisManifest,
+    NormalizedEvidenceRecord,
+    PaperKnowledge,
+    PaperMetadata,
+    Provenance,
+    ReviewDecision,
+    SourceDocument,
+)
 from app.literature_extraction.review import (
     build_review_queue,
     evaluate_publication_decision,
     refresh_publication_decisions,
 )
+
+
+@pytest.fixture
+def sample_paper() -> PaperKnowledge:
+    provenance = Provenance(method="rule_extracted", confidence=0.8, extractor="fixture")
+    return PaperKnowledge(
+        paper_id="paper-review-fixture",
+        source=SourceDocument(
+            content_hash="0" * 64,
+            media_type="application/pdf",
+            original_filename="review-fixture.pdf",
+        ),
+        metadata=PaperMetadata(title="Review fixture"),
+        normalized_evidence_records=[
+            NormalizedEvidenceRecord(
+                record_id="record-1",
+                source_claim_id="claim-1",
+                statement="A specimen was reported from the study locality.",
+                normalized_statement="Specimen reported from study locality.",
+                domain="occurrence",
+                unresolved_entities=["Unresolved orchid"],
+                extraction_confidence=0.9,
+                normalization_confidence=0.7,
+                provenance=provenance,
+            ),
+            NormalizedEvidenceRecord(
+                record_id="record-2",
+                source_claim_id="claim-2",
+                statement="Flowering occurred during the observation period.",
+                normalized_statement="Flowering observed during study period.",
+                domain="trait",
+                canonical_entity_ids=["taxon:fixture"],
+                extraction_confidence=0.9,
+                normalization_confidence=0.9,
+                provenance=provenance,
+            ),
+        ],
+        analysis_manifest=AnalysisManifest(
+            analysis_id="analysis-review-fixture",
+            analysis_version=1,
+            created_at=datetime(2026, 7, 25, tzinfo=timezone.utc),
+            pipeline_version="fixture",
+            status="completed",
+        ),
+    )
 
 
 def test_review_queue_is_deterministic_and_prioritizes_unresolved_entities(sample_paper):
@@ -75,7 +130,8 @@ def test_refresh_publication_decisions_uses_latest_append_only_decision(sample_p
     refresh_publication_decisions(paper)
 
     publication = next(
-        item for item in paper.publication_decisions
+        item
+        for item in paper.publication_decisions
         if item.review_item_id == paper.review_items[0].review_item_id
     )
     assert publication.status == "eligible_for_publication"
