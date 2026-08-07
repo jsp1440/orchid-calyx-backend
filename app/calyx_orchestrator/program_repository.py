@@ -17,6 +17,7 @@ SUCCESSFUL_OUTCOMES = {
     TerminalOutcome.DELIVERED.value,
     TerminalOutcome.NO_OP.value,
 }
+MAX_JOB_INPUT_BYTES = 2_000_000
 
 
 @dataclass(frozen=True)
@@ -27,11 +28,40 @@ class ProgramJobSpec:
     repository: str
     branch: str | None = None
     mutating: bool = False
+    inputs: dict[str, object] | None = None
+
+    @property
+    def serialized_inputs(self) -> str | None:
+        value = self.inputs or {}
+        if not isinstance(value, dict):
+            raise TypeError("PROGRAM_JOB_INPUTS_OBJECT_REQUIRED")
+        if any(not isinstance(key, str) or not key.strip() for key in value):
+            raise ValueError("PROGRAM_JOB_INPUT_KEY_INVALID")
+        try:
+            payload = json.dumps(
+                value,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("PROGRAM_JOB_INPUTS_NOT_CANONICAL_JSON") from exc
+        if len(payload.encode("utf-8")) > MAX_JOB_INPUT_BYTES:
+            raise ValueError("PROGRAM_JOB_INPUTS_TOO_LARGE")
+        return payload if value else None
 
     @property
     def fingerprint(self) -> str:
         payload = "|".join(
-            [self.job_key, self.role_key, self.repository, self.branch or "", "1" if self.mutating else "0"]
+            [
+                self.job_key,
+                self.role_key,
+                self.repository,
+                self.branch or "",
+                "1" if self.mutating else "0",
+                self.serialized_inputs or "{}",
+            ]
         )
         return hashlib.sha256(payload.encode()).hexdigest()
 
@@ -56,6 +86,7 @@ class PersistentProgramRepository:
         keys = [item.job_key for item in specs]
         if len(keys) != len(set(keys)):
             raise ValueError("DUPLICATE_PROGRAM_JOB_KEY")
+        serialized_inputs = {spec.job_key: spec.serialized_inputs for spec in specs}
         program = CalyxProgram(
             owner=owner,
             title=title,
@@ -75,6 +106,7 @@ class PersistentProgramRepository:
                 repository=spec.repository,
                 branch=spec.branch,
                 mutating=spec.mutating,
+                input_json=serialized_inputs[spec.job_key],
                 work_fingerprint=spec.fingerprint,
                 status="waiting",
             )
@@ -253,6 +285,7 @@ class PersistentProgramRepository:
                     "repository": job.repository,
                     "branch": job.branch,
                     "mutating": job.mutating,
+                    **self._input_manifest_metadata(job.input_json),
                     "status": job.status,
                     "outcome": job.outcome,
                     "blocker": job.blocker,
@@ -267,6 +300,30 @@ class PersistentProgramRepository:
                 }
                 for dep in deps
             ],
+        }
+
+    @staticmethod
+    def _input_manifest_metadata(input_json: str | None) -> dict[str, object]:
+        if not input_json:
+            return {
+                "input_manifest_present": False,
+                "input_manifest_sha256": None,
+                "input_manifest_keys": [],
+            }
+        try:
+            value = json.loads(input_json)
+        except json.JSONDecodeError:
+            return {
+                "input_manifest_present": True,
+                "input_manifest_sha256": hashlib.sha256(input_json.encode()).hexdigest(),
+                "input_manifest_keys": [],
+                "input_manifest_invalid": True,
+            }
+        keys = sorted(str(key) for key in value) if isinstance(value, dict) else []
+        return {
+            "input_manifest_present": True,
+            "input_manifest_sha256": hashlib.sha256(input_json.encode()).hexdigest(),
+            "input_manifest_keys": keys,
         }
 
     def _refresh_program_status(self, program_id: str) -> None:
