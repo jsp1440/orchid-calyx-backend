@@ -110,7 +110,3 @@ Large integration branches can obscure validation state. Dependency-ordered slic
 ## Turn disposition
 
 No further implementation should expand feature scope until PR #487 receives repository-side workflow approval and authoritative CI evidence. The correct next action is administrative approval, followed by Slice 1 CI review and a controlled restack of Slice 2.
-
-## Metadata synchronization
-
-The pull-request conversations are being updated to mirror this record and remove obsolete references to closed issue #481.
