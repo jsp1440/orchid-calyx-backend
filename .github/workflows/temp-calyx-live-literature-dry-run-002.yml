@@ -1,0 +1,68 @@
+name: TEMP Calyx Live Literature Dry Run 002
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/temp-calyx-live-literature-dry-run-002.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  literature-staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+      CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+      CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
+      CALYX_BOUNDED_DRY_RUN_DOMAIN: literature
+      CALYX_BOUNDED_DRY_RUN_EVIDENCE_PATH: literature-pass1.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Validate protected configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CALYX_BACKEND_URL:?CALYX_BACKEND_URL required}"
+          : "${CALYX_OWNER_ACCESS_CODE:?CALYX_OWNER_ACCESS_CODE required}"
+      - name: Run exactly one bounded literature staging step
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/run_bounded_resumable_graph_dry_run.py | tee literature-pass1.txt
+      - name: Summarize bounded evidence
+        run: |
+          python - <<'PY'
+          import json
+          data = json.load(open("literature-pass1.json", encoding="utf-8"))
+          report = data.get("report") or {}
+          session = report.get("session") or data.get("session") or {}
+          summary = {
+              "run_id": session.get("run_id"),
+              "domain": data.get("domain"),
+              "status": session.get("status"),
+              "next_action": (report.get("progress") or {}).get("next_action"),
+              "known_source_rows": (report.get("progress") or {}).get("known_source_rows"),
+              "staging_counts": report.get("staging_counts"),
+              "zero_delta": report.get("zero_delta"),
+              "validation_healthy": (report.get("validation") or {}).get("healthy"),
+              "total_problems": (report.get("validation") or {}).get("total_problems"),
+              "production_graph_mutation": data.get("production_graph_mutation"),
+              "publication_endpoint_invoked": data.get("publication_endpoint_invoked"),
+          }
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
+      - name: Upload literature staging evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: temp-calyx-live-literature-002-${{ github.run_id }}
+          path: |
+            literature-pass1.json
+            literature-pass1.txt
+          if-no-files-found: warn
+          retention-days: 7
