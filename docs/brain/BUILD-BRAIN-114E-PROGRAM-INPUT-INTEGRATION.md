@@ -70,8 +70,22 @@ Authoritative successful runs obtained during recovery include:
 - BUILD-BRAIN-114D run `31209921587`: passed.
 - BUILD-BRAIN-114A and BUILD-BRAIN-108-113A also passed on the integration lineage during recovery.
 
-A final synchronized validation wave is required on the current 114E head. Merge, deployment, publication, taxonomy activation, production database mutation, and production Knowledge Graph mutation remain unauthorized.
+### Final synchronized head
+
+Current validated head: `b58808adef3ca66c0447de7977ee6ec929fac921`.
+
+All triggered validation workflows completed successfully on this same synchronized head:
+
+- BUILD-BRAIN-114B Validation — run `31210354402`
+- BUILD-BRAIN-114C Validation — run `31210354423`
+- BUILD-BRAIN-114D Validation — run `31210355616`
+- BUILD-BRAIN-114E Validation — run `31210354755`
+- BUILD-BRAIN-114A Validation — run `31210354411`
+- BUILD-BRAIN-108-113A Validation — run `31210355015`
+- CALYX-AGENT-003 Validation — run `31210354468`
+
+This establishes one coherent, executable CI-green autonomous-engineering integration head after runner recovery and ancestor synchronization. Merge, deployment, publication, taxonomy activation, production database mutation, and production Knowledge Graph mutation remain unauthorized.
 
 ## Next milestone
 
-First reconcile this now-validated autonomy surface with current `main` without overwriting newer mainline work. After that consolidation is green, the next safe autonomy milestone is a sandboxed executable validation adapter with a fixed command profile, network isolation, no credentials, output/time/resource ceilings, and explicit repository-code-execution receipts. Only after that validator is proven should Calyx gain a separate governed commit/PR-proposal capability. Merge and deployment authority remain human-governed.
+First reconcile this now-validated autonomy surface with current `main` without overwriting newer mainline work. A clean consolidation branch, `feature/brain-114f-current-main-consolidation`, has been created from current `main` for that purpose. After that consolidation is green, the next safe autonomy milestone is a sandboxed executable validation adapter with a fixed command profile, network isolation, no credentials, output/time/resource ceilings, and explicit repository-code-execution receipts. Only after that validator is proven should Calyx gain a separate governed commit/PR-proposal capability. Merge and deployment authority remain human-governed.
