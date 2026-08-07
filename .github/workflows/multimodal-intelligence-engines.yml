@@ -81,7 +81,8 @@ jobs:
 
           text = Path("docs/brain/CALYX-MULTIMODAL-INTELLIGENCE-2026-08-07.md").read_text()
           assert "Human review remains the mandatory boundary" in text
-          assert "PR: #417" in text
+          assert "PR: #571" in text
+          assert "HUMAN_REVIEW_OWNER_SESSION_REQUIRED" in text
           PY
       - name: Route smoke
         run: |
