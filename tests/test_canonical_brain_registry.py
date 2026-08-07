@@ -3,7 +3,12 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from app.canonical_brain import BrainObject, BrainRelationship, CanonicalBrainRegistry, build_canonical_brain_fixture
+from app.canonical_brain import (
+    BrainObject,
+    BrainRelationship,
+    CanonicalBrainRegistry,
+    build_canonical_brain_fixture,
+)
 
 
 def test_search_and_intent_alignment_are_deterministic():
@@ -25,26 +30,40 @@ def test_registry_is_idempotent_and_rejects_conflicts():
 def test_relationships_require_registered_endpoints():
     registry = CanonicalBrainRegistry()
     with pytest.raises(ValueError):
-        registry.register_relationship(BrainRelationship(
-            relationship_id="rel:test",
-            subject_id="architecture:first",
-            relationship_type="depends_on",
-            object_id="architecture:second",
-            rationale="Endpoints must exist first.",
-            source_uri="test://relationship",
-        ))
+        registry.register_relationship(
+            BrainRelationship(
+                relationship_id="rel:test",
+                subject_id="architecture:first",
+                relationship_type="depends_on",
+                object_id="architecture:second",
+                rationale="Endpoints must exist first.",
+                source_uri="test://relationship",
+            )
+        )
 
 
 def test_alias_and_supersession_validation():
-    common = dict(
-        object_type="architecture",
-        summary="Architecture test record.",
-        tags=[],
-        source_uri="test://object",
-        content_checksum="a" * 64,
-        created_at=datetime.now(timezone.utc),
-    )
+    common = {
+        "object_type": "architecture",
+        "summary": "Architecture test record.",
+        "tags": [],
+        "source_uri": "test://object",
+        "content_checksum": "a" * 64,
+        "created_at": datetime.now(timezone.utc),
+    }
     with pytest.raises(ValidationError):
-        BrainObject(object_id="architecture:aliases", title="Aliases", aliases=["Atlas", "atlas"], lifecycle="approved", **common)
+        BrainObject(
+            object_id="architecture:aliases",
+            title="Aliases",
+            aliases=["Atlas", "atlas"],
+            lifecycle="approved",
+            **common,
+        )
     with pytest.raises(ValidationError):
-        BrainObject(object_id="architecture:old", title="Old architecture", aliases=[], lifecycle="superseded", **common)
+        BrainObject(
+            object_id="architecture:old",
+            title="Old architecture",
+            aliases=[],
+            lifecycle="superseded",
+            **common,
+        )
