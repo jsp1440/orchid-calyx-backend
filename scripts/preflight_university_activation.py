@@ -24,43 +24,18 @@ from scripts.validate_university_release_evidence import (
 
 REQUIRED_COLUMNS: dict[str, set[str]] = {
     "lab_sessions": {
-        "session_id",
-        "laboratory_id",
-        "chapter_id",
-        "learner_actor",
-        "status",
-        "current_stage",
-        "revision",
-        "publication_allowed",
-        "automatic_candidate_knowledge",
-        "human_review_required",
-        "created_at",
-        "updated_at",
+        "session_id", "laboratory_id", "chapter_id", "learner_actor", "status",
+        "current_stage", "revision", "publication_allowed",
+        "automatic_candidate_knowledge", "human_review_required", "created_at", "updated_at",
     },
     "session_events": {
-        "event_id",
-        "session_id",
-        "sequence_no",
-        "event_type",
-        "stage",
-        "payload",
-        "actor",
-        "session_revision",
-        "created_at",
+        "event_id", "session_id", "sequence_no", "event_type", "stage", "payload",
+        "actor", "session_revision", "created_at",
     },
     "session_reviews": {
-        "review_id",
-        "session_id",
-        "reviewer_actor",
-        "reviewer_capability",
-        "reviewer_roles",
-        "reviewer_qualifications",
-        "decision",
-        "notes",
-        "reviewed_revision",
-        "candidate_knowledge_promoted",
-        "publication_performed",
-        "created_at",
+        "review_id", "session_id", "reviewer_actor", "reviewer_capability",
+        "reviewer_roles", "reviewer_qualifications", "decision", "notes",
+        "reviewed_revision", "candidate_knowledge_promoted", "publication_performed", "created_at",
     },
 }
 
@@ -136,6 +111,9 @@ def _reviewer_registry_state() -> dict[str, Any]:
             "configured": True,
             "valid": False,
             "subject_count": 0,
+            "science_grant_count": 0,
+            "expert_grant_count": 0,
+            "publication_grant_count": 0,
             "error": getattr(exc, "code", str(exc)),
         }
 
@@ -156,7 +134,6 @@ def _database_state(database_url: str | None) -> dict[str, Any]:
             found: dict[str, set[str]] = {name: set() for name in REQUIRED_COLUMNS}
             for row in cur.fetchall():
                 found[str(row["table_name"])].add(str(row["column_name"]))
-
             cur.execute(
                 """
                 SELECT pg_get_constraintdef(c.oid) AS definition
@@ -165,25 +142,16 @@ def _database_state(database_url: str | None) -> dict[str, Any]:
                 WHERE n.nspname='oc_university'
                 """
             )
-            constraint_text = "\n".join(
-                str(row["definition"]).lower() for row in cur.fetchall()
-            )
-    except Exception as exc:  # operational diagnostic; never mutates the DB
-        return {
-            "configured": True,
-            "reachable": False,
-            "schema_valid": False,
-            "error": str(exc),
-        }
+            constraint_text = "\n".join(str(row["definition"]).lower() for row in cur.fetchall())
+    except Exception as exc:
+        return {"configured": True, "reachable": False, "schema_valid": False, "error": str(exc)}
 
     missing_columns = {
         table: sorted(required - found.get(table, set()))
         for table, required in REQUIRED_COLUMNS.items()
         if required - found.get(table, set())
     }
-    missing_constraints = [
-        fragment for fragment in REQUIRED_CONSTRAINT_FRAGMENTS if fragment not in constraint_text
-    ]
+    missing_constraints = [fragment for fragment in REQUIRED_CONSTRAINT_FRAGMENTS if fragment not in constraint_text]
     return {
         "configured": True,
         "reachable": True,
@@ -235,6 +203,8 @@ def preflight(*, release_evidence: Path | None = None, database_url: str | None 
         blockers.append("oc_university durable schema is incomplete or unsafe")
     if not reviewer_registry["valid"]:
         blockers.append("reviewer qualification registry is invalid")
+    elif int(reviewer_registry.get("science_grant_count", 0)) < 1:
+        blockers.append("no qualified scientific reviewer is assigned for learner submissions")
 
     return {
         "contract": "OCU-SCI-009H-PREFLIGHT-001",
