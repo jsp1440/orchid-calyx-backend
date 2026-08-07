@@ -97,8 +97,13 @@ def _confidence(graph: list[dict[str, Any]]) -> dict[str, Any]:
     scored: list[tuple[float, dict[str, Any]]] = []
     for row in graph:
         value = row.get("confidence_score")
-        if isinstance(value, (int, float)):
-            scored.append((float(value), row))
+        if value is None or isinstance(value, bool):
+            continue
+        try:
+            score = float(value)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        scored.append((score, row))
     if not scored:
         return {
             "state": "unavailable",
@@ -195,11 +200,11 @@ def _evidence_receipt(
 
 def _graph_rows(cur, taxon_id: str) -> list[dict[str, Any]]:
     cur.execute(
-        "SELECT to_regclass('oc_graph.kg_nodes') IS NOT NULL, "
-        "to_regclass('oc_graph.kg_edges') IS NOT NULL"
+        "SELECT to_regclass('oc_graph.kg_nodes') IS NOT NULL AS nodes_present, "
+        "to_regclass('oc_graph.kg_edges') IS NOT NULL AS edges_present"
     )
     present = cur.fetchone()
-    if not present or not all(present.values()):
+    if not present or not present["nodes_present"] or not present["edges_present"]:
         return []
     cur.execute(
         """
