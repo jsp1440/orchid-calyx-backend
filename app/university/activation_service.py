@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.mission_control_access import AccessPrincipal, Capability, CapabilityService
+
 from .durable_config import durable_sessions_enabled
 from .durable_repository import (
     DurableUniversityError,
@@ -37,6 +39,14 @@ _DURABLE_ERROR_STATUS = {
     "REVIEW_CREATE_FAILED": 500,
     "SESSION_CREATE_FAILED": 500,
 }
+_REVIEW_CAPABILITIES = CapabilityService()
+_SCIENTIFIC_REVIEW_QUALIFICATIONS = frozenset(
+    {
+        "qualified.science-reviewer",
+        "qualified.expert-reviewer",
+        "qualified.publication-reviewer",
+    }
+)
 
 
 def _translate(exc: DurableUniversityError) -> UniversityServiceError:
@@ -71,6 +81,43 @@ def _session_to_api(row: dict[str, Any]) -> LabSession:
         revision=int(row["revision"]),
         events=[_event_to_api(event) for event in row.get("events", [])],
     )
+
+
+def _required_review_capability(decision: str) -> str:
+    if decision == "approved_for_candidate_knowledge_consideration":
+        return Capability.REVIEW_EXPERT.value
+    return Capability.REVIEW_SCIENCE.value
+
+
+def qualified_reviewer_context(
+    principal: AccessPrincipal,
+    decision: str,
+) -> dict[str, object]:
+    """Return auditable reviewer authorization or fail closed.
+
+    Administrative/API-key status is intentionally insufficient. The principal must
+    hold an active scientific-review qualification and the capability appropriate to
+    the requested decision.
+    """
+    required_capability = _required_review_capability(decision)
+    scientific_qualifications = tuple(
+        qualification
+        for qualification in principal.qualifications
+        if qualification in _SCIENTIFIC_REVIEW_QUALIFICATIONS
+    )
+    capability_decision = _REVIEW_CAPABILITIES.evaluate(principal, required_capability)
+    if not scientific_qualifications or not capability_decision.allowed:
+        raise UniversityServiceError(
+            "REVIEWER_QUALIFICATION_REQUIRED",
+            403,
+            f"University review decision requires qualified capability {required_capability}",
+        )
+    return {
+        "principal_id": principal.principal_id,
+        "capability": required_capability,
+        "roles": tuple(role.value for role in principal.roles),
+        "qualifications": scientific_qualifications,
+    }
 
 
 class UniversityActivationService:
@@ -179,8 +226,7 @@ class UniversityActivationService:
     def review_session(
         cls,
         session_id: str,
-        reviewer_actor: str,
-        privileged: bool,
+        reviewer_principal: AccessPrincipal,
         payload: SessionReviewCreate,
     ) -> dict[str, Any]:
         if not durable_sessions_enabled():
@@ -189,14 +235,14 @@ class UniversityActivationService:
                 403,
                 "Human review is available only after verified durable-session activation",
             )
-        if not privileged:
-            raise UniversityServiceError(
-                "REVIEWER_PRIVILEGE_REQUIRED", 403, "Instructor review requires privileged authorization"
-            )
+        reviewer = qualified_reviewer_context(reviewer_principal, payload.decision)
         try:
             review = durable_record_review(
                 session_id=session_id,
-                reviewer_actor=reviewer_actor,
+                reviewer_actor=str(reviewer["principal_id"]),
+                reviewer_capability=str(reviewer["capability"]),
+                reviewer_roles=tuple(reviewer["roles"]),
+                reviewer_qualifications=tuple(reviewer["qualifications"]),
                 reviewed_revision=payload.reviewed_revision,
                 decision=payload.decision,
                 notes=payload.notes,
@@ -205,6 +251,9 @@ class UniversityActivationService:
                 "review_id": str(review["review_id"]),
                 "session_id": str(review["session_id"]),
                 "reviewer_actor": review["reviewer_actor"],
+                "reviewer_capability": review["reviewer_capability"],
+                "reviewer_roles": review.get("reviewer_roles") or [],
+                "reviewer_qualifications": review.get("reviewer_qualifications") or [],
                 "decision": review["decision"],
                 "notes": review.get("notes"),
                 "reviewed_revision": int(review["reviewed_revision"]),
