@@ -72,4 +72,5 @@ def test_cancellation_receipt_is_deterministic() -> None:
 def test_naive_timestamps_fail_closed() -> None:
     manager = ExecutionLeaseManager()
     with pytest.raises(ValueError, match="timezone-aware"):
-        manager.acquire(_assignment(), "worker-1", datetime(2026, 8, 6))
+        naive_timestamp = datetime(2026, 8, 6, tzinfo=timezone.utc).replace(tzinfo=None)
+        manager.acquire(_assignment(), "worker-1", naive_timestamp)

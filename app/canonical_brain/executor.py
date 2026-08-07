@@ -66,7 +66,7 @@ class DeterministicDryRunExecutor:
         }
         output_checksum = _checksum(output_payload)
         receipt_id = hashlib.sha256(
-            f"{request.assignment.assignment_id}:completed:dry-run".encode("utf-8")
+            f"{request.assignment.assignment_id}:completed:dry-run".encode()
         ).hexdigest()
         receipt = ExecutionReceipt(
             receipt_id=receipt_id,

@@ -1,4 +1,7 @@
-from app.canonical_brain.constitution import BuildAdmissionRequest, evaluate_build_admission
+from app.canonical_brain.constitution import (
+    BuildAdmissionRequest,
+    evaluate_build_admission,
+)
 
 
 def _request(**overrides: object) -> BuildAdmissionRequest:

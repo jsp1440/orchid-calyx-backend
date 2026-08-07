@@ -5,7 +5,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .constitution import BuildAdmissionDecision, BuildAdmissionRequest, evaluate_build_admission
+from .constitution import (
+    BuildAdmissionDecision,
+    BuildAdmissionRequest,
+    evaluate_build_admission,
+)
 
 
 class StrictModel(BaseModel):

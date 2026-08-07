@@ -9,17 +9,33 @@ from .constitution import (
     BuildAdmissionRequest,
     evaluate_build_admission,
 )
-from .executor import DeterministicDryRunExecutor, ExecutionRequest, ExecutionResult, ExecutorAdapter
+from .executor import (
+    DeterministicDryRunExecutor,
+    ExecutionRequest,
+    ExecutionResult,
+    ExecutorAdapter,
+)
 from .fixtures import build_canonical_brain_fixture
 from .handoff import BrainCaptureBundle, BrainCaptureResult, capture_build_bundle
-from .leases import CancellationReceipt, ExecutionLease, ExecutionLeaseManager, RecoveryDecision
+from .leases import (
+    CancellationReceipt,
+    ExecutionLease,
+    ExecutionLeaseManager,
+    RecoveryDecision,
+)
 from .mission_control import BrainMissionControlStatus, build_mission_control_status
 from .models import BrainObject, BrainRelationship, BrainSnapshot, SearchHit
-from .orchestration import AgentDescriptor, BuildAssignment, ExecutionReceipt, GovernedOrchestrator
+from .orchestration import (
+    AgentDescriptor,
+    BuildAssignment,
+    ExecutionReceipt,
+    GovernedOrchestrator,
+)
 from .persistence import BrainSnapshotRepository, JsonBrainSnapshotRepository
 from .registry import CanonicalBrainRegistry
 
 __all__ = [
+    "CONSTITUTION_VERSION",
     "AdmissionFinding",
     "AgentDescriptor",
     "BrainCaptureBundle",
@@ -34,7 +50,6 @@ __all__ = [
     "BuildAssignment",
     "BuildQueueItem",
     "BuildQueueSnapshot",
-    "CONSTITUTION_VERSION",
     "CancellationReceipt",
     "CanonicalBrainRegistry",
     "DeterministicDryRunExecutor",
