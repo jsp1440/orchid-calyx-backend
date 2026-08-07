@@ -16,10 +16,13 @@ Record the implemented state of the Literature Intelligence, Matrix Identificati
 - canonical source identity and SHA-256 content identity;
 - evidence-span-bound claims;
 - deterministic document-page ingestion contract;
+- read-only adapter from completed Document Intelligence records and extraction runs;
+- fail-closed handling of incomplete runs, revision mismatch, and missing text;
 - fail-closed OCR adapter boundary;
 - accepted-name and synonym-aware taxonomy resolution contract;
 - Candidate Knowledge payload planning;
-- human-review approval required before any promotion plan;
+- protected non-executing Candidate Knowledge promotion-plan endpoint;
+- human-review approval required before a promotion plan can become eligible;
 - publication remains disabled.
 
 ### Matrix Identification
@@ -43,18 +46,20 @@ Record the implemented state of the Literature Intelligence, Matrix Identificati
 - unsupported near-certain confidence rejected;
 - autonomous species publication disabled.
 
-## Operator and governance layer
+## Operator, persistence, and governance layer
 
 - protected Mission Control status and configuration routes;
 - deterministic idempotent operation fingerprints;
 - swappable operation repository contract;
-- in-memory repository for non-production validation;
+- in-memory repository for deterministic validation;
+- inert `PostgresOperationRepository` requiring an explicitly supplied connection factory;
+- inactive Postgres schema supplied for later governed migration;
 - human-review queue with pagination and filtering;
 - approve/request-revision/reject transitions;
 - audit export and per-operation provenance bundles;
 - deterministic benchmark case registry;
 - non-executing Candidate Knowledge promotion plans;
-- inactive Postgres schema supplied for later governed migration.
+- no credentials read and no database connections opened at import or construction time.
 
 ## Safety state
 
@@ -62,6 +67,7 @@ The following remain disabled by design:
 
 - live production AI.Vision inference;
 - OCR provider activation;
+- Postgres schema activation;
 - automatic Candidate Knowledge execution;
 - scientific publication;
 - taxonomy activation;
@@ -70,20 +76,22 @@ The following remain disabled by design:
 
 ## Validation strategy
 
-The lane uses fixture-backed deterministic tests and CI covering compile, Ruff, scientific contracts, Matrix scoring, Vision licensing, abstention, operator review behavior, route mounting, provenance, and promotion gates. The full Mission Control router is mounted in `app.main` through the health router.
+The lane uses fixture-backed deterministic tests and CI covering compile, Ruff, scientific contracts, Matrix scoring, Vision licensing, abstention, operator review behavior, route mounting, provenance, promotion gates, persistence construction, and the Document Intelligence bridge. The full Mission Control router is mounted in `app.main` through the health router.
+
+GitHub Actions experienced runner-level failures on 2026-08-07 in which multiple unrelated workflows ended with zero executable steps and no retrievable job log. These are treated as external CI infrastructure failures, not passing or failing code evidence. The lane must obtain a normal executable CI run before being described as CI-green.
 
 ## Remaining production dependencies
 
-1. Governed activation of Postgres persistence migration.
-2. Real PDF/document adapter binding to Document Intelligence.
-3. OCR provider selection and credentials through approved secret management.
+1. Governed activation of the Postgres persistence migration and repository selection.
+2. OCR provider selection and credentials through approved secret management.
+3. Binding taxonomy resolution to the production Hassler/World Plants release service.
 4. Live AI.Vision provider selection and benchmark certification.
 5. Curated, version-controlled orchid character matrices at useful taxonomic breadth.
-6. Binding taxonomy resolution to the production Hassler/World Plants release service.
-7. Real-world orchid image and literature benchmark sets.
-8. Mission Control frontend panels for review, provenance, and candidate comparisons.
-9. Explicit owner approval before Candidate Knowledge handoff execution.
-10. Separate publication approval before any Knowledge Graph mutation.
+6. Real-world orchid image and literature benchmark sets.
+7. Mission Control frontend panels for review, provenance, and candidate comparisons.
+8. Explicit owner approval before Candidate Knowledge handoff execution.
+9. Separate publication approval before any Knowledge Graph mutation.
+10. Normal GitHub Actions runner execution proving the complete focused suite and route smoke.
 
 ## Governance conclusion
 
