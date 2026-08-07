@@ -31,10 +31,12 @@ BUILD-BRAIN-114I already requires a trusted `SandboxValidationAuthorizer` before
 
 BUILD-BRAIN-114J supplies an executable proof pattern for the external runtime controls that such an authorizer must enforce. It does not yet wire a production service to issue authorizations automatically.
 
+## Validation evidence
+
+GitHub-hosted run `31225128294` completed successfully on 2026-08-07. The workflow executed checkout, Python compilation of the verifier, the Docker-isolated runtime proof, and diff hygiene. The isolated-runtime step passed with network disabled, repository/root writes blocked, credentials absent, all capabilities dropped, `no-new-privileges` enforced, and an unprivileged runtime identity.
+
 ## Remaining boundary
 
 A production supervisor still needs durable authorization issuance/evidence plumbing and deployment outside the repository process. The repository may not self-authorize based solely on this workflow or a marker file.
 
 No arbitrary shell/argv acceptance, package installation inside the sandbox, network, credentials, Git mutation, autonomous PR creation, merge, deployment, scientific publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation is authorized.
-
-Validation must be obtained from the dedicated `BUILD-BRAIN-114J Sandbox Supervisor Validation` workflow on the exact PR head before this record is considered complete.
