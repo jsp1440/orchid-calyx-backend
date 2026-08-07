@@ -65,12 +65,6 @@ class PostgresDesignPlanningRepository:
                 return self._hydrate(kind, existing[0])
             try:
                 cur.execute(
-                    f"SELECT payload FROM design_planning.{table} WHERE integrity_hash=%s",
-                    (digest,),
-                )
-                if existing := cur.fetchone():
-                    return self._hydrate(kind, existing[0])
-                cur.execute(
                     f"INSERT INTO design_planning.{table} (artifact_id, logical_key, version, integrity_hash, payload) VALUES (%s,%s,%s,%s,%s)",
                     (
                         identity,
