@@ -62,7 +62,7 @@ class AttestationEvaluation:
 def _parse_timestamp(value: str, label: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
+    except (AttributeError, ValueError) as exc:
         raise ValueError(f"{label} must be an ISO-8601 timestamp") from exc
     if parsed.tzinfo is None:
         raise ValueError(f"{label} must include a timezone")
@@ -75,6 +75,8 @@ def _canonical_digest(payload: dict[str, Any]) -> str:
 
 
 def _validate_gate_metadata(item: GateAttestation) -> None:
+    if item.metadata is not None and not isinstance(item.metadata, dict):
+        raise ValueError(f"metadata must be an object: {item.gate}")
     metadata = item.metadata or {}
     if item.gate == "ci_validation":
         for key in ("repository", "commit_sha", "workflow_run_id"):
@@ -97,7 +99,7 @@ def _validate_gate_metadata(item: GateAttestation) -> None:
         thresholds = metadata.get("thresholds_percent")
         if not isinstance(thresholds, list) or not thresholds:
             raise ValueError("budget_alerts metadata requires thresholds_percent")
-        if any(not isinstance(value, (int, float)) or not 0 < value <= 100 for value in thresholds):
+        if any(not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 < value <= 100 for value in thresholds):
             raise ValueError("budget alert thresholds must be numbers in (0, 100]")
     elif item.gate == "microsoft_architecture_review":
         for key in ("review_reference", "reviewer_organization", "review_outcome"):
@@ -107,10 +109,27 @@ def _validate_gate_metadata(item: GateAttestation) -> None:
             raise ValueError("unsupported architecture review outcome")
 
 
+def _construct_attestation(raw: dict[str, Any]) -> GateAttestation:
+    fields = set(GateAttestation.__dataclass_fields__)
+    required = {name for name, item in GateAttestation.__dataclass_fields__.items() if item.default is item.default_factory}
+    unknown = sorted(set(raw) - fields)
+    if unknown:
+        raise ValueError(f"unknown attestation fields: {', '.join(unknown)}")
+    missing = sorted(required - set(raw))
+    if missing:
+        raise ValueError(f"missing attestation fields: {', '.join(missing)}")
+    try:
+        return GateAttestation(**raw)
+    except TypeError as exc:
+        raise ValueError(f"invalid attestation structure: {exc}") from exc
+
+
 def load_and_evaluate(path: Path, *, now: datetime | None = None) -> AttestationEvaluation:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("attestation register must be a JSON object")
+    if set(payload) - {"schema_version", "attestations"}:
+        raise ValueError("attestation register contains unknown top-level fields")
     if payload.get("schema_version") != ATTESTATION_SCHEMA_VERSION:
         raise ValueError("unsupported attestation schema version")
     raw_items = payload.get("attestations")
@@ -126,10 +145,7 @@ def load_and_evaluate(path: Path, *, now: datetime | None = None) -> Attestation
     for raw in raw_items:
         if not isinstance(raw, dict):
             raise ValueError("each attestation must be a JSON object")
-        unknown = sorted(set(raw) - set(GateAttestation.__dataclass_fields__))
-        if unknown:
-            raise ValueError(f"unknown attestation fields: {', '.join(unknown)}")
-        item = GateAttestation(**raw)
+        item = _construct_attestation(raw)
         if item.gate not in GATES:
             raise ValueError(f"unknown readiness gate: {item.gate}")
         if item.gate in seen:
@@ -137,6 +153,8 @@ def load_and_evaluate(path: Path, *, now: datetime | None = None) -> Attestation
         seen.add(item.gate)
         if item.status not in {"verified", "rejected", "pending"}:
             raise ValueError(f"invalid attestation status for {item.gate}")
+        if not all(isinstance(value, str) for value in (item.evidence_id, item.issuer, item.issued_at, item.evidence_sha256, item.scope)):
+            raise ValueError(f"attestation text fields must be strings: {item.gate}")
         if not item.evidence_id.strip() or not item.issuer.strip() or not item.scope.strip():
             raise ValueError(f"attestation identity fields may not be empty: {item.gate}")
         if not SHA256_RE.fullmatch(item.evidence_sha256.casefold()):
