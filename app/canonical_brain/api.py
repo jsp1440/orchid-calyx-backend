@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from .constitution import (
+    CONSTITUTION_VERSION,
+    BuildAdmissionDecision,
+    BuildAdmissionRequest,
+    evaluate_build_admission,
+)
 from .fixtures import build_canonical_brain_fixture
 from .models import BrainObject, BrainSnapshot, SearchHit
 from .registry import CanonicalBrainRegistry
@@ -18,6 +24,7 @@ def create_brain_router(registry: CanonicalBrainRegistry | None = None) -> APIRo
             "mode": "read-only-candidate",
             "write_enabled": False,
             "publication_enabled": False,
+            "constitution_version": CONSTITUTION_VERSION,
             "object_count": len(snapshot.objects),
             "relationship_count": len(snapshot.relationships),
             "snapshot_checksum": snapshot.snapshot_checksum,
@@ -45,6 +52,10 @@ def create_brain_router(registry: CanonicalBrainRegistry | None = None) -> APIRo
         if brain.get(object_id) is None:
             raise HTTPException(status_code=404, detail="Brain object not found")
         return brain.aligned_intents(object_id)
+
+    @router.post("/admission/evaluate", response_model=BuildAdmissionDecision)
+    def admission_evaluate(request: BuildAdmissionRequest) -> BuildAdmissionDecision:
+        return evaluate_build_admission(request)
 
     @router.get("/snapshot", response_model=BrainSnapshot)
     def snapshot() -> BrainSnapshot:
