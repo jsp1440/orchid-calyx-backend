@@ -64,6 +64,7 @@ class RegisteredExecutor:
     authoritative: bool
     external_side_effects: bool
     workspace_mutation: bool = False
+    repository_code_execution: bool = False
 
 
 class AuthoritativeExecutorRegistry:
@@ -132,6 +133,7 @@ class AuthoritativeExecutorRegistry:
                     "authoritative": registered.authoritative,
                     "external_side_effects": registered.external_side_effects,
                     "workspace_mutation": registered.workspace_mutation,
+                    "repository_code_execution": registered.repository_code_execution,
                 }
                 for registered in sorted(self._by_role.values(), key=lambda item: item.role_key)
             ],
