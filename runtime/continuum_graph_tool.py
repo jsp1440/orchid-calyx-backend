@@ -11,7 +11,14 @@ from __future__ import annotations
 import os
 from typing import Any, Protocol
 
-from runtime.knowledge_graph import GraphRepository, PostgresGraphRepository, canonical_key, traverse
+import psycopg
+
+from runtime.knowledge_graph import (
+    GraphRepository,
+    PostgresGraphRepository,
+    canonical_key,
+    traverse,
+)
 
 GRAPH_TOOL_SCHEMA_VERSION = "calyx-knowledge-graph-read/v1"
 
@@ -80,7 +87,7 @@ class ReadOnlyKnowledgeGraphTool:
                     reason="TAXON_NOT_FOUND_IN_GRAPH",
                 )
             traversal = traverse(repo, focal, depth=int(depth), limit=int(limit), offset=0)
-        except Exception as exc:
+        except psycopg.Error as exc:
             return self._status(
                 "unavailable",
                 taxon_id=normalized,
@@ -130,5 +137,10 @@ class ReadOnlyKnowledgeGraphTool:
             "domain_coverage": {},
             "data_gaps": [],
             "graph": {"depth": 0, "node_count": 0, "edge_count": 0},
-            "pagination": {"limit": 0, "offset": 0, "truncated": False, "next_offset": None},
+            "pagination": {
+                "limit": 0,
+                "offset": 0,
+                "truncated": False,
+                "next_offset": None,
+            },
         }
