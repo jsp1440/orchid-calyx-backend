@@ -25,10 +25,10 @@ def _default_store() -> WorldPlantsReleaseStore:
     return WorldPlantsReleaseStore(_intake_root(), max_upload_bytes=limit)
 
 
-def _default_staging_store() -> Any:
-    from runtime.world_plants_staging import PostgresWorldPlantsStagingStore
+def _default_durable_store() -> Any:
+    from runtime.world_plants_durable_intake import PostgresWorldPlantsIntakeStore
 
-    return PostgresWorldPlantsStagingStore()
+    return PostgresWorldPlantsIntakeStore()
 
 
 def _default_migration_preflight() -> dict[str, Any]:
@@ -44,10 +44,26 @@ def _default_migration_preflight() -> dict[str, Any]:
         ) from exc
 
 
+def _try_durable_store(factory: Callable[[], Any]) -> Any | None:
+    """Return durable intake when available; fail open only to legacy local intake."""
+    try:
+        return factory()
+    except (ModuleNotFoundError, ValueError, RuntimeError):
+        return None
+    except Exception as exc:
+        try:
+            from sqlalchemy.exc import SQLAlchemyError
+        except ModuleNotFoundError:
+            return None
+        if isinstance(exc, SQLAlchemyError):
+            return None
+        raise
+
+
 def create_taxonomy_release_router(
     get_store: Callable[[], WorldPlantsReleaseStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
-    get_staging_store: Callable[[], Any] = _default_staging_store,
+    get_durable_store: Callable[[], Any] = _default_durable_store,
     get_migration_preflight: Callable[
         [], dict[str, Any]
     ] = _default_migration_preflight,
@@ -59,7 +75,26 @@ def create_taxonomy_release_router(
     def taxonomy_readiness(
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
-        return build_taxonomy_readiness_report(intake_root=_intake_root())
+        migration: dict[str, Any] | None = None
+        try:
+            migration = get_migration_preflight()
+        except (ModuleNotFoundError, RuntimeError):
+            migration = None
+
+        durable = _try_durable_store(get_durable_store)
+        durable_reports = durable.list_reports() if durable is not None else []
+        latest_release = durable_reports[0] if durable_reports else None
+        schema_verified = (
+            bool(migration.get("schema_complete")) if migration is not None else None
+        )
+        return build_taxonomy_readiness_report(
+            intake_root=_intake_root(),
+            staging_schema_verified_override=schema_verified,
+            durable_intake_available_override=(
+                schema_verified if schema_verified is not None else None
+            ),
+            latest_release_override=latest_release,
+        )
 
     @router.get("/api/mission-control/taxonomy/migration-preflight")
     def taxonomy_migration_preflight(
@@ -80,8 +115,11 @@ def create_taxonomy_release_router(
     def list_releases(
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
+        durable = _try_durable_store(get_durable_store)
+        reports = durable.list_reports() if durable is not None else get_store().list_reports()
         return {
-            "releases": get_store().list_reports(),
+            "releases": reports,
+            "durable_storage": "postgresql" if durable is not None else "local_compatibility",
             "automatic_promotion": False,
         }
 
@@ -90,7 +128,10 @@ def create_taxonomy_release_router(
         release_id: str,
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
-        report = get_store().get(release_id)
+        durable = _try_durable_store(get_durable_store)
+        report = durable.get_with_inspection(release_id) if durable is not None else None
+        if report is None:
+            report = get_store().get(release_id)
         if report is None:
             raise HTTPException(status_code=404, detail="taxonomy release not found")
         return report
@@ -104,10 +145,20 @@ def create_taxonomy_release_router(
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
         payload = await file.read()
+        filename = file.filename or "world-orchids-release"
         try:
+            durable = _try_durable_store(get_durable_store)
+            if durable is not None:
+                return durable.inspect_and_store(
+                    payload,
+                    filename=filename,
+                    version_label=version_label,
+                    acquired_at=acquired_at,
+                    notes=notes,
+                )
             return get_store().inspect_and_store(
                 payload,
-                filename=file.filename or "world-orchids-release",
+                filename=filename,
                 version_label=version_label,
                 acquired_at=acquired_at,
                 notes=notes,
@@ -126,31 +177,35 @@ def create_taxonomy_release_router(
                 status_code=400,
                 detail=f"batch_size must be between 1 and {STAGING_MAX_BATCH_SIZE}",
             )
-        local_report = get_store().get(release_id)
-        if local_report is None:
-            raise HTTPException(status_code=404, detail="taxonomy release not found")
-        try:
-            from sqlalchemy.exc import SQLAlchemyError
-
-            payload = get_store().source_bytes(release_id)
-            snapshot = local_report.get("snapshot", {})
-            staging = get_staging_store()
-            durable_release_id, parsed = staging.register_release(
-                payload,
-                version_label=str(snapshot.get("version_label", "unknown")),
-                filename=str(snapshot.get("filename", "world-orchids-release")),
-                acquired_at=str(snapshot.get("acquired_at", "unknown")),
+        durable = _try_durable_store(get_durable_store)
+        if durable is None:
+            raise HTTPException(
+                status_code=503,
+                detail="durable taxonomy staging is unavailable until migration 107 is verified",
             )
-            if durable_release_id != release_id:
-                raise RuntimeError(
-                    "durable release checksum does not match inspected release"
+        try:
+            report = durable.get(release_id)
+            if report is None:
+                local_report = get_store().get(release_id)
+                if local_report is None:
+                    raise KeyError(f"taxonomy release not found: {release_id}")
+                snapshot = local_report.get("snapshot", {})
+                durable_release_id, _ = durable.staging.register_release(
+                    get_store().source_bytes(release_id),
+                    version_label=str(snapshot.get("version_label", "unknown")),
+                    filename=str(snapshot.get("filename", "world-orchids-release")),
+                    acquired_at=str(snapshot.get("acquired_at", "unknown")),
                 )
-            receipt = staging.stage_next_batch(release_id, batch_size=batch_size)
+                if durable_release_id != release_id:
+                    raise RuntimeError(
+                        "durable release checksum does not match inspected release"
+                    )
+            receipt = durable.stage_next_batch(release_id, batch_size=batch_size)
             return {
                 "receipt": receipt.as_dict(),
-                "inspection": parsed.summary(),
-                "checkpoint": staging.checkpoint(release_id),
-                "change_report": staging.change_report(release_id),
+                "checkpoint": durable.checkpoint(release_id),
+                "counts": durable.counts(release_id),
+                "change_report": durable.change_report(release_id),
                 "activation": "blocked_pending_owner_approval",
                 "automatic_promotion": False,
             }
@@ -158,30 +213,28 @@ def create_taxonomy_release_router(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except SQLAlchemyError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail="durable taxonomy staging is unavailable until migration 107 is activated",
-            ) from exc
 
     @releases.get("/{release_id}/staging")
     def staging_status(
         release_id: str,
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
+        durable = _try_durable_store(get_durable_store)
+        if durable is None:
+            raise HTTPException(
+                status_code=503,
+                detail="durable taxonomy staging is unavailable until migration 107 is verified",
+            )
         try:
-            from sqlalchemy.exc import SQLAlchemyError
-
-            staging = get_staging_store()
             return {
                 "release_id": release_id,
-                "checkpoint": staging.checkpoint(release_id),
-                "counts": staging.counts(release_id),
-                "change_report": staging.change_report(release_id),
+                "checkpoint": durable.checkpoint(release_id),
+                "counts": durable.counts(release_id),
+                "change_report": durable.change_report(release_id),
                 "activation": "blocked_pending_owner_approval",
                 "automatic_promotion": False,
             }
-        except (KeyError, SQLAlchemyError) as exc:
+        except KeyError as exc:
             raise HTTPException(
                 status_code=404, detail="durable taxonomy staging state not found"
             ) from exc
