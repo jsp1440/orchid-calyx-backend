@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - "app/calyx_orchestrator/proposal_authorization.py"
+      - "app/calyx_orchestrator/proposal_authorization_status.py"
       - "tests/test_calyx_proposal_authorization.py"
+      - "tests/test_calyx_proposal_authorization_status.py"
       - "docs/brain/BUILD-BRAIN-114N-PROPOSAL-AUTHORIZATION.md"
       - ".github/workflows/build-brain-114n-proposal-authorization.yml"
   workflow_dispatch:
@@ -30,22 +32,24 @@ jobs:
           pip install pytest ruff
       - name: Compile proposal authorization surface
         run: |
-          python -m compileall -q app/calyx_orchestrator/proposal_authorization.py tests/test_calyx_proposal_authorization.py
+          python -m compileall -q app/calyx_orchestrator/proposal_authorization.py app/calyx_orchestrator/proposal_authorization_status.py tests/test_calyx_proposal_authorization.py tests/test_calyx_proposal_authorization_status.py
       - name: Ruff proposal authorization surface
         run: |
-          ruff check app/calyx_orchestrator/proposal_authorization.py tests/test_calyx_proposal_authorization.py
-          ruff format --check app/calyx_orchestrator/proposal_authorization.py tests/test_calyx_proposal_authorization.py
+          ruff check app/calyx_orchestrator/proposal_authorization.py app/calyx_orchestrator/proposal_authorization_status.py tests/test_calyx_proposal_authorization.py tests/test_calyx_proposal_authorization_status.py
+          ruff format --check app/calyx_orchestrator/proposal_authorization.py app/calyx_orchestrator/proposal_authorization_status.py tests/test_calyx_proposal_authorization.py tests/test_calyx_proposal_authorization_status.py
       - name: Focused proposal authorization regressions
         env:
           PYTHONPATH: .
         run: |
-          pytest -q tests/test_calyx_proposal_authorization.py
+          pytest -q tests/test_calyx_proposal_authorization.py tests/test_calyx_proposal_authorization_status.py
       - name: Non-mutation and identity-boundary assertions
         run: |
           python - <<'PY'
           from pathlib import Path
 
           source = Path("app/calyx_orchestrator/proposal_authorization.py").read_text(encoding="utf-8")
+          status = Path("app/calyx_orchestrator/proposal_authorization_status.py").read_text(encoding="utf-8")
+          combined = source + "\n" + status
           forbidden = (
               "subprocess",
               "git push",
@@ -56,7 +60,7 @@ jobs:
               "urllib.request",
           )
           for marker in forbidden:
-              assert marker not in source, marker
+              assert marker not in combined, marker
           assert 'PATCH_EXECUTOR_KEY = "isolated_workspace_patcher_v1"' in source
           assert "PROPOSAL_AUTH_SELF_APPROVAL_PROHIBITED" in source
           assert "PROPOSAL_AUTH_STALE_MANIFEST" in source
@@ -66,6 +70,9 @@ jobs:
           assert '"pull_request_creation_authorized": False' in source
           assert '"automatic_merge_authorized": False' in source
           assert '"deployment_authorized": False' in source
+          assert "PROPOSAL_REVIEW_EVIDENCE_COMPLETE" in status
+          assert "review_evidence_complete" in status
+          assert "git_mutation_authorized: bool = False" in status
           PY
       - name: Diff hygiene
         env:
