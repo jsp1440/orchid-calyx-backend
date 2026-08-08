@@ -71,6 +71,8 @@ jobs:
           assert '"automatic_merge_authorized": False' in source
           assert '"deployment_authorized": False' in source
           assert "PROPOSAL_REVIEW_EVIDENCE_COMPLETE" in status
+          assert "PROPOSAL_REVIEW_REVIEWER_CONFLICT" in status
+          assert "approved_reviewers" in status
           assert "review_evidence_complete" in status
           assert "git_mutation_authorized: bool = False" in status
           PY
