@@ -4,7 +4,17 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    Uuid,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,9 +42,13 @@ class ConversationSession(Base):
     )
     owner_subject: Mapped[str] = mapped_column(Text, nullable=False)
     project_id: Mapped[str | None] = mapped_column(
-        Uuid(as_uuid=False), ForeignKey("research_station.projects.project_id"), nullable=True
+        Uuid(as_uuid=False),
+        ForeignKey("research_station.projects.project_id"),
+        nullable=True,
     )
-    title: Mapped[str] = mapped_column(String(160), nullable=False, default="Calyx conversation")
+    title: Mapped[str] = mapped_column(
+        String(160), nullable=False, default="Calyx conversation"
+    )
     active_taxon_id: Mapped[str | None] = mapped_column(Text)
     active_document_id: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -48,7 +62,9 @@ class ConversationSession(Base):
 class ConversationMessage(Base):
     __tablename__ = "conversation_messages"
     __table_args__ = (
-        CheckConstraint("role IN ('OPERATOR','CALYX')", name="ck_rs_conversation_message_role"),
+        CheckConstraint(
+            "role IN ('OPERATOR','CALYX')", name="ck_rs_conversation_message_role"
+        ),
         CheckConstraint(
             "data_status = 'CONVERSATION_CONTEXT'",
             name="ck_rs_conversation_message_status",
