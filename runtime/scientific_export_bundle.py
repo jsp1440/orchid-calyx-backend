@@ -184,9 +184,8 @@ class ScientificAnalysisExportService:
             if diagnostic.get("result_sha256") != analysis.get("result_sha256"):
                 raise ValueError("ANALYSIS_EXPORT_DIAGNOSTIC_IDENTITY_MISMATCH")
 
-        if artifact is not None:
-            if artifact.get("analysis_id") != clean_analysis_id:
-                raise ValueError("ANALYSIS_EXPORT_ARTIFACT_IDENTITY_MISMATCH")
+        if artifact is not None and artifact.get("analysis_id") != clean_analysis_id:
+            raise ValueError("ANALYSIS_EXPORT_ARTIFACT_IDENTITY_MISMATCH")
 
         core = {
             "schema_version": EXPORT_SCHEMA_VERSION,
