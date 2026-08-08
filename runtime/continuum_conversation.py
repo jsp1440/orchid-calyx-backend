@@ -1,8 +1,9 @@
-"""Retrieval-grounded conversational access to the Orchid Continuum.
+"""Retrieval- and graph-grounded conversational access to the Orchid Continuum.
 
-CALYX-634 deliberately starts with extractive, provenance-preserving synthesis over
-existing Evidence Retrieval results. It does not use general model knowledge, create
-reviewed scientific interpretations, publish knowledge, or mutate the Knowledge Graph.
+CALYX-634 established extractive, provenance-preserving synthesis over Evidence
+Retrieval. CALYX-635 adds an explicit read-only Knowledge Graph tool when a taxon
+context is supplied. Neither layer uses general model knowledge, publishes scientific
+knowledge, or mutates the Knowledge Graph.
 """
 from __future__ import annotations
 
@@ -13,8 +14,9 @@ from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
 from app.semantic_index.provider import DeterministicLocalProvider
 from app.semantic_index.routes import REPO
+from runtime.continuum_graph_tool import KnowledgeGraphReadProtocol, ReadOnlyKnowledgeGraphTool
 
-CONVERSATION_SCHEMA_VERSION = "calyx-continuum-conversation/v1"
+CONVERSATION_SCHEMA_VERSION = "calyx-continuum-conversation/v2"
 
 
 class RetrievalEngineProtocol(Protocol):
@@ -67,10 +69,15 @@ def _authorized_excerpt(result: dict[str, Any]) -> str | None:
 
 
 class ContinuumConversationService:
-    """Answer operator questions from governed Orchid Continuum evidence only."""
+    """Answer questions from governed Continuum evidence and read-only graph context."""
 
-    def __init__(self, retrieval: RetrievalEngineProtocol | None = None) -> None:
+    def __init__(
+        self,
+        retrieval: RetrievalEngineProtocol | None = None,
+        graph_tool: KnowledgeGraphReadProtocol | None = None,
+    ) -> None:
         self.retrieval = retrieval or RetrievalEngine(REPO, DeterministicLocalProvider())
+        self.graph_tool = graph_tool or ReadOnlyKnowledgeGraphTool()
 
     def ask(
         self,
@@ -96,7 +103,47 @@ class ContinuumConversationService:
         results = list(retrieval.get("results") or [])
         evidence = [self._evidence_record(item) for item in results]
         usable = [item for item in evidence if item["authorized_excerpt"]]
-        answer, epistemic_status = self._compose_answer(text, evidence, usable)
+
+        graph_context = None
+        if active_context.active_taxon_id:
+            graph_context = self.graph_tool.lookup_taxon(
+                active_context.active_taxon_id,
+                depth=1,
+                limit=50,
+            )
+
+        answer, epistemic_status = self._compose_answer(
+            text,
+            evidence,
+            usable,
+            graph_context,
+        )
+        tool_trace = [
+            {
+                "tool": "evidence_retrieval",
+                "mode": retrieval.get("retrieval_mode", "HYBRID"),
+                "ranking_configuration_version": retrieval.get(
+                    "ranking_configuration_version"
+                ),
+                "total_candidates": retrieval.get("total_candidates", 0),
+                "total_eligible_results": retrieval.get("total_eligible_results", 0),
+                "elapsed_ms": retrieval.get("elapsed_ms"),
+            }
+        ]
+        if graph_context is not None:
+            tool_trace.append(
+                {
+                    "tool": "knowledge_graph_read",
+                    "status": graph_context.get("status"),
+                    "taxon_id": graph_context.get("taxon_id"),
+                    "canonical_key": graph_context.get("canonical_key"),
+                    "node_count": (graph_context.get("graph") or {}).get("node_count", 0),
+                    "edge_count": (graph_context.get("graph") or {}).get("edge_count", 0),
+                    "read_only": True,
+                    "knowledge_graph_mutation_authorized": False,
+                }
+            )
+
         return {
             "schema_version": CONVERSATION_SCHEMA_VERSION,
             "question": text,
@@ -106,22 +153,13 @@ class ContinuumConversationService:
             "evidence_count": len(evidence),
             "usable_excerpt_count": len(usable),
             "evidence": evidence,
-            "tool_trace": [
-                {
-                    "tool": "evidence_retrieval",
-                    "mode": retrieval.get("retrieval_mode", "HYBRID"),
-                    "ranking_configuration_version": retrieval.get(
-                        "ranking_configuration_version"
-                    ),
-                    "total_candidates": retrieval.get("total_candidates", 0),
-                    "total_eligible_results": retrieval.get("total_eligible_results", 0),
-                    "elapsed_ms": retrieval.get("elapsed_ms"),
-                }
-            ],
+            "graph_context": graph_context,
+            "tool_trace": tool_trace,
             "model_knowledge_used": False,
             "scientific_interpretation_generated": False,
             "human_review_required_for_scientific_conclusion": True,
             "scientific_publication_authorized": False,
+            "knowledge_graph_read_authorized": True,
             "knowledge_graph_mutation_authorized": False,
             "answering_policy": "ASK_THE_CONTINUUM_FIRST",
         }
@@ -148,6 +186,51 @@ class ContinuumConversationService:
 
     @staticmethod
     def _compose_answer(
+        question: str,
+        evidence: list[dict[str, Any]],
+        usable: list[dict[str, Any]],
+        graph_context: dict[str, Any] | None,
+    ) -> tuple[str, str]:
+        evidence_text, evidence_status = ContinuumConversationService._evidence_answer(
+            question,
+            evidence,
+            usable,
+        )
+        if not graph_context or graph_context.get("status") != "found":
+            return evidence_text, evidence_status
+
+        graph = dict(graph_context.get("graph") or {})
+        focal = dict(graph_context.get("focal_node") or {})
+        label = _optional_text(focal.get("label")) or str(graph_context.get("taxon_id"))
+        edge_types = [str(value) for value in graph_context.get("edge_types") or []]
+        domains = sorted(str(value) for value in (graph_context.get("domain_coverage") or {}))
+        gaps = [str(value) for value in graph_context.get("data_gaps") or []]
+        graph_text = (
+            f" Read-only Knowledge Graph context for {label} contains "
+            f"{int(graph.get('node_count', 0))} connected node(s) and "
+            f"{int(graph.get('edge_count', 0))} edge(s)."
+        )
+        if edge_types:
+            graph_text += f" Recorded relationship types: {', '.join(edge_types[:12])}."
+        if domains:
+            graph_text += f" Graph domains represented: {', '.join(domains)}."
+        if gaps:
+            graph_text += f" Explicit graph data gaps include: {', '.join(gaps[:8])}."
+        graph_text += (
+            " These are stored graph relationships and coverage signals, not a new causal or "
+            "scientific interpretation."
+        )
+
+        if evidence_status == "continuum_evidence":
+            status = "continuum_evidence_and_graph"
+        elif evidence_status == "continuum_evidence_metadata_only":
+            status = "continuum_graph_and_evidence_metadata"
+        else:
+            status = "continuum_graph"
+        return evidence_text + graph_text, status
+
+    @staticmethod
+    def _evidence_answer(
         question: str,
         evidence: list[dict[str, Any]],
         usable: list[dict[str, Any]],
