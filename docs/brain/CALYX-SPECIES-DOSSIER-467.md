@@ -1,6 +1,6 @@
 # CALYX-467 — Canonical species dossier and federation gateway
 
-Status: IMPLEMENTED / VALIDATION PENDING / GOVERNED REVIEW-ONLY
+Status: IMPLEMENTED / VALIDATED / GOVERNED REVIEW-ONLY
 
 ## Delivered
 
@@ -24,4 +24,11 @@ This slice does not claim partner permissions without evidence, perform provider
 
 ## Validation
 
-Dedicated CI compiles the runtime/router/Mission Control surface, runs deterministic dossier tests, asserts permanent federation/non-authority boundaries, runs Ruff, and checks diff hygiene. Record exact-head validation evidence here after the pull-request workflow completes.
+Implementation commit `264bd3f7888df1274bfd1e524156d8318964a487` completed the dedicated validation gate:
+
+- CALYX Species Dossier 467: success; compile, 9 deterministic dossier/API tests, permanent federation/non-authority assertions, Ruff, and diff hygiene all passed.
+- CALYX Workflow Governance Audit: success.
+- CALYX-AUTONOMY-DEPLOYMENT-001: success.
+- CALYX-SUPERVISED-PILOT-001: success.
+
+The generic BUILD-088E workflow was still running when this Brain entry was updated; no failure was observed. PR #635 remains draft/unmerged. This documentation-only validation-record commit remains subject to the same PR checks.
