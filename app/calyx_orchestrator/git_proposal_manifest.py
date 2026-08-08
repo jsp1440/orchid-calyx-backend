@@ -241,13 +241,18 @@ class GitProposalManifestBuilder:
             raise PermissionError("GIT_PROPOSAL_BRANCH_INVALID")
 
         raw_changes = output.get("changes")
-        if not isinstance(raw_changes, list) or not 1 <= len(raw_changes) <= MAX_CHANGES:
+        if (
+            not isinstance(raw_changes, list)
+            or not 1 <= len(raw_changes) <= MAX_CHANGES
+        ):
             raise ValueError("GIT_PROPOSAL_CHANGE_COUNT_INVALID")
         changes = tuple(ProposedChange.from_mapping(item) for item in raw_changes)
         if len({change.path for change in changes}) != len(changes):
             raise ValueError("GIT_PROPOSAL_DUPLICATE_CHANGE")
 
-        output_checksum = str(patch_receipt.get("output_checksum") or "").strip().lower()
+        output_checksum = (
+            str(patch_receipt.get("output_checksum") or "").strip().lower()
+        )
         if not _is_sha256(output_checksum) or output_checksum != canonical_checksum(
             dict(output)
         ):
@@ -330,7 +335,8 @@ class GitProposalManifestBuilder:
             raise PermissionError("GIT_PROPOSAL_PERSISTED_VALIDATION_REQUIRED") from exc
 
         expected_targets = [
-            target.as_dict() for target in sorted(request.targets, key=lambda item: item.path)
+            target.as_dict()
+            for target in sorted(request.targets, key=lambda item: item.path)
         ]
         persisted_targets = json.loads(persisted.targets_json)
         if (
@@ -340,7 +346,8 @@ class GitProposalManifestBuilder:
             or persisted.checkout_commit_sha != request.checkout_commit_sha
             or persisted.preset != request.preset
             or int(persisted.timeout_seconds) != request.timeout_seconds
-            or sorted(persisted_targets, key=lambda item: item["path"]) != expected_targets
+            or sorted(persisted_targets, key=lambda item: item["path"])
+            != expected_targets
             or persisted.status != "completed"
             or persisted.outcome != "delivered"
             or persisted.receipt_digest != receipt.receipt_digest
