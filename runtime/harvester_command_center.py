@@ -11,7 +11,11 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from runtime.harvester_control import HarvesterControlPlane, control_plane, harvester_allowed_actions
+from runtime.harvester_control import (
+    HarvesterControlPlane,
+    control_plane,
+    harvester_allowed_actions,
+)
 
 COMMAND_CENTER_SCHEMA = "calyx-harvester-command-center/v1"
 ACTIONS = {"run_once", "pause", "resume", "cancel", "reschedule", "retire", "restore", "reassess"}
