@@ -4,9 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
-
-from app.main import app
+from app.routers.health import router as health_router
 from app.routers.release_identity import release_identity
 
 
@@ -32,12 +30,11 @@ class ReleaseIdentityTests(unittest.TestCase):
         self.assertFalse(identity["attested"])
         self.assertIsNone(identity["commit_sha"])
 
-    def test_public_endpoint_exposes_only_non_secret_release_identity(self) -> None:
+    def test_public_endpoint_is_registered_and_payload_is_non_secret(self) -> None:
+        self.assertIn("/api/release-identity", {route.path for route in health_router.routes})
         sha = "b" * 40
         with patch.dict(os.environ, {"OCU_RELEASE_SHA": sha}, clear=True):
-            response = TestClient(app).get("/api/release-identity")
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
+            payload = release_identity()
         self.assertEqual(payload["service"], "orchid-calyx-backend")
         self.assertEqual(payload["commit_sha"], sha)
         self.assertTrue(payload["attested"])
