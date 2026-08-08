@@ -4,8 +4,11 @@ on:
   pull_request:
     paths:
       - "app/university/**"
+      - "app/routers/release_identity.py"
+      - "app/routers/health.py"
       - "scripts/smoke_university_release.py"
       - "tests/test_university_release_readiness.py"
+      - "tests/test_release_identity.py"
       - ".github/workflows/ocu-university-release-contract.yml"
   workflow_dispatch:
     inputs:
@@ -28,9 +31,10 @@ jobs:
         run: |
           python -m unittest \
             tests/test_university_session_service.py \
-            tests/test_university_release_readiness.py
-      - name: Compile smoke checker
-        run: python -m py_compile scripts/smoke_university_release.py
+            tests/test_university_release_readiness.py \
+            tests/test_release_identity.py
+      - name: Compile release and smoke checkers
+        run: python -m py_compile app/routers/release_identity.py scripts/smoke_university_release.py
       - name: Smoke deployed read-only University backend
         if: ${{ inputs.api_base_url != '' }}
         run: python scripts/smoke_university_release.py "${{ inputs.api_base_url }}"
