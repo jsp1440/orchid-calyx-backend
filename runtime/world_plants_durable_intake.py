@@ -19,9 +19,15 @@ from runtime.world_plants_staging import PostgresWorldPlantsStagingStore
 class PostgresWorldPlantsIntakeStore:
     """Inspect and retain exact release bytes in PostgreSQL before staging."""
 
-    def __init__(self, engine: Engine | None = None) -> None:
+    def __init__(
+        self,
+        engine: Engine | None = None,
+        *,
+        max_upload_bytes: int = 75_000_000,
+    ) -> None:
         self.staging = PostgresWorldPlantsStagingStore(engine)
         self.engine = self.staging.engine
+        self.max_upload_bytes = max_upload_bytes
 
     def inspect_and_store(
         self,
@@ -34,6 +40,8 @@ class PostgresWorldPlantsIntakeStore:
     ) -> dict[str, Any]:
         if not payload:
             raise ValueError("taxonomy release file is empty")
+        if len(payload) > self.max_upload_bytes:
+            raise ValueError("taxonomy release file exceeds configured size limit")
         release_id, parsed = self.staging.register_release(
             payload,
             version_label=version_label,
