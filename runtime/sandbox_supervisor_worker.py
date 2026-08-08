@@ -175,6 +175,7 @@ class SandboxSupervisorWorker:
         *,
         runner: Callable[[Sequence[str], int], ProcessResult] | None = None,
         git_head_reader: Callable[[Path], str] | None = None,
+        git_clean_reader: Callable[[Path], bool] | None = None,
         snapshot_maker: Callable[[Path, str], Any] | None = None,
     ) -> None:
         self.config = config
@@ -186,6 +187,7 @@ class SandboxSupervisorWorker:
         else:
             self._runner = runner
         self._git_head_reader = git_head_reader or _git_head
+        self._git_clean_reader = git_clean_reader or _git_checkout_clean
         self._snapshot_maker = snapshot_maker or _immutable_archive
 
     @property
@@ -195,6 +197,10 @@ class SandboxSupervisorWorker:
             "network": "none",
             "container_root": "read-only",
             "repository_mount": "read-only",
+            "immutable_commit_snapshot": True,
+            "clean_checkout_required": True,
+            "explicit_container_name": True,
+            "daemon_cleanup_on_abort": True,
             "capabilities": "drop-all",
             "no_new_privileges": True,
             "user": "65534:65534",
@@ -261,12 +267,11 @@ class SandboxSupervisorWorker:
             self._verify_claim_identity(request)
             commit = str(request.get("checkout_commit_sha") or "").strip().lower()
             with self._snapshot_maker(self.config.repository_root, commit) as snapshot:
-                # Verify targets from the immutable snapshot so that the files
-                # that are hash-checked are exactly the files that will be executed,
-                # eliminating any TOCTOU race with the live worktree.
                 targets = self._verify_targets(request, snapshot)
+                probe_name = self._container_name(request_digest, "probe")
                 probe = self._runner(
-                    self._docker_prefix(snapshot) + ["python", "-c", TRUSTED_SANDBOX_PROBE],
+                    self._docker_prefix(snapshot, probe_name)
+                    + ["python", "-c", TRUSTED_SANDBOX_PROBE],
                     15,
                 )
                 if probe.return_code != 0 or probe.timed_out or probe.output_limited:
@@ -277,7 +282,11 @@ class SandboxSupervisorWorker:
                     )
                 command = self._validation_command(str(request.get("preset") or ""), targets)
                 timeout_seconds = int(request.get("timeout_seconds") or 0)
-                result = self._runner(self._docker_prefix(snapshot) + command, timeout_seconds)
+                validation_name = self._container_name(request_digest, "validation")
+                result = self._runner(
+                    self._docker_prefix(snapshot, validation_name) + command,
+                    timeout_seconds,
+                )
             if result.timed_out:
                 outcome = "timed_out"
             elif result.output_limited or result.return_code != 0:
@@ -306,6 +315,8 @@ class SandboxSupervisorWorker:
         expected_commit = str(request.get("checkout_commit_sha") or "").strip().lower()
         if len(expected_commit) != 40 or any(c not in "0123456789abcdef" for c in expected_commit):
             raise ValueError("SANDBOX_SUPERVISOR_CHECKOUT_COMMIT_INVALID")
+        if not self._git_clean_reader(self.config.repository_root):
+            raise PermissionError("SANDBOX_SUPERVISOR_CHECKOUT_DIRTY")
         actual_commit = self._git_head_reader(self.config.repository_root).strip().lower()
         if actual_commit != expected_commit:
             raise PermissionError("SANDBOX_SUPERVISOR_CHECKOUT_COMMIT_MISMATCH")
@@ -355,11 +366,17 @@ class SandboxSupervisorWorker:
             raise LookupError("SANDBOX_SUPERVISOR_TARGET_NOT_REGULAR_FILE")
         return candidate
 
-    def _docker_prefix(self, snapshot: Path) -> list[str]:
+    @staticmethod
+    def _container_name(request_digest: str, phase: str) -> str:
+        return f"calyx-sbx-{phase}-{request_digest[:12]}-{uuid4().hex[:12]}"
+
+    def _docker_prefix(self, snapshot: Path, container_name: str) -> list[str]:
         return [
             self.config.docker_binary,
             "run",
             "--rm",
+            "--name",
+            container_name,
             "--network",
             "none",
             "--read-only",
@@ -452,13 +469,29 @@ def _git_head(root: Path) -> str:
     return result.stdout.strip()
 
 
+def _git_checkout_clean(root: Path) -> bool:
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("SANDBOX_SUPERVISOR_GIT_STATUS_UNAVAILABLE")
+    return not result.stdout.strip()
+
+
 @contextlib.contextmanager
 def _immutable_archive(repo_root: Path, commit: str):
-    """Context manager: extract *commit* from *repo_root* into a read-only temp dir.
-
-    The yielded directory is an immutable snapshot of the repository at the
-    given commit.  It is removed unconditionally on exit.
-    """
+    """Extract the exact requested commit into a host-read-only temporary snapshot."""
     tmp = tempfile.mkdtemp(prefix="calyx-sandbox-snapshot-")
     try:
         archive = subprocess.run(
@@ -478,56 +511,64 @@ def _immutable_archive(repo_root: Path, commit: str):
         )
         if extract.returncode != 0:
             raise RuntimeError("SANDBOX_SUPERVISOR_GIT_ARCHIVE_EXTRACT_FAILED")
-        # Remove write permission from owner so the snapshot is immutable on
-        # the host (the Docker --read-only flag protects the container side).
-        subprocess.run(
+        chmod = subprocess.run(
             ["chmod", "-R", "a-w", tmp],
             check=False,
             capture_output=True,
             timeout=30,
         )
-        yield Path(tmp)
+        if chmod.returncode != 0:
+            raise RuntimeError("SANDBOX_SUPERVISOR_SNAPSHOT_READ_ONLY_FAILED")
+        yield Path(tmp).resolve()
     finally:
-        # Restore write permission so rmtree can delete files.
-        subprocess.run(["chmod", "-R", "u+w", tmp], check=False, capture_output=True, timeout=30)
+        subprocess.run(
+            ["chmod", "-R", "u+w", tmp],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _stop_container(cidfile: Path, docker_binary: str) -> None:
-    """Best-effort: gracefully stop then forcibly kill a container by cidfile."""
+def _container_name_from_argv(argv: Sequence[str]) -> str:
+    values = list(argv)
     try:
-        cid = cidfile.read_text(encoding="ascii").strip()
-    except OSError:
-        return
-    if not cid:
-        return
-    for cmd in (
-        [docker_binary, "stop", "-t", "2", cid],
-        [docker_binary, "kill", cid],
+        index = values.index("--name")
+        name = values[index + 1].strip()
+    except (IndexError, ValueError) as exc:
+        raise ValueError("SANDBOX_SUPERVISOR_CONTAINER_NAME_REQUIRED") from exc
+    if not name.startswith("calyx-sbx-") or len(name) > 128:
+        raise ValueError("SANDBOX_SUPERVISOR_CONTAINER_NAME_INVALID")
+    return name
+
+
+def _cleanup_container(container_name: str, docker_binary: str) -> None:
+    """Best-effort daemon-side stop/remove for the explicitly named container."""
+    for command in (
+        [docker_binary, "stop", "-t", "2", container_name],
+        [docker_binary, "rm", "-f", container_name],
     ):
         try:
-            subprocess.run(cmd, check=False, capture_output=True, timeout=10)
-        except Exception:  # noqa: BLE001, S110
+            subprocess.run(command, check=False, capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
             pass
 
 
-def _run_docker_bounded(docker_binary: str, argv: Sequence[str], timeout_seconds: int) -> ProcessResult:
-    """Like _run_bounded but also terminates the Docker container on abort."""
+def _run_docker_bounded(
+    docker_binary: str,
+    argv: Sequence[str],
+    timeout_seconds: int,
+) -> ProcessResult:
+    """Run one explicitly named container and always clean its daemon-side state."""
     if not 1 <= timeout_seconds <= 120:
         raise ValueError("SANDBOX_SUPERVISOR_TIMEOUT_INVALID")
-    cidfile_fd, cidfile_path = tempfile.mkstemp(prefix="calyx-cid-")
-    os.close(cidfile_fd)
-    cidfile = Path(cidfile_path)
-    # Inject --cidfile after `docker run` (argv[0]=docker, argv[1]=run)
-    patched = list(argv[:2]) + ["--cidfile", str(cidfile)] + list(argv[2:])
+    values = list(argv)
+    container_name = _container_name_from_argv(values)
+    cleanup = lambda: _cleanup_container(container_name, docker_binary)
     try:
-        result = _run_bounded_inner(patched, timeout_seconds, on_abort=lambda: _stop_container(cidfile, docker_binary))
+        return _run_bounded_inner(values, timeout_seconds, on_abort=cleanup)
     finally:
-        try:
-            cidfile.unlink(missing_ok=True)
-        except OSError:
-            pass
-    return result
+        cleanup()
 
 
 def _run_bounded(argv: Sequence[str], timeout_seconds: int) -> ProcessResult:
@@ -591,6 +632,8 @@ def _run_bounded_inner(
     finally:
         selector.close()
         if process.poll() is None:
+            if on_abort is not None:
+                on_abort()
             process.kill()
             process.wait(timeout=5)
     return ProcessResult(
