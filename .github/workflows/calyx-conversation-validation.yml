@@ -26,7 +26,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest ruff
+        run: pip install -r requirements.txt pytest httpx ruff
       - name: Compile Calyx analysis slice
         run: python -m py_compile app/calyx_conversation/routes.py app/calyx_conversation/store.py app/calyx_conversation/file_analysis.py app/calyx_conversation/file_routes.py app/calyx_conversation/reasoning_routes.py app/routers/calyx_core.py tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py tests/test_build_613_calyx_reasoning_context.py
       - name: Run focused regression tests
