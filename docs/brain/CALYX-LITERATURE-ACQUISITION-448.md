@@ -130,6 +130,15 @@ Validation covers:
 - permanent non-authority assertions;
 - Ruff and `git diff --check`.
 
+Corrective validation history:
+
+- initial dedicated CI identified a stale/nonexistent Candidate Knowledge test path in the new workflow; the workflow was corrected to reference current canonical tests;
+- the next run exposed that a local Candidate Knowledge integration fixture needed explicit in-memory components because the global production dependency correctly fails closed without a configured database; the test now injects the canonical `MemoryCandidateRepository` + `CandidateExtractionService` boundary rather than bypassing it;
+- an unrelated async regression file was removed from this network-independent lane because its own pytest plugin dependency is not part of this build's runtime contract;
+- the next run passed 22 deterministic functional/regression tests and permanent non-authority assertions, then Ruff exposed two local style defects; both were corrected in source rather than waived.
+
+A fresh exact-head CI cycle is required after this Brain update before the implementation is reported as final DELIVERED evidence on issue #448.
+
 ## Explicit non-actions
 
 No live DOI/URL fetching, OCR service invocation, production literature crawl, scientific publication, production Knowledge Graph mutation, deployment, merge, credential storage, or fabricated production counts are performed.
