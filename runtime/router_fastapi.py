@@ -7,6 +7,12 @@ from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
 
+from .australian_diurideae_propagation_bridge import (
+    bridge_matrix as diurideae_bridge_matrix,
+    diuris_source,
+    non_destructive_bridge_assessment,
+    phylogenetic_bridge,
+)
 from .config_loader import BrainConfigLoader
 from .constitutional_orchestrator import orchestrator
 from .featured_genus_sentinel import FeaturedGenusSentinel
@@ -251,6 +257,49 @@ def queen_of_sheba_vegetative_hypothesis_endpoint() -> dict[str, Any]:
     payload["digest"] = hypothesis.digest()
     payload["publication_authority"] = False
     return payload
+
+
+@science_router.get(
+    "/propagation/queen-of-sheba/comparators/diuris/source",
+    dependencies=PROPAGATION_AUTH,
+)
+def queen_of_sheba_diuris_source_endpoint() -> dict[str, Any]:
+    source = diuris_source()
+    return {
+        **asdict(source),
+        "digest": source.digest(),
+        "direct_thelymitra_evidence": False,
+        "publication_authority": False,
+    }
+
+
+@science_router.get(
+    "/propagation/queen-of-sheba/comparators/diuris/matrix",
+    dependencies=PROPAGATION_AUTH,
+)
+def queen_of_sheba_diuris_matrix_endpoint() -> dict[str, Any]:
+    rows = diurideae_bridge_matrix()
+    return {
+        "comparator_taxon": "Diuris longifolia",
+        "row_count": len(rows),
+        "rows": rows,
+        "direct_thelymitra_evidence": False,
+        "publication_authority": False,
+        "canonical_graph_mutation_allowed": False,
+    }
+
+
+@science_router.get(
+    "/propagation/queen-of-sheba/comparators/diuris/bridge",
+    dependencies=PROPAGATION_AUTH,
+)
+def queen_of_sheba_diuris_bridge_endpoint() -> dict[str, Any]:
+    return {
+        "phylogenetic": phylogenetic_bridge(),
+        "non_destructive": non_destructive_bridge_assessment(),
+        "publication_authority": False,
+        "canonical_graph_mutation_allowed": False,
+    }
 
 
 @config_router.get("/manifest")
