@@ -8,7 +8,9 @@ import pytest
 
 ROOT = Path(__file__).parents[1]
 SCRIPT_PATH = ROOT / "scripts/activate_reasoning_prerequisite_schemas.py"
-SPEC = importlib.util.spec_from_file_location("reasoning_prereq_activation", SCRIPT_PATH)
+SPEC = importlib.util.spec_from_file_location(
+    "reasoning_prereq_activation", SCRIPT_PATH
+)
 assert SPEC and SPEC.loader
 activation = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(activation)
@@ -48,7 +50,9 @@ def test_classification_accepts_safe_resumable_prefix():
 
 def test_classification_blocks_malformed_or_out_of_order_schema():
     result = activation.classify_preflight(
-        _contract(safe_resume=False, blockers=["MALFORMED_PARTIAL_PREREQUISITE_SCHEMA"]),
+        _contract(
+            safe_resume=False, blockers=["MALFORMED_PARTIAL_PREREQUISITE_SCHEMA"]
+        ),
         identities_match=True,
     )
     assert result["status"] == "blocked"
@@ -84,9 +88,7 @@ def test_postgres_preflight_apply_and_idempotent_reapply(monkeypatch, tmp_path: 
         assert activation.classify_preflight(before, True)["ready_to_apply"] is True
 
         monkeypatch.setenv("DATABASE_URL", dsn)
-        monkeypatch.setenv(
-            "CALYX_REASONING_PREREQ_CONFIRM", activation.CONFIRMATION
-        )
+        monkeypatch.setenv("CALYX_REASONING_PREREQ_CONFIRM", activation.CONFIRMATION)
         monkeypatch.setattr("sys.argv", [str(SCRIPT_PATH), "--apply"])
         assert activation.main() == 0
 
