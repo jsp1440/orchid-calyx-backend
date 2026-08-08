@@ -24,6 +24,14 @@ class ReleaseIdentityTests(unittest.TestCase):
         self.assertEqual(identity["commit_sha"], sha)
         self.assertEqual(identity["source"], "OCU_RELEASE_SHA")
 
+    def test_existing_calyx_deployed_commit_is_supported(self) -> None:
+        sha = "c" * 40
+        with patch.dict(os.environ, {"CALYX_DEPLOYED_COMMIT": sha}, clear=True):
+            identity = release_identity()
+        self.assertTrue(identity["attested"])
+        self.assertEqual(identity["commit_sha"], sha)
+        self.assertEqual(identity["source"], "CALYX_DEPLOYED_COMMIT")
+
     def test_short_sha_is_not_attested(self) -> None:
         with patch.dict(os.environ, {"OCU_RELEASE_SHA": "abc1234"}, clear=True):
             identity = release_identity()
