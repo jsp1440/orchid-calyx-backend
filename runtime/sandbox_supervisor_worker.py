@@ -11,11 +11,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from uuid import uuid4
 
 MAX_CAPTURE_BYTES = 262_144
+MAX_TARGET_BYTES = 4_194_304
 DEFAULT_MEMORY = "1024m"
 DEFAULT_CPUS = "2.0"
 DEFAULT_PIDS = "128"
@@ -66,12 +68,13 @@ def _is_sha256(value: str) -> bool:
 
 
 def _normalize_api_base_url(value: str) -> str:
-    parsed = urllib.parse.urlparse(value.strip())
+    normalized = value.strip().rstrip("/")
+    parsed = urllib.parse.urlparse(normalized)
     if parsed.scheme not in {"https", "http"} or not parsed.netloc:
         raise ValueError("SANDBOX_SUPERVISOR_API_URL_INVALID")
     if parsed.scheme != "https" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
         raise PermissionError("SANDBOX_SUPERVISOR_HTTPS_REQUIRED")
-    return value.rstrip("/")
+    return normalized
 
 
 def _validate_image_digest(value: str) -> str:
@@ -83,6 +86,32 @@ def _validate_image_digest(value: str) -> str:
     if not _is_sha256(digest.lower()):
         raise ValueError("SANDBOX_SUPERVISOR_IMAGE_DIGEST_INVALID")
     return image
+
+
+def _request_digest(request: Mapping[str, Any]) -> str:
+    targets = request.get("targets")
+    if not isinstance(targets, list):
+        raise ValueError("SANDBOX_SUPERVISOR_TARGETS_INVALID")
+    normalized_targets = []
+    for item in targets:
+        if not isinstance(item, Mapping):
+            raise ValueError("SANDBOX_SUPERVISOR_TARGET_INVALID")
+        normalized_targets.append(
+            {
+                "path": str(item.get("path") or "").strip(),
+                "sha256": str(item.get("sha256") or "").strip().lower(),
+            }
+        )
+    payload = {
+        "schema": "calyx-external-validation-request-v1",
+        "repository": str(request.get("repository") or "").strip(),
+        "branch": str(request.get("branch") or "").strip(),
+        "checkout_commit_sha": str(request.get("checkout_commit_sha") or "").strip().lower(),
+        "preset": str(request.get("preset") or "").strip().lower(),
+        "targets": sorted(normalized_targets, key=lambda item: item["path"]),
+        "timeout_seconds": int(request.get("timeout_seconds") or 0),
+    }
+    return _canonical_sha256(payload)
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +195,7 @@ class SandboxSupervisorWorker:
             "arbitrary_shell": False,
             "package_installation": False,
             "credentials_forwarded": False,
+            "max_capture_bytes": MAX_CAPTURE_BYTES,
         }
 
     @property
@@ -215,13 +245,18 @@ class SandboxSupervisorWorker:
         if not _is_sha256(request_digest):
             raise RuntimeError("SANDBOX_SUPERVISOR_REQUEST_DIGEST_INVALID")
         try:
+            if _request_digest(request) != request_digest:
+                raise PermissionError("SANDBOX_SUPERVISOR_REQUEST_DIGEST_MISMATCH")
             self._verify_claim_identity(request)
             targets = self._verify_targets(request)
-            probe = self._runner(self._docker_prefix() + ["python", "-c", TRUSTED_SANDBOX_PROBE], 15)
+            probe = self._runner(
+                self._docker_prefix() + ["python", "-c", TRUSTED_SANDBOX_PROBE],
+                15,
+            )
             if probe.return_code != 0 or probe.timed_out or probe.output_limited:
                 return self._receipt(
                     request_digest=request_digest,
-                    outcome="blocked" if not probe.timed_out else "timed_out",
+                    outcome="timed_out" if probe.timed_out else "blocked",
                     result=probe,
                 )
             command = self._validation_command(str(request.get("preset") or ""), targets)
@@ -243,6 +278,10 @@ class SandboxSupervisorWorker:
             )
 
     def _verify_claim_identity(self, request: Mapping[str, Any]) -> None:
+        if str(request.get("claim_worker") or "") != self.config.worker_id:
+            raise PermissionError("SANDBOX_SUPERVISOR_CLAIM_WORKER_MISMATCH")
+        if not str(request.get("claim_token") or ""):
+            raise PermissionError("SANDBOX_SUPERVISOR_CLAIM_TOKEN_MISSING")
         if str(request.get("repository") or "") != self.config.repository:
             raise PermissionError("SANDBOX_SUPERVISOR_REPOSITORY_MISMATCH")
         branch = str(request.get("branch") or "")
@@ -272,13 +311,9 @@ class SandboxSupervisorWorker:
                 raise PermissionError("SANDBOX_SUPERVISOR_TARGET_PATH_NOT_ALLOWED")
             if not _is_sha256(expected_hash):
                 raise ValueError("SANDBOX_SUPERVISOR_TARGET_HASH_INVALID")
-            candidate = (self.config.repository_root / path).resolve()
-            try:
-                candidate.relative_to(self.config.repository_root)
-            except ValueError as exc:
-                raise PermissionError("SANDBOX_SUPERVISOR_TARGET_ESCAPE") from exc
-            if candidate.is_symlink() or not candidate.is_file():
-                raise LookupError("SANDBOX_SUPERVISOR_TARGET_NOT_REGULAR_FILE")
+            candidate = self._regular_file_without_symlinks(path)
+            if candidate.stat().st_size > MAX_TARGET_BYTES:
+                raise PermissionError("SANDBOX_SUPERVISOR_TARGET_TOO_LARGE")
             actual_hash = _sha256_bytes(candidate.read_bytes())
             if actual_hash != expected_hash:
                 raise PermissionError("SANDBOX_SUPERVISOR_TARGET_HASH_MISMATCH")
@@ -288,6 +323,21 @@ class SandboxSupervisorWorker:
         if preset == "pytest" and any(not path.startswith("tests/") for path in verified):
             raise PermissionError("SANDBOX_SUPERVISOR_PYTEST_TARGET_NOT_TEST")
         return sorted(verified)
+
+    def _regular_file_without_symlinks(self, path: str) -> Path:
+        current = self.config.repository_root
+        for part in Path(path).parts:
+            current = current / part
+            if current.is_symlink():
+                raise PermissionError("SANDBOX_SUPERVISOR_TARGET_SYMLINK_PROHIBITED")
+        candidate = current.resolve()
+        try:
+            candidate.relative_to(self.config.repository_root)
+        except ValueError as exc:
+            raise PermissionError("SANDBOX_SUPERVISOR_TARGET_ESCAPE") from exc
+        if not candidate.is_file():
+            raise LookupError("SANDBOX_SUPERVISOR_TARGET_NOT_REGULAR_FILE")
+        return candidate
 
     def _docker_prefix(self) -> list[str]:
         return [
@@ -343,7 +393,7 @@ class SandboxSupervisorWorker:
             "return_code": result.return_code,
             "stdout_sha256": _sha256_bytes(result.stdout),
             "stderr_sha256": _sha256_bytes(result.stderr),
-            "issued_at": _utc_iso_now(),
+            "issued_at": datetime.now(timezone.utc).isoformat(),
         }
 
     def _post_json(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -371,12 +421,6 @@ class SandboxSupervisorWorker:
         if not isinstance(value, dict):
             raise RuntimeError("SANDBOX_SUPERVISOR_API_RESPONSE_INVALID")
         return value
-
-
-def _utc_iso_now() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _git_head(root: Path) -> str:
@@ -420,8 +464,8 @@ def _run_bounded(argv: Sequence[str], timeout_seconds: int) -> ProcessResult:
                 break
             events = selector.select(timeout=min(remaining, 0.25))
             if not events and process.poll() is not None:
-                for fileobj in list(selector.get_map().values()):
-                    selector.unregister(fileobj.fileobj)
+                for registered in list(selector.get_map().values()):
+                    selector.unregister(registered.fileobj)
                 break
             for key, _ in events:
                 chunk = os.read(key.fileobj.fileno(), 65_536)
