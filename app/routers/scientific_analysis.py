@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
 from runtime.research_analysis_workflow import ResearchAnalysisWorkflowService
 from runtime.scientific_analysis import ScientificAnalysisService
+from runtime.scientific_analysis_history import ScientificAnalysisHistoryService
 from runtime.scientific_comparison import ScientificComparisonService
 from runtime.scientific_dataset_snapshots import ScientificDatasetSnapshotService
 from runtime.scientific_diagnostics import ScientificDiagnosticsService
@@ -21,6 +22,7 @@ router = APIRouter(
 )
 _service_instance = ScientificAnalysisService()
 _workflow_instance = ResearchAnalysisWorkflowService(analysis=_service_instance)
+_history_instance = ScientificAnalysisHistoryService(_service_instance)
 _snapshot_instance = ScientificDatasetSnapshotService(_workflow_instance)
 _diagnostics_instance = ScientificDiagnosticsService(_workflow_instance)
 _comparison_instance = ScientificComparisonService(_service_instance)
@@ -37,6 +39,10 @@ def _service() -> ScientificAnalysisService:
 
 def _workflow() -> ResearchAnalysisWorkflowService:
     return _workflow_instance
+
+
+def _history() -> ScientificAnalysisHistoryService:
+    return _history_instance
 
 
 def _snapshots() -> ScientificDatasetSnapshotService:
@@ -131,6 +137,23 @@ def validate(project_id: str, request: AnalysisRequest, identity: OwnerIdentity)
 def execute(project_id: str, request: AnalysisRequest, identity: OwnerIdentity) -> dict:
     return _translate(
         lambda: _service().execute(_owner(identity), project_id, request.model_dump())
+    )
+
+
+@router.get("/projects/{project_id}/analyses")
+def list_analyses(
+    project_id: str,
+    identity: OwnerIdentity,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    return _translate(
+        lambda: _history().list(
+            _owner(identity),
+            project_id,
+            limit=limit,
+            offset=offset,
+        )
     )
 
 
