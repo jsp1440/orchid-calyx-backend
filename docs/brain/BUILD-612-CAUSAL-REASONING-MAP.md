@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented on `feature/build-612-causal-reasoning-map`.
+Implemented on `feature/build-612-causal-reasoning-map` in PR #622. The BUILD-612 implementation and strengthened blocking Brain integration gate are green and the build is ready to merge.
 
 ## Purpose
 
@@ -73,7 +73,19 @@ Any new scientific claim derived from a map remains candidate knowledge subject 
 
 ## Validation
 
-Added `tests/test_build_612_reasoning_map.py` covering:
+The blocking `.github/workflows/calyx-brain-integration-validation.yml` gate was strengthened so the BUILD-612 suite is linted, formatter-checked, executed with the governed Brain tests, included in secret/hygiene scanning, and the `/brain/reasoning-map` route is asserted in the compiled application OpenAPI surface.
+
+Run `31253664618` completed successfully on the live PR merge result against the current `main`. The following stages all passed:
+
+- Ruff;
+- Ruff formatting;
+- governed Brain bridge and BUILD-612 behavioral tests;
+- PostgreSQL 16 migration integration;
+- adjacent Knowledge Graph, literature, candidate-knowledge, and research-workspace regressions;
+- compile and route import, including `/brain/reasoning-map`;
+- secret scan and repository hygiene.
+
+`tests/test_build_612_reasoning_map.py` specifically covers:
 
 - relationship polarity and semantic classification;
 - multi-step gene-to-phenotype causal traversal;
