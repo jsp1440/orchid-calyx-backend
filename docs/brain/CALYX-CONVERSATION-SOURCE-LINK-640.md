@@ -2,7 +2,7 @@
 
 Date: 2026-08-08
 Depends on: CALYX-636 persistent conversations, CALYX-639 source document identity continuity, and the existing Research Workspace document-link service.
-Status: implemented; exact-head validation pending. No merge, deployment, scientific publication, evidence-authority upgrade, or Knowledge Graph mutation authorized.
+Status: implemented; behavior validated; final user-authored exact-head validation in progress. No merge, deployment, scientific publication, evidence-authority upgrade, or Knowledge Graph mutation authorized.
 
 ## Goal
 
@@ -17,6 +17,7 @@ Allow a researcher to explicitly save a source that Calyx actually used in a per
 - requests fail closed when the conversation has no project, the source is not in that conversation, or the source lacks an exact `document_id`;
 - normal Research Workspace canonical document validation remains mandatory;
 - normal Research Workspace document-link idempotency is reused, so repeating the same save does not create duplicate project-document rows;
+- successful first-time linking retains the normal Research Workspace `DOCUMENT_LINKED` audit event;
 - the caller may choose only the existing governed document relationship vocabulary: `SOURCE`, `BACKGROUND`, `METHOD`, or `CONTRADICTS`;
 - response states explicitly that conversation history is not evidence and that scientific publication and Knowledge Graph mutation remain unauthorized;
 - router is registered through the existing Mission Control registration path.
@@ -40,9 +41,17 @@ The action fails closed for:
 
 No fuzzy fallback is permitted.
 
-## Validation plan
+## Validation and corrections
 
 Dedicated CALYX-640 CI validates compilation; successful and repeat/idempotent source linking; owner isolation; unknown-source and missing-document failure paths; CALYX-639 source identity regressions; CALYX-638 report regressions; CALYX-636 persistence regressions; permanent source-bound and non-authority assertions; Ruff formatting/lint; and diff hygiene.
+
+Corrective validation history:
+
+1. Mission Control live-registration lint exposed noncanonical import wrapping after mounting the new router. The import was canonically formatted.
+2. The source-link integration test then reached the real Research Workspace audit path and exposed that the SQLite fixture omitted `audit_events`. The fixture was corrected rather than weakening production behavior, and now asserts exactly one `DOCUMENT_LINKED` audit event for repeated/idempotent saves.
+3. Mission Control live-registration then exposed that its legacy workflow installed only lightweight FastAPI test dependencies while the mounted source-link router legitimately depends on SQLAlchemy. The workflow now installs the repository's real application requirements before registration testing.
+4. The dedicated behavioral gate subsequently passed 12 source-link/provenance/report/session tests plus permanent non-authority assertions. Ruff identified only canonical line wrapping in the new router and test fixture; those exact formatter changes were applied by GitHub Copilot.
+5. The Copilot-authored formatting head was marked `action_required` by repository Actions policy before jobs could run. This Brain update is a user-authored documentation-only head used to trigger the final executable exact-head validation without altering runtime behavior.
 
 ## Next priority after validation
 
