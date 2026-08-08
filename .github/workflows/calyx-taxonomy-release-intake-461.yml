@@ -1,0 +1,53 @@
+name: CALYX Taxonomy Release Intake 461
+
+on:
+  pull_request:
+    paths:
+      - "runtime/taxonomy_release_intake.py"
+      - "runtime/taxonomy_preflight.py"
+      - "app/routers/taxonomy_release_intake.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_taxonomy_release_intake_461.py"
+      - "docs/brain/CALYX-TAXONOMY-RELEASE-INTAKE-461.md"
+      - ".github/workflows/calyx-taxonomy-release-intake-461.yml"
+  workflow_dispatch:
+
+jobs:
+  taxonomy-release-intake:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile intake surface
+        run: >-
+          python -m py_compile
+          runtime/taxonomy_release_intake.py
+          app/routers/taxonomy_release_intake.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_taxonomy_release_intake_461.py
+      - name: Deterministic intake and staging tests
+        run: python -m pytest -q tests/test_calyx_taxonomy_release_intake_461.py
+      - name: Permanent non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/taxonomy_release_intake.py').read_text()
+          required = (
+              '"ready_for_promotion": False',
+              '"taxonomy_activation_authorized": False',
+              '"production_relink_authorized": False',
+              '"knowledge_graph_publication_authorized": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing permanent non-authority assertion(s): {missing}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/taxonomy_release_intake.py app/routers/taxonomy_release_intake.py tests/test_calyx_taxonomy_release_intake_461.py
+          git diff --check
