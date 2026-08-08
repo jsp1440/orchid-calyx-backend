@@ -28,7 +28,7 @@ class ConversationContext:
     active_document_id: str | None = None
 
     @classmethod
-    def from_payload(cls, payload: dict[str, Any] | None) -> "ConversationContext":
+    def from_payload(cls, payload: dict[str, Any] | None) -> ConversationContext:
         values = payload or {}
         return cls(
             active_project_id=_optional_text(values.get("active_project_id")),
@@ -154,16 +154,20 @@ class ContinuumConversationService:
     ) -> tuple[str, str]:
         if not evidence:
             return (
-                "I asked the Orchid Continuum, but it returned no eligible evidence for this "
-                "question. I am not substituting general model knowledge for missing Continuum "
-                "evidence. The next step is to broaden retrieval or add relevant sources.",
+                (
+                    "I asked the Orchid Continuum, but it returned no eligible evidence for this "
+                    "question. I am not substituting general model knowledge for missing Continuum "
+                    "evidence. The next step is to broaden retrieval or add relevant sources."
+                ),
                 "unknown",
             )
         if not usable:
             return (
-                f"I found {len(evidence)} eligible Continuum record(s) for ‘{question}’, but their "
-                "display policies do not authorize an excerpt that I can safely synthesize here. "
-                "I can still show the source metadata and citations for review.",
+                (
+                    f"I found {len(evidence)} eligible Continuum record(s) for '{question}', but their "
+                    "display policies do not authorize an excerpt that I can safely synthesize here. "
+                    "I can still show the source metadata and citations for review."
+                ),
                 "continuum_evidence_metadata_only",
             )
         statements: list[str] = []
