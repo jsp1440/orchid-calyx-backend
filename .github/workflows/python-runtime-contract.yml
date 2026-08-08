@@ -1,0 +1,40 @@
+name: Python Runtime Contract
+
+on:
+  pull_request:
+    paths:
+      - '.python-version'
+      - 'requirements.txt'
+      - '.github/workflows/python-runtime-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-python-runtime:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: '.python-version'
+      - name: Verify exact repository runtime
+        run: |
+          python - <<'PY'
+          import pathlib
+          import platform
+          expected = pathlib.Path('.python-version').read_text().strip()
+          actual = platform.python_version()
+          if actual != expected:
+              raise SystemExit(f'Python runtime mismatch: expected {expected}, got {actual}')
+          print(f'Python runtime contract verified: {actual}')
+          PY
+      - name: Install base runtime dependencies
+        run: pip install -r requirements.txt
+      - name: Import application runtime
+        run: python -c "import app.main; import app.routers.calyx_core; print('base application imports under pinned runtime')"
+      - name: Compile core runtime surfaces
+        run: python -m compileall -q app runtime
