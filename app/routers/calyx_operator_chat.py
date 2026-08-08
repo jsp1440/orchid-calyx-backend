@@ -19,13 +19,16 @@ try:
         ConversationMemoryService,
     )
     from app.database import get_db
-except ModuleNotFoundError:  # pragma: no cover - exercised by lightweight CI import path
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - exercised by lightweight CI import path
     Session = Any
     ConversationMemoryError = RuntimeError
     ConversationMemoryService = None
 
     def get_db():
         raise RuntimeError("Conversation memory dependencies are unavailable")
+
 
 router = APIRouter(prefix="/brain/mission-control/chat", tags=["mission-control-chat"])
 _chat = GovernedOperatorChat()
