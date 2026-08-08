@@ -20,6 +20,7 @@ from app.schemas import (
 from app.routers.calyx_operator_workflow import router as calyx_operator_router
 from app.university.routes import router as university_router
 from app.calyx_conversation.routes import router as calyx_conversation_router
+from app.calyx_conversation.file_routes import router as calyx_file_analysis_router
 from runtime.calyx_core_certification import create_certification_router
 
 router = APIRouter(prefix="/api", tags=["calyx-core"])
@@ -45,7 +46,7 @@ def list_org_shows(org_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/organizations/{org_id}/shows", response_model=ShowOut)
-def create_org_show(org_id: str, payload: ShowCreate, db: Session = Depends(get_db)):
+def create_org_show(org_id: str, payload: OrganizationCreate, db: Session = Depends(get_db)):
     org = db.execute(select(Organization).where(Organization.id == org_id)).scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -207,3 +208,4 @@ router.include_router(university_router)
 router.include_router(create_certification_router())
 router.include_router(calyx_operator_router)
 router.include_router(calyx_conversation_router)
+router.include_router(calyx_file_analysis_router)
