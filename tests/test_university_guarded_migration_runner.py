@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -117,8 +116,8 @@ class GuardedMigrationRunnerPostgresTests(unittest.TestCase):
         self.assertTrue(state["schema_valid"])
 
     def test_failed_post_apply_verification_rolls_back_transaction(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            bad_migration = Path(directory) / "bad.sql"
+        bad_migration = runner.ROOT / "migrations" / "_ocu_sci_009n_bad_test.sql"
+        try:
             bad_migration.write_text(
                 "CREATE SCHEMA ocu_rollback_probe; CREATE TABLE ocu_rollback_probe.partial(id integer);\n",
                 encoding="utf-8",
@@ -133,6 +132,8 @@ class GuardedMigrationRunnerPostgresTests(unittest.TestCase):
                         database_url=self.database_url,
                         confirm_migration_sha256=digest,
                     )
+        finally:
+            bad_migration.unlink(missing_ok=True)
 
         with psycopg.connect(self.database_url) as conn:
             exists = conn.execute(
