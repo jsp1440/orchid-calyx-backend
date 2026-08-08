@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import selectors
 import shutil
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -173,10 +175,18 @@ class SandboxSupervisorWorker:
         *,
         runner: Callable[[Sequence[str], int], ProcessResult] | None = None,
         git_head_reader: Callable[[Path], str] | None = None,
+        snapshot_maker: Callable[[Path, str], Any] | None = None,
     ) -> None:
         self.config = config
-        self._runner = runner or _run_bounded
+        if runner is None:
+            docker = config.docker_binary
+            self._runner: Callable[[Sequence[str], int], ProcessResult] = (
+                lambda argv, timeout: _run_docker_bounded(docker, argv, timeout)
+            )
+        else:
+            self._runner = runner
         self._git_head_reader = git_head_reader or _git_head
+        self._snapshot_maker = snapshot_maker or _immutable_archive
 
     @property
     def policy(self) -> dict[str, Any]:
@@ -250,19 +260,21 @@ class SandboxSupervisorWorker:
                 raise PermissionError("SANDBOX_SUPERVISOR_REQUEST_DIGEST_MISMATCH")
             self._verify_claim_identity(request)
             targets = self._verify_targets(request)
-            probe = self._runner(
-                self._docker_prefix() + ["python", "-c", TRUSTED_SANDBOX_PROBE],
-                15,
-            )
-            if probe.return_code != 0 or probe.timed_out or probe.output_limited:
-                return self._receipt(
-                    request_digest=request_digest,
-                    outcome="timed_out" if probe.timed_out else "blocked",
-                    result=probe,
+            commit = str(request.get("checkout_commit_sha") or "").strip().lower()
+            with self._snapshot_maker(self.config.repository_root, commit) as snapshot:
+                probe = self._runner(
+                    self._docker_prefix(snapshot) + ["python", "-c", TRUSTED_SANDBOX_PROBE],
+                    15,
                 )
-            command = self._validation_command(str(request.get("preset") or ""), targets)
-            timeout_seconds = int(request.get("timeout_seconds") or 0)
-            result = self._runner(self._docker_prefix() + command, timeout_seconds)
+                if probe.return_code != 0 or probe.timed_out or probe.output_limited:
+                    return self._receipt(
+                        request_digest=request_digest,
+                        outcome="timed_out" if probe.timed_out else "blocked",
+                        result=probe,
+                    )
+                command = self._validation_command(str(request.get("preset") or ""), targets)
+                timeout_seconds = int(request.get("timeout_seconds") or 0)
+                result = self._runner(self._docker_prefix(snapshot) + command, timeout_seconds)
             if result.timed_out:
                 outcome = "timed_out"
             elif result.output_limited or result.return_code != 0:
@@ -340,7 +352,7 @@ class SandboxSupervisorWorker:
             raise LookupError("SANDBOX_SUPERVISOR_TARGET_NOT_REGULAR_FILE")
         return candidate
 
-    def _docker_prefix(self) -> list[str]:
+    def _docker_prefix(self, snapshot: Path) -> list[str]:
         return [
             self.config.docker_binary,
             "run",
@@ -363,7 +375,7 @@ class SandboxSupervisorWorker:
             "--tmpfs",
             "/tmp:rw,noexec,nosuid,nodev,size=64m",
             "--mount",
-            f"type=bind,src={self.config.repository_root},dst=/workspace,readonly",
+            f"type=bind,src={snapshot},dst=/workspace,readonly",
             "--workdir",
             "/workspace",
             self.config.image,
@@ -437,11 +449,98 @@ def _git_head(root: Path) -> str:
     return result.stdout.strip()
 
 
+@contextlib.contextmanager
+def _immutable_archive(repo_root: Path, commit: str):
+    """Context manager: extract *commit* from *repo_root* into a read-only temp dir.
+
+    The yielded directory is an immutable snapshot of the repository at the
+    given commit.  It is removed unconditionally on exit.
+    """
+    tmp = tempfile.mkdtemp(prefix="calyx-sandbox-snapshot-")
+    try:
+        archive = subprocess.run(
+            ["git", "-C", str(repo_root), "archive", "--format=tar", commit],
+            check=False,
+            capture_output=True,
+            timeout=60,
+        )
+        if archive.returncode != 0:
+            raise RuntimeError("SANDBOX_SUPERVISOR_GIT_ARCHIVE_FAILED")
+        extract = subprocess.run(
+            ["tar", "-x", "-C", tmp],
+            input=archive.stdout,
+            check=False,
+            capture_output=True,
+            timeout=60,
+        )
+        if extract.returncode != 0:
+            raise RuntimeError("SANDBOX_SUPERVISOR_GIT_ARCHIVE_EXTRACT_FAILED")
+        # Remove write permission from owner so the snapshot is immutable on
+        # the host (the Docker --read-only flag protects the container side).
+        subprocess.run(
+            ["chmod", "-R", "a-w", tmp],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        yield Path(tmp)
+    finally:
+        # Restore write permission so rmtree can delete files.
+        subprocess.run(["chmod", "-R", "u+w", tmp], check=False, capture_output=True, timeout=30)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _stop_container(cidfile: Path, docker_binary: str) -> None:
+    """Best-effort: gracefully stop then forcibly kill a container by cidfile."""
+    try:
+        cid = cidfile.read_text(encoding="ascii").strip()
+    except OSError:
+        return
+    if not cid:
+        return
+    for cmd in (
+        [docker_binary, "stop", "-t", "2", cid],
+        [docker_binary, "kill", cid],
+    ):
+        try:
+            subprocess.run(cmd, check=False, capture_output=True, timeout=10)
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+
+def _run_docker_bounded(docker_binary: str, argv: Sequence[str], timeout_seconds: int) -> ProcessResult:
+    """Like _run_bounded but also terminates the Docker container on abort."""
+    if not 1 <= timeout_seconds <= 120:
+        raise ValueError("SANDBOX_SUPERVISOR_TIMEOUT_INVALID")
+    cidfile_fd, cidfile_path = tempfile.mkstemp(prefix="calyx-cid-")
+    os.close(cidfile_fd)
+    cidfile = Path(cidfile_path)
+    # Inject --cidfile after `docker run` (argv[0]=docker, argv[1]=run)
+    patched = list(argv[:2]) + ["--cidfile", str(cidfile)] + list(argv[2:])
+    try:
+        result = _run_bounded_inner(patched, timeout_seconds, on_abort=lambda: _stop_container(cidfile, docker_binary))
+    finally:
+        try:
+            cidfile.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return result
+
+
 def _run_bounded(argv: Sequence[str], timeout_seconds: int) -> ProcessResult:
+    return _run_bounded_inner(list(argv), timeout_seconds, on_abort=None)
+
+
+def _run_bounded_inner(
+    argv: list[str],
+    timeout_seconds: int,
+    *,
+    on_abort: Callable[[], None] | None,
+) -> ProcessResult:
     if not 1 <= timeout_seconds <= 120:
         raise ValueError("SANDBOX_SUPERVISOR_TIMEOUT_INVALID")
     process = subprocess.Popen(
-        list(argv),
+        argv,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -461,6 +560,8 @@ def _run_bounded(argv: Sequence[str], timeout_seconds: int) -> ProcessResult:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 timed_out = True
+                if on_abort is not None:
+                    on_abort()
                 process.kill()
                 break
             events = selector.select(timeout=min(remaining, 0.25))
@@ -477,6 +578,8 @@ def _run_bounded(argv: Sequence[str], timeout_seconds: int) -> ProcessResult:
                 target.extend(chunk)
                 if len(target) > MAX_CAPTURE_BYTES:
                     output_limited = True
+                    if on_abort is not None:
+                        on_abort()
                     process.kill()
                     break
             if output_limited:

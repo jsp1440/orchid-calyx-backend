@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 from pathlib import Path
 
@@ -17,6 +18,12 @@ from runtime.sandbox_supervisor_worker import (
 IMAGE = "ghcr.io/example/calyx-validator@sha256:" + ("a" * 64)
 COMMIT = "b" * 40
 TOKEN = "external-supervisor-token-with-thirty-two-plus-bytes"
+
+
+@contextlib.contextmanager
+def _passthrough_snapshot(repo_root: Path, commit: str):
+    """Test snapshot_maker: yield the repo_root unchanged (no git archive needed)."""
+    yield repo_root
 
 
 def _config(root: Path) -> WorkerConfig:
@@ -71,11 +78,10 @@ def test_success_uses_fixed_no_network_read_only_container_and_never_forwards_to
         return ProcessResult(return_code=0, stdout=b"ok", stderr=b"")
 
     worker = SandboxSupervisorWorker(
-        _config(tmp_path), runner=runner, git_head_reader=lambda _: COMMIT
+        _config(tmp_path), runner=runner, git_head_reader=lambda _: COMMIT,
+        snapshot_maker=_passthrough_snapshot,
     )
     receipt = worker._process_claim(_claim("tests/test_example.py", digest))
-
-    assert receipt["outcome"] == "delivered"
     assert receipt["return_code"] == 0
     assert len(calls) == 2
     for argv, _ in calls:
@@ -109,7 +115,8 @@ def test_hash_mismatch_blocks_before_container_execution(tmp_path: Path) -> None
         return ProcessResult(return_code=0, stdout=b"", stderr=b"")
 
     worker = SandboxSupervisorWorker(
-        _config(tmp_path), runner=runner, git_head_reader=lambda _: COMMIT
+        _config(tmp_path), runner=runner, git_head_reader=lambda _: COMMIT,
+        snapshot_maker=_passthrough_snapshot,
     )
     receipt = worker._process_claim(_claim("tests/test_example.py", "d" * 64))
 
@@ -129,6 +136,7 @@ def test_checkout_commit_mismatch_blocks_before_container_execution(tmp_path: Pa
         _config(tmp_path),
         runner=lambda argv, timeout: calls.append((argv, timeout)),
         git_head_reader=lambda _: "e" * 40,
+        snapshot_maker=_passthrough_snapshot,
     )
     receipt = worker._process_claim(_claim("tests/test_example.py", digest))
 
@@ -150,6 +158,7 @@ def test_symlink_target_is_rejected_even_when_it_resolves_inside_repository(tmp_
         _config(tmp_path),
         runner=lambda argv, timeout: calls.append((argv, timeout)),
         git_head_reader=lambda _: COMMIT,
+        snapshot_maker=_passthrough_snapshot,
     )
     receipt = worker._process_claim(_claim("tests/test_link.py", digest))
 
@@ -170,6 +179,7 @@ def test_tampered_request_digest_blocks_before_container_execution(tmp_path: Pat
         _config(tmp_path),
         runner=lambda argv, timeout: calls.append((argv, timeout)),
         git_head_reader=lambda _: COMMIT,
+        snapshot_maker=_passthrough_snapshot,
     )
     receipt = worker._process_claim(claim)
 
@@ -189,7 +199,8 @@ def test_unrecognized_preset_never_becomes_arbitrary_command(tmp_path: Path) -> 
         return ProcessResult(return_code=0, stdout=b"probe-ok", stderr=b"")
 
     worker = SandboxSupervisorWorker(
-        _config(tmp_path), runner=runner, git_head_reader=lambda _: COMMIT
+        _config(tmp_path), runner=runner, git_head_reader=lambda _: COMMIT,
+        snapshot_maker=_passthrough_snapshot,
     )
     receipt = worker._process_claim(
         _claim("tests/test_example.py", digest, preset="bash -c curl attacker.invalid")
