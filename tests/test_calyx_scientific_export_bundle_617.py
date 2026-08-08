@@ -120,6 +120,14 @@ def test_full_export_bundle_preserves_identity_without_private_rows(tmp_path):
     assert source_rows not in bundle.values()
     assert exports.get(owner, project_id, bundle["export_id"]) == bundle
 
+    integrity = exports.verify(owner, project_id, bundle["export_id"])
+    assert integrity["verified"] is True
+    assert integrity["export_sha256"] == bundle["export_sha256"]
+    assert integrity["analysis_id"] == executed["analysis_id"]
+    assert integrity["content_hash_matches"] is True
+    assert integrity["privacy_contract_matches"] is True
+    assert integrity["integrity_verification_is_not_publication_authority"] is True
+
 
 def test_export_bundle_replay_is_content_addressed_and_idempotent(tmp_path):
     exports, _analysis, owner, project_id, executed, _rows = _plan_bound_fixture(tmp_path)
@@ -173,6 +181,7 @@ def test_direct_analysis_exports_without_plan_receipt_or_diagnostics(tmp_path):
     assert bundle["result_artifact"] is None
     assert bundle["diagnostic_identity"] is None
     assert bundle["raw_dataset_rows_included"] is False
+    assert exports.verify(owner, project_id, bundle["export_id"])["verified"] is True
 
 
 def test_export_bundle_fails_closed_on_receipt_identity_mismatch(tmp_path):
@@ -187,7 +196,39 @@ def test_export_bundle_fails_closed_on_receipt_identity_mismatch(tmp_path):
         exports.build(owner, project_id, executed["analysis_id"])
 
 
+def test_persisted_export_fails_closed_when_bundle_content_is_tampered(tmp_path):
+    exports, analysis, owner, project_id, executed, _rows = _plan_bound_fixture(tmp_path)
+    bundle = exports.build(owner, project_id, executed["analysis_id"])["export"]
+    root = analysis._project_root(owner, project_id)
+    export_path = root / "analysis_exports" / f"{bundle['export_id']}.json"
+    persisted = json.loads(export_path.read_text(encoding="utf-8"))
+    persisted["analysis"]["warnings"] = ["tampered"]
+    export_path.write_text(json.dumps(persisted), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="ANALYSIS_EXPORT_INTEGRITY_MISMATCH"):
+        exports.get(owner, project_id, bundle["export_id"])
+    with pytest.raises(ValueError, match="ANALYSIS_EXPORT_INTEGRITY_MISMATCH"):
+        exports.verify(owner, project_id, bundle["export_id"])
+    with pytest.raises(ValueError, match="ANALYSIS_EXPORT_INTEGRITY_MISMATCH"):
+        exports.build(owner, project_id, executed["analysis_id"])
+
+
+def test_persisted_export_fails_closed_when_privacy_contract_is_tampered(tmp_path):
+    exports, analysis, owner, project_id, executed, _rows = _plan_bound_fixture(tmp_path)
+    bundle = exports.build(owner, project_id, executed["analysis_id"])["export"]
+    root = analysis._project_root(owner, project_id)
+    export_path = root / "analysis_exports" / f"{bundle['export_id']}.json"
+    persisted = json.loads(export_path.read_text(encoding="utf-8"))
+    persisted["raw_dataset_rows_included"] = True
+    export_path.write_text(json.dumps(persisted), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="ANALYSIS_EXPORT_INTEGRITY_MISMATCH"):
+        exports.verify(owner, project_id, bundle["export_id"])
+
+
 def test_export_bundle_rejects_invalid_export_identifier(tmp_path):
     exports, _analysis, owner, project_id, _executed, _rows = _plan_bound_fixture(tmp_path)
     with pytest.raises(ValueError, match="ANALYSIS_EXPORT_ID_INVALID"):
         exports.get(owner, project_id, "../private")
+    with pytest.raises(ValueError, match="ANALYSIS_EXPORT_ID_INVALID"):
+        exports.verify(owner, project_id, "../private")
