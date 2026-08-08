@@ -234,7 +234,9 @@ def build_taxonomy_readiness_report(*, intake_root: Path) -> dict[str, Any]:
         "pipeline_state": pipeline_state,
         "next_job": next_job,
         "latest_inspected_release": (
-            next_job.get("release") if isinstance(next_job.get("release"), dict) else None
+            next_job.get("release")
+            if isinstance(next_job.get("release"), dict)
+            else None
         ),
         "gates": [gate.as_dict() for gate in gates],
         "checked_at": datetime.now(UTC).isoformat(),
