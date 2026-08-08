@@ -1,19 +1,21 @@
 from __future__ import annotations
 
+from typing import ClassVar
+
 from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
 from runtime.continuum_conversation import ContinuumConversationService
 
 
 class FixtureProvider:
-    metadata = {"provider": "fixture"}
+    metadata: ClassVar[dict[str, str]] = {"provider": "fixture"}
 
     def embed_batch(self, values):
         return [[1.0, 0.0] for _ in values]
 
 
 class FixtureRepo:
-    documents = [
+    documents: ClassVar[list[dict]] = [
         {
             "index_document_id": "index-target",
             "source_object_type": "CLAIM",
@@ -43,7 +45,7 @@ class FixtureRepo:
             },
         },
     ]
-    lexical = [
+    lexical: ClassVar[list[dict]] = [
         {
             "index_document_id": "index-target",
             "normalized_text": "flowering evidence from the target document",
@@ -55,7 +57,7 @@ class FixtureRepo:
             "title": "Other paper",
         },
     ]
-    vectors = [
+    vectors: ClassVar[list[dict]] = [
         {"index_document_id": "index-target", "vector": [1.0, 0.0], "active": True},
         {"index_document_id": "index-other", "vector": [1.0, 0.0], "active": True},
     ]
