@@ -1,4 +1,5 @@
 """FastAPI router for Calyx Runtime v0.1, constitutional guardrails, and BUILD-049 audit commands."""
+from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -9,6 +10,15 @@ from .config_loader import BrainConfigLoader
 from .constitutional_orchestrator import orchestrator
 from .featured_genus_sentinel import FeaturedGenusSentinel
 from .infrastructure import InfrastructureRegistryService
+from .recalcitrant_orchid_propagation import (
+    MaterialClass,
+    evidence_support_for_entry_material,
+    protocol_matrix,
+    queen_of_sheba_readiness,
+    queen_of_sheba_source,
+    transfer_candidate_score,
+    vegetative_entry_hypothesis,
+)
 from .scheduler import CalyxHeartbeat
 from .science_registry import (
     AUDIT_ENDPOINT_TO_DEPARTMENT,
@@ -163,6 +173,81 @@ def science_audit(audit_key: str) -> dict[str, Any]:
             "promoted_claims": False,
         }
     return audit_result(department_id)
+
+
+PROPAGATION_AUTH = [Depends(verify_owner_or_api_key)]
+
+
+@science_router.get(
+    "/propagation/queen-of-sheba/source",
+    dependencies=PROPAGATION_AUTH,
+)
+def queen_of_sheba_source_endpoint() -> dict[str, Any]:
+    source = queen_of_sheba_source()
+    payload = asdict(source)
+    payload["authority"] = source.authority.value
+    payload["completeness"] = source.completeness.value
+    payload["digest"] = source.digest()
+    payload["publication_authority"] = False
+    return payload
+
+
+@science_router.get(
+    "/propagation/queen-of-sheba/matrix",
+    dependencies=PROPAGATION_AUTH,
+)
+def queen_of_sheba_matrix_endpoint() -> dict[str, Any]:
+    rows = protocol_matrix()
+    return {
+        "taxon": "Thelymitra variegata",
+        "candidate_only": True,
+        "row_count": len(rows),
+        "rows": rows,
+        "publication_authority": False,
+        "canonical_graph_mutation_allowed": False,
+    }
+
+
+@science_router.get(
+    "/propagation/queen-of-sheba/readiness",
+    dependencies=PROPAGATION_AUTH,
+)
+def queen_of_sheba_readiness_endpoint() -> dict[str, Any]:
+    return asdict(queen_of_sheba_readiness())
+
+
+@science_router.get(
+    "/propagation/queen-of-sheba/entry-material/{material}",
+    dependencies=PROPAGATION_AUTH,
+)
+def queen_of_sheba_entry_material_endpoint(material: str) -> dict[str, Any]:
+    try:
+        material_class = MaterialClass(material)
+    except ValueError:
+        return {
+            "status": "unknown_material",
+            "material": material,
+            "available_materials": sorted(item.value for item in MaterialClass),
+            "scientific_validation": False,
+        }
+    support = evidence_support_for_entry_material(material_class)
+    support["transfer_assessment"] = transfer_candidate_score(material_class)
+    support["publication_authority"] = False
+    return support
+
+
+@science_router.get(
+    "/propagation/queen-of-sheba/hypotheses/vegetative-entry",
+    dependencies=PROPAGATION_AUTH,
+)
+def queen_of_sheba_vegetative_hypothesis_endpoint() -> dict[str, Any]:
+    hypothesis = vegetative_entry_hypothesis()
+    payload = asdict(hypothesis)
+    payload["authority"] = hypothesis.authority.value
+    payload["target_material"] = hypothesis.target_material.value
+    payload["digest"] = hypothesis.digest()
+    payload["publication_authority"] = False
+    return payload
 
 
 @config_router.get("/manifest")
