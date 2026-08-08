@@ -59,6 +59,31 @@ The gate:
 
 The protected production workflow uses the GitHub `production` environment and checks out exact current `main`. After an explicitly authorized prerequisite application, it runs the existing 103/105 gate in **read-only mode** to show whether issue #580 can advance.
 
+## Corrective validation history
+
+Validation was intentionally fail-first:
+
+1. The first run stopped at Ruff formatting before PostgreSQL execution; formatting was corrected without changing behavior.
+2. The next PostgreSQL run exposed test contamination because a malformed-schema test reused a database where the successful apply test had already created `research_station.projects`. The malformed simulation was moved into a rollback-only transaction so it no longer changes shared disposable state.
+3. The next run proved the test-level apply/replay path but exposed a workflow-ordering defect: the independent CLI apply was being executed against the already-complete test database. The validation workflow now resets the disposable database before the CLI rehearsal, creating two independent proofs instead of weakening the activation command.
+
+Validated code/workflow head before this documentation receipt: `5d78dc34bf0b03629e25f66915cc6156f0bc62d0`.
+
+Passing evidence:
+
+- CALYX Reasoning Prerequisite Activation Validation run #5 — success
+  - compile, Ruff, and format checks passed
+  - 7 focused tests passed
+  - ordered 087b→088b→088c→088d→101 application passed on PostgreSQL 16
+  - direct DDL replay remained idempotent
+  - malformed partial schema failed closed
+  - fresh independent CLI preflight passed
+  - fresh independent CLI apply passed
+  - explicit verification proved Reasoning Ledger 103 and publication 105 target relations remained absent
+  - disposable evidence artifacts uploaded
+- CALYX Workflow Governance Audit run #489 — success
+- BUILD-088E Validation run #1238 — success
+
 ## Governance separation
 
 There are three independent production decisions:
