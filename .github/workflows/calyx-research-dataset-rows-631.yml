@@ -1,0 +1,61 @@
+name: CALYX Research Dataset Rows 631
+
+on:
+  pull_request:
+    paths:
+      - "runtime/research_dataset_rows.py"
+      - "app/routers/research_dataset_rows.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_research_dataset_rows_631.py"
+      - "docs/brain/CALYX-RESEARCH-DATASET-ROWS-631.md"
+      - ".github/workflows/calyx-research-dataset-rows-631.yml"
+  workflow_dispatch:
+
+jobs:
+  dataset-rows:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile dataset-row surface
+        run: >-
+          python -m py_compile
+          runtime/research_dataset_rows.py
+          app/routers/research_dataset_rows.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_research_dataset_rows_631.py
+      - name: Dataset-row and stacked scientific regressions
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_research_dataset_rows_631.py
+          tests/test_calyx_analysis_plan_workflow_617.py
+          tests/test_calyx_research_station_453.py
+          tests/test_calyx_literature_acquisition_448.py
+      - name: Permanent private non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/research_dataset_rows.py').read_text()
+          required = (
+              '"private_by_default": True',
+              '"scientific_publication_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+              '"immutable": True',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing dataset-row governance assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'TRUNCATE oc_graph')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden graph mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/research_dataset_rows.py app/routers/research_dataset_rows.py tests/test_calyx_research_dataset_rows_631.py
+          git diff --check
