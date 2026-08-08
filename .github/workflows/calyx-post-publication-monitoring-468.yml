@@ -1,0 +1,57 @@
+name: CALYX Post Publication Monitoring 468
+
+on:
+  pull_request:
+    paths:
+      - "runtime/post_publication_monitoring.py"
+      - "app/routers/post_publication_monitoring.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_post_publication_monitoring_468.py"
+      - "docs/brain/CALYX-POST-PUBLICATION-MONITORING-468.md"
+      - ".github/workflows/calyx-post-publication-monitoring-468.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  post-publication-monitoring:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile monitoring surface
+        run: python -m py_compile runtime/post_publication_monitoring.py app/routers/post_publication_monitoring.py app/routers/live_mission_control.py tests/test_calyx_post_publication_monitoring_468.py
+      - name: Deterministic monitoring tests
+        run: python -m pytest -q tests/test_calyx_post_publication_monitoring_468.py
+      - name: Permanent post-publication governance assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/post_publication_monitoring.py').read_text()
+          required = (
+              '"automatic_republication_authorized": False',
+              '"production_graph_rewrite_authorized": False',
+              '"scientific_approval_authorized": False',
+              '"production_deployment_authorized": False',
+              '"historical_record_preserved": True',
+              'MONITOR_IMMUTABLE_PUBLICATION_CONFLICT',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing monitoring governance assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'requests.get(', 'requests.post(', 'httpx.get(', 'httpx.post(')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden monitoring authority present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/post_publication_monitoring.py app/routers/post_publication_monitoring.py tests/test_calyx_post_publication_monitoring_468.py
+          git diff --check
