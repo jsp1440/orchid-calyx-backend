@@ -33,12 +33,13 @@ jobs:
       - name: Ruff external supervisor worker
         run: |
           ruff check runtime/sandbox_supervisor_worker.py tests/test_calyx_external_sandbox_supervisor_worker.py
+          ruff format --check runtime/sandbox_supervisor_worker.py tests/test_calyx_external_sandbox_supervisor_worker.py
       - name: Focused external supervisor regressions
         env:
           PYTHONPATH: .
         run: |
           pytest -q tests/test_calyx_external_sandbox_supervisor_worker.py
-      - name: Static authority boundary assertions
+      - name: Static authority and P1 boundary assertions
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -52,6 +53,13 @@ jobs:
           assert "--cap-drop" in source
           assert "no-new-privileges" in source
           assert "@sha256:" in source
+          assert "--untracked-files=all" in source
+          assert "SANDBOX_SUPERVISOR_CHECKOUT_DIRTY" in source
+          assert '"--name"' in source
+          assert '"stop", "-t", "2"' in source
+          assert '"rm", "-f"' in source
+          assert "git archive" not in source  # argv is structured; no shell command string
+          assert '["git", "-C", str(repo_root), "archive"' in source
           PY
       - name: Diff hygiene
         run: |
