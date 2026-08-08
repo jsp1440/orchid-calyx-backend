@@ -1,0 +1,65 @@
+name: CALYX Research Station 453
+
+on:
+  pull_request:
+    paths:
+      - "runtime/research_station.py"
+      - "runtime/literature_acquisition.py"
+      - "app/routers/research_station.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_research_station_453.py"
+      - "tests/test_calyx_literature_acquisition_448.py"
+      - "docs/brain/CALYX-RESEARCH-STATION-453.md"
+      - ".github/workflows/calyx-research-station-453.yml"
+  workflow_dispatch:
+
+jobs:
+  research-station:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile Research Station surface
+        run: >-
+          python -m py_compile
+          runtime/research_station.py
+          runtime/literature_acquisition.py
+          app/routers/research_station.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_research_station_453.py
+      - name: Deterministic Research Station and literature tests
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_research_station_453.py
+          tests/test_calyx_literature_acquisition_448.py
+          tests/test_calyx_artifact_registry.py
+      - name: Permanent private non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/research_station.py').read_text()
+          required = (
+              '"private_by_default": True',
+              '"public_sharing_enabled": False',
+              '"scientific_publication_authorized": False',
+              '"live_laboratory_control": False',
+              '"production_deployment_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing Research Station governance assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'TRUNCATE oc_graph')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden graph mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check --ignore UP037 runtime/research_station.py app/routers/research_station.py tests/test_calyx_research_station_453.py
+          git diff --check
