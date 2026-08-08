@@ -6,62 +6,24 @@ Add immutable repository-proposal review evidence after merged BUILD-BRAIN-114M 
 
 ## Current-main lineage
 
-BUILD-BRAIN-114M is merged on `main` at `ab318d6d6c83d8cbfa8962bc9ef891ab14a96e3b`. The original 114N branch had accumulated 64 commits of mainline drift after that merge, so it was not retained as the authoritative integration branch. This slice is rebuilt directly from current `main` on `feature/brain-114n-current-main`; only 114N files belong in its delta.
+This slice is rebuilt directly from current `main` on `feature/brain-114n-current-main`; only 114N files belong in its functional delta.
 
 ## Trust chain
 
-Before creating a decision record, 114N verifies:
+Before creating a decision record, 114N verifies the exact `calyx-git-proposal-manifest-v1` digest and proposal identity, the delivered `isolated_workspace_patcher_v1` receipt and checksum, and derives producer identity from that authoritative executor. Reviewers must be distinct from requester and producer, role-qualified for `security` or `operational`, and provide rationale, evidence URIs, and a timezone-aware decision time.
 
-1. the exact `calyx-git-proposal-manifest-v1` payload against its `manifest_digest`;
-2. repository, base commit, source autonomy branch, proposed branch, and patch-output checksum;
-3. an accompanying delivered receipt from exact executor `isolated_workspace_patcher_v1`;
-4. receipt output checksum both against the manifest checksum and a fresh canonical checksum of the output;
-5. receipt repository, branch, checkout commit, and authoritative isolated-patch mode against the manifest;
-6. producer identity derived as `executor:isolated_workspace_patcher_v1`, never caller-supplied;
-7. an independent reviewer distinct from requester and producer and holding the requested `security` or `operational` role;
-8. non-empty rationale, evidence URIs, and a timezone-aware decision time.
-
-The resulting `ProposalAuthorizationRecord` receives a deterministic `authorization_digest`.
-
-## Immutable decisions
-
-`ProposalAuthorizationRegistry` keys records by `(manifest_digest, review_class)`. Re-recording an identical record is idempotent. A conflicting later record is rejected. A rejection therefore cannot be silently replaced for the same exact proposal and review class. A changed proposal has a new manifest digest and requires new review.
+`ProposalAuthorizationRegistry` keys records by `(manifest_digest, review_class)`. Identical re-recording is idempotent; conflicting later decisions are rejected. Changed proposals require new review.
 
 ## Dual-review completion
 
-One approval is never sufficient for complete repository review evidence. `proposal_review_status()` requires both independent classes:
+`proposal_review_status()` requires both required classes. Missing evidence produces `PROPOSAL_REVIEWS_PENDING`; any rejection produces `PROPOSAL_REVIEW_REJECTED`; only approved security plus approved operational evidence produces `PROPOSAL_REVIEW_EVIDENCE_COMPLETE`.
 
-- one approved + one absent → `PROPOSAL_REVIEWS_PENDING`;
-- any rejection → `PROPOSAL_REVIEW_REJECTED`;
-- security approved + operational approved → `PROPOSAL_REVIEW_EVIDENCE_COMPLETE`.
+Even complete review evidence grants no Git mutation, commit, push, pull-request creation, automatic merge, deployment, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation authority.
 
-Even `PROPOSAL_REVIEW_EVIDENCE_COMPLETE` is **not execution authorization**. The status fixes Git mutation, commit, push, pull-request creation, and automatic merge authority to false.
+## CI provenance
 
-## Relationship to existing review governance
+CI-INFRA-002 (#685) currently causes selected PR jobs to terminate before checkout with `steps=null`. Such runs provide no code verdict. The exact-head 114N implementation remains draft until real workflow steps execute and pass.
 
-114N follows existing `ReviewRegistry` principles—immutable decisions, named review classes, role-qualified reviewers, and self-approval prohibition—but is narrower and cryptographically bound to 114M proposal/patch provenance. It does not replace scientific, licensing, publication, or release review.
+## Next dependency
 
-## Permanent non-authorities
-
-Neither an approved record nor completed dual-class review evidence authorizes:
-
-- Git mutation;
-- commit creation;
-- push;
-- pull-request creation;
-- automatic merge;
-- deployment;
-- publication;
-- taxonomy activation;
-- production database mutation;
-- production Knowledge Graph mutation.
-
-114N runtime code invokes no Git command, shell, GitHub mutation API, network request, deployment system, publication system, or production mutation path.
-
-## Validation contract
-
-The dedicated read-only workflow compiles both 114N runtime surfaces, runs Ruff lint/format, executes focused record and aggregate-status regressions, statically asserts identity and non-authority boundaries, and runs event-aware diff hygiene.
-
-Earlier validation attempts on the divergent predecessor branch failed before step 1 with `steps=null` across 114N and unchanged dependency workflows, so they are recorded as runner/allocation incidents and provide no code verdict. The current-main replacement must receive real workflow steps and pass exact-head validation before becoming review-ready.
-
-Merge remains a separate repository governance decision.
+BUILD-BRAIN-114O may consume only authoritative 114N records retrieved from the registry for the exact manifest. It must require both approved classes from distinct reviewers before any owner-bound Git-proposal authorization request can exist. Actual Git/GitHub mutation remains a separate governance boundary.
