@@ -7,8 +7,9 @@ Knowledge Graph or activate taxonomy.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
