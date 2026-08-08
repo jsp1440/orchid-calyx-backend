@@ -9,8 +9,6 @@ generic, not hard-coded per genus or per domain.
 
 from __future__ import annotations
 
-import pytest
-
 from runtime.knowledge_graph import (
     BuildOrchestrator,
     Edge,
@@ -26,8 +24,11 @@ from runtime.knowledge_graph import (
     validate_graph,
 )
 from runtime.knowledge_graph.adapters import DOMAIN_ADAPTERS
-from runtime.knowledge_graph.checkpoint import STATUS_COMPLETED, STATUS_SKIPPED, Checkpoint
-
+from runtime.knowledge_graph.checkpoint import (
+    STATUS_COMPLETED,
+    STATUS_SKIPPED,
+    Checkpoint,
+)
 
 ALL_DOMAINS = {
     "occurrences", "geography", "habitat", "climate", "elevation", "traits",
