@@ -274,7 +274,7 @@ class HomepageGovernanceService:
         for name in required_checks:
             item = checks.get(name)
             if not isinstance(item, dict):
-                raise ValueError(f"HOMEPAGE_VALIDATION_CHECK_REQUIRED:{name}")
+                raise TypeError(f"HOMEPAGE_VALIDATION_CHECK_REQUIRED:{name}")
             passed = item.get("passed") is True
             evidence = list(item.get("evidence") or [])
             if passed and not evidence:
