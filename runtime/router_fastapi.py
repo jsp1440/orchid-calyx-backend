@@ -43,6 +43,11 @@ from .science_registry import (
 from .science_registry import (
     summary as science_summary,
 )
+from .thelymitrinae_propagation_evidence_gap import (
+    acquisition_matrix as thelymitrinae_acquisition_matrix,
+    evidence_ladder as thelymitrinae_evidence_ladder,
+    targeted_search_state as thelymitrinae_search_state,
+)
 
 router = APIRouter(prefix="/api/runtime", tags=["Calyx Runtime"])
 config_router = APIRouter(prefix="/api/config", tags=["Calyx Config"])
@@ -71,13 +76,6 @@ def runtime_health():
 
 @router.get("/featured-genus/audit")
 def audit_featured_genus_media() -> dict[str, Any]:
-    """Run the binding Featured Genus audit gate.
-
-    This audit is intentionally read-only. It returns promotion_allowed=false
-    until the BUILD-208 source contract and a live browser-render probe are
-    evidenced. It is the command Calyx must consult before recommending any
-    Featured Genus media merge or deployment.
-    """
     return FeaturedGenusSentinel().audit()
 
 
@@ -187,10 +185,7 @@ def science_audit(audit_key: str) -> dict[str, Any]:
 PROPAGATION_AUTH = [Depends(verify_owner_or_api_key)]
 
 
-@science_router.get(
-    "/propagation/queen-of-sheba/source",
-    dependencies=PROPAGATION_AUTH,
-)
+@science_router.get("/propagation/queen-of-sheba/source", dependencies=PROPAGATION_AUTH)
 def queen_of_sheba_source_endpoint() -> dict[str, Any]:
     source = queen_of_sheba_source()
     payload = asdict(source)
@@ -201,10 +196,7 @@ def queen_of_sheba_source_endpoint() -> dict[str, Any]:
     return payload
 
 
-@science_router.get(
-    "/propagation/queen-of-sheba/matrix",
-    dependencies=PROPAGATION_AUTH,
-)
+@science_router.get("/propagation/queen-of-sheba/matrix", dependencies=PROPAGATION_AUTH)
 def queen_of_sheba_matrix_endpoint() -> dict[str, Any]:
     rows = protocol_matrix()
     return {
@@ -217,17 +209,13 @@ def queen_of_sheba_matrix_endpoint() -> dict[str, Any]:
     }
 
 
-@science_router.get(
-    "/propagation/queen-of-sheba/readiness",
-    dependencies=PROPAGATION_AUTH,
-)
+@science_router.get("/propagation/queen-of-sheba/readiness", dependencies=PROPAGATION_AUTH)
 def queen_of_sheba_readiness_endpoint() -> dict[str, Any]:
     return asdict(queen_of_sheba_readiness())
 
 
 @science_router.get(
-    "/propagation/queen-of-sheba/entry-material/{material}",
-    dependencies=PROPAGATION_AUTH,
+    "/propagation/queen-of-sheba/entry-material/{material}", dependencies=PROPAGATION_AUTH
 )
 def queen_of_sheba_entry_material_endpoint(material: str) -> dict[str, Any]:
     try:
@@ -246,8 +234,7 @@ def queen_of_sheba_entry_material_endpoint(material: str) -> dict[str, Any]:
 
 
 @science_router.get(
-    "/propagation/queen-of-sheba/hypotheses/vegetative-entry",
-    dependencies=PROPAGATION_AUTH,
+    "/propagation/queen-of-sheba/hypotheses/vegetative-entry", dependencies=PROPAGATION_AUTH
 )
 def queen_of_sheba_vegetative_hypothesis_endpoint() -> dict[str, Any]:
     hypothesis = vegetative_entry_hypothesis()
@@ -260,8 +247,7 @@ def queen_of_sheba_vegetative_hypothesis_endpoint() -> dict[str, Any]:
 
 
 @science_router.get(
-    "/propagation/queen-of-sheba/comparators/diuris/source",
-    dependencies=PROPAGATION_AUTH,
+    "/propagation/queen-of-sheba/comparators/diuris/source", dependencies=PROPAGATION_AUTH
 )
 def queen_of_sheba_diuris_source_endpoint() -> dict[str, Any]:
     source = diuris_source()
@@ -274,8 +260,7 @@ def queen_of_sheba_diuris_source_endpoint() -> dict[str, Any]:
 
 
 @science_router.get(
-    "/propagation/queen-of-sheba/comparators/diuris/matrix",
-    dependencies=PROPAGATION_AUTH,
+    "/propagation/queen-of-sheba/comparators/diuris/matrix", dependencies=PROPAGATION_AUTH
 )
 def queen_of_sheba_diuris_matrix_endpoint() -> dict[str, Any]:
     rows = diurideae_bridge_matrix()
@@ -290,8 +275,7 @@ def queen_of_sheba_diuris_matrix_endpoint() -> dict[str, Any]:
 
 
 @science_router.get(
-    "/propagation/queen-of-sheba/comparators/diuris/bridge",
-    dependencies=PROPAGATION_AUTH,
+    "/propagation/queen-of-sheba/comparators/diuris/bridge", dependencies=PROPAGATION_AUTH
 )
 def queen_of_sheba_diuris_bridge_endpoint() -> dict[str, Any]:
     return {
@@ -300,6 +284,36 @@ def queen_of_sheba_diuris_bridge_endpoint() -> dict[str, Any]:
         "publication_authority": False,
         "canonical_graph_mutation_allowed": False,
     }
+
+
+@science_router.get(
+    "/propagation/queen-of-sheba/evidence/thelymitrinae/search-state",
+    dependencies=PROPAGATION_AUTH,
+)
+def queen_of_sheba_thelymitrinae_search_state_endpoint() -> dict[str, Any]:
+    return thelymitrinae_search_state()
+
+
+@science_router.get(
+    "/propagation/queen-of-sheba/evidence/thelymitrinae/acquisition-matrix",
+    dependencies=PROPAGATION_AUTH,
+)
+def queen_of_sheba_thelymitrinae_acquisition_endpoint() -> dict[str, Any]:
+    rows = thelymitrinae_acquisition_matrix()
+    return {
+        "row_count": len(rows),
+        "rows": rows,
+        "publication_authority": False,
+        "canonical_graph_mutation_allowed": False,
+    }
+
+
+@science_router.get(
+    "/propagation/queen-of-sheba/evidence/ladder",
+    dependencies=PROPAGATION_AUTH,
+)
+def queen_of_sheba_evidence_ladder_endpoint() -> dict[str, Any]:
+    return thelymitrinae_evidence_ladder()
 
 
 @config_router.get("/manifest")
