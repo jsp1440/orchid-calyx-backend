@@ -104,7 +104,7 @@ def test_durable_claim_completion_never_exposes_claim_token_to_owner() -> None:
         service = SandboxSupervisorService(db)
         created = service.create_request(
             owner="owner-1",
-            program_job_id="job-1",
+            program_job_id=None,
             repository=envelope.repository,
             branch=envelope.branch,
             checkout_commit_sha=envelope.checkout_commit_sha,
@@ -114,7 +114,7 @@ def test_durable_claim_completion_never_exposes_claim_token_to_owner() -> None:
         )
         duplicate = service.create_request(
             owner="owner-1",
-            program_job_id="job-1",
+            program_job_id=None,
             repository=envelope.repository,
             branch=envelope.branch,
             checkout_commit_sha=envelope.checkout_commit_sha,
@@ -123,8 +123,10 @@ def test_durable_claim_completion_never_exposes_claim_token_to_owner() -> None:
             timeout_seconds=envelope.timeout_seconds,
         )
         assert duplicate.request_id == created.request_id
-        claimed = service.claim_next(worker_id="external-supervisor-1")
+        claimed = service.claim_next(worker_id="external-supervisor-1", lease_seconds=120)
         assert claimed is not None and claimed.claim_token
+        assert claimed.claim_expires_at is not None
+        assert claimed.attempt_count == 1
         owner_view = service.public_snapshot(claimed)
         assert "claim_token" not in owner_view
         assert owner_view["claim_token_exposed"] is False
@@ -170,3 +172,10 @@ def test_stale_claim_or_receipt_fails_closed() -> None:
                 claim_token=claimed.claim_token,
                 receipt_payload=_receipt("0" * 64),
             )
+
+
+def test_invalid_supervisor_lease_fails_closed() -> None:
+    with _db() as db:
+        service = SandboxSupervisorService(db)
+        with pytest.raises(ValueError, match="LEASE_INVALID"):
+            service.claim_next(worker_id="external-supervisor-1", lease_seconds=30)
