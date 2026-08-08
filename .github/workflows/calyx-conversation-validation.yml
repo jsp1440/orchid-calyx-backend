@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate-calyx-conversation:
@@ -22,56 +22,11 @@ jobs:
       PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install dependencies
         run: pip install -r requirements.txt pytest httpx ruff
-      - name: Restore main files and apply minimal governance correction
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch --depth=1 origin main
-          git show origin/main:app/calyx_conversation/routes.py > app/calyx_conversation/routes.py
-          git show origin/main:tests/test_calyx_conversation.py > tests/test_calyx_conversation.py
-          python - <<'PY'
-          from pathlib import Path
-
-          routes = Path('app/calyx_conversation/routes.py')
-          text = routes.read_text()
-          result_anchor = '''                "method": "normal-approximation",\n                "n": len(values),\n'''
-          result_replacement = '''                "method": "normal-approximation",\n                "n": len(values),\n                "approximation_only": True,\n                "canonical_scientific_method": False,\n                "research_grade": False,\n                "p_value_generated": False,\n                "scientific_interpretation_generated": False,\n                "governed_research_method": "CALYX-617 Student-t mean confidence interval (not yet live)",\n                "warning": (\n                    "Approximation-only convenience interval. Do not treat this normal-approximation "\n                    "result as the governed Research Station confidence interval; small-sample mean "\n                    "inference requires the CALYX-617 Student-t method."\n                ),\n'''
-          if result_anchor not in text:
-              raise SystemExit('confidence interval result anchor not found in main')
-          text = text.replace(result_anchor, result_replacement, 1)
-
-          capability_anchor = '''            "moving_average",\n        ],\n        "dataset_analysis": ["describe", "correlation_matrix"],\n'''
-          capability_replacement = '''            "moving_average",\n        ],\n        "analysis_method_notes": {\n            "confidence_interval_mean": {\n                "status": "approximation_only",\n                "canonical_scientific_method": False,\n                "distribution": "normal",\n                "governed_research_equivalent": "CALYX-617 Student-t mean confidence interval (pending activation)",\n            }\n        },\n        "dataset_analysis": ["describe", "correlation_matrix"],\n'''
-          if capability_anchor not in text:
-              raise SystemExit('capabilities analysis anchor not found in main')
-          routes.write_text(text.replace(capability_anchor, capability_replacement, 1))
-
-          tests = Path('tests/test_calyx_conversation.py')
-          test_text = tests.read_text()
-          test_anchor = '''    assert result["result"]["lower"] < 12 < result["result"]["upper"]\n    assert result["result"]["method"] == "normal-approximation"\n'''
-          test_replacement = '''    assert result["result"]["lower"] < 12 < result["result"]["upper"]\n    assert result["result"]["method"] == "normal-approximation"\n    assert result["result"]["approximation_only"] is True\n    assert result["result"]["canonical_scientific_method"] is False\n    assert result["result"]["research_grade"] is False\n    assert result["result"]["p_value_generated"] is False\n    assert result["result"]["scientific_interpretation_generated"] is False\n    assert "Student-t" in result["result"]["warning"]\n'''
-          if test_anchor not in test_text:
-              raise SystemExit('confidence interval test anchor not found in main')
-          tests.write_text(test_text.replace(test_anchor, test_replacement, 1))
-          PY
-      - name: Commit minimal correction
-        if: github.event_name == 'pull_request'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/calyx_conversation/routes.py tests/test_calyx_conversation.py
-          if git diff --cached --quiet; then
-            echo "Minimal confidence interval governance correction already present."
-            exit 0
-          fi
-          git commit -m "fix: minimize conversational confidence interval governance diff"
-          git push origin HEAD:${{ github.head_ref }}
       - name: Compile Calyx analysis slice
         run: python -m py_compile app/calyx_conversation/routes.py app/calyx_conversation/store.py app/calyx_conversation/file_analysis.py app/calyx_conversation/file_routes.py app/calyx_conversation/reasoning_routes.py app/routers/calyx_core.py tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py tests/test_build_613_calyx_reasoning_context.py
       - name: Run focused regression tests
@@ -89,9 +44,11 @@ jobs:
           assert result['research_grade'] is False
           assert result['p_value_generated'] is False
           assert result['scientific_interpretation_generated'] is False
+          assert 'Student-t' in result['warning']
           note = capabilities()['analysis_method_notes']['confidence_interval_mean']
           assert note['status'] == 'approximation_only'
           assert note['canonical_scientific_method'] is False
+          assert note['distribution'] == 'normal'
           PY
       - name: Verify router import
         run: python -c "from app.routers.calyx_core import router; paths={getattr(r, 'path', '') for r in router.routes}; assert '/api/calyx/query' in paths; assert '/api/calyx/reasoning-map' in paths; assert '/api/calyx/reasoning-query' in paths; assert '/api/calyx/dataset/upload-analyze' in paths; assert '/api/calyx/dataset/upload-report' in paths"
