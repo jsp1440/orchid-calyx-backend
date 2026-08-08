@@ -17,7 +17,11 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app.database import get_engine
-from runtime.world_plants_ingest import ParseResult, WorldPlantsRow, parse_world_orchids_release
+from runtime.world_plants_ingest import (
+    ParseResult,
+    WorldPlantsRow,
+    parse_world_orchids_release,
+)
 
 MAX_BATCH_SIZE = 2_000
 
