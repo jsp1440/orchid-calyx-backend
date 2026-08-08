@@ -55,7 +55,7 @@ def _rollback_certified() -> tuple[bool, str]:
 
 
 def _latest_inspected_release(intake_root: Path) -> dict[str, Any] | None:
-    """Read the newest immutable intake report without importing database code."""
+    """Read the newest immutable local intake report without importing database code."""
     if not intake_root.is_dir():
         return None
     candidates: list[dict[str, Any]] = []
@@ -146,14 +146,42 @@ def _pipeline_state(
     )
 
 
-def build_taxonomy_readiness_report(*, intake_root: Path) -> dict[str, Any]:
+def build_taxonomy_readiness_report(
+    *,
+    intake_root: Path,
+    staging_schema_verified_override: bool | None = None,
+    durable_intake_available_override: bool | None = None,
+    latest_release_override: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Return deployed operational evidence without mutating taxonomy data."""
     storage_exists = intake_root.exists() and intake_root.is_dir()
     storage_persistent = _flag("CALYX_TAXONOMY_STORAGE_PERSISTENT")
     storage_writable = storage_exists and os.access(intake_root, os.W_OK)
-    staging_schema_verified = _flag("CALYX_TAXONOMY_STAGING_SCHEMA_VERIFIED")
+    filesystem_intake_ready = storage_exists and storage_writable and storage_persistent
+    durable_intake_available = (
+        durable_intake_available_override
+        if durable_intake_available_override is not None
+        else False
+    )
+    persistent_intake_ready = filesystem_intake_ready or durable_intake_available
+    staging_schema_verified = (
+        staging_schema_verified_override
+        if staging_schema_verified_override is not None
+        else _flag("CALYX_TAXONOMY_STAGING_SCHEMA_VERIFIED")
+    )
     smoke_verified = _flag("CALYX_TAXONOMY_SMOKE_FIXTURE_VERIFIED")
     rollback_ok, rollback_evidence = _rollback_certified()
+
+    if durable_intake_available:
+        intake_evidence = (
+            "Migration 107 PostgreSQL durable source-byte storage is verified; "
+            "local persistent volume is not required for authoritative intake."
+        )
+    else:
+        intake_evidence = (
+            f"Storage path={intake_root}; exists={storage_exists}; "
+            f"writable={storage_writable}; persistent_flag={storage_persistent}."
+        )
 
     gates = (
         _gate(
@@ -164,9 +192,12 @@ def build_taxonomy_readiness_report(*, intake_root: Path) -> dict[str, Any]:
         ),
         _gate(
             "persistent_intake_storage",
-            storage_exists and storage_writable and storage_persistent,
-            f"Storage path={intake_root}; exists={storage_exists}; writable={storage_writable}; persistent_flag={storage_persistent}.",
-            "Configure a writable persistent volume and set CALYX_TAXONOMY_STORAGE_PERSISTENT=true.",
+            persistent_intake_ready,
+            intake_evidence,
+            (
+                "Configure a writable persistent volume or verify migration 107 "
+                "PostgreSQL durable intake storage."
+            ),
         ),
         _gate(
             "database_connection",
@@ -177,8 +208,12 @@ def build_taxonomy_readiness_report(*, intake_root: Path) -> dict[str, Any]:
         _gate(
             "staging_schema",
             staging_schema_verified,
-            "Operator-controlled migration verification flag checked.",
-            "Apply and verify the staging migration, then set CALYX_TAXONOMY_STAGING_SCHEMA_VERIFIED=true.",
+            (
+                "Live migration-107 schema verification supplied by Mission Control."
+                if staging_schema_verified_override is not None
+                else "Operator-controlled migration verification flag checked."
+            ),
+            "Apply and verify migration 107 before durable staging.",
         ),
         _gate(
             "deployed_routes",
@@ -190,7 +225,7 @@ def build_taxonomy_readiness_report(*, intake_root: Path) -> dict[str, Any]:
             "smoke_fixture",
             smoke_verified,
             "Operator-controlled smoke upload/readback verification flag checked.",
-            "Run a harmless Hassler-format upload/readback test and set CALYX_TAXONOMY_SMOKE_FIXTURE_VERIFIED=true.",
+            "Run a harmless Hassler-format upload/readback test and record its verified evidence.",
         ),
         _gate(
             "comparison_engine",
@@ -221,7 +256,11 @@ def build_taxonomy_readiness_report(*, intake_root: Path) -> dict[str, Any]:
         gate for gate in gates if gate.name != "owner_promotion_approval"
     )
     ready_for_upload = all(gate.status == "passed" for gate in upload_gates)
-    latest_release = _latest_inspected_release(intake_root)
+    latest_release = (
+        latest_release_override
+        if latest_release_override is not None
+        else _latest_inspected_release(intake_root)
+    )
     pipeline_state, next_job = _pipeline_state(
         latest_release=latest_release,
         staging_schema_verified=staging_schema_verified,
