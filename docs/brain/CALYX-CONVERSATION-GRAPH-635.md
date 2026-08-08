@@ -2,7 +2,7 @@
 
 Date: 2026-08-08
 Depends on: CALYX-634 Ask the Continuum, canonical Knowledge Graph traversal, Evidence Retrieval 085B.
-Status: implementation pending exact-head validation; no merge, deployment, scientific publication, external communication, or Knowledge Graph mutation authorized.
+Status: implementation validated on exact behavioral head; final documentation-only exact-head rerun pending. No merge, deployment, scientific publication, external communication, or Knowledge Graph mutation authorized.
 
 ## Goal
 
@@ -53,16 +53,20 @@ Existing `unknown`, `continuum_evidence`, and `continuum_evidence_metadata_only`
 
 Graph answer text is deliberately descriptive. It may state the number of connected nodes/edges, recorded edge types, represented domains, and explicit data gaps. It must state that these are stored graph relationships and coverage signals, not a newly inferred causal or scientific interpretation.
 
-## Validation plan
+## Validation evidence
 
-Dedicated CALYX-635 CI will run:
+Behavioral head `b02ce7c8099757f8fad211260dd9388e22ed60d5` passed:
 
-- graph-tool and conversation integration tests;
-- CALYX-634 conversation regressions;
-- canonical Knowledge Graph traversal regressions;
-- compilation;
-- Ruff/diff hygiene;
-- source-level non-authority assertions proving that the conversation graph adapter does not reference writable graph APIs or SQL mutation statements.
+- CALYX-634 conversation compatibility lane;
+- global CALYX workflow-governance audit;
+- CALYX-635 graph conversation lane;
+- 29 stacked graph/conversation/traversal tests;
+- permanent read-only Knowledge Graph assertions;
+- changed-surface Ruff and diff hygiene.
+
+The first CALYX-635 run exposed only code-quality issues after all behavioral tests passed: Ruff requested import normalization and rejected a broad `Exception` catch. Those were corrected by formatting imports and narrowing database read failure handling to `psycopg.Error`. No behavioral authority was broadened by the fixes.
+
+The prior CALYX-634 lane also remained behavior-clean during development: its 18 conversation/retrieval tests and non-authority assertions passed before the import-format correction.
 
 ## Next priority after validation
 
