@@ -91,9 +91,7 @@ def test_report_deduplicates_persisted_source_references():
 
     assert report.count('<a id="source-1"></a>Source 1:') == 1  # deduplicated in ledger
     assert "Source 2:" not in report
-    assert (
-        report.count("- Sources: [Source 1](#source-1)") == 2
-    )  # one per Calyx message
+    assert report.count("- Sources: [Source 1](#source-1)") == 2
 
 
 def test_owner_scoped_report_endpoint_returns_markdown_attachment():
