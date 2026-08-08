@@ -51,7 +51,7 @@ def validate_source(path: Path) -> dict[str, Any]:
 def _assert_release_report(report: dict[str, Any]) -> None:
     snapshot = report.get("snapshot")
     if not isinstance(snapshot, dict):
-        raise RuntimeError("upload response is missing snapshot")
+        raise TypeError("upload response is missing snapshot")
     expected = {
         "release_id": EXPECTED_SHA256,
         "sha256": EXPECTED_SHA256,
