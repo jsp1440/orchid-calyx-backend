@@ -1,0 +1,71 @@
+name: BUILD-614 Causal Vocabulary Validation
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/knowledge_graph/causal_vocabulary.py'
+      - 'runtime/knowledge_graph/vocabulary.py'
+      - 'runtime/knowledge_graph/validation.py'
+      - 'app/brain/reasoning_map.py'
+      - 'tests/test_build_614_scientific_causal_vocabulary.py'
+      - 'tests/test_build_612_reasoning_map.py'
+      - '.github/workflows/build-614-causal-vocabulary-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-causal-vocabulary:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile causal reasoning slice
+        run: >-
+          python -m py_compile
+          runtime/knowledge_graph/causal_vocabulary.py
+          runtime/knowledge_graph/vocabulary.py
+          runtime/knowledge_graph/validation.py
+          app/brain/reasoning_map.py
+          tests/test_build_614_scientific_causal_vocabulary.py
+          tests/test_build_612_reasoning_map.py
+      - name: Ruff
+        run: >-
+          ruff check
+          runtime/knowledge_graph/causal_vocabulary.py
+          runtime/knowledge_graph/vocabulary.py
+          runtime/knowledge_graph/validation.py
+          app/brain/reasoning_map.py
+          tests/test_build_614_scientific_causal_vocabulary.py
+          tests/test_build_612_reasoning_map.py
+      - name: Formatting
+        run: >-
+          ruff format --check
+          runtime/knowledge_graph/causal_vocabulary.py
+          runtime/knowledge_graph/vocabulary.py
+          runtime/knowledge_graph/validation.py
+          app/brain/reasoning_map.py
+          tests/test_build_614_scientific_causal_vocabulary.py
+          tests/test_build_612_reasoning_map.py
+      - name: Causal vocabulary and reasoning regressions
+        run: >-
+          python -m pytest -q
+          tests/test_build_614_scientific_causal_vocabulary.py
+          tests/test_build_612_reasoning_map.py
+      - name: Existing Knowledge Graph regression
+        run: >-
+          python -m pytest -q
+          tests/test_knowledge_graph_api.py
+          tests/test_knowledge_graph_traversal.py
+          tests/test_knowledge_graph_orchestrator.py
+      - name: Hygiene
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
