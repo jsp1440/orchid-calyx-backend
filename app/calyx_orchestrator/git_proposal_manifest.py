@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -10,20 +11,52 @@ from .sandbox_supervisor_evidence import (
     ValidationRequestEnvelope,
     canonical_sha256,
 )
+from .sandbox_supervisor_service import SandboxSupervisorService
 
 SCHEMA = "calyx-git-proposal-manifest-v1"
 MAX_CHANGES = 8
 MAX_TITLE = 120
 MAX_SUMMARY = 4_000
 ALLOWED_CHANGE_PREFIXES = ("app/", "tests/", "docs/brain/")
+FORBIDDEN_REF_CHARS = frozenset(" ~^:?*[\\")
 
 
 def _is_sha256(value: str) -> bool:
-    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+    return len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
 
 
 def _is_git_sha(value: str) -> bool:
-    return len(value) == 40 and all(character in "0123456789abcdef" for character in value)
+    return len(value) == 40 and all(
+        character in "0123456789abcdef" for character in value
+    )
+
+
+def _valid_git_branch(value: str) -> bool:
+    """Apply Git ref-name rules without invoking Git or a shell."""
+    if (
+        not value
+        or value == "@"
+        or value.startswith("/")
+        or value.endswith("/")
+        or value.endswith(".")
+        or "//" in value
+        or ".." in value
+        or "@{" in value
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
+        or any(character in FORBIDDEN_REF_CHARS for character in value)
+    ):
+        return False
+    for component in value.split("/"):
+        if (
+            not component
+            or component.startswith(".")
+            or component.endswith(".")
+            or component.endswith(".lock")
+        ):
+            return False
+    return True
 
 
 def _bounded_text(value: Any, *, field: str, maximum: int) -> str:
@@ -151,7 +184,21 @@ class GitProposalManifest:
 
 
 class GitProposalManifestBuilder:
-    """Build a non-mutating Git/PR proposal from exact patch and sandbox evidence."""
+    """Build a proposal only from exact patch and persisted supervisor evidence."""
+
+    def __init__(
+        self,
+        supervisor_service: SandboxSupervisorService,
+        *,
+        allowed_policy_digests: Sequence[str],
+    ) -> None:
+        normalized = frozenset(
+            str(value or "").strip().lower() for value in allowed_policy_digests
+        )
+        if not normalized or any(not _is_sha256(value) for value in normalized):
+            raise ValueError("GIT_PROPOSAL_ALLOWED_POLICY_DIGESTS_INVALID")
+        self._supervisor_service = supervisor_service
+        self._allowed_policy_digests = normalized
 
     def build(
         self,
@@ -170,7 +217,9 @@ class GitProposalManifestBuilder:
             raise PermissionError("GIT_PROPOSAL_AUTHORITATIVE_PATCH_REQUIRED")
         if output.get("mode") != "authoritative_isolated_workspace_patch":
             raise PermissionError("GIT_PROPOSAL_PATCH_MODE_INVALID")
-        if not bool(output.get("workspace_isolated")) or not bool(output.get("workspace_disposable")):
+        if not bool(output.get("workspace_isolated")) or not bool(
+            output.get("workspace_disposable")
+        ):
             raise PermissionError("GIT_PROPOSAL_ISOLATED_WORKSPACE_REQUIRED")
         if bool(output.get("commit_created")):
             raise PermissionError("GIT_PROPOSAL_PREEXISTING_COMMIT_PROHIBITED")
@@ -189,8 +238,7 @@ class GitProposalManifestBuilder:
         if (
             not proposal_branch.startswith("autonomy/proposal/")
             or proposal_branch == source_branch
-            or ".." in proposal_branch
-            or proposal_branch.endswith("/")
+            or not _valid_git_branch(proposal_branch)
         ):
             raise PermissionError("GIT_PROPOSAL_BRANCH_INVALID")
 
@@ -202,7 +250,9 @@ class GitProposalManifestBuilder:
             raise ValueError("GIT_PROPOSAL_DUPLICATE_CHANGE")
 
         output_checksum = str(patch_receipt.get("output_checksum") or "").strip().lower()
-        if not _is_sha256(output_checksum) or output_checksum != canonical_checksum(dict(output)):
+        if not _is_sha256(output_checksum) or output_checksum != canonical_checksum(
+            dict(output)
+        ):
             raise PermissionError("GIT_PROPOSAL_PATCH_OUTPUT_CHECKSUM_MISMATCH")
 
         verified = tuple(
@@ -228,13 +278,15 @@ class GitProposalManifestBuilder:
             validations=tuple(
                 sorted(verified, key=lambda item: (item.preset, item.request_digest))
             ),
-            commit_title=_bounded_text(commit_title, field="COMMIT_TITLE", maximum=MAX_TITLE),
+            commit_title=_bounded_text(
+                commit_title, field="COMMIT_TITLE", maximum=MAX_TITLE
+            ),
             pr_title=_bounded_text(pr_title, field="PR_TITLE", maximum=MAX_TITLE),
             summary=_bounded_text(summary, field="SUMMARY", maximum=MAX_SUMMARY),
         )
 
-    @staticmethod
     def _verify_validation(
+        self,
         entry: Mapping[str, Any],
         *,
         repository: str,
@@ -264,10 +316,42 @@ class GitProposalManifestBuilder:
             or request.checkout_commit_sha != commit_sha
         ):
             raise PermissionError("GIT_PROPOSAL_VALIDATION_IDENTITY_MISMATCH")
+
         receipt = SupervisorValidationReceipt.from_mapping(raw_receipt)
         receipt.verify_for(request)
         if receipt.outcome != "delivered" or receipt.return_code != 0:
             raise PermissionError("GIT_PROPOSAL_SUCCESSFUL_VALIDATION_REQUIRED")
+        if receipt.policy_digest not in self._allowed_policy_digests:
+            raise PermissionError("GIT_PROPOSAL_VALIDATION_POLICY_NOT_ALLOWED")
+
+        try:
+            persisted = self._supervisor_service.get_completed_by_digest(
+                request_digest=request.request_digest
+            )
+        except (LookupError, PermissionError, ValueError) as exc:
+            raise PermissionError("GIT_PROPOSAL_PERSISTED_VALIDATION_REQUIRED") from exc
+
+        expected_targets = [
+            target.as_dict() for target in sorted(request.targets, key=lambda item: item.path)
+        ]
+        persisted_targets = json.loads(persisted.targets_json)
+        if (
+            persisted.request_digest != request.request_digest
+            or persisted.repository != request.repository
+            or persisted.branch != request.branch
+            or persisted.checkout_commit_sha != request.checkout_commit_sha
+            or persisted.preset != request.preset
+            or int(persisted.timeout_seconds) != request.timeout_seconds
+            or sorted(persisted_targets, key=lambda item: item["path"]) != expected_targets
+            or persisted.status != "completed"
+            or persisted.outcome != "delivered"
+            or persisted.receipt_digest != receipt.receipt_digest
+            or persisted.policy_digest != receipt.policy_digest
+            or persisted.authorization_id != receipt.authorization_id
+            or persisted.evidence_uri != receipt.evidence_uri
+        ):
+            raise PermissionError("GIT_PROPOSAL_PERSISTED_VALIDATION_MISMATCH")
+
         return VerifiedValidation(
             preset=request.preset,
             request_digest=request.request_digest,
@@ -307,5 +391,5 @@ class GitProposalManifestBuilder:
             for change in changes
             if change.path.startswith("tests/") and change.path.endswith(".py")
         }
-        if changed_tests and not pytest_targets:
-            raise PermissionError("GIT_PROPOSAL_PYTEST_VALIDATION_REQUIRED")
+        if changed_tests - pytest_targets:
+            raise PermissionError("GIT_PROPOSAL_PYTEST_COVERAGE_INCOMPLETE")
