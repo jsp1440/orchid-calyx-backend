@@ -18,6 +18,7 @@ on:
       - "tests/test_australian_diurideae_propagation_bridge.py"
       - "tests/test_australian_diurideae_propagation_api.py"
       - "tests/test_thelymitrinae_propagation_evidence_gap.py"
+      - "tests/test_thelymitrinae_propagation_api.py"
       - "docs/brain/CALYX-639-recalcitrant-orchid-propagation.md"
       - "docs/brain/CALYX-639B-terrestrial-vegetative-plb-comparators.md"
       - "docs/brain/CALYX-639C-propagation-comparator-dataset.md"
@@ -25,6 +26,7 @@ on:
       - "docs/brain/CALYX-639E-proximal-australian-diurideae-bridge.md"
       - "docs/brain/CALYX-639F-proximal-bridge-validation.md"
       - "docs/brain/CALYX-639G-thelymitrinae-evidence-gap.md"
+      - "docs/brain/CALYX-639H-same-genus-recovery-evidence.md"
       - ".github/workflows/calyx-639-propagation.yml"
   workflow_dispatch:
 
@@ -65,3 +67,4 @@ jobs:
           tests/test_australian_diurideae_propagation_bridge.py
           tests/test_australian_diurideae_propagation_api.py
           tests/test_thelymitrinae_propagation_evidence_gap.py
+          tests/test_thelymitrinae_propagation_api.py
