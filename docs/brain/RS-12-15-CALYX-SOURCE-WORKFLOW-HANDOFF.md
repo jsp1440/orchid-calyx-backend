@@ -41,22 +41,26 @@ Delivered runtime behavior:
 - fixed page size of 10 conversations;
 - one bounded conversation-list request per page;
 - at most 10 owner-scoped conversation-detail reads for the current page;
-- stale/negative offsets clamp to a valid page;
+- negative, oversized, and misaligned positive offsets normalize to a valid page boundary;
 - explicit newer/older navigation;
 - current conversation range, total conversation count, and current-page source count are displayed;
 - project document links remain independently loaded and refresh only after an explicit save;
 - all RS-14 provenance and non-authority rules remain unchanged.
 
-Additional hardening:
+Additional hardening and supplemental validation:
 - manual diff review completed;
 - React document-loading effect was made self-contained to avoid an ambiguous hook dependency;
-- focused pagination tests cover first page, final partial page, oversized offset, negative offset, and empty archive.
+- focused pagination tests cover first page, final partial page, oversized offset, negative offset, empty archive, and misaligned positive offsets;
+- pure pagination invariants were independently exercised across 42,220 boundary/randomized cases with zero failures after page-boundary normalization;
+- this supplemental property check verifies page alignment, bounded ranges, correct final partial pages, and deterministic newer/older offsets, but it is not a substitute for the repository's full TypeScript/lint/test/build gate.
 
 ## Current validation blocker
 
 Beginning with RS-15, GitHub-hosted Research Station jobs repeatedly fail before workflow step 1. The observed job objects contain `steps: null`; there are no formatter, lint, test, build, or application-step failures and no retrievable project log. Fresh heads and explicit reruns reproduce the same pre-step termination.
 
-At 2026-08-08 15:30 PT the latest rerun still failed before step 1. The exact external cause is not established from available repository APIs. Do not label this as an application-code failure, but do not promote RS-15 to review-ready until an executable full Research Station gate succeeds.
+The failure is now confirmed cross-repository. At approximately 2026-08-08 15:30–16:13 PT, documentation-only heads and reruns in `orchid-calyx-backend` also caused CALYX-640, Mission Control live-registration, and governance jobs to terminate before workflow step 1 with `steps: null`. This rules out an RS-15-specific workflow or application defect as the observed hosted-runner failure mode. The exact account/platform cause remains unavailable through the connected repository APIs.
+
+Do not label this as an application-code failure, but do not promote RS-15 to review-ready until an executable full Research Station gate succeeds.
 
 ## Governance boundary
 
