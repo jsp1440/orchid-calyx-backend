@@ -25,6 +25,7 @@ class FixtureRepo:
             "content_hash": "hash-target",
             "anchors": [],
             "metadata": {
+                "document_id": "document-target",
                 "source_document_id": "document-target",
                 "display_policy": "FULL_TEXT_ALLOWED",
                 "document_title": "Target paper",
@@ -97,7 +98,15 @@ def test_retrieval_document_scope_excludes_other_documents():
     assert result["applied_filters"]["filters"] == {"document_id": "document-target"}
 
 
-def test_document_scope_can_match_revision_or_parent_identity():
+def test_document_scope_matches_canonical_document_id_only():
+    engine = RetrievalEngine(FixtureRepo(), FixtureProvider())
+
+    by_document_id = engine.search(RetrievalQuery(text="flowering", filters={"document_id": "document-target"}))
+
+    assert [item["citation"]["revision_id"] for item in by_document_id["results"]] == ["rev-target"]
+
+
+def test_document_scope_does_not_match_revision_or_parent_id():
     engine = RetrievalEngine(FixtureRepo(), FixtureProvider())
 
     by_revision = engine.search(RetrievalQuery(text="flowering", filters={"document_id": "rev-target"}))
@@ -105,8 +114,10 @@ def test_document_scope_can_match_revision_or_parent_identity():
         RetrievalQuery(text="flowering", filters={"document_id": "parent-target"})
     )
 
-    assert [item["citation"]["revision_id"] for item in by_revision["results"]] == ["rev-target"]
-    assert [item["citation"]["revision_id"] for item in by_parent["results"]] == ["rev-target"]
+    # revision_id and parent_id are not canonical document identifiers;
+    # scoping by them must not admit any evidence.
+    assert by_revision["results"] == []
+    assert by_parent["results"] == []
 
 
 def test_conversation_passes_active_document_as_exact_retrieval_filter():

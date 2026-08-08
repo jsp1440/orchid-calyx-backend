@@ -17,7 +17,7 @@ class RetrievalEngine:
    if q.object_types and d["source_object_type"] not in q.object_types: continue
    if q.document_classes and meta.get("document_class") not in q.document_classes: continue
    if q.language and lexical.get("language")!=q.language: continue
-   if document_scope and document_scope not in {str(d.get("revision_id") or ""),str(d.get("parent_id") or ""),str(meta.get("document_id") or ""),str(meta.get("source_document_id") or "")}: excluded["DOCUMENT_SCOPE"]+=1; continue
+   if document_scope and document_scope not in {str(meta.get("document_id") or ""),str(meta.get("source_document_id") or "")}: excluded["DOCUMENT_SCOPE"]+=1; continue
    if meta.get("tombstoned") or (meta.get("temporal_status") in {"SUPERSEDED","RETRACTED"} and not q.historical): excluded["STATUS"]+=1; continue
    if meta.get("expires_at") and meta["expires_at"]<meta.get("as_of","9999") and not q.historical: excluded["EXPIRED"]+=1; continue
    matches=[t for t in terms if t in text or t in title]; ls=(sum(text.count(t) for t in terms)+3*sum(title.count(t) for t in terms))/max(1,len(terms)); vector=next((v for v in self.repo.vectors if v["index_document_id"]==d["index_document_id"] and v.get("active",True)),None); ss=cosine(query_vector,vector["vector"]) if query_vector is not None and vector else 0
