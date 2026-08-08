@@ -62,6 +62,7 @@ CAUSAL_CONTEXT_NODE_TYPES: Final[frozenset[str]] = frozenset(
         "molecular_record",
         "assertion",
         "evidence",
+        "publication",
         "hypothesis",
         "research_question",
     }
@@ -99,6 +100,13 @@ CAUSAL_RELATION_SEMANTICS: Final[dict[str, CausalRelationSemantics]] = {
     "observed_as": {"role": "evidence", "polarity": 0, "causal": False},
     "derived_from": {"role": "evidence", "polarity": 0, "causal": False},
     "has_evidence": {"role": "evidence", "polarity": 0, "causal": False},
+    "documented_by": {"role": "evidence", "polarity": 0, "causal": False},
+    "supported_by_evidence": {
+        "role": "evidence",
+        "polarity": 1,
+        "causal": False,
+    },
+    "contradicted_by": {"role": "evidence", "polarity": -1, "causal": False},
 }
 
 CANONICAL_CAUSAL_EDGE_TYPES: Final[frozenset[str]] = frozenset(
