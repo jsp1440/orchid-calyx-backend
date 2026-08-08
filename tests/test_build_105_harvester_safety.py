@@ -6,6 +6,7 @@ import types
 import pytest
 from fastapi.testclient import TestClient
 
+import harvesters
 from app.main import app
 from harvesters.execution import run_harvester
 from harvesters.safety import (
@@ -19,6 +20,12 @@ from harvesters.safety import (
     enforce_gbif_offset,
 )
 from harvesters.safety_store import record_dead_letter, record_safety_snapshot
+
+
+def _install_fake_harvester(monkeypatch, module_name: str, fake: types.ModuleType) -> None:
+    """Replace both import-system and package-attribute references for one fake module."""
+    monkeypatch.setitem(sys.modules, f"harvesters.{module_name}", fake)
+    monkeypatch.setattr(harvesters, module_name, fake, raising=False)
 
 
 def test_work_budget_caps_requests_records_and_writes():
@@ -75,7 +82,7 @@ def test_inaturalist_audit_only_does_not_execute(monkeypatch):
         raise AssertionError("harvest_all must not run in audit-only mode")
 
     fake.harvest_all = forbidden
-    monkeypatch.setitem(sys.modules, "harvesters.inat", fake)
+    _install_fake_harvester(monkeypatch, "inat", fake)
 
     result = run_harvester("inaturalist", audit_only=True)
     assert result["starting_checkpoint"] == "42"
@@ -98,7 +105,7 @@ def test_gbif_dry_run_enforces_window_without_execution(monkeypatch):
         raise AssertionError("GBIF run must not execute in dry-run mode")
 
     fake.run = forbidden
-    monkeypatch.setitem(sys.modules, "harvesters.gbif_api", fake)
+    _install_fake_harvester(monkeypatch, "gbif_api", fake)
 
     with pytest.raises(BudgetExceeded):
         run_harvester("gbif", limit=1_000, dry_run=True)
@@ -121,8 +128,8 @@ def test_traitbank_audit_only_reads_without_database_writes(monkeypatch):
             yield {"id": 3}
 
     traitbank.TraitBankHarvester = FakeTraitBankHarvester
-    monkeypatch.setitem(sys.modules, "harvesters.state_helper", helper)
-    monkeypatch.setitem(sys.modules, "harvesters.traitbank", traitbank)
+    _install_fake_harvester(monkeypatch, "state_helper", helper)
+    _install_fake_harvester(monkeypatch, "traitbank", traitbank)
     monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
 
     result = run_harvester("eol_traitbank", audit_only=True)
@@ -148,7 +155,7 @@ def test_preview_endpoint_returns_no_write_contract(monkeypatch):
     fake.harvest_all = lambda *_args, **_kwargs: (_ for _ in ()).throw(
         AssertionError("preview endpoint must not run the live harvester")
     )
-    monkeypatch.setitem(sys.modules, "harvesters.inat", fake)
+    _install_fake_harvester(monkeypatch, "inat", fake)
 
     client = TestClient(app)
     response = client.post(
@@ -185,7 +192,7 @@ def test_run_persists_optional_safety_snapshot(monkeypatch):
     fake.SOURCE_KEY = "inat"
     fake.get_state = lambda _key: {"last_offset": 7}
     fake.harvest_all = lambda limit=1: {"cursor": 8, "batches": 1, "images": 0}
-    monkeypatch.setitem(sys.modules, "harvesters.inat", fake)
+    _install_fake_harvester(monkeypatch, "inat", fake)
 
     calls = []
     monkeypatch.setattr(
@@ -210,8 +217,8 @@ def test_traitbank_live_rejects_malformed_record_and_continues(monkeypatch):
             yield {"trait_raw": "height"}
 
     traitbank.TraitBankHarvester = FakeTraitBankHarvester
-    monkeypatch.setitem(sys.modules, "harvesters.state_helper", helper)
-    monkeypatch.setitem(sys.modules, "harvesters.traitbank", traitbank)
+    _install_fake_harvester(monkeypatch, "state_helper", helper)
+    _install_fake_harvester(monkeypatch, "traitbank", traitbank)
     monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
 
     class Cursor:

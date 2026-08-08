@@ -1,0 +1,32 @@
+name: CI-BASELINE-001 Harvester Isolation
+
+on:
+  pull_request:
+    paths:
+      - "tests/test_build_105_harvester_safety.py"
+      - "docs/brain/CI-BASELINE-001-HARVESTER-ISOLATION.md"
+      - ".github/workflows/ci-baseline-001-harvester-isolation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx ruff
+      - name: Focused BUILD-105 safety tests
+        run: python -m pytest -q tests/test_build_105_harvester_safety.py
+      - name: Ruff focused safety tests
+        run: python -m ruff check tests/test_build_105_harvester_safety.py
+      - name: Diff hygiene
+        run: git diff --check

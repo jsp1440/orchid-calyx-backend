@@ -7,6 +7,7 @@ on:
       - "app/main.py"
       - "migrations/087b_context_preserving_interpretation.sql"
       - "tests/test_build_087b_scientific_interpretation.py"
+      - "tests/test_build_105_harvester_safety.py"
       - "tests/test_ci_baseline_001.py"
       - "docs/BUILD-087B-IMPLEMENTATION-REPORT.md"
       - "docs/brain/CI-BASELINE-001*.md"
