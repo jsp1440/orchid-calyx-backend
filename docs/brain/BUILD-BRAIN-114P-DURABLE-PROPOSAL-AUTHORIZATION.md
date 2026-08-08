@@ -8,7 +8,9 @@ Close the persistence gap between BUILD-BRAIN-114N review evidence and any futur
 
 `calyx_proposal_authorization_decisions` stores one immutable decision for each exact `(manifest_digest, review_class)` pair. The database enforces that pair as unique and also keeps `authorization_digest` unique. Review classes are restricted to `operational` and `security`.
 
-`DurableProposalAuthorizationStore.record()` is idempotent for an identical decision. If a competing writer wins the uniqueness race, the loser rolls back, reloads the winning row, verifies it, and returns it only if it is exactly the same decision. A different decision for the same manifest/review class fails closed as `PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED`.
+A structural audit found that accepting a caller-constructed `ProposalAuthorizationRecord` directly into the durable store would create a confused-deputy path: persistence could be asked to bless an object that had not passed the 114N manifest, patch-provenance, reviewer-role, evidence, and self-approval checks. The public write path is therefore `DurableProposalAuthorizationStore.record_review()`. It accepts the underlying manifest/patch/reviewer decision inputs and internally invokes `ProposalAuthorizationBuilder` before the resulting canonical record can be persisted. There is no public `record(record)` shortcut.
+
+The internal persistence operation is idempotent for an identical governed decision. If a competing writer wins the uniqueness race, the loser rolls back, reloads the winning row, verifies it, and returns it only if it is exactly the same decision. A different decision for the same manifest/review class fails closed as `PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED`.
 
 ## Read-time verification
 
@@ -18,14 +20,14 @@ Persistent rows are never trusted merely because they exist. Every read:
 2. verifies schema `calyx-proposal-authorization-v1`;
 3. recomputes the canonical SHA-256 authorization digest over the payload;
 4. verifies the recomputed digest against the payload digest and the dedicated row digest column;
-5. verifies row manifest/review identity against the payload;
+5. verifies row manifest/review identity and allowed review class against the payload;
 6. reconstructs a `ProposalAuthorizationRecord` and requires its canonical snapshot to match the stored payload exactly.
 
-This detects malformed, drifted, or accidentally tampered persisted evidence before it can be materialized into the 114N registry consumed by later gates.
+This detects malformed, drifted, or accidentally tampered persisted evidence before it can be materialized into the 114N registry consumed by later gates. It is not claimed as protection against an attacker who already has unrestricted database write authority and can coherently rewrite every field and digest; database-write authority remains a separate trust boundary.
 
 ## Restart and dual-review behavior
 
-`require()` reloads one exact digest-verified decision after process/session restart. `materialize_registry()` rebuilds the in-memory 114N registry only from verified persistent rows, preserving immutable-decision and dual-review semantics. The focused regressions require approved security plus approved operational evidence from distinct reviewers to remain complete after durable reload.
+`require()` reloads one exact digest-verified decision after process/session restart. `materialize_registry()` rebuilds the in-memory 114N registry only from verified persistent rows, preserving immutable-decision and dual-review semantics. The focused regressions require approved security plus approved operational evidence from distinct reviewers to remain complete after durable reload. They also assert that a self-approval cannot enter persistence through `record_review()` and that no direct arbitrary-record write API is exposed.
 
 ## Migration
 
@@ -39,6 +41,6 @@ The future bounded Git proposal executor is blocked on durable 114P evidence, ex
 
 ## Validation
 
-The dedicated read-only 114P workflow compiles and Ruff-checks the model/store/tests, runs focused 114N plus durable restart/idempotency/tamper/dual-review regressions, asserts the migration contract and non-mutation boundary, and performs diff hygiene.
+The dedicated read-only 114P workflow compiles and Ruff-checks the model/store/tests, runs focused 114N plus durable restart/idempotency/tamper/dual-review/self-approval regressions, asserts the migration contract and non-mutation boundary, and performs diff hygiene.
 
 Canonical repository CI incident #481 currently records hosted jobs terminating before workflow step 1 with `steps=null`. Such attempts are infrastructure evidence only and do not count as executable validation. This slice must remain draft until a real exact-head workflow executes and passes.
