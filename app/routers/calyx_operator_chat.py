@@ -35,7 +35,9 @@ class AskContinuumRequest(BaseModel):
 def _owner(identity: dict[str, object]) -> str:
     actor = str(identity.get("actor") or "").strip()
     if not actor:
-        raise HTTPException(status_code=403, detail="Calyx conversation owner scope unavailable")
+        raise HTTPException(
+            status_code=403, detail="Calyx conversation owner scope unavailable"
+        )
     return actor
 
 
@@ -70,7 +72,9 @@ def post_calyx_reply(request: CalyxReplyRequest) -> dict[str, Any]:
 
 
 @router.post("/ask")
-def ask_the_continuum(request: AskContinuumRequest, identity: OwnerIdentity) -> dict[str, Any]:
+def ask_the_continuum(
+    request: AskContinuumRequest, identity: OwnerIdentity
+) -> dict[str, Any]:
     owner = _owner(identity)
     operator_message = _chat.receive(request.question)
     try:
