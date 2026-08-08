@@ -300,7 +300,6 @@ def test_docker_abort_uses_cidfile_to_stop_and_kill_container(
 
     def fake_subprocess_run(argv, **kwargs):
         docker_calls.append(list(argv))
-        return None
 
     def fake_inner(argv, timeout_seconds, *, on_abort):
         assert argv[:2] == ["/usr/bin/docker", "run"]
