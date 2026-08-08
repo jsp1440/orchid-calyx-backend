@@ -25,7 +25,7 @@ DEFAULT_MEMORY = "1024m"
 DEFAULT_CPUS = "2.0"
 DEFAULT_PIDS = "128"
 
-TRUSTED_SANDBOX_PROBE = r'''
+TRUSTED_SANDBOX_PROBE = r"""
 import os, socket
 from pathlib import Path
 workspace = Path('/workspace')
@@ -48,7 +48,7 @@ finally:
     sock.close()
 assert result != 0, 'network connection unexpectedly succeeded'
 print('CALYX_EXTERNAL_SANDBOX_PROBE_OK')
-'''.strip()
+""".strip()
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -67,7 +67,9 @@ def _canonical_sha256(payload: Mapping[str, Any]) -> str:
 
 
 def _is_sha256(value: str) -> bool:
-    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+    return len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
 
 
 def _normalize_api_base_url(value: str) -> str:
@@ -75,7 +77,11 @@ def _normalize_api_base_url(value: str) -> str:
     parsed = urllib.parse.urlparse(normalized)
     if parsed.scheme not in {"https", "http"} or not parsed.netloc:
         raise ValueError("SANDBOX_SUPERVISOR_API_URL_INVALID")
-    if parsed.scheme != "https" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+    if parsed.scheme != "https" and parsed.hostname not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
         raise PermissionError("SANDBOX_SUPERVISOR_HTTPS_REQUIRED")
     return normalized
 
@@ -109,7 +115,9 @@ def _request_digest(request: Mapping[str, Any]) -> str:
         "schema": "calyx-external-validation-request-v1",
         "repository": str(request.get("repository") or "").strip(),
         "branch": str(request.get("branch") or "").strip(),
-        "checkout_commit_sha": str(request.get("checkout_commit_sha") or "").strip().lower(),
+        "checkout_commit_sha": str(request.get("checkout_commit_sha") or "")
+        .strip()
+        .lower(),
         "preset": str(request.get("preset") or "").strip().lower(),
         "targets": sorted(normalized_targets, key=lambda item: item["path"]),
         "timeout_seconds": int(request.get("timeout_seconds") or 0),
@@ -139,7 +147,11 @@ class WorkerConfig:
         repository = str(source.get("CALYX_SANDBOX_REPOSITORY", "")).strip()
         if not repository or "/" not in repository:
             raise RuntimeError("SANDBOX_SUPERVISOR_REPOSITORY_NOT_CONFIGURED")
-        root = Path(str(source.get("CALYX_SANDBOX_REPOSITORY_ROOT", ""))).expanduser().resolve()
+        root = (
+            Path(str(source.get("CALYX_SANDBOX_REPOSITORY_ROOT", "")))
+            .expanduser()
+            .resolve()
+        )
         if not root.is_dir():
             raise RuntimeError("SANDBOX_SUPERVISOR_REPOSITORY_ROOT_INVALID")
         image = _validate_image_digest(str(source.get("CALYX_SANDBOX_IMAGE", "")))
@@ -243,7 +255,9 @@ class SandboxSupervisorWorker:
             {"worker_id": self.config.worker_id},
         )
 
-    def _complete(self, request: Mapping[str, Any], receipt: Mapping[str, Any]) -> dict[str, Any]:
+    def _complete(
+        self, request: Mapping[str, Any], receipt: Mapping[str, Any]
+    ) -> dict[str, Any]:
         request_id = str(request.get("request_id") or "")
         claim_token = str(request.get("claim_token") or "")
         if not request_id or not claim_token:
@@ -280,7 +294,9 @@ class SandboxSupervisorWorker:
                         outcome="timed_out" if probe.timed_out else "blocked",
                         result=probe,
                     )
-                command = self._validation_command(str(request.get("preset") or ""), targets)
+                command = self._validation_command(
+                    str(request.get("preset") or ""), targets
+                )
                 timeout_seconds = int(request.get("timeout_seconds") or 0)
                 validation_name = self._container_name(request_digest, "validation")
                 result = self._runner(
@@ -293,8 +309,16 @@ class SandboxSupervisorWorker:
                 outcome = "blocked"
             else:
                 outcome = "delivered"
-            return self._receipt(request_digest=request_digest, outcome=outcome, result=result)
-        except (LookupError, PermissionError, RuntimeError, TypeError, ValueError) as exc:
+            return self._receipt(
+                request_digest=request_digest, outcome=outcome, result=result
+            )
+        except (
+            LookupError,
+            PermissionError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
             reason = str(exc).encode("utf-8", errors="replace")
             return self._receipt(
                 request_digest=request_digest,
@@ -313,11 +337,15 @@ class SandboxSupervisorWorker:
         if not branch.startswith("autonomy/"):
             raise PermissionError("SANDBOX_SUPERVISOR_AUTONOMY_BRANCH_REQUIRED")
         expected_commit = str(request.get("checkout_commit_sha") or "").strip().lower()
-        if len(expected_commit) != 40 or any(c not in "0123456789abcdef" for c in expected_commit):
+        if len(expected_commit) != 40 or any(
+            c not in "0123456789abcdef" for c in expected_commit
+        ):
             raise ValueError("SANDBOX_SUPERVISOR_CHECKOUT_COMMIT_INVALID")
         if not self._git_clean_reader(self.config.repository_root):
             raise PermissionError("SANDBOX_SUPERVISOR_CHECKOUT_DIRTY")
-        actual_commit = self._git_head_reader(self.config.repository_root).strip().lower()
+        actual_commit = (
+            self._git_head_reader(self.config.repository_root).strip().lower()
+        )
         if actual_commit != expected_commit:
             raise PermissionError("SANDBOX_SUPERVISOR_CHECKOUT_COMMIT_MISMATCH")
 
@@ -332,7 +360,12 @@ class SandboxSupervisorWorker:
                 raise TypeError("SANDBOX_SUPERVISOR_TARGET_INVALID")
             path = str(item.get("path") or "").strip()
             expected_hash = str(item.get("sha256") or "").strip().lower()
-            if path in seen or not path or path.startswith("/") or ".." in Path(path).parts:
+            if (
+                path in seen
+                or not path
+                or path.startswith("/")
+                or ".." in Path(path).parts
+            ):
                 raise ValueError("SANDBOX_SUPERVISOR_TARGET_PATH_INVALID")
             if not path.startswith(("app/", "tests/")):
                 raise PermissionError("SANDBOX_SUPERVISOR_TARGET_PATH_NOT_ALLOWED")
@@ -347,7 +380,9 @@ class SandboxSupervisorWorker:
             seen.add(path)
             verified.append(path)
         preset = str(request.get("preset") or "").strip().lower()
-        if preset == "pytest" and any(not path.startswith("tests/") for path in verified):
+        if preset == "pytest" and any(
+            not path.startswith("tests/") for path in verified
+        ):
             raise PermissionError("SANDBOX_SUPERVISOR_PYTEST_TARGET_NOT_TEST")
         return sorted(verified)
 
@@ -430,7 +465,9 @@ class SandboxSupervisorWorker:
         }
 
     def _post_json(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-        body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
         request = urllib.request.Request(
             self.config.api_base_url + path,
             data=body,
