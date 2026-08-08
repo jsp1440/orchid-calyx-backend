@@ -43,6 +43,35 @@ def test_intake_is_content_addressed_review_only_and_replay_idempotent(tmp_path:
     assert len((root / "normalized.jsonl").read_text().splitlines()) == 3
 
 
+def test_actual_hassler_layout_preserves_mixed_encoding_rank_synonyms_and_photo_slots(tmp_path: Path):
+    header = (
+        b"Taxon|Number|Name|Literature|TrivialName|Distribution|Synonyms|Status|Remarks|"
+        b"ConservationStatus|Photo|Orientation|Author\n"
+    )
+    # Predominantly UTF-8 with one isolated Latin-1 byte mirrors the supplied 26-08 export.
+    row = (
+        b"S||Dactylorhiza fuchsii|Example||Europe|= Orchis fuchsii||||orchids/a.jpg|V|Author|"
+        b"orchids/b.jpg|H|J\xc3\xb6rg|orchids/c.jpg|V|M\xfcller|||\n"
+    )
+    service = TaxonomyReleaseIntakeService(tmp_path)
+    result = service.intake_bytes("WorldOrchids 26-08.csv", header + row, expected_label="26-08")
+
+    assert result["source_metadata"]["source_layout"] == "hassler_worldorchids"
+    assert result["source_metadata"]["source_encoding"] == "mixed_utf8_latin1"
+    assert result["source_metadata"]["legacy_bytes_repaired"] == 1
+    assert result["source_metadata"]["canonical_width"] == 22
+    assert result["accepted_name_count"] == 1
+    assert result["embedded_synonym_count"] == 1
+    assert result["rank_counts"] == {"species": 1}
+    assert result["unresolved_review_count"] == 0
+
+    normalized = (tmp_path / "releases" / result["release_id"] / "normalized.jsonl").read_text()
+    assert '"Photo2": "orchids/b.jpg"' in normalized
+    assert '"Photo3": "orchids/c.jpg"' in normalized
+    assert "Jörg" in normalized
+    assert "Müller" in normalized
+
+
 def test_bounded_staging_resumes_and_becomes_review_ready_without_promotion(tmp_path: Path):
     service = TaxonomyReleaseIntakeService(tmp_path)
     intake = service.intake_bytes("candidate.csv", CANDIDATE)
@@ -166,14 +195,10 @@ def test_protected_mission_control_api_uses_configured_active_baseline_and_revie
     assert staged.status_code == 200
     assert staged.json()["ready_for_review"] is True
 
-    queue = client.get(
-        f"/brain/mission-control/taxonomy/releases/{release_id}/review-queue"
-    )
+    queue = client.get(f"/brain/mission-control/taxonomy/releases/{release_id}/review-queue")
     assert queue.status_code == 200
     assert queue.json()["review_write_authorized"] is False
 
-    readiness = client.get(
-        f"/brain/mission-control/taxonomy/releases/{release_id}/readiness"
-    )
+    readiness = client.get(f"/brain/mission-control/taxonomy/releases/{release_id}/readiness")
     assert readiness.status_code == 200
     assert readiness.json()["ready_for_promotion"] is False
