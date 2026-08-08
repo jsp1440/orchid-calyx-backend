@@ -238,7 +238,6 @@ class LiteratureAcquisitionService:
                 raise
 
         spans = _evidence_spans(text)
-        taxonomy = ReviewedTaxonIndex.from_path(taxonomy_staging_path)
         identity = LiteratureIdentity(
             source_id=source_id,
             revision_id=revision_id,

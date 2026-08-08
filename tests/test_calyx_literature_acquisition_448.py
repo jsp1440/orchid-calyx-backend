@@ -15,9 +15,9 @@ from runtime import literature_acquisition as runtime
 from runtime.literature_acquisition import LiteratureAcquisitionService
 
 TEXT = (
-    "Cattleya labiata occurs in seasonal forest.\n\n"
-    "This observation supports a habitat association."
-).encode()
+    b"Cattleya labiata occurs in seasonal forest.\n\n"
+    b"This observation supports a habitat association."
+)
 
 
 def _taxonomy(path: Path) -> Path:
