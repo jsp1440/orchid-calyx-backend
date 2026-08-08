@@ -1,0 +1,56 @@
+name: CALYX Occurrence Persistence 462
+
+on:
+  pull_request:
+    paths:
+      - "runtime/occurrence_persistence.py"
+      - "app/routers/occurrence_persistence.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_occurrence_persistence_462.py"
+      - "docs/brain/CALYX-OCCURRENCE-PERSISTENCE-462.md"
+      - ".github/workflows/calyx-occurrence-persistence-462.yml"
+  workflow_dispatch:
+
+jobs:
+  occurrence-persistence:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile occurrence surface
+        run: >-
+          python -m py_compile
+          runtime/occurrence_persistence.py
+          app/routers/occurrence_persistence.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_occurrence_persistence_462.py
+      - name: Deterministic occurrence persistence tests
+        run: python -m pytest -q tests/test_calyx_occurrence_persistence_462.py tests/test_calyx_taxonomy_release_intake_461.py
+      - name: Permanent non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/occurrence_persistence.py').read_text()
+          required = (
+              '"ready_for_publication": False',
+              '"knowledge_graph_mutation_authorized": False',
+              '"taxonomy_activation_authorized": False',
+              '"unbounded_harvest_authorized": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing permanent non-authority assertion(s): {missing}')
+          forbidden = ('oc_graph', 'TRUNCATE ', 'DELETE FROM ', 'UPDATE oc_', 'INSERT INTO oc_graph')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden production mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/occurrence_persistence.py app/routers/occurrence_persistence.py tests/test_calyx_occurrence_persistence_462.py
+          git diff --check
