@@ -62,7 +62,7 @@ The seven expanded domains are explicit fail-closed registrations until their pr
 
 For these seven domains: `enabled=false`, `sql=null`, BUILD-064 metadata status is `BLOCKED`, and `blocked_reason` is mandatory. This prevents silent omission while also preventing an unverified production query from becoming executable.
 
-## Validation evidence before final exact-head run
+## Validation evidence
 
 On earlier #597 head `591273b3a7241390e8670310a03bd036e2a08895`, BUILD-087B run `31235890178` passed the strict current contracts and measured the broad suite at:
 
@@ -83,9 +83,17 @@ On implementation head `155b6ba147c2e1a6057f49a0ff0ff8438b77e235`, BUILD-087B ru
 - canonical runtime/executive contract: 7 passed
 - focused science/live-graph repair: 5 passed
 
-The KG-focused step then reported one remaining assertion that still compared all adapters to only the enabled-domain set. The subsequent branch commit `f5f959073ce10dd974a79e6811ec940924dbd931` corrected that distinction: all fifteen adapters must be registered, while `enabled_queries()` remains the verified eight.
+The KG-focused step then reported one remaining assertion that still compared all adapters to only the enabled-domain set. Commit `f5f959073ce10dd974a79e6811ec940924dbd931` corrected that distinction: all fifteen adapters must be registered, while `enabled_queries()` remains the verified eight.
 
-Workflows created automatically for the Copilot-authored `f5f959...` commit returned `action_required`; they are not counted as executable validation evidence.
+Owner-authored documentation head `a7ac13be2172282ebcde35f6713cf131cccd1112` then passed all five triggered pull-request validation lanes:
+
+- CALYX Workflow Governance Audit `31236253509` — success
+- CI-BASELINE-001 Validation `31236253488` — success
+- CALYX Graph Full Integration `31236253483` — success
+- BUILD-088E Validation `31236253487` — success
+- BUILD-087B validation `31236253463` — success
+
+A subsequent Copilot-authored lint-only commit `f0fa3ffc65b185e69d8f34bd5732391a4bd47e78` removed an unused `pytest` import and reformatted the checkpoint import in `tests/test_knowledge_graph_orchestrator.py`. Its automatically created workflows returned `action_required`; they are not counted as executable validation evidence. This Brain update intentionally creates a new owner-authored exact head so the unchanged implementation plus lint-only cleanup are revalidated normally before merge.
 
 ## Governance / non-authority
 
@@ -101,4 +109,4 @@ This work does **not** authorize or perform:
 - weakening of owner/API-key authentication;
 - bypass of the external trusted-supervisor boundary for executable repository code.
 
-Final exact-head CI evidence and the final broad-suite result must be appended before merge.
+The final owner-authored exact-head CI result must be green before merge.
