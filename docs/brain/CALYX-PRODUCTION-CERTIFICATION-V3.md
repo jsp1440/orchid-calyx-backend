@@ -53,7 +53,45 @@ Implementation head `87a0b0806d38eb431298ba0fe2bc5bd91fa3bb77` passed the comple
 
 The dedicated certification run passed compilation, Ruff, new production-observability tests, both existing Calyx Core certification regression suites, read-only governance smoke, Brain smoke, and diff hygiene.
 
-The final Brain/documentation head must re-pass the triggered release gates before merge; implementation-head results are not reused as final-head evidence.
+## Deployed production evidence — 2026-08-08 UTC
+
+Issue #469's remaining deployed-evidence criterion was completed with a temporary read-only GitHub-hosted probe and the temporary PR was closed unmerged.
+
+Successful evidence run `31241617490`, job `93063471965`, verified:
+
+- `/health`: HTTP 200;
+- protected owner session: HTTP 200;
+- `/api/mission-control/calyx-core/certification`: HTTP 200;
+- deployed Render commit `c114aba0545a71a3be23375e5b6d84e624fa82b4`;
+- repository `main` at capture `c114aba0545a71a3be23375e5b6d84e624fa82b4` — exact match;
+- evidence receipt hash `1d8c8e04fb14f4f0ac9848c2a1219ff378bf1e8a6a43d5d9c5e94b60c4da6ccb`;
+- GitHub artifact ID `9017198288`;
+- artifact ZIP SHA-256 `99e8bd21ac00a5a35720cb056643ca9bd93291432506ea1e0b6504bfeb3169eb`.
+
+The receipt explicitly records read-only execution and no migration, publication, taxonomy activation, production database mutation, or Knowledge Graph mutation.
+
+The deployed report exposed four production blockers without attempting remediation automatically:
+
+- `REASONING_SCHEMA_INCOMPLETE` — the four Reasoning Ledger/publication relations are absent; activation remains owner-governed in issue #580;
+- `EXPECTED_MAIN_COMMIT_UNAVAILABLE` — the release environment does not expose `CALYX_EXPECTED_MAIN_COMMIT`, although the independently captured deployed SHA matched `main` exactly;
+- `GRAPH_VERSION_UNAVAILABLE` — no explicit deployed graph-version identifier is exposed;
+- `ENGINEERING_QUEUE_METRICS_UNAVAILABLE` — the optional operational queue metrics relation/probe is unavailable.
+
+Issue #469 was then closed as completed because the deployed certification surface had been exercised successfully and its purpose is to report production readiness truthfully, not to auto-clear its blockers.
+
+## Optional PostgreSQL probe isolation follow-up
+
+The same live evidence revealed a robustness defect: PostgreSQL connectivity had succeeded (`reachable=true`) but the report also contained `database.error_type=InternalError`. The optional engineering-queue group-count query had encountered an unavailable relation; PostgreSQL marked the transaction aborted, and the subsequent optional scalar query leaked that aborted transaction into the top-level database-health result.
+
+Follow-up PR #609 corrects the boundary:
+
+1. optional relations are checked with `to_regclass` before querying them;
+2. optional group-count and scalar probes execute inside nested transactions/SAVEPOINTs;
+3. an optional metric failure returns unavailable state without poisoning the enclosing read-only connection;
+4. the top-level database error is reserved for connection or base-probe failure;
+5. PostgreSQL 16 regression coverage reproduces the missing-queue-table condition and requires `reachable=true`, `dialect=postgresql`, and `error_type=None` while retaining `ENGINEERING_QUEUE_METRICS_UNAVAILABLE`.
+
+This correction changes observability only. It creates no queue table and performs no production mutation.
 
 ## Remaining deployment configuration dependencies
 
@@ -68,6 +106,4 @@ These are reported with exact remediation and do not trigger mutation automatica
 
 ## Release boundary
 
-Merging #590 changes only the protected read-only certification surface. It does not deploy the code to production and does not execute the owner-governed Reasoning Schema Production Activation workflow.
-
-Exact final-head run identifiers will be recorded before release.
+The certification surface and its probe-isolation correction are read-only. They do not execute the owner-governed Reasoning Schema Production Activation workflow, publish reviewed science, activate taxonomy, deploy code, or mutate the production Knowledge Graph.

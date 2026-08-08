@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine
 
 from runtime import calyx_core_certification as certification
@@ -71,6 +73,41 @@ def test_live_certification_marks_missing_config_and_unknown_graph_version(monke
     assert "GRAPH_VERSION_UNAVAILABLE" in report["blockers"]
     assert "CONFIGURATION_ABSENT:database_url" in report["blockers"]
     assert report["queues"]["engineering_job_status_counts"] is None
+
+
+@pytest.mark.skipif(
+    not os.getenv("CALYX_CERTIFICATION_TEST_DATABASE_URL"),
+    reason="CALYX_CERTIFICATION_TEST_DATABASE_URL not configured",
+)
+def test_missing_optional_postgres_queue_does_not_poison_database_probe(monkeypatch) -> None:
+    engine = create_engine(os.environ["CALYX_CERTIFICATION_TEST_DATABASE_URL"])
+    monkeypatch.setattr("app.database.get_engine", lambda: engine)
+
+    report = certification._production_observability(
+        {
+            "DATABASE_URL": "configured",
+            "RENDER_GIT_COMMIT": "same-sha",
+            "CALYX_EXPECTED_MAIN_COMMIT": "same-sha",
+            "CALYX_GRAPH_VERSION": "test-graph",
+        }
+    )
+
+    assert report["database"] == {
+        "reachable": True,
+        "dialect": "postgresql",
+        "error_type": None,
+    }
+    assert report["queues"] == {
+        "engineering_job_status_counts": None,
+        "blocked_or_failed_jobs": None,
+    }
+    assert "ENGINEERING_QUEUE_METRICS_UNAVAILABLE" in report["blockers"]
+    assert report["migration_state"] == {
+        relation: "absent" for relation in certification.REASONING_RELATIONS
+    }
+    assert "REASONING_SCHEMA_INCOMPLETE" in report["blockers"]
+    assert report["production_database_mutation"] is False
+    assert report["production_knowledge_graph_mutation"] is False
 
 
 def test_router_enables_live_probes_and_remains_protected() -> None:
