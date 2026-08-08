@@ -1,6 +1,6 @@
 # CALYX-472 — Volunteer service, hours, skills, and recognition system
 
-Status: IMPLEMENTED / VALIDATION PENDING / PRIVATE OWNER-SCOPED
+Status: IMPLEMENTED / VALIDATED / PRIVATE OWNER-SCOPED
 
 ## Delivered
 
@@ -14,6 +14,7 @@ Status: IMPLEMENTED / VALIDATION PENDING / PRIVATE OWNER-SCOPED
 - Privacy-preserving volunteer export that redacts contact and accessibility/support notes by default and counts only supervisor-verified service hours.
 - Mission Control profile, assignment, hour, verification, training, certificate, recognition, conflict, export, and readiness APIs.
 - Deterministic nonprofit and orchid-society fixture workflows covering private profiles, supervised service-hour verification, orchid show-table training, certificates, recognition, privacy, owner isolation, and conflict review.
+- Record identifiers are validated before filesystem use, preventing path traversal through volunteer, assignment, hour-log, training, certificate, recognition, or conflict identifiers.
 
 ## Integration model
 
@@ -29,4 +30,14 @@ Hours require supervisor verification and are not credited merely because a volu
 
 ## Validation
 
-Dedicated CI compiles the volunteer runtime/router/Mission Control surface, runs nonprofit and orchid-society deterministic workflows, asserts permanent privacy/human-review/no-binding-authority boundaries, runs Ruff on changed Python surfaces, and checks diff hygiene. Exact-head CI evidence will be recorded after the pull-request workflow completes.
+Initial PR validation proved all five nonprofit/orchid-society workflows and permanent governance assertions, then correctly failed Ruff on import formatting in `runtime/volunteer_service.py`. That failure was fixed before expansion; the corrective pass also hardened all filesystem-facing record identifiers.
+
+Exact corrective head `63ce4231c3ae4f987e485ec0962eab4a189a4eae` passed every triggered gate:
+
+- CALYX Volunteer Service 472 run `31262717616` — success: compile, 5 deterministic tests, privacy/human-review assertions, Ruff, and diff hygiene.
+- BUILD-088E Validation run `31262717644` — success.
+- CALYX Workflow Governance Audit run `31262717666` — success.
+- CALYX-SUPERVISED-PILOT-001 run `31262717697` — success.
+- CALYX-AUTONOMY-DEPLOYMENT-001 run `31262717701` — success.
+
+The build remains draft/unmerged. No deployment, public personal-data release, binding commitment, or disciplinary decision was performed.
