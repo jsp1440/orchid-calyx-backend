@@ -21,7 +21,9 @@ router = APIRouter(
 def _service() -> OccurrencePersistenceService:
     root = Path(os.environ.get("CALYX_OCCURRENCE_PATH", "/tmp/calyx/occurrences"))
     maximum_records = int(os.environ.get("CALYX_OCCURRENCE_MAX_RECORDS", "5000"))
-    maximum_bytes = int(os.environ.get("CALYX_OCCURRENCE_MAX_BYTES", str(25 * 1024 * 1024)))
+    maximum_bytes = int(
+        os.environ.get("CALYX_OCCURRENCE_MAX_BYTES", str(25 * 1024 * 1024))
+    )
     return OccurrencePersistenceService(
         root,
         maximum_records=maximum_records,
@@ -41,10 +43,13 @@ class OccurrenceIntakeRequest(BaseModel):
 
 class StageRequest(BaseModel):
     batch_size: int = Field(default=500, ge=1, le=5000)
+    run_id: str | None = Field(default=None, min_length=1, max_length=80)
 
 
 @router.post("/intake")
-def intake_occurrences(request: Annotated[OccurrenceIntakeRequest, Body()]) -> dict[str, Any]:
+def intake_occurrences(
+    request: Annotated[OccurrenceIntakeRequest, Body()],
+) -> dict[str, Any]:
     try:
         return _service().intake_records(
             request.source,
@@ -58,7 +63,11 @@ def intake_occurrences(request: Annotated[OccurrenceIntakeRequest, Body()]) -> d
 @router.post("/{batch_id}/stage")
 def stage_occurrences(batch_id: str, request: StageRequest) -> dict[str, Any]:
     try:
-        return _service().project_staging(batch_id, batch_size=request.batch_size)
+        return _service().project_staging(
+            batch_id,
+            batch_size=request.batch_size,
+            run_id=request.run_id,
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -70,9 +79,15 @@ def occurrence_review_queue(
     batch_id: str,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    run_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
 ) -> dict[str, Any]:
     try:
-        return _service().review_queue(batch_id, offset=offset, limit=limit)
+        return _service().review_queue(
+            batch_id,
+            offset=offset,
+            limit=limit,
+            run_id=run_id,
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -80,8 +95,13 @@ def occurrence_review_queue(
 
 
 @router.get("/{batch_id}/readiness")
-def occurrence_readiness(batch_id: str) -> dict[str, Any]:
+def occurrence_readiness(
+    batch_id: str,
+    run_id: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+) -> dict[str, Any]:
     try:
-        return _service().readiness(batch_id)
+        return _service().readiness(batch_id, run_id=run_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
