@@ -110,7 +110,9 @@ def execute_upload(
         if ready.get("ready_for_upload") is not True:
             raise RuntimeError("Mission Control does not report ready_for_upload=true")
         if ready.get("next_job", {}).get("job") != "upload_world_orchids_release":
-            raise RuntimeError("Mission Control next job is not upload_world_orchids_release")
+            raise RuntimeError(
+                "Mission Control next job is not upload_world_orchids_release"
+            )
 
         with source_path.open("rb") as handle:
             uploaded = client.post(
@@ -199,7 +201,9 @@ def main() -> int:
         base_url = os.getenv("CALYX_BACKEND_URL", "").strip()
         access_code = os.getenv("CALYX_OWNER_ACCESS_CODE", "").strip()
         if not base_url or not access_code:
-            raise SystemExit("CALYX_BACKEND_URL and CALYX_OWNER_ACCESS_CODE are required")
+            raise SystemExit(
+                "CALYX_BACKEND_URL and CALYX_OWNER_ACCESS_CODE are required"
+            )
         report = execute_upload(
             source_path=args.source,
             base_url=base_url,
