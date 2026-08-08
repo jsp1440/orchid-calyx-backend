@@ -39,14 +39,18 @@ def _default_migration_preflight() -> dict[str, Any]:
     try:
         return inspect_world_plants_migration()
     except SQLAlchemyError as exc:
-        raise RuntimeError("taxonomy migration preflight database check failed") from exc
+        raise RuntimeError(
+            "taxonomy migration preflight database check failed"
+        ) from exc
 
 
 def create_taxonomy_release_router(
     get_store: Callable[[], WorldPlantsReleaseStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
     get_staging_store: Callable[[], Any] = _default_staging_store,
-    get_migration_preflight: Callable[[], dict[str, Any]] = _default_migration_preflight,
+    get_migration_preflight: Callable[
+        [], dict[str, Any]
+    ] = _default_migration_preflight,
 ) -> APIRouter:
     router = APIRouter(tags=["taxonomy-releases"])
     releases = APIRouter(prefix="/api/mission-control/taxonomy/releases")
