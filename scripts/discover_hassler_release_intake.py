@@ -14,12 +14,18 @@ from urllib.request import Request, urlopen
 
 BASE_URL = os.environ.get("CALYX_BACKEND_URL", "").strip().rstrip("/")
 ACCESS_CODE = os.environ.get("CALYX_OWNER_ACCESS_CODE", "").strip()
-REPORT_PATH = Path(os.environ.get("CALYX_HASSLER_DISCOVERY_REPORT", "calyx-hassler-intake-discovery.json"))
+REPORT_PATH = Path(
+    os.environ.get(
+        "CALYX_HASSLER_DISCOVERY_REPORT", "calyx-hassler-intake-discovery.json"
+    )
+)
 EXPECTED_FILENAME = "WorldOrchids 26-08 (Aug 2 2026).csv"
 EXPECTED_SHA256 = "e5be9268e1a48cb0e1777137ac386a9a870f3581c35f10678c9b810c59688c6f"
 
 
-def _request(path: str, *, method: str = "GET", payload: dict | None = None, token: str = "") -> tuple[int, dict]:
+def _request(
+    path: str, *, method: str = "GET", payload: dict | None = None, token: str = ""
+) -> tuple[int, dict]:
     body = json.dumps(payload).encode() if payload is not None else None
     headers = {"Accept": "application/json"}
     if body is not None:
@@ -63,7 +69,10 @@ def main() -> int:
     matches = []
     for item in releases_payload.get("releases", []):
         snapshot = item.get("snapshot", {}) if isinstance(item, dict) else {}
-        if snapshot.get("filename") == EXPECTED_FILENAME or item.get("release_id") == EXPECTED_SHA256:
+        if (
+            snapshot.get("filename") == EXPECTED_FILENAME
+            or item.get("release_id") == EXPECTED_SHA256
+        ):
             matches.append(
                 {
                     "release_id": item.get("release_id"),
@@ -84,7 +93,8 @@ def main() -> int:
             "evidence": gate.get("evidence"),
         }
         for gate in gates
-        if gate.get("status") != "passed" and gate.get("name") != "owner_promotion_approval"
+        if gate.get("status") != "passed"
+        and gate.get("name") != "owner_promotion_approval"
     ]
     exact_match = any(
         item.get("release_id") == EXPECTED_SHA256
@@ -120,7 +130,9 @@ def main() -> int:
         ),
     }
     report["artifact_hash"] = _artifact_hash(report)
-    REPORT_PATH.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    REPORT_PATH.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
