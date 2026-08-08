@@ -7,6 +7,7 @@ inferential methods are exposed through the Scientific Analysis API.
 from __future__ import annotations
 
 import math
+import platform
 from collections.abc import Iterable
 from importlib.metadata import version
 from statistics import fmean, stdev
@@ -16,6 +17,9 @@ from scipy.stats import t as student_t
 
 UNCERTAINTY_SCHEMA_VERSION = "calyx-scientific-uncertainty/v1"
 SUPPORTED_CONFIDENCE_LEVELS = {0.90, 0.95, 0.99}
+PYTHON_IMPLEMENTATION = platform.python_implementation()
+PYTHON_VERSION = platform.python_version()
+NUMPY_VERSION = version("numpy")
 SCIPY_VERSION = version("scipy")
 
 
@@ -29,6 +33,16 @@ def _finite(value: Any, error: str) -> float:
     if not math.isfinite(number):
         raise ValueError(error)
     return number
+
+
+def numerical_environment() -> dict[str, str]:
+    """Return the exact numerical environment embedded into uncertainty artifacts."""
+    return {
+        "python_implementation": PYTHON_IMPLEMENTATION,
+        "python_version": PYTHON_VERSION,
+        "numpy_version": NUMPY_VERSION,
+        "scipy_version": SCIPY_VERSION,
+    }
 
 
 def mean_confidence_interval_from_summary(
@@ -77,6 +91,7 @@ def mean_confidence_interval_from_summary(
         "upper": mean + margin,
         "numerical_library": "scipy",
         "numerical_library_version": SCIPY_VERSION,
+        "numerical_environment": numerical_environment(),
         "reference_formula": "mean_plus_minus_student_t_times_sample_standard_error",
         "p_value_generated": False,
         "scientific_interpretation_generated": False,
