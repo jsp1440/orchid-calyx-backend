@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+from app.conversation_memory.report import build_conversation_markdown
 from app.security import verify_owner_or_api_key
 from runtime.continuum_conversation import ContinuumConversationService
 from runtime.operator_chat import GovernedOperatorChat
@@ -98,6 +100,7 @@ def chat_status() -> dict[str, Any]:
         "ask_the_continuum_enabled": True,
         "ask_the_continuum_requires_authentication": True,
         "persistent_conversations_enabled": True,
+        "persistent_conversation_reports_enabled": True,
         "conversation_history_is_evidence": False,
         "model_knowledge_fallback_enabled": False,
         "scientific_publication_authorized": False,
@@ -197,6 +200,28 @@ def get_conversation(
     owner = _owner(identity)
     return _memory_call(
         db, lambda: ConversationMemoryService(db).get_session(conversation_id, owner)
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}/report",
+    response_class=PlainTextResponse,
+)
+def export_conversation_report(
+    conversation_id: str,
+    identity: OwnerIdentity,
+    db: Db,
+) -> PlainTextResponse:
+    owner = _owner(identity)
+    conversation = _memory_call(
+        db, lambda: ConversationMemoryService(db).get_session(conversation_id, owner)
+    )
+    content = build_conversation_markdown(conversation)
+    filename = f"calyx-conversation-{conversation_id}.md"
+    return PlainTextResponse(
+        content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
