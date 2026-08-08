@@ -75,11 +75,15 @@ New read-only staging/status endpoint:
 
 `GET /api/mission-control/taxonomy/releases/{release_id}/staging`
 
+New owner-authenticated read-only migration preflight endpoint:
+
+`GET /api/mission-control/taxonomy/migration-preflight`
+
 The stage endpoint takes an already inspected release, verifies its checksum identity while registering exact source bytes in PostgreSQL, stages one bounded batch, returns the durable checkpoint and exposes the completed change report when available.
 
 If migration 107 is not active, staging fails closed with an actionable 503 rather than falling back to ephemeral or production taxonomy mutation.
 
-The existing owner-authenticated readiness endpoint now returns concrete workflow state and the next executable job without requiring the owner to know hashes, workflow names, or server paths. States include:
+The existing owner-authenticated readiness endpoint returns concrete workflow state and the next executable job without requiring the owner to know hashes, workflow names, or server paths. States include:
 
 - `deployment_gates_blocking_intake` → `resolve_taxonomy_intake_gates`;
 - `ready_for_release_upload` → `upload_world_orchids_release`;
@@ -87,7 +91,33 @@ The existing owner-authenticated readiness endpoint now returns concrete workflo
 - `release_inspected_staging_smoke_required` → `verify_taxonomy_staging_smoke`;
 - `release_inspected_ready_for_bounded_staging` → `stage_next_taxonomy_batch` with maximum batch size 2,000.
 
-The readiness module remains dependency-light and read-only. PostgreSQL dependencies are lazy-loaded only when durable staging endpoints are invoked, preserving existing lightweight readiness/upload validation environments.
+The readiness module remains dependency-light and read-only. PostgreSQL dependencies are lazy-loaded only when durable staging or migration-preflight endpoints are invoked, preserving existing lightweight readiness/upload validation environments.
+
+## Read-only migration preflight
+
+`runtime/world_plants_migration_preflight.py` removes the remaining manual uncertainty before migration 107 without applying any DDL.
+
+It reports:
+
+- the exact migration identifier and SHA-256 fingerprint under review;
+- database dialect and PostgreSQL server version;
+- whether `taxonomy_pipeline` exists;
+- whether every required table and column exists;
+- whether required indexes exist;
+- whether the connected role has the CREATE privilege needed for the next governed step;
+- explicit missing tables, columns and indexes;
+- a deterministic next job and governance boundary.
+
+The preflight is deliberately fail-closed:
+
+- no schema → `migration_required`;
+- complete expected schema → `migration_verified`;
+- any partially present schema → `partial_schema_detected`, which blocks automatic repair because `CREATE TABLE IF NOT EXISTS` cannot safely repair missing columns;
+- non-PostgreSQL target → `non_postgresql_target`.
+
+It performs PostgreSQL catalog reads only and returns `read_only=true`, `no_schema_mutation=true`, and `automatic_promotion=false`.
+
+If migration is required and privileges are sufficient, the next job is `apply_migration_107` with `requires_owner_approval=true` and governance boundary `production_database_migration`. If the schema is verified, the next job is a bounded staging smoke verification, also explicitly classified as a production-database write boundary.
 
 ## Governance
 
@@ -102,7 +132,9 @@ It does not:
 - mutate `oc_graph` or the Knowledge Graph;
 - publish scientific knowledge;
 - run an unbounded staging operation;
-- apply migration 107 to production.
+- apply migration 107 to production;
+- repair a partial production schema;
+- perform a production staging smoke write.
 
 Every response keeps `automatic_promotion=false`. Taxonomy activation remains an explicit owner governance boundary after review. Applying migration 107 to the production database is also recorded by Mission Control as a governance boundary rather than being performed implicitly.
 
@@ -119,8 +151,12 @@ The dedicated `CALYX World Plants Durable Staging Validation` workflow uses disp
 - accepted-name candidates require review;
 - comparison categories remain evidence-backed;
 - legacy Mission Control upload tests continue to pass;
-- Ruff and compile pass;
-- migration and runtime contain no `oc_graph` mutation;
+- fresh-schema migration preflight is read-only and reports a governed migration requirement;
+- partial-schema preflight fails closed and refuses to imply automatic repair;
+- migration 107 can be applied twice in disposable PostgreSQL without error and still verifies as structurally complete;
+- the owner-gated migration-preflight route returns the injected read-only report;
+- Ruff and compile pass on the changed surface;
+- migration/runtime contain no `oc_graph` mutation;
 - no automatic-promotion path exists.
 
 ## Validation history and corrective work
@@ -134,21 +170,25 @@ Validation was treated as a hard gate before expansion.
 5. The dedicated validation harness then exposed its own missing `httpx` test dependency; the harness was corrected rather than altering application code.
 6. PostgreSQL staging tests subsequently passed, including duplicate-row preservation, restart/resume and replay behavior.
 7. Mission Control readiness was extended with deterministic pipeline state and next-job reporting, then its formatting/test regressions were corrected before proceeding.
+8. Migration preflight was added only after the staging slice was green. The first expanded run exposed formatter-only differences in the router/new preflight and also revealed that broad format enforcement would create unrelated churn in already-green staging files. The changed surfaces were formatted and the format gate was narrowed to the migration-preflight surfaces rather than rewriting unrelated code.
+9. The resulting exact head passed all legacy and dedicated gates, including disposable PostgreSQL double-apply migration idempotency and partial-schema fail-closed behavior.
 
-Exact implementation head validated before this Brain receipt: `3cb24c1e8d366142276f7caa7072985649bfb221`.
+Exact implementation head validated before this Brain receipt: `6dffbac44066ff9389763540fd5c8fdfd84e2b4c`.
 
 Successful exact-head runs:
 
-- `CALYX World Plants Durable Staging Validation` run **#9** — success;
-- `CALYX-TAXONOMY-READINESS-API-001` run **#14** — success;
-- `WORLD-PLANTS-UPLOAD-001` run **#71** — success;
-- `CALYX Workflow Governance Audit` run **#225** — success;
-- `BUILD-088E Validation` run **#1126** — success.
+- `CALYX World Plants Durable Staging Validation` run **#17** — success;
+- `CALYX-TAXONOMY-READINESS-API-001` run **#22** — success;
+- `WORLD-PLANTS-UPLOAD-001` run **#79** — success;
+- `CALYX Workflow Governance Audit` run **#321** — success;
+- `BUILD-088E Validation` run **#1175** — success.
 
-This Brain update changes documentation only. The resulting documentation-bearing head must also pass the same applicable gates before the PR is considered review-ready.
+This Brain update changes documentation only. Because this exact Brain file is part of the dedicated validation path, the resulting documentation-bearing head must pass the same applicable gates before the PR is considered review-ready.
 
 ## Current boundary
 
 Issue #386 requires an implementation PR and stop-before-merge. PR #619 therefore remains open, draft, and unmerged even after exact-head validation succeeds.
 
-The next production step would be application and verification of migration 107 so the real inspected release can enter durable bounded staging. That is a production database mutation and remains outside this autonomous implementation turn absent explicit owner approval. Taxonomy activation remains separately blocked until the completed change report and review queue have been reviewed and owner approval is explicitly recorded.
+The code can now determine, using read-only production catalog inspection, whether migration 107 is absent, partially present or structurally verified and whether the connected role has the required CREATE privilege. The next actual production action remains application of migration 107 if the preflight reports `migration_required`, followed by a bounded staging smoke verification. Both are production database mutations and remain outside this autonomous implementation turn absent explicit owner approval.
+
+Taxonomy activation remains separately blocked until the completed change report and review queue have been reviewed and owner approval is explicitly recorded.
