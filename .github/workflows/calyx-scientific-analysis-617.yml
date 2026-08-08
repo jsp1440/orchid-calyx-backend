@@ -1,0 +1,115 @@
+name: CALYX Scientific Analysis 617
+
+on:
+  pull_request:
+    paths:
+      - "runtime/scientific_analysis.py"
+      - "runtime/research_analysis_workflow.py"
+      - "runtime/scientific_transforms.py"
+      - "runtime/scientific_filters.py"
+      - "runtime/scientific_diagnostics.py"
+      - "runtime/scientific_comparison.py"
+      - "runtime/scientific_result_artifacts.py"
+      - "runtime/research_station.py"
+      - "app/routers/scientific_analysis.py"
+      - "app/routers/research_station.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_scientific_analysis_617.py"
+      - "tests/test_calyx_analysis_plan_workflow_617.py"
+      - "tests/test_calyx_scientific_diagnostics_617.py"
+      - "tests/test_calyx_scientific_comparison_617.py"
+      - "tests/test_calyx_scientific_result_artifacts_617.py"
+      - "tests/test_calyx_research_station_453.py"
+      - "docs/brain/CALYX-SCIENTIFIC-ANALYSIS-617.md"
+      - ".github/workflows/calyx-scientific-analysis-617.yml"
+  workflow_dispatch:
+
+jobs:
+  scientific-analysis:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile analysis and Research Station surfaces
+        run: >-
+          python -m py_compile
+          runtime/scientific_analysis.py
+          runtime/research_analysis_workflow.py
+          runtime/scientific_transforms.py
+          runtime/scientific_filters.py
+          runtime/scientific_diagnostics.py
+          runtime/scientific_comparison.py
+          runtime/scientific_result_artifacts.py
+          runtime/research_station.py
+          app/routers/scientific_analysis.py
+          app/routers/research_station.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_scientific_analysis_617.py
+          tests/test_calyx_analysis_plan_workflow_617.py
+          tests/test_calyx_scientific_diagnostics_617.py
+          tests/test_calyx_scientific_comparison_617.py
+          tests/test_calyx_scientific_result_artifacts_617.py
+      - name: Deterministic analysis and Research Station regressions
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_scientific_analysis_617.py
+          tests/test_calyx_analysis_plan_workflow_617.py
+          tests/test_calyx_scientific_diagnostics_617.py
+          tests/test_calyx_scientific_comparison_617.py
+          tests/test_calyx_scientific_result_artifacts_617.py
+          tests/test_calyx_research_station_453.py
+      - name: Permanent scientific-analysis non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          analysis = Path('runtime/scientific_analysis.py').read_text()
+          workflow = Path('runtime/research_analysis_workflow.py').read_text()
+          transforms = Path('runtime/scientific_transforms.py').read_text()
+          filters = Path('runtime/scientific_filters.py').read_text()
+          diagnostics = Path('runtime/scientific_diagnostics.py').read_text()
+          comparison = Path('runtime/scientific_comparison.py').read_text()
+          result_artifacts = Path('runtime/scientific_result_artifacts.py').read_text()
+          text = '\n'.join((analysis, workflow, transforms, filters, diagnostics, comparison, result_artifacts))
+          required = (
+              '"arbitrary_code_execution": False',
+              '"autonomous_scientific_publication": False',
+              '"knowledge_graph_mutation_authorized": False',
+              '"interpretation_generated": False',
+              '"human_review_required_for_scientific_conclusion": True',
+              '"scientific_publication_authorized": False',
+              '"method_auto_selected": False',
+              '"exact_raw_dataset_checksum_required": True',
+              '"derived_variable_units_required": True',
+              '"governed_transform_execution_enabled": True',
+              '"governed_row_filter_execution_enabled": True',
+              '"freeform_filter_expression_allowed": False',
+              '"implicit_outlier_removal_allowed": False',
+              '"excluded_row_identity_required": True',
+              '"filter_reason_code_required": True',
+              '"diagnostics_are_descriptive_not_inferential": True',
+              '"model_quality_judgment_generated": False',
+              '"comparison_is_descriptive_not_model_selection": True',
+              '"scientific_superiority_determined": False',
+              '"figure_specs_are_rendering_instructions_not_interpretation": True',
+              '"scientific_interpretation_generated": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing scientific analysis governance assertion(s): {missing}')
+          forbidden = (
+              'subprocess.', 'os.system(', 'eval(', 'exec(',
+              'INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'TRUNCATE oc_graph',
+          )
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden analysis execution/mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check --ignore UP037 runtime/scientific_analysis.py runtime/research_analysis_workflow.py runtime/scientific_transforms.py runtime/scientific_filters.py runtime/scientific_diagnostics.py runtime/scientific_comparison.py runtime/scientific_result_artifacts.py app/routers/scientific_analysis.py tests/test_calyx_scientific_analysis_617.py tests/test_calyx_analysis_plan_workflow_617.py tests/test_calyx_scientific_diagnostics_617.py tests/test_calyx_scientific_comparison_617.py tests/test_calyx_scientific_result_artifacts_617.py
+          git diff --check

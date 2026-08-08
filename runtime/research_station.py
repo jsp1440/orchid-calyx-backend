@@ -12,10 +12,12 @@ import os
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.calyx_orchestrator.artifact_registry import ImmutableArtifactRegistry
-from runtime.literature_acquisition import LiteratureAcquisitionService
+
+if TYPE_CHECKING:
+    from runtime.literature_acquisition import LiteratureAcquisitionService
 
 RESEARCH_SCHEMA_VERSION = "calyx-research-station/v1"
 PROJECT_STATES = {"planned", "active", "blocked", "completed", "archived"}
@@ -149,8 +151,19 @@ class ResearchStationService:
         artifact_registry: ImmutableArtifactRegistry | None = None,
     ) -> None:
         self.workspace = workspace or research_root()
-        self.literature = literature or LiteratureAcquisitionService(literature_root())
+        self._literature_override = literature
         self.artifact_registry = artifact_registry or ImmutableArtifactRegistry()
+
+    @property
+    def literature(self) -> LiteratureAcquisitionService:
+        if self._literature_override is not None:
+            return self._literature_override
+        if not hasattr(self, "_literature_instance"):
+            from runtime.literature_acquisition import (
+                LiteratureAcquisitionService,
+            )
+            self._literature_instance = LiteratureAcquisitionService(literature_root())
+        return self._literature_instance
 
     @staticmethod
     def _owner_key(owner_id: str) -> str:
