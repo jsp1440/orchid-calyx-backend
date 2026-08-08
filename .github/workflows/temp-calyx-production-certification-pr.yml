@@ -1,0 +1,123 @@
+name: TEMP Calyx Production Certification
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/temp-calyx-production-certification-pr.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deployed-certification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+      CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
+      EXPECTED_MAIN_SHA: c114aba0545a71a3be23375e5b6d84e624fa82b4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Validate protected deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CALYX_BACKEND_URL:?Repository variable CALYX_BACKEND_URL is required}"
+          : "${CALYX_OWNER_ACCESS_CODE:?Repository secret CALYX_OWNER_ACCESS_CODE is required}"
+
+      - name: Capture protected read-only certification
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from datetime import datetime, timezone
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          base = os.environ["CALYX_BACKEND_URL"].rstrip("/")
+          access_code = os.environ["CALYX_OWNER_ACCESS_CODE"]
+          expected_main = os.environ["EXPECTED_MAIN_SHA"]
+          receipt = {
+              "schema_version": "1.0",
+              "captured_at": datetime.now(timezone.utc).isoformat(),
+              "backend_url": base,
+              "expected_main_sha": expected_main,
+              "read_only": True,
+              "production_mutation": False,
+              "publication_invoked": False,
+              "migration_invoked": False,
+              "taxonomy_activation_invoked": False,
+          }
+
+          def call(path, *, method="GET", payload=None, token=""):
+              data = json.dumps(payload).encode() if payload is not None else None
+              headers = {"Content-Type": "application/json"}
+              if token:
+                  headers["Authorization"] = f"Bearer {token}"
+              request = Request(f"{base}{path}", data=data, headers=headers, method=method)
+              with urlopen(request, timeout=30) as response:
+                  body = response.read().decode()
+                  return response.status, json.loads(body) if body else {}
+
+          exit_code = 0
+          try:
+              health_status, health = call("/health")
+              receipt["health_status"] = health_status
+              receipt["health"] = health
+              if health_status != 200:
+                  exit_code = 1
+
+              session_status, session = call(
+                  "/api/mission-control/owner/session-token",
+                  method="POST",
+                  payload={"access_code": access_code, "owner": "owner"},
+              )
+              token = session.get("token") or session.get("access_token") or ""
+              receipt["owner_session_status"] = session_status
+              receipt["owner_authenticated"] = session_status == 200 and bool(token) and token != "cookie"
+              if not receipt["owner_authenticated"]:
+                  exit_code = 1
+
+              if exit_code == 0:
+                  cert_status, certification = call(
+                      "/mission-control/calyx-core/certification",
+                      token=token,
+                  )
+                  receipt["certification_status"] = cert_status
+                  receipt["certification"] = certification
+                  if cert_status != 200:
+                      exit_code = 1
+          except HTTPError as exc:
+              receipt["error_type"] = "HTTPError"
+              receipt["error_status"] = exc.code
+              receipt["error_body"] = exc.read().decode(errors="replace")[:2000]
+              exit_code = 1
+          except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+              receipt["error_type"] = type(exc).__name__
+              receipt["error"] = str(exc)[:1000]
+              exit_code = 1
+
+          canonical = json.dumps(receipt, sort_keys=True, separators=(",", ":"), default=str)
+          receipt["artifact_hash"] = hashlib.sha256(canonical.encode()).hexdigest()
+          with open("calyx-production-certification-live.json", "w", encoding="utf-8") as handle:
+              json.dump(receipt, handle, indent=2, sort_keys=True, default=str)
+              handle.write("\n")
+          print(json.dumps(receipt, indent=2, sort_keys=True, default=str))
+          raise SystemExit(exit_code)
+          PY
+
+      - name: Upload live certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: temp-calyx-production-certification-${{ github.sha }}
+          path: calyx-production-certification-live.json
+          if-no-files-found: error
+          retention-days: 7
