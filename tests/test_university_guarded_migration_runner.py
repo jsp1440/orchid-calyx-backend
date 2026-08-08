@@ -34,33 +34,49 @@ VALID_SCHEMA_PREFLIGHT = {
 
 class GuardedMigrationRunnerContractTests(unittest.TestCase):
     def test_plan_is_non_mutating_and_redacts_credentials(self) -> None:
+        database_url = "postgresql://secret-user:secret-pass@db.example.org:5432/orchid"
         with patch.object(runner, "preflight", return_value=READY_PREFLIGHT):
-            result = runner.plan(
-                release_evidence=Path("evidence.json"),
-                database_url="postgresql://secret-user:secret-pass@db.example.org:5432/orchid",
-            )
+            result = runner.plan(release_evidence=Path("evidence.json"), database_url=database_url)
         self.assertTrue(result["migration_stage_preflight"]["ready"])
         self.assertTrue(result["would_apply"])
         self.assertFalse(result["mutations_performed"])
         self.assertEqual(result["database"]["hostname"], "db.example.org")
         self.assertEqual(result["database"]["database"], "orchid")
+        self.assertEqual(result["database_confirmation_target"], "db.example.org:5432/orchid")
         self.assertNotIn("secret-user", str(result))
         self.assertNotIn("secret-pass", str(result))
         self.assertRegex(result["migration"]["sha256"], r"^sha256:[0-9a-f]{64}$")
 
     def test_apply_requires_exact_digest_confirmation_before_connecting(self) -> None:
+        database_url = "postgresql://db.example.org/orchid"
         with patch.object(runner, "preflight", return_value=READY_PREFLIGHT), patch.object(
             runner.psycopg, "connect"
         ) as connect:
             with self.assertRaisesRegex(runner.MigrationGuardError, "exact migration SHA-256 confirmation"):
                 runner.apply_migration(
                     release_evidence=Path("evidence.json"),
-                    database_url="postgresql://db.example.org/orchid",
+                    database_url=database_url,
                     confirm_migration_sha256="sha256:" + "0" * 64,
+                    confirm_database_target=runner.database_confirmation_target(database_url),
+                )
+        connect.assert_not_called()
+
+    def test_apply_requires_exact_database_target_before_connecting(self) -> None:
+        database_url = "postgresql://db.example.org/orchid"
+        with patch.object(runner, "preflight", return_value=READY_PREFLIGHT), patch.object(
+            runner.psycopg, "connect"
+        ) as connect:
+            with self.assertRaisesRegex(runner.MigrationGuardError, "exact database target confirmation"):
+                runner.apply_migration(
+                    release_evidence=Path("evidence.json"),
+                    database_url=database_url,
+                    confirm_migration_sha256=runner.migration_digest(),
+                    confirm_database_target="wrong.example.org/orchid",
                 )
         connect.assert_not_called()
 
     def test_blocked_preflight_never_connects(self) -> None:
+        database_url = "postgresql://db.example.org/orchid"
         blocked = {
             **READY_PREFLIGHT,
             "ready_to_apply_migration": False,
@@ -72,19 +88,22 @@ class GuardedMigrationRunnerContractTests(unittest.TestCase):
             with self.assertRaisesRegex(runner.MigrationGuardError, "migration-stage preflight is blocked"):
                 runner.apply_migration(
                     release_evidence=Path("evidence.json"),
-                    database_url="postgresql://db.example.org/orchid",
+                    database_url=database_url,
                     confirm_migration_sha256=runner.migration_digest(),
+                    confirm_database_target=runner.database_confirmation_target(database_url),
                 )
         connect.assert_not_called()
 
     def test_already_valid_schema_is_idempotent_noop(self) -> None:
+        database_url = "postgresql://db.example.org/orchid"
         with patch.object(runner, "preflight", return_value=VALID_SCHEMA_PREFLIGHT), patch.object(
             runner.psycopg, "connect"
         ) as connect:
             result = runner.apply_migration(
                 release_evidence=Path("evidence.json"),
-                database_url="postgresql://db.example.org/orchid",
+                database_url=database_url,
                 confirm_migration_sha256=runner.migration_digest(),
+                confirm_database_target=runner.database_confirmation_target(database_url),
             )
         connect.assert_not_called()
         self.assertEqual(result["result"], "already_valid_noop")
@@ -96,6 +115,7 @@ class GuardedMigrationRunnerPostgresTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.database_url = os.environ["OCU_TEST_DATABASE_URL"]
+        cls.database_target = runner.database_confirmation_target(cls.database_url)
 
     def tearDown(self) -> None:
         with psycopg.connect(self.database_url, autocommit=True) as conn:
@@ -108,6 +128,7 @@ class GuardedMigrationRunnerPostgresTests(unittest.TestCase):
                 release_evidence=Path("evidence.json"),
                 database_url=self.database_url,
                 confirm_migration_sha256=runner.migration_digest(),
+                confirm_database_target=self.database_target,
             )
         self.assertEqual(result["result"], "applied_and_verified")
         self.assertTrue(result["post_apply_schema_valid"])
@@ -131,6 +152,7 @@ class GuardedMigrationRunnerPostgresTests(unittest.TestCase):
                         release_evidence=Path("evidence.json"),
                         database_url=self.database_url,
                         confirm_migration_sha256=digest,
+                        confirm_database_target=self.database_target,
                     )
         finally:
             bad_migration.unlink(missing_ok=True)
