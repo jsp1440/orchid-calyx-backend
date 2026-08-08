@@ -86,7 +86,7 @@ def _status(row: dict[str, str]) -> str:
         return "accepted"
     if "syn" in value or value in {"synonym", "basionym"}:
         return "synonym"
-    return value or "unresolved"
+    return "unresolved"
 
 
 def _malformed_count(finding_counts: dict[str, int]) -> int:
