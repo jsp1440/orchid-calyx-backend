@@ -7,7 +7,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.calyx_orchestrator.artifact_registry import ArtifactRegistration, ImmutableArtifactRegistry
+from app.calyx_orchestrator.artifact_registry import (
+    ArtifactRegistration,
+    ImmutableArtifactRegistry,
+)
 from app.routers import research_station as api
 from app.security import verify_owner_or_api_key
 from runtime.literature_acquisition import LiteratureAcquisitionService
