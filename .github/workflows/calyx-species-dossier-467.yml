@@ -1,0 +1,57 @@
+name: CALYX Species Dossier 467
+
+on:
+  pull_request:
+    paths:
+      - "runtime/species_dossier.py"
+      - "app/routers/species_dossier.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_species_dossier_467.py"
+      - "docs/brain/CALYX-SPECIES-DOSSIER-467.md"
+      - ".github/workflows/calyx-species-dossier-467.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  species-dossier:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile dossier surface
+        run: python -m py_compile runtime/species_dossier.py app/routers/species_dossier.py app/routers/live_mission_control.py tests/test_calyx_species_dossier_467.py
+      - name: Deterministic dossier tests
+        run: python -m pytest -q tests/test_calyx_species_dossier_467.py
+      - name: Permanent federation and non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/species_dossier.py').read_text()
+          required = (
+              '"partner_permission_claims_inferred": False',
+              '"production_ingestion_authorized": False',
+              '"production_graph_mutation_authorized": False',
+              '"scientific_publication_authorized": False',
+              '"production_deployment_authorized": False',
+              'DOSSIER_PARTNER_PERMISSION_EVIDENCE_REQUIRED',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing dossier governance assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'requests.get(', 'requests.post(', 'httpx.get(', 'httpx.post(')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden dossier authority present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/species_dossier.py app/routers/species_dossier.py tests/test_calyx_species_dossier_467.py
+          git diff --check
