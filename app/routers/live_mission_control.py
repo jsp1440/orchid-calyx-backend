@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter
 
+from app.routers.ai_vision_governed import router as ai_vision_router
 from app.routers.calyx_operator_chat import router as chat_router
 from app.routers.calyx_runtime_controls import create_runtime_controls_router
 from app.routers.matrix_operational import router as matrix_operational_router
@@ -42,3 +43,4 @@ router.include_router(
     create_runtime_controls_router(get_runtime_controls, verify_owner_or_api_key)
 )
 router.include_router(matrix_operational_router)
+router.include_router(ai_vision_router)
