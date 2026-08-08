@@ -2,7 +2,7 @@
 
 Date: 2026-08-08
 Depends on: CALYX-636 persistent conversation sessions.
-Status: implemented; exact-head validation pending. No merge, deployment, publication, or Knowledge Graph mutation authorized.
+Status: implemented, exact-head validation passed, and PR #651 is review-ready. No merge, deployment, publication, or Knowledge Graph mutation authorized.
 
 ## Goal
 
@@ -37,21 +37,34 @@ Permanent constraints remain:
 - Knowledge Graph mutation is not authorized;
 - read-only graph context remains separately governed by explicit taxon context.
 
-## Validation
+## Validation evidence
 
-Dedicated `CALYX Document Scope 637` CI validates:
+Implementation head `2adb0614b9708516ef4813c72a4a91d3a179db85` passed all four triggered lanes:
 
-- compilation;
-- exact document exclusion behavior;
-- revision/parent identity compatibility;
-- conversation propagation into `RetrievalQuery.filters`;
-- CALYX-634 conversation regressions;
-- BUILD-085B Evidence Retrieval regressions;
-- source-level non-authority assertions;
-- Ruff and diff hygiene.
+- CALYX Document Scope 637;
+- CALYX Continuum Conversation 634;
+- CALYX Conversation Graph 635;
+- CALYX Workflow Governance Audit.
 
-Existing CALYX-634, CALYX-636, legacy Mission Control chat, and workflow-governance lanes may also trigger from the stacked changes and remain authoritative regressions.
+The dedicated document-scope lane compiled the new surface, passed 18 focused + stacked Evidence Retrieval/conversation tests, passed permanent non-authority assertions, and passed Ruff/diff hygiene. Its first run had already passed all behavior tests and failed only four `RUF012` fixture annotations; those were corrected with `ClassVar` without changing runtime behavior.
 
-## Next priority after validation
+PR #651 was then promoted from draft to review-ready and remains unmerged/non-production.
 
-Expose project-linked document selection in Research Station persistent Ask Calyx, restore the stored document scope when reopening a thread, and make evidence-only/global retrieval an explicit selectable state. Conversation history remains context, not evidence.
+## Research Station handoff
+
+RS-10 is implemented on branch `feature/research-calyx-document-scope-10` and opened as frontend PR #12, stacked on validated RS-9. It adds:
+
+- project-linked document discovery;
+- explicit all-evidence versus exact-document selection;
+- persistent `active_document_id` create/ask routing;
+- reopened-thread restoration of valid stored document scope;
+- revision-to-document mapping;
+- visible stale-scope handling instead of silent substitution;
+- fail-closed messaging when a scoped document returns no eligible evidence;
+- pure deterministic scope helpers with focused tests.
+
+RS-10 remains draft and unmerged until its full Research Station exact-head formatting/lint/test/build gate passes.
+
+This Brain update moves the CALYX-637 branch head beyond the validated implementation commit, so the same backend gates must revalidate this documentation-only exact head before it is treated as final.
+
+Conversation history and routing context remain context, not evidence.
