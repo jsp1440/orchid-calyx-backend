@@ -18,7 +18,7 @@ def test_safe_expression_supports_scientific_math_without_eval():
 
 
 def test_safe_expression_rejects_python_object_access():
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         safe_expression("(1).__class__")
 
 
