@@ -259,9 +259,12 @@ class SandboxSupervisorWorker:
             if _request_digest(request) != request_digest:
                 raise PermissionError("SANDBOX_SUPERVISOR_REQUEST_DIGEST_MISMATCH")
             self._verify_claim_identity(request)
-            targets = self._verify_targets(request)
             commit = str(request.get("checkout_commit_sha") or "").strip().lower()
             with self._snapshot_maker(self.config.repository_root, commit) as snapshot:
+                # Verify targets from the immutable snapshot so that the files
+                # that are hash-checked are exactly the files that will be executed,
+                # eliminating any TOCTOU race with the live worktree.
+                targets = self._verify_targets(request, snapshot)
                 probe = self._runner(
                     self._docker_prefix(snapshot) + ["python", "-c", TRUSTED_SANDBOX_PROBE],
                     15,
@@ -307,7 +310,7 @@ class SandboxSupervisorWorker:
         if actual_commit != expected_commit:
             raise PermissionError("SANDBOX_SUPERVISOR_CHECKOUT_COMMIT_MISMATCH")
 
-    def _verify_targets(self, request: Mapping[str, Any]) -> list[str]:
+    def _verify_targets(self, request: Mapping[str, Any], snapshot: Path) -> list[str]:
         raw_targets = request.get("targets")
         if not isinstance(raw_targets, list) or not 1 <= len(raw_targets) <= 24:
             raise ValueError("SANDBOX_SUPERVISOR_TARGET_COUNT_INVALID")
@@ -324,7 +327,7 @@ class SandboxSupervisorWorker:
                 raise PermissionError("SANDBOX_SUPERVISOR_TARGET_PATH_NOT_ALLOWED")
             if not _is_sha256(expected_hash):
                 raise ValueError("SANDBOX_SUPERVISOR_TARGET_HASH_INVALID")
-            candidate = self._regular_file_without_symlinks(path)
+            candidate = self._regular_file_without_symlinks(path, snapshot)
             if candidate.stat().st_size > MAX_TARGET_BYTES:
                 raise PermissionError("SANDBOX_SUPERVISOR_TARGET_TOO_LARGE")
             actual_hash = _sha256_bytes(candidate.read_bytes())
@@ -337,15 +340,15 @@ class SandboxSupervisorWorker:
             raise PermissionError("SANDBOX_SUPERVISOR_PYTEST_TARGET_NOT_TEST")
         return sorted(verified)
 
-    def _regular_file_without_symlinks(self, path: str) -> Path:
-        current = self.config.repository_root
+    def _regular_file_without_symlinks(self, path: str, root: Path) -> Path:
+        current = root
         for part in Path(path).parts:
             current = current / part
             if current.is_symlink():
                 raise PermissionError("SANDBOX_SUPERVISOR_TARGET_SYMLINK_PROHIBITED")
         candidate = current.resolve()
         try:
-            candidate.relative_to(self.config.repository_root)
+            candidate.relative_to(root)
         except ValueError as exc:
             raise PermissionError("SANDBOX_SUPERVISOR_TARGET_ESCAPE") from exc
         if not candidate.is_file():
