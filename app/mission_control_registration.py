@@ -2,7 +2,9 @@
 
 from fastapi import FastAPI
 
-from app.routers.calyx_conversation_sources import router as calyx_conversation_sources_router
+from app.routers.calyx_conversation_sources import (
+    router as calyx_conversation_sources_router,
+)
 from app.routers.calyx_operator_chat import router as calyx_operator_chat_router
 
 
