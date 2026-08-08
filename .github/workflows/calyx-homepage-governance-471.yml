@@ -1,0 +1,59 @@
+name: CALYX Homepage Governance 471
+
+on:
+  pull_request:
+    paths:
+      - "runtime/homepage_governance.py"
+      - "runtime/species_dossier.py"
+      - "app/routers/homepage_governance.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_homepage_governance_471.py"
+      - "tests/test_calyx_species_dossier_467.py"
+      - "docs/brain/CALYX-HOMEPAGE-GOVERNANCE-471.md"
+      - ".github/workflows/calyx-homepage-governance-471.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  homepage-governance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile homepage governance surface
+        run: python -m py_compile runtime/homepage_governance.py app/routers/homepage_governance.py app/routers/live_mission_control.py tests/test_calyx_homepage_governance_471.py
+      - name: Homepage pipeline and species dossier regressions
+        run: python -m pytest -q tests/test_calyx_homepage_governance_471.py tests/test_calyx_species_dossier_467.py
+      - name: Permanent release-governance assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/homepage_governance.py').read_text()
+          required = (
+              '"automatic_deployment_authorized": False',
+              '"scientific_publication_authorized": False',
+              '"unreviewed_activation_authorized": False',
+              '"owner_activation_required": True',
+              'HOMEPAGE_SPEC_OWNER_APPROVAL_REQUIRED',
+              'HOMEPAGE_VALIDATION_EVIDENCE_REQUIRED',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing homepage governance assertion(s): {missing}')
+          forbidden = ('deploy(', 'requests.post(', 'httpx.post(', 'INSERT INTO oc_graph', 'UPDATE oc_graph')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden homepage authority present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/homepage_governance.py app/routers/homepage_governance.py tests/test_calyx_homepage_governance_471.py
+          git diff --check
