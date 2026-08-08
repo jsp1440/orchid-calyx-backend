@@ -1,0 +1,59 @@
+name: CALYX Volunteer Service 472
+
+on:
+  pull_request:
+    paths:
+      - "runtime/volunteer_service.py"
+      - "app/routers/volunteer_service.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_volunteer_service_472.py"
+      - "docs/brain/CALYX-VOLUNTEER-SERVICE-472.md"
+      - ".github/workflows/calyx-volunteer-service-472.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  volunteer-service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile volunteer surface
+        run: python -m py_compile runtime/volunteer_service.py app/routers/volunteer_service.py app/routers/live_mission_control.py tests/test_calyx_volunteer_service_472.py
+      - name: Deterministic nonprofit and orchid-society workflows
+        run: python -m pytest -q tests/test_calyx_volunteer_service_472.py
+      - name: Permanent privacy and human-review assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/volunteer_service.py').read_text()
+          required = (
+              '"public_profile_authorized": False',
+              '"autonomous_disciplinary_decision_authorized": False',
+              '"autonomous_verification_authorized": False',
+              '"binding_commitment_authorized": False',
+              '"public_display_authorized": False',
+              '"review_state": "human_review_required"',
+              '"public_export": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing volunteer governance assertion(s): {missing}')
+          forbidden = ('requests.post(', 'httpx.post(', 'discipline(', 'public_profile_authorized": True')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden volunteer authority present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/volunteer_service.py app/routers/volunteer_service.py tests/test_calyx_volunteer_service_472.py
+          git diff --check
