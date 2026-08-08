@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import utcnow
+from .program_models import CalyxProgram, CalyxProgramJob
 from .sandbox_supervisor_evidence import (
     SupervisorValidationReceipt,
     ValidationRequestEnvelope,
 )
 from .sandbox_supervisor_models import SandboxValidationRequestRecord
+
+MIN_CLAIM_SECONDS = 60
+MAX_CLAIM_SECONDS = 600
 
 
 class SandboxSupervisorService:
@@ -37,6 +42,12 @@ class SandboxSupervisorService:
             preset=preset,
             targets=targets,
             timeout_seconds=timeout_seconds,
+        )
+        self._validate_program_job_binding(
+            owner=owner,
+            program_job_id=program_job_id,
+            repository=envelope.repository,
+            branch=envelope.branch,
         )
         existing = self.db.scalar(
             select(SandboxValidationRequestRecord).where(
@@ -64,10 +75,18 @@ class SandboxSupervisorService:
         self.db.refresh(record)
         return record
 
-    def claim_next(self, *, worker_id: str) -> SandboxValidationRequestRecord | None:
+    def claim_next(
+        self,
+        *,
+        worker_id: str,
+        lease_seconds: int = 300,
+    ) -> SandboxValidationRequestRecord | None:
         worker = worker_id.strip()
         if not worker:
             raise ValueError("SANDBOX_SUPERVISOR_WORKER_REQUIRED")
+        if not MIN_CLAIM_SECONDS <= lease_seconds <= MAX_CLAIM_SECONDS:
+            raise ValueError("SANDBOX_SUPERVISOR_LEASE_INVALID")
+        self._recover_expired_claims()
         record = self.db.scalar(
             select(SandboxValidationRequestRecord)
             .where(SandboxValidationRequestRecord.status == "queued")
@@ -75,11 +94,20 @@ class SandboxSupervisorService:
             .with_for_update(skip_locked=True)
         )
         if record is None:
+            self.db.commit()
             return None
+        if record.attempt_count >= record.max_attempts:
+            record.status = "blocked"
+            record.outcome = "blocked"
+            self.db.commit()
+            return self.claim_next(worker_id=worker, lease_seconds=lease_seconds)
+        now = utcnow()
         record.status = "claimed"
         record.claim_worker = worker
         record.claim_token = str(uuid4())
-        record.claimed_at = utcnow()
+        record.claimed_at = now
+        record.claim_expires_at = now + timedelta(seconds=lease_seconds)
+        record.attempt_count += 1
         self.db.commit()
         self.db.refresh(record)
         return record
@@ -99,6 +127,8 @@ class SandboxSupervisorService:
             raise ValueError("SANDBOX_VALIDATION_REQUEST_NOT_CLAIMED")
         if record.claim_worker != worker_id or record.claim_token != claim_token:
             raise PermissionError("SANDBOX_VALIDATION_CLAIM_MISMATCH")
+        if record.claim_expires_at is None or record.claim_expires_at <= utcnow():
+            raise PermissionError("SANDBOX_VALIDATION_CLAIM_EXPIRED")
         envelope = self._envelope(record)
         receipt = SupervisorValidationReceipt.from_mapping(receipt_payload)
         receipt.verify_for(envelope)
@@ -111,6 +141,7 @@ class SandboxSupervisorService:
         record.status = "completed" if receipt.outcome == "delivered" else "blocked"
         record.completed_at = utcnow()
         record.claim_token = None
+        record.claim_expires_at = None
         self.db.commit()
         self.db.refresh(record)
         return record
@@ -140,6 +171,11 @@ class SandboxSupervisorService:
             "outcome": record.outcome,
             "receipt_digest": record.receipt_digest,
             "claimed": record.claim_worker is not None,
+            "attempt_count": record.attempt_count,
+            "max_attempts": record.max_attempts,
+            "claim_expires_at": (
+                record.claim_expires_at.isoformat() if record.claim_expires_at else None
+            ),
             "claim_token_exposed": False,
             "automatic_merge_authorized": False,
             "deployment_authorized": False,
@@ -160,7 +196,53 @@ class SandboxSupervisorService:
             "request_digest": record.request_digest,
             "claim_worker": record.claim_worker,
             "claim_token": record.claim_token,
+            "claim_expires_at": (
+                record.claim_expires_at.isoformat() if record.claim_expires_at else None
+            ),
+            "attempt_count": record.attempt_count,
+            "max_attempts": record.max_attempts,
         }
+
+    def _validate_program_job_binding(
+        self,
+        *,
+        owner: str,
+        program_job_id: str | None,
+        repository: str,
+        branch: str,
+    ) -> None:
+        if program_job_id is None:
+            return
+        job = self.db.get(CalyxProgramJob, program_job_id)
+        if job is None:
+            raise LookupError("SANDBOX_VALIDATION_PROGRAM_JOB_NOT_FOUND")
+        program = self.db.get(CalyxProgram, job.program_id)
+        if program is None or program.owner != owner:
+            raise LookupError("SANDBOX_VALIDATION_PROGRAM_JOB_NOT_FOUND")
+        if job.mutating:
+            raise PermissionError("SANDBOX_VALIDATION_MUTATING_JOB_PROHIBITED")
+        if job.repository != repository or (job.branch or "") != branch:
+            raise PermissionError("SANDBOX_VALIDATION_PROGRAM_JOB_IDENTITY_MISMATCH")
+
+    def _recover_expired_claims(self) -> None:
+        now = utcnow()
+        expired = self.db.scalars(
+            select(SandboxValidationRequestRecord).where(
+                SandboxValidationRequestRecord.status == "claimed",
+                SandboxValidationRequestRecord.claim_expires_at.is_not(None),
+                SandboxValidationRequestRecord.claim_expires_at <= now,
+            )
+        ).all()
+        for record in expired:
+            record.claim_worker = None
+            record.claim_token = None
+            record.claimed_at = None
+            record.claim_expires_at = None
+            if record.attempt_count >= record.max_attempts:
+                record.status = "blocked"
+                record.outcome = "blocked"
+            else:
+                record.status = "queued"
 
     @staticmethod
     def _envelope(record: SandboxValidationRequestRecord) -> ValidationRequestEnvelope:
