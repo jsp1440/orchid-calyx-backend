@@ -1,6 +1,6 @@
 # CALYX-465 — Mycorrhizal evidence and fungal relationship pipeline
 
-Status: IMPLEMENTED / GOVERNED REVIEW-ONLY
+Status: IMPLEMENTED / VALIDATED / GOVERNED REVIEW-ONLY
 
 ## Delivered
 
@@ -22,4 +22,12 @@ This slice does not convert co-occurrence into verified symbiosis, autonomously 
 
 ## Validation
 
-Dedicated CI compiles the mycorrhizal runtime/router/Mission Control surface, runs CALYX-465 tests plus Literature Intelligence #448 regressions, asserts permanent co-occurrence/non-publication/non-production-mutation boundaries, runs Ruff, and checks diff hygiene. The branch remains draft/unmerged until exact-head validation completes.
+Validation completed on implementation commit `1667ca32e05f7c19726b7de784c73758cb7be29a`.
+
+- CALYX Mycorrhizal Evidence 465: success; compile, deterministic mycorrhizal + literature regressions, permanent governance assertions, Ruff, and diff hygiene all passed.
+- CALYX Literature Acquisition 448 dependency regression: success.
+- CALYX Workflow Governance Audit: success.
+- CALYX-SUPERVISED-PILOT-001: success.
+- CALYX-AUTONOMY-DEPLOYMENT-001: success.
+
+PR #615 remains draft/unmerged and targets `feature/calyx-literature-acquisition-448` because exact evidence binding depends on #448. This documentation-only commit remains subject to the same PR checks before any review-state change.
