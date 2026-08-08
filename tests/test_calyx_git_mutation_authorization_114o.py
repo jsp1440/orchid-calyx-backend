@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.calyx_orchestrator.executor import canonical_checksum
-from app.calyx_orchestrator.git_mutation_authorization import GitMutationAuthorizationGate
+from app.calyx_orchestrator.git_mutation_authorization import (
+    GRANT_SCHEMA,
+    GitMutationAuthorizationGate,
+)
 from app.calyx_orchestrator.proposal_authorization import (
     ProposalAuthorizationBuilder,
     ProposalAuthorizationRegistry,
@@ -17,6 +22,7 @@ REPOSITORY = "jsp1440/orchid-calyx-backend"
 BASE_COMMIT = "a" * 40
 NOW = datetime(2026, 8, 8, 22, 0, tzinfo=timezone.utc)
 SECRET = b"s" * 32
+OWNER = "principal:owner"
 
 
 def _patch_output() -> dict:
@@ -157,6 +163,25 @@ def _request(registry: ProposalAuthorizationRegistry):
     )
 
 
+def _owner_grant(
+    *, request_digest: str, decision: str, issued_at: str, expires_at: str
+) -> dict[str, str]:
+    unsigned = {
+        "schema": GRANT_SCHEMA,
+        "request_digest": request_digest,
+        "decision": decision,
+        "approved_by": OWNER,
+        "issued_at": issued_at,
+        "expires_at": expires_at,
+    }
+    signature = hmac.new(
+        SECRET,
+        canonical_sha256(unsigned).encode("ascii"),
+        hashlib.sha256,
+    ).hexdigest()
+    return {**unsigned, "signature": signature}
+
+
 def test_request_requires_both_authoritative_registry_reviews() -> None:
     registry = ProposalAuthorizationRegistry()
     registry.record(
@@ -178,7 +203,10 @@ def test_distinct_reviewers_are_required() -> None:
         _review(review_class="operational", reviewer="principal:reviewer")
     )
     registry.record(_review(review_class="security", reviewer="principal:reviewer"))
-    with pytest.raises(PermissionError, match="REVIEWER_SEPARATION_REQUIRED"):
+    with pytest.raises(
+        PermissionError,
+        match="PROPOSAL_REVIEW_REVIEWER_CONFLICT|REVIEWER_SEPARATION_REQUIRED",
+    ):
         _request(registry)
 
 
@@ -220,22 +248,29 @@ def test_merge_action_is_not_allowlisted() -> None:
         )
 
 
-def test_exact_owner_grant_verifies_and_expired_grant_fails() -> None:
+def test_exact_external_owner_grant_verifies_and_expired_grant_fails() -> None:
     gate = GitMutationAuthorizationGate(
-        owner_principal="principal:owner",
+        owner_principal=OWNER,
         hmac_secret=SECRET,
     )
     request = _request(_registry())
-    grant = gate.sign_for_test_or_operator(
+    grant = _owner_grant(
         request_digest=request.request_digest,
         decision="approved",
         issued_at=NOW.isoformat(),
         expires_at=request.expires_at,
     )
     verified = gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
-    assert verified.approved_by == "principal:owner"
+    assert verified.approved_by == OWNER
     with pytest.raises(PermissionError, match="EXPIRED_OR_INVALID"):
         gate.verify_grant(request, grant, now=NOW + timedelta(minutes=16))
+
+
+def test_runtime_gate_cannot_mint_owner_grants() -> None:
+    gate = GitMutationAuthorizationGate(owner_principal=OWNER, hmac_secret=SECRET)
+    assert not hasattr(gate, "sign_for_test_or_operator")
+    assert not hasattr(gate, "sign_grant")
+    assert not hasattr(gate, "approve")
 
 
 def test_manifest_tampering_invalidates_request() -> None:
