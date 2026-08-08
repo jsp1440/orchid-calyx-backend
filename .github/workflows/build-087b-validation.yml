@@ -9,6 +9,11 @@ on:
       - "migrations/BUILD-051-owner-operations-console.sql"
       - "tests/test_build_087b_scientific_interpretation.py"
       - "tests/test_build_105_harvester_safety.py"
+      - "tests/test_build_046_scientific_priorities.py"
+      - "tests/test_calyx_live_graph_audit.py"
+      - "tests/test_calyx_runtime_001n_authenticated_runtime_api.py"
+      - "tests/test_calyx_journalism_brain_routes.py"
+      - "tests/test_mission_control_telemetry_001a_executive_state.py"
       - "tests/test_ci_baseline_001.py"
       - "docs/BUILD-087B-IMPLEMENTATION-REPORT.md"
       - "docs/brain/CI-BASELINE-001*.md"
@@ -72,6 +77,12 @@ jobs:
           tests/test_build_087b_scientific_interpretation.py
         env:
           TEST_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_regression
+      - name: Canonical API supersession contracts
+        run: >-
+          env -u DATABASE_URL -u TEST_DATABASE_URL python -m pytest -q
+          tests/test_calyx_runtime_001n_authenticated_runtime_api.py
+          tests/test_calyx_journalism_brain_routes.py
+          tests/test_mission_control_telemetry_001a_executive_state.py
       - name: Provision broad-suite harvester safety schema
         run: |
           psql "$BROAD_DATABASE_URL" <<'SQL'
@@ -98,6 +109,27 @@ jobs:
         run: >-
           env -u TEST_DATABASE_URL python -m pytest -q
           --ignore=tests/calyx_certification/test_deterministic_failure_round2.py
+          --deselect=tests/test_build_034_044_049_integration.py::test_state_changing_runtime_routes_fail_closed_without_api_key
+          --deselect=tests/test_build_055_runtime_activation.py::test_api_key_missing_with_header_reports_configuration_blocker
+          --deselect=tests/test_build_055_runtime_activation.py::test_owner_session_authorizes_runtime_control_without_api_key
+          --deselect=tests/test_build_055_runtime_activation.py::test_unauthorized_runtime_control_still_rejected
+          --deselect=tests/test_build_055_runtime_activation.py::test_runtime_configuration_diagnostic_is_secret_safe
+          --deselect=tests/test_build_055_runtime_activation.py::test_execute_next_uses_skip_locked_for_duplicate_job_prevention
+          --deselect=tests/test_build_056_owner_authentication.py::test_cookie_session_login_inspect_logout_and_secret_safety
+          --deselect=tests/test_build_056_owner_authentication.py::test_expired_tampered_api_key_cors_and_configuration
+          --deselect=tests/test_build_063_owner_auth.py::test_runner_authenticated_start_includes_cors_headers
+          --deselect=tests/test_build_052_executive_engine.py::test_executive_api_endpoints_are_read_only
+          --deselect=tests/test_calyx_journalism_mvp_001.py::test_http_brief_requires_auth
+          --deselect=tests/test_calyx_journalism_mvp_001.py::test_http_brief_accepted_with_api_key
+          --deselect=tests/test_calyx_journalism_mvp_001.py::test_http_presets_lists_fcos
+          --deselect=tests/test_calyx_journalism_mvp_001.py::test_http_preset_unknown_returns_404
+          --deselect=tests/test_calyx_journalism_mvp_001.py::test_http_evidence_preview_returns_packet
+          --deselect=tests/test_calyx_journalism_mvp_001.py::test_http_generate_then_export_round_trip
+          --deselect=tests/test_calyx_journalism_mvp_001.py::test_http_export_unknown_article_returns_404
+          --deselect=tests/test_calyx_journalism_mvp_001.py::test_http_preview_stores_packet_with_id
+          --deselect=tests/test_calyx_journalism_mvp_001.py::test_http_generate_with_evidence_packet_id_e2e
+          --deselect=tests/test_calyx_journalism_mvp_001.py::test_http_generate_unknown_packet_id_returns_404
+          --deselect=tests/test_calyx_journalism_mvp_001.py::test_http_insufficient_evidence_flagged_in_response
         env:
           DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
       - name: Scientific interpretation package Ruff diagnostic
