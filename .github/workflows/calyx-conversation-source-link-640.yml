@@ -1,0 +1,63 @@
+name: CALYX Conversation Source Link 640
+
+on:
+  pull_request:
+    paths:
+      - "app/routers/calyx_conversation_sources.py"
+      - "app/mission_control_registration.py"
+      - "tests/test_calyx_conversation_source_link_640.py"
+      - ".github/workflows/calyx-conversation-source-link-640.yml"
+      - "docs/brain/CALYX-CONVERSATION-SOURCE-LINK-640.md"
+
+jobs:
+  conversation-source-link:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile governed source-link surfaces
+        run: python -m py_compile app/routers/calyx_conversation_sources.py app/mission_control_registration.py tests/test_calyx_conversation_source_link_640.py
+      - name: Source-link plus conversation provenance regressions
+        run: python -m pytest -q tests/test_calyx_conversation_source_link_640.py tests/test_calyx_source_document_identity_639.py tests/test_calyx_conversation_report_638.py tests/test_calyx_conversation_sessions_636.py
+      - name: Permanent source-bound and non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          route = Path('app/routers/calyx_conversation_sources.py').read_text()
+          registration = Path('app/mission_control_registration.py').read_text()
+          required_route = (
+              'ConversationMemoryService(db).get_session',
+              '_source_ref(conversation, result_id)',
+              'CONVERSATION_SOURCE_DOCUMENT_ID_UNAVAILABLE',
+              'ResearchWorkspaceService(db).add_document',
+              'conversation_history_is_evidence',
+              '"scientific_publication_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+          )
+          missing = [value for value in required_route if value not in route]
+          if missing:
+              raise SystemExit(f'missing governed source-link assertion(s): {missing}')
+          if 'calyx_conversation_sources_router' not in registration:
+              raise SystemExit('CALYX-640 router is not registered with Mission Control')
+          forbidden = (
+              'INSERT INTO oc_graph',
+              'UPDATE oc_graph',
+              'DELETE FROM oc_graph',
+              'TRUNCATE oc_graph',
+              'document_title',
+              'identifier ==',
+          )
+          present = [value for value in forbidden if value in route]
+          if present:
+              raise SystemExit(f'forbidden source-link inference or graph mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check app/routers/calyx_conversation_sources.py app/mission_control_registration.py tests/test_calyx_conversation_source_link_640.py
+          python -m ruff format --check app/routers/calyx_conversation_sources.py app/mission_control_registration.py tests/test_calyx_conversation_source_link_640.py
+          git diff --check
