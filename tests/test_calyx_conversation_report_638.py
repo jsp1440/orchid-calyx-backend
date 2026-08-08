@@ -90,7 +90,7 @@ def test_report_deduplicates_persisted_source_references():
     report = build_conversation_markdown(fixture)
 
     assert report.count('<a id="source-1"></a>Source 1:') == 1
-    assert "### Source 2:" not in report
+    assert '<a id="source-2"></a>Source 2:' not in report
     assert (
         report.count("- Sources: [Source 1](#source-1)") == 2
     )  # one per Calyx message
