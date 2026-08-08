@@ -143,7 +143,10 @@ class SandboxSupervisorService:
             raise ValueError("SANDBOX_VALIDATION_REQUEST_NOT_CLAIMED")
         if record.claim_worker != worker_id or record.claim_token != claim_token:
             raise PermissionError("SANDBOX_VALIDATION_CLAIM_MISMATCH")
-        if record.claim_expires_at is None or _as_utc(record.claim_expires_at) <= utcnow():
+        if (
+            record.claim_expires_at is None
+            or _as_utc(record.claim_expires_at) <= utcnow()
+        ):
             raise PermissionError("SANDBOX_VALIDATION_CLAIM_EXPIRED")
         envelope = self._envelope(record)
         receipt = SupervisorValidationReceipt.from_mapping(receipt_payload)
@@ -172,7 +175,9 @@ class SandboxSupervisorService:
             raise LookupError("SANDBOX_VALIDATION_REQUEST_NOT_FOUND")
         return record
 
-    def get_completed_by_digest(self, *, request_digest: str) -> SandboxValidationRequestRecord:
+    def get_completed_by_digest(
+        self, *, request_digest: str
+    ) -> SandboxValidationRequestRecord:
         """Resolve one persisted completed supervisor record by exact request digest."""
         digest = request_digest.strip().lower()
         if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
