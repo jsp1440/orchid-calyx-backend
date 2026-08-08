@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -17,6 +17,20 @@ from .sandbox_supervisor_models import SandboxValidationRequestRecord
 
 MIN_CLAIM_SECONDS = 60
 MAX_CLAIM_SECONDS = 600
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Normalize database timestamps for Python-side comparisons.
+
+    PostgreSQL preserves timezone-aware TIMESTAMPTZ values, while SQLite used by
+    focused tests can round-trip DateTime(timezone=True) as a naive datetime.
+    Treat a naive persisted value as UTC rather than allowing backend-specific
+    datetime semantics to bypass or crash the lease boundary.
+    """
+
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 class SandboxSupervisorService:
@@ -127,7 +141,7 @@ class SandboxSupervisorService:
             raise ValueError("SANDBOX_VALIDATION_REQUEST_NOT_CLAIMED")
         if record.claim_worker != worker_id or record.claim_token != claim_token:
             raise PermissionError("SANDBOX_VALIDATION_CLAIM_MISMATCH")
-        if record.claim_expires_at is None or record.claim_expires_at <= utcnow():
+        if record.claim_expires_at is None or _as_utc(record.claim_expires_at) <= utcnow():
             raise PermissionError("SANDBOX_VALIDATION_CLAIM_EXPIRED")
         envelope = self._envelope(record)
         receipt = SupervisorValidationReceipt.from_mapping(receipt_payload)
