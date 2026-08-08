@@ -82,7 +82,9 @@ def build_conversation_markdown(conversation: dict[str, Any]) -> str:
                 ]
             )
             if message.get("epistemic_status"):
-                lines.append(f"- Epistemic status: `{_text(message.get('epistemic_status'))}`")
+                lines.append(
+                    f"- Epistemic status: `{_text(message.get('epistemic_status'))}`"
+                )
             context = dict(message.get("context") or {})
             if context:
                 lines.extend(
