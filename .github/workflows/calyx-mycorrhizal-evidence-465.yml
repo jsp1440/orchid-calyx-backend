@@ -1,0 +1,56 @@
+name: CALYX Mycorrhizal Evidence 465
+
+on:
+  pull_request:
+    paths:
+      - "runtime/mycorrhizal_evidence.py"
+      - "app/routers/mycorrhizal_evidence.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_mycorrhizal_evidence_465.py"
+      - "runtime/literature_acquisition.py"
+      - "tests/test_calyx_literature_acquisition_448.py"
+      - "docs/brain/CALYX-MYCORRHIZAL-EVIDENCE-465.md"
+      - ".github/workflows/calyx-mycorrhizal-evidence-465.yml"
+  workflow_dispatch:
+
+jobs:
+  mycorrhizal-evidence:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile mycorrhizal surface
+        run: python -m py_compile runtime/mycorrhizal_evidence.py app/routers/mycorrhizal_evidence.py app/routers/live_mission_control.py tests/test_calyx_mycorrhizal_evidence_465.py
+      - name: Deterministic mycorrhizal and literature regressions
+        run: python -m pytest -q tests/test_calyx_mycorrhizal_evidence_465.py tests/test_calyx_literature_acquisition_448.py
+      - name: Permanent evidence and non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/mycorrhizal_evidence.py').read_text()
+          required = (
+              'MYCORRHIZA_COOCCURRENCE_CANNOT_VERIFY_SYMBIOSIS',
+              'MYCORRHIZA_ASSOCIATION_DOCUMENTATION_REQUIRED',
+              '"cooccurrence_as_verified_symbiosis_authorized": False',
+              '"scientific_publication_authorized": False',
+              '"production_graph_mutation_authorized": False',
+              '"production_deployment_authorized": False',
+              '"production_graph_mutation_performed": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing mycorrhizal governance assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'requests.get(', 'requests.post(', 'httpx.get(', 'httpx.post(')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden mycorrhizal authority present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check --ignore UP037 runtime/mycorrhizal_evidence.py app/routers/mycorrhizal_evidence.py tests/test_calyx_mycorrhizal_evidence_465.py
+          git diff --check
