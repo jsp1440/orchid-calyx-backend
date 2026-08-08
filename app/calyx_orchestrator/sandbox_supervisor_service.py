@@ -79,7 +79,9 @@ class SandboxSupervisorService:
             branch=envelope.branch,
             checkout_commit_sha=envelope.checkout_commit_sha,
             preset=envelope.preset,
-            targets_json=json.dumps([item.as_dict() for item in envelope.targets], sort_keys=True),
+            targets_json=json.dumps(
+                [item.as_dict() for item in envelope.targets], sort_keys=True
+            ),
             timeout_seconds=envelope.timeout_seconds,
             request_digest=envelope.request_digest,
             status="queued",
@@ -141,7 +143,10 @@ class SandboxSupervisorService:
             raise ValueError("SANDBOX_VALIDATION_REQUEST_NOT_CLAIMED")
         if record.claim_worker != worker_id or record.claim_token != claim_token:
             raise PermissionError("SANDBOX_VALIDATION_CLAIM_MISMATCH")
-        if record.claim_expires_at is None or _as_utc(record.claim_expires_at) <= utcnow():
+        if (
+            record.claim_expires_at is None
+            or _as_utc(record.claim_expires_at) <= utcnow()
+        ):
             raise PermissionError("SANDBOX_VALIDATION_CLAIM_EXPIRED")
         envelope = self._envelope(record)
         receipt = SupervisorValidationReceipt.from_mapping(receipt_payload)
@@ -151,7 +156,9 @@ class SandboxSupervisorService:
         record.evidence_uri = receipt.evidence_uri
         record.outcome = receipt.outcome
         record.receipt_digest = receipt.receipt_digest
-        record.result_json = json.dumps(receipt.payload(), sort_keys=True, separators=(",", ":"))
+        record.result_json = json.dumps(
+            receipt.payload(), sort_keys=True, separators=(",", ":")
+        )
         record.status = "completed" if receipt.outcome == "delivered" else "blocked"
         record.completed_at = utcnow()
         record.claim_token = None
@@ -160,10 +167,37 @@ class SandboxSupervisorService:
         self.db.refresh(record)
         return record
 
-    def get_owned(self, *, owner: str, request_id: str) -> SandboxValidationRequestRecord:
+    def get_owned(
+        self, *, owner: str, request_id: str
+    ) -> SandboxValidationRequestRecord:
         record = self.db.get(SandboxValidationRequestRecord, request_id)
         if record is None or record.owner != owner:
             raise LookupError("SANDBOX_VALIDATION_REQUEST_NOT_FOUND")
+        return record
+
+    def get_completed_by_digest(
+        self, *, request_digest: str
+    ) -> SandboxValidationRequestRecord:
+        """Resolve one persisted completed supervisor record by exact request digest."""
+        digest = request_digest.strip().lower()
+        if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+            raise ValueError("SANDBOX_VALIDATION_REQUEST_DIGEST_INVALID")
+        record = self.db.scalar(
+            select(SandboxValidationRequestRecord).where(
+                SandboxValidationRequestRecord.request_digest == digest,
+                SandboxValidationRequestRecord.status == "completed",
+            )
+        )
+        if record is None:
+            raise LookupError("SANDBOX_VALIDATION_COMPLETED_RECORD_NOT_FOUND")
+        if (
+            record.outcome != "delivered"
+            or not record.receipt_digest
+            or not record.policy_digest
+            or not record.authorization_id
+            or not record.evidence_uri
+        ):
+            raise PermissionError("SANDBOX_VALIDATION_COMPLETED_RECORD_INVALID")
         return record
 
     @staticmethod
