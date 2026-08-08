@@ -1,0 +1,75 @@
+name: BUILD-BRAIN-114O Durable Reviewed Owner Authorization Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/calyx_orchestrator/git_mutation_authorization.py"
+      - "app/calyx_orchestrator/proposal_authorization.py"
+      - "app/calyx_orchestrator/proposal_authorization_status.py"
+      - "app/calyx_orchestrator/proposal_authorization_models.py"
+      - "app/calyx_orchestrator/proposal_authorization_store.py"
+      - "tests/test_calyx_git_mutation_authorization_114o.py"
+      - "tests/test_calyx_durable_proposal_authorization.py"
+      - "docs/brain/BUILD-BRAIN-114O-DURABLE-REVIEWED-OWNER-AUTHORIZATION.md"
+      - ".github/workflows/build-brain-114o-durable-reviewed-owner-authorization.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile durable reviewed authorization surface
+        run: |
+          python -m compileall -q app/calyx_orchestrator/git_mutation_authorization.py app/calyx_orchestrator/proposal_authorization_store.py tests/test_calyx_git_mutation_authorization_114o.py
+      - name: Ruff durable reviewed authorization surface
+        run: |
+          ruff check app/calyx_orchestrator/git_mutation_authorization.py app/calyx_orchestrator/proposal_authorization_store.py tests/test_calyx_git_mutation_authorization_114o.py
+          ruff format --check app/calyx_orchestrator/git_mutation_authorization.py app/calyx_orchestrator/proposal_authorization_store.py tests/test_calyx_git_mutation_authorization_114o.py
+      - name: Focused durable reviewed authorization regressions
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q tests/test_calyx_git_mutation_authorization_114o.py tests/test_calyx_durable_proposal_authorization.py tests/test_calyx_proposal_authorization.py tests/test_calyx_proposal_authorization_status.py
+      - name: Verifier-only and non-mutation assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("app/calyx_orchestrator/git_mutation_authorization.py").read_text(encoding="utf-8")
+          assert "DurableProposalAuthorizationStore" in source
+          assert "review_store" in source
+          forbidden = (
+              "sign_for_test_or_operator",
+              "subprocess",
+              "git push",
+              "git commit",
+              "create_pull_request",
+              "merge_pull_request",
+              "enable_auto_merge",
+              "requests.post",
+              "urllib.request",
+          )
+          for marker in forbidden:
+              assert marker not in source, marker
+          PY
+      - name: Diff hygiene
+        env:
+          BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
+        run: |
+          test -n "$BASE_REF"
+          git diff --check "origin/${BASE_REF}...HEAD"
