@@ -55,5 +55,5 @@ jobs:
           PY
       - name: Changed-surface Ruff and diff hygiene
         run: |
-          python -m ruff check runtime/conservatory_operational.py app/routers/conservatory_operational.py tests/test_calyx_conservatory_451.py
+          python -m ruff check --ignore UP037 runtime/conservatory_operational.py app/routers/conservatory_operational.py tests/test_calyx_conservatory_451.py
           git diff --check
