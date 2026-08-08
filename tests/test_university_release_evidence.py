@@ -85,6 +85,17 @@ class ReleaseEvidenceTests(unittest.TestCase):
         with self.assertRaises(MODULE.EvidenceError):
             MODULE.validate_evidence(artifact)
 
+    def test_non_object_backend_release_identity_is_rejected_without_attribute_error(self) -> None:
+        for malformed in ("not-an-object", ["bad"], 42, True, None):
+            with self.subTest(malformed=malformed):
+                artifact = valid_artifact()
+                artifact["backend"]["release_identity"] = malformed
+                with self.assertRaisesRegex(
+                    MODULE.EvidenceError,
+                    r"backend\.release_identity must be a JSON object",
+                ):
+                    MODULE.validate_evidence(artifact)
+
     def test_legacy_schema_is_rejected(self) -> None:
         artifact = valid_artifact()
         artifact["schema_version"] = "1.0.0"
@@ -97,6 +108,14 @@ class ReleaseEvidenceTests(unittest.TestCase):
             path.write_text("{}\n", encoding="utf-8")
             digest = MODULE.evidence_digest(path)
         self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$")
+
+    def test_digest_bytes_matches_path_digest(self) -> None:
+        payload = b'{"stable":true}\n'
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "evidence.json"
+            path.write_bytes(payload)
+            path_digest = MODULE.evidence_digest(path)
+        self.assertEqual(MODULE.evidence_digest_bytes(payload), path_digest)
 
 
 if __name__ == "__main__":
