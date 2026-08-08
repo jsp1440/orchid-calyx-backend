@@ -228,15 +228,26 @@ def stage_and_persist_occurrences(
     job_key: str,
     canonical_lookup: Mapping[str, str] | None = None,
     completed: bool = False,
+    batch_start: int | None = None,
 ) -> tuple[OccurrenceStagingResult, OccurrencePersistenceReceipt]:
-    """Stage one bounded batch using durable checkpoint and deduplication state."""
+    """Stage one bounded batch using durable checkpoint and deduplication state.
+
+    ``batch_start`` may be supplied when deliberately replaying a known source
+    page. Otherwise the durable checkpoint's prior ``batch_end`` is used.
+    """
 
     prior = store.load_checkpoint(source, job_key)
-    batch_start = int(prior["batch_end"]) if prior else 0
+    effective_batch_start = (
+        int(batch_start)
+        if batch_start is not None
+        else int(prior["batch_end"])
+        if prior
+        else 0
+    )
     result = stage_occurrence_batch(
         records,
         source=source,
-        batch_start=batch_start,
+        batch_start=effective_batch_start,
         seen_checksums=store.seen_checksums(source),
         canonical_lookup=canonical_lookup,
     )
