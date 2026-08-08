@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "app/calyx_orchestrator/git_proposal_manifest.py"
+      - "app/calyx_orchestrator/sandbox_supervisor_service.py"
       - "tests/test_calyx_git_proposal_manifest.py"
       - "docs/brain/BUILD-BRAIN-114M-GIT-PROPOSAL-MANIFEST.md"
       - ".github/workflows/build-brain-114m-git-proposal-manifest.yml"
@@ -30,16 +31,17 @@ jobs:
           pip install pytest ruff
       - name: Compile proposal manifest surface
         run: |
-          python -m compileall -q app/calyx_orchestrator/git_proposal_manifest.py tests/test_calyx_git_proposal_manifest.py
+          python -m compileall -q app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py
       - name: Ruff proposal manifest surface
         run: |
-          ruff check app/calyx_orchestrator/git_proposal_manifest.py tests/test_calyx_git_proposal_manifest.py
+          ruff check app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py
+          ruff format --check app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py
       - name: Focused proposal manifest regressions
         env:
           PYTHONPATH: .
         run: |
           pytest -q tests/test_calyx_git_proposal_manifest.py
-      - name: Non-mutation authority assertions
+      - name: Non-mutation and evidence-authority assertions
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -56,10 +58,17 @@ jobs:
           )
           for marker in forbidden:
               assert marker not in source, marker
+          assert "get_completed_by_digest" in source
+          assert "GIT_PROPOSAL_PERSISTED_VALIDATION_MISMATCH" in source
+          assert "GIT_PROPOSAL_VALIDATION_POLICY_NOT_ALLOWED" in source
+          assert "GIT_PROPOSAL_PYTEST_COVERAGE_INCOMPLETE" in source
           assert '"git_mutation_performed": False' in source
           assert '"automatic_merge_authorized": False' in source
           assert '"deployment_authorized": False' in source
           PY
       - name: Diff hygiene
+        env:
+          BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
         run: |
-          git diff --check origin/${{ github.base_ref }}...HEAD
+          test -n "$BASE_REF"
+          git diff --check "origin/${BASE_REF}...HEAD"
