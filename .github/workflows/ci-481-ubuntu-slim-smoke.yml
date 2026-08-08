@@ -1,0 +1,20 @@
+name: CI-481 Ubuntu Slim Runner Smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ci-481-ubuntu-slim-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-slim
+    timeout-minutes: 2
+    steps:
+      - name: Prove runner reached first step
+        run: |
+          echo "runner-step-executed"
+          uname -a
