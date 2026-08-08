@@ -1,6 +1,6 @@
 # CALYX-464 — Pollinator and ecological interaction evidence pipeline
 
-Status: IMPLEMENTED / GOVERNED REVIEW-ONLY
+Status: IMPLEMENTED / VALIDATED / GOVERNED REVIEW-ONLY
 
 ## Delivered
 
@@ -20,4 +20,12 @@ This slice does not infer undocumented pollination, publish scientific conclusio
 
 ## Validation
 
-Dedicated CI compiles the interaction runtime/router/Mission Control surface, runs CALYX-464 tests plus taxonomy-release regression coverage, asserts permanent evidence/non-publication/non-production-mutation boundaries, runs Ruff, and checks diff hygiene. The branch remains draft/unmerged until exact-head validation completes.
+Validation completed on implementation commit `31342e53d1d3b61c152af5f6a8fc2a6eb81d55e5`.
+
+- CALYX Ecological Interactions 464: success; compile, deterministic interaction + taxonomy regressions, permanent governance assertions, Ruff, and diff hygiene all passed.
+- CALYX Taxonomy Release Intake 461 dependency regression: success.
+- CALYX Workflow Governance Audit: success.
+- CALYX-SUPERVISED-PILOT-001: success.
+- CALYX-AUTONOMY-DEPLOYMENT-001: success.
+
+PR #614 remains draft/unmerged and targets `feature/calyx-taxonomy-release-intake-461` because canonical taxon identity depends on #461. This documentation-only commit must remain subject to the same PR checks before any review-state change.
