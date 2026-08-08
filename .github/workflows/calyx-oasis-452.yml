@@ -1,0 +1,63 @@
+name: CALYX OASIS 452
+
+on:
+  pull_request:
+    paths:
+      - "runtime/oasis_operational.py"
+      - "runtime/conservatory_operational.py"
+      - "app/routers/oasis_operational.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_oasis_452.py"
+      - "tests/test_calyx_conservatory_451.py"
+      - "docs/brain/CALYX-OASIS-452.md"
+      - ".github/workflows/calyx-oasis-452.yml"
+  workflow_dispatch:
+
+jobs:
+  oasis:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile OASIS surface
+        run: >-
+          python -m py_compile
+          runtime/oasis_operational.py
+          runtime/conservatory_operational.py
+          app/routers/oasis_operational.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_oasis_452.py
+      - name: Deterministic OASIS and Conservatory tests
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_oasis_452.py
+          tests/test_calyx_conservatory_451.py
+      - name: Permanent advisory-only assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/oasis_operational.py').read_text()
+          required = (
+              '"autonomous_equipment_control": False',
+              '"medical_or_pesticide_prescribing": False',
+              '"production_deployment_authorized": False',
+              '"scientific_publication_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing OASIS governance assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'TRUNCATE oc_graph')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden graph mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check --ignore UP037 runtime/oasis_operational.py app/routers/oasis_operational.py tests/test_calyx_oasis_452.py
+          git diff --check
