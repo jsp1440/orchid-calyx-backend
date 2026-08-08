@@ -1,7 +1,7 @@
 """Protected Orchid Continuum University routes for CALYX issue #454."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -11,6 +11,8 @@ from runtime.university_operational import UniversityService
 
 router = APIRouter(prefix="/brain/mission-control/university", tags=["mission-control-university"])
 _service_instance = UniversityService()
+Identity = Annotated[dict[str, object], Depends(verify_owner_or_api_key)]
+GlossaryLevel = Annotated[str, Query()]
 
 
 def _service() -> UniversityService:
@@ -88,7 +90,7 @@ class ProgressRequest(BaseModel):
 
 
 @router.post("/courses")
-def create_course(request: CourseRequest, identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def create_course(request: CourseRequest, identity: Identity) -> dict:
     try:
         return _service().create_course(_owner(identity), request.model_dump())
     except (FileNotFoundError, ValueError) as exc:
@@ -96,7 +98,7 @@ def create_course(request: CourseRequest, identity: dict[str, object] = Depends(
 
 
 @router.post("/lessons")
-def create_lesson(request: LessonRequest, identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def create_lesson(request: LessonRequest, identity: Identity) -> dict:
     try:
         return _service().create_lesson(_owner(identity), request.model_dump())
     except (FileNotFoundError, ValueError) as exc:
@@ -104,7 +106,7 @@ def create_lesson(request: LessonRequest, identity: dict[str, object] = Depends(
 
 
 @router.get("/glossary/{term}")
-def glossary(term: str, level: str = Query("learner"), identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def glossary(term: str, identity: Identity, level: GlossaryLevel = "learner") -> dict:
     _owner(identity)
     try:
         return _service().glossary(term, level=level)
@@ -113,7 +115,7 @@ def glossary(term: str, level: str = Query("learner"), identity: dict[str, objec
 
 
 @router.post("/virtual-labs")
-def create_virtual_lab(request: VirtualLabRequest, identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def create_virtual_lab(request: VirtualLabRequest, identity: Identity) -> dict:
     try:
         return _service().create_virtual_lab(_owner(identity), request.model_dump())
     except (FileNotFoundError, ValueError) as exc:
@@ -121,7 +123,7 @@ def create_virtual_lab(request: VirtualLabRequest, identity: dict[str, object] =
 
 
 @router.post("/virtual-labs/{lab_id}/sessions")
-def start_lab(lab_id: str, request: StartLabRequest, identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def start_lab(lab_id: str, request: StartLabRequest, identity: Identity) -> dict:
     try:
         return _service().start_lab_session(_owner(identity), lab_id, request.learner_id, request.started_at)
     except (FileNotFoundError, ValueError) as exc:
@@ -129,7 +131,7 @@ def start_lab(lab_id: str, request: StartLabRequest, identity: dict[str, object]
 
 
 @router.post("/lab-sessions/{session_id}/transitions")
-def transition_lab(session_id: str, request: LabTransitionRequest, identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def transition_lab(session_id: str, request: LabTransitionRequest, identity: Identity) -> dict:
     try:
         return _service().transition_lab(_owner(identity), session_id, request.model_dump())
     except (FileNotFoundError, ValueError) as exc:
@@ -137,7 +139,7 @@ def transition_lab(session_id: str, request: LabTransitionRequest, identity: dic
 
 
 @router.post("/question-banks")
-def create_question_bank(request: QuestionBankRequest, identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def create_question_bank(request: QuestionBankRequest, identity: Identity) -> dict:
     try:
         return _service().create_question_bank(_owner(identity), request.model_dump())
     except (FileNotFoundError, ValueError) as exc:
@@ -145,7 +147,7 @@ def create_question_bank(request: QuestionBankRequest, identity: dict[str, objec
 
 
 @router.post("/progress")
-def record_progress(request: ProgressRequest, identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def record_progress(request: ProgressRequest, identity: Identity) -> dict:
     try:
         return _service().record_progress(_owner(identity), request.model_dump())
     except (FileNotFoundError, ValueError) as exc:
@@ -153,7 +155,7 @@ def record_progress(request: ProgressRequest, identity: dict[str, object] = Depe
 
 
 @router.get("/lessons/{lesson_id}/learner")
-def learner_lesson(lesson_id: str, identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def learner_lesson(lesson_id: str, identity: Identity) -> dict:
     try:
         return _service().learner_lesson(_owner(identity), lesson_id)
     except (FileNotFoundError, ValueError) as exc:
@@ -161,7 +163,7 @@ def learner_lesson(lesson_id: str, identity: dict[str, object] = Depends(verify_
 
 
 @router.get("/lessons/{lesson_id}/instructor")
-def instructor_lesson(lesson_id: str, identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def instructor_lesson(lesson_id: str, identity: Identity) -> dict:
     try:
         return _service().instructor_lesson(_owner(identity), lesson_id)
     except (FileNotFoundError, ValueError) as exc:
@@ -169,5 +171,5 @@ def instructor_lesson(lesson_id: str, identity: dict[str, object] = Depends(veri
 
 
 @router.get("/readiness")
-def readiness(identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def readiness(identity: Identity) -> dict:
     return _service().readiness(_owner(identity))
