@@ -1,0 +1,74 @@
+name: CALYX Reasoning Prerequisite Activation Validation
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/activate_reasoning_prerequisite_schemas.py'
+      - 'tests/test_reasoning_prerequisite_schema_activation.py'
+      - '.github/workflows/calyx-reasoning-prerequisite-activation-validation.yml'
+      - '.github/workflows/calyx-reasoning-prerequisite-production-activation.yml'
+      - 'docs/brain/CALYX-CORE-REASONING-PREREQUISITE-ACTIVATION.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: calyx
+          POSTGRES_PASSWORD: calyx
+          POSTGRES_DB: calyx_prereq_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U calyx -d calyx_prereq_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://calyx:calyx@localhost:5432/calyx_prereq_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install validation dependencies
+        run: python -m pip install 'psycopg[binary]' pytest ruff
+      - name: Compile, lint, and format
+        run: |
+          python -m py_compile scripts/activate_reasoning_prerequisite_schemas.py tests/test_reasoning_prerequisite_schema_activation.py
+          python -m ruff check scripts/activate_reasoning_prerequisite_schemas.py tests/test_reasoning_prerequisite_schema_activation.py
+          python -m ruff format --check scripts/activate_reasoning_prerequisite_schemas.py tests/test_reasoning_prerequisite_schema_activation.py
+      - name: Unit and disposable PostgreSQL tests
+        run: pytest -q tests/test_reasoning_prerequisite_schema_activation.py
+      - name: Disposable CLI preflight
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+          CALYX_REASONING_PREREQ_EVIDENCE_PATH: prereq-preflight.json
+        run: python scripts/activate_reasoning_prerequisite_schemas.py
+      - name: Disposable CLI apply
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+          CALYX_REASONING_PREREQ_CONFIRM: APPLY_087B_088B_088C_088D_101
+          CALYX_REASONING_PREREQ_EVIDENCE_PATH: prereq-apply.json
+        run: python scripts/activate_reasoning_prerequisite_schemas.py --apply
+      - name: Verify 103 and 105 remain absent
+        env:
+          PGPASSWORD: calyx
+        run: |
+          test "$(psql -h localhost -U calyx -d calyx_prereq_test -Atc "SELECT to_regclass('reasoning_ledger.ledger_heads') IS NULL AND to_regclass('reasoning_publication.publication_artifacts') IS NULL")" = "t"
+      - name: Upload disposable evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-reasoning-prerequisite-validation-${{ github.sha }}
+          path: |
+            prereq-preflight.json
+            prereq-apply.json
+          if-no-files-found: error
+          retention-days: 30
