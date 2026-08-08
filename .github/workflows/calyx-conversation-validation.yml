@@ -7,6 +7,7 @@ on:
       - 'app/routers/calyx_core.py'
       - 'tests/test_calyx_conversation.py'
       - 'tests/test_calyx_file_analysis.py'
+      - 'tests/test_build_613_calyx_reasoning_context.py'
       - 'migrations/610_calyx_conversations.sql'
       - '.github/workflows/calyx-conversation-validation.yml'
   workflow_dispatch:
@@ -25,12 +26,12 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest ruff
+        run: pip install -r requirements.txt pytest httpx ruff
       - name: Compile Calyx analysis slice
-        run: python -m py_compile app/calyx_conversation/routes.py app/calyx_conversation/store.py app/calyx_conversation/file_analysis.py app/calyx_conversation/file_routes.py app/routers/calyx_core.py tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py
+        run: python -m py_compile app/calyx_conversation/routes.py app/calyx_conversation/store.py app/calyx_conversation/file_analysis.py app/calyx_conversation/file_routes.py app/calyx_conversation/reasoning_routes.py app/routers/calyx_core.py tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py tests/test_build_613_calyx_reasoning_context.py
       - name: Run focused regression tests
-        run: python -m pytest -q tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py
+        run: python -m pytest -q tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py tests/test_build_613_calyx_reasoning_context.py
       - name: Lint Calyx analysis slice
-        run: ruff check app/calyx_conversation tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py
+        run: ruff check app/calyx_conversation tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py tests/test_build_613_calyx_reasoning_context.py
       - name: Verify router import
-        run: python -c "from app.routers.calyx_core import router; paths={getattr(r, 'path', '') for r in router.routes}; assert '/api/calyx/query' in paths; assert '/api/calyx/dataset/upload-analyze' in paths; assert '/api/calyx/dataset/upload-report' in paths"
+        run: python -c "from app.routers.calyx_core import router; paths={getattr(r, 'path', '') for r in router.routes}; assert '/api/calyx/query' in paths; assert '/api/calyx/reasoning-map' in paths; assert '/api/calyx/reasoning-query' in paths; assert '/api/calyx/dataset/upload-analyze' in paths; assert '/api/calyx/dataset/upload-report' in paths"
