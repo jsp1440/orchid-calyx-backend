@@ -292,6 +292,11 @@ def get_analysis_export(project_id: str, export_id: str, identity: OwnerIdentity
     return _translate(lambda: _exports().get(_owner(identity), project_id, export_id))
 
 
+@router.get("/projects/{project_id}/exports/{export_id}/integrity")
+def verify_analysis_export(project_id: str, export_id: str, identity: OwnerIdentity) -> dict:
+    return _translate(lambda: _exports().verify(_owner(identity), project_id, export_id))
+
+
 @router.post("/projects/{project_id}/comparisons")
 def compare_runs(project_id: str, request: CompareRunsRequest, identity: OwnerIdentity) -> dict:
     owner = _owner(identity)
