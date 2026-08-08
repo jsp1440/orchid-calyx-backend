@@ -9,6 +9,7 @@ from fastapi import APIRouter
 
 from app.routers.calyx_operator_chat import router as chat_router
 from app.routers.calyx_runtime_controls import create_runtime_controls_router
+from app.routers.grant_funding import router as grant_funding_router
 from app.routers.literature_acquisition import router as literature_acquisition_router
 from app.routers.research_station import router as research_station_router
 from app.security import verify_owner_or_api_key
@@ -44,3 +45,4 @@ router.include_router(
 )
 router.include_router(literature_acquisition_router)
 router.include_router(research_station_router)
+router.include_router(grant_funding_router)
