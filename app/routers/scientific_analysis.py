@@ -10,6 +10,7 @@ from app.security import verify_owner_or_api_key
 from runtime.research_analysis_workflow import ResearchAnalysisWorkflowService
 from runtime.scientific_analysis import ScientificAnalysisService
 from runtime.scientific_comparison import ScientificComparisonService
+from runtime.scientific_dataset_snapshots import ScientificDatasetSnapshotService
 from runtime.scientific_diagnostics import ScientificDiagnosticsService
 from runtime.scientific_result_artifacts import ScientificResultArtifactService
 
@@ -19,6 +20,7 @@ router = APIRouter(
 )
 _service_instance = ScientificAnalysisService()
 _workflow_instance = ResearchAnalysisWorkflowService(analysis=_service_instance)
+_snapshot_instance = ScientificDatasetSnapshotService(_workflow_instance)
 _diagnostics_instance = ScientificDiagnosticsService(_workflow_instance)
 _comparison_instance = ScientificComparisonService(_service_instance)
 _result_artifact_instance = ScientificResultArtifactService(
@@ -34,6 +36,10 @@ def _service() -> ScientificAnalysisService:
 
 def _workflow() -> ResearchAnalysisWorkflowService:
     return _workflow_instance
+
+
+def _snapshots() -> ScientificDatasetSnapshotService:
+    return _snapshot_instance
 
 
 def _diagnostics() -> ScientificDiagnosticsService:
@@ -96,6 +102,12 @@ class ExecutePlanRequest(PlanRowsRequest):
     recorded_at: str
 
 
+class DatasetSnapshotRequest(BaseModel):
+    rows: list[dict[str, Any]]
+    provenance: dict[str, Any]
+    recorded_at: str
+
+
 class CompareRunsRequest(BaseModel):
     analysis_a_id: str
     analysis_b_id: str
@@ -133,8 +145,31 @@ def readiness(project_id: str, identity: OwnerIdentity) -> dict:
         lambda: {
             "engine": _service().readiness(owner, project_id),
             "workflow": _workflow().readiness(owner, project_id),
+            "dataset_snapshots": _snapshots().readiness(owner, project_id),
         }
     )
+
+
+@router.get("/projects/{project_id}/dataset-snapshots")
+def list_dataset_snapshots(project_id: str, identity: OwnerIdentity) -> dict:
+    return _translate(lambda: _snapshots().list(_owner(identity), project_id))
+
+
+@router.get("/projects/{project_id}/dataset-snapshots/{dataset_id}")
+def get_dataset_snapshot(project_id: str, dataset_id: str, identity: OwnerIdentity) -> dict:
+    return _translate(lambda: _snapshots().get(_owner(identity), project_id, dataset_id))
+
+
+@router.post("/projects/{project_id}/dataset-snapshots/{dataset_id}", status_code=201)
+def put_dataset_snapshot(
+    project_id: str,
+    dataset_id: str,
+    request: DatasetSnapshotRequest,
+    identity: OwnerIdentity,
+) -> dict:
+    owner = _owner(identity)
+    payload = {**request.model_dump(), "recorded_by": owner}
+    return _translate(lambda: _snapshots().put(owner, project_id, dataset_id, payload))
 
 
 @router.post("/projects/{project_id}/plans", status_code=201)
