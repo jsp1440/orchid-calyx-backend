@@ -9,12 +9,15 @@ from unittest.mock import patch
 from scripts.generate_university_cutover_manifest import generate_manifest
 
 READY_PREFLIGHT = {
+    "migration_blockers": [],
+    "durable_blockers": [],
     "blockers": [],
     "reviewer_registry": {
         "science_grant_count": 1,
         "expert_grant_count": 0,
         "publication_grant_count": 0,
     },
+    "ready_to_apply_migration": True,
     "ready_to_enable_durable": True,
     "mutations_performed": False,
 }
@@ -189,6 +192,8 @@ class UniversityCutoverManifestTests(unittest.TestCase):
     def test_preflight_blockers_are_preserved(self):
         blocked = {
             **READY_PREFLIGHT,
+            "migration_blockers": ["qualified science reviewer has not been assigned"],
+            "durable_blockers": ["qualified science reviewer has not been assigned"],
             "blockers": ["qualified science reviewer has not been assigned"],
         }
         result = self._generate(preflight_result=blocked)

@@ -96,7 +96,7 @@ def generate_manifest(
         evidence_snapshot,
         database_url=database_url,
     )
-    blockers = list(readiness["blockers"])
+    blockers = list(readiness["migration_blockers"])
     frontend_commit = frontend_commit.strip().lower()
     backend_commit = backend_commit.strip().lower()
     normalized_frontend_origin = frontend_origin.rstrip("/")

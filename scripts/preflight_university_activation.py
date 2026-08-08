@@ -162,6 +162,16 @@ def _database_state(database_url: str | None) -> dict[str, Any]:
 
 
 def preflight(*, release_evidence: Path | None = None, database_url: str | None = None) -> dict[str, Any]:
+    """Evaluate migration and durable-activation gates without circular dependencies.
+
+    The migration gate proves that the read-only release is verified, mutating flags
+    are still off, the retained evidence is bound correctly, and the target database
+    is reachable. It does not require the not-yet-applied schema, learner identity,
+    or a reviewer grant.
+
+    The durable gate adds all post-migration requirements: durable schema safeguards,
+    backend-verifiable learner identity, and an explicitly qualified science reviewer.
+    """
     writes_enabled = env_bool("OCU_UNIVERSITY_SESSION_WRITES_ENABLED", False)
     durable_flag_enabled = env_bool("OCU_UNIVERSITY_DURABLE_SESSIONS_ENABLED", False)
     environment = {
@@ -178,61 +188,71 @@ def preflight(*, release_evidence: Path | None = None, database_url: str | None 
     database = _database_state(database_url or os.getenv("DATABASE_URL"))
     reviewer_registry = _reviewer_registry_state()
 
-    blockers: list[str] = []
+    migration_blockers: list[str] = []
     if not environment["university_enabled"]:
-        blockers.append("OCU_UNIVERSITY_ENABLED must be true")
-    if not environment["learner_auth_enabled"]:
-        blockers.append("OCU_UNIVERSITY_LEARNER_AUTH_ENABLED must be true")
-    if not environment["supabase_url_present"] or not environment["supabase_anon_key_present"]:
-        blockers.append("learner Supabase verification configuration is incomplete")
+        migration_blockers.append("OCU_UNIVERSITY_ENABLED must be true")
     if not environment["read_only_release_verified"]:
-        blockers.append("read-only production release has not been marked verified")
+        migration_blockers.append("read-only production release has not been marked verified")
     if not environment["safe_pre_activation_flags"]:
-        blockers.append("preflight requires session writes and durable mode to remain disabled")
+        migration_blockers.append("preflight requires session writes and durable mode to remain disabled")
     if not evidence["configured_id_valid"]:
-        blockers.append("configured OCU-SCI-007 release evidence ID is missing or invalid")
+        migration_blockers.append("configured OCU-SCI-007 release evidence ID is missing or invalid")
     if release_evidence is None:
-        blockers.append("release evidence artifact was not supplied")
+        migration_blockers.append("release evidence artifact was not supplied")
     elif not evidence["artifact_valid"]:
-        blockers.append("release evidence artifact is invalid")
+        migration_blockers.append("release evidence artifact is invalid")
     elif not evidence["artifact_matches_configured_id"]:
-        blockers.append("release evidence artifact does not match configured SHA-256 evidence ID")
+        migration_blockers.append("release evidence artifact does not match configured SHA-256 evidence ID")
     if not database["reachable"]:
-        blockers.append("target database is not reachable")
-    elif not database["schema_valid"]:
-        blockers.append("oc_university durable schema is incomplete or unsafe")
+        migration_blockers.append("target database is not reachable")
+
+    durable_blockers = list(migration_blockers)
+    if not environment["learner_auth_enabled"]:
+        durable_blockers.append("OCU_UNIVERSITY_LEARNER_AUTH_ENABLED must be true before durable activation")
+    if not environment["supabase_url_present"] or not environment["supabase_anon_key_present"]:
+        durable_blockers.append("learner Supabase verification configuration is incomplete")
+    if database["reachable"] and not database["schema_valid"]:
+        durable_blockers.append("oc_university durable schema is incomplete or unsafe")
     if not reviewer_registry["valid"]:
-        blockers.append("reviewer qualification registry is invalid")
+        durable_blockers.append("reviewer qualification registry is invalid")
     elif int(reviewer_registry.get("science_grant_count", 0)) < 1:
-        blockers.append("no qualified scientific reviewer is assigned for learner submissions")
+        durable_blockers.append("no qualified scientific reviewer is assigned for learner submissions")
 
     return {
-        "contract": "OCU-SCI-009H-PREFLIGHT-001",
+        "contract": "OCU-SCI-009H-PREFLIGHT-002",
         "mode": "read_only_pre_activation",
         "environment": environment,
         "release_evidence": evidence,
         "database": database,
         "reviewer_registry": reviewer_registry,
-        "blockers": blockers,
-        "ready_to_enable_durable": not blockers,
+        "migration_blockers": migration_blockers,
+        "durable_blockers": durable_blockers,
+        # Compatibility alias: generic blockers continue to mean durable-activation blockers.
+        "blockers": durable_blockers,
+        "ready_to_apply_migration": not migration_blockers,
+        "ready_to_enable_durable": not durable_blockers,
         "mutations_performed": False,
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Read-only Orchid University durable activation preflight")
+    parser = argparse.ArgumentParser(description="Read-only Orchid University phased activation preflight")
     parser.add_argument("--release-evidence", type=Path, required=True)
+    parser.add_argument("--stage", choices=("migration", "durable"), default="durable")
     parser.add_argument("--json", action="store_true", dest="json_output")
     args = parser.parse_args()
     result = preflight(release_evidence=args.release_evidence)
+    ready_key = "ready_to_apply_migration" if args.stage == "migration" else "ready_to_enable_durable"
+    blockers_key = "migration_blockers" if args.stage == "migration" else "durable_blockers"
+    ready = bool(result[ready_key])
     if args.json_output:
         print(json.dumps(result, indent=2, sort_keys=True, default=str))
     else:
-        print(f"University activation preflight: {'READY' if result['ready_to_enable_durable'] else 'BLOCKED'}")
-        for blocker in result["blockers"]:
+        print(f"University {args.stage} preflight: {'READY' if ready else 'BLOCKED'}")
+        for blocker in result[blockers_key]:
             print(f"BLOCKER: {blocker}")
         print("No mutations were performed.")
-    return 0 if result["ready_to_enable_durable"] else 1
+    return 0 if ready else 1
 
 
 if __name__ == "__main__":

@@ -23,6 +23,17 @@ GOOD_DATABASE = {
     "missing_columns": {},
     "missing_constraint_fragments": [],
 }
+PRE_MIGRATION_DATABASE = {
+    "configured": True,
+    "reachable": True,
+    "schema_valid": False,
+    "missing_columns": {
+        "lab_sessions": ["session_id"],
+        "session_events": ["event_id"],
+        "session_reviews": ["review_id"],
+    },
+    "missing_constraint_fragments": ["publication_allowed = false"],
+}
 GOOD_REGISTRY = {
     "configured": True,
     "valid": True,
@@ -56,39 +67,62 @@ class UniversityActivationPreflightTests(unittest.TestCase):
         ):
             return preflight(release_evidence=Path("evidence.json"), database_url="postgresql://example")
 
-    def test_ready_only_while_mutating_flags_remain_off_and_reviewer_exists(self) -> None:
+    def test_post_migration_state_is_ready_for_both_gates(self) -> None:
         result = self._run()
         self.assertTrue(result["ready_to_enable_durable"])
-        self.assertEqual(result["blockers"], [])
+        self.assertEqual(result["contract"], "OCU-SCI-009H-PREFLIGHT-002")
+        self.assertTrue(result["ready_to_apply_migration"])
         self.assertFalse(result["mutations_performed"])
+        self.assertEqual(result["migration_blockers"], [])
+        self.assertEqual(result["durable_blockers"], [])
+
+    def test_pre_migration_database_is_ready_to_migrate_but_not_enable_durable(self) -> None:
+        result = self._run(database=PRE_MIGRATION_DATABASE)
+        self.assertTrue(result["ready_to_apply_migration"])
+        self.assertEqual(result["migration_blockers"], [])
+        self.assertFalse(result["ready_to_enable_durable"])
+        self.assertIn("oc_university durable schema is incomplete or unsafe", result["durable_blockers"])
+
+    def test_unreachable_database_blocks_both_gates(self) -> None:
+        database = {"configured": True, "reachable": False, "schema_valid": False, "error": "offline"}
+        result = self._run(database=database)
+        self.assertFalse(result["ready_to_apply_migration"])
+        self.assertFalse(result["ready_to_enable_durable"])
+        self.assertIn("target database is not reachable", result["migration_blockers"])
 
     def test_preflight_blocks_if_session_writes_are_already_enabled(self) -> None:
         env = self._env()
         env["OCU_UNIVERSITY_SESSION_WRITES_ENABLED"] = "true"
         result = self._run(env=env)
         self.assertFalse(result["ready_to_enable_durable"])
+        self.assertFalse(result["ready_to_apply_migration"])
         self.assertIn(
             "preflight requires session writes and durable mode to remain disabled",
-            result["blockers"],
+            result["migration_blockers"],
         )
 
     def test_preflight_blocks_mismatched_release_evidence(self) -> None:
         result = self._run(evidence={**GOOD_EVIDENCE, "artifact_matches_configured_id": False})
         self.assertIn(
             "release evidence artifact does not match configured SHA-256 evidence ID",
-            result["blockers"],
+            result["migration_blockers"],
         )
 
-    def test_preflight_blocks_incomplete_database_schema(self) -> None:
-        database = {
-            **GOOD_DATABASE,
-            "schema_valid": False,
-            "missing_columns": {"session_reviews": ["reviewer_qualifications"]},
-        }
-        result = self._run(database=database)
-        self.assertIn("oc_university durable schema is incomplete or unsafe", result["blockers"])
+    def test_learner_identity_can_be_configured_after_migration(self) -> None:
+        env = self._env()
+        env["OCU_UNIVERSITY_LEARNER_AUTH_ENABLED"] = "false"
+        env.pop("OCU_SUPABASE_URL")
+        env.pop("OCU_SUPABASE_ANON_KEY")
+        result = self._run(env=env, database=PRE_MIGRATION_DATABASE)
+        self.assertTrue(result["ready_to_apply_migration"])
+        self.assertFalse(result["ready_to_enable_durable"])
+        self.assertIn(
+            "OCU_UNIVERSITY_LEARNER_AUTH_ENABLED must be true before durable activation",
+            result["durable_blockers"],
+        )
+        self.assertIn("learner Supabase verification configuration is incomplete", result["durable_blockers"])
 
-    def test_preflight_blocks_invalid_reviewer_registry(self) -> None:
+    def test_invalid_reviewer_registry_blocks_durable_but_not_migration(self) -> None:
         registry = {
             "configured": True,
             "valid": False,
@@ -98,11 +132,13 @@ class UniversityActivationPreflightTests(unittest.TestCase):
             "publication_grant_count": 0,
             "error": "INVALID",
         }
-        result = self._run(registry=registry)
-        self.assertIn("reviewer qualification registry is invalid", result["blockers"])
+        result = self._run(registry=registry, database=PRE_MIGRATION_DATABASE)
+        self.assertTrue(result["ready_to_apply_migration"])
+        self.assertNotIn("reviewer qualification registry is invalid", result["migration_blockers"])
+        self.assertIn("reviewer qualification registry is invalid", result["durable_blockers"])
         self.assertFalse(result["ready_to_enable_durable"])
 
-    def test_preflight_blocks_until_governance_assigns_a_science_reviewer(self) -> None:
+    def test_reviewer_assignment_is_governance_hinge_only_for_durable_activation(self) -> None:
         registry = {
             "configured": False,
             "valid": True,
@@ -111,10 +147,15 @@ class UniversityActivationPreflightTests(unittest.TestCase):
             "expert_grant_count": 0,
             "publication_grant_count": 0,
         }
-        result = self._run(registry=registry)
+        result = self._run(registry=registry, database=PRE_MIGRATION_DATABASE)
+        self.assertTrue(result["ready_to_apply_migration"])
+        self.assertNotIn(
+            "no qualified scientific reviewer is assigned for learner submissions",
+            result["migration_blockers"],
+        )
         self.assertIn(
             "no qualified scientific reviewer is assigned for learner submissions",
-            result["blockers"],
+            result["durable_blockers"],
         )
         self.assertFalse(result["ready_to_enable_durable"])
 
