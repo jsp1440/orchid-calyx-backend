@@ -108,7 +108,7 @@ def test_dataset_rejects_mismatched_column_lengths():
 
 
 def test_memory_conversation_store_persists_transcript_and_context():
-    store = ConversationStore(dsn=None)
+    store = ConversationStore(dsn="")
     cid = store.create_or_touch(None, title="Orchid question", context={"taxon": "Thelymitra"})
     first = store.append(cid, "operator", "What do we know?")
     second = store.append(cid, "calyx", "Evidence found.", {"evidence": {"count": 2}})
