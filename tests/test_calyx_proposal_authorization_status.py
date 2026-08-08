@@ -79,13 +79,18 @@ def _manifest() -> dict:
     return {**payload, "manifest_digest": canonical_sha256(payload)}
 
 
-def _record(review_class: str, decision: ProposalDecision):
+def _record(
+    review_class: str,
+    decision: ProposalDecision,
+    *,
+    reviewer_id: str | None = None,
+):
     return ProposalAuthorizationBuilder().build(
         manifest_snapshot=_manifest(),
         patch_receipt=_patch_receipt(),
         requested_by="principal:requester",
         review_class=review_class,
-        reviewer_id=f"principal:{review_class}-reviewer",
+        reviewer_id=reviewer_id or f"principal:{review_class}-reviewer",
         reviewer_roles=(review_class,),
         decision=decision,
         rationale="Reviewed exact proposal evidence.",
@@ -104,6 +109,7 @@ def test_one_approval_remains_pending_and_non_authoritative() -> None:
     assert status.code == "PROPOSAL_REVIEWS_PENDING"
     assert status.approved_classes == ("security",)
     assert status.pending_classes == ("operational",)
+    assert status.reviewer_conflict is False
     assert status.git_mutation_authorized is False
     assert status.commit_authorized is False
     assert status.push_authorized is False
@@ -124,7 +130,38 @@ def test_both_independent_classes_complete_review_evidence_only() -> None:
     assert status.approved_classes == ("operational", "security")
     assert status.pending_classes == ()
     assert status.rejected_classes == ()
+    assert status.reviewer_conflict is False
     assert status.git_mutation_authorized is False
+
+
+def test_same_reviewer_cannot_complete_both_required_classes() -> None:
+    registry = ProposalAuthorizationRegistry()
+    reviewer = "principal:dual-role-reviewer"
+    security = _record(
+        "security",
+        ProposalDecision.APPROVED,
+        reviewer_id=reviewer,
+    )
+    operational = _record(
+        "operational",
+        ProposalDecision.APPROVED,
+        reviewer_id=reviewer,
+    )
+    registry.record(security)
+    registry.record(operational)
+
+    status = proposal_review_status(registry, manifest_digest=security.manifest_digest)
+    assert status.review_evidence_complete is False
+    assert status.code == "PROPOSAL_REVIEW_REVIEWER_CONFLICT"
+    assert status.approved_classes == ("operational", "security")
+    assert status.pending_classes == ()
+    assert status.rejected_classes == ()
+    assert status.reviewer_conflict is True
+    assert status.git_mutation_authorized is False
+    assert status.commit_authorized is False
+    assert status.push_authorized is False
+    assert status.pull_request_creation_authorized is False
+    assert status.automatic_merge_authorized is False
 
 
 def test_any_rejection_blocks_review_evidence_completion() -> None:
@@ -138,4 +175,5 @@ def test_any_rejection_blocks_review_evidence_completion() -> None:
     assert status.review_evidence_complete is False
     assert status.code == "PROPOSAL_REVIEW_REJECTED"
     assert status.rejected_classes == ("operational",)
+    assert status.reviewer_conflict is False
     assert status.git_mutation_authorized is False
