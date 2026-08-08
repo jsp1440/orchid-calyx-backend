@@ -1,0 +1,67 @@
+name: CALYX Knowledge Explorer 444
+
+on:
+  pull_request:
+    paths:
+      - "runtime/knowledge_explorer.py"
+      - "app/routers/knowledge_explorer.py"
+      - "app/routers/live_mission_control.py"
+      - "config/knowledge_explorer_engineer_profile.json"
+      - "tests/test_calyx_knowledge_explorer_444.py"
+      - "docs/brain/CALYX-KNOWLEDGE-EXPLORER-444.md"
+      - ".github/workflows/calyx-knowledge-explorer-444.yml"
+  workflow_dispatch:
+
+jobs:
+  knowledge-explorer:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile Knowledge Explorer surface
+        run: >-
+          python -m py_compile
+          runtime/knowledge_explorer.py
+          app/routers/knowledge_explorer.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_knowledge_explorer_444.py
+      - name: Deterministic Knowledge Explorer tests
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_knowledge_explorer_444.py
+          tests/test_calyx_artifact_registry.py
+      - name: Validate engineer profile and permanent non-authority
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          profile = json.loads(Path('config/knowledge_explorer_engineer_profile.json').read_text())
+          if profile.get('output_authority') != 'candidate_only':
+              raise SystemExit('Knowledge Explorer engineer profile must remain candidate-only')
+          if profile.get('scientific_review_required') is not True:
+              raise SystemExit('Knowledge Explorer engineer profile must require scientific review')
+          text = Path('runtime/knowledge_explorer.py').read_text()
+          required = (
+              '"candidate_only": True',
+              '"scientific_review_required": True',
+              '"scientific_publication_authorized": False',
+              '"production_deployment_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing Knowledge Explorer governance assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'TRUNCATE oc_graph')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden graph mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check --ignore UP037 runtime/knowledge_explorer.py app/routers/knowledge_explorer.py tests/test_calyx_knowledge_explorer_444.py
+          git diff --check
