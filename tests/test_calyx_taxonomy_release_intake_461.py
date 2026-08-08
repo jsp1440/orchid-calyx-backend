@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from app.routers import taxonomy_release_intake as api
 from app.security import verify_owner_or_api_key
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from runtime.taxonomy_release_intake import TaxonomyReleaseIntakeService
 
 
