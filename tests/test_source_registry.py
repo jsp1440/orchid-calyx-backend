@@ -32,7 +32,6 @@ from runtime.knowledge_graph.source_registry import (
     registry_by_domain,
 )
 
-
 DOMAINS = {
     "occurrences", "geography", "habitat", "climate", "elevation", "traits",
     "glossary", "literature", "evidence", "pollinators", "mycorrhiza",
@@ -160,7 +159,7 @@ def test_provider_rejects_unsafe_sql_on_construction():
 
 def test_provider_from_registry_builds_without_db():
     provider = PostgresSourceProvider.from_registry("postgresql://ignored")
-    assert set(provider._queries) == ENABLED_DOMAINS  # noqa: SLF001
+    assert set(provider._queries) == ENABLED_DOMAINS
 
 
 # ---- taxon mapping & adapter output shape ----

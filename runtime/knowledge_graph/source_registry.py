@@ -8,8 +8,8 @@ falling out of the graph build.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
 import re
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 
@@ -82,7 +82,7 @@ def assert_safe_sql(sql: str) -> None:
     if ";" in body:
         raise UnsafeSQLError("multiple statements are not allowed")
     head = body.lower().lstrip("(").lstrip()
-    if not (head.startswith("select") or head.startswith("with")):
+    if not head.startswith(("select", "with")):
         raise UnsafeSQLError("only SELECT/WITH read queries are allowed")
     hits = sorted(set(re.findall(r"[a-z_]+", body.lower())) & _FORBIDDEN)
     if hits:
