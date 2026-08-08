@@ -1,17 +1,16 @@
 """Review-only taxonomy release intake and bounded staging for CALYX issue #461.
 
-This module accepts a caller-supplied taxonomy export, preserves it immutably by
-content digest, reuses the existing non-publishing taxonomy preflight validator,
-normalizes records into an evidence bundle, builds an unresolved-review queue,
-and projects normalized rows into a bounded local staging artifact.
-
-It deliberately has no production database, Knowledge Graph, taxonomy activation,
-or publication capability. A successful intake can become ready for *review*;
-it can never become ready for promotion from this module.
+The service preserves caller-supplied source bytes immutably, normalizes the actual
+Hassler WorldOrchids layout without activating it, reuses the non-publishing
+preflight validator on a canonical UTF-8 projection, builds a review queue, and
+projects bounded idempotent staging artifacts. It has no production taxonomy,
+relink, Knowledge Graph publication, or scientific publication authority.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import os
 import re
@@ -21,17 +20,22 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from runtime.taxonomy_preflight import (
-    Policy,
-    load_csv,
-    normalize,
-    scientific_name,
-    taxon_key,
-    validate,
-)
+from runtime.taxonomy_preflight import Policy, normalize, scientific_name, taxon_key, validate
 
-INTAKE_SCHEMA_VERSION = "1.1.0"
+INTAKE_SCHEMA_VERSION = "1.2.0"
 RELEASE_ID_RE = re.compile(r"[^A-Za-z0-9._-]+")
+HASSLER_RANKS = {
+    "F": "family",
+    "SF": "subfamily",
+    "T": "tribe",
+    "ST": "subtribe",
+    "G": "genus",
+    "S": "species",
+    "SS": "subspecies",
+    "V": "variety",
+    "FM": "form",
+}
+SYNONYM_MARKER_RE = re.compile(r"(?:^|\s)=\s*")
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -79,22 +83,105 @@ def _first(row: dict[str, str], *names: str) -> str:
     return ""
 
 
+def _decode_source(content: bytes) -> tuple[str, str, int]:
+    """Preserve valid UTF-8 while deterministically mapping isolated legacy bytes.
+
+    The August 2026 Hassler export is predominantly UTF-8 but contains isolated
+    Latin-1 bytes. ``surrogateescape`` lets us distinguish invalid bytes from valid
+    UTF-8 multibyte sequences; only those isolated bytes are mapped 1:1 to Latin-1.
+    """
+    try:
+        return content.decode("utf-8"), "utf-8", 0
+    except UnicodeDecodeError:
+        decoded = content.decode("utf-8", errors="surrogateescape")
+        invalid_count = sum(1 for char in decoded if 0xDC80 <= ord(char) <= 0xDCFF)
+        repaired = "".join(
+            chr(ord(char) - 0xDC00) if 0xDC80 <= ord(char) <= 0xDCFF else char
+            for char in decoded
+        )
+        return repaired, "mixed_utf8_latin1", invalid_count
+
+
+def _expand_columns(header: list[str], width: int) -> list[str]:
+    columns = list(header)
+    if width <= len(columns):
+        return columns
+    if len(columns) >= 3 and columns[-3:] == ["Photo", "Orientation", "Author"]:
+        while len(columns) < width:
+            offset = len(columns) - len(header)
+            number = offset // 3 + 2
+            field = ("Photo", "Orientation", "Author")[offset % 3]
+            columns.append(f"{field}{number}")
+        return columns
+    columns.extend(f"extra_field_{index}" for index in range(len(columns) + 1, width + 1))
+    return columns
+
+
+def _load_source(content: bytes) -> tuple[list[str], list[dict[str, str]], dict[str, Any], str]:
+    text, encoding, repaired_bytes = _decode_source(content)
+    parsed = [
+        row
+        for row in csv.reader(io.StringIO(text), delimiter="|")
+        if any(normalize(value) for value in row)
+    ]
+    if not parsed:
+        raise ValueError("taxonomy source contains no rows")
+    header = [normalize(value) for value in parsed[0]]
+    if not {"Taxon", "Name"}.issubset(header):
+        raise ValueError("taxonomy source is not the expected headered Hassler WorldOrchids layout")
+    data_rows = parsed[1:]
+    widths = Counter(len(row) for row in data_rows)
+    modal_width = widths.most_common(1)[0][0] if widths else len(header)
+    columns = _expand_columns(header, modal_width)
+    rows: list[dict[str, str]] = []
+    nonempty_overflow_cells = 0
+    for raw in data_rows:
+        padded = raw + [""] * max(0, len(columns) - len(raw))
+        if len(raw) > len(columns):
+            nonempty_overflow_cells += sum(bool(normalize(value)) for value in raw[len(columns) :])
+        rows.append(
+            {
+                column: normalize(value)
+                for column, value in zip(columns, padded[: len(columns)], strict=True)
+            }
+        )
+    stream = io.StringIO()
+    writer = csv.writer(stream, delimiter="|", lineterminator="\n")
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow([row[column] for column in columns])
+    metadata = {
+        "source_encoding": encoding,
+        "legacy_bytes_repaired": repaired_bytes,
+        "header_width": len(header),
+        "canonical_width": len(columns),
+        "data_row_count": len(rows),
+        "nonempty_overflow_cells": nonempty_overflow_cells,
+    }
+    return columns, rows, metadata, stream.getvalue()
+
+
 def _status(row: dict[str, str]) -> str:
     raw = _first(row, "taxonomic_status", "status", "accepted_status", "record_type")
     value = raw.casefold()
-    if value in {"accepted", "accepted name", "a", "s", "species"}:
+    if value in {"accepted", "accepted name", "a"}:
         return "accepted"
-    if "syn" in value or value in {"synonym", "basionym"}:
+    if "syn" in value or value in {"basionym"}:
         return "synonym"
+    if not value and _first(row, "Taxon") in HASSLER_RANKS:
+        return "accepted"
     return "unresolved"
 
 
+def _release_taxon_key(row: dict[str, str]) -> str:
+    number = _first(row, "Number")
+    if number:
+        return f"hassler:{number.casefold()}"
+    return taxon_key(row)
+
+
 def _malformed_count(finding_counts: dict[str, int]) -> int:
-    return sum(
-        count
-        for key, count in finding_counts.items()
-        if key.endswith(":malformed_taxon_name")
-    )
+    return sum(count for key, count in finding_counts.items() if key.endswith(":malformed_taxon_name"))
 
 
 @dataclass(frozen=True)
@@ -165,21 +252,33 @@ class TaxonomyReleaseIntakeService:
             byte_count=len(content),
             expected_label=normalize(expected_label) or None,
         )
-        preflight = validate(source, baseline_path=baseline_path, policy=policy)
-        columns, rows, *_ = load_csv(source)
+        columns, rows, source_metadata, canonical_text = _load_source(content)
+        canonical_path = root / "canonical_source.psv"
+        _atomic_write(canonical_path, canonical_text)
+        preflight = validate(canonical_path, baseline_path=baseline_path, policy=policy)
+
         normalized_rows: list[dict[str, Any]] = []
         unresolved: list[dict[str, Any]] = []
         status_counts: Counter[str] = Counter()
+        rank_counts: Counter[str] = Counter()
+        embedded_synonym_count = 0
         for index, row in enumerate(rows, start=1):
             name = scientific_name(row)
-            key = taxon_key(row)
+            key = _release_taxon_key(row)
             status = _status(row)
+            rank_code = _first(row, "Taxon")
+            rank = HASSLER_RANKS.get(rank_code, "unresolved")
             status_counts[status] += 1
+            rank_counts[rank] += 1
+            embedded_synonym_count += len(SYNONYM_MARKER_RE.findall(_first(row, "Synonyms")))
             normalized_row = {
                 "row_number": index,
                 "taxon_key": key,
                 "scientific_name": name,
                 "taxonomic_status": status,
+                "taxon_rank": rank,
+                "hassler_rank_code": rank_code,
+                "hassler_number": _first(row, "Number"),
                 "accepted_name_id": _first(row, "accepted_name_id", "acceptednameid"),
                 "source_record": {column: normalize(row.get(column)) for column in columns},
             }
@@ -192,6 +291,8 @@ class TaxonomyReleaseIntakeService:
                 reason = "synonym_missing_accepted_name_id"
             elif status == "unresolved":
                 reason = "unresolved_taxonomic_status"
+            elif rank == "unresolved":
+                reason = "unresolved_taxon_rank"
             if reason:
                 unresolved.append(
                     {
@@ -218,6 +319,8 @@ class TaxonomyReleaseIntakeService:
             {
                 "schema_version": INTAKE_SCHEMA_VERSION,
                 "identity": asdict(identity),
+                "source_metadata": source_metadata,
+                "canonical_source_sha256": _sha256(canonical_text.encode("utf-8")),
                 "baseline_filename": preflight.baseline_filename,
                 "baseline_sha256": preflight.baseline_sha256,
                 "preflight_status": preflight.status,
@@ -227,7 +330,9 @@ class TaxonomyReleaseIntakeService:
                 "normalized_row_count": len(normalized_rows),
                 "normalized_sha256": normalized_sha,
                 "status_counts": status_payload,
+                "rank_counts": dict(sorted(rank_counts.items())),
                 "accepted_name_count": status_payload.get("accepted", 0),
+                "embedded_synonym_count": embedded_synonym_count,
                 "synonym_count": status_payload.get("synonym", 0),
                 "malformed_taxon_count": malformed_count,
                 "unresolved_review_count": len(unresolved),
@@ -246,17 +351,12 @@ class TaxonomyReleaseIntakeService:
             raise ValueError("batch_size must be between 1 and 5000")
         root = self._release_dir(release_id)
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-        rows = [
-            json.loads(line)
-            for line in (root / "normalized.jsonl").read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        rows = [json.loads(line) for line in (root / "normalized.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
         checkpoint_path = root / "staging_checkpoint.json"
         checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
         offset = int(checkpoint.get("next_offset", 0))
         if checkpoint.get("complete"):
             return self.readiness(release_id)
-
         end = min(offset + batch_size, len(rows))
         staging_path = root / "staging.jsonl"
         existing: dict[str, dict[str, Any]] = {}
@@ -268,20 +368,9 @@ class TaxonomyReleaseIntakeService:
         for row in rows[offset:end]:
             existing.setdefault(row["row_sha256"], row)
         ordered = sorted(existing.values(), key=lambda item: (item["row_number"], item["row_sha256"]))
-        _atomic_write(
-            staging_path,
-            "".join(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n" for row in ordered),
-        )
+        _atomic_write(staging_path, "".join(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n" for row in ordered))
         complete = end >= len(rows)
-        _json(
-            checkpoint_path,
-            {
-                "next_offset": end,
-                "complete": complete,
-                "normalized_sha256": manifest["normalized_sha256"],
-                "projected_unique_rows": len(ordered),
-            },
-        )
+        _json(checkpoint_path, {"next_offset": end, "complete": complete, "normalized_sha256": manifest["normalized_sha256"], "projected_unique_rows": len(ordered)})
         return self.readiness(release_id)
 
     def review_queue(self, release_id: str, *, offset: int = 0, limit: int = 100) -> dict[str, Any]:
@@ -294,14 +383,7 @@ class TaxonomyReleaseIntakeService:
         if not queue_path.exists():
             raise FileNotFoundError(f"unknown taxonomy release: {release_id}")
         queue = json.loads(queue_path.read_text(encoding="utf-8"))
-        return {
-            "release_id": release_id,
-            "total": len(queue),
-            "offset": offset,
-            "limit": limit,
-            "items": queue[offset : offset + limit],
-            "review_write_authorized": False,
-        }
+        return {"release_id": release_id, "total": len(queue), "offset": offset, "limit": limit, "items": queue[offset : offset + limit], "review_write_authorized": False}
 
     def readiness(self, release_id: str) -> dict[str, Any]:
         root = self._release_dir(release_id)
@@ -319,6 +401,8 @@ class TaxonomyReleaseIntakeService:
             "release_id": release_id,
             "identity": manifest["identity"],
             "source_sha256": manifest["identity"]["sha256"],
+            "source_metadata": manifest["source_metadata"],
+            "canonical_source_sha256": manifest["canonical_source_sha256"],
             "baseline_filename": manifest.get("baseline_filename"),
             "baseline_sha256": manifest.get("baseline_sha256"),
             "preflight_status": manifest["preflight_status"],
@@ -326,7 +410,9 @@ class TaxonomyReleaseIntakeService:
             "normalized_row_count": manifest["normalized_row_count"],
             "normalized_sha256": manifest["normalized_sha256"],
             "status_counts": manifest["status_counts"],
+            "rank_counts": manifest["rank_counts"],
             "accepted_name_count": manifest["accepted_name_count"],
+            "embedded_synonym_count": manifest["embedded_synonym_count"],
             "synonym_count": manifest["synonym_count"],
             "malformed_taxon_count": manifest["malformed_taxon_count"],
             "comparison": manifest.get("comparison"),
