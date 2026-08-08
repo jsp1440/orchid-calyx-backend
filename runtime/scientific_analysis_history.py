@@ -4,7 +4,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from runtime.scientific_analysis import ANALYSIS_SCHEMA_VERSION, ScientificAnalysisService
+from runtime.scientific_analysis import (
+    ANALYSIS_SCHEMA_VERSION,
+    ScientificAnalysisService,
+)
 
 ANALYSIS_HISTORY_SCHEMA_VERSION = "calyx-scientific-analysis-history/v1"
 DEFAULT_LIMIT = 50
@@ -18,7 +21,7 @@ class ScientificAnalysisHistoryService:
     @staticmethod
     def _page_value(value: Any, *, default: int, maximum: int | None = None) -> int:
         if isinstance(value, bool):
-            raise ValueError("ANALYSIS_HISTORY_PAGINATION_INVALID")
+            raise TypeError("ANALYSIS_HISTORY_PAGINATION_INVALID")
         try:
             normalized = int(value)
         except (TypeError, ValueError) as exc:
