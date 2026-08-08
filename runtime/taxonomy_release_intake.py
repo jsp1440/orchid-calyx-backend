@@ -21,7 +21,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from runtime.taxonomy_preflight import Policy, normalize, scientific_name, taxon_key, validate
+from runtime.taxonomy_preflight import (
+    Policy,
+    normalize,
+    scientific_name,
+    taxon_key,
+    validate,
+)
 
 INTAKE_SCHEMA_VERSION = "1.2.0"
 RELEASE_ID_RE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -315,7 +321,10 @@ class TaxonomyReleaseIntakeService:
                     }
                 )
 
-        normalized_text = "".join(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n" for row in normalized_rows)
+        normalized_text = "".join(
+            json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n"
+            for row in normalized_rows
+        )
         normalized_sha = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
         status_payload = dict(sorted(status_counts.items()))
         malformed_count = _malformed_count(preflight.finding_counts)
@@ -359,7 +368,11 @@ class TaxonomyReleaseIntakeService:
             raise ValueError("batch_size must be between 1 and 5000")
         root = self._release_dir(release_id)
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-        rows = [json.loads(line) for line in (root / "normalized.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+        rows = [
+            json.loads(line)
+            for line in (root / "normalized.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         checkpoint_path = root / "staging_checkpoint.json"
         checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
         offset = int(checkpoint.get("next_offset", 0))
@@ -375,10 +388,27 @@ class TaxonomyReleaseIntakeService:
                     existing[record["row_sha256"]] = record
         for row in rows[offset:end]:
             existing.setdefault(row["row_sha256"], row)
-        ordered = sorted(existing.values(), key=lambda item: (item["row_number"], item["row_sha256"]))
-        _atomic_write(staging_path, "".join(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n" for row in ordered))
+        ordered = sorted(
+            existing.values(),
+            key=lambda item: (item["row_number"], item["row_sha256"]),
+        )
+        _atomic_write(
+            staging_path,
+            "".join(
+                json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n"
+                for row in ordered
+            ),
+        )
         complete = end >= len(rows)
-        _json(checkpoint_path, {"next_offset": end, "complete": complete, "normalized_sha256": manifest["normalized_sha256"], "projected_unique_rows": len(ordered)})
+        _json(
+            checkpoint_path,
+            {
+                "next_offset": end,
+                "complete": complete,
+                "normalized_sha256": manifest["normalized_sha256"],
+                "projected_unique_rows": len(ordered),
+            },
+        )
         return self.readiness(release_id)
 
     def review_queue(self, release_id: str, *, offset: int = 0, limit: int = 100) -> dict[str, Any]:
@@ -391,7 +421,14 @@ class TaxonomyReleaseIntakeService:
         if not queue_path.exists():
             raise FileNotFoundError(f"unknown taxonomy release: {release_id}")
         queue = json.loads(queue_path.read_text(encoding="utf-8"))
-        return {"release_id": release_id, "total": len(queue), "offset": offset, "limit": limit, "items": queue[offset : offset + limit], "review_write_authorized": False}
+        return {
+            "release_id": release_id,
+            "total": len(queue),
+            "offset": offset,
+            "limit": limit,
+            "items": queue[offset : offset + limit],
+            "review_write_authorized": False,
+        }
 
     def readiness(self, release_id: str) -> dict[str, Any]:
         root = self._release_dir(release_id)
