@@ -21,7 +21,14 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from runtime.taxonomy_preflight import Policy, load_csv, normalize, scientific_name, taxon_key, validate
+from runtime.taxonomy_preflight import (
+    Policy,
+    load_csv,
+    normalize,
+    scientific_name,
+    taxon_key,
+    validate,
+)
 
 INTAKE_SCHEMA_VERSION = "1.0.0"
 RELEASE_ID_RE = re.compile(r"[^A-Za-z0-9._-]+")
