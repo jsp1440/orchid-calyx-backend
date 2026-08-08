@@ -13,6 +13,7 @@ from runtime.scientific_comparison import ScientificComparisonService
 from runtime.scientific_dataset_snapshots import ScientificDatasetSnapshotService
 from runtime.scientific_diagnostics import ScientificDiagnosticsService
 from runtime.scientific_result_artifacts import ScientificResultArtifactService
+from runtime.scientific_runtime_readiness import scientific_runtime_readiness
 
 router = APIRouter(
     prefix="/brain/mission-control/research/analysis",
@@ -146,6 +147,7 @@ def readiness(project_id: str, identity: OwnerIdentity) -> dict:
             "engine": _service().readiness(owner, project_id),
             "workflow": _workflow().readiness(owner, project_id),
             "dataset_snapshots": _snapshots().readiness(owner, project_id),
+            "runtime_environment": scientific_runtime_readiness(),
         }
     )
 
