@@ -1,0 +1,78 @@
+name: CALYX Conversation Graph 635
+
+on:
+  pull_request:
+    paths:
+      - "runtime/continuum_conversation.py"
+      - "runtime/continuum_graph_tool.py"
+      - "runtime/knowledge_graph/**"
+      - "tests/test_calyx_conversation_graph_635.py"
+      - "tests/test_calyx_continuum_conversation_634.py"
+      - "tests/test_knowledge_graph_traversal.py"
+      - "docs/brain/CALYX-CONVERSATION-GRAPH-635.md"
+      - ".github/workflows/calyx-conversation-graph-635.yml"
+  workflow_dispatch:
+
+jobs:
+  conversation-graph:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile graph conversation surface
+        run: >-
+          python -m py_compile
+          runtime/continuum_conversation.py
+          runtime/continuum_graph_tool.py
+          tests/test_calyx_conversation_graph_635.py
+      - name: Graph conversation and stacked regressions
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_conversation_graph_635.py
+          tests/test_calyx_continuum_conversation_634.py
+          tests/test_knowledge_graph_traversal.py
+      - name: Permanent read-only Knowledge Graph assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          graph = Path('runtime/continuum_graph_tool.py').read_text()
+          conversation = Path('runtime/continuum_conversation.py').read_text()
+          required = (
+              '"knowledge_graph_mutation_authorized": False',
+              '"read_only": True',
+          )
+          missing = [item for item in required if item not in graph]
+          if missing:
+              raise SystemExit(f'missing graph governance assertion(s): {missing}')
+          conversation_required = (
+              '"model_knowledge_used": False',
+              '"scientific_interpretation_generated": False',
+              '"scientific_publication_authorized": False',
+              '"knowledge_graph_read_authorized": True',
+              '"knowledge_graph_mutation_authorized": False',
+          )
+          missing = [item for item in conversation_required if item not in conversation]
+          if missing:
+              raise SystemExit(f'missing conversation governance assertion(s): {missing}')
+          forbidden = (
+              'WritablePostgresGraphRepository',
+              'upsert_node(',
+              'upsert_edge(',
+              'INSERT INTO oc_graph',
+              'UPDATE oc_graph',
+              'DELETE FROM oc_graph',
+              'TRUNCATE oc_graph',
+          )
+          present = [item for item in forbidden if item in graph]
+          if present:
+              raise SystemExit(f'forbidden graph mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/continuum_conversation.py runtime/continuum_graph_tool.py tests/test_calyx_conversation_graph_635.py
+          git diff --check
