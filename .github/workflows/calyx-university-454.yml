@@ -1,0 +1,63 @@
+name: CALYX University 454
+
+on:
+  pull_request:
+    paths:
+      - "runtime/university_operational.py"
+      - "runtime/knowledge_explorer.py"
+      - "runtime/research_station.py"
+      - "app/routers/university_operational.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_university_454.py"
+      - "docs/brain/CALYX-UNIVERSITY-454.md"
+      - ".github/workflows/calyx-university-454.yml"
+  workflow_dispatch:
+
+jobs:
+  university:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile University surface
+        run: >-
+          python -m py_compile
+          runtime/university_operational.py
+          app/routers/university_operational.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_university_454.py
+      - name: Deterministic University and dependency tests
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_university_454.py
+          tests/test_calyx_knowledge_explorer_444.py
+          tests/test_calyx_research_station_453.py
+      - name: Permanent education-only assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/university_operational.py').read_text()
+          required = (
+              '"real_equipment_control": False',
+              '"autonomous_high_stakes_grading": False',
+              '"scientific_publication_authorized": False',
+              '"production_deployment_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing University governance assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'TRUNCATE oc_graph')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden graph mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check --ignore UP037 runtime/university_operational.py app/routers/university_operational.py tests/test_calyx_university_454.py
+          git diff --check
