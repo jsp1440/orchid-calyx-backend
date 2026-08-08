@@ -78,7 +78,7 @@ def test_lesson_glossary_and_accessible_payloads(tmp_path: Path):
     learner = service.learner_lesson(OWNER, "velamen-foundations")
     instructor = service.instructor_lesson(OWNER, "velamen-foundations")
     assert learner["accessible"] is True
-    assert learner["glossary"][0]["resolution"]["state"] == "matched"
+    assert learner["glossary"][0]["state"] == "matched"
     assert instructor["autonomous_high_stakes_grading"] is False
 
 
