@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import PlainTextResponse
 
 from app.security import verify_owner_or_api_key
 
@@ -13,6 +15,56 @@ router = APIRouter(
     tags=["calyx-file-analysis"],
     dependencies=[Depends(verify_owner_or_api_key)],
 )
+
+
+def _run_uploaded_analysis(parsed: dict, operation: str) -> dict:
+    from .routes import DatasetAnalysisRequest, run_dataset_analysis
+
+    return run_dataset_analysis(
+        DatasetAnalysisRequest(operation=operation, columns=parsed["columns"])
+    )
+
+
+def _file_summary(parsed: dict) -> dict:
+    return {
+        "filename": parsed["filename"],
+        "row_count": parsed["row_count"],
+        "column_count": parsed["column_count"],
+        "column_names": list(parsed["columns"]),
+        "metadata": parsed["metadata"],
+    }
+
+
+def _analysis_markdown(parsed: dict, analysis: dict, spec: dict | None) -> str:
+    out = io.StringIO()
+    out.write("# Calyx Dataset Analysis Report\n\n")
+    out.write(f"Source file: `{parsed['filename']}`\n\n")
+    out.write(f"Rows: {parsed['row_count']}  \nColumns: {parsed['column_count']}\n\n")
+    if parsed["metadata"].get("sheet"):
+        out.write(f"Worksheet: `{parsed['metadata']['sheet']}`\n\n")
+    out.write("## Analysis\n\n")
+    out.write(f"Operation: `{analysis['operation']}`\n\n")
+    if analysis["operation"] == "describe":
+        for name, summary in analysis["columns"].items():
+            out.write(f"### {name}\n\n")
+            for key, value in summary.items():
+                out.write(f"- {key}: {value}\n")
+            out.write("\n")
+    else:
+        out.write("### Correlation matrix\n\n")
+        for left, row in analysis["matrix"].items():
+            out.write(f"- {left}: {row}\n")
+        out.write("\n")
+    if spec is not None:
+        out.write("## Chart specification\n\n")
+        out.write(f"- Type: {spec['chart_type']}\n")
+        out.write(f"- X: {spec.get('x')}\n")
+        out.write(f"- Y: {spec.get('y')}\n")
+        out.write(f"- Points returned: {spec['points_returned']}\n")
+        out.write(f"- Truncated: {spec['truncated']}\n\n")
+    out.write("## Governance\n\n")
+    out.write("The uploaded file was analyzed in memory and was not persisted by this endpoint. The report does not publish scientific claims or mutate canonical Orchid Continuum knowledge.\n")
+    return out.getvalue()
 
 
 @router.post("/upload-analyze")
@@ -28,24 +80,14 @@ async def upload_analyze(
     try:
         content = await file.read()
         parsed = parse_tabular_file(content, file.filename or "upload", sheet_name=sheet_name)
-        from .routes import DatasetAnalysisRequest, run_dataset_analysis
-
-        analysis = run_dataset_analysis(
-            DatasetAnalysisRequest(operation=operation, columns=parsed["columns"])
-        )
+        analysis = _run_uploaded_analysis(parsed, operation)
         spec = (
             chart_spec(parsed["columns"], chart_type=chart_type, x=x, y=y)
             if chart_type
             else None
         )
         return {
-            "file": {
-                "filename": parsed["filename"],
-                "row_count": parsed["row_count"],
-                "column_count": parsed["column_count"],
-                "column_names": list(parsed["columns"]),
-                "metadata": parsed["metadata"],
-            },
+            "file": _file_summary(parsed),
             "analysis": analysis,
             "chart_spec": spec,
             "governance": {
@@ -54,6 +96,38 @@ async def upload_analyze(
                 "knowledge_graph_mutation": False,
             },
         }
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        await file.close()
+
+
+@router.post("/upload-report", response_class=PlainTextResponse)
+async def upload_report(
+    file: UploadFile = File(...),
+    operation: Literal["describe", "correlation_matrix"] = Form("describe"),
+    sheet_name: str | None = Form(None),
+    chart_type: Literal["scatter", "line", "bar", "histogram"] | None = Form(None),
+    x: str | None = Form(None),
+    y: str | None = Form(None),
+) -> PlainTextResponse:
+    """Analyze an uploaded dataset and return a downloadable evidence-safe Markdown report."""
+    try:
+        content = await file.read()
+        parsed = parse_tabular_file(content, file.filename or "upload", sheet_name=sheet_name)
+        analysis = _run_uploaded_analysis(parsed, operation)
+        spec = (
+            chart_spec(parsed["columns"], chart_type=chart_type, x=x, y=y)
+            if chart_type
+            else None
+        )
+        report = _analysis_markdown(parsed, analysis, spec)
+        stem = parsed["filename"].rsplit(".", 1)[0] or "dataset"
+        return PlainTextResponse(
+            report,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="calyx-{stem}-analysis.md"'},
+        )
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     finally:
