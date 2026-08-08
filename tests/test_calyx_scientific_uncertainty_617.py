@@ -5,6 +5,9 @@ import math
 import pytest
 
 from runtime.scientific_uncertainty import (
+    NUMPY_VERSION,
+    PYTHON_IMPLEMENTATION,
+    PYTHON_VERSION,
     SCIPY_VERSION,
     mean_confidence_interval,
     mean_confidence_interval_from_summary,
@@ -28,6 +31,20 @@ def test_mean_ci_matches_nist_195_observation_reference():
     assert math.isclose(result["upper"], 9.26467, abs_tol=5e-5)
     assert result["numerical_library"] == "scipy"
     assert result["numerical_library_version"] == SCIPY_VERSION
+
+
+def test_mean_ci_records_exact_numerical_environment():
+    result = mean_confidence_interval([1.0, 2.0, 3.0, 4.0], 0.95)
+
+    assert result["numerical_environment"] == {
+        "python_implementation": PYTHON_IMPLEMENTATION,
+        "python_version": PYTHON_VERSION,
+        "numpy_version": NUMPY_VERSION,
+        "scipy_version": SCIPY_VERSION,
+    }
+    assert result["numerical_environment"]["python_version"]
+    assert result["numerical_environment"]["numpy_version"]
+    assert result["numerical_environment"]["scipy_version"] == "1.18.0"
 
 
 def test_mean_ci_matches_nist_ten_observation_reference():
