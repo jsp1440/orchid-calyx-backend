@@ -123,6 +123,16 @@ def test_draft_is_review_only_artifact_and_never_submission_authority(tmp_path: 
     assert draft["budget_outline"]["requested_amount"] == 50000
 
 
+def test_repeated_draft_generation_is_content_stable_and_registry_safe(tmp_path: Path):
+    svc = service(tmp_path)
+    seed(svc)
+    first = svc.create_draft(OWNER, "orchid-continuum", "fixture-grant")
+    second = svc.create_draft(OWNER, "orchid-continuum", "fixture-grant")
+    assert first["artifact"]["artifact_id"] == second["artifact"]["artifact_id"]
+    assert first["artifact"]["checksum"] == second["artifact"]["checksum"]
+    assert first["narrative"] == second["narrative"]
+
+
 def test_readiness_preserves_governance_boundaries(tmp_path: Path):
     svc = service(tmp_path)
     seed(svc)
