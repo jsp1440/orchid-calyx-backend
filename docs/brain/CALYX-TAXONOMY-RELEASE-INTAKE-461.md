@@ -1,75 +1,137 @@
 # CALYX taxonomy release intake — issue #461
 
 Date: 2026-08-07
-Base main: `c114aba0545a71a3be23375e5b6d84e624fa82b4`
 Issue: #461
 PR: #598 (draft; intentionally unmerged)
-Status: implementation DELIVERED for synthetic/current-code validation; real August release evidence BLOCKED pending the exact source file.
+Status: real August source received and parser/staging contract validated; active-release comparison BLOCKED pending a genuine prior active Hassler release artifact.
 
 ## Goal
 
-Provide the real-release-ready intake path for a caller-supplied Hassler WorldOrchids/World Plants release without inventing the August 2026 dataset and without giving repository code any taxonomy activation authority.
+Provide the real-release-ready intake path for a caller-supplied Hassler WorldOrchids/World Plants release without inventing source evidence and without giving repository code taxonomy activation authority.
 
-## Implemented
+## Real August 2026 source evidence
 
-### Content-addressed immutable intake
+The exact acceptance-target release has now been supplied to the project workflow as:
 
-`runtime/taxonomy_release_intake.py` accepts bounded caller-supplied bytes and derives a release identity from SHA-256. Source bytes are preserved under a content-addressed release directory. A replay of identical content resolves to the same release identity; a conflicting write cannot replace an existing immutable source.
+`WorldOrchids 26-08 (Aug 2 2026)(1).csv`
 
-The existing `runtime/taxonomy_preflight.py` remains the schema/file validator and candidate-vs-baseline comparison engine. Intake persists its preflight report rather than duplicating a second validator.
+Observed immutable source evidence:
 
-### Normalization and release evidence
+- raw byte count: **11,529,836**;
+- raw SHA-256: **`e5be9268e1a48cb0e1777137ac386a9a870f3581c35f10678c9b810c59688c6f`**;
+- content-derived release ID: **`rel-e5be9268e1a48cb0e177`**;
+- data rows: **34,724** plus the header;
+- header fields: `Taxon|Number|Name|Literature|TrivialName|Distribution|Synonyms|Status|Remarks|ConservationStatus|Photo|Orientation|Author`;
+- source rows have a 22-field physical layout because Hassler repeats `Photo / Orientation / Author` triplets beyond the 13-field header;
+- zero non-empty source cells fall beyond the canonical 22-field expansion.
 
-Each source row is normalized into deterministic JSONL with:
+### Encoding evidence
 
-- source row number;
-- canonical `taxon_key` from the existing preflight identity rules;
-- scientific name;
-- normalized taxonomic status;
-- accepted-name identifier when supplied;
-- preserved normalized source record;
-- deterministic row SHA-256.
+The release is predominantly UTF-8 but contains **293 isolated legacy single-byte characters**. Direct strict UTF-8 decoding fails. The intake parser therefore uses UTF-8 `surrogateescape` to preserve valid UTF-8 multibyte sequences and maps only isolated invalid bytes one-to-one to Latin-1 characters. This is deterministic and preserves the original raw bytes separately as the immutable source artifact.
 
-The release manifest/readiness contract exposes:
+### Hassler rank distribution
 
-- source SHA-256 and normalized artifact SHA-256;
-- configured active-baseline filename and SHA-256 when present;
-- preflight status/run identity;
-- normalized row count;
-- accepted-name count;
-- synonym count;
-- malformed-taxon count from the existing preflight findings;
-- unresolved-review count;
-- status counts;
-- deterministic candidate-vs-baseline added/removed/changed comparison.
+The source `Taxon` rank codes resolve to:
 
-Only recognized accepted/synonym states escape taxonomy-status review. Unknown or unrecognized status values fail closed into `unresolved` rather than silently becoming new status classes.
+- species (`S`): **32,108**;
+- variety (`V`): **1,040**;
+- subspecies (`SS`): **738**;
+- genus (`G`): **732**;
+- subtribe (`ST`): **55**;
+- form (`FM`): **23**;
+- tribe (`T`): **22**;
+- subfamily (`SF`): **5**;
+- family (`F`): **1**.
 
-### Active-release comparison
+The source `Status` field is blank on all 34,724 records. For this recognized Hassler layout, accepted-record status is therefore derived from the known `Taxon` rank codes rather than treating the release as 34,724 unresolved records.
+
+### Synonyms and media
+
+Hassler encodes synonyms inside the `Synonyms` field rather than as separate synonym rows. The real release contains:
+
+- rows carrying embedded synonym text: **19,219**;
+- embedded synonym names/markers: **60,984**;
+- separate synonym rows: **0**.
+
+The release media slots are:
+
+- `Photo`: **5,121** populated;
+- `Photo2`: **2,988** populated;
+- `Photo3`: **364** populated;
+- `Photo4`: **99** populated.
+
+The intake contract therefore reports `synonym_count` as the embedded Hassler synonym-name count for a Hassler release while preserving `synonym_row_count` separately.
+
+### Review findings from the real release
+
+Rank-aware validation found three records that must remain in explicit review rather than being silently accepted:
+
+1. two identical accepted records for **`Gastrochilus wenchuanensis P. Y. Wu &amp; C. Y. Zhou`**, creating one duplicated taxon key represented by two review-queue items;
+2. one species-like name, **`Lepanthes o A. Doucette`**, that fails the rank-aware Hassler species-name contract.
+
+The intended real-release review queue is therefore **3 row-level review items**: two `duplicate_taxon_key` items plus one `malformed_taxon_name` item. No review decision is fabricated by the intake system.
+
+## Actual-file-driven parser corrections
+
+The real source exposed issues that the earlier synthetic fixtures could not demonstrate. PR #598 was hardened to:
+
+- support the mixed UTF-8/legacy-byte source without corrupting valid UTF-8;
+- recognize the headered Hassler `Taxon / Number / Name` layout;
+- expand repeated `Photo / Orientation / Author` triplets deterministically to the observed 22-column row width;
+- derive Hassler taxon rank and accepted-record status from the known `Taxon` codes when `Status` is blank;
+- preserve Hassler `Number` where present and fall back to scientific-name identity for species-like records that lack it;
+- report the actual embedded-synonym model rather than falsely reporting zero synonyms;
+- use rank-aware malformed-name validation so genera and valid hybrid notation are not over-flagged by the generic species heuristic;
+- place duplicate taxon keys and rank-aware malformed names into the bounded read-only review queue;
+- canonicalize a configured prior baseline through the same mixed-encoding/layout adapter before candidate-vs-baseline comparison.
+
+Generic headered CSV fixtures remain supported; these Hassler-specific rules activate only for the recognized Hassler layout.
+
+## Deterministic artifacts
+
+The current real-source canonicalization produces:
+
+- canonical UTF-8 source SHA-256: **`e7ba31a1f5ab2361f754bcc81a50b38750a986cacf36e180cc72027b5f202be6`**;
+- normalized JSONL SHA-256: **`9928fe9fc1e71d0fa987e49ed2c563320fba1a8b980318f58f892e0a3c3313e2`**.
+
+These are derived artifacts. The raw source SHA-256 remains the immutable release identity.
+
+## Content-addressed immutable intake
+
+`runtime/taxonomy_release_intake.py` derives release identity from the raw source SHA-256. Original bytes are preserved under a content-addressed release directory. A replay of identical content resolves to the same release identity and conflicting replacement is rejected.
+
+The canonical source is a normalized UTF-8 pipe-delimited projection used for validation. It does not replace or alter the immutable original source.
+
+## Active-release comparison
 
 Mission Control reads the active comparison source only from operator configuration:
 
 `CALYX_TAXONOMY_ACTIVE_BASELINE_PATH`
 
-The upload request cannot supply an arbitrary server-side comparison path. If a configured baseline is missing or is not a regular file, intake fails closed instead of silently skipping comparison.
+The upload request cannot supply an arbitrary server-side comparison path. A configured baseline is canonicalized through the same source adapter before deterministic comparison.
 
-### Review queue
+A search of the connected Google Drive, the `WorldPlants Orchid Project` location exposed there, the Orchid Continuum file index, and repository history did **not** locate a genuine prior active WorldOrchids release CSV suitable for authoritative comparison. Therefore no added/removed/changed counts are claimed yet.
 
-Rows are placed into a deterministic pending review queue when they have:
+This is now the sole dataset-evidence blocker for the comparison phase: **the August source is present; the prior active baseline artifact is not grounded.**
 
-- no usable taxon identity;
-- synonym status without an accepted-name identifier; or
-- unresolved/unrecognized taxonomic status.
+## Review and staging contract
 
-The service exposes bounded read-only queue pagination (offset >= 0, limit 1–500). `review_write_authorized=false` is permanent in this surface. No review decision is fabricated by the intake system.
+Each normalized row carries:
 
-### Bounded resumable staging projection
+- source row number;
+- canonical taxon key;
+- scientific name;
+- taxonomic status;
+- taxon rank and Hassler rank code when applicable;
+- Hassler number when supplied;
+- preserved normalized source record, including repeated photo slots;
+- deterministic row SHA-256.
 
-`project_staging()` projects normalized records into a local review staging artifact in batches of 1–5000 rows. A durable checkpoint records the next offset, normalized artifact digest, unique projected-row count, and completion state. Row digests make replay idempotent.
+`project_staging()` projects normalized records into a local review staging artifact in batches of 1–5000 rows. A durable checkpoint records next offset, normalized artifact digest, unique projected-row count, and completion. Row digests make replay idempotent.
 
 This staging artifact is intentionally not the production taxonomy database and does not relink downstream data.
 
-### Protected Mission Control API
+## Protected Mission Control API
 
 `app/routers/taxonomy_release_intake.py` exposes owner/API-key-protected routes under:
 
@@ -82,7 +144,7 @@ This staging artifact is intentionally not the production taxonomy database and 
 
 The router is mounted through `app/routers/live_mission_control.py` and uses the existing `verify_owner_or_api_key` dependency.
 
-### Permanent non-authority
+## Permanent non-authority
 
 Readiness can become `REVIEW_ONLY`; it cannot become taxonomy-promotion authority. The contract permanently returns:
 
@@ -93,47 +155,36 @@ Readiness can become `REVIEW_ONLY`; it cannot become taxonomy-promotion authorit
 
 No production DB connection or Knowledge Graph publisher is present in the intake service.
 
-## Validation
+## Validation history
 
-Dedicated workflow:
-`.github/workflows/calyx-taxonomy-release-intake-461.yml`
+Earlier validation exposed and repaired real defects instead of suppressing them:
 
-It provides:
+- `31237084522`: functional tests passed but Ruff caught import-format debt;
+- `31237320818`: a new test caught unfamiliar status values escaping the unresolved queue;
+- implementation head `525cb260cf47a56939f2ba6d146cc2c092361a0a` subsequently passed all five triggered lanes;
+- real-file support initially passed 8 tests but Ruff again caught one import-format issue;
+- implementation head `589651fc53c5910762a0d384df39e9620ded41d8` passed the full five-lane matrix after mixed-encoding/Hassler-layout support and source-aware baseline handling.
 
-- compile validation;
-- deterministic synthetic intake/replay/comparison/review/staging tests;
-- protected API route + configured active baseline + review-queue tests;
-- permanent non-authority assertions;
-- changed-surface Ruff and diff hygiene.
+On exact current implementation/test head **`367c0f6a8b0b68569eff74dafe2ebac1755677c2`**, all five triggered lanes passed:
 
-A first validation run (`31237084522`) proved compile, 6 functional tests and non-authority but caught Ruff import-format debt. A later expansion run (`31237320818`) caught a real semantic defect: an unfamiliar taxonomy status was not entering the unresolved queue. That classifier was repaired to fail unknown statuses into `unresolved`.
+- CALYX Taxonomy Release Intake 461 **`31242449335`** — success;
+- CALYX Workflow Governance Audit **`31242449348`** — success;
+- BUILD-088E Validation **`31242449343`** — success;
+- CALYX-AUTONOMY-DEPLOYMENT-001 **`31242449341`** — success;
+- CALYX-SUPERVISED-PILOT-001 **`31242449336`** — success.
 
-On owner-authored implementation head `525cb260cf47a56939f2ba6d146cc2c092361a0a`, all triggered validation lanes passed:
+The dedicated taxonomy lane includes compile validation, deterministic generic and actual-Hassler-layout tests, permanent non-authority assertions, Ruff, and diff hygiene.
 
-- CALYX Taxonomy Release Intake 461 `31237380172` — success;
-- CALYX Workflow Governance Audit `31237380150` — success;
-- BUILD-088E Validation `31237380173` — success;
-- CALYX-AUTONOMY-DEPLOYMENT-001 `31237380141` — success;
-- CALYX-SUPERVISED-PILOT-001 `31237380127` — success.
+This Brain update creates a new final documentation head and therefore requires its own exact-head CI cycle before the draft is considered internally validated.
 
-The dedicated lane passed compile, 7 deterministic tests, permanent non-authority assertions, Ruff, and `git diff --check`.
+## Remaining work before any activation decision
 
-This Brain update creates the final owner-authored exact head; a fresh exact-head validation cycle after this documentation commit is required before #598 is considered internally validated. The PR still remains draft/unmerged regardless of CI because issue #461 explicitly says not to merge.
-
-## External evidence still required
-
-The exact `WorldOrchids 26-08 (Aug 2 2026).csv` source file has **not** been supplied in this repository context. Therefore this work does not claim:
-
-- the August file checksum;
-- its actual row count;
-- added/removed/changed taxon counts for that release;
-- accepted-name/synonym counts for that release;
-- malformed/unresolved counts for that release;
-- successful real-dataset staging completion;
-- readiness for taxonomy promotion.
-
-When the exact file is supplied, it can be run through this intake path and the existing preflight evidence controls. Promotion/activation remains a separate explicit governance operation.
+1. Ground the genuine prior active Hassler/WorldOrchids release artifact.
+2. Run deterministic candidate-vs-active comparison and record added/removed/changed evidence.
+3. Run the complete August release through the protected intake/staging path and preserve the resulting manifest/review/staging receipt in the target runtime environment.
+4. Review the three currently identified row-level issues plus any baseline-comparison conflicts.
+5. Only after those steps may a separate owner-governed activation operation even be considered.
 
 ## Explicit non-actions
 
-This implementation does not activate taxonomy, relink production records, publish the Knowledge Graph, perform a production migration, deploy, provision Azure, or publish scientific conclusions. Issue #461 explicitly says not to merge; PR #598 remains draft/unmerged unless that issue-level governance instruction is separately changed.
+This work does **not** activate taxonomy, relink production records, publish the Knowledge Graph, perform a production migration, deploy, provision Azure, or publish scientific conclusions. Issue #461 explicitly says not to merge; PR #598 remains draft/unmerged unless that issue-level governance instruction is separately changed.
