@@ -22,6 +22,10 @@ Complete the execution side of BUILD-BRAIN-114K without moving repository-code e
 - receipt includes request digest, sandbox policy digest, authorization ID, outcome, return code, and hashes of captured stdout/stderr;
 - focused regression tests and a dedicated read-only GitHub Actions validation gate.
 
+## Mainline integration state
+
+BUILD-BRAIN-114K was merged to `main` as PR #655. PR #664 was then retargeted from the former stacked 114K branch to current `main`. The runtime delta remains purely additive. This documentation synchronization commit intentionally changes no worker behavior and exists to force a fresh exact-head validation against the post-114K mainline merge context before merge.
+
 ## Security and authority model
 
 The application remains unable to execute repository code itself. BUILD-BRAIN-114K creates and persists the request and validates the returned evidence. BUILD-BRAIN-114L is the separately deployed execution worker. The two components therefore require separate credentials and runtime placement.
