@@ -13,9 +13,9 @@ labels and domain assignments that publishers and validators may accept.
 from __future__ import annotations
 
 from .causal_vocabulary import (
+    CANONICAL_CAUSAL_EDGE_TYPES,
     CAUSAL_EVIDENCE_EDGE_TYPES,
     CAUSAL_NODE_TYPE_DOMAIN,
-    CANONICAL_CAUSAL_EDGE_TYPES,
 )
 
 NODE_TYPE_DOMAIN: dict[str, str] = {
