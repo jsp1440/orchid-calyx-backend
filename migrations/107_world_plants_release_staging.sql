@@ -27,9 +27,14 @@ CREATE TABLE IF NOT EXISTS taxonomy_pipeline.staged_taxa (
     scientific_name text NOT NULL,
     row_checksum text NOT NULL,
     normalized_payload jsonb NOT NULL,
-    PRIMARY KEY (release_id, source_row_number),
-    UNIQUE (release_id, row_checksum)
+    PRIMARY KEY (release_id, source_row_number)
 );
+
+-- Row checksums are intentionally non-unique. The source release can contain
+-- byte-identical duplicate taxon rows; both source row numbers must be retained
+-- so the review queue can expose the duplication rather than silently discard it.
+CREATE INDEX IF NOT EXISTS idx_taxonomy_staged_taxa_checksum
+    ON taxonomy_pipeline.staged_taxa (release_id, row_checksum);
 
 CREATE INDEX IF NOT EXISTS idx_taxonomy_staged_taxa_identity
     ON taxonomy_pipeline.staged_taxa (release_id, taxon_code, scientific_name);
