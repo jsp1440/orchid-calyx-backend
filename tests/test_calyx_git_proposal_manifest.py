@@ -234,7 +234,9 @@ def test_validation_identity_and_success_are_required() -> None:
         _build(_builder([failed]), [failed])
 
 
-def test_forged_serialized_receipt_is_rejected_without_matching_persisted_record() -> None:
+def test_forged_serialized_receipt_is_rejected_without_matching_persisted_record() -> (
+    None
+):
     persisted = _validations()
     supplied = _validations()
     supplied[0]["receipt"]["authorization_id"] = "sandbox-auth-forged"
