@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import Any
 
 from runtime.knowledge_graph import Edge, GraphRepository, Node
+from runtime.knowledge_graph.causal_vocabulary import causal_relation_semantics
 
 
 class ReasoningDirection(StrEnum):
@@ -28,45 +29,6 @@ class RelationSemantics:
     polarity: int
     causal: bool
 
-
-_POSITIVE = {
-    "causes",
-    "promotes",
-    "activates",
-    "induces",
-    "enables",
-    "results_in",
-    "expressed_as",
-    "increases",
-    "stimulates",
-    "supports",
-    "facilitates",
-}
-_NEGATIVE = {
-    "inhibits",
-    "suppresses",
-    "reduces",
-    "blocks",
-    "represses",
-    "contradicts",
-}
-_REGULATORY = {
-    "regulates",
-    "modulates",
-    "responds_to",
-    "depends_on",
-    "requires",
-    "precedes",
-    "influences",
-}
-_EVIDENCE = {
-    "supports",
-    "contradicts",
-    "observed_as",
-    "documented_by",
-    "derived_from",
-    "has_evidence",
-}
 
 _PROFILE_NODE_TYPES = {
     ReasoningProfile.BIOLOGICAL_MECHANISM: {
@@ -126,18 +88,12 @@ _PROFILE_NODE_TYPES = {
 
 
 def relation_semantics(edge_type: str) -> RelationSemantics:
-    normalized = edge_type.strip().lower()
-    if normalized in _NEGATIVE:
-        return RelationSemantics("causal", -1, True)
-    if normalized in _POSITIVE:
-        role = "evidence" if normalized == "supports" else "causal"
-        return RelationSemantics(role, 1, normalized != "supports")
-    if normalized in _REGULATORY:
-        return RelationSemantics("regulatory", 0, True)
-    if normalized in _EVIDENCE:
-        polarity = -1 if normalized == "contradicts" else 0
-        return RelationSemantics("evidence", polarity, False)
-    return RelationSemantics("context", 0, False)
+    controlled = causal_relation_semantics(edge_type)
+    if controlled is None:
+        return RelationSemantics("context", 0, False)
+    return RelationSemantics(
+        controlled["role"], controlled["polarity"], controlled["causal"]
+    )
 
 
 def _confidence(edge: Edge) -> float:
@@ -239,17 +195,16 @@ class ReasoningMapEngine:
                 current_id, outgoing, incoming, direction
             )
             for edge, next_id, traversal_direction in candidates:
-                if next_id in node_path:
-                    continue
-                if next_id not in nodes_by_id:
+                if next_id in node_path or next_id not in nodes_by_id:
                     continue
                 next_edges = edge_path + [edge]
                 next_nodes = node_path + [next_id]
                 next_directions = direction_path + [traversal_direction]
-                path = self._serialize_path(
-                    next_nodes, next_edges, nodes_by_id, next_directions
+                paths.append(
+                    self._serialize_path(
+                        next_nodes, next_edges, nodes_by_id, next_directions
+                    )
                 )
-                paths.append(path)
                 used_edge_ids.add(edge.kg_edge_id)
                 used_node_ids.add(next_id)
                 layers.setdefault(len(next_edges), set()).add(next_id)
@@ -273,10 +228,7 @@ class ReasoningMapEngine:
             "edges": [self._serialize_edge(edge) for edge in mapped_edges],
             "paths": paths,
             "layers": [
-                {
-                    "depth": depth,
-                    "node_ids": sorted(node_ids),
-                }
+                {"depth": depth, "node_ids": sorted(node_ids)}
                 for depth, node_ids in sorted(layers.items())
             ],
             "summary": {
@@ -382,10 +334,8 @@ class ReasoningMapEngine:
         for predicate, traversal_direction, label in zip(
             predicates, traversal_directions, labels[1:]
         ):
-            if traversal_direction == "backward":
-                explanation_parts.extend((f" <--{predicate}-- ", label))
-            else:
-                explanation_parts.extend((f" --{predicate}--> ", label))
+            arrow = f" <--{predicate}-- " if traversal_direction == "backward" else f" --{predicate}--> "
+            explanation_parts.extend((arrow, label))
         unique_directions = set(traversal_directions)
         aggregate_direction = (
             traversal_directions[0] if len(unique_directions) == 1 else "mixed"
