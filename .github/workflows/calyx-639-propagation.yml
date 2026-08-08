@@ -7,15 +7,19 @@ on:
       - "runtime/propagation_research_dataset.py"
       - "runtime/terrestrial_orchid_propagation_comparators.py"
       - "runtime/propagation_comparator_dataset.py"
+      - "runtime/australian_diurideae_propagation_bridge.py"
       - "runtime/router_fastapi.py"
       - "tests/test_recalcitrant_orchid_propagation.py"
       - "tests/test_recalcitrant_orchid_propagation_api.py"
       - "tests/test_propagation_research_dataset.py"
       - "tests/test_terrestrial_orchid_propagation_comparators.py"
       - "tests/test_propagation_comparator_dataset.py"
+      - "tests/test_australian_diurideae_propagation_bridge.py"
       - "docs/brain/CALYX-639-recalcitrant-orchid-propagation.md"
       - "docs/brain/CALYX-639B-terrestrial-vegetative-plb-comparators.md"
       - "docs/brain/CALYX-639C-propagation-comparator-dataset.md"
+      - "docs/brain/CALYX-639D-exact-head-validation.md"
+      - "docs/brain/CALYX-639E-proximal-australian-diurideae-bridge.md"
       - ".github/workflows/calyx-639-propagation.yml"
   workflow_dispatch:
 
@@ -40,6 +44,7 @@ jobs:
           runtime/propagation_research_dataset.py
           runtime/terrestrial_orchid_propagation_comparators.py
           runtime/propagation_comparator_dataset.py
+          runtime/australian_diurideae_propagation_bridge.py
           runtime/router_fastapi.py
       - name: Run CALYX-639 tests
         env:
@@ -51,3 +56,4 @@ jobs:
           tests/test_propagation_research_dataset.py
           tests/test_terrestrial_orchid_propagation_comparators.py
           tests/test_propagation_comparator_dataset.py
+          tests/test_australian_diurideae_propagation_bridge.py
