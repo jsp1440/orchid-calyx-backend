@@ -5,12 +5,16 @@ import math
 import pytest
 
 from runtime.scientific_uncertainty import (
+    MEAN_CI_CANDIDATE_METHOD,
     NUMPY_VERSION,
     PYTHON_IMPLEMENTATION,
     PYTHON_VERSION,
     SCIPY_VERSION,
+    evaluate_mean_ci_candidate_rows,
     mean_confidence_interval,
     mean_confidence_interval_from_summary,
+    normalize_mean_ci_candidate_parameters,
+    validate_mean_ci_candidate_variable,
 )
 
 
@@ -74,6 +78,91 @@ def test_value_wrapper_preserves_non_authority_and_no_p_value():
     assert result["scientific_publication_authorized"] is False
     assert result["knowledge_graph_mutation_authorized"] is False
     assert result["analysis_plan_method_registered"] is False
+
+
+def test_mean_ci_candidate_contract_is_explicit_and_not_registered():
+    assert MEAN_CI_CANDIDATE_METHOD["method"] == "mean_ci.v1"
+    assert MEAN_CI_CANDIDATE_METHOD["registered"] is False
+    assert MEAN_CI_CANDIDATE_METHOD["p_value_capable"] is False
+    assert MEAN_CI_CANDIDATE_METHOD["missing_policy"] == "complete_case"
+    assert MEAN_CI_CANDIDATE_METHOD["sidedness"] == "two_sided"
+
+    parameters = normalize_mean_ci_candidate_parameters(
+        {"column": "flower_size_mm", "confidence_level": 0.95}
+    )
+    assert parameters == {"column": "flower_size_mm", "confidence_level": 0.95}
+
+
+def test_mean_ci_candidate_requires_declared_numeric_variable_with_unit():
+    parameters = {"column": "flower_size_mm", "confidence_level": 0.95}
+    variable = validate_mean_ci_candidate_variable(
+        parameters,
+        [
+            {
+                "name": "flower_size_mm",
+                "kind": "numeric",
+                "role": "outcome",
+                "unit": "mm",
+            }
+        ],
+    )
+    assert variable["unit"] == "mm"
+
+    with pytest.raises(ValueError, match="UNCERTAINTY_MEAN_CI_VARIABLE_NOT_DECLARED"):
+        validate_mean_ci_candidate_variable(parameters, [])
+
+    with pytest.raises(ValueError, match="UNCERTAINTY_MEAN_CI_VARIABLE_NOT_NUMERIC"):
+        validate_mean_ci_candidate_variable(
+            parameters,
+            [
+                {
+                    "name": "flower_size_mm",
+                    "kind": "categorical",
+                    "role": "outcome",
+                    "unit": "1",
+                }
+            ],
+        )
+
+
+def test_mean_ci_candidate_accounts_for_complete_case_rows_without_becoming_live():
+    result = evaluate_mean_ci_candidate_rows(
+        rows=[
+            {"flower_size_mm": 10.0},
+            {"flower_size_mm": None},
+            {"flower_size_mm": 12.0},
+            {"flower_size_mm": ""},
+            {"flower_size_mm": 14.0},
+        ],
+        parameters={"column": "flower_size_mm", "confidence_level": 0.95},
+        variables=[
+            {
+                "name": "flower_size_mm",
+                "kind": "numeric",
+                "role": "outcome",
+                "unit": "mm",
+            }
+        ],
+    )
+
+    assert result["method_candidate"] == "mean_ci.v1"
+    assert result["method_candidate_registered"] is False
+    assert result["rows_received"] == 5
+    assert result["complete_values"] == 3
+    assert result["missing_values"] == 2
+    assert result["missing_policy"] == "complete_case"
+    assert result["interval"]["sample_mean"] == 12.0
+    assert result["interval"]["analysis_plan_method_registered"] is False
+
+
+def test_mean_ci_candidate_rejects_parameter_drift():
+    with pytest.raises(ValueError, match="UNCERTAINTY_MEAN_CI_PARAMETERS_UNSUPPORTED"):
+        normalize_mean_ci_candidate_parameters(
+            {"column": "x", "confidence_level": 0.95, "alternative": "two-sided"}
+        )
+
+    with pytest.raises(ValueError, match="UNCERTAINTY_MEAN_CI_COLUMN_REQUIRED"):
+        normalize_mean_ci_candidate_parameters({"column": "", "confidence_level": 0.95})
 
 
 def test_mean_ci_fails_closed_for_invalid_sample_and_confidence_level():
