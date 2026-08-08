@@ -42,12 +42,12 @@ def main() -> int:
         raise SystemExit("CALYX_BACKEND_URL and CALYX_OWNER_ACCESS_CODE are required")
 
     session_status, session = _request(
-        "/api/mission-control/owner/session",
+        "/api/mission-control/owner/session-token",
         method="POST",
-        payload={"access_code": ACCESS_CODE},
+        payload={"access_code": ACCESS_CODE, "owner": "owner"},
     )
     token = str(session.get("token") or session.get("access_token") or "")
-    if session_status != 200 or not token:
+    if session_status != 200 or not token or token == "cookie":
         raise SystemExit("owner session authentication failed")
 
     migration_status, migration = _request(
