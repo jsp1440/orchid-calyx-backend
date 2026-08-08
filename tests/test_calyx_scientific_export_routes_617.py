@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import json
 from pathlib import Path
 
 import pytest
@@ -54,15 +57,26 @@ def test_export_routes_are_registered_as_protected_analysis_surfaces():
         "/brain/mission-control/research/analysis/projects/{project_id}/exports/{export_id}",
         "GET",
     ) in route_methods
+    assert (
+        "/brain/mission-control/research/analysis/projects/{project_id}/exports/{export_id}/integrity",
+        "GET",
+    ) in route_methods
 
 
-def test_protected_export_build_and_get_delegate_to_owner_scoped_service(tmp_path, monkeypatch):
+def test_protected_export_build_get_and_integrity_delegate_to_owner_scoped_service(
+    tmp_path, monkeypatch
+):
     exports, owner, project_id, analysis_id = _route_fixture(tmp_path)
     monkeypatch.setattr(analysis_router, "_export_instance", exports)
 
     built = analysis_router.build_analysis_export(project_id, analysis_id, {"actor": owner})
     bundle = built["export"]
     fetched = analysis_router.get_analysis_export(project_id, bundle["export_id"], {"actor": owner})
+    integrity = analysis_router.verify_analysis_export_integrity(
+        project_id,
+        bundle["export_id"],
+        {"actor": owner},
+    )
 
     assert bundle == fetched
     assert bundle["raw_dataset_rows_included"] is False
@@ -70,6 +84,12 @@ def test_protected_export_build_and_get_delegate_to_owner_scoped_service(tmp_pat
     assert bundle["private_research_artifact"] is True
     assert bundle["export_is_not_publication"] is True
     assert bundle["scientific_publication_authorized"] is False
+    assert integrity["verified"] is True
+    assert integrity["export_sha256"] == bundle["export_sha256"]
+    assert integrity["analysis_id"] == analysis_id
+    assert integrity["content_hash_matches"] is True
+    assert integrity["privacy_contract_matches"] is True
+    assert integrity["integrity_verification_is_not_publication_authority"] is True
 
 
 def test_export_routes_fail_closed_without_owner_scope(tmp_path, monkeypatch):
@@ -91,3 +111,37 @@ def test_export_route_translates_invalid_export_id_to_unprocessable_entity(tmp_p
 
     assert caught.value.status_code == 422
     assert "ANALYSIS_EXPORT_ID_INVALID" in str(caught.value.detail)
+
+    with pytest.raises(HTTPException) as integrity_caught:
+        analysis_router.verify_analysis_export_integrity(
+            project_id,
+            "../private",
+            {"actor": owner},
+        )
+
+    assert integrity_caught.value.status_code == 422
+    assert "ANALYSIS_EXPORT_ID_INVALID" in str(integrity_caught.value.detail)
+
+
+def test_integrity_route_fails_closed_on_persisted_tampering(tmp_path, monkeypatch):
+    exports, owner, project_id, analysis_id = _route_fixture(tmp_path)
+    monkeypatch.setattr(analysis_router, "_export_instance", exports)
+    bundle = analysis_router.build_analysis_export(project_id, analysis_id, {"actor": owner})[
+        "export"
+    ]
+
+    root = exports.analysis._project_root(owner, project_id)
+    path = root / "analysis_exports" / f"{bundle['export_id']}.json"
+    persisted = json.loads(path.read_text(encoding="utf-8"))
+    persisted["scientific_publication_authorized"] = True
+    path.write_text(json.dumps(persisted), encoding="utf-8")
+
+    with pytest.raises(HTTPException) as caught:
+        analysis_router.verify_analysis_export_integrity(
+            project_id,
+            bundle["export_id"],
+            {"actor": owner},
+        )
+
+    assert caught.value.status_code == 422
+    assert "ANALYSIS_EXPORT_INTEGRITY_MISMATCH" in str(caught.value.detail)
