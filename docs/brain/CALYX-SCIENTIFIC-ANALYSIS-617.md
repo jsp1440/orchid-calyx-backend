@@ -1,16 +1,17 @@
 # CALYX-617 — Scientific Computing & Analysis Engine
 
 ## Status
-Seventh bounded implementation slice completed on top of `feature/calyx-research-station-453` and retained in draft PR #618.
+Eighth bounded implementation slice is present on `feature/calyx-scientific-analysis-617` and retained in draft PR #618.
 
-Canonical architecture is preserved in the Orchid Continuum Brain as `14_ENGINEERING/SCICOMP-001-scientific-computing-analysis-engine-blueprint.md`, with implementation contracts SCICOMP-001B through SCICOMP-001G. A new SCICOMP-001H contract records the checksum-bound analysis dataset snapshot layer.
+Canonical architecture is preserved in the Orchid Continuum Brain through SCICOMP-001M. The current slice adds a reference-validated uncertainty primitive without registering a new live Analysis Plan method or changing production runtime requirements.
 
 ## Purpose
-Give the private Research Station a reproducible statistical and mathematical execution layer without turning Calyx into an opaque calculator or giving computed results, diagnostics, comparisons, filters, snapshots, or visualizations publication authority.
+Give the private Research Station a reproducible statistical and mathematical execution layer without turning Calyx into an opaque calculator or giving computed results, diagnostics, comparisons, filters, snapshots, uncertainty artifacts, or visualizations publication authority.
 
 ## Operational surface
 
 - `runtime/scientific_analysis.py` — deterministic statistical kernel and capability registry.
+- `runtime/scientific_uncertainty.py` — bounded dependency-backed uncertainty primitives; not yet live in the Analysis Plan registry.
 - `runtime/research_analysis_workflow.py` — immutable Analysis Plans, exact Research Station dataset binding, transform/filter execution, receipts, and replay-safe notebook linkage.
 - `runtime/scientific_transforms.py` — typed variable metadata and deterministic derived-variable transformations.
 - `runtime/scientific_filters.py` — bounded declarative row filtering with excluded-row identity and reason receipts.
@@ -21,13 +22,74 @@ Give the private Research Station a reproducible statistical and mathematical ex
 - `app/routers/scientific_analysis.py` — protected Mission Control APIs.
 - dedicated deterministic regression suite and CI with permanent non-authority assertions.
 
-### Supported statistical methods
+### Supported live statistical methods
 
 - `describe.v1` — descriptive statistics.
 - `pearson.v1` — Pearson product-moment correlation.
 - `ols.v1` — simple ordinary least-squares regression.
 
-The current slice intentionally omits p-values and significance claims.
+The live registry still omits p-values, hypothesis tests, and confidence-interval methods.
+
+## Governed uncertainty foundation
+
+`calyx-scientific-uncertainty/v1` introduces the first external numerical-library primitive under SCICOMP-001J/K.
+
+The current bounded primitive computes a classical two-sided Student-t confidence interval for a population mean using:
+
+```text
+sample mean ± t_(1-alpha/2, n-1) × sample_sd / sqrt(n)
+```
+
+Implementation rules:
+
+- confidence level must be declared before execution;
+- current supported levels are 0.90, 0.95, and 0.99;
+- inputs are validated before any numerical-library call;
+- only `scipy.stats.t.ppf` is used for the Student-t critical value;
+- raw SciPy result objects are never exposed;
+- exact SciPy version is recorded in the normalized output;
+- no p-value is generated;
+- no interpretation or significance verdict is generated;
+- human scientific review remains required;
+- `analysis_plan_method_registered` remains false.
+
+### Numerical dependency isolation
+
+The Scientific Analysis workflow validates the primitive on Python 3.12 with `scipy==1.18.0`. SciPy resolves NumPy as its dependency in the validation environment.
+
+SciPy is deliberately **not** added to repository-global `requirements.txt` in this slice. The repository has not yet demonstrated an authoritative production Python 3.12 pin, while SciPy 1.18.0 requires Python >=3.12. This prevents a reference-validation experiment from silently becoming a production startup dependency.
+
+### Independent reference fixtures
+
+The uncertainty regression suite uses published NIST/SEMATECH Dataplot confidence-limit examples as independent numerical oracles.
+
+Reference A:
+
+- n = 195;
+- sample mean = 9.26146;
+- sample SD = 0.02278;
+- expected 95% t critical value ≈ 1.972;
+- expected lower = 9.25824;
+- expected upper = 9.26467.
+
+Reference B:
+
+- n = 10;
+- sample mean = 0.99800;
+- sample SD = 0.00434;
+- expected 95% t critical value ≈ 2.262;
+- expected lower = 0.99489;
+- expected upper = 1.00110.
+
+Tests use explicit floating-point tolerances and exact degrees-of-freedom checks.
+
+Failure fixtures cover insufficient sample size, unsupported confidence levels, negative sample SD, booleans, and non-finite values. Failures surface stable CALYX uncertainty errors rather than uncaught SciPy exceptions.
+
+### Conversational-analysis compatibility boundary
+
+A separate open Calyx conversational-analysis branch currently offers a mean confidence interval using a normal approximation for sample sizes as small as two observations.
+
+That is not equivalent to this Research Station Student-t uncertainty contract. A conversational confidence-interval result must therefore not be treated as the canonical research-grade CALYX interval unless it delegates to the governed Scientific Computing method. Otherwise it must remain explicitly labeled approximation-only.
 
 ## Analysis Plan contract
 A pre-execution immutable plan contains:
@@ -100,17 +162,17 @@ Every plan-bound run distinguishes:
 A dataset snapshot adds a prior transport-level assertion: the rows retrieved by the Workbench already match the registered raw dataset checksum before plan validation begins.
 
 ## Downstream artifacts
-`calyx-scientific-diagnostics/v1` creates immutable descriptive diagnostic payloads bound to exact plan/analysis/input/result identity. `calyx-scientific-comparison/v1` compares runs without selecting a winner. `calyx-scientific-result-artifact/v1` provides normalized result tables and diagnostic-backed figure specifications. Diagnostics, comparisons, tables, and figure specifications remain distinct from scientific interpretation.
+`calyx-scientific-diagnostics/v1` creates immutable descriptive diagnostic payloads bound to exact plan/analysis/input/result identity. `calyx-scientific-comparison/v1` compares runs without selecting a winner. `calyx-scientific-result-artifact/v1` provides normalized result tables and diagnostic-backed figure specifications. Diagnostics, comparisons, tables, figure specifications, and uncertainty outputs remain distinct from scientific interpretation.
 
 ## Research Station notebook integration
 Successful plan execution writes a machine-readable, non-interpretive receipt into the project notebook. The receipt includes raw/pre-filter/post-filter checksums, transformation receipts, filter receipt, analysis/result identity, warnings, and governance state. Replay is idempotent and conflicting content fails closed rather than rewriting history.
 
 ## Front-end contract
-The Research Station Workbench now has a governed path to enumerate and load checksum-bound dataset snapshots. A selected snapshot should populate the registered dataset ID, exact rows, and provenance fields while preserving manual row JSON as an explicit fallback for datasets that have not yet been snapshotted.
+The Research Station Workbench can enumerate, create, and load checksum-bound dataset snapshots. Guided controls author the same Analysis Plan fields exposed by Advanced JSON.
 
-Before execution the Workbench should show raw dataset identity, source/derived variables and units, transformations, each row filter with its reason code, method/rationale, assumptions, and blockers. After validation/execution it should display before/after filter counts, excluded-row identities/reasons, raw/pre-filter/post-filter checksums, analysis/result/diagnostic/artifact identities, transformation/filter receipts, warnings, notebook receipt, and optional run comparison.
+Before execution the Workbench shows dataset identity, source/derived variables and units, transformations, row filters with reason codes, method/rationale, and validation blockers. It must continue to avoid unlabeled outlier removal, significance color coding, or automatic method selection.
 
-The frontend must not offer an unlabeled “remove outliers” action. Any future convenience control must compile into the same visible governed filter contract before execution.
+A future live mean-confidence-interval surface should show the estimate, interval, confidence level, assumptions, numerical provenance, and review status without converting interval overlap/non-overlap into an automatic scientific conclusion.
 
 ## Governance
 Permanent current-slice boundaries:
@@ -120,6 +182,9 @@ Permanent current-slice boundaries:
 - no autonomous scientific publication;
 - no Knowledge Graph mutation;
 - no fabricated significance;
+- no p-values in the uncertainty foundation;
+- no live confidence-interval Analysis Plan method yet;
+- no production SciPy dependency yet;
 - no silent conversion of missing values to zero or absence;
 - no source-column mutation by transforms;
 - no undeclared/unversioned transformations;
@@ -136,18 +201,22 @@ Permanent current-slice boundaries:
 - human review remains required before scientific conclusions become reviewed claims.
 
 ## Validation
-The dataset-snapshot slice adds deterministic coverage for exact registered checksum binding, replay idempotence, checksum mismatch failure, list-without-rows behavior, explicit exact-row retrieval, missing registration failure, and permanent non-authority/readiness assertions. The dedicated CALYX Scientific Analysis workflow passed compile, regression tests, governance assertions, Ruff, and diff hygiene on the snapshot implementation head before frontend consumption was started.
+The uncertainty implementation head successfully installed SciPy 1.18.0 on Python 3.12, compiled the new and existing scientific surfaces, passed 39 deterministic tests including both NIST references and uncertainty failure fixtures, and passed permanent governance assertions. Its only failure was Ruff `UP035` for importing `Iterable` from `typing`; that one-line import was corrected by moving `Iterable` to `collections.abc`.
 
-The earlier filter slice covers unchanged plans, explicit thresholds, derived-variable filters, before/after hashes and counts, excluded-row identity/reasons, zero-row fail-closed behavior, legacy free-text exclusion rejection, replay-safe notebook receipts, existing transform/diagnostic/comparison/result-artifact behavior, and Research Station regressions.
+Exact-head validation of the Ruff-corrected/documented branch remains the completion gate for this slice.
+
+Earlier CALYX-617 slices retain coverage for exact registered checksum binding, replay idempotence, checksum mismatch failure, snapshot transport, explicit filters, derived-variable transforms, before/after hashes and counts, excluded-row identity/reasons, zero-row fail-closed behavior, legacy free-text exclusion rejection, replay-safe notebook receipts, diagnostics, comparison, result artifacts, and Research Station regressions.
 
 ## Next implementation priorities
 
-1. complete and validate Workbench snapshot selection/loading against the live protected APIs;
-2. replace raw JSON editing with structured variable/method/filter controls while retaining an advanced JSON mode;
-3. expand diagnostics where justified, including influence/residual distribution measures;
-4. define the inferential-method governance contract for effect sizes, confidence intervals, assumptions, multiplicity, and power before adding hypothesis-testing methods;
-5. add export/render artifacts and publication-quality rendering profiles;
-6. only later design a separately sandboxed Python/R execution environment.
+1. complete exact-head validation of the uncertainty foundation;
+2. explicitly establish the production Python runtime before adding SciPy to production dependencies;
+3. reconcile conversational mean-CI behavior with the governed Student-t contract;
+4. only after those gates, register a bounded mean-confidence-interval Analysis Plan method and normalized result artifact;
+5. add Workbench estimate/interval rendering without significance color coding;
+6. then consider OLS coefficient standard errors/confidence intervals under the same numerical-reference contract;
+7. introduce p-values/hypothesis tests only through SCICOMP-001J method-specific governance;
+8. only later design a separately sandboxed Python/R execution environment.
 
 ## Relationship impact
 
@@ -163,7 +232,7 @@ Research Project
   -> Governed Row Filters + exclusion receipt
   -> Final Analytical Dataset + checksum
   -> Analysis Run
-  -> Diagnostic Artifact
+  -> Diagnostic / Uncertainty Artifact
   -> Result Table + Figure Specifications
   -> Optional Run Comparison
   -> Research Station Notebook / Workbench
@@ -171,4 +240,4 @@ Research Project
   -> Human Review
 ```
 
-No new scientific fact is created merely because a dataset snapshot, analysis, exclusion receipt, diagnostic, comparison, table, or figure specification exists.
+No new scientific fact is created merely because a dataset snapshot, analysis, exclusion receipt, diagnostic, uncertainty interval, comparison, table, or figure specification exists.
