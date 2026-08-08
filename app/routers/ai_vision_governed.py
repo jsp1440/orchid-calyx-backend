@@ -1,7 +1,6 @@
 """Protected Mission Control routes for governed AI.Vision review workflows."""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
