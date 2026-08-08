@@ -29,7 +29,10 @@ def _source_key(source: dict[str, Any]) -> tuple[str, str, str]:
 def build_conversation_markdown(conversation: dict[str, Any]) -> str:
     """Render persisted conversation context without elevating it to evidence."""
     messages = list(conversation.get("messages") or [])
+
+    # Build global deduplicated source ledger and map each source key → ledger index.
     source_refs: list[dict[str, Any]] = []
+    source_index_map: dict[tuple[str, str, str], int] = {}
     seen: set[tuple[str, str, str]] = set()
     for message in messages:
         for source in message.get("source_refs") or []:
@@ -39,6 +42,7 @@ def build_conversation_markdown(conversation: dict[str, Any]) -> str:
                 continue
             seen.add(key)
             source_refs.append(item)
+            source_index_map[key] = len(source_refs)  # 1-based
 
     lines = [
         "# Calyx Research Conversation Report",
@@ -94,6 +98,17 @@ def build_conversation_markdown(conversation: dict[str, Any]) -> str:
                         f"- Document context: `{_text(context.get('active_document_id'))}`",
                     ]
                 )
+            msg_source_indices = []
+            for source in message.get("source_refs") or []:
+                key = _source_key(dict(source))
+                idx = source_index_map.get(key)
+                if idx is not None:
+                    msg_source_indices.append(idx)
+            if msg_source_indices:
+                refs_str = ", ".join(
+                    f"[Source {i}](#source-{i})" for i in msg_source_indices
+                )
+                lines.append(f"- Sources: {refs_str}")
             lines.extend(["", str(message.get("content") or ""), ""])
 
     lines.extend(["## Source reference ledger", ""])
@@ -109,7 +124,7 @@ def build_conversation_markdown(conversation: dict[str, Any]) -> str:
             citation = dict(source.get("citation") or {})
             lines.extend(
                 [
-                    f"### Source {index}: {_text(source.get('title'), source.get('object_type') or 'Continuum record')}",
+                    f'### <a id="source-{index}"></a>Source {index}: {_text(source.get("title"), source.get("object_type") or "Continuum record")}',
                     "",
                     f"- Result ID: `{_text(source.get('result_id'))}`",
                     f"- Object type: `{_text(source.get('object_type'))}`",

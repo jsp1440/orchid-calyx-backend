@@ -89,8 +89,9 @@ def test_report_deduplicates_persisted_source_references():
     fixture["messages"].append(dict(fixture["messages"][1], message_id="calyx-2"))
     report = build_conversation_markdown(fixture)
 
-    assert report.count("### Source 1:") == 1
-    assert "### Source 2:" not in report
+    assert report.count('<a id="source-1"></a>Source 1:') == 1  # deduplicated in ledger
+    assert "Source 2:" not in report
+    assert report.count("- Sources: [Source 1](#source-1)") == 2  # one per Calyx message
 
 
 def test_owner_scoped_report_endpoint_returns_markdown_attachment():
