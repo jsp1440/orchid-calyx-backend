@@ -76,13 +76,23 @@ def main() -> int:
                 }
             )
 
+    gates = readiness.get("gates", [])
+    blocked_gates = [
+        {
+            "name": gate.get("name"),
+            "blocking_reason": gate.get("blocking_reason"),
+            "evidence": gate.get("evidence"),
+        }
+        for gate in gates
+        if gate.get("status") != "passed" and gate.get("name") != "owner_promotion_approval"
+    ]
     exact_match = any(
         item.get("release_id") == EXPECTED_SHA256
         or item.get("sha256") == EXPECTED_SHA256
         for item in matches
     )
     report = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "read_only": True,
         "production_mutation": False,
         "upload_invoked": False,
@@ -100,10 +110,14 @@ def main() -> int:
         "migration_schema_complete": migration.get("schema_complete"),
         "pipeline_state": readiness.get("pipeline_state"),
         "next_job": readiness.get("next_job"),
+        "ready_for_upload": readiness.get("ready_for_upload"),
+        "blocked_gates": blocked_gates,
         "release_count": len(releases_payload.get("releases", [])),
         "matching_releases": matches,
         "real_release_present": exact_match,
-        "bounded_smoke_ready": bool(exact_match and migration.get("schema_complete")),
+        "bounded_smoke_ready": bool(
+            exact_match and migration.get("schema_complete") and not blocked_gates
+        ),
     }
     report["artifact_hash"] = _artifact_hash(report)
     REPORT_PATH.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
