@@ -72,7 +72,7 @@ def test_protected_export_build_get_and_integrity_delegate_to_owner_scoped_servi
     built = analysis_router.build_analysis_export(project_id, analysis_id, {"actor": owner})
     bundle = built["export"]
     fetched = analysis_router.get_analysis_export(project_id, bundle["export_id"], {"actor": owner})
-    integrity = analysis_router.verify_analysis_export_integrity(
+    integrity = analysis_router.verify_analysis_export(
         project_id,
         bundle["export_id"],
         {"actor": owner},
@@ -113,7 +113,7 @@ def test_export_route_translates_invalid_export_id_to_unprocessable_entity(tmp_p
     assert "ANALYSIS_EXPORT_ID_INVALID" in str(caught.value.detail)
 
     with pytest.raises(HTTPException) as integrity_caught:
-        analysis_router.verify_analysis_export_integrity(
+        analysis_router.verify_analysis_export(
             project_id,
             "../private",
             {"actor": owner},
@@ -137,7 +137,7 @@ def test_integrity_route_fails_closed_on_persisted_tampering(tmp_path, monkeypat
     path.write_text(json.dumps(persisted), encoding="utf-8")
 
     with pytest.raises(HTTPException) as caught:
-        analysis_router.verify_analysis_export_integrity(
+        analysis_router.verify_analysis_export(
             project_id,
             bundle["export_id"],
             {"actor": owner},
