@@ -425,10 +425,15 @@ class UniversityService:
 
     def learner_lesson(self, owner_id: str, lesson_id: str) -> dict[str, Any]:
         lesson = self._read(self._path(owner_id, "lessons", lesson_id))
-        concepts = [
-            self.knowledge.popover(item["preferred_term"], level="learner")
-            for item in lesson["concept_coverage"]
-        ]
+        concepts = []
+        for item in lesson["concept_coverage"]:
+            concept_id = item["concept_id"]
+            try:
+                concept = self.knowledge.get(concept_id)
+                term = concept["preferred_term"]
+            except FileNotFoundError:
+                term = concept_id
+            concepts.append(self.knowledge.popover(term, level="learner"))
         return {
             "lesson_id": lesson_id,
             "title": lesson["title"],
