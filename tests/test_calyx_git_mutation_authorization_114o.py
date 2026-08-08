@@ -266,6 +266,19 @@ def test_exact_external_owner_grant_verifies_and_expired_grant_fails() -> None:
         gate.verify_grant(request, grant, now=NOW + timedelta(minutes=16))
 
 
+def test_stale_owner_grant_issue_time_is_rejected() -> None:
+    gate = GitMutationAuthorizationGate(owner_principal=OWNER, hmac_secret=SECRET)
+    request = _request(_registry())
+    grant = _owner_grant(
+        request_digest=request.request_digest,
+        decision="approved",
+        issued_at=(NOW - timedelta(hours=2)).isoformat(),
+        expires_at=request.expires_at,
+    )
+    with pytest.raises(PermissionError, match="EXPIRED_OR_INVALID"):
+        gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
+
+
 def test_runtime_gate_cannot_mint_owner_grants() -> None:
     gate = GitMutationAuthorizationGate(owner_principal=OWNER, hmac_secret=SECRET)
     assert not hasattr(gate, "sign_for_test_or_operator")
