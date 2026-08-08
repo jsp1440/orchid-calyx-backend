@@ -1,14 +1,4 @@
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from runtime.router_fastapi import science_router
-
-
-def _client() -> TestClient:
-    app = FastAPI()
-    app.include_router(science_router)
-    app.dependency_overrides = {}
-    return TestClient(app)
 
 
 def test_diuris_comparator_routes_are_mounted():
