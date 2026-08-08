@@ -182,7 +182,11 @@ class ConversationMemoryService:
     ) -> dict[str, Any]:
         session = self._session(conversation_id, owner)
         project_context = context.get("active_project_id")
-        if session.project_id and project_context and str(session.project_id) != str(project_context):
+        if (
+            session.project_id
+            and project_context
+            and str(session.project_id) != str(project_context)
+        ):
             raise ConversationMemoryError("CONVERSATION_PROJECT_CONTEXT_MISMATCH", 409)
 
         source_refs = [self._source_ref(item) for item in evidence]
