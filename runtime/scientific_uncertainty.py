@@ -7,9 +7,10 @@ inferential methods are exposed through the Scientific Analysis API.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from importlib.metadata import version
 from statistics import fmean, stdev
-from typing import Any, Iterable
+from typing import Any
 
 from scipy.stats import t as student_t
 
