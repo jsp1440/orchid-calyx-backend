@@ -8,7 +8,6 @@ from app.calyx_orchestrator.executor import canonical_checksum
 from app.calyx_orchestrator.git_mutation_authorization import GitMutationAuthorizationGate
 from app.calyx_orchestrator.proposal_authorization import (
     ProposalAuthorizationBuilder,
-    ProposalAuthorizationRecord,
     ProposalAuthorizationRegistry,
     ProposalDecision,
 )
@@ -82,7 +81,9 @@ def _manifest() -> dict:
                 "request_digest": "d" * 64,
                 "receipt_digest": "e" * 64,
                 "policy_digest": "f" * 64,
-                "target_hashes": [{"path": "app/example.py", "sha256": "c" * 64}],
+                "target_hashes": [
+                    {"path": "app/example.py", "sha256": "c" * 64}
+                ],
             }
         ],
         "commit_title": "Bounded change",
@@ -121,7 +122,9 @@ def _review(
     )
 
 
-def _registry(*, security_decision=ProposalDecision.APPROVED) -> ProposalAuthorizationRegistry:
+def _registry(
+    *, security_decision: ProposalDecision = ProposalDecision.APPROVED
+) -> ProposalAuthorizationRegistry:
     registry = ProposalAuthorizationRegistry()
     registry.record(
         _review(
@@ -143,7 +146,12 @@ def _request(registry: ProposalAuthorizationRegistry):
     return GitMutationAuthorizationGate.build_request(
         _manifest(),
         review_registry=registry,
-        actions=("create_branch", "create_commit", "push_branch", "open_pull_request"),
+        actions=(
+            "create_branch",
+            "create_commit",
+            "push_branch",
+            "open_pull_request",
+        ),
         expires_at=(NOW + timedelta(minutes=15)).isoformat(),
         now=NOW,
     )
@@ -166,24 +174,24 @@ def test_rejected_review_blocks_request() -> None:
 
 def test_distinct_reviewers_are_required() -> None:
     registry = ProposalAuthorizationRegistry()
-    registry.record(_review(review_class="operational", reviewer="principal:reviewer"))
+    registry.record(
+        _review(review_class="operational", reviewer="principal:reviewer")
+    )
     registry.record(_review(review_class="security", reviewer="principal:reviewer"))
     with pytest.raises(PermissionError, match="REVIEWER_SEPARATION_REQUIRED"):
         _request(registry)
 
 
-def test_unregistered_forged_record_cannot_satisfy_gate() -> None:
+def test_unregistered_review_object_cannot_satisfy_gate() -> None:
     registry = ProposalAuthorizationRegistry()
-    legitimate = _review(review_class="operational", reviewer="principal:ops-reviewer")
-    registry.record(legitimate)
-    forged = ProposalAuthorizationRecord(
-        **{
-            **_review(
-                review_class="security", reviewer="principal:security-reviewer"
-            ).__dict__,
-        }
-    ) if hasattr(legitimate, "__dict__") else None
-    assert forged is None
+    registry.record(
+        _review(review_class="operational", reviewer="principal:ops-reviewer")
+    )
+    unregistered_security = _review(
+        review_class="security",
+        reviewer="principal:security-reviewer",
+    )
+    assert unregistered_security.decision is ProposalDecision.APPROVED
     with pytest.raises(PermissionError, match="PROPOSAL_REVIEWS_PENDING"):
         _request(registry)
 
