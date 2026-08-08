@@ -49,7 +49,8 @@ BLOCKED_DOMAINS = DOMAINS - ENABLED_DOMAINS
 
 def test_registry_covers_every_adapter_domain():
     assert set(registry_by_domain()) == DOMAINS
-    assert set(adapters_by_domain()) == ENABLED_DOMAINS
+    assert set(adapters_by_domain()) == DOMAINS
+    assert set(enabled_queries()) == ENABLED_DOMAINS
 
 
 def test_every_query_declares_the_contract_columns():
