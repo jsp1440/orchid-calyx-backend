@@ -8,7 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.conversation_memory.service import ConversationMemoryError, ConversationMemoryService
+from app.conversation_memory.service import (
+    ConversationMemoryError,
+    ConversationMemoryService,
+)
 from app.database import get_db
 from app.security import verify_owner_or_api_key
 from runtime.continuum_conversation import ContinuumConversationService
@@ -64,7 +67,7 @@ def _resolved_context(
     stored: dict[str, Any], requested: dict[str, Any]
 ) -> dict[str, Any]:
     def value(key: str, fallback: Any) -> Any:
-        return requested[key] if key in requested else fallback
+        return requested.get(key, fallback)
 
     return {
         "active_project_id": value("active_project_id", stored.get("project_id")),
