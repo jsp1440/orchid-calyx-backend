@@ -2,7 +2,7 @@
 
 Date: 2026-08-08
 Depends on: CALYX-636 persistent conversations, CALYX-639 source document identity continuity, and the existing Research Workspace document-link service.
-Status: implemented; behavior validated; final user-authored exact-head validation in progress. No merge, deployment, scientific publication, evidence-authority upgrade, or Knowledge Graph mutation authorized.
+Status: implementation exact-head validated, review-ready, mergeable, and unmerged. No merge, deployment, scientific publication, evidence-authority upgrade, or Knowledge Graph mutation authorized.
 
 ## Goal
 
@@ -51,8 +51,10 @@ Corrective validation history:
 2. The source-link integration test then reached the real Research Workspace audit path and exposed that the SQLite fixture omitted `audit_events`. The fixture was corrected rather than weakening production behavior, and now asserts exactly one `DOCUMENT_LINKED` audit event for repeated/idempotent saves.
 3. Mission Control live-registration then exposed that its legacy workflow installed only lightweight FastAPI test dependencies while the mounted source-link router legitimately depends on SQLAlchemy. The workflow now installs the repository's real application requirements before registration testing.
 4. The dedicated behavioral gate subsequently passed 12 source-link/provenance/report/session tests plus permanent non-authority assertions. Ruff identified only canonical line wrapping in the new router and test fixture; those exact formatter changes were applied by GitHub Copilot.
-5. The Copilot-authored formatting head was marked `action_required` by repository Actions policy before jobs could run. This Brain update is a user-authored documentation-only head used to trigger the final executable exact-head validation without altering runtime behavior.
+5. The Copilot-authored formatting head was marked `action_required` by repository Actions policy before jobs could run. A user-authored Brain commit restored executable validation without altering runtime behavior.
+6. Exact implementation head `8e3140289946b0612fdf7c1c6abfa0e55c1a52ae` passed all three required lanes: CALYX Conversation Source Link 640, CALYX-MISSION-CONTROL-003C Live Registration, and CALYX Workflow Governance Audit. The dedicated lane passed compilation, 12 integrated tests, permanent provenance/non-authority assertions, Ruff, formatting, and diff hygiene.
+7. PR #679 was marked ready for review after the exact-head green result. It remains unmerged and non-production.
 
-## Next priority after validation
+## Next priority
 
 Expose the action in the Research Station persistent Ask Calyx interface. The frontend should show `Save source to project` only for response evidence carrying exact `citation.document_id`, disable or mark already-linked documents based on the project's current document links, call only this conversation-bound endpoint, refresh project document links after success, and never automatically change active document retrieval scope.
