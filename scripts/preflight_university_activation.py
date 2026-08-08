@@ -162,11 +162,15 @@ def _database_state(database_url: str | None) -> dict[str, Any]:
 
 
 def preflight(*, release_evidence: Path | None = None, database_url: str | None = None) -> dict[str, Any]:
-    """Evaluate the two non-mutating activation gates without creating a dependency cycle.
+    """Evaluate migration and durable-activation gates without circular dependencies.
 
-    `ready_to_apply_migration` requires every non-schema prerequisite while writes and
-    durable mode remain off. `ready_to_enable_durable` additionally requires the
-    post-migration durable schema and safeguards to be present and valid.
+    The migration gate proves that the read-only release is verified, mutating flags
+    are still off, the retained evidence is bound correctly, and the target database
+    is reachable. It does not require the not-yet-applied schema, learner identity,
+    or a reviewer grant.
+
+    The durable gate adds all post-migration requirements: durable schema safeguards,
+    backend-verifiable learner identity, and an explicitly qualified science reviewer.
     """
     writes_enabled = env_bool("OCU_UNIVERSITY_SESSION_WRITES_ENABLED", False)
     durable_flag_enabled = env_bool("OCU_UNIVERSITY_DURABLE_SESSIONS_ENABLED", False)
@@ -187,10 +191,6 @@ def preflight(*, release_evidence: Path | None = None, database_url: str | None 
     migration_blockers: list[str] = []
     if not environment["university_enabled"]:
         migration_blockers.append("OCU_UNIVERSITY_ENABLED must be true")
-    if not environment["learner_auth_enabled"]:
-        migration_blockers.append("OCU_UNIVERSITY_LEARNER_AUTH_ENABLED must be true")
-    if not environment["supabase_url_present"] or not environment["supabase_anon_key_present"]:
-        migration_blockers.append("learner Supabase verification configuration is incomplete")
     if not environment["read_only_release_verified"]:
         migration_blockers.append("read-only production release has not been marked verified")
     if not environment["safe_pre_activation_flags"]:
@@ -205,14 +205,18 @@ def preflight(*, release_evidence: Path | None = None, database_url: str | None 
         migration_blockers.append("release evidence artifact does not match configured SHA-256 evidence ID")
     if not database["reachable"]:
         migration_blockers.append("target database is not reachable")
-    if not reviewer_registry["valid"]:
-        migration_blockers.append("reviewer qualification registry is invalid")
-    elif int(reviewer_registry.get("science_grant_count", 0)) < 1:
-        migration_blockers.append("no qualified scientific reviewer is assigned for learner submissions")
 
     durable_blockers = list(migration_blockers)
+    if not environment["learner_auth_enabled"]:
+        durable_blockers.append("OCU_UNIVERSITY_LEARNER_AUTH_ENABLED must be true before durable activation")
+    if not environment["supabase_url_present"] or not environment["supabase_anon_key_present"]:
+        durable_blockers.append("learner Supabase verification configuration is incomplete")
     if database["reachable"] and not database["schema_valid"]:
         durable_blockers.append("oc_university durable schema is incomplete or unsafe")
+    if not reviewer_registry["valid"]:
+        durable_blockers.append("reviewer qualification registry is invalid")
+    elif int(reviewer_registry.get("science_grant_count", 0)) < 1:
+        durable_blockers.append("no qualified scientific reviewer is assigned for learner submissions")
 
     return {
         "contract": "OCU-SCI-009H-PREFLIGHT-002",
