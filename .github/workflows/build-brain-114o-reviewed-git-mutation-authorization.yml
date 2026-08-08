@@ -41,7 +41,7 @@ jobs:
         env:
           PYTHONPATH: .
         run: pytest -q tests/test_calyx_git_mutation_authorization_114o.py
-      - name: Static non-mutation boundary
+      - name: Static non-mutation and verifier-only boundary
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -50,6 +50,9 @@ jobs:
               assert marker not in source, marker
           assert "ProposalAuthorizationRegistry" in source
           assert "proposal_review_status" in source
+          assert "sign_for_test_or_operator" not in source
+          assert "def sign_grant" not in source
+          assert "def approve" not in source
           assert '"merge_authorized": False' in source
           assert '"automatic_merge_authorized": False' in source
           assert '"deployment_authorized": False' in source
