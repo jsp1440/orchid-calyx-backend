@@ -47,7 +47,9 @@ def _release_binding(path: Path) -> dict[str, Any]:
 def generate_manifest(*, frontend_commit: str, backend_commit: str, frontend_origin: str, api_origin: str,
                       release_evidence: Path, database_url: str | None = None) -> dict[str, Any]:
     readiness = preflight(release_evidence=release_evidence, database_url=database_url)
-    blockers = list(readiness["blockers"])
+    # A cutover packet may be generated before the durable schema exists. Only the
+    # migration gate belongs here; the durable gate must be rerun after migration.
+    blockers = list(readiness["migration_blockers"])
     frontend_commit = frontend_commit.strip().lower()
     backend_commit = backend_commit.strip().lower()
     normalized_frontend_origin = frontend_origin.rstrip("/")
@@ -79,16 +81,41 @@ def generate_manifest(*, frontend_commit: str, backend_commit: str, frontend_ori
     evidence_digest = _sha256(release_evidence) if release_evidence.exists() else None
 
     phases = [
-        {"phase": 0, "name": "read_only_cutover", "requires": ["canonical frontend deployed", "OCU-SCI-007 pass with release identities"],
-         "mutations": ["hosting/DNS only"], "university_write_flags": False},
-        {"phase": 1, "name": "database_migration", "requires": ["backup/rollback reviewed", "preflight ready"],
-         "mutations": ["apply ocu_sci_008_durable_sessions.sql"], "university_write_flags": False},
-        {"phase": 2, "name": "post_migration_read_only_verification", "requires": ["schema validation pass"],
-         "mutations": [], "university_write_flags": False},
-        {"phase": 3, "name": "durable_activation", "requires": ["qualified science reviewer present", "evidence SHA configured"],
-         "mutations": ["enable learner auth/session writes/durable flags"], "university_write_flags": True},
-        {"phase": 4, "name": "authenticated_e2e", "requires": ["durable capability verified"],
-         "mutations": ["test learner session/review records only"], "university_write_flags": True},
+        {
+            "phase": 0,
+            "name": "read_only_cutover",
+            "requires": ["canonical frontend deployed", "OCU-SCI-007 pass with release identities"],
+            "mutations": ["hosting/DNS only"],
+            "university_write_flags": False,
+        },
+        {
+            "phase": 1,
+            "name": "database_migration",
+            "requires": ["backup/rollback reviewed", "preflight.ready_to_apply_migration=true"],
+            "mutations": ["apply ocu_sci_008_durable_sessions.sql"],
+            "university_write_flags": False,
+        },
+        {
+            "phase": 2,
+            "name": "post_migration_read_only_verification",
+            "requires": ["rerun preflight", "preflight.ready_to_enable_durable=true"],
+            "mutations": [],
+            "university_write_flags": False,
+        },
+        {
+            "phase": 3,
+            "name": "durable_activation",
+            "requires": ["post-migration durable preflight ready", "attested release still current"],
+            "mutations": ["enable learner auth/session writes/durable flags"],
+            "university_write_flags": True,
+        },
+        {
+            "phase": 4,
+            "name": "authenticated_e2e",
+            "requires": ["durable capability verified"],
+            "mutations": ["test learner session/review records only"],
+            "university_write_flags": True,
+        },
     ]
     rollback = {
         "before_phase_3": ["keep session writes disabled", "keep durable flag disabled", "restore prior frontend/domain if cutover fails"],
@@ -97,7 +124,7 @@ def generate_manifest(*, frontend_commit: str, backend_commit: str, frontend_ori
     }
 
     return {
-        "contract": "OCU-SCI-009I-CUTOVER-MANIFEST-002",
+        "contract": "OCU-SCI-009I-CUTOVER-MANIFEST-003",
         "release_identity_contract": "OCU-RELEASE-IDENTITY-001",
         "frontend": {"commit": frontend_commit, "origin": normalized_frontend_origin},
         "backend": {"commit": backend_commit, "api_origin": normalized_api_origin},
@@ -105,6 +132,11 @@ def generate_manifest(*, frontend_commit: str, backend_commit: str, frontend_ori
         "migration": {"path": str(MIGRATION.relative_to(ROOT)), "sha256": migration_digest},
         "release_evidence": {"path": release_evidence.name, "sha256": evidence_digest},
         "preflight": readiness,
+        "gates": {
+            "ready_to_apply_migration": bool(readiness["ready_to_apply_migration"]),
+            "ready_to_enable_durable": bool(readiness["ready_to_enable_durable"]),
+            "durable_gate_requires_post_migration_rerun": True,
+        },
         "reviewer_grants": {
             "science": readiness["reviewer_registry"].get("science_grant_count", 0),
             "expert": readiness["reviewer_registry"].get("expert_grant_count", 0),
