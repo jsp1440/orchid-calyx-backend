@@ -10,7 +10,10 @@ from app.routers import ai_vision_governed as api
 from app.security import verify_owner_or_api_key
 from runtime.ai_vision_governed import GovernedVisionService
 from runtime.matrix_identification import Candidate
-from runtime.matrix_identification_registry import RegistryCharacter, create_registry_version
+from runtime.matrix_identification_registry import (
+    RegistryCharacter,
+    create_registry_version,
+)
 
 
 def _sha(value: str) -> str:
