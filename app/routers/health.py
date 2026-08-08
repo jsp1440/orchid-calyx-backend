@@ -18,6 +18,7 @@ from app.routers.matrix_relationship import router as matrix_relationship_router
 from app.routers.mission_control import router as mission_control_router
 from app.routers.owner_operations import router as owner_operations_router
 from app.routers.owner_session_token import router as owner_session_token_router
+from app.routers.release_identity import router as release_identity_router
 from app.routers.scientific_intelligence import router as scientific_intelligence_router
 from app.routers.taxonomy_releases import router as taxonomy_releases_router
 from runtime.connector_routes import router as connector_router
@@ -146,6 +147,7 @@ def system_status():
 from app.executive_intelligence.routes import router as executive_intelligence_router
 from app.workflow.routes import router as workflow_router
 
+router.include_router(release_identity_router)
 router.include_router(mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(owner_operations_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(owner_session_token_router, dependencies=[Depends(add_mission_control_cors_headers)])
