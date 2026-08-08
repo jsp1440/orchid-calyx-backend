@@ -108,7 +108,21 @@ class UniversityActivationPreflightTests(unittest.TestCase):
             result["migration_blockers"],
         )
 
-    def test_invalid_reviewer_registry_blocks_both_gates(self) -> None:
+    def test_learner_identity_can_be_configured_after_migration(self) -> None:
+        env = self._env()
+        env["OCU_UNIVERSITY_LEARNER_AUTH_ENABLED"] = "false"
+        env.pop("OCU_SUPABASE_URL")
+        env.pop("OCU_SUPABASE_ANON_KEY")
+        result = self._run(env=env, database=PRE_MIGRATION_DATABASE)
+        self.assertTrue(result["ready_to_apply_migration"])
+        self.assertFalse(result["ready_to_enable_durable"])
+        self.assertIn(
+            "OCU_UNIVERSITY_LEARNER_AUTH_ENABLED must be true before durable activation",
+            result["durable_blockers"],
+        )
+        self.assertIn("learner Supabase verification configuration is incomplete", result["durable_blockers"])
+
+    def test_invalid_reviewer_registry_blocks_durable_but_not_migration(self) -> None:
         registry = {
             "configured": True,
             "valid": False,
@@ -118,12 +132,13 @@ class UniversityActivationPreflightTests(unittest.TestCase):
             "publication_grant_count": 0,
             "error": "INVALID",
         }
-        result = self._run(registry=registry)
-        self.assertIn("reviewer qualification registry is invalid", result["migration_blockers"])
-        self.assertFalse(result["ready_to_apply_migration"])
+        result = self._run(registry=registry, database=PRE_MIGRATION_DATABASE)
+        self.assertTrue(result["ready_to_apply_migration"])
+        self.assertNotIn("reviewer qualification registry is invalid", result["migration_blockers"])
+        self.assertIn("reviewer qualification registry is invalid", result["durable_blockers"])
         self.assertFalse(result["ready_to_enable_durable"])
 
-    def test_governance_reviewer_assignment_blocks_both_gates_until_present(self) -> None:
+    def test_reviewer_assignment_is_governance_hinge_only_for_durable_activation(self) -> None:
         registry = {
             "configured": False,
             "valid": True,
@@ -132,12 +147,16 @@ class UniversityActivationPreflightTests(unittest.TestCase):
             "expert_grant_count": 0,
             "publication_grant_count": 0,
         }
-        result = self._run(registry=registry)
-        self.assertIn(
+        result = self._run(registry=registry, database=PRE_MIGRATION_DATABASE)
+        self.assertTrue(result["ready_to_apply_migration"])
+        self.assertNotIn(
             "no qualified scientific reviewer is assigned for learner submissions",
             result["migration_blockers"],
         )
-        self.assertFalse(result["ready_to_apply_migration"])
+        self.assertIn(
+            "no qualified scientific reviewer is assigned for learner submissions",
+            result["durable_blockers"],
+        )
         self.assertFalse(result["ready_to_enable_durable"])
 
 
