@@ -29,7 +29,7 @@ from runtime.taxonomy_preflight import (
     validate,
 )
 
-INTAKE_SCHEMA_VERSION = "1.3.0"
+INTAKE_SCHEMA_VERSION = "1.4.0"
 RELEASE_ID_RE = re.compile(r"[^A-Za-z0-9._-]+")
 HASSLER_RANKS = {
     "F": "family",
@@ -198,23 +198,24 @@ def _release_taxon_key(row: dict[str, str]) -> str:
     return taxon_key(row)
 
 
+def _is_malformed_hassler_name(row: dict[str, str]) -> bool:
+    if _first(row, "Taxon") not in HASSLER_SPECIES_CODES:
+        return False
+    name = scientific_name(row)
+    return bool(name and not HASSLER_SPECIES_NAME_RE.match(name))
+
+
 def _malformed_count(
     finding_counts: dict[str, int],
     rows: list[dict[str, str]],
     hassler_layout: bool,
 ) -> int:
-    if not hassler_layout:
-        return sum(
-            count
-            for key, count in finding_counts.items()
-            if key.endswith(":malformed_taxon_name")
-        )
+    if hassler_layout:
+        return sum(_is_malformed_hassler_name(row) for row in rows)
     return sum(
-        1
-        for row in rows
-        if _first(row, "Taxon") in HASSLER_SPECIES_CODES
-        and (name := scientific_name(row))
-        and not HASSLER_SPECIES_NAME_RE.match(name)
+        count
+        for key, count in finding_counts.items()
+        if key.endswith(":malformed_taxon_name")
     )
 
 
@@ -239,7 +240,11 @@ class TaxonomyReleaseIntakeService:
             raise ValueError("invalid release_id")
         return self.workspace / "releases" / release_id
 
-    def _canonicalize_baseline(self, root: Path, baseline_path: Path | None) -> tuple[Path | None, str | None, str | None]:
+    def _canonicalize_baseline(
+        self,
+        root: Path,
+        baseline_path: Path | None,
+    ) -> tuple[Path | None, str | None, str | None]:
         if baseline_path is None:
             return None, None, None
         baseline_bytes = baseline_path.read_bytes()
@@ -299,7 +304,10 @@ class TaxonomyReleaseIntakeService:
         hassler_layout = source_metadata["source_layout"] == "hassler_worldorchids"
         canonical_path = root / "canonical_source.psv"
         _atomic_write(canonical_path, canonical_text)
-        baseline_canonical, baseline_filename, baseline_sha256 = self._canonicalize_baseline(root, baseline_path)
+        baseline_canonical, baseline_filename, baseline_sha256 = self._canonicalize_baseline(
+            root,
+            baseline_path,
+        )
         preflight = validate(canonical_path, baseline_path=baseline_canonical, policy=policy)
 
         normalized_rows: list[dict[str, Any]] = []
@@ -307,6 +315,7 @@ class TaxonomyReleaseIntakeService:
         status_counts: Counter[str] = Counter()
         rank_counts: Counter[str] = Counter()
         embedded_synonym_count = 0
+        key_counts = Counter(_release_taxon_key(row) for row in rows)
         for index, row in enumerate(rows, start=1):
             name = scientific_name(row)
             key = _release_taxon_key(row)
@@ -333,6 +342,10 @@ class TaxonomyReleaseIntakeService:
             reason = None
             if key == "name:" or not name:
                 reason = "missing_taxon_identity"
+            elif key_counts[key] > 1:
+                reason = "duplicate_taxon_key"
+            elif hassler_layout and _is_malformed_hassler_name(row):
+                reason = "malformed_taxon_name"
             elif status == "synonym" and not normalized_row["accepted_name_id"]:
                 reason = "synonym_missing_accepted_name_id"
             elif status == "unresolved":
@@ -358,6 +371,8 @@ class TaxonomyReleaseIntakeService:
         normalized_sha = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
         status_payload = dict(sorted(status_counts.items()))
         malformed_count = _malformed_count(preflight.finding_counts, rows, hassler_layout)
+        synonym_row_count = status_payload.get("synonym", 0)
+        synonym_count = embedded_synonym_count if hassler_layout else synonym_row_count
         _atomic_write(root / "normalized.jsonl", normalized_text)
         _json(root / "preflight.json", preflight.to_dict())
         _json(root / "review_queue.json", unresolved)
@@ -380,7 +395,8 @@ class TaxonomyReleaseIntakeService:
                 "rank_counts": dict(sorted(rank_counts.items())),
                 "accepted_name_count": status_payload.get("accepted", 0),
                 "embedded_synonym_count": embedded_synonym_count,
-                "synonym_count": status_payload.get("synonym", 0),
+                "synonym_row_count": synonym_row_count,
+                "synonym_count": synonym_count,
                 "malformed_taxon_count": malformed_count,
                 "unresolved_review_count": len(unresolved),
                 "comparison": preflight.diff,
@@ -485,6 +501,7 @@ class TaxonomyReleaseIntakeService:
             "rank_counts": manifest["rank_counts"],
             "accepted_name_count": manifest["accepted_name_count"],
             "embedded_synonym_count": manifest["embedded_synonym_count"],
+            "synonym_row_count": manifest["synonym_row_count"],
             "synonym_count": manifest["synonym_count"],
             "malformed_taxon_count": manifest["malformed_taxon_count"],
             "comparison": manifest.get("comparison"),
