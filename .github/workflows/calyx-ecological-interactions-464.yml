@@ -1,0 +1,55 @@
+name: CALYX Ecological Interactions 464
+
+on:
+  pull_request:
+    paths:
+      - "runtime/ecological_interactions.py"
+      - "app/routers/ecological_interactions.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_ecological_interactions_464.py"
+      - "runtime/taxonomy_preflight.py"
+      - "tests/test_calyx_taxonomy_release_intake_461.py"
+      - "docs/brain/CALYX-ECOLOGICAL-INTERACTIONS-464.md"
+      - ".github/workflows/calyx-ecological-interactions-464.yml"
+  workflow_dispatch:
+
+jobs:
+  ecological-interactions:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile ecological interaction surface
+        run: python -m py_compile runtime/ecological_interactions.py app/routers/ecological_interactions.py app/routers/live_mission_control.py tests/test_calyx_ecological_interactions_464.py
+      - name: Deterministic interaction and taxonomy regressions
+        run: python -m pytest -q tests/test_calyx_ecological_interactions_464.py tests/test_calyx_taxonomy_release_intake_461.py
+      - name: Permanent evidence and non-publication assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/ecological_interactions.py').read_text()
+          required = (
+              '"undocumented_pollination_inference_authorized": False',
+              '"scientific_publication_authorized": False',
+              '"production_graph_mutation_authorized": False',
+              '"production_deployment_authorized": False',
+              'INTERACTION_POLLINATION_DOCUMENTATION_REQUIRED',
+              '"production_graph_mutation_performed": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing interaction governance assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'requests.get(', 'requests.post(', 'httpx.get(', 'httpx.post(')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden ecological interaction authority present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check --ignore UP037 runtime/ecological_interactions.py app/routers/ecological_interactions.py tests/test_calyx_ecological_interactions_464.py
+          git diff --check
