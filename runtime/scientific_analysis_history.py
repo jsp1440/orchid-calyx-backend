@@ -20,6 +20,8 @@ class ScientificAnalysisHistoryService:
 
     @staticmethod
     def _page_value(value: Any, *, default: int, maximum: int | None = None) -> int:
+        if value is None:
+            return default
         if isinstance(value, bool):
             raise TypeError("ANALYSIS_HISTORY_PAGINATION_INVALID")
         try:
@@ -28,7 +30,7 @@ class ScientificAnalysisHistoryService:
             raise ValueError("ANALYSIS_HISTORY_PAGINATION_INVALID") from exc
         if normalized < 0 or (maximum is not None and normalized > maximum):
             raise ValueError("ANALYSIS_HISTORY_PAGINATION_INVALID")
-        return normalized if value is not None else default
+        return normalized
 
     @staticmethod
     def _summary(record: dict[str, Any], project_id: str) -> dict[str, Any]:
