@@ -1,0 +1,56 @@
+name: CALYX Source Document Identity 639
+
+on:
+  pull_request:
+    paths:
+      - "app/evidence_retrieval/engine.py"
+      - "app/conversation_memory/service.py"
+      - "app/conversation_memory/report.py"
+      - "tests/test_calyx_source_document_identity_639.py"
+      - ".github/workflows/calyx-source-document-identity-639.yml"
+      - "docs/brain/CALYX-SOURCE-DOCUMENT-IDENTITY-639.md"
+
+jobs:
+  source-document-identity:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile source identity surfaces
+        run: python -m py_compile app/evidence_retrieval/engine.py app/conversation_memory/service.py app/conversation_memory/report.py tests/test_calyx_source_document_identity_639.py
+      - name: Source identity plus retrieval/conversation report regressions
+        run: python -m pytest -q tests/test_calyx_source_document_identity_639.py tests/test_calyx_document_scope_637.py tests/test_calyx_conversation_report_638.py
+      - name: Permanent provenance and non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          engine = Path('app/evidence_retrieval/engine.py').read_text()
+          memory = Path('app/conversation_memory/service.py').read_text()
+          report = Path('app/conversation_memory/report.py').read_text()
+          if '"document_id":meta.get("source_document_id") or meta.get("document_id")' not in engine:
+              raise SystemExit('retrieval citation source document identity missing')
+          if '"document_id": citation.get("document_id")' not in memory:
+              raise SystemExit('persistent source ref document identity missing')
+          required = (
+              'not scientific evidence',
+              'Scientific publication authorized: `false`',
+              'Knowledge Graph mutation authorized: `false`',
+          )
+          missing = [value for value in required if value not in report]
+          if missing:
+              raise SystemExit(f'missing non-authority report assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'TRUNCATE oc_graph')
+          present = [value for value in forbidden if value in engine or value in memory or value in report]
+          if present:
+              raise SystemExit(f'forbidden graph mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check app/conversation_memory/service.py app/conversation_memory/report.py tests/test_calyx_source_document_identity_639.py
+          python -m ruff format --check app/conversation_memory/service.py app/conversation_memory/report.py tests/test_calyx_source_document_identity_639.py
+          git diff --check
