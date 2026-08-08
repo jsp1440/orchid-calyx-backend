@@ -100,7 +100,8 @@ def test_live_state_projection_is_ipad_safe_and_excludes_secret_fields():
     assert card["progress"]["yield_rate"] == 0.2
     assert card["last_success"] == "2026-08-08T00:01:00Z"
     assert card["warnings"] == ["fixture warning"]
-    assert "api_key" not in str(card)
+    assert "must-not-leak" not in str(card)
+    assert "api_key" not in card
 
 
 def test_preview_is_provably_no_write_and_never_invokes_provider_or_action():
