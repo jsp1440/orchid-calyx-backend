@@ -1,6 +1,6 @@
 # CALYX-470 — Unified owner operator flow from mission to supervised publication
 
-Status: IMPLEMENTED / VALIDATION PENDING / GOVERNED SUPERVISED FLOW
+Status: IMPLEMENTED / VALIDATED / GOVERNED SUPERVISED FLOW
 
 ## Delivered
 
@@ -28,4 +28,13 @@ This implementation does not execute a real production publication, deploy code,
 
 ## Validation
 
-Dedicated CI compiles the new owner-flow surface, runs CALYX-470 tests plus the existing CALYX-CORE-REBASE-004 operator regressions, asserts permanent confirmation/no-auto-publication/no-ID-copying boundaries, runs Ruff on the new surface, and checks diff hygiene. Record exact-head evidence here after validation completes.
+Implementation head `af6bf8a302e49ca8501075a0ae0d114a6f3d1ca7` passed all triggered integration gates:
+
+- CALYX Unified Owner Flow 470: success; compile, CALYX-470 browser/API contract tests plus existing CALYX-CORE-REBASE-004 operator regressions, permanent confirmation/no-auto-publication/no-ID-copying assertions, Ruff, and diff hygiene all passed.
+- CALYX-CORE-REBASE-004 Validation: success.
+- CALYX-CORE-REBASE-002A Validation: success.
+- BUILD-088E publication pipeline readiness/regression: success.
+- CALYX Workflow Governance Audit: success.
+- Calyx Conversation Validation: success.
+
+PR #637 remains draft/unmerged. This documentation-only evidence commit remains subject to the same PR checks. No real publication was attempted during validation.
