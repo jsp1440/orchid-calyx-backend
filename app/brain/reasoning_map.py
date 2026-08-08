@@ -226,12 +226,12 @@ class ReasoningMapEngine:
         used_edge_ids: set[int] = set()
         used_node_ids: set[int] = {subject_id}
         layers: dict[int, set[int]] = {0: {subject_id}}
-        queue: list[tuple[int, list[int], list[Edge]]] = [
-            (subject_id, [subject_id], [])
+        queue: list[tuple[int, list[int], list[Edge], list[str]]] = [
+            (subject_id, [subject_id], [], [])
         ]
 
         while queue and len(paths) < limit:
-            current_id, node_path, edge_path = queue.pop(0)
+            current_id, node_path, edge_path, direction_path = queue.pop(0)
             depth = len(edge_path)
             if depth >= max_depth:
                 continue
@@ -245,8 +245,9 @@ class ReasoningMapEngine:
                     continue
                 next_edges = edge_path + [edge]
                 next_nodes = node_path + [next_id]
+                next_directions = direction_path + [traversal_direction]
                 path = self._serialize_path(
-                    next_nodes, next_edges, nodes_by_id, traversal_direction
+                    next_nodes, next_edges, nodes_by_id, next_directions
                 )
                 paths.append(path)
                 used_edge_ids.add(edge.kg_edge_id)
@@ -254,7 +255,7 @@ class ReasoningMapEngine:
                 layers.setdefault(len(next_edges), set()).add(next_id)
                 if len(paths) >= limit:
                     break
-                queue.append((next_id, next_nodes, next_edges))
+                queue.append((next_id, next_nodes, next_edges, next_directions))
 
         mapped_edges = [edge for edge in selected if edge.kg_edge_id in used_edge_ids]
         mapped_nodes = [nodes_by_id[node_id] for node_id in sorted(used_node_ids)]
@@ -368,7 +369,7 @@ class ReasoningMapEngine:
         node_ids: list[int],
         edges: list[Edge],
         nodes_by_id: dict[int, Node],
-        traversal_direction: str,
+        traversal_directions: list[str],
     ) -> dict[str, Any]:
         confidence = _path_confidence(edges)
         polarity = _path_polarity(edges)
@@ -378,8 +379,17 @@ class ReasoningMapEngine:
         ]
         predicates = [edge.edge_type for edge in edges]
         explanation_parts = [labels[0]]
-        for predicate, label in zip(predicates, labels[1:]):
-            explanation_parts.extend((f" --{predicate}--> ", label))
+        for predicate, traversal_direction, label in zip(
+            predicates, traversal_directions, labels[1:]
+        ):
+            if traversal_direction == "backward":
+                explanation_parts.extend((f" <--{predicate}-- ", label))
+            else:
+                explanation_parts.extend((f" --{predicate}--> ", label))
+        unique_directions = set(traversal_directions)
+        aggregate_direction = (
+            traversal_directions[0] if len(unique_directions) == 1 else "mixed"
+        )
         return {
             "node_ids": node_ids,
             "edge_ids": [edge.kg_edge_id for edge in edges],
@@ -392,7 +402,8 @@ class ReasoningMapEngine:
                 -1: "inhibitory",
                 0: "mixed_or_unspecified",
             }[polarity],
-            "traversal_direction": traversal_direction,
+            "traversal_direction": aggregate_direction,
+            "traversal_directions": traversal_directions,
             "evidence": [_edge_evidence(edge) for edge in edges],
             "explanation": "".join(explanation_parts),
         }
