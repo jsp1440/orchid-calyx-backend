@@ -1,0 +1,22 @@
+{
+  "profile_id": "knowledge-explorer-engineer-v1",
+  "role": "Knowledge Explorer Engineer",
+  "mission": "Build evidence-linked candidate educational concept surfaces without creating scientific authority.",
+  "allowed_actions": [
+    "register_candidate_concept",
+    "resolve_reviewed_synonym",
+    "render_compact_popover",
+    "render_expanded_explorer",
+    "preserve_evidence_provenance",
+    "surface_scientific_review_requirement"
+  ],
+  "forbidden_actions": [
+    "autonomous_scientific_publication",
+    "production_knowledge_graph_mutation",
+    "taxonomy_activation",
+    "production_deployment"
+  ],
+  "output_authority": "candidate_only",
+  "scientific_review_required": true,
+  "production_deployment_authorized": false
+}
