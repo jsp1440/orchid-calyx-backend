@@ -1,0 +1,35 @@
+name: Calyx Conversation Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/calyx_conversation/**'
+      - 'app/routers/calyx_core.py'
+      - 'tests/test_calyx_conversation.py'
+      - 'migrations/610_calyx_conversations.sql'
+      - '.github/workflows/calyx-conversation-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-calyx-conversation:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest ruff
+      - name: Compile Calyx conversation slice
+        run: python -m py_compile app/calyx_conversation/routes.py app/calyx_conversation/store.py app/routers/calyx_core.py tests/test_calyx_conversation.py
+      - name: Run focused regression tests
+        run: python -m pytest -q tests/test_calyx_conversation.py
+      - name: Lint Calyx conversation slice
+        run: ruff check app/calyx_conversation tests/test_calyx_conversation.py
+      - name: Verify router import
+        run: python -c "from app.routers.calyx_core import router; assert any(getattr(r, 'path', '').startswith('/api/calyx') for r in router.routes)"
