@@ -22,4 +22,4 @@ This slice does not expose secrets, weaken authentication, scrape external provi
 
 ## Validation
 
-Dedicated CI compiles the command-center runtime/router/Mission Control surface, runs CALYX-455 tests plus the existing BUILD-049 control-plane regression suite, asserts permanent no-provider/no-production-test-mutation boundaries, runs Ruff, and checks diff hygiene. The PR remains draft/unmerged until exact-head CI and review gates are satisfied.
+Dedicated CI compiles the command-center runtime/router/Mission Control surface, runs CALYX-455 tests plus the existing BUILD-049 control-plane regression suite, asserts permanent no-provider/no-production-test-mutation boundaries, runs Ruff, and checks diff hygiene. Initial validation found and corrected a secret-projection test that confused the authorization-method label `api_key_required` with secret material, then found and corrected Ruff import formatting. The focused suite reached 15 passing tests before the formatting correction; exact-head CI is rerun after every correction. The PR remains draft/unmerged until exact-head CI and review gates are satisfied.
