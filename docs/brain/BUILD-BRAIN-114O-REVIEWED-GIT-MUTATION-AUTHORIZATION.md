@@ -26,7 +26,9 @@ The runtime authorization gate is **verifier-only**. An externally controlled ow
 
 A structural audit found and removed the earlier `sign_for_test_or_operator()` method from runtime code because keeping grant creation beside grant verification collapsed the owner-approval trust boundary. Test signing is implemented only in the focused test module using independent test-only HMAC code.
 
-Wrong request, wrong owner, denial, invalid signature, future-issued grant, mismatched expiry, or expired grant fails closed.
+Grant verification also enforces temporal freshness independently of request creation. The signed grant expiry must exactly match the request expiry, and the grant's own `issued_at → expires_at` lifetime must be positive and no longer than the same 30-minute maximum. This rejects a correctly signed but stale grant whose issue time predates the bounded authorization window.
+
+Wrong request, wrong owner, denial, invalid signature, stale issue time, future-issued grant, mismatched expiry, or expired grant fails closed.
 
 ## Permanent boundaries
 
@@ -36,6 +38,6 @@ Actual branch/commit/push/PR creation is a separate governance milestone and is 
 
 ## Validation
 
-Dedicated CI compiles the 114O/114N surfaces, runs Ruff, executes focused registry/review/owner-expiry regressions including a runtime-can-not-sign assertion, statically asserts the non-mutation and verifier-only boundaries, and runs diff hygiene.
+Dedicated CI compiles the 114O/114N surfaces, runs Ruff, executes focused registry/review/owner-expiry regressions including runtime-can-not-sign and stale-grant assertions, statically asserts the non-mutation and verifier-only boundaries, and runs diff hygiene.
 
 Canonical CI issue #481 currently records repository jobs terminating before checkout with `steps=null`; such attempts are infrastructure evidence only and provide no code verdict. Keep this slice draft until BUILD-BRAIN-114N is executable-green and 114O exact-head CI executes real steps and passes.
