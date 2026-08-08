@@ -102,11 +102,17 @@ def test_owner_scoped_report_endpoint_returns_markdown_attachment():
     )
     Base.metadata.create_all(
         engine,
-        tables=[Project.__table__, ConversationSession.__table__, ConversationMessage.__table__],
+        tables=[
+            Project.__table__,
+            ConversationSession.__table__,
+            ConversationMessage.__table__,
+        ],
     )
     SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     with SessionLocal() as db:
-        session = ConversationSession(owner_subject="owner-report", title="Export fixture")
+        session = ConversationSession(
+            owner_subject="owner-report", title="Export fixture"
+        )
         db.add(session)
         db.commit()
         db.refresh(session)
@@ -149,7 +155,10 @@ def test_owner_scoped_report_endpoint_returns_markdown_attachment():
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/markdown")
-    assert f"calyx-conversation-{conversation_id}.md" in response.headers["content-disposition"]
+    assert (
+        f"calyx-conversation-{conversation_id}.md"
+        in response.headers["content-disposition"]
+    )
     assert "Question fixture" in response.text
     assert "Answer fixture" in response.text
 
