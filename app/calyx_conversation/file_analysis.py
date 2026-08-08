@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from openpyxl import load_workbook
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_ROWS = 100_000
 MAX_COLUMNS = 500
+MAX_CHART_POINTS = 5_000
 SUPPORTED_EXTENSIONS = {".csv", ".xlsx"}
 
 
@@ -42,6 +44,24 @@ def _columns_from_rows(rows: list[list[Any]]) -> dict[str, list[Any]]:
     return columns
 
 
+def _coerce_csv_value(value: str) -> Any:
+    text = value.strip()
+    if text == "":
+        return None
+    lowered = text.casefold()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    try:
+        if not any(marker in text.casefold() for marker in (".", "e")):
+            return int(text)
+        number = float(text)
+        return number if math.isfinite(number) else text
+    except ValueError:
+        return text
+
+
 def _parse_csv(content: bytes) -> tuple[dict[str, list[Any]], dict[str, Any]]:
     try:
         text = content.decode("utf-8-sig")
@@ -54,7 +74,7 @@ def _parse_csv(content: bytes) -> tuple[dict[str, list[Any]], dict[str, Any]]:
             raise ValueError(f"dataset exceeds {MAX_ROWS} data rows")
         if len(row) > MAX_COLUMNS:
             raise ValueError(f"dataset exceeds {MAX_COLUMNS} columns")
-        rows.append(row)
+        rows.append(row if index == 0 else [_coerce_csv_value(value) for value in row])
     columns = _columns_from_rows(rows)
     return columns, {"format": "csv", "sheet": None}
 
@@ -123,12 +143,26 @@ def chart_spec(columns: dict[str, list[Any]], *, chart_type: str, x: str | None 
         raise ValueError(f"{chart_type} chart requires y column")
     if chart_type == "histogram" and not (x or y):
         raise ValueError("histogram requires a numeric column in x or y")
+
+    row_count = len(next(iter(columns.values()))) if columns else 0
+    if chart_type == "histogram":
+        axis = x or y
+        values = columns[axis][:MAX_CHART_POINTS] if axis else []
+        data = [{"value": value} for value in values if isinstance(value, (int, float)) and not isinstance(value, bool)]
+    else:
+        data = [
+            {"x": x_value, "y": y_value}
+            for x_value, y_value in zip(columns[x][:MAX_CHART_POINTS], columns[y][:MAX_CHART_POINTS], strict=True)
+        ]
     return {
         "version": "calyx-chart-spec-1",
         "chart_type": chart_type,
         "x": x,
         "y": y,
-        "row_count": len(next(iter(columns.values()))) if columns else 0,
+        "row_count": row_count,
+        "points_returned": len(data),
+        "truncated": row_count > MAX_CHART_POINTS,
         "rendering": "frontend",
-        "data_inline": False,
+        "data_inline": True,
+        "data": data,
     }
