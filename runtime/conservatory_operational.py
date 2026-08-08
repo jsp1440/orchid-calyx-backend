@@ -84,7 +84,7 @@ class OwnerScope:
     owner_key: str
 
     @classmethod
-    def from_id(cls, owner_id: str) -> "OwnerScope":
+    def from_id(cls, owner_id: str) -> OwnerScope:
         normalized = _text(owner_id)
         if not normalized:
             raise ValueError("CONSERVATORY_OWNER_REQUIRED")
