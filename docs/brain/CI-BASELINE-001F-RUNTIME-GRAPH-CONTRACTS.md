@@ -62,9 +62,24 @@ The seven expanded domains are explicit fail-closed registrations until their pr
 
 For these seven domains: `enabled=false`, `sql=null`, BUILD-064 metadata status is `BLOCKED`, and `blocked_reason` is mandatory. This prevents silent omission while also preventing an unverified production query from becoming executable.
 
+### Repository-wide backend suite restored as blocking
+
+The broad suite was kept informational while concrete baseline failures remained. On owner-authored exact head `a826185df730db6e07a840ccab46517b4939c44d`, BUILD-087B run `31236559524` reached zero failures:
+
+- 1,947 passed
+- 16 skipped
+- 10 intentionally deselected superseded node-level contracts
+- 35 warnings
+- 3 subtests passed
+- 0 failed
+
+The exact same test command is therefore promoted from `continue-on-error: true` to a normal blocking step named `Repository-wide backend suite`. No tests were newly hidden to achieve this promotion. The two ignored/deselected historical groups already have strict canonical replacements earlier in the workflow: Journalism Brain routes and authenticated Mission Control runtime/executive contracts.
+
+The package-wide scientific-interpretation Ruff scan remains a non-blocking diagnostic because it reports inherited style debt outside the current repair surface. Changed-surface compile/Ruff/diff hygiene remains blocking.
+
 ## Validation evidence
 
-On earlier #597 head `591273b3a7241390e8670310a03bd036e2a08895`, BUILD-087B run `31235890178` passed the strict current contracts and measured the broad suite at:
+On earlier #597 head `591273b3a7241390e8670310a03bd036e2a08895`, BUILD-087B run `31235890178` measured the broad suite at:
 
 - 3 failed
 - 1,943 passed
@@ -85,7 +100,7 @@ On implementation head `155b6ba147c2e1a6057f49a0ff0ff8438b77e235`, BUILD-087B ru
 
 The KG-focused step then reported one remaining assertion that still compared all adapters to only the enabled-domain set. Commit `f5f959073ce10dd974a79e6811ec940924dbd931` corrected that distinction: all fifteen adapters must be registered, while `enabled_queries()` remains the verified eight.
 
-Owner-authored documentation head `a7ac13be2172282ebcde35f6713cf131cccd1112` then passed all five triggered pull-request validation lanes:
+Owner-authored documentation head `a7ac13be2172282ebcde35f6713cf131cccd1112` passed all five triggered pull-request validation lanes:
 
 - CALYX Workflow Governance Audit `31236253509` — success
 - CI-BASELINE-001 Validation `31236253488` — success
@@ -93,7 +108,27 @@ Owner-authored documentation head `a7ac13be2172282ebcde35f6713cf131cccd1112` the
 - BUILD-088E Validation `31236253487` — success
 - BUILD-087B validation `31236253463` — success
 
-A subsequent Copilot-authored lint-only commit `f0fa3ffc65b185e69d8f34bd5732391a4bd47e78` removed an unused `pytest` import and reformatted the checkpoint import in `tests/test_knowledge_graph_orchestrator.py`. Its automatically created workflows returned `action_required`; they are not counted as executable validation evidence. This Brain update intentionally creates a new owner-authored exact head so the unchanged implementation plus lint-only cleanup are revalidated normally before merge.
+After a lint-only Copilot commit was rewrapped in an owner-authored head, exact head `a826185df730db6e07a840ccab46517b4939c44d` again passed all five lanes:
+
+- CALYX Workflow Governance Audit `31236559529` — success
+- CI-BASELINE-001 Validation `31236559532` — success
+- CALYX Graph Full Integration `31236559542` — success
+- BUILD-088E Validation `31236559525` — success
+- BUILD-087B validation `31236559524` — success
+
+BUILD-087B `31236559524` specifically passed:
+
+- focused PostgreSQL validation: 18 passed
+- BUILD-082 through BUILD-087 regression matrix: 108 passed
+- Journalism non-HTTP contract: 28 passed, 11 deselected
+- canonical Journalism Brain routes: 4 passed
+- canonical runtime/executive contract: 7 passed
+- focused science/live-graph contract: 5 passed
+- expanded Knowledge Graph registry contract: 70 passed
+- repository-wide backend suite: 1,947 passed, 16 skipped, 10 deselected, 3 subtests passed, zero failures
+- strict changed-surface compile/Ruff/diff hygiene: success
+
+Commit `494c7ffd483ea9fcfa086219b3e3ab76f76ed61e` promotes the clean repository-wide suite to a blocking gate. A final exact-head run after this promotion is required before merge.
 
 ## Governance / non-authority
 
@@ -109,4 +144,4 @@ This work does **not** authorize or perform:
 - weakening of owner/API-key authentication;
 - bypass of the external trusted-supervisor boundary for executable repository code.
 
-The final owner-authored exact-head CI result must be green before merge.
+PR #597 may merge only after the final exact head with the blocking repository-wide suite passes all required validation lanes.
