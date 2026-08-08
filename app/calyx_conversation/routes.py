@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field
 from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
 from app.evidence_retrieval.routes import REPO
-from app.semantic_index.provider import DeterministicLocalProvider
 from app.security import verify_owner_or_api_key
+from app.semantic_index.provider import DeterministicLocalProvider
 from runtime.knowledge_graph import PostgresGraphRepository, canonical_key, traverse
 
 from .store import ConversationStore
@@ -124,7 +124,7 @@ def _eval_math(node: ast.AST) -> float:
         if node.keywords:
             raise ValueError("keyword arguments are not supported")
         return float(_ALLOWED_FUNCS[node.func.id](*[_eval_math(arg) for arg in node.args]))
-    raise ValueError("unsupported mathematical expression")
+    raise TypeError("unsupported mathematical expression")
 
 
 def safe_expression(expression: str) -> float:
@@ -133,7 +133,7 @@ def safe_expression(expression: str) -> float:
     tree = ast.parse(expression, mode="eval")
     for node in ast.walk(tree):
         if isinstance(node, (ast.Attribute, ast.Subscript, ast.Lambda, ast.Dict, ast.ListComp, ast.GeneratorExp, ast.SetComp)):
-            raise ValueError("unsupported mathematical expression")
+            raise TypeError("unsupported mathematical expression")
     result = _eval_math(tree)
     if not math.isfinite(result):
         raise ValueError("mathematical result is not finite")
@@ -468,7 +468,7 @@ def _execute(payload: ConversationRequest) -> dict[str, Any]:
         dataset = run_dataset_analysis(payload.dataset_analysis) if payload.dataset_analysis else None
         graph = run_graph_context(payload.graph_context) if payload.graph_context else None
         brain = run_brain_query(payload.brain_query) if payload.brain_query else None
-    except (ValueError, SyntaxError, ZeroDivisionError, OverflowError) as exc:
+    except (ValueError, TypeError, SyntaxError, ZeroDivisionError, OverflowError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     answer_text = _compose_answer(payload.message, retrieval, analysis, dataset, graph, brain)
     evidence_summary = {
@@ -518,7 +518,7 @@ def analyze(payload: AnalysisRequest) -> dict[str, Any]:
     """Run deterministic mathematical/statistical analysis without arbitrary code execution."""
     try:
         return run_analysis(payload)
-    except (ValueError, SyntaxError, ZeroDivisionError, OverflowError) as exc:
+    except (ValueError, TypeError, SyntaxError, ZeroDivisionError, OverflowError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
