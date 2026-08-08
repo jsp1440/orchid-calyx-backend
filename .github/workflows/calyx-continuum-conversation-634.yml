@@ -34,7 +34,7 @@ jobs:
           python -m pytest -q
           tests/test_calyx_continuum_conversation_634.py
           tests/test_calyx_mission_control_003b_chat_api.py
-          tests/test_calyx_evidence_retrieval_085b.py
+          tests/test_build_085b_hybrid_retrieval.py
       - name: Permanent Ask-the-Continuum non-authority assertions
         run: |
           python - <<'PY'
