@@ -192,7 +192,7 @@ class GitMutationAuthorizationGrant:
 
 
 class GitMutationAuthorizationGate:
-    """Authorize a future bounded proposal executor without performing mutation."""
+    """Verify owner authorization for a future bounded proposal executor."""
 
     def __init__(self, *, owner_principal: str, hmac_secret: bytes) -> None:
         principal = owner_principal.strip()
@@ -310,26 +310,3 @@ class GitMutationAuthorizationGate:
         if grant.decision != "approved":
             raise PermissionError("GIT_AUTHORIZATION_NOT_APPROVED")
         return grant
-
-    def sign_for_test_or_operator(
-        self,
-        *,
-        request_digest: str,
-        decision: str,
-        issued_at: str,
-        expires_at: str,
-    ) -> dict[str, Any]:
-        unsigned = {
-            "schema": GRANT_SCHEMA,
-            "request_digest": request_digest,
-            "decision": decision,
-            "approved_by": self._owner_principal,
-            "issued_at": issued_at,
-            "expires_at": expires_at,
-        }
-        signature = hmac.new(
-            self._secret,
-            canonical_sha256(unsigned).encode("ascii"),
-            hashlib.sha256,
-        ).hexdigest()
-        return {**unsigned, "signature": signature}
