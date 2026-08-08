@@ -298,7 +298,14 @@ class GitMutationAuthorizationGate:
         expiry = _parse_utc(grant.expires_at)
         request_expiry = _parse_utc(request.expires_at)
         current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-        if expiry != request_expiry or issued > current or current >= expiry:
+        grant_ttl = (expiry - issued).total_seconds()
+        if (
+            expiry != request_expiry
+            or grant_ttl <= 0
+            or grant_ttl > MAX_TTL_SECONDS
+            or issued > current
+            or current >= expiry
+        ):
             raise PermissionError("GIT_AUTHORIZATION_GRANT_EXPIRED_OR_INVALID")
         expected = hmac.new(
             self._secret,
