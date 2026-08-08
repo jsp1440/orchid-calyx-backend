@@ -13,6 +13,7 @@ from runtime.scientific_analysis_history import ScientificAnalysisHistoryService
 from runtime.scientific_comparison import ScientificComparisonService
 from runtime.scientific_dataset_snapshots import ScientificDatasetSnapshotService
 from runtime.scientific_diagnostics import ScientificDiagnosticsService
+from runtime.scientific_export_bundle import ScientificAnalysisExportService
 from runtime.scientific_result_artifacts import ScientificResultArtifactService
 from runtime.scientific_runtime_readiness import scientific_runtime_readiness
 
@@ -29,6 +30,12 @@ _comparison_instance = ScientificComparisonService(_service_instance)
 _result_artifact_instance = ScientificResultArtifactService(
     _service_instance,
     _diagnostics_instance,
+)
+_export_instance = ScientificAnalysisExportService(
+    _service_instance,
+    _workflow_instance,
+    _diagnostics_instance,
+    _result_artifact_instance,
 )
 OwnerIdentity = Annotated[dict[str, object], Depends(verify_owner_or_api_key)]
 
@@ -59,6 +66,10 @@ def _comparison() -> ScientificComparisonService:
 
 def _result_artifacts() -> ScientificResultArtifactService:
     return _result_artifact_instance
+
+
+def _exports() -> ScientificAnalysisExportService:
+    return _export_instance
 
 
 def _owner(identity: dict[str, object]) -> str:
@@ -269,6 +280,16 @@ def build_result_artifact(project_id: str, analysis_id: str, identity: OwnerIden
 @router.get("/projects/{project_id}/results/{analysis_id}/artifacts")
 def get_result_artifact(project_id: str, analysis_id: str, identity: OwnerIdentity) -> dict:
     return _translate(lambda: _result_artifacts().get(_owner(identity), project_id, analysis_id))
+
+
+@router.post("/projects/{project_id}/results/{analysis_id}/exports")
+def build_analysis_export(project_id: str, analysis_id: str, identity: OwnerIdentity) -> dict:
+    return _translate(lambda: _exports().build(_owner(identity), project_id, analysis_id))
+
+
+@router.get("/projects/{project_id}/exports/{export_id}")
+def get_analysis_export(project_id: str, export_id: str, identity: OwnerIdentity) -> dict:
+    return _translate(lambda: _exports().get(_owner(identity), project_id, export_id))
 
 
 @router.post("/projects/{project_id}/comparisons")
