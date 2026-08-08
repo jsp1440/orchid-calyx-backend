@@ -11,7 +11,11 @@ from urllib.parse import urlparse
 
 import psycopg
 
-from scripts.preflight_university_activation import _database_state, preflight
+from scripts.preflight_university_activation import (
+    REQUIRED_COLUMNS,
+    REQUIRED_CONSTRAINT_FRAGMENTS,
+    preflight,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations" / "ocu_sci_008_durable_sessions.sql"
@@ -38,6 +42,44 @@ def safe_database_identity(database_url: str) -> dict[str, str | None]:
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise MigrationGuardError(message)
+
+
+def _schema_state_on_connection(conn: psycopg.Connection) -> dict[str, Any]:
+    """Verify the guarded schema using the same transaction that applied it."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema='oc_university'
+              AND table_name IN ('lab_sessions','session_events','session_reviews')
+            """
+        )
+        found: dict[str, set[str]] = {name: set() for name in REQUIRED_COLUMNS}
+        for table_name, column_name in cur.fetchall():
+            found[str(table_name)].add(str(column_name))
+
+        cur.execute(
+            """
+            SELECT pg_get_constraintdef(c.oid)
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE n.nspname='oc_university'
+            """
+        )
+        constraint_text = "\n".join(str(row[0]).lower() for row in cur.fetchall())
+
+    missing_columns = {
+        table: sorted(required - found.get(table, set()))
+        for table, required in REQUIRED_COLUMNS.items()
+        if required - found.get(table, set())
+    }
+    missing_constraints = [fragment for fragment in REQUIRED_CONSTRAINT_FRAGMENTS if fragment not in constraint_text]
+    return {
+        "schema_valid": not missing_columns and not missing_constraints,
+        "missing_columns": missing_columns,
+        "missing_constraint_fragments": missing_constraints,
+    }
 
 
 def plan(*, release_evidence: Path, database_url: str) -> dict[str, Any]:
@@ -89,15 +131,14 @@ def apply_migration(*, release_evidence: Path, database_url: str, confirm_migrat
         }
 
     sql = MIGRATION.read_text(encoding="utf-8")
+    post_state: dict[str, Any]
     try:
         with psycopg.connect(database_url) as conn:
             with conn.transaction():
                 with conn.cursor() as cur:
                     cur.execute("SELECT pg_advisory_xact_lock(%s)", (ADVISORY_LOCK_KEY,))
                     cur.execute(sql)
-
-                post_state = _database_state(database_url)
-                _require(bool(post_state.get("reachable")), "post-apply database verification failed: database unreachable")
+                post_state = _schema_state_on_connection(conn)
                 _require(bool(post_state.get("schema_valid")), "post-apply durable schema verification failed")
     except MigrationGuardError:
         raise
@@ -110,6 +151,7 @@ def apply_migration(*, release_evidence: Path, database_url: str, confirm_migrat
         "would_apply": False,
         "result": "applied_and_verified",
         "post_apply_schema_valid": True,
+        "post_apply_verification": post_state,
         "mutations_performed": True,
     }
 
