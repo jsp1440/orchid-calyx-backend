@@ -14,9 +14,10 @@ import math
 import os
 import re
 import tempfile
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from runtime.taxonomy_preflight import normalize
 
@@ -153,7 +154,7 @@ class CanonicalTaxonIndex:
             self.by_name.setdefault(_norm_name(scientific_name), []).append(item)
 
     @classmethod
-    def from_path(cls, path: Path | None) -> "CanonicalTaxonIndex":
+    def from_path(cls, path: Path | None) -> CanonicalTaxonIndex:
         if path is None:
             return cls([])
         if not path.is_file():
