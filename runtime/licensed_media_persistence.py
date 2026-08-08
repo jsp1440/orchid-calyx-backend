@@ -17,7 +17,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from app.calyx_orchestrator.artifact_registry import ArtifactRegistration, ImmutableArtifactRegistry
+from app.calyx_orchestrator.artifact_registry import (
+    ArtifactRegistration,
+    ImmutableArtifactRegistry,
+)
 from runtime.taxonomy_preflight import normalize
 
 MEDIA_SCHEMA_VERSION = "1.0.0"
@@ -130,7 +133,11 @@ class ReviewedTaxonIndex:
             return cls([])
         if not path.is_file():
             raise ValueError("configured taxonomy staging artifact is not a regular file")
-        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        rows = [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         return cls(rows)
 
     def resolve(self, scientific_name: str, supplied_key: str) -> dict[str, Any]:
@@ -142,8 +149,18 @@ class ReviewedTaxonIndex:
             item = next(iter(unique.values()))
             return {"state": "matched", **item, "method": "scientific_name_exact"}
         if len(unique) > 1:
-            return {"state": "ambiguous", "canonical_taxon_id": None, "candidate_ids": sorted(unique), "method": "scientific_name_exact"}
-        return {"state": "unmatched", "canonical_taxon_id": None, "candidate_ids": [], "method": "none"}
+            return {
+                "state": "ambiguous",
+                "canonical_taxon_id": None,
+                "candidate_ids": sorted(unique),
+                "method": "scientific_name_exact",
+            }
+        return {
+            "state": "unmatched",
+            "canonical_taxon_id": None,
+            "candidate_ids": [],
+            "method": "none",
+        }
 
 
 class LicensedMediaPersistenceService:
@@ -241,7 +258,11 @@ class LicensedMediaPersistenceService:
             reasons: list[str] = []
             prior_url_hash = seen_urls.get(source_url)
             if prior_url_hash is not None:
-                reasons.append("duplicate_url" if prior_url_hash == checksum else "conflicting_url_checksum")
+                reasons.append(
+                    "duplicate_url"
+                    if prior_url_hash == checksum
+                    else "conflicting_url_checksum"
+                )
             prior_hash_url = seen_hashes.get(checksum)
             if prior_hash_url is not None and prior_hash_url != source_url:
                 reasons.append("duplicate_content_different_url")
@@ -252,33 +273,50 @@ class LicensedMediaPersistenceService:
             seen_hashes.setdefault(checksum, source_url)
             normalized_rows.append(normalized)
 
-            artifact_content = _stable_json({key: normalized[key] for key in (
-                "provider", "source_url", "creator", "attribution", "license", "sha256",
-                "media_type", "canonical_taxon_id", "scientific_name", "acquired_at"
-            )}).encode("utf-8")
+            artifact_content = _stable_json(
+                {
+                    key: normalized[key]
+                    for key in (
+                        "provider",
+                        "source_url",
+                        "creator",
+                        "attribution",
+                        "license",
+                        "sha256",
+                        "media_type",
+                        "canonical_taxon_id",
+                        "scientific_name",
+                        "acquired_at",
+                    )
+                }
+            ).encode("utf-8")
             artifact_id = f"media-metadata:{normalized['row_sha256']}"
-            self.registry.register(ArtifactRegistration(
-                artifact_id=artifact_id,
-                content=artifact_content,
-                media_type="application/json",
-                source_uri=source_url,
-                producer_assignment_id=f"calyx-463:{batch_id}",
-                license=license_name,
-                evidence_uris=(source_url,),
-                metadata={"media_sha256": checksum, "provider": provider},
-            ))
+            self.registry.register(
+                ArtifactRegistration(
+                    artifact_id=artifact_id,
+                    content=artifact_content,
+                    media_type="application/json",
+                    source_uri=source_url,
+                    producer_assignment_id=f"calyx-463:{batch_id}",
+                    license=license_name,
+                    evidence_uris=(source_url,),
+                    metadata={"media_sha256": checksum, "provider": provider},
+                )
+            )
             self.registry.require_evidence(artifact_id)
 
             if reasons:
-                review_queue.append({
-                    "row_number": row_number,
-                    "source_url": source_url,
-                    "sha256": checksum,
-                    "scientific_name": scientific_name,
-                    "reasons": reasons,
-                    "candidate_taxon_ids": reconciliation.get("candidate_ids", []),
-                    "review_state": "pending",
-                })
+                review_queue.append(
+                    {
+                        "row_number": row_number,
+                        "source_url": source_url,
+                        "sha256": checksum,
+                        "scientific_name": scientific_name,
+                        "reasons": reasons,
+                        "candidate_taxon_ids": reconciliation.get("candidate_ids", []),
+                        "review_state": "pending",
+                    }
+                )
 
         normalized_text = "".join(_stable_json(row) + "\n" for row in normalized_rows)
         normalized_sha = _digest(normalized_text.encode("utf-8"))
@@ -286,25 +324,45 @@ class LicensedMediaPersistenceService:
         _atomic_write(root / "normalized.jsonl", normalized_text)
         _json(root / "review_queue.json", review_queue)
         _json(root / "artifact_registry_snapshot.json", self.registry.snapshot())
-        _json(root / "manifest.json", {
-            "schema_version": MEDIA_SCHEMA_VERSION,
-            "identity": asdict(identity),
-            "normalized_sha256": normalized_sha,
-            "matched_taxa": sum(row["taxon_resolution_state"] == "matched" for row in normalized_rows),
-            "unmatched_taxa": sum(row["taxon_resolution_state"] == "unmatched" for row in normalized_rows),
-            "ambiguous_taxa": sum(row["taxon_resolution_state"] == "ambiguous" for row in normalized_rows),
-            "review_queue_count": len(review_queue),
-            "duplicate_url_count": sum("duplicate_url" in item["reasons"] for item in review_queue),
-            "conflicting_url_checksum_count": sum("conflicting_url_checksum" in item["reasons"] for item in review_queue),
-            "duplicate_content_count": sum("duplicate_content_different_url" in item["reasons"] for item in review_queue),
-            "taxonomy_staging_configured": taxonomy_staging_path is not None,
-            "license_allowlist": sorted(ALLOWED_LICENSES),
-            "artifact_registry_artifact_count": self.registry.snapshot()["artifact_count"],
-            "publication_authorized": False,
-            "knowledge_graph_mutation_authorized": False,
-        })
+        registry_snapshot = self.registry.snapshot()
+        _json(
+            root / "manifest.json",
+            {
+                "schema_version": MEDIA_SCHEMA_VERSION,
+                "identity": asdict(identity),
+                "normalized_sha256": normalized_sha,
+                "matched_taxa": sum(
+                    row["taxon_resolution_state"] == "matched" for row in normalized_rows
+                ),
+                "unmatched_taxa": sum(
+                    row["taxon_resolution_state"] == "unmatched" for row in normalized_rows
+                ),
+                "ambiguous_taxa": sum(
+                    row["taxon_resolution_state"] == "ambiguous" for row in normalized_rows
+                ),
+                "review_queue_count": len(review_queue),
+                "duplicate_url_count": sum(
+                    "duplicate_url" in item["reasons"] for item in review_queue
+                ),
+                "conflicting_url_checksum_count": sum(
+                    "conflicting_url_checksum" in item["reasons"] for item in review_queue
+                ),
+                "duplicate_content_count": sum(
+                    "duplicate_content_different_url" in item["reasons"]
+                    for item in review_queue
+                ),
+                "taxonomy_staging_configured": taxonomy_staging_path is not None,
+                "license_allowlist": sorted(ALLOWED_LICENSES),
+                "artifact_registry_artifact_count": registry_snapshot["artifact_count"],
+                "publication_authorized": False,
+                "knowledge_graph_mutation_authorized": False,
+            },
+        )
         if not (root / "checkpoint.json").exists():
-            _json(root / "checkpoint.json", {"next_offset": 0, "complete": False, "projected_unique_rows": 0})
+            _json(
+                root / "checkpoint.json",
+                {"next_offset": 0, "complete": False, "projected_unique_rows": 0},
+            )
         return self.readiness(batch_id)
 
     def project_staging(self, batch_id: str, *, batch_size: int = 500) -> dict[str, Any]:
@@ -315,7 +373,11 @@ class LicensedMediaPersistenceService:
         if not manifest_path.exists():
             raise FileNotFoundError(f"unknown media batch: {batch_id}")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        rows = [json.loads(line) for line in (root / "normalized.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+        rows = [
+            json.loads(line)
+            for line in (root / "normalized.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         checkpoint_path = root / "checkpoint.json"
         checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
         if checkpoint.get("complete"):
@@ -331,17 +393,27 @@ class LicensedMediaPersistenceService:
                     existing[row["row_sha256"]] = row
         for row in rows[offset:end]:
             existing.setdefault(row["row_sha256"], row)
-        ordered = sorted(existing.values(), key=lambda item: (item["source_url"], item["row_sha256"]))
-        _atomic_write(staging_path, "".join(_stable_json(row) + "\n" for row in ordered))
-        _json(checkpoint_path, {
-            "next_offset": end,
-            "complete": end >= len(rows),
-            "projected_unique_rows": len(ordered),
-            "normalized_sha256": manifest["normalized_sha256"],
-        })
+        ordered = sorted(
+            existing.values(), key=lambda item: (item["source_url"], item["row_sha256"])
+        )
+        _atomic_write(
+            staging_path,
+            "".join(_stable_json(row) + "\n" for row in ordered),
+        )
+        _json(
+            checkpoint_path,
+            {
+                "next_offset": end,
+                "complete": end >= len(rows),
+                "projected_unique_rows": len(ordered),
+                "normalized_sha256": manifest["normalized_sha256"],
+            },
+        )
         return self.readiness(batch_id)
 
-    def review_queue(self, batch_id: str, *, offset: int = 0, limit: int = 100) -> dict[str, Any]:
+    def review_queue(
+        self, batch_id: str, *, offset: int = 0, limit: int = 100
+    ) -> dict[str, Any]:
         if offset < 0:
             raise ValueError("offset must be non-negative")
         if limit < 1 or limit > 500:
@@ -350,7 +422,14 @@ class LicensedMediaPersistenceService:
         if not path.exists():
             raise FileNotFoundError(f"unknown media batch: {batch_id}")
         queue = json.loads(path.read_text(encoding="utf-8"))
-        return {"batch_id": batch_id, "total": len(queue), "offset": offset, "limit": limit, "items": queue[offset:offset + limit], "review_write_authorized": False}
+        return {
+            "batch_id": batch_id,
+            "total": len(queue),
+            "offset": offset,
+            "limit": limit,
+            "items": queue[offset : offset + limit],
+            "review_write_authorized": False,
+        }
 
     def readiness(self, batch_id: str) -> dict[str, Any]:
         root = self._batch_dir(batch_id)
@@ -370,10 +449,14 @@ class LicensedMediaPersistenceService:
             "ambiguous_taxa": manifest["ambiguous_taxa"],
             "review_queue_count": manifest["review_queue_count"],
             "duplicate_url_count": manifest["duplicate_url_count"],
-            "conflicting_url_checksum_count": manifest["conflicting_url_checksum_count"],
+            "conflicting_url_checksum_count": manifest[
+                "conflicting_url_checksum_count"
+            ],
             "duplicate_content_count": manifest["duplicate_content_count"],
             "taxonomy_staging_configured": manifest["taxonomy_staging_configured"],
-            "artifact_registry_artifact_count": manifest["artifact_registry_artifact_count"],
+            "artifact_registry_artifact_count": manifest[
+                "artifact_registry_artifact_count"
+            ],
             "staging_next_offset": int(checkpoint.get("next_offset", 0)),
             "staging_complete": bool(checkpoint.get("complete")),
             "projected_unique_rows": int(checkpoint.get("projected_unique_rows", 0)),
