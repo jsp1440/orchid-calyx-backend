@@ -14,7 +14,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.calyx_orchestrator.artifact_registry import ArtifactRegistration, ImmutableArtifactRegistry
+from app.calyx_orchestrator.artifact_registry import (
+    ArtifactRegistration,
+    ImmutableArtifactRegistry,
+)
 
 SCHEMA_VERSION = "calyx-grant-funding/v1"
 SENSITIVE_KEYS = {"password", "secret", "token", "api_key", "ssn", "bank_account", "routing_number"}
@@ -41,7 +44,7 @@ def _reject_sensitive(value: Any, *, path: str = "root") -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             normalized = str(key).casefold().replace("-", "_")
-            if normalized in SENSITIVE_KEYS or normalized.endswith("_secret") or normalized.endswith("_token"):
+            if normalized in SENSITIVE_KEYS or normalized.endswith(("_secret", "_token")):
                 raise ValueError(f"FUNDING_SENSITIVE_FIELD_REJECTED:{path}.{key}")
             _reject_sensitive(item, path=f"{path}.{key}")
     elif isinstance(value, list):
@@ -128,7 +131,7 @@ class GrantFundingService:
             raise ValueError("FUNDING_OPPORTUNITY_PROVENANCE_REQUIRED")
         eligibility = opportunity.get("eligibility") or {}
         if not isinstance(eligibility, dict):
-            raise ValueError("FUNDING_ELIGIBILITY_INVALID")
+            raise TypeError("FUNDING_ELIGIBILITY_INVALID")
         clean = {
             "schema_version": SCHEMA_VERSION,
             "opportunity_id": opportunity_id,
