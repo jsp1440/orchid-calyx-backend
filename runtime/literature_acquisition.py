@@ -155,7 +155,7 @@ class ReviewedTaxonIndex:
             self.by_name.setdefault(_norm_name(name), []).append(key)
 
     @classmethod
-    def from_path(cls, path: Path | None) -> "ReviewedTaxonIndex":
+    def from_path(cls, path: Path | None) -> ReviewedTaxonIndex:
         if path is None:
             return cls([])
         if not path.is_file():
