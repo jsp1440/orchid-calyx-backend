@@ -8,7 +8,10 @@ from fastapi.testclient import TestClient
 from app.routers import matrix_operational as api
 from app.security import verify_owner_or_api_key
 from runtime.matrix_identification import Candidate
-from runtime.matrix_identification_registry import RegistryCharacter, create_registry_version
+from runtime.matrix_identification_registry import (
+    RegistryCharacter,
+    create_registry_version,
+)
 from runtime.matrix_operational import (
     create_identification_session,
     get_candidate_explanation,
