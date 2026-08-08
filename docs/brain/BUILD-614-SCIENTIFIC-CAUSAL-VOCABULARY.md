@@ -2,7 +2,16 @@
 
 ## Status
 
-Implemented on `feature/build-614-scientific-causal-vocabulary`, pending validation and merge.
+Implemented on `feature/build-614-scientific-causal-vocabulary`, pending final validation and merge.
+
+Validation hardening completed in this implementation cycle:
+
+- the initial dedicated gate stopped on import ordering before behavioral tests; the import order was corrected;
+- the next run passed Ruff but stopped on formatter normalization; the exact formatter output was applied to the reasoning engine, causal vocabulary, validator, and regression test;
+- broader CALYX graph integration, workflow governance, Brain end-to-end, publication, and interpretation regressions remained green on the pre-format functional head;
+- the formatter-only head triggered GitHub `action_required` workflow state rather than executing jobs, so this owner-authored Brain update intentionally retriggers the same validation without bypassing any gate.
+
+No BUILD-614 production graph mutation or scientific publication has occurred.
 
 ## Purpose
 
