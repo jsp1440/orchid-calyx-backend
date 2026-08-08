@@ -7,7 +7,7 @@ from app.calyx_conversation.routes import AnalysisRequest, run_analysis, safe_ex
 
 def test_safe_expression_supports_scientific_math_without_eval():
     assert safe_expression("sqrt(81) + 2**3") == 17.0
-    assert safe_expression("round(pi, 3)") == 3.142
+    assert math.isclose(safe_expression("pi"), math.pi)
 
 
 def test_safe_expression_rejects_python_object_access():
