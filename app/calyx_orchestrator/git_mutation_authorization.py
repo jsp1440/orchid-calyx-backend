@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Protocol
 
 from .proposal_authorization import ProposalAuthorizationRecord, ProposalDecision
 from .proposal_authorization_status import proposal_review_status
@@ -23,6 +21,12 @@ ALLOWED_ACTIONS = (
     "open_pull_request",
 )
 MAX_TTL_SECONDS = 1800
+
+
+class OwnerGrantSignatureVerifier(Protocol):
+    """Externally supplied verification capability; runtime holds no signing secret."""
+
+    def verify(self, *, payload: Mapping[str, Any], signature: str) -> bool: ...
 
 
 def _is_sha256(value: str) -> bool:
@@ -190,16 +194,21 @@ class GitMutationAuthorizationGrant:
 
 
 class GitMutationAuthorizationGate:
-    """Verify durable reviewed owner authorization; never mutate Git or GitHub."""
+    """Verify durable reviewed owner authorization; never mutate Git or hold signing secrets."""
 
-    def __init__(self, *, owner_principal: str, hmac_secret: bytes) -> None:
+    def __init__(
+        self,
+        *,
+        owner_principal: str,
+        signature_verifier: OwnerGrantSignatureVerifier,
+    ) -> None:
         principal = owner_principal.strip()
         if not principal:
             raise ValueError("GIT_AUTHORIZATION_OWNER_PRINCIPAL_REQUIRED")
-        if len(hmac_secret) < 32:
-            raise ValueError("GIT_AUTHORIZATION_SECRET_TOO_SHORT")
+        if signature_verifier is None:
+            raise ValueError("GIT_AUTHORIZATION_SIGNATURE_VERIFIER_REQUIRED")
         self._owner_principal = principal
-        self._secret = bytes(hmac_secret)
+        self._signature_verifier = signature_verifier
 
     @staticmethod
     def build_request(
@@ -305,12 +314,10 @@ class GitMutationAuthorizationGate:
             or current >= expiry
         ):
             raise PermissionError("GIT_AUTHORIZATION_GRANT_EXPIRED_OR_INVALID")
-        expected = hmac.new(
-            self._secret,
-            canonical_sha256(grant.signing_payload()).encode("ascii"),
-            hashlib.sha256,
-        ).hexdigest()
-        if not hmac.compare_digest(expected, grant.signature):
+        if not self._signature_verifier.verify(
+            payload=grant.signing_payload(),
+            signature=grant.signature,
+        ):
             raise PermissionError("GIT_AUTHORIZATION_SIGNATURE_INVALID")
         if grant.decision != "approved":
             raise PermissionError("GIT_AUTHORIZATION_NOT_APPROVED")
