@@ -73,9 +73,14 @@ EDGE_TYPE_DOMAIN: dict[str, str] = {
     "explained_by": "education",
     "raises_question": "research",
     "tested_by_hypothesis": "research",
-    **{edge_type: "causal_reasoning" for edge_type in CANONICAL_CAUSAL_EDGE_TYPES},
-    **{edge_type: "evidence" for edge_type in CAUSAL_EVIDENCE_EDGE_TYPES},
 }
+
+# Extend rather than overwrite the legacy domain assignment of evidence aliases
+# such as ``documented_by`` and ``supported_by_evidence``.
+for _edge_type in CANONICAL_CAUSAL_EDGE_TYPES:
+    EDGE_TYPE_DOMAIN.setdefault(_edge_type, "causal_reasoning")
+for _edge_type in CAUSAL_EVIDENCE_EDGE_TYPES:
+    EDGE_TYPE_DOMAIN.setdefault(_edge_type, "evidence")
 
 ALL_DOMAINS: tuple[str, ...] = (
     "taxonomy",
