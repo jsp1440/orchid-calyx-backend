@@ -26,11 +26,26 @@ EVIDENCE_PATH = Path(
 )
 CONFIRMATION = "APPLY_087B_088B_088C_088D_101"
 MIGRATIONS = (
-    ("087b_context_preserving_interpretation.sql", "3a8273d058808bd98025270faddfdf9e8f589b7b"),
-    ("088b_publication_registry_policy_foundation.sql", "10c3ab60420f7c15342691c80dbef1a039859678"),
-    ("088c_atomic_graph_transaction_publication_engine.sql", "35c27b6278430ac65e70d3c9e85f77bf19c85a19"),
-    ("088d_publication_lifecycle_corrections_rollback.sql", "779a2a262b20c1dfe52b80df953a802eaf546f55"),
-    ("101_research_workspace_foundation.sql", "3333853c97832154cb0f61bace0c2184396da160"),
+    (
+        "087b_context_preserving_interpretation.sql",
+        "3a8273d058808bd98025270faddfdf9e8f589b7b",
+    ),
+    (
+        "088b_publication_registry_policy_foundation.sql",
+        "10c3ab60420f7c15342691c80dbef1a039859678",
+    ),
+    (
+        "088c_atomic_graph_transaction_publication_engine.sql",
+        "35c27b6278430ac65e70d3c9e85f77bf19c85a19",
+    ),
+    (
+        "088d_publication_lifecycle_corrections_rollback.sql",
+        "779a2a262b20c1dfe52b80df953a802eaf546f55",
+    ),
+    (
+        "101_research_workspace_foundation.sql",
+        "3333853c97832154cb0f61bace0c2184396da160",
+    ),
 )
 
 PUBLICATION_CHAIN = (
@@ -54,9 +69,7 @@ MIGRATION_TARGETS: dict[str, tuple[str, ...]] = {
     "088d_publication_lifecycle_corrections_rollback.sql": (
         "oc_knowledge_publication.publication_lineage",
     ),
-    "101_research_workspace_foundation.sql": (
-        "research_station.projects",
-    ),
+    "101_research_workspace_foundation.sql": ("research_station.projects",),
 }
 
 REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
@@ -142,7 +155,9 @@ def migration_identity_report() -> dict[str, dict[str, Any]]:
 
 def _relation_report(connection, qualified_name: str) -> dict[str, Any]:
     schema, table = qualified_name.split(".", 1)
-    relation = connection.execute("SELECT to_regclass(%s)", (qualified_name,)).fetchone()
+    relation = connection.execute(
+        "SELECT to_regclass(%s)", (qualified_name,)
+    ).fetchone()
     exists = bool(relation and relation[0])
     if not exists:
         return {
@@ -198,7 +213,9 @@ def inspect_contract(connection) -> dict[str, Any]:
         reports = [relation_reports[target] for target in targets]
         exists_any = any(report["exists"] for report in reports)
         complete = all(report["complete"] for report in reports)
-        malformed = any(report["exists"] and not report["complete"] for report in reports)
+        malformed = any(
+            report["exists"] and not report["complete"] for report in reports
+        )
         stage_reports[migration] = {
             "exists_any": exists_any,
             "complete": complete,
@@ -247,7 +264,9 @@ def inspect_contract(connection) -> dict[str, Any]:
     }
 
 
-def classify_preflight(contract: dict[str, Any], identities_match: bool) -> dict[str, Any]:
+def classify_preflight(
+    contract: dict[str, Any], identities_match: bool
+) -> dict[str, Any]:
     if not identities_match:
         return {
             "status": "blocked",
@@ -315,7 +334,9 @@ def main() -> int:
         "migration_results": [],
         "failed_migration": None,
         "partial_application": False,
-        "production_database_mutation_authorized": bool(args.apply and confirmation_present),
+        "production_database_mutation_authorized": bool(
+            args.apply and confirmation_present
+        ),
         "production_database_mutation_attempted": False,
         "production_database_mutation_observed": False,
         "publication_authorized": False,
@@ -336,7 +357,10 @@ def main() -> int:
         if not confirmation_present:
             receipt["status"] = "blocked"
             receipt["ready_to_apply"] = False
-            receipt["blockers"] = [*receipt["blockers"], "EXPLICIT_CONFIRMATION_REQUIRED"]
+            receipt["blockers"] = [
+                *receipt["blockers"],
+                "EXPLICIT_CONFIRMATION_REQUIRED",
+            ]
             _write_receipt(receipt)
             return 2
         if not identities_match or not preflight["ready_to_apply"]:
@@ -351,7 +375,11 @@ def main() -> int:
             except psycopg.Error as exc:
                 receipt["failed_migration"] = filename
                 receipt["migration_results"].append(
-                    {"migration": filename, "status": "failed", "error_type": type(exc).__name__}
+                    {
+                        "migration": filename,
+                        "status": "failed",
+                        "error_type": type(exc).__name__,
+                    }
                 )
                 break
             receipt["applied_migrations"].append(filename)
