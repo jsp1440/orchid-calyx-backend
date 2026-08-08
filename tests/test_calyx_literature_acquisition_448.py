@@ -6,6 +6,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.candidate_knowledge.repository import MemoryCandidateRepository
+from app.candidate_knowledge.service import CandidateExtractionService
+from app.parallel_platform.brain_candidate_handoff import handoff_brain_candidate
 from app.routers import literature_acquisition as api
 from app.security import verify_owner_or_api_key
 from runtime import literature_acquisition as runtime
@@ -106,7 +109,16 @@ def test_taxonomy_reconciliation_exposes_unmatched_review(tmp_path: Path):
     assert reconciled["items"][0]["canonical_taxon_id"] == "id:1001"
 
 
-def test_candidate_handoff_preserves_claim_counterevidence_confidence_and_provenance(tmp_path: Path):
+def test_candidate_handoff_preserves_claim_counterevidence_confidence_and_provenance(
+    tmp_path: Path, monkeypatch
+):
+    repository = MemoryCandidateRepository()
+    candidate_service = CandidateExtractionService(repository)
+    monkeypatch.setattr(
+        runtime,
+        "handoff_brain_candidate",
+        lambda request: handoff_brain_candidate(request, (repository, candidate_service)),
+    )
     service = LiteratureAcquisitionService(tmp_path / "lit")
     result = service.intake_bytes("paper.txt", TEXT, source_ref="10.9999/orchid.1")
     text = (tmp_path / "lit" / "runs" / result["run_id"] / "extracted.txt").read_text()
@@ -132,6 +144,7 @@ def test_candidate_handoff_preserves_claim_counterevidence_confidence_and_proven
     assert first["handoffs"][0]["confidence"] == 0.82
     assert first["handoffs"][0]["contradiction"] is False
     assert len(first["handoffs"][0]["evidence_sha256"]) == 64
+    assert first["handoffs"][0]["candidate_ids"]
     assert first["published"] is False
     assert first["graph_mutation"] is False
 
