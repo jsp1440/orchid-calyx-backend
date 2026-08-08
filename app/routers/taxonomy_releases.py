@@ -60,6 +60,14 @@ def _try_durable_store(factory: Callable[[], Any]) -> Any | None:
         raise
 
 
+def _is_sqlalchemy_error(exc: Exception) -> bool:
+    try:
+        from sqlalchemy.exc import SQLAlchemyError
+    except ModuleNotFoundError:
+        return False
+    return isinstance(exc, SQLAlchemyError)
+
+
 def create_taxonomy_release_router(
     get_store: Callable[[], WorldPlantsReleaseStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
@@ -82,7 +90,12 @@ def create_taxonomy_release_router(
             migration = None
 
         durable = _try_durable_store(get_durable_store)
-        durable_reports = durable.list_reports() if durable is not None else []
+        try:
+            durable_reports = durable.list_reports() if durable is not None else []
+        except Exception as exc:
+            if not _is_sqlalchemy_error(exc):
+                raise
+            durable_reports = []
         latest_release = durable_reports[0] if durable_reports else None
         schema_verified = (
             bool(migration.get("schema_complete")) if migration is not None else None
@@ -116,10 +129,21 @@ def create_taxonomy_release_router(
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
         durable = _try_durable_store(get_durable_store)
-        reports = durable.list_reports() if durable is not None else get_store().list_reports()
+        used_durable = durable is not None
+        try:
+            reports = (
+                durable.list_reports()
+                if durable is not None
+                else get_store().list_reports()
+            )
+        except Exception as exc:
+            if not _is_sqlalchemy_error(exc):
+                raise
+            used_durable = False
+            reports = get_store().list_reports()
         return {
             "releases": reports,
-            "durable_storage": "postgresql" if durable is not None else "local_compatibility",
+            "durable_storage": "postgresql" if used_durable else "local_compatibility",
             "automatic_promotion": False,
         }
 
@@ -129,7 +153,14 @@ def create_taxonomy_release_router(
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
         durable = _try_durable_store(get_durable_store)
-        report = durable.get_with_inspection(release_id) if durable is not None else None
+        try:
+            report = (
+                durable.get_with_inspection(release_id) if durable is not None else None
+            )
+        except Exception as exc:
+            if not _is_sqlalchemy_error(exc):
+                raise
+            report = None
         if report is None:
             report = get_store().get(release_id)
         if report is None:
@@ -149,13 +180,17 @@ def create_taxonomy_release_router(
         try:
             durable = _try_durable_store(get_durable_store)
             if durable is not None:
-                return durable.inspect_and_store(
-                    payload,
-                    filename=filename,
-                    version_label=version_label,
-                    acquired_at=acquired_at,
-                    notes=notes,
-                )
+                try:
+                    return durable.inspect_and_store(
+                        payload,
+                        filename=filename,
+                        version_label=version_label,
+                        acquired_at=acquired_at,
+                        notes=notes,
+                    )
+                except Exception as exc:
+                    if not _is_sqlalchemy_error(exc):
+                        raise
             return get_store().inspect_and_store(
                 payload,
                 filename=filename,
@@ -213,6 +248,13 @@ def create_taxonomy_release_router(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            if not _is_sqlalchemy_error(exc):
+                raise
+            raise HTTPException(
+                status_code=503,
+                detail="durable taxonomy staging is unavailable until migration 107 is verified",
+            ) from exc
 
     @releases.get("/{release_id}/staging")
     def staging_status(
@@ -237,6 +279,13 @@ def create_taxonomy_release_router(
         except KeyError as exc:
             raise HTTPException(
                 status_code=404, detail="durable taxonomy staging state not found"
+            ) from exc
+        except Exception as exc:
+            if not _is_sqlalchemy_error(exc):
+                raise
+            raise HTTPException(
+                status_code=503,
+                detail="durable taxonomy staging is unavailable until migration 107 is verified",
             ) from exc
 
     router.include_router(releases)
