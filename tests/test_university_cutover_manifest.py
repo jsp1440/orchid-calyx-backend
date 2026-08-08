@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -34,6 +36,49 @@ READY_BINDING = {
 }
 
 
+def _valid_evidence_bytes() -> bytes:
+    payload = {
+        "schema_version": "1.1.0",
+        "verification": "OCU-SCI-007",
+        "release_identity_contract": "OCU-RELEASE-IDENTITY-001",
+        "started_at": "2026-08-08T00:00:00Z",
+        "completed_at": "2026-08-08T00:01:00Z",
+        "frontend_origin": "https://orchidcontinuum.org",
+        "api_origin": "https://calyx.example.org/api",
+        "frontend": {
+            "status": 200,
+            "canonical_app_shell": True,
+            "release_commit_sha": "a" * 40,
+        },
+        "backend": {
+            "release_identity": {
+                "contract": "OCU-RELEASE-IDENTITY-001",
+                "service": "orchid-calyx-backend",
+                "commit_sha": "b" * 40,
+                "attested": True,
+            },
+            "readiness": {
+                "university_enabled": True,
+                "read_only_ready": True,
+                "session_writes_enabled": False,
+                "publication_enabled": False,
+                "candidate_knowledge_writes_enabled": False,
+                "calyx_model_calls_enabled": False,
+                "human_review_required": True,
+            },
+            "capability": {"enabled": True, "session_writes_enabled": False},
+            "catalog": {
+                "chapter_id": "BITB-CHAPTER-ORCHID-FLOWERING-001",
+                "laboratory_id": "OCU-LAB-FAILURE-TO-BLOOM-001",
+            },
+            "chapter_sections": 1,
+            "laboratory_evidence_items": 1,
+        },
+        "result": "pass",
+    }
+    return json.dumps(payload, sort_keys=True).encode("utf-8")
+
+
 class UniversityCutoverManifestTests(unittest.TestCase):
     def _generate(self, binding=None, preflight_state=READY_PREFLIGHT, **overrides):
         values = {
@@ -41,18 +86,24 @@ class UniversityCutoverManifestTests(unittest.TestCase):
             "backend_commit": "b" * 40,
             "frontend_origin": "https://orchidcontinuum.org",
             "api_origin": "https://calyx.example.org/api",
-            "release_evidence": Path("evidence.json"),
             "database_url": "postgresql://example",
         }
         values.update(overrides)
-        with patch("scripts.generate_university_cutover_manifest.preflight", return_value=preflight_state), patch(
-            "scripts.generate_university_cutover_manifest._release_binding",
-            return_value=binding or READY_BINDING,
-        ), patch(
-            "scripts.generate_university_cutover_manifest._sha256",
-            side_effect=["sha256:" + "1" * 64, "sha256:" + "2" * 64],
-        ), patch.object(Path, "exists", return_value=True):
-            return generate_manifest(**values)
+        with tempfile.TemporaryDirectory() as directory:
+            evidence_path = Path(directory) / "evidence.json"
+            evidence_path.write_bytes(_valid_evidence_bytes())
+            values.setdefault("release_evidence", evidence_path)
+            with patch(
+                "scripts.generate_university_cutover_manifest._preflight_from_snapshot",
+                return_value=preflight_state,
+            ), patch(
+                "scripts.generate_university_cutover_manifest._release_binding_bytes",
+                return_value=binding or READY_BINDING,
+            ), patch(
+                "scripts.generate_university_cutover_manifest._sha256",
+                return_value="sha256:" + "1" * 64,
+            ):
+                return generate_manifest(**values)
 
     def test_ready_manifest_is_non_mutating_non_secret_and_attested(self):
         result = self._generate()
@@ -67,8 +118,39 @@ class UniversityCutoverManifestTests(unittest.TestCase):
         self.assertEqual(result["reviewer_grants"]["science"], 1)
         self.assertEqual(result["attested_release"]["frontend_commit"], "a" * 40)
         self.assertEqual(result["attested_release"]["backend_commit"], "b" * 40)
+        self.assertTrue(result["release_evidence"]["single_snapshot_bound"])
         self.assertEqual(result["phases"][1]["requires"][-1], "preflight.ready_to_apply_migration=true")
         self.assertEqual(result["phases"][2]["requires"][-1], "preflight.ready_to_enable_durable=true")
+
+    def test_manifest_reads_retained_evidence_only_once(self):
+        payload = _valid_evidence_bytes()
+        evidence_path = Path("replaceable-evidence.json")
+        with patch.object(
+            Path,
+            "read_bytes",
+            side_effect=[payload, AssertionError("release evidence was read twice")],
+        ) as read_bytes, patch(
+            "scripts.generate_university_cutover_manifest._preflight_from_snapshot",
+            return_value=READY_PREFLIGHT,
+        ) as snapshot_preflight, patch(
+            "scripts.generate_university_cutover_manifest._sha256",
+            return_value="sha256:" + "1" * 64,
+        ):
+            result = generate_manifest(
+                frontend_commit="a" * 40,
+                backend_commit="b" * 40,
+                frontend_origin="https://orchidcontinuum.org",
+                api_origin="https://calyx.example.org/api",
+                release_evidence=evidence_path,
+                database_url="postgresql://example",
+            )
+        self.assertEqual(read_bytes.call_count, 1)
+        snapshot_preflight.assert_called_once_with(
+            payload,
+            database_url="postgresql://example",
+        )
+        self.assertTrue(result["ready_for_operator_cutover"])
+        self.assertTrue(result["release_evidence"]["single_snapshot_bound"])
 
     def test_missing_schema_does_not_block_starting_database_migration(self):
         result = self._generate(preflight_state=PRE_MIGRATION_PREFLIGHT)
