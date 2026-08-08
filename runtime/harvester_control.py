@@ -239,7 +239,7 @@ class HarvesterControlPlane:
         try:
             telemetry = run_harvester(harvester.harvester_id)
             status = "success"
-        except Exception as exc:  # execution failures are recorded, not raised
+        except Exception as exc:  # noqa: BLE001  # execution failures are recorded, not raised
             telemetry = {}
             status = "failed"
             errors = [str(exc)]
