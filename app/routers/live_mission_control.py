@@ -9,7 +9,9 @@ from fastapi import APIRouter
 
 from app.routers.calyx_operator_chat import router as chat_router
 from app.routers.calyx_runtime_controls import create_runtime_controls_router
-from app.routers.post_publication_monitoring import router as post_publication_monitoring_router
+from app.routers.post_publication_monitoring import (
+    router as post_publication_monitoring_router,
+)
 from app.security import verify_owner_or_api_key
 from runtime.governed_worker_loop import GovernedWorkerLoop
 from runtime.json_activation_store import JsonActivationStateStore
