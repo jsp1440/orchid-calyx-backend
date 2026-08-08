@@ -43,7 +43,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install validation dependencies
-        run: python -m pip install -r requirements.txt pytest ruff
+        run: python -m pip install -r requirements.txt pytest ruff httpx
       - name: Compile and lint
         run: |
           python -m py_compile runtime/world_plants_ingest.py runtime/world_plants_release_store.py runtime/world_plants_staging.py app/routers/taxonomy_releases.py tests/test_world_plants_durable_staging.py tests/test_world_plants_upload_001.py
