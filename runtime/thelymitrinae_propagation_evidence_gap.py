@@ -1,9 +1,9 @@
-"""Same-subtribe propagation evidence-gap registry for CALYX-639G.
+"""Same-subtribe propagation evidence-gap registry for CALYX-639G/H.
 
-This module records the result of a targeted Thelymitrinae evidence search without
-converting search non-retrieval into evidence of absence. It identifies authoritative
-acquisition leads and keeps direct vegetative-culture support unresolved until source
-text is acquired and reviewed.
+This module records targeted Thelymitrinae evidence without converting search
+non-retrieval into evidence of absence. It now also preserves a same-genus historical
+recovery record showing successful ex-situ propagation of Thelymitra manginii while
+keeping the propagation method unresolved.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
-SCHEMA_VERSION = "calyx-thelymitrinae-propagation-evidence-gap/v1"
+SCHEMA_VERSION = "calyx-thelymitrinae-propagation-evidence-gap/v2"
 
 
 @dataclass(frozen=True)
@@ -50,12 +50,32 @@ def acquisition_leads() -> tuple[AcquisitionLead, ...]:
             source_type="specialist_reference_book",
             focal_taxa=("Thelymitra",),
             retrievable_fact=(
-                "Publisher table of contents confirms a dedicated Thelymitra section in the "
-                "micropropagation reference work."
+                "Publisher table of contents confirms a dedicated one-page Thelymitra section "
+                "in the genus-specific micropropagation chapter."
             ),
             unresolved_question=(
-                "Does the Thelymitra section document vegetative explants, meristem/shoot-tip "
-                "culture, inflorescence-derived culture, PLB induction, or only seed/protocorm methods?"
+                "Which primary Thelymitra studies are cited, and do they document vegetative "
+                "explants, meristem/shoot-tip culture, inflorescence-derived culture, PLB induction, "
+                "or only seed/protocorm methods?"
+            ),
+            acquisition_priority="critical",
+        ),
+        AcquisitionLead(
+            lead_id="dcceew-1999-thelymitra-manginii-recovery",
+            title="Interim Recovery Plan for the Cinnamon Sun Orchid (Thelymitra manginii) 1999-2002",
+            authors=("Robyn Phillimore", "Andrew Brown", "Val English"),
+            source_type="government_recovery_plan",
+            focal_taxa=("Thelymitra manginii",),
+            retrievable_fact=(
+                "The recovery plan reports that Botanic Gardens and Parks Authority had successfully "
+                "propagated Thelymitra manginii ex situ, had planted 25 dormant tubers in a research "
+                "translocation, and was considering seed, cutting material, tubers, living collections, "
+                "and tissue-culture material as germplasm routes."
+            ),
+            unresolved_question=(
+                "The plan does not state how the successfully propagated plants or translocation tubers "
+                "were produced. Acquire BGPA technical reports, propagation records, or cited primary "
+                "methods before classifying this as vegetative tissue culture."
             ),
             acquisition_priority="critical",
         ),
@@ -88,13 +108,18 @@ def targeted_search_state() -> dict[str, Any]:
             "Is direct vegetative-to-PLB or meristematic micropropagation verified within "
             "Thelymitrinae independently of the Davis et al. seed/protocorm pathway?"
         ),
-        "answer_state": "unresolved_source_acquisition_required",
+        "answer_state": "same_genus_ex_situ_success_documented_method_unresolved",
+        "same_genus_ex_situ_propagation_documented": True,
+        "same_genus_method_resolved": False,
         "direct_same_subtribe_vegetative_evidence_verified": False,
         "evidence_of_absence_claimed": False,
         "search_nonretrieval_means_absence": False,
         "lead_count": len(leads),
         "lead_ids": [lead.lead_id for lead in leads],
-        "highest_priority_next_source": "yam-arditti-micropropagation-thelymitra",
+        "highest_priority_next_sources": [
+            "yam-arditti-micropropagation-thelymitra",
+            "dcceew-1999-thelymitra-manginii-recovery",
+        ],
         "scientific_review_required": True,
         "publication_authority": False,
         "knowledge_graph_mutation_authorized": False,
@@ -114,16 +139,24 @@ def evidence_ladder() -> dict[str, Any]:
             },
             {
                 "rank": 2,
-                "scope": "same subtribe Thelymitrinae",
-                "state": "unresolved_source_acquisition_required",
+                "scope": "same genus Thelymitra",
+                "state": (
+                    "Thelymitra_manginii_successful_ex_situ_propagation_and_dormant_tuber_"
+                    "translocation_documented; propagation_method_unresolved"
+                ),
             },
             {
                 "rank": 3,
+                "scope": "same subtribe Thelymitrinae",
+                "state": "direct_vegetative_micropropagation_unresolved_source_acquisition_required",
+            },
+            {
+                "rank": 4,
                 "scope": "proximal core Diurideae",
                 "state": "Diuris_longifolia_non_destructive_inflorescence_to_PLB_documented",
             },
             {
-                "rank": 4,
+                "rank": 5,
                 "scope": "other terrestrial orchids",
                 "state": "vegetative_and_meristem_to_PLB_documented_multiple_taxa",
             },
