@@ -73,7 +73,7 @@ The broad suite was kept informational while concrete baseline failures remained
 - 3 subtests passed
 - 0 failed
 
-The exact same test command is therefore promoted from `continue-on-error: true` to a normal blocking step named `Repository-wide backend suite`. No tests were newly hidden to achieve this promotion. The two ignored/deselected historical groups already have strict canonical replacements earlier in the workflow: Journalism Brain routes and authenticated Mission Control runtime/executive contracts.
+The exact same test command is therefore promoted from `continue-on-error: true` to a normal blocking step named `Repository-wide backend suite`. No tests were newly hidden to achieve this promotion. The ignored/deselected historical contracts already have strict canonical replacements earlier in the workflow, including Journalism Brain routes and authenticated Mission Control runtime/executive contracts.
 
 The package-wide scientific-interpretation Ruff scan remains a non-blocking diagnostic because it reports inherited style debt outside the current repair surface. Changed-surface compile/Ruff/diff hygiene remains blocking.
 
@@ -128,7 +128,9 @@ BUILD-087B `31236559524` specifically passed:
 - repository-wide backend suite: 1,947 passed, 16 skipped, 10 deselected, 3 subtests passed, zero failures
 - strict changed-surface compile/Ruff/diff hygiene: success
 
-Commit `494c7ffd483ea9fcfa086219b3e3ab76f76ed61e` promotes the clean repository-wide suite to a blocking gate. A final exact-head run after this promotion is required before merge.
+Commit `494c7ffd483ea9fcfa086219b3e3ab76f76ed61e` promoted the clean repository-wide suite to a blocking gate. The resulting CI-BASELINE run `31236698393` correctly caught one stale meta-test in `tests/test_ci_baseline_001.py` that still asserted the old non-blocking workflow name and `continue-on-error` behavior. That test—not the backend suite—was the sole failing step. Commit `2d72741d3cf18ed9f867e6bd094315805e3d6954` updates the meta-contract to require the new blocking step, require absence of `continue-on-error: true`, retain the isolated PostgreSQL fallback, and retain the deliberate historical ignore set. This is a validation-contract repair, not a weakening of the promoted gate.
+
+The final Brain commit after that repair must receive a fresh exact-head validation cycle before merge.
 
 ## Governance / non-authority
 
