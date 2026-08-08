@@ -227,6 +227,7 @@ class ConversationMemoryService:
             "object_type": evidence.get("object_type"),
             "title": evidence.get("title"),
             "citation": {
+                "document_id": citation.get("document_id"),
                 "revision_id": citation.get("revision_id"),
                 "identifier": citation.get("identifier"),
                 "locator": citation.get("locator"),
