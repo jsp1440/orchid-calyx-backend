@@ -1,0 +1,56 @@
+name: CALYX Licensed Media Persistence 463
+
+on:
+  pull_request:
+    paths:
+      - "runtime/licensed_media_persistence.py"
+      - "app/routers/licensed_media_persistence.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_licensed_media_persistence_463.py"
+      - "tests/test_calyx_taxonomy_release_intake_461.py"
+      - "docs/brain/CALYX-LICENSED-MEDIA-PERSISTENCE-463.md"
+      - ".github/workflows/calyx-licensed-media-persistence-463.yml"
+  workflow_dispatch:
+
+jobs:
+  licensed-media-persistence:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile licensed-media surface
+        run: >-
+          python -m py_compile
+          runtime/licensed_media_persistence.py
+          app/routers/licensed_media_persistence.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_licensed_media_persistence_463.py
+      - name: Deterministic licensed-media and taxonomy regression tests
+        run: python -m pytest -q tests/test_calyx_licensed_media_persistence_463.py tests/test_calyx_taxonomy_release_intake_461.py tests/test_calyx_artifact_registry.py
+      - name: Permanent non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/licensed_media_persistence.py').read_text()
+          required = (
+              '"ready_for_publication": False',
+              '"publication_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing permanent non-authority assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'TRUNCATE oc_graph')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden graph mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/licensed_media_persistence.py app/routers/licensed_media_persistence.py tests/test_calyx_licensed_media_persistence_463.py
+          git diff --check
