@@ -36,6 +36,7 @@ async def test_real_document_to_authenticated_queryable_evidence(
         "metadata",
         "sections",
         "entities",
+        "glossary",
         "claims",
     ]
     assert all(
@@ -54,6 +55,14 @@ async def test_real_document_to_authenticated_queryable_evidence(
         "pcr",
         "escherichia coli",
     }
+    assert {term.normalized_term for term in first.glossary_terms} >= {
+        "atp",
+        "pcr",
+        "orchids",
+        "roots",
+        "microbiology",
+    }
+    assert all(term.status == "candidate" for term in first.glossary_terms)
     assert first.claims and first.evidence and first.normalized_evidence_records
     assert any(claim.subject_ids for claim in first.claims)
     assert any(
@@ -88,6 +97,7 @@ async def test_real_document_to_authenticated_queryable_evidence(
         )
     assert response.status_code == 200
     assert response.json()["claims"][0]["evidence_ids"]
+    assert response.json()["glossary_terms"]
 
 
 @pytest.mark.asyncio
