@@ -1,0 +1,185 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.calyx_orchestrator.engineering_core import TerminalOutcome
+from app.calyx_orchestrator.execution_bridge import LeaseExecutionBridge
+from app.calyx_orchestrator.executor import (
+    ExecutionReceipt,
+    ExecutionState,
+    canonical_checksum,
+)
+from app.calyx_orchestrator.isolated_patch_executor import (
+    ISOLATED_PATCH_ROLE,
+    IsolatedWorkspacePatchExecutor,
+)
+from app.calyx_orchestrator.persisted_patch_execution import (
+    PersistedPatchExecutionService,
+)
+from app.calyx_orchestrator.program_models import (
+    CalyxProgram,
+    CalyxProgramDependency,
+    CalyxProgramJob,
+)
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
+from app.calyx_orchestrator.program_worker import PersistentProgramWorker
+from app.database import Base
+
+REPOSITORY = "jsp1440/orchid-calyx-backend"
+BRANCH = "autonomy/work-123"
+COMMIT = "a" * 40
+
+
+def _db() -> Session:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            CalyxProgram.__table__,
+            CalyxProgramJob.__table__,
+            CalyxProgramDependency.__table__,
+        ],
+    )
+    return Session(engine)
+
+
+def _output(*, repository: str = REPOSITORY, branch: str = BRANCH) -> dict[str, object]:
+    return {
+        "status": "delivered",
+        "executed": True,
+        "mode": "authoritative_isolated_workspace_patch",
+        "repository": repository,
+        "branch": branch,
+        "checkout_commit_sha": COMMIT,
+        "workspace_isolated": True,
+        "workspace_disposable": True,
+        "changes": [
+            {
+                "path": "app/example.py",
+                "before_sha256": "b" * 64,
+                "after_sha256": "c" * 64,
+                "created": False,
+                "size_bytes": 100,
+            }
+        ],
+        "file_count": 1,
+        "total_written_bytes": 100,
+        "commit_created": False,
+        "validation_commands_run": False,
+        "side_effects": ["isolated_workspace_files_modified"],
+    }
+
+
+def _completed_job(
+    db: Session,
+    *,
+    role_key: str = ISOLATED_PATCH_ROLE,
+    executor_key: str = IsolatedWorkspacePatchExecutor.executor_key,
+    job_repository: str = REPOSITORY,
+    job_branch: str = BRANCH,
+    output_repository: str = REPOSITORY,
+    output_branch: str = BRANCH,
+) -> CalyxProgramJob:
+    repository = PersistentProgramRepository(db)
+    program = repository.create_program(
+        owner="owner",
+        title="persisted patch",
+        objective="persist authoritative patch evidence",
+        jobs=[
+            ProgramJobSpec(
+                "patch",
+                role_key,
+                "patch",
+                job_repository,
+                job_branch,
+                True,
+            )
+        ],
+        dependencies=[],
+    )
+    repository.start(owner="owner", program_id=program.program_id)
+    claimed = PersistentProgramWorker(db).claim(worker_id="worker")
+    assert claimed is not None and claimed.lease_token
+    output = _output(repository=output_repository, branch=output_branch)
+    receipt = ExecutionReceipt(
+        assignment_id=claimed.program_job_id,
+        program_id=program.program_id,
+        job_key=claimed.job_key,
+        executor_key=executor_key,
+        state=ExecutionState.DELIVERED,
+        outcome=TerminalOutcome.DELIVERED,
+        input_checksum="input",
+        output_checksum=canonical_checksum(output),
+        output=output,
+        evidence_uris=("github:issue/692",),
+    )
+    return LeaseExecutionBridge(db).complete_from_receipt(
+        program_job_id=claimed.program_job_id,
+        worker_id="worker",
+        lease_token=claimed.lease_token,
+        receipt=receipt,
+    )
+
+
+def test_resolves_real_persisted_isolated_patch_execution() -> None:
+    with _db() as db:
+        completed = _completed_job(db)
+        resolved = PersistedPatchExecutionService(db).get_completed(
+            program_job_id=completed.program_job_id
+        )
+        assert resolved.program_job_id == completed.program_job_id
+        assert resolved.repository == REPOSITORY
+        assert resolved.branch == BRANCH
+        assert resolved.executor_key == IsolatedWorkspacePatchExecutor.executor_key
+        assert resolved.output_checksum == canonical_checksum(_output())
+        assert resolved.output["checkout_commit_sha"] == COMMIT
+
+
+def test_missing_or_wrong_role_patch_job_is_rejected() -> None:
+    with _db() as db:
+        service = PersistedPatchExecutionService(db)
+        with pytest.raises(LookupError, match="PATCH_PROGRAM_JOB_NOT_FOUND"):
+            service.get_completed(program_job_id="missing")
+        completed = _completed_job(db, role_key="brain_engineer")
+        with pytest.raises(PermissionError, match="PATCH_PROGRAM_JOB_ROLE_INVALID"):
+            service.get_completed(program_job_id=completed.program_job_id)
+
+
+def test_wrong_executor_identity_is_rejected() -> None:
+    with _db() as db:
+        completed = _completed_job(db, executor_key="caller_fabricated_executor")
+        with pytest.raises(PermissionError, match="PATCH_PROGRAM_JOB_EXECUTOR_INVALID"):
+            PersistedPatchExecutionService(db).get_completed(
+                program_job_id=completed.program_job_id
+            )
+
+
+def test_repository_or_branch_mismatch_is_rejected() -> None:
+    with _db() as db:
+        completed = _completed_job(db, output_repository="other/repository")
+        with pytest.raises(PermissionError, match="PATCH_PROGRAM_JOB_IDENTITY_MISMATCH"):
+            PersistedPatchExecutionService(db).get_completed(
+                program_job_id=completed.program_job_id
+            )
+
+
+def test_tampered_persisted_output_is_rejected() -> None:
+    with _db() as db:
+        completed = _completed_job(db)
+        evidence = json.loads(completed.evidence_json or "{}")
+        evidence["output"]["total_written_bytes"] = 101
+        completed.evidence_json = json.dumps(evidence, sort_keys=True)
+        db.commit()
+        with pytest.raises(
+            PermissionError, match="PATCH_PROGRAM_JOB_OUTPUT_CHECKSUM_MISMATCH"
+        ):
+            PersistedPatchExecutionService(db).get_completed(
+                program_job_id=completed.program_job_id
+            )
