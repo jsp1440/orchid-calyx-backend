@@ -1,7 +1,7 @@
 """Protected owner-scoped Conservatory routes for CALYX issue #451."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -11,6 +11,7 @@ from runtime.conservatory_operational import ConservatoryService
 
 router = APIRouter(prefix="/brain/mission-control/conservatory", tags=["mission-control-conservatory"])
 _service_instance = ConservatoryService()
+OwnerIdentity = Annotated[dict[str, object], Depends(verify_owner_or_api_key)]
 
 
 def _service() -> ConservatoryService:
@@ -49,10 +50,7 @@ class EventRequest(BaseModel):
 
 
 @router.post("/locations")
-def create_location(
-    request: LocationRequest,
-    identity: dict[str, object] = Depends(verify_owner_or_api_key),
-) -> dict:
+def create_location(request: LocationRequest, identity: OwnerIdentity) -> dict:
     try:
         return _service().create_location(_owner(identity), request.model_dump())
     except ValueError as exc:
@@ -60,10 +58,7 @@ def create_location(
 
 
 @router.post("/intake")
-def intake(
-    request: IntakeRequest,
-    identity: dict[str, object] = Depends(verify_owner_or_api_key),
-) -> dict:
+def intake(request: IntakeRequest, identity: OwnerIdentity) -> dict:
     try:
         return _service().intake(_owner(identity), request.model_dump())
     except FileNotFoundError as exc:
@@ -73,11 +68,7 @@ def intake(
 
 
 @router.post("/plants/{plant_id}/events")
-def add_event(
-    plant_id: str,
-    request: EventRequest,
-    identity: dict[str, object] = Depends(verify_owner_or_api_key),
-) -> dict:
+def add_event(plant_id: str, request: EventRequest, identity: OwnerIdentity) -> dict:
     try:
         return _service().add_event(
             _owner(identity),
@@ -94,10 +85,7 @@ def add_event(
 
 
 @router.get("/plants/{plant_id}")
-def dossier(
-    plant_id: str,
-    identity: dict[str, object] = Depends(verify_owner_or_api_key),
-) -> dict:
+def dossier(plant_id: str, identity: OwnerIdentity) -> dict:
     try:
         return _service().dossier(_owner(identity), plant_id)
     except FileNotFoundError as exc:
@@ -107,10 +95,7 @@ def dossier(
 
 
 @router.get("/scan/{label_id}")
-def scan(
-    label_id: str,
-    identity: dict[str, object] = Depends(verify_owner_or_api_key),
-) -> dict:
+def scan(label_id: str, identity: OwnerIdentity) -> dict:
     try:
         return _service().scan(_owner(identity), label_id)
     except FileNotFoundError as exc:
@@ -120,10 +105,7 @@ def scan(
 
 
 @router.get("/labels/{label_id}/printable")
-def printable_label(
-    label_id: str,
-    identity: dict[str, object] = Depends(verify_owner_or_api_key),
-) -> dict:
+def printable_label(label_id: str, identity: OwnerIdentity) -> dict:
     try:
         return _service().printable_label(_owner(identity), label_id)
     except FileNotFoundError as exc:
@@ -133,5 +115,5 @@ def printable_label(
 
 
 @router.get("/readiness")
-def readiness(identity: dict[str, object] = Depends(verify_owner_or_api_key)) -> dict:
+def readiness(identity: OwnerIdentity) -> dict:
     return _service().readiness(_owner(identity))
