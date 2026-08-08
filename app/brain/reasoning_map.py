@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Iterable
+from typing import Any
 
 from runtime.knowledge_graph import Edge, GraphRepository, Node
 
@@ -322,9 +323,13 @@ class ReasoningMapEngine:
     ) -> list[tuple[Edge, int, str]]:
         candidates: list[tuple[Edge, int, str]] = []
         if direction in {ReasoningDirection.FORWARD, ReasoningDirection.BOTH}:
-            candidates.extend((edge, edge.to_node_id, "forward") for edge in outgoing.get(node_id, []))
+            candidates.extend(
+                (edge, edge.to_node_id, "forward") for edge in outgoing.get(node_id, [])
+            )
         if direction in {ReasoningDirection.BACKWARD, ReasoningDirection.BOTH}:
-            candidates.extend((edge, edge.from_node_id, "backward") for edge in incoming.get(node_id, []))
+            candidates.extend(
+                (edge, edge.from_node_id, "backward") for edge in incoming.get(node_id, [])
+            )
         return sorted(candidates, key=lambda item: (item[0].kg_edge_id, item[1], item[2]))
 
     @staticmethod
@@ -364,7 +369,11 @@ class ReasoningMapEngine:
             "depth": len(edges),
             "confidence": confidence,
             "polarity": polarity,
-            "polarity_label": {1: "promoting", -1: "inhibitory", 0: "mixed_or_unspecified"}[polarity],
+            "polarity_label": {
+                1: "promoting",
+                -1: "inhibitory",
+                0: "mixed_or_unspecified",
+            }[polarity],
             "traversal_direction": traversal_direction,
             "evidence": [_edge_evidence(edge) for edge in edges],
             "explanation": "".join(explanation_parts),
