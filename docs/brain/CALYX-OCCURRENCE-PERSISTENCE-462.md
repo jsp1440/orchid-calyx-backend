@@ -137,6 +137,14 @@ Validation covers:
 - changed-surface Ruff and diff hygiene;
 - #461 taxonomy intake regression tests.
 
+### Validation chronology
+
+The first exact-head CI attempt correctly exposed a production normalization defect: numeric GBIF/iNaturalist source identifiers were passed to the taxonomy string normalizer and raised `AttributeError`. The implementation was corrected to normalize scalar source values through explicit string conversion and, in the same correction, gained deterministic nested-field traversal for source payloads such as iNaturalist taxon/GeoJSON structures. Tests were not weakened.
+
+The second CI attempt passed compilation, all focused occurrence tests plus #461 taxonomy regressions (`14 passed`), and the permanent non-authority assertions. It then failed only changed-surface Ruff rules `UP035` and `UP037`. Those lint defects were corrected by importing `Iterable` from `collections.abc` and using the unquoted forward annotation enabled by `from __future__ import annotations`.
+
+A subsequent documentation-only commit records this evidence and intentionally retriggers exact-head CI. Final delivery status must be based on that exact head; no earlier green subset is represented as a complete final validation.
+
 ## Integration and dependency posture
 
 This implementation is intentionally stacked on #461 because it consumes the reviewed taxonomy staging identity contract introduced there. The authoritative pull request for #462 should target the #461 feature branch until #461 is merged or otherwise resolved.
