@@ -339,8 +339,7 @@ class ReasoningMapEngine:
         candidates: list[tuple[Edge, int, str]] = []
         if direction in {ReasoningDirection.FORWARD, ReasoningDirection.BOTH}:
             candidates.extend(
-                (edge, edge.to_node_id, "forward")
-                for edge in outgoing.get(node_id, [])
+                (edge, edge.to_node_id, "forward") for edge in outgoing.get(node_id, [])
             )
         if direction in {ReasoningDirection.BACKWARD, ReasoningDirection.BOTH}:
             candidates.extend(
