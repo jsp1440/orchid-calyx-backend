@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -28,6 +30,27 @@ BASE_COMMIT = "a" * 40
 NOW = datetime(2026, 8, 8, 23, 0, tzinfo=timezone.utc)
 SECRET = b"s" * 32
 OWNER = "principal:owner"
+
+
+class TestHmacVerifier:
+    """Test-only verifier; the production 114O runtime never receives SECRET."""
+
+    __test__ = False
+
+    def verify(self, *, payload: Mapping[str, Any], signature: str) -> bool:
+        expected = hmac.new(
+            SECRET,
+            canonical_sha256(payload).encode("ascii"),
+            hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(expected, signature)
+
+
+def _gate() -> GitMutationAuthorizationGate:
+    return GitMutationAuthorizationGate(
+        owner_principal=OWNER,
+        signature_verifier=TestHmacVerifier(),
+    )
 
 
 def _session() -> Session:
@@ -265,10 +288,7 @@ def test_merge_action_is_not_allowlisted() -> None:
 
 
 def test_exact_external_owner_grant_verifies_and_expired_grant_fails() -> None:
-    gate = GitMutationAuthorizationGate(
-        owner_principal=OWNER,
-        hmac_secret=SECRET,
-    )
+    gate = _gate()
     request = _request(_store())
     grant = _owner_grant(
         request_digest=request.request_digest,
@@ -283,7 +303,7 @@ def test_exact_external_owner_grant_verifies_and_expired_grant_fails() -> None:
 
 
 def test_stale_owner_grant_issue_time_is_rejected() -> None:
-    gate = GitMutationAuthorizationGate(owner_principal=OWNER, hmac_secret=SECRET)
+    gate = _gate()
     request = _request(_store())
     grant = _owner_grant(
         request_digest=request.request_digest,
@@ -295,11 +315,26 @@ def test_stale_owner_grant_issue_time_is_rejected() -> None:
         gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
 
 
-def test_runtime_gate_cannot_mint_owner_grants() -> None:
-    gate = GitMutationAuthorizationGate(owner_principal=OWNER, hmac_secret=SECRET)
+def test_runtime_gate_has_no_owner_signing_secret_or_minting_api() -> None:
+    gate = _gate()
+    assert not hasattr(gate, "_secret")
     assert not hasattr(gate, "sign_for_test_or_operator")
     assert not hasattr(gate, "sign_grant")
     assert not hasattr(gate, "approve")
+
+
+def test_invalid_external_signature_is_rejected() -> None:
+    gate = _gate()
+    request = _request(_store())
+    grant = _owner_grant(
+        request_digest=request.request_digest,
+        decision="approved",
+        issued_at=NOW.isoformat(),
+        expires_at=request.expires_at,
+    )
+    grant["signature"] = "0" * 64
+    with pytest.raises(PermissionError, match="SIGNATURE_INVALID"):
+        gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
 
 
 def test_manifest_tampering_invalidates_request() -> None:
