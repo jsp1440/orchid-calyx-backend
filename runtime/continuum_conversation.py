@@ -14,7 +14,10 @@ from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
 from app.semantic_index.provider import DeterministicLocalProvider
 from app.semantic_index.routes import REPO
-from runtime.continuum_graph_tool import KnowledgeGraphReadProtocol, ReadOnlyKnowledgeGraphTool
+from runtime.continuum_graph_tool import (
+    KnowledgeGraphReadProtocol,
+    ReadOnlyKnowledgeGraphTool,
+)
 
 CONVERSATION_SCHEMA_VERSION = "calyx-continuum-conversation/v2"
 
