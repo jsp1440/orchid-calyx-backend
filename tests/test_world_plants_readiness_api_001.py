@@ -44,9 +44,7 @@ def test_readiness_passes_upload_gates_with_verified_environment(
     assert "Mission Control taxonomy intake" in report["instruction"]
 
 
-def test_live_durable_evidence_allows_upload_before_smoke(
-    tmp_path: Path, monkeypatch
-):
+def test_live_durable_evidence_allows_upload_before_smoke(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("CALYX_TAXONOMY_STORAGE_PERSISTENT", raising=False)
     monkeypatch.delenv("CALYX_TAXONOMY_STAGING_SCHEMA_VERIFIED", raising=False)
     monkeypatch.delenv("CALYX_TAXONOMY_SMOKE_FIXTURE_VERIFIED", raising=False)
