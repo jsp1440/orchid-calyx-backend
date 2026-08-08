@@ -41,7 +41,7 @@ jobs:
           from urllib.error import HTTPError, URLError
           from urllib.request import Request, urlopen
 
-          base = os.environ["CALYX_BACKEND_URL"].rstrip("/")
+          base = os.environ["CALYX_BACKEND_URL"].strip().rstrip("/")
           access_code = os.environ["CALYX_OWNER_ACCESS_CODE"]
           expected_main = os.environ["EXPECTED_MAIN_SHA"]
           receipt = {
@@ -87,7 +87,7 @@ jobs:
 
               if exit_code == 0:
                   cert_status, certification = call(
-                      "/mission-control/calyx-core/certification",
+                      "/api/mission-control/calyx-core/certification",
                       token=token,
                   )
                   receipt["certification_status"] = cert_status
