@@ -1,0 +1,62 @@
+name: CALYX Document Scope 637
+
+on:
+  pull_request:
+    paths:
+      - "app/evidence_retrieval/engine.py"
+      - "runtime/continuum_conversation.py"
+      - "tests/test_calyx_document_scope_637.py"
+      - "docs/brain/CALYX-DOCUMENT-SCOPE-637.md"
+      - ".github/workflows/calyx-document-scope-637.yml"
+  workflow_dispatch:
+
+jobs:
+  document-scope:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile document-scoped conversation surface
+        run: >-
+          python -m py_compile
+          app/evidence_retrieval/engine.py
+          runtime/continuum_conversation.py
+          tests/test_calyx_document_scope_637.py
+      - name: Document scope plus conversation/retrieval regressions
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_document_scope_637.py
+          tests/test_calyx_continuum_conversation_634.py
+          tests/test_build_085b_hybrid_retrieval.py
+      - name: Permanent scoped-retrieval non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          conversation = Path('runtime/continuum_conversation.py').read_text()
+          engine = Path('app/evidence_retrieval/engine.py').read_text()
+          required = (
+              'filters=retrieval_filters',
+              '"document_scope_applied": bool(active_context.active_document_id)',
+              '"model_knowledge_used": False',
+              '"scientific_publication_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+          )
+          missing = [item for item in required if item not in conversation]
+          if missing:
+              raise SystemExit(f'missing document-scope governance assertion(s): {missing}')
+          if 'DOCUMENT_SCOPE' not in engine:
+              raise SystemExit('document scope exclusion accounting missing')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'TRUNCATE oc_graph')
+          present = [item for item in forbidden if item in conversation or item in engine]
+          if present:
+              raise SystemExit(f'forbidden graph mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/continuum_conversation.py tests/test_calyx_document_scope_637.py
+          git diff --check
