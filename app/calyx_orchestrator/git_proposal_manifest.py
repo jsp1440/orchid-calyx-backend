@@ -39,8 +39,7 @@ def _valid_git_branch(value: str) -> bool:
         not value
         or value == "@"
         or value.startswith("/")
-        or value.endswith("/")
-        or value.endswith(".")
+        or value.endswith(("/", "."))
         or "//" in value
         or ".." in value
         or "@{" in value
@@ -52,8 +51,7 @@ def _valid_git_branch(value: str) -> bool:
         if (
             not component
             or component.startswith(".")
-            or component.endswith(".")
-            or component.endswith(".lock")
+            or component.endswith((".", ".lock"))
         ):
             return False
     return True
