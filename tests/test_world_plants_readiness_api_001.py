@@ -44,6 +44,28 @@ def test_readiness_passes_upload_gates_with_verified_environment(
     assert "Mission Control taxonomy intake" in report["instruction"]
 
 
+def test_live_durable_evidence_clears_filesystem_and_schema_flags(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.delenv("CALYX_TAXONOMY_STORAGE_PERSISTENT", raising=False)
+    monkeypatch.delenv("CALYX_TAXONOMY_STAGING_SCHEMA_VERIFIED", raising=False)
+    monkeypatch.delenv("CALYX_TAXONOMY_SMOKE_FIXTURE_VERIFIED", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://redacted")
+
+    report = build_taxonomy_readiness_report(
+        intake_root=tmp_path / "missing-local-volume",
+        staging_schema_verified_override=True,
+        durable_intake_available_override=True,
+    )
+    statuses = {gate["name"]: gate["status"] for gate in report["gates"]}
+
+    assert statuses["persistent_intake_storage"] == "passed"
+    assert statuses["staging_schema"] == "passed"
+    assert statuses["smoke_fixture"] == "blocked"
+    assert report["ready_for_upload"] is False
+    assert report["pipeline_state"] == "deployment_gates_blocking_intake"
+
+
 def test_inspected_release_reports_staging_schema_governance_boundary(
     tmp_path: Path, monkeypatch
 ):
