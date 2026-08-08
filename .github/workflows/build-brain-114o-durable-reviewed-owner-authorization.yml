@@ -52,8 +52,14 @@ jobs:
 
           source = Path("app/calyx_orchestrator/git_mutation_authorization.py").read_text(encoding="utf-8")
           assert "DurableProposalAuthorizationStore" in source
+          assert "OwnerGrantSignatureVerifier" in source
+          assert "signature_verifier" in source
           assert "review_store" in source
           forbidden = (
+              "import hmac",
+              "import hashlib",
+              "hmac_secret",
+              "_secret",
               "sign_for_test_or_operator",
               "subprocess",
               "git push",
