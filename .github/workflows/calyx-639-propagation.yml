@@ -15,6 +15,7 @@ on:
       - "tests/test_propagation_comparator_dataset.py"
       - "docs/brain/CALYX-639-recalcitrant-orchid-propagation.md"
       - "docs/brain/CALYX-639B-terrestrial-vegetative-plb-comparators.md"
+      - "docs/brain/CALYX-639C-propagation-comparator-dataset.md"
       - ".github/workflows/calyx-639-propagation.yml"
   workflow_dispatch:
 
