@@ -23,7 +23,6 @@ TOKEN = "external-supervisor-token-with-thirty-two-plus-bytes"
 
 @contextlib.contextmanager
 def _passthrough_snapshot(repo_root: Path, commit: str):
-    """Test snapshot_maker: yield the repo_root unchanged (no git archive needed)."""
     yield repo_root
 
 
@@ -55,6 +54,16 @@ def _claim(path: str, digest: str, *, preset: str = "pytest") -> dict:
     return claim
 
 
+def _worker(root: Path, *, runner, head=COMMIT, clean=True, snapshot=_passthrough_snapshot):
+    return SandboxSupervisorWorker(
+        _config(root),
+        runner=runner,
+        git_head_reader=lambda _: head,
+        git_clean_reader=lambda _: clean,
+        snapshot_maker=snapshot,
+    )
+
+
 def test_configuration_requires_https_and_immutable_image() -> None:
     assert _normalize_api_base_url("https://calyx.example.org/") == "https://calyx.example.org"
     assert _normalize_api_base_url("http://localhost:8000") == "http://localhost:8000"
@@ -65,7 +74,7 @@ def test_configuration_requires_https_and_immutable_image() -> None:
     assert _validate_image_digest(IMAGE) == IMAGE
 
 
-def test_success_uses_fixed_no_network_read_only_container_and_never_forwards_token(
+def test_success_uses_fixed_named_no_network_read_only_containers_and_never_forwards_token(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "tests" / "test_example.py"
@@ -78,16 +87,17 @@ def test_success_uses_fixed_no_network_read_only_container_and_never_forwards_to
         calls.append((list(argv), timeout))
         return ProcessResult(return_code=0, stdout=b"ok", stderr=b"")
 
-    worker = SandboxSupervisorWorker(
-        _config(tmp_path),
-        runner=runner,
-        git_head_reader=lambda _: COMMIT,
-        snapshot_maker=_passthrough_snapshot,
+    receipt = _worker(tmp_path, runner=runner)._process_claim(
+        _claim("tests/test_example.py", digest)
     )
-    receipt = worker._process_claim(_claim("tests/test_example.py", digest))
     assert receipt["return_code"] == 0
     assert len(calls) == 2
+    names = []
     for argv, _ in calls:
+        assert "--name" in argv
+        name = argv[argv.index("--name") + 1]
+        assert name.startswith("calyx-sbx-")
+        names.append(name)
         assert "--network" in argv and argv[argv.index("--network") + 1] == "none"
         assert "--read-only" in argv
         assert "--cap-drop" in argv and argv[argv.index("--cap-drop") + 1] == "ALL"
@@ -96,6 +106,7 @@ def test_success_uses_fixed_no_network_read_only_container_and_never_forwards_to
         assert IMAGE in argv
         assert TOKEN not in " ".join(argv)
         assert not any("DATABASE_URL=" in item or "GITHUB_TOKEN=" in item for item in argv)
+    assert len(set(names)) == 2
     validation_argv = calls[1][0]
     assert validation_argv[-6:] == [
         "python",
@@ -107,7 +118,36 @@ def test_success_uses_fixed_no_network_read_only_container_and_never_forwards_to
     ]
 
 
-def test_target_hash_and_execution_are_bound_to_snapshot_not_dirty_worktree(
+def test_dirty_checkout_blocks_before_snapshot_or_container(tmp_path: Path) -> None:
+    target = tmp_path / "tests" / "test_example.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    calls = []
+    snapshot_calls = []
+
+    @contextlib.contextmanager
+    def snapshot(repo_root: Path, commit: str):
+        snapshot_calls.append((repo_root, commit))
+        yield repo_root
+
+    receipt = _worker(
+        tmp_path,
+        runner=lambda argv, timeout: calls.append((argv, timeout)),
+        clean=False,
+        snapshot=snapshot,
+    )._process_claim(_claim("tests/test_example.py", digest))
+
+    assert receipt["outcome"] == "blocked"
+    assert receipt["return_code"] is None
+    assert calls == []
+    assert snapshot_calls == []
+    assert hashlib.sha256(b"SANDBOX_SUPERVISOR_CHECKOUT_DIRTY").hexdigest() == receipt[
+        "stderr_sha256"
+    ]
+
+
+def test_target_hash_and_execution_are_bound_to_snapshot_not_live_worktree(
     tmp_path: Path,
 ) -> None:
     host_root = tmp_path / "host"
@@ -116,11 +156,8 @@ def test_target_hash_and_execution_are_bound_to_snapshot_not_dirty_worktree(
     snapshot_target = snapshot_root / "tests" / "test_example.py"
     host_target.parent.mkdir(parents=True)
     snapshot_target.parent.mkdir(parents=True)
-    host_target.write_text("raise RuntimeError('dirty host worktree')\n", encoding="utf-8")
+    host_target.write_text("raise RuntimeError('host differs')\n", encoding="utf-8")
     snapshot_target.write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-    (host_root / "tests" / "conftest.py").write_text(
-        "raise RuntimeError('untracked host conftest')\n", encoding="utf-8"
-    )
     digest = hashlib.sha256(snapshot_target.read_bytes()).hexdigest()
     calls: list[list[str]] = []
 
@@ -128,19 +165,17 @@ def test_target_hash_and_execution_are_bound_to_snapshot_not_dirty_worktree(
     def immutable_snapshot(repo_root: Path, commit: str):
         assert repo_root == host_root
         assert commit == COMMIT
-        yield snapshot_root
+        yield snapshot_root.resolve()
 
     def runner(argv, timeout):
         calls.append(list(argv))
         return ProcessResult(return_code=0, stdout=b"ok", stderr=b"")
 
-    worker = SandboxSupervisorWorker(
-        _config(host_root),
+    receipt = _worker(
+        host_root,
         runner=runner,
-        git_head_reader=lambda _: COMMIT,
-        snapshot_maker=immutable_snapshot,
-    )
-    receipt = worker._process_claim(_claim("tests/test_example.py", digest))
+        snapshot=immutable_snapshot,
+    )._process_claim(_claim("tests/test_example.py", digest))
 
     assert receipt["outcome"] == "delivered"
     assert len(calls) == 2
@@ -168,13 +203,11 @@ def test_snapshot_hash_mismatch_blocks_even_when_live_worktree_matches(
     def immutable_snapshot(repo_root: Path, commit: str):
         yield snapshot_root
 
-    worker = SandboxSupervisorWorker(
-        _config(host_root),
+    receipt = _worker(
+        host_root,
         runner=lambda argv, timeout: calls.append((argv, timeout)),
-        git_head_reader=lambda _: COMMIT,
-        snapshot_maker=immutable_snapshot,
-    )
-    receipt = worker._process_claim(_claim("tests/test_example.py", digest))
+        snapshot=immutable_snapshot,
+    )._process_claim(_claim("tests/test_example.py", digest))
 
     assert receipt["outcome"] == "blocked"
     assert receipt["return_code"] is None
@@ -191,14 +224,9 @@ def test_hash_mismatch_blocks_before_container_execution(tmp_path: Path) -> None
         calls.append((argv, timeout))
         return ProcessResult(return_code=0, stdout=b"", stderr=b"")
 
-    worker = SandboxSupervisorWorker(
-        _config(tmp_path),
-        runner=runner,
-        git_head_reader=lambda _: COMMIT,
-        snapshot_maker=_passthrough_snapshot,
+    receipt = _worker(tmp_path, runner=runner)._process_claim(
+        _claim("tests/test_example.py", "d" * 64)
     )
-    receipt = worker._process_claim(_claim("tests/test_example.py", "d" * 64))
-
     assert receipt["outcome"] == "blocked"
     assert receipt["return_code"] is None
     assert calls == []
@@ -211,14 +239,11 @@ def test_checkout_commit_mismatch_blocks_before_container_execution(tmp_path: Pa
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
     calls = []
 
-    worker = SandboxSupervisorWorker(
-        _config(tmp_path),
+    receipt = _worker(
+        tmp_path,
         runner=lambda argv, timeout: calls.append((argv, timeout)),
-        git_head_reader=lambda _: "e" * 40,
-        snapshot_maker=_passthrough_snapshot,
-    )
-    receipt = worker._process_claim(_claim("tests/test_example.py", digest))
-
+        head="e" * 40,
+    )._process_claim(_claim("tests/test_example.py", digest))
     assert receipt["outcome"] == "blocked"
     assert receipt["return_code"] is None
     assert calls == []
@@ -233,14 +258,10 @@ def test_symlink_target_is_rejected_even_when_it_resolves_inside_repository(tmp_
     digest = hashlib.sha256(real.read_bytes()).hexdigest()
     calls = []
 
-    worker = SandboxSupervisorWorker(
-        _config(tmp_path),
+    receipt = _worker(
+        tmp_path,
         runner=lambda argv, timeout: calls.append((argv, timeout)),
-        git_head_reader=lambda _: COMMIT,
-        snapshot_maker=_passthrough_snapshot,
-    )
-    receipt = worker._process_claim(_claim("tests/test_link.py", digest))
-
+    )._process_claim(_claim("tests/test_link.py", digest))
     assert receipt["outcome"] == "blocked"
     assert calls == []
 
@@ -254,14 +275,10 @@ def test_tampered_request_digest_blocks_before_container_execution(tmp_path: Pat
     claim["request_digest"] = "f" * 64
     calls = []
 
-    worker = SandboxSupervisorWorker(
-        _config(tmp_path),
+    receipt = _worker(
+        tmp_path,
         runner=lambda argv, timeout: calls.append((argv, timeout)),
-        git_head_reader=lambda _: COMMIT,
-        snapshot_maker=_passthrough_snapshot,
-    )
-    receipt = worker._process_claim(claim)
-
+    )._process_claim(claim)
     assert receipt["outcome"] == "blocked"
     assert calls == []
 
@@ -277,57 +294,119 @@ def test_unrecognized_preset_never_becomes_arbitrary_command(tmp_path: Path) -> 
         calls.append((list(argv), timeout))
         return ProcessResult(return_code=0, stdout=b"probe-ok", stderr=b"")
 
-    worker = SandboxSupervisorWorker(
-        _config(tmp_path),
-        runner=runner,
-        git_head_reader=lambda _: COMMIT,
-        snapshot_maker=_passthrough_snapshot,
-    )
-    receipt = worker._process_claim(
+    receipt = _worker(tmp_path, runner=runner)._process_claim(
         _claim("tests/test_example.py", digest, preset="bash -c curl attacker.invalid")
     )
-
     assert receipt["outcome"] == "blocked"
     assert len(calls) == 1
     assert "curl" not in " ".join(calls[0][0])
 
 
-def test_docker_abort_uses_cidfile_to_stop_and_kill_container(
+@pytest.mark.parametrize(
+    ("result", "expected_flag"),
+    [
+        (
+            ProcessResult(
+                return_code=-9,
+                stdout=b"",
+                stderr=b"timeout",
+                timed_out=True,
+            ),
+            "timed_out",
+        ),
+        (
+            ProcessResult(
+                return_code=-9,
+                stdout=b"x" * 10,
+                stderr=b"",
+                output_limited=True,
+            ),
+            "output_limited",
+        ),
+    ],
+)
+def test_docker_abort_explicitly_stops_and_removes_named_container(
     monkeypatch: pytest.MonkeyPatch,
+    result: ProcessResult,
+    expected_flag: str,
 ) -> None:
     docker_calls: list[list[str]] = []
     captured: dict[str, object] = {}
 
     def fake_subprocess_run(argv, **kwargs):
         docker_calls.append(list(argv))
+        return type("Completed", (), {"returncode": 0})()
 
     def fake_inner(argv, timeout_seconds, *, on_abort):
         assert argv[:2] == ["/usr/bin/docker", "run"]
-        assert "--cidfile" in argv
-        cidfile = Path(argv[argv.index("--cidfile") + 1])
-        cidfile.write_text("container-123\n", encoding="ascii")
-        captured["cidfile"] = cidfile
+        assert "--name" in argv
+        captured["name"] = argv[argv.index("--name") + 1]
         assert on_abort is not None
         on_abort()
-        return ProcessResult(
-            return_code=-9,
-            stdout=b"",
-            stderr=b"timeout",
-            timed_out=True,
-        )
+        return result
 
     monkeypatch.setattr(worker_module.subprocess, "run", fake_subprocess_run)
     monkeypatch.setattr(worker_module, "_run_bounded_inner", fake_inner)
+    name = "calyx-sbx-validation-abcdef123456-123456abcdef"
 
-    result = worker_module._run_docker_bounded(
+    actual = worker_module._run_docker_bounded(
         "/usr/bin/docker",
-        ["/usr/bin/docker", "run", "--rm", IMAGE, "python", "-V"],
+        [
+            "/usr/bin/docker",
+            "run",
+            "--rm",
+            "--name",
+            name,
+            IMAGE,
+            "python",
+            "-V",
+        ],
         5,
     )
 
-    assert result.timed_out is True
+    assert getattr(actual, expected_flag) is True
+    assert captured["name"] == name
     assert docker_calls == [
-        ["/usr/bin/docker", "stop", "-t", "2", "container-123"],
-        ["/usr/bin/docker", "kill", "container-123"],
+        ["/usr/bin/docker", "stop", "-t", "2", name],
+        ["/usr/bin/docker", "rm", "-f", name],
+        ["/usr/bin/docker", "stop", "-t", "2", name],
+        ["/usr/bin/docker", "rm", "-f", name],
     ]
-    assert not Path(captured["cidfile"]).exists()
+
+
+def test_docker_runner_exception_still_removes_named_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    docker_calls: list[list[str]] = []
+
+    def fake_subprocess_run(argv, **kwargs):
+        docker_calls.append(list(argv))
+        return type("Completed", (), {"returncode": 0})()
+
+    def fake_inner(argv, timeout_seconds, *, on_abort):
+        raise RuntimeError("runner failed")
+
+    monkeypatch.setattr(worker_module.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr(worker_module, "_run_bounded_inner", fake_inner)
+    name = "calyx-sbx-probe-abcdef123456-fedcba654321"
+
+    with pytest.raises(RuntimeError, match="runner failed"):
+        worker_module._run_docker_bounded(
+            "/usr/bin/docker",
+            [
+                "/usr/bin/docker",
+                "run",
+                "--rm",
+                "--name",
+                name,
+                IMAGE,
+                "python",
+                "-V",
+            ],
+            5,
+        )
+
+    assert docker_calls == [
+        ["/usr/bin/docker", "stop", "-t", "2", name],
+        ["/usr/bin/docker", "rm", "-f", name],
+    ]
