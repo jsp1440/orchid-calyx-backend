@@ -47,6 +47,12 @@ jobs:
           python -m ruff format --check scripts/activate_reasoning_prerequisite_schemas.py tests/test_reasoning_prerequisite_schema_activation.py
       - name: Unit and disposable PostgreSQL tests
         run: pytest -q tests/test_reasoning_prerequisite_schema_activation.py
+      - name: Reset disposable database for independent CLI rehearsal
+        env:
+          PGPASSWORD: calyx
+        run: |
+          psql -h localhost -U calyx -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS calyx_prereq_test WITH (FORCE);"
+          psql -h localhost -U calyx -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE calyx_prereq_test OWNER calyx;"
       - name: Disposable CLI preflight
         env:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
