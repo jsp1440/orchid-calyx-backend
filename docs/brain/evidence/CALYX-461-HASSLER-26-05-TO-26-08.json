@@ -1,0 +1,242 @@
+{
+  "baseline": {
+    "canonical_utf8_sha256": "12b3a5bf980f1a26b4a0ae372a9749a1658c69cb3c8838d5875c74dd775d830a",
+    "data_rows": 34675,
+    "embedded_synonym_names": 60961,
+    "filename": "Orchids 26-05 (May 20 2026) 3.csv",
+    "legacy_bytes_repaired_in_canonical_projection": 293,
+    "normalized_jsonl_sha256": "4b4c97f70f86875d8680f71102094c8aec929ecf534b1d2423bfab7f1a517651",
+    "rank_counts": {
+      "F": 1,
+      "FM": 23,
+      "G": 733,
+      "S": 32058,
+      "SF": 5,
+      "SS": 738,
+      "ST": 55,
+      "T": 22,
+      "V": 1040
+    },
+    "raw_bytes": 11496953,
+    "raw_sha256": "df6e220e6f2998dea236e4b4e0d656c4d8344b9e615aaf6eaaab97f7619a122a",
+    "release_label": "26-05",
+    "review_items": [
+      {
+        "rank": "S",
+        "reason": "malformed_taxon_name",
+        "row_number": 30684,
+        "scientific_name": "Lepanthes o A. Doucette"
+      }
+    ],
+    "unique_name_keys": 34675
+  },
+  "candidate": {
+    "canonical_utf8_sha256": "e7ba31a1f5ab2361f754bcc81a50b38750a986cacf36e180cc72027b5f202be6",
+    "data_rows": 34724,
+    "embedded_synonym_names": 60984,
+    "filename": "WorldOrchids 26-08 (Aug 2 2026)(1).csv",
+    "legacy_bytes_repaired_in_canonical_projection": 293,
+    "normalized_jsonl_sha256": "9928fe9fc1e71d0fa987e49ed2c563320fba1a8b980318f58f892e0a3c3313e2",
+    "rank_counts": {
+      "F": 1,
+      "FM": 23,
+      "G": 732,
+      "S": 32108,
+      "SF": 5,
+      "SS": 738,
+      "ST": 55,
+      "T": 22,
+      "V": 1040
+    },
+    "raw_bytes": 11529836,
+    "raw_sha256": "e5be9268e1a48cb0e1777137ac386a9a870f3581c35f10678c9b810c59688c6f",
+    "release_id": "rel-e5be9268e1a48cb0e177",
+    "release_label": "26-08",
+    "review_items": [
+      {
+        "reason": "duplicate_taxon_key",
+        "row_number": 19063,
+        "scientific_name": "Gastrochilus wenchuanensis P. Y. Wu &amp; C. Y. Zhou"
+      },
+      {
+        "reason": "duplicate_taxon_key",
+        "row_number": 19069,
+        "scientific_name": "Gastrochilus wenchuanensis P. Y. Wu &amp; C. Y. Zhou"
+      },
+      {
+        "reason": "malformed_taxon_name",
+        "row_number": 30728,
+        "scientific_name": "Lepanthes o A. Doucette"
+      }
+    ],
+    "unique_name_keys": 34723
+  },
+  "comparison": {
+    "added": 65,
+    "added_names": [
+      "Aerides confusa Calaramo, Cabactulan &amp; Cootes",
+      "Aerides jannae Cabactulan &amp; Cootes",
+      "Anacamptis pyramidalis (L.) Rich. var. lusitanica (Presser) comb. ined.",
+      "Andreettaea nikoleae A. Doucette, H. Medina, J. Portilla &amp; J. P. Martinez",
+      "Brachionidium ramiro-medinae Kolan. &amp; Szlach.",
+      "Bryobium scutatum Mustaqim, J. Champ. &amp; Schuit.",
+      "Bulbophyllum bequaertii De Wild.",
+      "Bulbophyllum bequaertii De Wild. var. brachyanthum Summerh.",
+      "Bulbophyllum bequaertii De Wild. var. tenuicaule (Lindl.) Cai F. Zhang, G. W. Hu &amp; Q. F. Wang",
+      "Bulbophyllum halmaherae Mustaqim, Yudistira, Jacop &amp; Schuit.",
+      "Bulbophyllum jaculatrix Ormerod &amp; K. Metzg.",
+      "Bulbophyllum tenuilabium Mustaqim, J. Champ., Yudistira &amp; Schuit.",
+      "Caladenia phoenix Kosky",
+      "Catasetum cantuariae Krahl, D. R. P. Krahl, Chiron &amp; J. B. F. Silva",
+      "Catasetum x abreuanum D. R. P. Krahl, Krahl, J. B. F. Silva &amp; Cantu&aacute;ria",
+      "Catasetum x inhotimensis L. C. Assis &amp; U. L. C. Ferreira",
+      "Cattleya attenboroughiana E. L. F. Menezes, Giordani &amp; R. A. Pinheiro",
+      "Cattleya meninensis (Campacci) D. R. P. Krahl, Schmal &amp; Cantu&aacute;ria",
+      "Cattleya regentii (V. P. Castro &amp; D. Motte) J. M. H. Shaw",
+      "Cattleya topazzoana (Campacci &amp; Locatelli) Krahl, D. R. P. Krahl &amp; Mig. S. Oliveira",
+      "Cattleya x freitasii (Rosim &amp; Campacci) J. M. H. Shaw",
+      "Chamaeanthus brachystachys Schltr. ex J. J. Sm.",
+      "Coryanthes ecallosa I. S. Santos &amp; M. J. Silva",
+      "Corybas apoensis Agad, Tandang, R. Bustam. &amp; D. S. Salas",
+      "Crepidium crenulatum (Ridl.) Sushil K. Singh, Agrawala &amp; Jalal",
+      "Dendrobium archipelagense Howcroft &amp; W. Takeuchi",
+      "Dendrobium eruciforme Schuit., Saputra &amp; Wanma",
+      "Dendrobium x falconerwardianum B. Q. Zheng &amp; Qun Wang",
+      "Dinema boothii (Lindl.) Van den Berg &amp; T. L. Vieira",
+      "Dinema mariae (A. E. Ramos, M. A. Lozano &amp; Solano) Van den Berg &amp; T. L. Vieira",
+      "Dinema ottonis (Rchb.f.) Van den Berg &amp; T. L. Vieira",
+      "Disa campestris Bytebier &amp; S. D. Johnson",
+      "Disperis ngeziensis S. Orsenigo, A. Bianchi &amp; Baldesi",
+      "Epidendrum acrobatesii Chiron",
+      "Epidendrum acutissimum H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum amphibiotum H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum ankaranense Bosser ex Hermans &amp; P. J. Cribb",
+      "Epidendrum cajabambae H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum carabayense H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum carolii H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum catacamasense H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum chachapoyense H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum cundinamarcense H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum eliasii H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum gentryi H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum juanjui H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum llanganatense H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum marianoi H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum monzonense H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum pichinchense H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum rodrigoi H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum sanmartinense H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum tarapotense H&aacute;gsater &amp; E. Santiago",
+      "Epidendrum xanthinum Lindl. var. minor H&aacute;gsater &amp; E. Santiago",
+      "Habenaria bennettiana (Rchb.f.) Ormerod",
+      "Ophrys x martinii O. Danesch &amp; E. Danesch ex H. Baumann &amp; K&uuml;nkele",
+      "Pleurothallis alvaroi Luer &amp; R. Escobar",
+      "Pleurothallis medinae Luer &amp; R. Escobar",
+      "Pleurothallis xanthochlora Luer &amp; R. Escobar",
+      "Stelis carmenae Luer &amp; R. Escobar",
+      "Stelis medinae Luer &amp; R. Escobar",
+      "Telipogon isabelae Dodson &amp; Hirtz ex J. M. H. Shaw",
+      "Trichocentrum brachyceras (Schltr.) M. W. Chase &amp; N. H. Williams",
+      "Trichocentrum ionopthalmum (Rchb.f.) M. W. Chase &amp; N. H. Williams",
+      "Trichocentrum pumilum (Lindl.) M. W. Chase &amp; N. H. Williams"
+    ],
+    "added_rank_counts": {
+      "S": 61,
+      "V": 4
+    },
+    "baseline_unique_taxa": 34675,
+    "candidate_unique_taxa": 34723,
+    "changed": 4461,
+    "changed_field_counts": {
+      "ConservationStatus": 31,
+      "Distribution": 3781,
+      "Literature": 126,
+      "Number": 34,
+      "Remarks": 141,
+      "Synonyms": 562
+    },
+    "changed_ratio": 0.12865176640230713,
+    "default_policy_changed_ratio_limit": 0.25,
+    "default_policy_removed_ratio_limit": 0.05,
+    "removed": 17,
+    "removed_names": [
+      "Bulbophyllum cochleatum Lindl. var. bequaertii (De Wild.) Verm.",
+      "Bulbophyllum cochleatum Lindl. var. brachyanthum (Summerh.) Verm.",
+      "Bulbophyllum cochleatum Lindl. var. tenuicaule (Lindl.) J. J. Verm.",
+      "Cattleya meninensis (Campacci) comb. ined.",
+      "Cattleya regentii (V. P. Castro &amp; D. Motte) comb. ined.",
+      "Cattleya topazzoana (Campacci &amp; Locatelli) comb. ined.",
+      "Cattleya x freitasii (Rosim &amp; Campacci) comb. ined.",
+      "Chamaeanthus brachystachys Schltr.",
+      "Crepidium crenulatum (Ridl.) Kottaim.",
+      "Dendrobium archipelagense Howcroft &amp; W. N. Takeuchi",
+      "Dendrobium vexillarius J. J. Sm. var. hansmeyerense Howcroft &amp; W. N. Takeuchi",
+      "Habenaria bennettiana (Rchb.f.) Bytebier",
+      "Nidema boothii (Lindl.) Schltr.",
+      "Nidema Britton &amp; Millsp.",
+      "Nidema ottonis (Rchb.f.) Britton &amp; Millsp.",
+      "Ophrys x martinii O. Danesch &amp; E. Danesch",
+      "Telipogon isabelae Dodson &amp; Hirtz"
+    ],
+    "removed_rank_counts": {
+      "G": 1,
+      "S": 12,
+      "V": 4
+    },
+    "removed_ratio": 0.0004902667627974045,
+    "unchanged": 30197
+  },
+  "comparison_semantics": {
+    "changed": "same identity key with one or more canonical source fields changed",
+    "identity": "case-folded scientific Name, matching runtime.taxonomy_preflight.compare_rows for canonical Hassler projections",
+    "note": "row totals can exceed unique-name totals when duplicate taxon keys exist"
+  },
+  "issue": 461,
+  "pr": 598,
+  "schema_version": "1.0.0",
+  "staging_projection_proof": {
+    "batch_size": 5000,
+    "checkpoints": [
+      {
+        "complete": false,
+        "next_offset": 5000,
+        "projected_unique_rows": 5000
+      },
+      {
+        "complete": false,
+        "next_offset": 10000,
+        "projected_unique_rows": 10000
+      },
+      {
+        "complete": false,
+        "next_offset": 15000,
+        "projected_unique_rows": 15000
+      },
+      {
+        "complete": false,
+        "next_offset": 20000,
+        "projected_unique_rows": 20000
+      },
+      {
+        "complete": false,
+        "next_offset": 25000,
+        "projected_unique_rows": 25000
+      },
+      {
+        "complete": false,
+        "next_offset": 30000,
+        "projected_unique_rows": 30000
+      },
+      {
+        "complete": true,
+        "next_offset": 34724,
+        "projected_unique_rows": 34724
+      }
+    ],
+    "duplicate_row_delta_on_replay": 0,
+    "final_projected_unique_rows": 34724,
+    "production_database_write": false,
+    "replay_projected_unique_rows": 34724,
+    "taxonomy_activation": false
+  }
+}
