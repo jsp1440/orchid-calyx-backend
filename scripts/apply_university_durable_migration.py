@@ -39,6 +39,16 @@ def safe_database_identity(database_url: str) -> dict[str, str | None]:
     }
 
 
+def database_confirmation_target(database_url: str) -> str:
+    identity = safe_database_identity(database_url)
+    hostname = identity["hostname"] or ""
+    database = identity["database"] or ""
+    port = f":{identity['port']}" if identity["port"] else ""
+    if not hostname or not database:
+        raise MigrationGuardError("database URL must include a hostname and database name")
+    return f"{hostname}{port}/{database}"
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise MigrationGuardError(message)
@@ -88,6 +98,7 @@ def plan(*, release_evidence: Path, database_url: str) -> dict[str, Any]:
     digest = migration_digest()
     already_valid = bool(database.get("schema_valid"))
     blockers = list(readiness.get("migration_blockers") or [])
+    target = database_confirmation_target(database_url)
 
     return {
         "contract": "OCU-SCI-009N-MIGRATION-RUNNER-001",
@@ -97,24 +108,37 @@ def plan(*, release_evidence: Path, database_url: str) -> dict[str, Any]:
             "sha256": digest,
         },
         "database": safe_database_identity(database_url),
+        "database_confirmation_target": target,
         "migration_stage_preflight": {
             "ready": bool(readiness.get("ready_to_apply_migration")),
             "blockers": blockers,
         },
         "schema_already_valid": already_valid,
         "would_apply": bool(readiness.get("ready_to_apply_migration")) and not already_valid,
-        "requires_exact_confirmation": digest,
+        "requires_exact_migration_confirmation": digest,
+        "requires_exact_database_confirmation": target,
         "mutations_performed": False,
     }
 
 
-def apply_migration(*, release_evidence: Path, database_url: str, confirm_migration_sha256: str) -> dict[str, Any]:
+def apply_migration(
+    *,
+    release_evidence: Path,
+    database_url: str,
+    confirm_migration_sha256: str,
+    confirm_database_target: str,
+) -> dict[str, Any]:
     migration_plan = plan(release_evidence=release_evidence, database_url=database_url)
     expected_digest = str(migration_plan["migration"]["sha256"])
+    expected_target = str(migration_plan["database_confirmation_target"])
 
     _require(
         confirm_migration_sha256.strip().lower() == expected_digest,
         "exact migration SHA-256 confirmation is required",
+    )
+    _require(
+        confirm_database_target.strip() == expected_target,
+        "exact database target confirmation is required",
     )
     _require(
         bool(migration_plan["migration_stage_preflight"]["ready"]),
@@ -164,6 +188,7 @@ def main() -> int:
     parser.add_argument("--database-url", default=os.getenv("DATABASE_URL"))
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--confirm-migration-sha256")
+    parser.add_argument("--confirm-database-target")
     parser.add_argument("--json", action="store_true", dest="json_output")
     args = parser.parse_args()
 
@@ -173,12 +198,15 @@ def main() -> int:
 
     try:
         if args.apply:
-            if not args.confirm_migration_sha256:
-                raise MigrationGuardError("--apply requires --confirm-migration-sha256")
+            if not args.confirm_migration_sha256 or not args.confirm_database_target:
+                raise MigrationGuardError(
+                    "--apply requires --confirm-migration-sha256 and --confirm-database-target"
+                )
             result = apply_migration(
                 release_evidence=args.release_evidence,
                 database_url=args.database_url,
                 confirm_migration_sha256=args.confirm_migration_sha256,
+                confirm_database_target=args.confirm_database_target,
             )
         else:
             result = plan(release_evidence=args.release_evidence, database_url=args.database_url)
@@ -196,6 +224,7 @@ def main() -> int:
         print(f"Migration: {result['migration']['path']}")
         print(f"SHA-256: {result['migration']['sha256']}")
         print(f"Database: {result['database']}")
+        print(f"Database confirmation target: {result['database_confirmation_target']}")
         if not args.apply:
             print(f"Ready to apply: {result['migration_stage_preflight']['ready']}")
             print(f"Schema already valid: {result['schema_already_valid']}")
