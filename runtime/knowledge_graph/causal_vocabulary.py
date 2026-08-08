@@ -37,6 +37,8 @@ CAUSAL_NODE_TYPE_DOMAIN: Final[dict[str, str]] = {
     "phenotype": "phenotype",
     "environment": "environment",
     "cultivation": "cultivation",
+    "plant": "cultivation",
+    "specimen": "cultivation",
     "symptom": "phenotype",
     "treatment": "cultivation",
     "nutrient": "cultivation",
