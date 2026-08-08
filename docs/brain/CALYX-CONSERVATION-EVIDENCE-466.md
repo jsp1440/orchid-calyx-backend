@@ -1,6 +1,6 @@
 # CALYX-466 — Conservation evidence, threats, and protection-status pipeline
 
-Status: IMPLEMENTED / GOVERNED REVIEW-ONLY
+Status: IMPLEMENTED / VALIDATED / GOVERNED REVIEW-ONLY
 
 ## Delivered
 
@@ -20,4 +20,12 @@ This slice does not fabricate IUCN status, autonomously publish conservation con
 
 ## Validation
 
-Dedicated CI compiles the conservation runtime/router/Mission Control surface, runs CALYX-466 tests plus Literature Intelligence #448 regressions, asserts permanent no-fabrication/non-publication/non-production-mutation boundaries, runs Ruff, and checks diff hygiene. The branch remains draft/unmerged until exact-head validation completes.
+Validation completed on corrected implementation commit `c2c0a7b1a7ceaf8c623783edc02965dd74bb27bb` after fixing a timezone-aware freshness-clock lint failure.
+
+- CALYX Conservation Evidence 466: success; compile, 15 combined conservation + literature tests, permanent governance assertions, Ruff, and diff hygiene all passed.
+- CALYX Literature Acquisition 448 dependency regression: success.
+- CALYX Workflow Governance Audit: success.
+- CALYX-SUPERVISED-PILOT-001: success.
+- CALYX-AUTONOMY-DEPLOYMENT-001: success.
+
+PR #616 remains draft/unmerged and targets `feature/calyx-literature-acquisition-448` because exact evidence binding depends on #448. This documentation-only commit remains subject to the same PR checks before any review-state change.
