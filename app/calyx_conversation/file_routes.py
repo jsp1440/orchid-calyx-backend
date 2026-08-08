@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import io
-from typing import Literal
+import re
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
@@ -15,6 +16,13 @@ router = APIRouter(
     tags=["calyx-file-analysis"],
     dependencies=[Depends(verify_owner_or_api_key)],
 )
+
+FileUpload = Annotated[UploadFile, File()]
+AnalysisOperation = Annotated[Literal["describe", "correlation_matrix"], Form()]
+OptionalSheet = Annotated[str | None, Form()]
+OptionalChart = Annotated[Literal["scatter", "line", "bar", "histogram"] | None, Form()]
+OptionalAxis = Annotated[str | None, Form()]
+PreviewRows = Annotated[int, Form(ge=1, le=100)]
 
 
 def _run_uploaded_analysis(parsed: dict, operation: str) -> dict:
@@ -67,14 +75,20 @@ def _analysis_markdown(parsed: dict, analysis: dict, spec: dict | None) -> str:
     return out.getvalue()
 
 
+def _report_filename(source_filename: str) -> str:
+    stem = source_filename.rsplit(".", 1)[0] or "dataset"
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-._") or "dataset"
+    return f"calyx-{safe_stem[:80]}-analysis.md"
+
+
 @router.post("/upload-analyze")
 async def upload_analyze(
-    file: UploadFile = File(...),
-    operation: Literal["describe", "correlation_matrix"] = Form("describe"),
-    sheet_name: str | None = Form(None),
-    chart_type: Literal["scatter", "line", "bar", "histogram"] | None = Form(None),
-    x: str | None = Form(None),
-    y: str | None = Form(None),
+    file: FileUpload,
+    operation: AnalysisOperation = "describe",
+    sheet_name: OptionalSheet = None,
+    chart_type: OptionalChart = None,
+    x: OptionalAxis = None,
+    y: OptionalAxis = None,
 ) -> dict:
     """Upload CSV/XLSX, run deterministic analysis, and optionally return a chart spec."""
     try:
@@ -104,12 +118,12 @@ async def upload_analyze(
 
 @router.post("/upload-report", response_class=PlainTextResponse)
 async def upload_report(
-    file: UploadFile = File(...),
-    operation: Literal["describe", "correlation_matrix"] = Form("describe"),
-    sheet_name: str | None = Form(None),
-    chart_type: Literal["scatter", "line", "bar", "histogram"] | None = Form(None),
-    x: str | None = Form(None),
-    y: str | None = Form(None),
+    file: FileUpload,
+    operation: AnalysisOperation = "describe",
+    sheet_name: OptionalSheet = None,
+    chart_type: OptionalChart = None,
+    x: OptionalAxis = None,
+    y: OptionalAxis = None,
 ) -> PlainTextResponse:
     """Analyze an uploaded dataset and return a downloadable evidence-safe Markdown report."""
     try:
@@ -122,11 +136,10 @@ async def upload_report(
             else None
         )
         report = _analysis_markdown(parsed, analysis, spec)
-        stem = parsed["filename"].rsplit(".", 1)[0] or "dataset"
         return PlainTextResponse(
             report,
             media_type="text/markdown; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="calyx-{stem}-analysis.md"'},
+            headers={"Content-Disposition": f'attachment; filename="{_report_filename(parsed["filename"])}"'},
         )
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -136,9 +149,9 @@ async def upload_report(
 
 @router.post("/upload-preview")
 async def upload_preview(
-    file: UploadFile = File(...),
-    sheet_name: str | None = Form(None),
-    preview_rows: int = Form(20, ge=1, le=100),
+    file: FileUpload,
+    sheet_name: OptionalSheet = None,
+    preview_rows: PreviewRows = 20,
 ) -> dict:
     """Inspect a CSV/XLSX schema and a bounded row preview without persisting the file."""
     try:
