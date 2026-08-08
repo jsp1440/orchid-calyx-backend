@@ -6,16 +6,26 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
 
-from app.conversation_memory.service import (
-    ConversationMemoryError,
-    ConversationMemoryService,
-)
-from app.database import get_db
 from app.security import verify_owner_or_api_key
 from runtime.continuum_conversation import ContinuumConversationService
 from runtime.operator_chat import GovernedOperatorChat
+
+try:
+    from sqlalchemy.orm import Session
+
+    from app.conversation_memory.service import (
+        ConversationMemoryError,
+        ConversationMemoryService,
+    )
+    from app.database import get_db
+except ModuleNotFoundError:  # pragma: no cover - exercised by lightweight CI import path
+    Session = Any
+    ConversationMemoryError = RuntimeError
+    ConversationMemoryService = None
+
+    def get_db():
+        raise RuntimeError("Conversation memory dependencies are unavailable")
 
 router = APIRouter(prefix="/brain/mission-control/chat", tags=["mission-control-chat"])
 _chat = GovernedOperatorChat()
@@ -183,8 +193,7 @@ def get_conversation(
 ) -> dict[str, Any]:
     owner = _owner(identity)
     return _memory_call(
-        db,
-        lambda: ConversationMemoryService(db).get_session(conversation_id, owner),
+        db, lambda: ConversationMemoryService(db).get_session(conversation_id, owner)
     )
 
 
