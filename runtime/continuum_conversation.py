@@ -2,8 +2,10 @@
 
 CALYX-634 established extractive, provenance-preserving synthesis over Evidence
 Retrieval. CALYX-635 adds an explicit read-only Knowledge Graph tool when a taxon
-context is supplied. Neither layer uses general model knowledge, publishes scientific
-knowledge, or mutates the Knowledge Graph.
+context is supplied. CALYX-637 makes active document context an exact Evidence
+Retrieval scope rather than passive session metadata. None of these layers uses
+general model knowledge, publishes scientific knowledge, or mutates the Knowledge
+Graph.
 """
 from __future__ import annotations
 
@@ -19,7 +21,7 @@ from runtime.continuum_graph_tool import (
     ReadOnlyKnowledgeGraphTool,
 )
 
-CONVERSATION_SCHEMA_VERSION = "calyx-continuum-conversation/v2"
+CONVERSATION_SCHEMA_VERSION = "calyx-continuum-conversation/v3"
 
 
 class RetrievalEngineProtocol(Protocol):
@@ -94,6 +96,11 @@ class ContinuumConversationService:
         if not 1 <= int(limit) <= 12:
             raise ValueError("CONTINUUM_RESULT_LIMIT_INVALID")
         active_context = ConversationContext.from_payload(context)
+        retrieval_filters = (
+            {"document_id": active_context.active_document_id}
+            if active_context.active_document_id
+            else {}
+        )
         query = RetrievalQuery(
             text=text,
             mode="HYBRID",
@@ -101,6 +108,7 @@ class ContinuumConversationService:
             per_source_limit=2,
             parent_expansion="AUTO",
             internal_access=bool(internal_access),
+            filters=retrieval_filters,
         )
         retrieval = self.retrieval.search(query)
         results = list(retrieval.get("results") or [])
@@ -130,6 +138,8 @@ class ContinuumConversationService:
                 ),
                 "total_candidates": retrieval.get("total_candidates", 0),
                 "total_eligible_results": retrieval.get("total_eligible_results", 0),
+                "document_scope": active_context.active_document_id,
+                "document_scope_applied": bool(active_context.active_document_id),
                 "elapsed_ms": retrieval.get("elapsed_ms"),
             }
         ]
