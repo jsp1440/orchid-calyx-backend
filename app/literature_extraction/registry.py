@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from .extractors.base import Extractor
 from .extractors.claims import ClaimExtractor
 from .extractors.entities import EntityExtractor
+from .extractors.glossary import GlossaryExtractor
 from .extractors.metadata import MetadataExtractor
 from .extractors.sections import SectionExtractor
 
@@ -28,5 +29,11 @@ class ExtractorRegistry:
 
 
 DEFAULT_REGISTRY = ExtractorRegistry(
-    [MetadataExtractor(), SectionExtractor(), EntityExtractor(), ClaimExtractor()]
+    [
+        MetadataExtractor(),
+        SectionExtractor(),
+        EntityExtractor(),
+        GlossaryExtractor(),
+        ClaimExtractor(),
+    ]
 )
