@@ -8,10 +8,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.executor import canonical_checksum
-from app.calyx_orchestrator.proposal_authorization import (
-    ProposalAuthorizationBuilder,
-    ProposalDecision,
-)
+from app.calyx_orchestrator.proposal_authorization import ProposalDecision
 from app.calyx_orchestrator.proposal_authorization_models import (
     ProposalAuthorizationDecisionRecord,
 )
@@ -119,13 +116,14 @@ def _manifest() -> dict:
     return {**payload, "manifest_digest": canonical_sha256(payload)}
 
 
-def _review(
+def _record_review(
+    store: DurableProposalAuthorizationStore,
     *,
     review_class: str = "security",
     reviewer_id: str = "principal:security-reviewer",
     decision: ProposalDecision = ProposalDecision.APPROVED,
 ):
-    return ProposalAuthorizationBuilder().build(
+    return store.record_review(
         manifest_snapshot=_manifest(),
         patch_receipt=_patch_receipt(),
         requested_by="principal:requester",
@@ -141,12 +139,13 @@ def _review(
 
 def test_record_survives_session_restart_and_rehydrates_exactly() -> None:
     session = _session()
-    item = _review()
     store = DurableProposalAuthorizationStore(session)
-    assert store.record(item) == item
+    item = _record_review(store)
+    engine = session.bind
     session.close()
 
-    session = Session(session.bind)
+    assert engine is not None
+    session = Session(engine)
     reloaded = DurableProposalAuthorizationStore(session).require(
         manifest_digest=item.manifest_digest,
         review_class=item.review_class,
@@ -156,25 +155,21 @@ def test_record_survives_session_restart_and_rehydrates_exactly() -> None:
 
 
 def test_identical_replay_is_idempotent_but_conflicting_decision_is_terminal() -> None:
-    session = _session()
-    store = DurableProposalAuthorizationStore(session)
-    approved = _review()
-    assert store.record(approved) == approved
-    assert store.record(approved) == approved
+    store = DurableProposalAuthorizationStore(_session())
+    approved = _record_review(store)
+    assert _record_review(store) == approved
 
-    rejected = _review(decision=ProposalDecision.REJECTED)
     with pytest.raises(
         ValueError,
         match="PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED",
     ):
-        store.record(rejected)
+        _record_review(store, decision=ProposalDecision.REJECTED)
 
 
 def test_payload_tampering_is_detected_on_read() -> None:
     session = _session()
-    item = _review()
     store = DurableProposalAuthorizationStore(session)
-    store.record(item)
+    item = _record_review(store)
     row = session.scalar(select(ProposalAuthorizationDecisionRecord))
     assert row is not None
     payload = json.loads(row.payload_json)
@@ -194,9 +189,8 @@ def test_payload_tampering_is_detected_on_read() -> None:
 
 def test_row_identity_tampering_is_detected() -> None:
     session = _session()
-    item = _review()
     store = DurableProposalAuthorizationStore(session)
-    store.record(item)
+    item = _record_review(store)
     row = session.scalar(select(ProposalAuthorizationDecisionRecord))
     assert row is not None
     row.authorization_digest = "f" * 64
@@ -210,21 +204,43 @@ def test_row_identity_tampering_is_detected() -> None:
 
 
 def test_dual_review_status_survives_materialization_from_durable_store() -> None:
-    session = _session()
-    store = DurableProposalAuthorizationStore(session)
-    security = _review()
-    operational = _review(
+    store = DurableProposalAuthorizationStore(_session())
+    security = _record_review(store)
+    _record_review(
+        store,
         review_class="operational",
         reviewer_id="principal:ops-reviewer",
     )
-    store.record(security)
-    store.record(operational)
 
     registry = store.materialize_registry(manifest_digest=security.manifest_digest)
     status = proposal_review_status(registry, manifest_digest=security.manifest_digest)
     assert status.review_evidence_complete is True
     assert status.code == "PROPOSAL_REVIEW_EVIDENCE_COMPLETE"
     assert status.reviewer_conflict is False
+
+
+def test_durable_write_api_requires_governed_builder_path() -> None:
+    store = DurableProposalAuthorizationStore(_session())
+    assert not hasattr(store, "record")
+    item = _record_review(store)
+    assert item.producer_id == "executor:isolated_workspace_patcher_v1"
+
+
+def test_self_approval_cannot_be_persisted_through_governed_write_path() -> None:
+    store = DurableProposalAuthorizationStore(_session())
+    with pytest.raises(PermissionError, match="SELF_APPROVAL_PROHIBITED"):
+        store.record_review(
+            manifest_snapshot=_manifest(),
+            patch_receipt=_patch_receipt(),
+            requested_by="principal:security-reviewer",
+            review_class="security",
+            reviewer_id="principal:security-reviewer",
+            reviewer_roles=("security",),
+            decision=ProposalDecision.APPROVED,
+            rationale="invalid self approval",
+            evidence_uris=("review:invalid",),
+            decided_at=NOW,
+        )
 
 
 def test_invalid_manifest_digest_and_review_class_fail_closed() -> None:
