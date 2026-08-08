@@ -24,6 +24,7 @@ on:
       - "tests/test_calyx_scientific_comparison_617.py"
       - "tests/test_calyx_scientific_result_artifacts_617.py"
       - "tests/test_calyx_research_station_453.py"
+      - "requirements-scientific.txt"
       - "docs/brain/CALYX-SCIENTIFIC-ANALYSIS-617.md"
       - ".github/workflows/calyx-scientific-analysis-617.yml"
   workflow_dispatch:
@@ -38,7 +39,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: pip install -r requirements.txt pytest httpx ruff scipy==1.18.0
+      - name: Install base plus isolated Scientific Computing dependencies
+        run: pip install -r requirements-scientific.txt pytest httpx ruff
+      - name: Verify Scientific Computing dependency contract
+        run: |
+          python - <<'PY'
+          from importlib.metadata import version
+          from pathlib import Path
+          scientific = Path('requirements-scientific.txt').read_text()
+          assert '-r requirements.txt' in scientific
+          assert 'scipy==1.18.0' in scientific
+          assert version('scipy') == '1.18.0'
+          PY
       - name: Compile analysis and Research Station surfaces
         run: >-
           python -m py_compile
