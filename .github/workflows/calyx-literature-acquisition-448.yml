@@ -1,0 +1,61 @@
+name: CALYX Literature Acquisition 448
+
+on:
+  pull_request:
+    paths:
+      - "runtime/literature_acquisition.py"
+      - "app/routers/literature_acquisition.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_literature_acquisition_448.py"
+      - "app/parallel_platform/brain_candidate_handoff.py"
+      - "docs/brain/CALYX-LITERATURE-ACQUISITION-448.md"
+      - ".github/workflows/calyx-literature-acquisition-448.yml"
+  workflow_dispatch:
+
+jobs:
+  literature-acquisition:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile literature surface
+        run: >-
+          python -m py_compile
+          runtime/literature_acquisition.py
+          app/routers/literature_acquisition.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_literature_acquisition_448.py
+      - name: Deterministic literature and Candidate Knowledge tests
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_literature_acquisition_448.py
+          tests/test_brain_candidate_handoff_004.py
+          tests/test_calyx_artifact_registry.py
+      - name: Permanent non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/literature_acquisition.py').read_text()
+          required = (
+              '"ready_for_publication": False',
+              '"scientific_publication_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+              '"live_ocr_authorized": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing permanent non-authority assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'TRUNCATE oc_graph')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden graph mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/literature_acquisition.py app/routers/literature_acquisition.py tests/test_calyx_literature_acquisition_448.py
+          git diff --check
