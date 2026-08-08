@@ -1,0 +1,59 @@
+name: CALYX Matrix Operational 449
+
+on:
+  pull_request:
+    paths:
+      - "runtime/matrix_operational.py"
+      - "runtime/matrix_identification.py"
+      - "runtime/matrix_identification_registry.py"
+      - "app/routers/matrix_operational.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_matrix_operational_449.py"
+      - "docs/brain/CALYX-MATRIX-OPERATIONAL-449.md"
+      - ".github/workflows/calyx-matrix-operational-449.yml"
+  workflow_dispatch:
+
+jobs:
+  matrix-operational:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile Matrix operational surface
+        run: >-
+          python -m py_compile
+          runtime/matrix_operational.py
+          app/routers/matrix_operational.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_matrix_operational_449.py
+      - name: Deterministic Matrix operational and baseline tests
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_matrix_operational_449.py
+          tests/test_matrix_identification_mvp_001.py
+          tests/test_matrix_identification_registry_001.py
+      - name: Permanent non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/matrix_operational.py').read_text()
+          required = (
+              '"definitive_identification": False',
+              '"human_review_required": True',
+              '"taxonomy_activation_authorized": False',
+              '"scientific_publication_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing Matrix governance assertion(s): {missing}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/matrix_operational.py app/routers/matrix_operational.py tests/test_calyx_matrix_operational_449.py
+          git diff --check
