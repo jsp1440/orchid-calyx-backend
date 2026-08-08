@@ -3,6 +3,7 @@
 Date: 2026-08-07
 Base main: `c114aba0545a71a3be23375e5b6d84e624fa82b4`
 Issue: #461
+PR: #598 (draft; intentionally unmerged)
 Status: implementation DELIVERED for synthetic/current-code validation; real August release evidence BLOCKED pending the exact source file.
 
 ## Goal
@@ -29,7 +30,28 @@ Each source row is normalized into deterministic JSONL with:
 - preserved normalized source record;
 - deterministic row SHA-256.
 
-The release manifest records source identity, preflight identity/status, normalized artifact digest/count, accepted/synonym/status counts, unresolved-review count, and candidate-vs-baseline comparison when a baseline is supplied.
+The release manifest/readiness contract exposes:
+
+- source SHA-256 and normalized artifact SHA-256;
+- configured active-baseline filename and SHA-256 when present;
+- preflight status/run identity;
+- normalized row count;
+- accepted-name count;
+- synonym count;
+- malformed-taxon count from the existing preflight findings;
+- unresolved-review count;
+- status counts;
+- deterministic candidate-vs-baseline added/removed/changed comparison.
+
+Only recognized accepted/synonym states escape taxonomy-status review. Unknown or unrecognized status values fail closed into `unresolved` rather than silently becoming new status classes.
+
+### Active-release comparison
+
+Mission Control reads the active comparison source only from operator configuration:
+
+`CALYX_TAXONOMY_ACTIVE_BASELINE_PATH`
+
+The upload request cannot supply an arbitrary server-side comparison path. If a configured baseline is missing or is not a regular file, intake fails closed instead of silently skipping comparison.
 
 ### Review queue
 
@@ -37,9 +59,9 @@ Rows are placed into a deterministic pending review queue when they have:
 
 - no usable taxon identity;
 - synonym status without an accepted-name identifier; or
-- unresolved taxonomic status.
+- unresolved/unrecognized taxonomic status.
 
-No review decision is fabricated by the intake system.
+The service exposes bounded read-only queue pagination (offset >= 0, limit 1–500). `review_write_authorized=false` is permanent in this surface. No review decision is fabricated by the intake system.
 
 ### Bounded resumable staging projection
 
@@ -53,9 +75,10 @@ This staging artifact is intentionally not the production taxonomy database and 
 
 `/brain/mission-control/taxonomy/releases`
 
-- `POST /intake` — bounded multipart source intake;
+- `POST /intake` — bounded multipart source intake and configured-active-baseline comparison;
 - `POST /{release_id}/stage` — bounded staging projection;
-- `GET /{release_id}/readiness` — protected readiness state.
+- `GET /{release_id}/review-queue` — bounded read-only review queue;
+- `GET /{release_id}/readiness` — protected release evidence/readiness state.
 
 The router is mounted through `app/routers/live_mission_control.py` and uses the existing `verify_owner_or_api_key` dependency.
 
@@ -72,15 +95,30 @@ No production DB connection or Knowledge Graph publisher is present in the intak
 
 ## Validation
 
-`.github/workflows/calyx-taxonomy-release-intake-461.yml` provides:
+Dedicated workflow:
+`.github/workflows/calyx-taxonomy-release-intake-461.yml`
+
+It provides:
 
 - compile validation;
 - deterministic synthetic intake/replay/comparison/review/staging tests;
-- protected API route test with dependency override;
+- protected API route + configured active baseline + review-queue tests;
 - permanent non-authority assertions;
 - changed-surface Ruff and diff hygiene.
 
-The repository-wide backend suite was restored as a blocking gate on main by PR #597 before this work began, so this PR also remains subject to existing triggered mainline validation where paths overlap.
+A first validation run (`31237084522`) proved compile, 6 functional tests and non-authority but caught Ruff import-format debt. A later expansion run (`31237320818`) caught a real semantic defect: an unfamiliar taxonomy status was not entering the unresolved queue. That classifier was repaired to fail unknown statuses into `unresolved`.
+
+On owner-authored implementation head `525cb260cf47a56939f2ba6d146cc2c092361a0a`, all triggered validation lanes passed:
+
+- CALYX Taxonomy Release Intake 461 `31237380172` — success;
+- CALYX Workflow Governance Audit `31237380150` — success;
+- BUILD-088E Validation `31237380173` — success;
+- CALYX-AUTONOMY-DEPLOYMENT-001 `31237380141` — success;
+- CALYX-SUPERVISED-PILOT-001 `31237380127` — success.
+
+The dedicated lane passed compile, 7 deterministic tests, permanent non-authority assertions, Ruff, and `git diff --check`.
+
+This Brain update creates the final owner-authored exact head; a fresh exact-head validation cycle after this documentation commit is required before #598 is considered internally validated. The PR still remains draft/unmerged regardless of CI because issue #461 explicitly says not to merge.
 
 ## External evidence still required
 
@@ -98,4 +136,4 @@ When the exact file is supplied, it can be run through this intake path and the 
 
 ## Explicit non-actions
 
-This implementation does not activate taxonomy, relink production records, publish the Knowledge Graph, perform a production migration, deploy, provision Azure, or publish scientific conclusions. Issue #461 explicitly says not to merge; the implementation PR must remain draft/unmerged unless that issue-level governance instruction is separately changed.
+This implementation does not activate taxonomy, relink production records, publish the Knowledge Graph, perform a production migration, deploy, provision Azure, or publish scientific conclusions. Issue #461 explicitly says not to merge; PR #598 remains draft/unmerged unless that issue-level governance instruction is separately changed.
