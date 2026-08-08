@@ -18,6 +18,7 @@ REASONING_RELATIONS = (
     "reasoning_publication.publication_artifacts",
     "reasoning_publication.publication_attempts",
 )
+ENGINEERING_QUEUE_RELATION = "calyx_engineering_program_jobs"
 
 
 def _present(name: str) -> str:
@@ -151,14 +152,39 @@ def _configuration_presence() -> dict[str, str]:
     }
 
 
+def _relation_exists(connection: Any, relation: str) -> bool | None:
+    from sqlalchemy import text
+
+    try:
+        with connection.begin_nested():
+            row = connection.execute(
+                text("SELECT to_regclass(:relation)"), {"relation": relation}
+            ).fetchone()
+    except Exception:  # noqa: BLE001 - optional readiness probe must not poison transaction
+        return None
+    return bool(row and row[0])
+
+
 def _safe_group_counts(connection: Any, statement: str) -> dict[str, int] | None:
     from sqlalchemy import text
 
     try:
-        rows = connection.execute(text(statement)).fetchall()
-    except Exception:  # noqa: BLE001 - absent operational tables are reported, not fatal
+        with connection.begin_nested():
+            rows = connection.execute(text(statement)).fetchall()
+    except Exception:  # noqa: BLE001 - optional readiness probe must not poison transaction
         return None
     return {str(row[0]): int(row[1]) for row in rows}
+
+
+def _safe_scalar(connection: Any, statement: str) -> int | None:
+    from sqlalchemy import text
+
+    try:
+        with connection.begin_nested():
+            value = connection.execute(text(statement)).scalar_one_or_none()
+    except Exception:  # noqa: BLE001 - optional readiness probe must not poison transaction
+        return None
+    return int(value) if value is not None else None
 
 
 def _production_observability(env: dict[str, str] | None = None) -> dict[str, Any]:
@@ -226,26 +252,29 @@ def _production_observability(env: dict[str, str] | None = None) -> dict[str, An
             database["reachable"] = True
             if engine.dialect.name == "postgresql":
                 for relation in REASONING_RELATIONS:
-                    row = connection.execute(
-                        text("SELECT to_regclass(:relation)"), {"relation": relation}
-                    ).fetchone()
-                    migration_state[relation] = "present" if row and row[0] else "absent"
-                queues["engineering_job_status_counts"] = _safe_group_counts(
-                    connection,
-                    "SELECT status, count(*) FROM calyx_engineering_program_jobs GROUP BY status",
-                )
-                queues["blocked_or_failed_jobs"] = connection.execute(
-                    text(
-                        "SELECT count(*) FROM calyx_engineering_program_jobs "
-                        "WHERE status = 'blocked' OR blocker IS NOT NULL"
+                    present = _relation_exists(connection, relation)
+                    migration_state[relation] = (
+                        "present" if present is True else "absent" if present is False else "unknown"
                     )
-                ).scalar_one_or_none()
+
+                queue_present = _relation_exists(connection, ENGINEERING_QUEUE_RELATION)
+                if queue_present is True:
+                    queues["engineering_job_status_counts"] = _safe_group_counts(
+                        connection,
+                        "SELECT status, count(*) FROM calyx_engineering_program_jobs GROUP BY status",
+                    )
+                    queues["blocked_or_failed_jobs"] = _safe_scalar(
+                        connection,
+                        "SELECT count(*) FROM calyx_engineering_program_jobs "
+                        "WHERE status = 'blocked' OR blocker IS NOT NULL",
+                    )
+
                 if migration_state["reasoning_ledger.ledger_revisions"] == "present":
                     review_queue["ledger_revision_status_counts"] = _safe_group_counts(
                         connection,
                         "SELECT status, count(*) FROM reasoning_ledger.ledger_revisions GROUP BY status",
                     )
-    except Exception as exc:  # noqa: BLE001 - report only exception type, never DSN/detail
+    except Exception as exc:  # noqa: BLE001 - report only connectivity/base-probe failure type
         database["error_type"] = type(exc).__name__
 
     if not database["reachable"]:
