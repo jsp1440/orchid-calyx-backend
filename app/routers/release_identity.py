@@ -10,6 +10,7 @@ router = APIRouter(tags=["release-identity"])
 _FULL_GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _RELEASE_SHA_ENV_KEYS = (
     "OCU_RELEASE_SHA",
+    "CALYX_DEPLOYED_COMMIT",
     "RENDER_GIT_COMMIT",
     "GIT_COMMIT",
     "COMMIT_SHA",
