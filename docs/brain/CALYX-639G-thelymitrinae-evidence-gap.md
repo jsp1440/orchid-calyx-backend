@@ -61,6 +61,10 @@ This hierarchy prevents broader evidence from silently gaining greater phylogene
 
 The CALYX-639 focused workflow now compiles the module and executes the new tests together with all prior propagation suites.
 
+## Validation state
+
+The immediately preceding CALYX-639F executable head passed all seven focused suites and the workflow-governance audit. CALYX-639G adds one isolated evidence-gap module, its deterministic tests, workflow inclusion and this Brain record. GitHub had not yet started an Actions run for the current CALYX-639G head when checked. CI for this exact head is therefore **pending/not yet evidenced**, not passed. PR #640 remains open, draft and mergeable; no merge or deployment is authorized.
+
 ## Next highest-value work
 
 1. Acquire authorized access to the Yam & Arditti Thelymitra section.
