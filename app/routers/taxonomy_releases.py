@@ -32,7 +32,9 @@ def _default_staging_store() -> PostgresWorldPlantsStagingStore:
 def create_taxonomy_release_router(
     get_store: Callable[[], WorldPlantsReleaseStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
-    get_staging_store: Callable[[], PostgresWorldPlantsStagingStore] = _default_staging_store,
+    get_staging_store: Callable[
+        [], PostgresWorldPlantsStagingStore
+    ] = _default_staging_store,
 ) -> APIRouter:
     router = APIRouter(tags=["taxonomy-releases"])
     releases = APIRouter(prefix="/api/mission-control/taxonomy/releases")
@@ -107,7 +109,9 @@ def create_taxonomy_release_router(
                 acquired_at=str(snapshot.get("acquired_at", "unknown")),
             )
             if durable_release_id != release_id:
-                raise RuntimeError("durable release checksum does not match inspected release")
+                raise RuntimeError(
+                    "durable release checksum does not match inspected release"
+                )
             receipt = staging.stage_next_batch(release_id, batch_size=batch_size)
             return {
                 "receipt": receipt.as_dict(),
@@ -143,7 +147,9 @@ def create_taxonomy_release_router(
                 "automatic_promotion": False,
             }
         except (KeyError, SQLAlchemyError) as exc:
-            raise HTTPException(status_code=404, detail="durable taxonomy staging state not found") from exc
+            raise HTTPException(
+                status_code=404, detail="durable taxonomy staging state not found"
+            ) from exc
 
     router.include_router(releases)
     return router
