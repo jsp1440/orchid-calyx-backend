@@ -2,7 +2,7 @@
 
 Date: 2026-08-08
 Depends on: CALYX-634 Ask the Continuum, canonical Knowledge Graph traversal, Evidence Retrieval 085B.
-Status: implementation validated on exact behavioral head; final documentation-only exact-head rerun pending. No merge, deployment, scientific publication, external communication, or Knowledge Graph mutation authorized.
+Status: backend and Research Station integration validated on exact heads and promoted to review. No merge, deployment, scientific publication, external communication, or Knowledge Graph mutation authorized.
 
 ## Goal
 
@@ -53,7 +53,7 @@ Existing `unknown`, `continuum_evidence`, and `continuum_evidence_metadata_only`
 
 Graph answer text is deliberately descriptive. It may state the number of connected nodes/edges, recorded edge types, represented domains, and explicit data gaps. It must state that these are stored graph relationships and coverage signals, not a newly inferred causal or scientific interpretation.
 
-## Validation evidence
+## Backend validation evidence
 
 Behavioral head `b02ce7c8099757f8fad211260dd9388e22ed60d5` passed:
 
@@ -64,12 +64,32 @@ Behavioral head `b02ce7c8099757f8fad211260dd9388e22ed60d5` passed:
 - permanent read-only Knowledge Graph assertions;
 - changed-surface Ruff and diff hygiene.
 
+The subsequent Brain documentation head `edafb0445f9d8e95bb096a6694c08a9763053068` also passed all three exact-head lanes: CALYX-634 compatibility, CALYX-635 graph conversation, and workflow-governance audit. Backend PR `#642` was therefore promoted from draft to review and remains unmerged/non-production.
+
 The first CALYX-635 run exposed only code-quality issues after all behavioral tests passed: Ruff requested import normalization and rejected a broad `Exception` catch. Those were corrected by formatting imports and narrowing database read failure handling to `psycopg.Error`. No behavioral authority was broadened by the fixes.
 
 The prior CALYX-634 lane also remained behavior-clean during development: its 18 conversation/retrieval tests and non-authority assertions passed before the import-format correction.
 
-## Next priority after validation
+## RS-8 human interface integration
 
-Expose `graph_context` in Research Station Ask Calyx as a human-readable relationship panel so the researcher can inspect focal taxon, edge types, domain coverage, and data gaps without reading raw JSON.
+Research Station PR `#8`, branch `feature/research-calyx-graph-8`, exposes the CALYX-635 graph packet in the existing project-scoped Ask Calyx workspace.
 
-No graph relationship becomes a new scientific conclusion merely because Calyx summarized its existence.
+RS-8 adds:
+
+- typed graph context layered over the RS-7 conversation response;
+- project-linked taxon discovery through the existing authenticated Research Station client;
+- an explicit `Evidence only` / linked-taxon selector;
+- automatic preselection only when exactly one linked taxon exists;
+- no silent taxon selection when multiple linked taxa exist;
+- selected taxon routing through `active_taxon_id` on the existing Ask Calyx request;
+- a human-readable graph panel showing focal taxon, node/edge counts, relationship types, domain coverage, connected objects, evidence class, confidence labels, provenance, and explicit data gaps;
+- explicit not-found/unavailable graph rendering;
+- continued display of the no-model-memory, no-publication, and no-Knowledge-Graph-mutation boundary.
+
+RS-8 exact head `6274ac5a7eb3be8e013d2a32afb8e55afd9d87bf` passed the complete Research Station CI sequence: formatting normalization and verification, both lint stages, full tests, and production build. Frontend PR `#8` was promoted from draft to review and remains unmerged/non-production.
+
+## Next priority
+
+The next high-value conversational layer is persistent conversation/session context plus explicit tool-selection history, so Calyx can sustain a research thread across multiple questions without treating prior conversation as canonical scientific evidence. That work should preserve the same evidence/graph provenance envelopes and governance boundaries.
+
+No graph relationship becomes a new scientific conclusion merely because Calyx summarized or displayed its existence.
