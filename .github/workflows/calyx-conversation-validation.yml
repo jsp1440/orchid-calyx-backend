@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate-calyx-conversation:
@@ -22,16 +22,81 @@ jobs:
       PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install dependencies
         run: pip install -r requirements.txt pytest httpx ruff
+      - name: Apply confidence interval governance correction
+        if: github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          routes = Path('app/calyx_conversation/routes.py')
+          text = routes.read_text()
+          old = '''                "method": "normal-approximation",\n                "n": len(values),\n'''
+          new = '''                "method": "normal-approximation",\n                "n": len(values),\n                "approximation_only": True,\n                "canonical_scientific_method": False,\n                "research_grade": False,\n                "p_value_generated": False,\n                "scientific_interpretation_generated": False,\n                "governed_research_method": "CALYX-617 Student-t mean confidence interval (not yet live)",\n                "warning": (\n                    "Approximation-only convenience interval. Do not treat this normal-approximation "\n                    "result as the governed Research Station confidence interval; small-sample mean "\n                    "inference requires the CALYX-617 Student-t method."\n                ),\n'''
+          if old not in text and '"approximation_only": True' not in text:
+              raise SystemExit('confidence interval result anchor not found')
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          analysis_anchor = '''            "moving_average",\n        ],\n        "dataset_analysis": ["describe", "correlation_matrix"],\n'''
+          analysis_replacement = '''            "moving_average",\n        ],\n        "analysis_method_notes": {\n            "confidence_interval_mean": {\n                "status": "approximation_only",\n                "canonical_scientific_method": False,\n                "distribution": "normal",\n                "governed_research_equivalent": "CALYX-617 Student-t mean confidence interval (pending activation)",\n            }\n        },\n        "dataset_analysis": ["describe", "correlation_matrix"],\n'''
+          if analysis_anchor not in text and '"analysis_method_notes"' not in text:
+              raise SystemExit('capabilities analysis anchor not found')
+          if analysis_anchor in text:
+              text = text.replace(analysis_anchor, analysis_replacement, 1)
+          routes.write_text(text)
+
+          tests = Path('tests/test_calyx_conversation.py')
+          test_text = tests.read_text()
+          test_old = '''    assert result["result"]["lower"] < 12 < result["result"]["upper"]\n    assert result["result"]["method"] == "normal-approximation"\n'''
+          test_new = '''    assert result["result"]["lower"] < 12 < result["result"]["upper"]\n    assert result["result"]["method"] == "normal-approximation"\n    assert result["result"]["approximation_only"] is True\n    assert result["result"]["canonical_scientific_method"] is False\n    assert result["result"]["research_grade"] is False\n    assert result["result"]["p_value_generated"] is False\n    assert result["result"]["scientific_interpretation_generated"] is False\n    assert "Student-t" in result["result"]["warning"]\n'''
+          if test_old not in test_text and 'canonical_scientific_method' not in test_text:
+              raise SystemExit('confidence interval test anchor not found')
+          if test_old in test_text:
+              test_text = test_text.replace(test_old, test_new, 1)
+          tests.write_text(test_text)
+          PY
+      - name: Canonically format corrected surfaces
+        if: github.event_name == 'pull_request'
+        run: ruff format app/calyx_conversation/routes.py tests/test_calyx_conversation.py
+      - name: Commit correction
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --quiet -- app/calyx_conversation/routes.py tests/test_calyx_conversation.py; then
+            echo "Confidence interval governance correction already present."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/calyx_conversation/routes.py tests/test_calyx_conversation.py
+          git commit -m "fix: label conversational confidence interval approximation"
+          git push origin HEAD:${{ github.head_ref }}
       - name: Compile Calyx analysis slice
         run: python -m py_compile app/calyx_conversation/routes.py app/calyx_conversation/store.py app/calyx_conversation/file_analysis.py app/calyx_conversation/file_routes.py app/calyx_conversation/reasoning_routes.py app/routers/calyx_core.py tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py tests/test_build_613_calyx_reasoning_context.py
       - name: Run focused regression tests
         run: python -m pytest -q tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py tests/test_build_613_calyx_reasoning_context.py
       - name: Lint Calyx analysis slice
         run: ruff check app/calyx_conversation tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py tests/test_build_613_calyx_reasoning_context.py
+      - name: Verify confidence interval governance
+        run: |
+          python - <<'PY'
+          from app.calyx_conversation.routes import AnalysisRequest, capabilities, run_analysis
+          result = run_analysis(AnalysisRequest(operation='confidence_interval_mean', values=[1.0, 2.0], confidence=0.95))['result']
+          assert result['method'] == 'normal-approximation'
+          assert result['approximation_only'] is True
+          assert result['canonical_scientific_method'] is False
+          assert result['research_grade'] is False
+          assert result['p_value_generated'] is False
+          assert result['scientific_interpretation_generated'] is False
+          note = capabilities()['analysis_method_notes']['confidence_interval_mean']
+          assert note['status'] == 'approximation_only'
+          assert note['canonical_scientific_method'] is False
+          PY
       - name: Verify router import
         run: python -c "from app.routers.calyx_core import router; paths={getattr(r, 'path', '') for r in router.routes}; assert '/api/calyx/query' in paths; assert '/api/calyx/reasoning-map' in paths; assert '/api/calyx/reasoning-query' in paths; assert '/api/calyx/dataset/upload-analyze' in paths; assert '/api/calyx/dataset/upload-report' in paths"
