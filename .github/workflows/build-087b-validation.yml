@@ -121,8 +121,7 @@ jobs:
         run: psql "$BROAD_DATABASE_URL" -f migrations/BUILD-051-owner-operations-console.sql
         env:
           BROAD_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
-      - name: Full backend suite diagnostic (non-blocking baseline debt)
-        continue-on-error: true
+      - name: Repository-wide backend suite
         run: >-
           env -u TEST_DATABASE_URL python -m pytest -q
           --ignore=tests/calyx_certification/test_deterministic_failure_round2.py
