@@ -1,0 +1,53 @@
+name: CALYX Grant Funding 456
+
+on:
+  pull_request:
+    paths:
+      - "runtime/grant_funding.py"
+      - "app/routers/grant_funding.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_grant_funding_456.py"
+      - "docs/brain/CALYX-GRANT-FUNDING-456.md"
+      - ".github/workflows/calyx-grant-funding-456.yml"
+  workflow_dispatch:
+
+jobs:
+  funding-workspace:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile funding surface
+        run: python -m py_compile runtime/grant_funding.py app/routers/grant_funding.py app/routers/live_mission_control.py tests/test_calyx_grant_funding_456.py
+      - name: Deterministic funding workspace tests
+        run: python -m pytest -q tests/test_calyx_grant_funding_456.py
+      - name: Permanent funding governance assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/grant_funding.py').read_text()
+          required = (
+              '"grant_submission_authorized": False',
+              '"autonomous_outreach_authorized": False',
+              '"binding_commitment_authorized": False',
+              '"secret_storage_authorized": False',
+              '"production_deployment_authorized": False',
+              '"submission_authorized": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing funding governance assertion(s): {missing}')
+          forbidden = ('requests.post(', 'httpx.post(', 'smtp.', 'send_mail(', 'grant_submit(', 'INSERT INTO oc_graph', 'UPDATE oc_graph')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden funding authority present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check --ignore UP037 runtime/grant_funding.py app/routers/grant_funding.py tests/test_calyx_grant_funding_456.py
+          git diff --check
