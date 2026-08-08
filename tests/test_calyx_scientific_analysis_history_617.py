@@ -93,12 +93,23 @@ def test_analysis_history_paginates_deterministically(tmp_path):
 
 @pytest.mark.parametrize(
     ("limit", "offset"),
-    [(0, 0), (201, 0), (1, -1), (True, 0)],
+    [(0, 0), (201, 0), (1, -1)],
 )
-def test_analysis_history_rejects_invalid_pagination(tmp_path, limit, offset):
+def test_analysis_history_rejects_invalid_pagination_values(tmp_path, limit, offset):
     _analysis, history, owner, project_id = _services(tmp_path)
     with pytest.raises(ValueError, match="ANALYSIS_HISTORY_PAGINATION_INVALID"):
         history.list(owner, project_id, limit=limit, offset=offset)
+
+
+def test_analysis_history_rejects_boolean_pagination_type(tmp_path):
+    _analysis, history, owner, project_id = _services(tmp_path)
+    with pytest.raises(TypeError, match="ANALYSIS_HISTORY_PAGINATION_INVALID"):
+        history.list(owner, project_id, limit=True, offset=0)
+
+
+def test_analysis_history_page_helper_uses_explicit_defaults():
+    assert ScientificAnalysisHistoryService._page_value(None, default=50, maximum=200) == 50
+    assert ScientificAnalysisHistoryService._page_value(None, default=0) == 0
 
 
 def test_analysis_history_enforces_project_scope(tmp_path):
