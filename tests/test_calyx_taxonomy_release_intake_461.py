@@ -21,6 +21,11 @@ BASELINE = b"""taxon_id,scientific_name,status,accepted_name_id
 4,Old orchid,accepted,
 """
 
+HASSLER_HEADER = (
+    b"Taxon|Number|Name|Literature|TrivialName|Distribution|Synonyms|Status|Remarks|"
+    b"ConservationStatus|Photo|Orientation|Author\n"
+)
+
 
 def test_intake_is_content_addressed_review_only_and_replay_idempotent(tmp_path: Path):
     service = TaxonomyReleaseIntakeService(tmp_path)
@@ -44,17 +49,12 @@ def test_intake_is_content_addressed_review_only_and_replay_idempotent(tmp_path:
 
 
 def test_actual_hassler_layout_preserves_mixed_encoding_rank_synonyms_and_photo_slots(tmp_path: Path):
-    header = (
-        b"Taxon|Number|Name|Literature|TrivialName|Distribution|Synonyms|Status|Remarks|"
-        b"ConservationStatus|Photo|Orientation|Author\n"
-    )
-    # Predominantly UTF-8 with one isolated Latin-1 byte mirrors the supplied 26-08 export.
     row = (
         b"S||Dactylorhiza fuchsii|Example||Europe|= Orchis fuchsii||||orchids/a.jpg|V|Author|"
         b"orchids/b.jpg|H|J\xc3\xb6rg|orchids/c.jpg|V|M\xfcller|||\n"
     )
     service = TaxonomyReleaseIntakeService(tmp_path)
-    result = service.intake_bytes("WorldOrchids 26-08.csv", header + row, expected_label="26-08")
+    result = service.intake_bytes("WorldOrchids 26-08.csv", HASSLER_HEADER + row, expected_label="26-08")
 
     assert result["source_metadata"]["source_layout"] == "hassler_worldorchids"
     assert result["source_metadata"]["source_encoding"] == "mixed_utf8_latin1"
@@ -62,7 +62,10 @@ def test_actual_hassler_layout_preserves_mixed_encoding_rank_synonyms_and_photo_
     assert result["source_metadata"]["canonical_width"] == 22
     assert result["accepted_name_count"] == 1
     assert result["embedded_synonym_count"] == 1
+    assert result["synonym_row_count"] == 0
+    assert result["synonym_count"] == 1
     assert result["rank_counts"] == {"species": 1}
+    assert result["malformed_taxon_count"] == 0
     assert result["unresolved_review_count"] == 0
 
     normalized = (tmp_path / "releases" / result["release_id"] / "normalized.jsonl").read_text()
@@ -70,6 +73,25 @@ def test_actual_hassler_layout_preserves_mixed_encoding_rank_synonyms_and_photo_
     assert '"Photo3": "orchids/c.jpg"' in normalized
     assert "Jörg" in normalized
     assert "Müller" in normalized
+
+
+def test_hassler_duplicate_and_rank_aware_malformed_names_enter_review(tmp_path: Path):
+    content = HASSLER_HEADER + (
+        b"S||Gastrochilus wenchuanensis P. Y. Wu &amp; C. Y. Zhou|Taiwania 70(4): 759 (2025)||China|||||||||\n"
+        b"S||Gastrochilus wenchuanensis P. Y. Wu &amp; C. Y. Zhou|Taiwania 70(4): 759 (2025)||China|||||||||\n"
+        b"S||Lepanthes o A. Doucette|Example|||||||||||\n"
+    )
+    service = TaxonomyReleaseIntakeService(tmp_path)
+    result = service.intake_bytes("WorldOrchids 26-08.csv", content)
+
+    assert result["malformed_taxon_count"] == 1
+    assert result["unresolved_review_count"] == 3
+    queue = service.review_queue(result["release_id"], limit=10)
+    assert [item["reason"] for item in queue["items"]] == [
+        "duplicate_taxon_key",
+        "duplicate_taxon_key",
+        "malformed_taxon_name",
+    ]
 
 
 def test_bounded_staging_resumes_and_becomes_review_ready_without_promotion(tmp_path: Path):
