@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +45,7 @@ class ConservationEvidenceService:
     ) -> None:
         self.workspace = workspace or conservation_root()
         self.literature = literature or LiteratureAcquisitionService(self.workspace / "literature")
-        self.as_of = as_of or date.today()
+        self.as_of = as_of or datetime.now(UTC).date()
         self.stale_after_years = stale_after_years
 
     def _root(self, owner_id: str) -> Path:
