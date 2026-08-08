@@ -252,8 +252,12 @@ def build_taxonomy_readiness_report(
             "No owner promotion approval has been recorded.",
         ),
     )
+    # Upload/inspection must precede the smoke readback. Smoke therefore remains a
+    # visible staging gate but is intentionally not an intake/upload prerequisite.
     upload_gates = tuple(
-        gate for gate in gates if gate.name != "owner_promotion_approval"
+        gate
+        for gate in gates
+        if gate.name not in {"smoke_fixture", "owner_promotion_approval"}
     )
     ready_for_upload = all(gate.status == "passed" for gate in upload_gates)
     latest_release = (
