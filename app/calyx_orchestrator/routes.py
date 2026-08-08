@@ -15,6 +15,7 @@ from .models import CalyxJob
 from .operations import operational_status, renew_lease, seed_approved_tasks
 from .portfolio_routes import router as portfolio_router
 from .program_routes import router as program_router
+from .sandbox_supervisor_routes import router as sandbox_supervisor_router
 from .service import (
     AUTONOMY_POLICY_CLASSES,
     READ_ONLY_JOB_TYPES,
@@ -150,3 +151,4 @@ def requeue_dead_letter(job_id: str, auth: AuthDependency, db: DbDependency) -> 
 router.include_router(program_router)
 router.include_router(autonomy_router)
 router.include_router(portfolio_router)
+router.include_router(sandbox_supervisor_router)
