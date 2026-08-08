@@ -2,7 +2,7 @@
 
 Date: 2026-08-08
 Depends on: CALYX-636 persistent conversation sessions and CALYX-637 document-scoped retrieval.
-Status: implemented; exact-head validation pending. No merge, deployment, scientific publication, or Knowledge Graph mutation authorized.
+Status: implemented and exact-head validated; PR #654 is review-ready and unmerged. No deployment, scientific publication, or Knowledge Graph mutation authorized.
 
 ## Goal
 
@@ -41,20 +41,24 @@ Every report states:
 - model-memory evidence authority is false;
 - the report is not a peer-reviewed scientific conclusion.
 
-## Validation plan
+## Validation
 
-Dedicated CALYX-638 CI validates:
+The implementation head `b23f03fa9ab30c97316061d9835bec14e9927a02` passed all five triggered gates after canonical formatting fixes:
 
-- compilation;
-- report content and governance language;
-- source-reference deduplication;
-- authenticated Markdown attachment response;
-- cross-owner isolation;
-- CALYX-636 persistence regressions;
-- CALYX-637 document-scope regressions;
-- permanent non-authority source assertions;
-- Ruff formatting/lint and diff hygiene.
+- CALYX Conversation Report 638;
+- CALYX Conversation Sessions 636;
+- CALYX Continuum Conversation 634;
+- CALYX-MISSION-CONTROL-003B Chat API;
+- CALYX Workflow Governance Audit.
 
-## Next priority after validation
+The dedicated report suite covered compilation, report content/governance language, source-reference deduplication, authenticated Markdown attachment response, cross-owner isolation, CALYX-636 persistence regressions, CALYX-637 document-scope regressions, permanent non-authority assertions, Ruff formatting/lint, and diff hygiene.
 
-Expose a `Download report` control on the Research Station persistent Ask Calyx thread, using the same authenticated owner session and preserving the server-provided attachment filename.
+The first CALYX-638 run had already passed all 11 behavioral/regression tests and governance assertions; its only failure was canonical formatting in the new report/test files. Those exact formatting differences were applied before the fully green head above.
+
+## Research Station handoff
+
+RS-11 implements the corresponding `Download report` control using the same authenticated owner session and the server-generated CALYX-638 artifact. Its implementation head `562bfa4f373aa48d608bd60dfb1d3a391ca11b36` passed the complete Research Station formatting, lint, Vitest, and production-build gate and PR #13 was promoted to review-ready. RS-11 additionally sanitizes both server-provided and deterministic fallback filenames before assigning the browser download filename.
+
+## Next priority
+
+Continue conversational-workbench integration without changing evidence authority: improve persistent research-thread navigation and source reuse only through explicit, provenance-preserving controls. Merge/deployment remains a governance boundary.
