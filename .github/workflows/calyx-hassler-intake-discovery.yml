@@ -1,5 +1,6 @@
 name: CALYX Hassler Intake Discovery
 
+# Diagnostic retrigger after durable PostgreSQL intake merge; no production write.
 on:
   pull_request:
     paths:
