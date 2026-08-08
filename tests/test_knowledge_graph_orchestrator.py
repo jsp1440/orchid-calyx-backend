@@ -3,13 +3,11 @@ validation and publisher integration.
 
 Every test runs against in-memory repositories and an in-memory source
 provider — no database connection is ever opened, guaranteeing "no production
-writes during tests".  Fixtures are synthetic and prove the pipeline is
+writes during tests". Fixtures are synthetic and prove the pipeline is
 generic, not hard-coded per genus or per domain.
 """
 
 from __future__ import annotations
-
-import pytest
 
 from runtime.knowledge_graph import (
     BuildOrchestrator,
@@ -26,7 +24,17 @@ from runtime.knowledge_graph import (
     validate_graph,
 )
 from runtime.knowledge_graph.adapters import DOMAIN_ADAPTERS
-from runtime.knowledge_graph.checkpoint import STATUS_COMPLETED, STATUS_SKIPPED, Checkpoint
+from runtime.knowledge_graph.checkpoint import (
+    STATUS_COMPLETED,
+    STATUS_SKIPPED,
+    Checkpoint,
+)
+
+ALL_DOMAINS = {
+    "occurrences", "geography", "habitat", "climate", "elevation", "traits",
+    "glossary", "literature", "evidence", "pollinators", "mycorrhiza",
+    "conservation", "molecular", "education", "media",
+}
 
 
 # ---- fixtures ----
@@ -75,12 +83,8 @@ def sample_source():
 
 # ---- adapters ----
 
-def test_all_eight_domains_registered():
-    domains = {a.domain for a in DOMAIN_ADAPTERS}
-    assert domains == {
-        "occurrences", "traits", "pollinators", "mycorrhiza",
-        "conservation", "climate", "literature", "media",
-    }
+def test_all_current_domains_registered():
+    assert {adapter.domain for adapter in DOMAIN_ADAPTERS} == ALL_DOMAINS
 
 
 def test_adapter_produces_domain_node_and_edge_but_never_taxon():
@@ -99,9 +103,9 @@ def test_publisher_counts_rows_missing_required_identifiers_and_validation_fails
     adapter = adapters_by_domain()["occurrences"]
     repo = taxonomy_repo()
     result = publish_domain(repo, adapter, [
-        {"source_pk": 1},                       # no taxon_pk
-        {"taxon_pk": 1001},                     # no source_pk
-        {"source_pk": 2, "taxon_pk": 1001},     # valid
+        {"source_pk": 1},
+        {"taxon_pk": 1001},
+        {"source_pk": 2, "taxon_pk": 1001},
     ])
     assert result.source_rows == 3
     assert result.missing_identifier_rows == 2
@@ -252,8 +256,8 @@ def test_adapter_dedupes_repeated_domain_node():
         {"source_pk": 5, "taxon_pk": 1001, "pollinator_name": "bee"},
         {"source_pk": 5, "taxon_pk": 2001, "pollinator_name": "bee"},
     ])
-    assert len(nodes) == 1   # same pollinator node
-    assert len(edges) == 2   # two taxa reference it
+    assert len(nodes) == 1
+    assert len(edges) == 2
 
 
 # ---- publisher integration + idempotency ----
@@ -274,12 +278,11 @@ def test_publish_is_idempotent_across_reruns():
 def test_audit_reports_availability_without_writes():
     repo = taxonomy_repo()
     before_nodes = len(repo.all_nodes())
-    orch = BuildOrchestrator(repo, sample_source())
-    report = orch.run(ExecutionMode.AUDIT)
+    report = BuildOrchestrator(repo, sample_source()).run(ExecutionMode.AUDIT)
     assert report["build"]["wrote_to_production"] is False
     assert report["preflight"]["source_availability"]["occurrences"] == 2
     assert report["per_domain"] == []
-    assert len(repo.all_nodes()) == before_nodes  # untouched
+    assert len(repo.all_nodes()) == before_nodes
 
 
 # ---- orchestrator: dry run ----
@@ -287,12 +290,9 @@ def test_audit_reports_availability_without_writes():
 def test_dry_run_populates_staging_not_production():
     repo = taxonomy_repo()
     before = (len(repo.all_nodes()), len(repo.all_edges()))
-    orch = BuildOrchestrator(repo, sample_source())
-    report = orch.run(ExecutionMode.DRY_RUN)
+    report = BuildOrchestrator(repo, sample_source()).run(ExecutionMode.DRY_RUN)
     assert report["build"]["wrote_to_production"] is False
-    # production repo unchanged
     assert (len(repo.all_nodes()), len(repo.all_edges())) == before
-    # every domain produced nodes/edges in staging
     assert report["totals"]["nodes_written"] == 9
     assert report["totals"]["edges_written"] == 9
     assert report["estimated_graph_growth"]["estimated_new_nodes"] == 9
@@ -300,8 +300,7 @@ def test_dry_run_populates_staging_not_production():
 
 
 def test_dry_run_reports_per_domain_stats():
-    orch = BuildOrchestrator(taxonomy_repo(), sample_source())
-    report = orch.run(ExecutionMode.DRY_RUN)
+    report = BuildOrchestrator(taxonomy_repo(), sample_source()).run(ExecutionMode.DRY_RUN)
     by_domain = {d["domain"]: d for d in report["per_domain"]}
     assert by_domain["occurrences"]["nodes_written"] == 2
     assert by_domain["traits"]["nodes_written"] == 1
@@ -312,8 +311,9 @@ def test_dry_run_reports_per_domain_stats():
 
 def test_publish_disabled_without_authorization():
     repo = taxonomy_repo()
-    orch = BuildOrchestrator(repo, sample_source(), authorized_to_publish=False)
-    report = orch.run(ExecutionMode.PUBLISH)
+    report = BuildOrchestrator(
+        repo, sample_source(), authorized_to_publish=False
+    ).run(ExecutionMode.PUBLISH)
     assert report["build"]["wrote_to_production"] is False
     assert report["preflight"]["publish_authorized"] is False
     assert len(repo.all_edges()) == 0
@@ -323,9 +323,9 @@ def test_publish_disabled_without_authorization():
 def test_resume_disabled_without_authorization():
     repo = taxonomy_repo()
     store = InMemoryCheckpointStore()
-    orch = BuildOrchestrator(repo, sample_source(), checkpoint_store=store,
-                             authorized_to_publish=False)
-    report = orch.run(ExecutionMode.RESUME)
+    report = BuildOrchestrator(
+        repo, sample_source(), checkpoint_store=store, authorized_to_publish=False
+    ).run(ExecutionMode.RESUME)
     assert report["build"]["wrote_to_production"] is False
     assert len(repo.all_edges()) == 0
     assert any("without authorization" in w for w in report["warnings"])
@@ -333,8 +333,9 @@ def test_resume_disabled_without_authorization():
 
 def test_publish_writes_when_authorized():
     repo = taxonomy_repo()
-    orch = BuildOrchestrator(repo, sample_source(), authorized_to_publish=True)
-    report = orch.run(ExecutionMode.PUBLISH)
+    report = BuildOrchestrator(
+        repo, sample_source(), authorized_to_publish=True
+    ).run(ExecutionMode.PUBLISH)
     assert report["build"]["wrote_to_production"] is True
     assert len(repo.all_edges()) == 9
     assert report["estimated_graph_growth"]["basis"] == "actual"
@@ -349,26 +350,25 @@ def test_batched_publish_covers_all_rows():
         ],
     })
     repo = taxonomy_repo()
-    orch = BuildOrchestrator(repo, source, adapters=(adapters_by_domain()["traits"],),
-                             batch_size=2, authorized_to_publish=True)
-    report = orch.run(ExecutionMode.PUBLISH)
-    d = report["per_domain"][0]
-    assert d["rows_processed"] == 7
-    assert d["nodes_written"] == 7
-    assert d["batches"] == 4  # 2+2+2+1
+    report = BuildOrchestrator(
+        repo, source, adapters=(adapters_by_domain()["traits"],),
+        batch_size=2, authorized_to_publish=True,
+    ).run(ExecutionMode.PUBLISH)
+    domain = report["per_domain"][0]
+    assert domain["rows_processed"] == 7
+    assert domain["nodes_written"] == 7
+    assert domain["batches"] == 4
 
 
 # ---- checkpointing + resume ----
 
-def test_checkpoints_saved_per_domain():
+def test_checkpoints_saved_per_current_domain():
     store = InMemoryCheckpointStore()
-    orch = BuildOrchestrator(taxonomy_repo(), sample_source(), checkpoint_store=store,
-                             authorized_to_publish=True)
-    orch.run(ExecutionMode.PUBLISH)
-    assert store.completed_domains() == {
-        "occurrences", "traits", "pollinators", "mycorrhiza",
-        "conservation", "climate", "literature", "media",
-    }
+    BuildOrchestrator(
+        taxonomy_repo(), sample_source(), checkpoint_store=store,
+        authorized_to_publish=True,
+    ).run(ExecutionMode.PUBLISH)
+    assert store.completed_domains() == ALL_DOMAINS
 
 
 def test_resume_skips_completed_domains():
@@ -376,14 +376,13 @@ def test_resume_skips_completed_domains():
     store.save(Checkpoint(domain="occurrences", status=STATUS_COMPLETED))
     store.save(Checkpoint(domain="traits", status=STATUS_COMPLETED))
     repo = taxonomy_repo()
-    orch = BuildOrchestrator(repo, sample_source(), checkpoint_store=store,
-                             authorized_to_publish=True)
-    report = orch.run(ExecutionMode.RESUME)
+    report = BuildOrchestrator(
+        repo, sample_source(), checkpoint_store=store, authorized_to_publish=True
+    ).run(ExecutionMode.RESUME)
     by_domain = {d["domain"]: d for d in report["per_domain"]}
     assert by_domain["occurrences"]["status"] == STATUS_SKIPPED
     assert by_domain["traits"]["status"] == STATUS_SKIPPED
     assert by_domain["pollinators"]["status"] == STATUS_COMPLETED
-    # skipped domains wrote nothing; the other six each wrote one edge
     assert len(repo.all_edges()) == 6
 
 
@@ -401,7 +400,7 @@ def test_json_file_checkpoint_store_roundtrip(tmp_path):
 def test_validate_graph_flags_dangling_and_duplicate_edges():
     repo = InMemoryGraphRepository(
         [_taxon(1, "Cattleya labiata", 1001)],
-        [Edge(1, "has_trait", 1, 999, "oc_traits.traits", "20")],  # 999 dangling
+        [Edge(1, "has_trait", 1, 999, "oc_traits.traits", "20")],
     )
     report = validate_graph(repo)
     assert report["orphan_edges"] == 1
@@ -409,16 +408,14 @@ def test_validate_graph_flags_dangling_and_duplicate_edges():
 
 
 def test_validate_graph_clean_after_dry_run():
-    orch = BuildOrchestrator(taxonomy_repo(), sample_source())
-    report = orch.run(ExecutionMode.DRY_RUN)
-    v = report["cross_domain_validation"]
-    assert v["vocabulary_compliance"]["compliant"] is True
-    assert v["cross_domain_consistency"]["mismatched_endpoint_edges"] == 0
-    assert v["total_problems"] == 0
+    report = BuildOrchestrator(taxonomy_repo(), sample_source()).run(ExecutionMode.DRY_RUN)
+    validation = report["cross_domain_validation"]
+    assert validation["vocabulary_compliance"]["compliant"] is True
+    assert validation["cross_domain_consistency"]["mismatched_endpoint_edges"] == 0
+    assert validation["total_problems"] == 0
 
 
 def test_cross_domain_consistency_detects_wrong_endpoint():
-    # An image node wired as the *source* of a has_trait edge is inconsistent.
     repo = InMemoryGraphRepository(
         [
             _taxon(1, "Cattleya labiata", 1001),
@@ -427,7 +424,7 @@ def test_cross_domain_consistency_detects_wrong_endpoint():
             Node(3, "trait", canonical_key("trait", 20), "leaf",
                  "oc_traits.traits", "20", None, None, None),
         ],
-        [Edge(1, "has_trait", 2, 3, "oc_traits.traits", "20")],  # from image, not taxon
+        [Edge(1, "has_trait", 2, 3, "oc_traits.traits", "20")],
     )
     report = validate_graph(repo)
     assert report["cross_domain_consistency"]["mismatched_endpoint_edges"] >= 1

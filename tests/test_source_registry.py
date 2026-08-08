@@ -1,12 +1,13 @@
-"""BUILD-062 tests: config-driven source-query registry, SQL safety, taxon
-mapping and connected-adapter output shape.
+"""BUILD-062 source-registry, SQL-safety, mapping, and adapter tests.
 
-No test opens a database connection. The registry's SQL text is validated
-structurally (read-only safety) and adapter behaviour is exercised against the
-in-memory provider using rows shaped exactly like the registered projections.
+No test opens a database connection. Expanded graph domains without a verified
+source projection must remain explicitly registered and fail closed.
 """
 
 from __future__ import annotations
+
+import json as _json
+import os as _os
 
 import pytest
 
@@ -31,21 +32,30 @@ from runtime.knowledge_graph.source_registry import (
     registry_by_domain,
 )
 
-
-DOMAINS = {"occurrences", "traits", "pollinators", "mycorrhiza",
-           "conservation", "climate", "literature", "media"}
+DOMAINS = {
+    "occurrences", "geography", "habitat", "climate", "elevation", "traits",
+    "glossary", "literature", "evidence", "pollinators", "mycorrhiza",
+    "conservation", "molecular", "education", "media",
+}
+ENABLED_DOMAINS = {
+    "occurrences", "traits", "pollinators", "mycorrhiza",
+    "conservation", "climate", "literature", "media",
+}
+BLOCKED_DOMAINS = DOMAINS - ENABLED_DOMAINS
 
 
 # ---- registry coverage & contract ----
 
 def test_registry_covers_every_adapter_domain():
-    assert set(registry_by_domain()) == set(adapters_by_domain()) == DOMAINS
+    assert set(registry_by_domain()) == DOMAINS
+    assert set(adapters_by_domain()) == DOMAINS
+    assert set(enabled_queries()) == ENABLED_DOMAINS
 
 
 def test_every_query_declares_the_contract_columns():
-    for q in SOURCE_QUERIES:
-        for col in CONTRACT_REQUIRED:
-            assert col in q.required_columns, f"{q.domain} missing {col}"
+    for query in SOURCE_QUERIES:
+        for column in CONTRACT_REQUIRED:
+            assert column in query.required_columns, f"{query.domain} missing {column}"
 
 
 def test_enabled_queries_emit_contract_aliases_in_sql():
@@ -61,34 +71,45 @@ def test_every_enabled_query_filters_to_the_taxon_backbone():
 
 
 def test_taxon_mapping_methods_are_known():
-    for q in SOURCE_QUERIES:
-        assert q.taxon_mapping in {"direct", "resolved_view", "name_join"}
+    for query in SOURCE_QUERIES:
+        assert query.taxon_mapping in {"direct", "resolved_view", "name_join"}
 
 
 def test_registry_to_dict_is_serialisable():
-    for q in SOURCE_QUERIES:
-        d = q.to_dict()
-        assert d["domain"] == q.domain
-        assert isinstance(d["expected_tables"], list)
+    for query in SOURCE_QUERIES:
+        data = query.to_dict()
+        assert data["domain"] == query.domain
+        assert isinstance(data["expected_tables"], list)
 
 
 # ---- blocked-domain handling ----
 
-def test_blocked_domains_are_excluded_from_enabled_queries(monkeypatch):
-    # No domain is blocked in the shipped registry (all real sources located).
-    assert blocked_domains() == {}
-    # But the mechanism must work: a disabled entry is excluded.
-    from runtime.knowledge_graph import source_registry as reg
+def test_unverified_expanded_domains_are_explicitly_blocked():
+    assert set(blocked_domains()) == BLOCKED_DOMAINS
+    assert set(enabled_queries()) == ENABLED_DOMAINS
+    for domain in BLOCKED_DOMAINS:
+        query = registry_by_domain()[domain]
+        assert query.enabled is False
+        assert query.sql is None
+        assert query.blocked_reason
+        assert query.metadata["status"] == "BLOCKED"
 
-    original = reg.SOURCE_QUERIES
-    blocked = reg.SourceQuery(
-        domain="occurrences", query_id="x", sql=None,
-        required_columns=CONTRACT_REQUIRED, enabled=False,
+
+def test_blocked_domains_are_excluded_from_enabled_queries(monkeypatch):
+    from runtime.knowledge_graph import source_registry as registry
+
+    original = registry.SOURCE_QUERIES
+    blocked = registry.SourceQuery(
+        domain="occurrences",
+        query_id="x",
+        sql=None,
+        required_columns=CONTRACT_REQUIRED,
+        enabled=False,
         blocked_reason="SOURCE MISSING",
     )
-    monkeypatch.setattr(reg, "SOURCE_QUERIES", (blocked,) + original[1:])
-    assert "occurrences" not in reg.enabled_queries()
-    assert reg.blocked_domains()["occurrences"] == "SOURCE MISSING"
+    monkeypatch.setattr(registry, "SOURCE_QUERIES", (blocked,) + original[1:])
+    assert "occurrences" not in registry.enabled_queries()
+    assert registry.blocked_domains()["occurrences"] == "SOURCE MISSING"
 
 
 # ---- SQL safety ----
@@ -122,13 +143,13 @@ def test_unsafe_sql_is_rejected(bad):
     "select 1;",
 ])
 def test_safe_select_is_accepted(good):
-    assert_safe_sql(good)  # must not raise
+    assert_safe_sql(good)
 
 
 def test_every_registered_query_is_safe():
-    for q in SOURCE_QUERIES:
-        if q.sql:
-            assert_safe_sql(q.sql)
+    for query in SOURCE_QUERIES:
+        if query.sql:
+            assert_safe_sql(query.sql)
 
 
 def test_provider_rejects_unsafe_sql_on_construction():
@@ -137,12 +158,11 @@ def test_provider_rejects_unsafe_sql_on_construction():
 
 
 def test_provider_from_registry_builds_without_db():
-    # Constructing must not open a connection; it only validates SQL.
     provider = PostgresSourceProvider.from_registry("postgresql://ignored")
-    assert set(provider._queries) == DOMAINS  # noqa: SLF001 - white-box check
+    assert set(provider._queries) == ENABLED_DOMAINS
 
 
-# ---- taxon mapping & adapter output shape (in-memory rows) ----
+# ---- taxon mapping & adapter output shape ----
 
 def _backbone():
     return InMemoryGraphRepository([
@@ -186,7 +206,7 @@ def test_adapter_refuses_unvalidated_rows_missing_taxon_pk():
     adapter = adapters_by_domain()["traits"]
     with pytest.raises(ValueError, match="without source_pk/taxon_pk"):
         adapter.produce([
-            {"source_pk": "a", "trait_name": "flower_color"},  # no taxon_pk
+            {"source_pk": "a", "trait_name": "flower_color"},
             {"source_pk": "b", "taxon_pk": 2001, "trait_name": "habit"},
         ])
 
@@ -194,7 +214,7 @@ def test_adapter_refuses_unvalidated_rows_missing_taxon_pk():
 def test_adapter_never_emits_a_taxon_node():
     for adapter in adapters_by_domain().values():
         nodes, _ = adapter.produce([{"source_pk": 1, "taxon_pk": 1001}])
-        assert all(n.node_type != "taxon" for n in nodes)
+        assert all(node.node_type != "taxon" for node in nodes)
 
 
 # ---- zero-write guarantees with registry-shaped rows ----
@@ -220,7 +240,7 @@ def test_audit_reads_availability_without_writing():
     report = BuildOrchestrator(repo, _shaped_source()).run(ExecutionMode.AUDIT)
     assert report["build"]["wrote_to_production"] is False
     assert report["preflight"]["source_availability"]["occurrences"] == 1
-    assert repo.all_edges() == []  # nothing written to the source repo
+    assert repo.all_edges() == []
 
 
 def test_dry_run_projects_edges_into_staging_only():
@@ -230,7 +250,7 @@ def test_dry_run_projects_edges_into_staging_only():
     ).run(ExecutionMode.DRY_RUN)
     assert report["build"]["wrote_to_production"] is False
     assert report["totals"]["edges_written"] == 8
-    assert repo.all_edges() == []  # production repo untouched
+    assert repo.all_edges() == []
 
 
 def test_publish_authorization_remains_disabled_by_default():
@@ -246,19 +266,12 @@ def test_vocabulary_is_compliant_for_every_registry_domain():
     report = BuildOrchestrator(
         repo, _shaped_source(), checkpoint_store=InMemoryCheckpointStore()
     ).run(ExecutionMode.DRY_RUN)
-    vocab = report["cross_domain_validation"]["vocabulary_compliance"]
-    assert vocab["compliant"] is True
+    assert report["cross_domain_validation"]["vocabulary_compliance"]["compliant"] is True
 
 
-# --- BUILD-064: crosswalk / collision / climate / completeness / metadata ----
-
-import json as _json
-import os as _os
-
-from runtime.knowledge_graph.source_registry import registry_by_domain
+# --- BUILD-064 metadata and crosswalk evidence ----
 
 _DOCS = _os.path.join(_os.path.dirname(__file__), "..", "docs", "crosswalks")
-
 _B064_REQUIRED_META = (
     "status", "identifier_strategy", "join_strategy", "crosswalk_required",
     "confidence", "expected_record_count", "actual_record_count",
@@ -270,27 +283,27 @@ _VALID_STATUS = {
 
 
 def test_every_domain_has_complete_build064_metadata():
-    for domain, q in registry_by_domain().items():
-        md = q.metadata
+    for domain, query in registry_by_domain().items():
+        metadata = query.metadata
         for key in _B064_REQUIRED_META:
-            assert key in md, f"{domain} missing metadata key {key}"
-        assert md["status"] in _VALID_STATUS, f"{domain} bad status {md['status']}"
-        assert isinstance(md["crosswalk_required"], bool)
-        assert isinstance(md["actual_record_count"], int)
-        assert isinstance(md["expected_record_count"], int)
+            assert key in metadata, f"{domain} missing metadata key {key}"
+        assert metadata["status"] in _VALID_STATUS
+        assert isinstance(metadata["crosswalk_required"], bool)
+        assert isinstance(metadata["actual_record_count"], int)
+        assert isinstance(metadata["expected_record_count"], int)
 
 
 def test_metadata_survives_to_dict():
-    for q in SOURCE_QUERIES:
-        assert q.to_dict()["metadata"]["status"] in _VALID_STATUS
+    for query in SOURCE_QUERIES:
+        assert query.to_dict()["metadata"]["status"] in _VALID_STATUS
 
 
 def test_climate_is_classified_blocked_as_proxy():
-    md = registry_by_domain()["climate"].metadata
-    assert md["status"] == "BLOCKED"
-    assert md["confidence"] == "low"
-    assert "proxy" in md["operator_notes"].lower()
-    assert "bioclim" in md["operator_notes"].lower()
+    metadata = registry_by_domain()["climate"].metadata
+    assert metadata["status"] == "BLOCKED"
+    assert metadata["confidence"] == "low"
+    assert "proxy" in metadata["operator_notes"].lower()
+    assert "bioclim" in metadata["operator_notes"].lower()
 
 
 def test_name_join_domains_flag_crosswalk_required():
@@ -299,9 +312,9 @@ def test_name_join_domains_flag_crosswalk_required():
 
 
 def test_literature_has_no_upstream_id_so_not_upgradable():
-    md = registry_by_domain()["literature"].metadata
-    assert md["join_strategy"] == "name_join"
-    assert "no taxon id" in md["identifier_strategy"].lower()
+    metadata = registry_by_domain()["literature"].metadata
+    assert metadata["join_strategy"] == "name_join"
+    assert "no taxon id" in metadata["identifier_strategy"].lower()
 
 
 def test_direct_id_domains_do_not_require_crosswalk():
@@ -313,31 +326,27 @@ def _load_json(name):
     path = _os.path.join(_DOCS, name)
     if not _os.path.exists(path):
         pytest.skip(f"artifact {name} not generated in this environment")
-    with open(path) as fh:
-        return _json.load(fh)
+    with open(path) as file:
+        return _json.load(file)
 
 
 def test_name_collision_stats_shape_and_rates():
     stats = _load_json("name_collision_statistics.json")
     for domain in ("pollinators", "mycorrhiza", "literature"):
-        d = stats[domain]
-        assert d["distinct_names"] >= d["names_matched_backbone"]
-        assert 0.0 <= d["match_rate"] <= 1.0
-        assert 0.0 <= d["orphan_rate"] <= 1.0
-        # orphans + matched cannot exceed distinct names
-        assert d["orphan_names"] + d["names_matched_backbone"] >= d["distinct_names"] - 0
+        data = stats[domain]
+        assert data["distinct_names"] >= data["names_matched_backbone"]
+        assert 0.0 <= data["match_rate"] <= 1.0
+        assert 0.0 <= data["orphan_rate"] <= 1.0
+        assert data["orphan_names"] + data["names_matched_backbone"] >= data["distinct_names"]
 
 
 def test_mycorrhiza_collision_detected():
-    stats = _load_json("name_collision_statistics.json")
-    myc = stats["mycorrhiza"]
-    # collisions inflate rows into more edges than source rows
-    assert myc["edges_after_join_fanout"] > myc["source_rows"]
-    assert myc["colliding_names_gt1_node"] > 0
+    mycorrhiza = _load_json("name_collision_statistics.json")["mycorrhiza"]
+    assert mycorrhiza["edges_after_join_fanout"] > mycorrhiza["source_rows"]
+    assert mycorrhiza["colliding_names_gt1_node"] > 0
 
 
 def test_crosswalk_confidence_bounds():
-    stats = _load_json("crosswalk_statistics.json")
-    x = stats["orchid_taxonomy_to_backbone"]
-    assert x["total_pairs"] >= x["distinct_source_ids"]
-    assert x["distinct_destination_ids"] > 0
+    crosswalk = _load_json("crosswalk_statistics.json")["orchid_taxonomy_to_backbone"]
+    assert crosswalk["total_pairs"] >= crosswalk["distinct_source_ids"]
+    assert crosswalk["distinct_destination_ids"] > 0

@@ -15,16 +15,16 @@ class Cursor:
         if "to_regclass" in sql:
             table = self.params[0]
             return (table in {"public.orchid_taxonomy", "public.orchid_images"},)
+        if "COUNT(DISTINCT i.taxonomy_id)" in sql:
+            return (30000,)
+        if "LEFT JOIN public.orchid_taxonomy" in sql:
+            return (25,)
         if "COUNT(*) FROM public.orchid_taxonomy" in sql:
             return (31840,)
         if "COUNT(*) FROM public.orchid_images WHERE taxonomy_id IS NOT NULL" in sql:
             return (5000000,)
         if "COUNT(*) FROM public.orchid_images" in sql:
             return (5070503,)
-        if "LEFT JOIN public.orchid_taxonomy" in sql:
-            return (25,)
-        if "COUNT(DISTINCT i.taxonomy_id)" in sql:
-            return (30000,)
         raise AssertionError(sql)
 
     def fetchall(self):

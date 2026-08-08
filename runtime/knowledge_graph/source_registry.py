@@ -1,38 +1,15 @@
-"""Configuration-driven registry of read-only source queries (BUILD-062).
+"""Configuration-driven read-only source registry for the Knowledge Graph.
 
-Every scientific domain's connection to real production data is described by a
-single :class:`SourceQuery` entry here.  There is exactly one place where the
-per-domain projection SQL lives; adapters and the orchestrator never embed SQL.
-
-Design
-------
-* Each enabled entry carries a SELECT-only projection that emits the publisher
-  contract: at minimum ``source_pk`` and ``taxon_pk``, plus the optional value /
-  provenance / quality columns the domain adapter reads.
-* ``taxon_pk`` is always the taxonomy identity used by the canonical graph
-  backbone ``oc_graph.kg_nodes`` (node_type ``taxon``, ``source_pk`` =
-  ``public.taxonomy_species.id``).  Every query filters to taxa that exist in
-  that backbone so projected edges always resolve.
-* Domains whose real production source could not be located, or whose taxon
-  mapping is not established, are recorded with ``enabled=False`` and a
-  ``blocked_reason`` — they are never silently dropped.
-
-Nothing here opens a connection.  :func:`enabled_queries` returns the plain
-``{domain: sql}`` mapping consumed by :class:`PostgresSourceProvider`.
-
-Taxon mapping methods
----------------------
-``direct``      — the source table carries a taxon id in the backbone id space.
-``resolved_view`` — a curated view already resolved the taxon id (traits).
-``name_join``   — the source has no backbone taxon id; join on exact (case-
-  insensitive) scientific name to ``kg_nodes.display_label``.  This is an exact
-  relational join on a natural key, not fuzzy matching; name collisions can fan
-  a source row out to multiple taxa and are reported as a warning.
+Every adapter domain is registered here. Domains with a verified production
+projection expose SELECT-only SQL; domains whose source contract has not yet
+been verified remain explicit, disabled, and fail closed instead of silently
+falling out of the graph build.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace as _replace
+import re
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 
@@ -71,31 +48,27 @@ class SourceQuery:
 
 
 CONTRACT_REQUIRED = ("source_pk", "taxon_pk")
-
-# --- SQL safety -------------------------------------------------------------
-
-_FORBIDDEN = (
+_FORBIDDEN = {
     "insert", "update", "delete", "merge", "create", "alter", "drop",
     "truncate", "grant", "revoke", "copy", "call", "do", "vacuum",
     "comment", "reindex", "refresh", "lock", "listen", "notify", "execute",
-)
+}
 
 
 class UnsafeSQLError(ValueError):
-    """Raised when a registered query is not a read-only single SELECT."""
+    """Raised when registered SQL is not a single read-only SELECT/WITH."""
 
 
 def _strip_sql_comments(sql: str) -> str:
     out: list[str] = []
-    i, n = 0, len(sql)
-    while i < n:
-        two = sql[i : i + 2]
-        if two == "--":
-            j = sql.find("\n", i)
-            i = n if j == -1 else j
-        elif two == "/*":
-            j = sql.find("*/", i + 2)
-            i = n if j == -1 else j + 2
+    i = 0
+    while i < len(sql):
+        if sql[i : i + 2] == "--":
+            end = sql.find("\n", i)
+            i = len(sql) if end == -1 else end
+        elif sql[i : i + 2] == "/*":
+            end = sql.find("*/", i + 2)
+            i = len(sql) if end == -1 else end + 2
         else:
             out.append(sql[i])
             i += 1
@@ -103,45 +76,69 @@ def _strip_sql_comments(sql: str) -> str:
 
 
 def assert_safe_sql(sql: str) -> None:
-    """Reject anything that is not a single read-only SELECT/WITH statement."""
     if not sql or not sql.strip():
         raise UnsafeSQLError("empty SQL")
     body = _strip_sql_comments(sql).strip().rstrip(";").strip()
     if ";" in body:
         raise UnsafeSQLError("multiple statements are not allowed")
-    lowered = body.lower()
-    head = lowered.lstrip("(").lstrip()
-    if not (head.startswith("select") or head.startswith("with")):
+    head = body.lower().lstrip("(").lstrip()
+    if not head.startswith(("select", "with")):
         raise UnsafeSQLError("only SELECT/WITH read queries are allowed")
-    import re
-
-    tokens = set(re.findall(r"[a-z_]+", lowered))
-    hits = sorted(tokens & set(_FORBIDDEN))
+    hits = sorted(set(re.findall(r"[a-z_]+", body.lower())) & _FORBIDDEN)
     if hits:
         raise UnsafeSQLError(f"forbidden SQL keyword(s): {', '.join(hits)}")
 
 
-# --- taxon backbone filter helpers -----------------------------------------
-
-_KG = "oc_graph.kg_nodes"
-_KG_TAXON = f"{_KG} k"
-
-
-def _direct(inner: str, taxon_expr: str) -> str:
-    return (
-        f"{inner}\n  and exists (select 1 from {_KG_TAXON} "
-        f"where k.node_type='taxon' and k.source_pk={taxon_expr}::text)"
+def _verified(
+    *,
+    domain: str,
+    query_id: str,
+    expected_tables: tuple[str, ...],
+    taxon_mapping: str,
+    optional_columns: tuple[str, ...],
+    provenance_columns: tuple[str, ...] = (),
+    quality_columns: tuple[str, ...] = (),
+    sql: str,
+    notes: str = "",
+) -> SourceQuery:
+    return SourceQuery(
+        domain=domain,
+        query_id=query_id,
+        sql=sql,
+        required_columns=CONTRACT_REQUIRED,
+        optional_columns=optional_columns,
+        expected_tables=expected_tables,
+        taxon_mapping=taxon_mapping,
+        provenance_columns=provenance_columns,
+        quality_columns=quality_columns,
+        notes=notes,
     )
 
 
-# --- the registry -----------------------------------------------------------
+def _blocked(domain: str, query_id: str, table: str) -> SourceQuery:
+    reason = (
+        "Source table is known from the adapter contract, but its production "
+        "projection and backbone taxon mapping have not been verified for a "
+        "publication build. Registered explicitly and disabled fail-closed."
+    )
+    return SourceQuery(
+        domain=domain,
+        query_id=query_id,
+        sql=None,
+        required_columns=CONTRACT_REQUIRED,
+        expected_tables=(table, "oc_graph.kg_nodes"),
+        taxon_mapping="direct",
+        enabled=False,
+        blocked_reason=reason,
+        notes=reason,
+    )
 
-_OCCURRENCES = SourceQuery(
+
+_OCCURRENCES = _verified(
     domain="occurrences",
     query_id="occurrences_v1",
     expected_tables=("oc_atlas.occurrences", "oc_graph.kg_nodes"),
     taxon_mapping="direct",
-    required_columns=CONTRACT_REQUIRED,
     optional_columns=(
         "locality", "scientific_name", "latitude", "longitude", "elevation",
         "country", "event_date", "basis_of_record", "source_name",
@@ -160,12 +157,80 @@ _OCCURRENCES = SourceQuery(
     """,
 )
 
-_CONSERVATION = SourceQuery(
+_TRAITS = _verified(
+    domain="traits",
+    query_id="traits_resolved_v4",
+    expected_tables=("oc_views.trait_resolved_v4", "oc_graph.kg_nodes"),
+    taxon_mapping="resolved_view",
+    optional_columns=("trait_name", "trait_value", "support_count"),
+    quality_columns=("confidence_score", "confidence_label"),
+    notes=(
+        "The curated trait_resolved_v4 view resolves taxonomy_id; source_pk is a "
+        "deterministic hash of taxonomy_id, trait_name and trait_value."
+    ),
+    sql="""
+        select md5(t.taxonomy_id::text || '|' || t.trait_name || '|'
+                   || coalesce(t.trait_value,'')) as source_pk,
+               t.taxonomy_id as taxon_pk, t.trait_name, t.trait_value,
+               t.support_count, t.source_level as confidence_label,
+               t.confidence_ratio as confidence_score
+        from oc_views.trait_resolved_v4 t
+        where t.taxonomy_id is not null and t.trait_name is not null
+          and exists (select 1 from oc_graph.kg_nodes k
+                      where k.node_type='taxon' and k.source_pk=t.taxonomy_id::text)
+    """,
+)
+
+_POLLINATORS = _verified(
+    domain="pollinators",
+    query_id="pollinators_interaction_edges_v1",
+    expected_tables=("oc_interactions.orchid_interaction_edges", "oc_graph.kg_nodes"),
+    taxon_mapping="name_join",
+    optional_columns=(
+        "partner_taxon_name", "interaction_type", "interaction_group",
+        "evidence_citation",
+    ),
+    provenance_columns=("created_at",),
+    quality_columns=("evidence_class", "confidence_score"),
+    sql="""
+        select e.edge_id as source_pk, k.source_pk::bigint as taxon_pk,
+               e.partner_taxon_name, e.interaction_type, e.interaction_group,
+               e.evidence_source as evidence_class, e.evidence_citation,
+               e.confidence_score, e.created_at
+        from oc_interactions.orchid_interaction_edges e
+        join oc_graph.kg_nodes k
+          on k.node_type='taxon' and lower(k.display_label)=lower(e.orchid_scientific_name)
+    """,
+)
+
+_MYCORRHIZA = _verified(
+    domain="mycorrhiza",
+    query_id="mycorrhiza_associations_v1",
+    expected_tables=("oc_mycorrhiza.orchid_fungal_associations", "oc_graph.kg_nodes"),
+    taxon_mapping="name_join",
+    optional_columns=(
+        "fungal_name", "fungal_taxon_id", "association_type", "life_stage",
+        "citation", "doi",
+    ),
+    provenance_columns=("citation", "doi", "created_at", "updated_at"),
+    quality_columns=("evidence_class", "confidence_score", "confidence_label"),
+    sql="""
+        select a.association_id as source_pk, k.source_pk::bigint as taxon_pk,
+               a.fungal_name, a.fungal_taxon_id, a.association_type, a.life_stage,
+               a.evidence_type as evidence_class, a.citation, a.doi,
+               a.confidence_score, a.confidence_band as confidence_label,
+               a.created_at, a.updated_at
+        from oc_mycorrhiza.orchid_fungal_associations a
+        join oc_graph.kg_nodes k
+          on k.node_type='taxon' and lower(k.display_label)=lower(a.orchid_scientific_name)
+    """,
+)
+
+_CONSERVATION = _verified(
     domain="conservation",
     query_id="conservation_v1",
     expected_tables=("oc_conservation.conservation_records", "oc_graph.kg_nodes"),
     taxon_mapping="direct",
-    required_columns=CONTRACT_REQUIRED,
     optional_columns=(
         "iucn_category", "cites_appendix", "scientific_name", "population_trend",
         "assessment_year", "region", "source_name",
@@ -184,148 +249,11 @@ _CONSERVATION = SourceQuery(
     """,
 )
 
-_MEDIA = SourceQuery(
-    domain="media",
-    query_id="media_gallery_v1",
-    expected_tables=("oc_api.species_media_gallery_v1", "oc_graph.kg_nodes"),
-    taxon_mapping="direct",
-    required_columns=CONTRACT_REQUIRED,
-    optional_columns=(
-        "scientific_name", "caption", "media_url", "thumbnail_url", "media_type",
-        "license", "rights_holder", "source_name",
-    ),
-    provenance_columns=("source_name", "created_at"),
-    quality_columns=(),
-    notes=(
-        "oc_core.media_assets.taxon_id is unpopulated (all NULL); the curated "
-        "gallery view carries the resolved taxonomy_id and is used instead."
-    ),
-    sql="""
-        select md5(g.taxonomy_id::text || '|' || coalesce(g.media_url,'')) as source_pk,
-               g.taxonomy_id as taxon_pk, g.scientific_name, g.caption, g.media_url,
-               g.thumbnail_url, g.media_type, g.license, g.rights_holder,
-               g.source_name, g.generated_at as created_at
-        from oc_api.species_media_gallery_v1 g
-        where g.taxonomy_id is not null and g.media_url is not null
-          and exists (select 1 from oc_graph.kg_nodes k
-                      where k.node_type='taxon' and k.source_pk=g.taxonomy_id::text)
-    """,
-)
-
-_TRAITS = SourceQuery(
-    domain="traits",
-    query_id="traits_resolved_v4",
-    expected_tables=("oc_views.trait_resolved_v4", "oc_graph.kg_nodes"),
-    taxon_mapping="resolved_view",
-    required_columns=CONTRACT_REQUIRED,
-    optional_columns=("trait_name", "trait_value", "support_count"),
-    provenance_columns=(),
-    quality_columns=("confidence_score", "confidence_label"),
-    notes=(
-        "oc_traits.traits carries no taxon column; the curated consensus view "
-        "trait_resolved_v4 resolves taxonomy_id. source_pk is a deterministic "
-        "hash of (taxonomy_id, trait_name, trait_value)."
-    ),
-    sql="""
-        select md5(t.taxonomy_id::text || '|' || t.trait_name || '|'
-                   || coalesce(t.trait_value,'')) as source_pk,
-               t.taxonomy_id as taxon_pk, t.trait_name, t.trait_value,
-               t.support_count, t.source_level as confidence_label,
-               t.confidence_ratio as confidence_score
-        from oc_views.trait_resolved_v4 t
-        where t.taxonomy_id is not null and t.trait_name is not null
-          and exists (select 1 from oc_graph.kg_nodes k
-                      where k.node_type='taxon' and k.source_pk=t.taxonomy_id::text)
-    """,
-)
-
-_LITERATURE = SourceQuery(
-    domain="literature",
-    query_id="literature_taxon_edges_v1",
-    expected_tables=("oc_graph.taxon_literature_edges", "oc_graph.kg_nodes"),
-    taxon_mapping="name_join",
-    required_columns=CONTRACT_REQUIRED,
-    optional_columns=("title", "doi", "year", "edge_strength"),
-    provenance_columns=("created_at",),
-    quality_columns=("confidence_score",),
-    notes=(
-        "Literature edge tables key taxa by scientific_name only (no backbone "
-        "taxon id). Exact case-insensitive name join to kg_nodes.display_label; "
-        "name collisions may fan one edge to multiple taxa (reported)."
-    ),
-    sql="""
-        select l.taxon_edge_id as source_pk, k.source_pk::bigint as taxon_pk,
-               l.title, l.doi, l.publication_year as year,
-               l.trust_score as confidence_score, l.edge_strength, l.created_at
-        from oc_graph.taxon_literature_edges l
-        join oc_graph.kg_nodes k
-          on k.node_type='taxon' and lower(k.display_label)=lower(l.scientific_name)
-    """,
-)
-
-_POLLINATORS = SourceQuery(
-    domain="pollinators",
-    query_id="pollinators_interaction_edges_v1",
-    expected_tables=("oc_interactions.orchid_interaction_edges", "oc_graph.kg_nodes"),
-    taxon_mapping="name_join",
-    required_columns=CONTRACT_REQUIRED,
-    optional_columns=(
-        "partner_taxon_name", "interaction_type", "interaction_group",
-        "evidence_citation",
-    ),
-    provenance_columns=("created_at",),
-    quality_columns=("evidence_class", "confidence_score"),
-    notes=(
-        "orchid_interaction_edges.orchid_taxonomy_id is in the oc_taxonomy id "
-        "space (values > backbone max) with no verified crosswalk to the graph "
-        "backbone, so an exact scientific-name join is used instead."
-    ),
-    sql="""
-        select e.edge_id as source_pk, k.source_pk::bigint as taxon_pk,
-               e.partner_taxon_name, e.interaction_type, e.interaction_group,
-               e.evidence_source as evidence_class, e.evidence_citation,
-               e.confidence_score, e.created_at
-        from oc_interactions.orchid_interaction_edges e
-        join oc_graph.kg_nodes k
-          on k.node_type='taxon' and lower(k.display_label)=lower(e.orchid_scientific_name)
-    """,
-)
-
-_MYCORRHIZA = SourceQuery(
-    domain="mycorrhiza",
-    query_id="mycorrhiza_associations_v1",
-    expected_tables=("oc_mycorrhiza.orchid_fungal_associations", "oc_graph.kg_nodes"),
-    taxon_mapping="name_join",
-    required_columns=CONTRACT_REQUIRED,
-    optional_columns=(
-        "fungal_name", "fungal_taxon_id", "association_type", "life_stage",
-        "citation", "doi",
-    ),
-    provenance_columns=("citation", "doi", "created_at", "updated_at"),
-    quality_columns=("evidence_class", "confidence_score", "confidence_label"),
-    notes=(
-        "orchid_fungal_associations.orchid_taxonomy_id is in the oc_taxonomy id "
-        "space with no verified backbone crosswalk; exact scientific-name join "
-        "is used. Name collisions fan some associations to multiple taxa."
-    ),
-    sql="""
-        select a.association_id as source_pk, k.source_pk::bigint as taxon_pk,
-               a.fungal_name, a.fungal_taxon_id, a.association_type, a.life_stage,
-               a.evidence_type as evidence_class, a.citation, a.doi,
-               a.confidence_score, a.confidence_band as confidence_label,
-               a.created_at, a.updated_at
-        from oc_mycorrhiza.orchid_fungal_associations a
-        join oc_graph.kg_nodes k
-          on k.node_type='taxon' and lower(k.display_label)=lower(a.orchid_scientific_name)
-    """,
-)
-
-_CLIMATE = SourceQuery(
+_CLIMATE = _verified(
     domain="climate",
     query_id="climate_env_proxy_v1",
     expected_tables=("oc_env_intel.species_environment_profile", "oc_graph.kg_nodes"),
     taxon_mapping="direct",
-    required_columns=CONTRACT_REQUIRED,
     optional_columns=(
         "scientific_name", "environmental_readiness_label", "climate_proxy_zones",
         "avg_elevation_m", "min_elevation_m", "max_elevation_m",
@@ -333,11 +261,8 @@ _CLIMATE = SourceQuery(
     provenance_columns=("build_id", "created_at"),
     quality_columns=("evidence_class", "confidence_score", "confidence_label"),
     notes=(
-        "No direct climate table exists (oc_env.climate_summaries absent). This "
-        "is an OCCURRENCE-DERIVED environmental proxy (elevation + qualitative "
-        "climate_proxy_zones), not modelled bioclim/WorldClim values. True "
-        "bioclim requires a future derivation pipeline from occurrence "
-        "coordinates. Classified PARTIALLY CONNECTED for this reason."
+        "Occurrence-derived environmental proxy only; not modelled bioclim. "
+        "Metadata keeps this scientific surface BLOCKED for climate claims."
     ),
     sql="""
         select e.taxonomy_id as source_pk, e.taxonomy_id as taxon_pk,
@@ -352,194 +277,185 @@ _CLIMATE = SourceQuery(
     """,
 )
 
+_LITERATURE = _verified(
+    domain="literature",
+    query_id="literature_taxon_edges_v1",
+    expected_tables=("oc_graph.taxon_literature_edges", "oc_graph.kg_nodes"),
+    taxon_mapping="name_join",
+    optional_columns=("title", "doi", "year", "edge_strength"),
+    provenance_columns=("created_at",),
+    quality_columns=("confidence_score",),
+    notes=(
+        "Literature source has no taxon id; exact scientific-name join is used "
+        "until an upstream identifier is available."
+    ),
+    sql="""
+        select l.taxon_edge_id as source_pk, k.source_pk::bigint as taxon_pk,
+               l.title, l.doi, l.publication_year as year,
+               l.trust_score as confidence_score, l.edge_strength, l.created_at
+        from oc_graph.taxon_literature_edges l
+        join oc_graph.kg_nodes k
+          on k.node_type='taxon' and lower(k.display_label)=lower(l.scientific_name)
+    """,
+)
+
+_MEDIA = _verified(
+    domain="media",
+    query_id="media_gallery_v1",
+    expected_tables=("oc_api.species_media_gallery_v1", "oc_graph.kg_nodes"),
+    taxon_mapping="direct",
+    optional_columns=(
+        "scientific_name", "caption", "media_url", "thumbnail_url", "media_type",
+        "license", "rights_holder", "source_name",
+    ),
+    provenance_columns=("source_name", "created_at"),
+    notes=(
+        "Curated gallery view carries the resolved taxonomy_id; the raw media "
+        "asset taxon linkage is not used."
+    ),
+    sql="""
+        select md5(g.taxonomy_id::text || '|' || coalesce(g.media_url,'')) as source_pk,
+               g.taxonomy_id as taxon_pk, g.scientific_name, g.caption, g.media_url,
+               g.thumbnail_url, g.media_type, g.license, g.rights_holder,
+               g.source_name, g.generated_at as created_at
+        from oc_api.species_media_gallery_v1 g
+        where g.taxonomy_id is not null and g.media_url is not null
+          and exists (select 1 from oc_graph.kg_nodes k
+                      where k.node_type='taxon' and k.source_pk=g.taxonomy_id::text)
+    """,
+)
+
+# BUILD-068 expanded adapters. Their source table names are known from the
+# adapter contract, but no current-main evidence establishes a safe publication
+# projection/taxon crosswalk. Register them explicitly, disabled, until verified.
+_GEOGRAPHY = _blocked("geography", "geography_unverified_v1", "oc_geo.taxon_places")
+_HABITAT = _blocked("habitat", "habitat_unverified_v1", "oc_habitat.taxon_habitats")
+_ELEVATION = _blocked("elevation", "elevation_unverified_v1", "oc_env.taxon_elevation_profiles")
+_GLOSSARY = _blocked("glossary", "glossary_unverified_v1", "oc_glossary.taxon_terms")
+_EVIDENCE = _blocked("evidence", "evidence_unverified_v1", "oc_claims.evidence_item")
+_MOLECULAR = _blocked("molecular", "molecular_unverified_v1", "oc_phylogeny.taxon_molecular_records")
+_EDUCATION = _blocked("education", "education_unverified_v1", "ocu.taxon_learning_objects")
+
 
 SOURCE_QUERIES: tuple[SourceQuery, ...] = (
     _OCCURRENCES,
+    _GEOGRAPHY,
+    _HABITAT,
+    _CLIMATE,
+    _ELEVATION,
     _TRAITS,
+    _GLOSSARY,
+    _LITERATURE,
+    _EVIDENCE,
     _POLLINATORS,
     _MYCORRHIZA,
     _CONSERVATION,
-    _CLIMATE,
-    _LITERATURE,
+    _MOLECULAR,
+    _EDUCATION,
     _MEDIA,
 )
 
 
-# --- BUILD-064 registry metadata --------------------------------------------
-# Evidence-based connection quality captured during the BUILD-064 read-only
-# investigation (see docs/BUILD-064-*). Verification date reflects the live
-# production audit run. Counts are ACTUAL rows projected into the graph today;
-# "expected" is the plausible production ceiling given the source landscape.
+def _meta(
+    status: str,
+    identifier_strategy: str,
+    join_strategy: str,
+    crosswalk_required: bool,
+    confidence: str,
+    expected: int,
+    actual: int,
+    notes: str,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "identifier_strategy": identifier_strategy,
+        "join_strategy": join_strategy,
+        "crosswalk_required": crosswalk_required,
+        "confidence": confidence,
+        "expected_record_count": expected,
+        "actual_record_count": actual,
+        "last_verification": "2026-07-15",
+        "operator_notes": notes,
+    }
+
+
 _BUILD064_META: dict[str, dict[str, Any]] = {
-    "occurrences": {
-        "status": "READY WITH OPERATOR REVIEW",
-        "identifier_strategy": "direct taxon_id (oc_atlas.occurrences.taxon_id -> backbone)",
-        "join_strategy": "direct_id",
-        "crosswalk_required": False,
-        "confidence": "high",
-        "expected_record_count": 580000,
-        "actual_record_count": 26,
-        "last_verification": "2026-07-15",
-        "operator_notes": (
-            "oc_atlas.occurrences holds only 26 curated rows (all 26 map cleanly "
-            "to the backbone; not a restrictive-SQL artifact). Bulk occurrence "
-            "data lives in public.orchid_occurrence (580,612 rows) and "
-            "public.oc_occurrences (114,517), but those link via ambiguous id "
-            "columns (accepted_taxon_id resolves only ~504 backbone taxa; "
-            "oc_occurrences.species_id resolves 0). Repointing is NOT done here "
-            "because the alt-source taxon linkage is unverified. Decide source "
-            "before controlled population."
-        ),
-    },
-    "conservation": {
-        "status": "PARTIALLY READY",
-        "identifier_strategy": "direct taxon_id (oc_conservation.conservation_records.taxon_id)",
-        "join_strategy": "direct_id",
-        "crosswalk_required": False,
-        "confidence": "high",
-        "expected_record_count": 2,
-        "actual_record_count": 2,
-        "last_verification": "2026-07-15",
-        "operator_notes": (
-            "Genuinely sparse in production: conservation_records=2, and the "
-            "curated CITES tables (cites_listings, v_cites_current_orchids) are "
-            "empty (0). orchid_taxonomy.iucn_red_list_category is entirely null. "
-            "This is a real source-availability gap, not a wrong-table issue. No "
-            "authoritative conservation dataset is populated yet."
-        ),
-    },
-    "media": {
-        "status": "READY",
-        "identifier_strategy": "direct taxonomy_id (oc_api.species_media_gallery_v1)",
-        "join_strategy": "direct_id",
-        "crosswalk_required": False,
-        "confidence": "high",
-        "expected_record_count": 51,
-        "actual_record_count": 51,
-        "last_verification": "2026-07-15",
-        "operator_notes": "Direct id join via the authoritative gallery view; clean.",
-    },
-    "traits": {
-        "status": "READY WITH OPERATOR REVIEW",
-        "identifier_strategy": "resolved consensus view (oc_views.trait_resolved_v4.taxonomy_id)",
-        "join_strategy": "resolved_view_id",
-        "crosswalk_required": False,
-        "confidence": "medium",
-        "expected_record_count": 33791,
-        "actual_record_count": 2807,
-        "last_verification": "2026-07-15",
-        "operator_notes": (
-            "Resolved-view id join (no name matching). Covers ~43% of backbone "
-            "taxa; remainder simply lack resolved trait consensus rows."
-        ),
-    },
-    "climate": {
-        "status": "BLOCKED",
-        "identifier_strategy": "direct taxonomy_id, but source is a proxy not climate",
-        "join_strategy": "direct_id",
-        "crosswalk_required": False,
-        "confidence": "low",
-        "expected_record_count": 0,
-        "actual_record_count": 19263,
-        "last_verification": "2026-07-15",
-        "operator_notes": (
-            "species_environment_profile is an OCCURRENCE-DERIVED environmental "
-            "summary (elevation bounds, lat/long bbox, country counts, qualitative "
-            "climate_proxy_zones) -- NOT modelled bioclim. The true-climate table "
-            "public.species_climate_profile_monthly (tmin/tmax/precip percentiles) "
-            "exists but is EMPTY (0 rows), as are climate_normals_monthly_point, "
-            "culture_engine_species_monthly_climate and oacs_origin_climate_profiles. "
-            "No real climate data is populated in production. Do not present the "
-            "proxy as climate. BLOCKED until a real climate source is populated."
-        ),
-    },
-    "pollinators": {
-        "status": "READY WITH OPERATOR REVIEW",
-        "identifier_strategy": (
-            "authoritative id available: orchid_taxonomy_id -> "
-            "oc_taxonomy.taxon_crosswalk (confidence-scored) -> oc_taxonomy.taxa; "
-            "final hop to backbone is canonical-name equality (no pure-id bridge "
-            "between the two taxonomy backbones)"
-        ),
-        "join_strategy": "name_join (crosswalk-upgradable)",
-        "crosswalk_required": True,
-        "confidence": "high",
-        "expected_record_count": 23,
-        "actual_record_count": 23,
-        "last_verification": "2026-07-15",
-        "operator_notes": (
-            "Tiny but clean: 23 rows / 4 distinct names, all 4 resolve to the "
-            "backbone, zero collisions, zero orphans. taxon_crosswalk covers all "
-            "4 orchid_taxonomy_ids, enabling an id-anchored path."
-        ),
-    },
-    "mycorrhiza": {
-        "status": "PARTIALLY READY",
-        "identifier_strategy": (
-            "orchid_taxonomy_id present; crosswalk chain available but final hop "
-            "is canonical-name equality"
-        ),
-        "join_strategy": "name_join (crosswalk-upgradable)",
-        "crosswalk_required": True,
-        "confidence": "medium",
-        "expected_record_count": 462,
-        "actual_record_count": 626,
-        "last_verification": "2026-07-15",
-        "operator_notes": (
-            "462 source rows / 218 distinct names; only 122 names resolve to the "
-            "backbone; 96 names are orphans; 32 names collide with >1 backbone "
-            "node, inflating 462 rows to 626 edges (fan-out). Backbone itself has "
-            "466 duplicate display_labels driving the collisions. Needs a "
-            "confidence-scored crosswalk or operator review before population."
-        ),
-    },
-    "literature": {
-        "status": "PARTIALLY READY",
-        "identifier_strategy": (
-            "NO taxon id on source (scientific_name only); pure name join, not "
-            "crosswalk-upgradable without an upstream id"
-        ),
-        "join_strategy": "name_join",
-        "crosswalk_required": True,
-        "confidence": "medium",
-        "expected_record_count": 35,
-        "actual_record_count": 29,
-        "last_verification": "2026-07-15",
-        "operator_notes": (
-            "35 source rows / 20 distinct names; 15 resolve, 5 orphan, 0 "
-            "collision; unmatched rows drop to 29 edges. taxon_literature_edges "
-            "carries no taxon identifier, so a crosswalk cannot be applied until "
-            "the upstream extractor emits an id."
-        ),
-    },
+    "occurrences": _meta(
+        "READY WITH OPERATOR REVIEW", "direct taxon_id", "direct_id", False,
+        "high", 580000, 26,
+        "Curated occurrence source maps directly; bulk alternatives require a verified crosswalk.",
+    ),
+    "traits": _meta(
+        "READY WITH OPERATOR REVIEW", "resolved consensus taxonomy_id", "resolved_view_id",
+        False, "medium", 33791, 2807,
+        "Resolved-view id join; missing rows represent incomplete trait coverage.",
+    ),
+    "pollinators": _meta(
+        "READY WITH OPERATOR REVIEW", "orchid taxonomy id plus canonical-name bridge",
+        "name_join (crosswalk-upgradable)", True, "high", 23, 23,
+        "Small clean source; crosswalk remains required for an identifier-only bridge.",
+    ),
+    "mycorrhiza": _meta(
+        "PARTIALLY READY", "orchid taxonomy id plus canonical-name bridge",
+        "name_join (crosswalk-upgradable)", True, "medium", 462, 626,
+        "Name collisions and orphan names require review before population.",
+    ),
+    "conservation": _meta(
+        "PARTIALLY READY", "direct taxon_id", "direct_id", False, "high", 2, 2,
+        "Production conservation source is currently sparse.",
+    ),
+    "climate": _meta(
+        "BLOCKED", "direct taxonomy_id but source is a proxy not climate", "direct_id",
+        False, "low", 0, 19263,
+        "Environmental proxy only, not modelled bioclim; blocked for climate claims.",
+    ),
+    "literature": _meta(
+        "PARTIALLY READY", "NO taxon id on source (scientific_name only)", "name_join",
+        True, "medium", 35, 29,
+        "No taxon id exists upstream; unmatched names cannot be crosswalked yet.",
+    ),
+    "media": _meta(
+        "READY", "direct taxonomy_id", "direct_id", False, "high", 51, 51,
+        "Direct id join through the authoritative gallery view.",
+    ),
 }
 
+for _domain in (
+    "geography", "habitat", "elevation", "glossary", "evidence", "molecular", "education"
+):
+    _BUILD064_META[_domain] = _meta(
+        "BLOCKED",
+        "adapter source named but taxon mapping not verified",
+        "unverified_fail_closed",
+        True,
+        "low",
+        0,
+        0,
+        "Explicit fail-closed registration only; verify projection, provenance, and taxon mapping before enabling.",
+    )
+
 SOURCE_QUERIES = tuple(
-    _replace(q, metadata={**_BUILD064_META.get(q.domain, {}), **q.metadata})
-    for q in SOURCE_QUERIES
+    replace(query, metadata={**_BUILD064_META[query.domain], **query.metadata})
+    for query in SOURCE_QUERIES
 )
 
 
 def registry_by_domain() -> dict[str, SourceQuery]:
-    return {q.domain: q for q in SOURCE_QUERIES}
+    return {query.domain: query for query in SOURCE_QUERIES}
 
 
 def enabled_queries() -> dict[str, str]:
-    """The ``{domain: sql}`` map consumed by ``PostgresSourceProvider``.
-
-    Every returned query is validated read-only before it is handed out.
-    """
     out: dict[str, str] = {}
-    for q in SOURCE_QUERIES:
-        if q.enabled and q.sql:
-            assert_safe_sql(q.sql)
-            out[q.domain] = q.sql
+    for query in SOURCE_QUERIES:
+        if query.enabled and query.sql:
+            assert_safe_sql(query.sql)
+            out[query.domain] = query.sql
     return out
 
 
 def blocked_domains() -> dict[str, str]:
     return {
-        q.domain: (q.blocked_reason or "disabled")
-        for q in SOURCE_QUERIES
-        if not q.enabled
+        query.domain: (query.blocked_reason or "disabled")
+        for query in SOURCE_QUERIES
+        if not query.enabled
     }
