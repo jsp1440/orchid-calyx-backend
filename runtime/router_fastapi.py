@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
+
 from .config_loader import BrainConfigLoader
 from .constitutional_orchestrator import orchestrator
 from .featured_genus_sentinel import FeaturedGenusSentinel
@@ -32,6 +33,8 @@ from .science_registry import (
     integration_status,
     mission_definitions,
     seed_missions,
+)
+from .science_registry import (
     summary as science_summary,
 )
 

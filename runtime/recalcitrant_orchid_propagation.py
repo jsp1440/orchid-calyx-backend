@@ -7,12 +7,11 @@ Orchid Continuum.  Nothing in this module is publication authority.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from enum import Enum
 import hashlib
 import json
-from typing import Iterable, Sequence
-
+from collections.abc import Iterable, Sequence
+from dataclasses import asdict, dataclass
+from enum import Enum
 
 ENGINE_VERSION = "calyx-recalcitrant-orchid-propagation/v1"
 QUEEN_OF_SHEBA_DOI = "10.1007/s11240-025-03226-9"
