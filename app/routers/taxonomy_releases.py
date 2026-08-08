@@ -31,10 +31,22 @@ def _default_staging_store() -> Any:
     return PostgresWorldPlantsStagingStore()
 
 
+def _default_migration_preflight() -> dict[str, Any]:
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from runtime.world_plants_migration_preflight import inspect_world_plants_migration
+
+    try:
+        return inspect_world_plants_migration()
+    except SQLAlchemyError as exc:
+        raise RuntimeError("taxonomy migration preflight database check failed") from exc
+
+
 def create_taxonomy_release_router(
     get_store: Callable[[], WorldPlantsReleaseStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
     get_staging_store: Callable[[], Any] = _default_staging_store,
+    get_migration_preflight: Callable[[], dict[str, Any]] = _default_migration_preflight,
 ) -> APIRouter:
     router = APIRouter(tags=["taxonomy-releases"])
     releases = APIRouter(prefix="/api/mission-control/taxonomy/releases")
@@ -44,6 +56,21 @@ def create_taxonomy_release_router(
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
         return build_taxonomy_readiness_report(intake_root=_intake_root())
+
+    @router.get("/api/mission-control/taxonomy/migration-preflight")
+    def taxonomy_migration_preflight(
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        try:
+            return get_migration_preflight()
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "taxonomy migration preflight is unavailable; verify the PostgreSQL "
+                    "connection before any production migration decision"
+                ),
+            ) from exc
 
     @releases.get("")
     def list_releases(
