@@ -15,7 +15,7 @@ from app.database import Base
 
 def _session():
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(engine, tables=[CalyxJob.__table__, CalyxFinding.__table__])
     return sessionmaker(bind=engine)()
 
 
