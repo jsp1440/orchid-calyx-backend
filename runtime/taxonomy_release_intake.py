@@ -1,10 +1,11 @@
 """Review-only taxonomy release intake and bounded staging for CALYX issue #461.
 
-The service preserves caller-supplied source bytes immutably, normalizes the actual
-Hassler WorldOrchids layout without activating it, reuses the non-publishing
-preflight validator on a canonical UTF-8 projection, builds a review queue, and
-projects bounded idempotent staging artifacts. It has no production taxonomy,
-relink, Knowledge Graph publication, or scientific publication authority.
+The service preserves caller-supplied source bytes immutably, normalizes ordinary
+headered taxonomy CSV plus the actual Hassler WorldOrchids layout without
+activating it, reuses the non-publishing preflight validator on a canonical UTF-8
+projection, builds a review queue, and projects bounded idempotent staging
+artifacts. It has no production taxonomy, relink, Knowledge Graph publication, or
+scientific publication authority.
 """
 from __future__ import annotations
 
@@ -84,12 +85,7 @@ def _first(row: dict[str, str], *names: str) -> str:
 
 
 def _decode_source(content: bytes) -> tuple[str, str, int]:
-    """Preserve valid UTF-8 while deterministically mapping isolated legacy bytes.
-
-    The August 2026 Hassler export is predominantly UTF-8 but contains isolated
-    Latin-1 bytes. ``surrogateescape`` lets us distinguish invalid bytes from valid
-    UTF-8 multibyte sequences; only those isolated bytes are mapped 1:1 to Latin-1.
-    """
+    """Preserve valid UTF-8 while deterministically mapping isolated legacy bytes."""
     try:
         return content.decode("utf-8"), "utf-8", 0
     except UnicodeDecodeError:
@@ -102,11 +98,21 @@ def _decode_source(content: bytes) -> tuple[str, str, int]:
         return repaired, "mixed_utf8_latin1", invalid_count
 
 
-def _expand_columns(header: list[str], width: int) -> list[str]:
+def _detect_delimiter(text: str) -> str:
+    first = next((line for line in text.splitlines() if line.strip()), "")
+    if first.count("|") > first.count(","):
+        return "|"
+    try:
+        return csv.Sniffer().sniff(text[:8192], delimiters=",\t;|").delimiter
+    except csv.Error:
+        return ","
+
+
+def _expand_columns(header: list[str], width: int, hassler_layout: bool) -> list[str]:
     columns = list(header)
     if width <= len(columns):
         return columns
-    if len(columns) >= 3 and columns[-3:] == ["Photo", "Orientation", "Author"]:
+    if hassler_layout and len(columns) >= 3 and columns[-3:] == ["Photo", "Orientation", "Author"]:
         while len(columns) < width:
             offset = len(columns) - len(header)
             number = offset // 3 + 2
@@ -119,20 +125,20 @@ def _expand_columns(header: list[str], width: int) -> list[str]:
 
 def _load_source(content: bytes) -> tuple[list[str], list[dict[str, str]], dict[str, Any], str]:
     text, encoding, repaired_bytes = _decode_source(content)
+    delimiter = _detect_delimiter(text)
     parsed = [
         row
-        for row in csv.reader(io.StringIO(text), delimiter="|")
+        for row in csv.reader(io.StringIO(text), delimiter=delimiter)
         if any(normalize(value) for value in row)
     ]
     if not parsed:
         raise ValueError("taxonomy source contains no rows")
     header = [normalize(value) for value in parsed[0]]
-    if not {"Taxon", "Name"}.issubset(header):
-        raise ValueError("taxonomy source is not the expected headered Hassler WorldOrchids layout")
+    hassler_layout = {"Taxon", "Number", "Name"}.issubset(header)
     data_rows = parsed[1:]
     widths = Counter(len(row) for row in data_rows)
     modal_width = widths.most_common(1)[0][0] if widths else len(header)
-    columns = _expand_columns(header, modal_width)
+    columns = _expand_columns(header, modal_width, hassler_layout)
     rows: list[dict[str, str]] = []
     nonempty_overflow_cells = 0
     for raw in data_rows:
@@ -151,6 +157,8 @@ def _load_source(content: bytes) -> tuple[list[str], list[dict[str, str]], dict[
     for row in rows:
         writer.writerow([row[column] for column in columns])
     metadata = {
+        "source_layout": "hassler_worldorchids" if hassler_layout else "generic_headered",
+        "source_delimiter": delimiter,
         "source_encoding": encoding,
         "legacy_bytes_repaired": repaired_bytes,
         "header_width": len(header),
@@ -161,14 +169,14 @@ def _load_source(content: bytes) -> tuple[list[str], list[dict[str, str]], dict[
     return columns, rows, metadata, stream.getvalue()
 
 
-def _status(row: dict[str, str]) -> str:
+def _status(row: dict[str, str], hassler_layout: bool) -> str:
     raw = _first(row, "taxonomic_status", "status", "accepted_status", "record_type")
     value = raw.casefold()
-    if value in {"accepted", "accepted name", "a"}:
+    if value in {"accepted", "accepted name", "a", "s", "species"}:
         return "accepted"
     if "syn" in value or value in {"basionym"}:
         return "synonym"
-    if not value and _first(row, "Taxon") in HASSLER_RANKS:
+    if hassler_layout and not value and _first(row, "Taxon") in HASSLER_RANKS:
         return "accepted"
     return "unresolved"
 
@@ -253,6 +261,7 @@ class TaxonomyReleaseIntakeService:
             expected_label=normalize(expected_label) or None,
         )
         columns, rows, source_metadata, canonical_text = _load_source(content)
+        hassler_layout = source_metadata["source_layout"] == "hassler_worldorchids"
         canonical_path = root / "canonical_source.psv"
         _atomic_write(canonical_path, canonical_text)
         preflight = validate(canonical_path, baseline_path=baseline_path, policy=policy)
@@ -265,12 +274,13 @@ class TaxonomyReleaseIntakeService:
         for index, row in enumerate(rows, start=1):
             name = scientific_name(row)
             key = _release_taxon_key(row)
-            status = _status(row)
+            status = _status(row, hassler_layout)
             rank_code = _first(row, "Taxon")
-            rank = HASSLER_RANKS.get(rank_code, "unresolved")
+            rank = HASSLER_RANKS.get(rank_code, _first(row, "rank") or "unspecified")
             status_counts[status] += 1
             rank_counts[rank] += 1
-            embedded_synonym_count += len(SYNONYM_MARKER_RE.findall(_first(row, "Synonyms")))
+            if hassler_layout:
+                embedded_synonym_count += len(SYNONYM_MARKER_RE.findall(_first(row, "Synonyms")))
             normalized_row = {
                 "row_number": index,
                 "taxon_key": key,
@@ -291,7 +301,7 @@ class TaxonomyReleaseIntakeService:
                 reason = "synonym_missing_accepted_name_id"
             elif status == "unresolved":
                 reason = "unresolved_taxonomic_status"
-            elif rank == "unresolved":
+            elif hassler_layout and rank == "unspecified":
                 reason = "unresolved_taxon_rank"
             if reason:
                 unresolved.append(
@@ -305,9 +315,7 @@ class TaxonomyReleaseIntakeService:
                     }
                 )
 
-        normalized_text = "".join(
-            json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n" for row in normalized_rows
-        )
+        normalized_text = "".join(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n" for row in normalized_rows)
         normalized_sha = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
         status_payload = dict(sorted(status_counts.items()))
         malformed_count = _malformed_count(preflight.finding_counts)
