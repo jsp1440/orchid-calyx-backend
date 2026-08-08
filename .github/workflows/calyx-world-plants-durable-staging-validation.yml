@@ -6,9 +6,11 @@ on:
       - 'runtime/world_plants_ingest.py'
       - 'runtime/world_plants_release_store.py'
       - 'runtime/world_plants_staging.py'
+      - 'runtime/world_plants_migration_preflight.py'
       - 'app/routers/taxonomy_releases.py'
       - 'migrations/107_world_plants_release_staging.sql'
       - 'tests/test_world_plants_durable_staging.py'
+      - 'tests/test_world_plants_migration_preflight.py'
       - 'tests/test_world_plants_upload_001.py'
       - '.github/workflows/calyx-world-plants-durable-staging-validation.yml'
       - 'docs/brain/CALYX-CORE-HASSLER-RELEASE-STAGING.md'
@@ -46,12 +48,13 @@ jobs:
         run: python -m pip install -r requirements.txt pytest ruff httpx
       - name: Compile and lint
         run: |
-          python -m py_compile runtime/world_plants_ingest.py runtime/world_plants_release_store.py runtime/world_plants_staging.py app/routers/taxonomy_releases.py tests/test_world_plants_durable_staging.py tests/test_world_plants_upload_001.py
-          python -m ruff check runtime/world_plants_ingest.py runtime/world_plants_release_store.py runtime/world_plants_staging.py app/routers/taxonomy_releases.py tests/test_world_plants_durable_staging.py tests/test_world_plants_upload_001.py
-      - name: Durable taxonomy staging tests
-        run: python -m pytest -q tests/test_world_plants_durable_staging.py tests/test_world_plants_upload_001.py
+          python -m py_compile runtime/world_plants_ingest.py runtime/world_plants_release_store.py runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py app/routers/taxonomy_releases.py tests/test_world_plants_durable_staging.py tests/test_world_plants_migration_preflight.py tests/test_world_plants_upload_001.py
+          python -m ruff check runtime/world_plants_ingest.py runtime/world_plants_release_store.py runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py app/routers/taxonomy_releases.py tests/test_world_plants_durable_staging.py tests/test_world_plants_migration_preflight.py tests/test_world_plants_upload_001.py
+          python -m ruff format --check runtime/world_plants_ingest.py runtime/world_plants_release_store.py runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py app/routers/taxonomy_releases.py tests/test_world_plants_durable_staging.py tests/test_world_plants_migration_preflight.py tests/test_world_plants_upload_001.py
+      - name: Durable taxonomy staging and migration-preflight tests
+        run: python -m pytest -q tests/test_world_plants_durable_staging.py tests/test_world_plants_migration_preflight.py tests/test_world_plants_upload_001.py
       - name: Migration and governance smoke
         run: |
           grep -q 'CREATE SCHEMA IF NOT EXISTS taxonomy_pipeline' migrations/107_world_plants_release_staging.sql
-          ! grep -Eq 'INSERT INTO[[:space:]]+oc_graph|UPDATE[[:space:]]+oc_graph|DELETE FROM[[:space:]]+oc_graph' migrations/107_world_plants_release_staging.sql runtime/world_plants_staging.py
-          ! grep -Eq 'automatic_promotion[[:space:]]*=[[:space:]]*True|automatic_promotion": true' runtime/world_plants_staging.py app/routers/taxonomy_releases.py
+          ! grep -Eq 'INSERT INTO[[:space:]]+oc_graph|UPDATE[[:space:]]+oc_graph|DELETE FROM[[:space:]]+oc_graph' migrations/107_world_plants_release_staging.sql runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py
+          ! grep -Eq 'automatic_promotion[[:space:]]*=[[:space:]]*True|automatic_promotion": true' runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py app/routers/taxonomy_releases.py
