@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 from pathlib import Path
 
 import pytest
@@ -63,7 +64,7 @@ async def test_literature_pipeline_emits_deterministic_glossary_candidates(
     assert all(term.provenance.extractor == "glossary" for term in first.glossary_terms)
     assert all(term.provenance.extractor_version == "0.1.0" for term in first.glossary_terms)
 
-    for normalized in {"velamen", "pollinium", "rostellum", "labellum", "pseudobulb"}:
+    for normalized in ("velamen", "pollinium", "rostellum", "labellum", "pseudobulb"):
         assert first_terms[normalized].mentions
         for span in first_terms[normalized].mentions:
             assert span.char_start is not None and span.char_end is not None
