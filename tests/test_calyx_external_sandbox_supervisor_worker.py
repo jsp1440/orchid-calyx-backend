@@ -54,7 +54,9 @@ def _claim(path: str, digest: str, *, preset: str = "pytest") -> dict:
     return claim
 
 
-def _worker(root: Path, *, runner, head=COMMIT, clean=True, snapshot=_passthrough_snapshot):
+def _worker(
+    root: Path, *, runner, head=COMMIT, clean=True, snapshot=_passthrough_snapshot
+):
     return SandboxSupervisorWorker(
         _config(root),
         runner=runner,
@@ -65,7 +67,10 @@ def _worker(root: Path, *, runner, head=COMMIT, clean=True, snapshot=_passthroug
 
 
 def test_configuration_requires_https_and_immutable_image() -> None:
-    assert _normalize_api_base_url("https://calyx.example.org/") == "https://calyx.example.org"
+    assert (
+        _normalize_api_base_url("https://calyx.example.org/")
+        == "https://calyx.example.org"
+    )
     assert _normalize_api_base_url("http://localhost:8000") == "http://localhost:8000"
     with pytest.raises(PermissionError, match="HTTPS_REQUIRED"):
         _normalize_api_base_url("http://calyx.example.org")
@@ -105,7 +110,9 @@ def test_success_uses_fixed_named_no_network_read_only_containers_and_never_forw
         assert "65534:65534" in argv
         assert IMAGE in argv
         assert TOKEN not in " ".join(argv)
-        assert not any("DATABASE_URL=" in item or "GITHUB_TOKEN=" in item for item in argv)
+        assert not any(
+            "DATABASE_URL=" in item or "GITHUB_TOKEN=" in item for item in argv
+        )
     assert len(set(names)) == 2
     validation_argv = calls[1][0]
     assert validation_argv[-6:] == [
@@ -142,9 +149,10 @@ def test_dirty_checkout_blocks_before_snapshot_or_container(tmp_path: Path) -> N
     assert receipt["return_code"] is None
     assert calls == []
     assert snapshot_calls == []
-    assert hashlib.sha256(b"SANDBOX_SUPERVISOR_CHECKOUT_DIRTY").hexdigest() == receipt[
-        "stderr_sha256"
-    ]
+    assert (
+        hashlib.sha256(b"SANDBOX_SUPERVISOR_CHECKOUT_DIRTY").hexdigest()
+        == receipt["stderr_sha256"]
+    )
 
 
 def test_target_hash_and_execution_are_bound_to_snapshot_not_live_worktree(
@@ -195,7 +203,9 @@ def test_snapshot_hash_mismatch_blocks_even_when_live_worktree_matches(
     host_target.parent.mkdir(parents=True)
     snapshot_target.parent.mkdir(parents=True)
     host_target.write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-    snapshot_target.write_text("def test_changed():\n    assert False\n", encoding="utf-8")
+    snapshot_target.write_text(
+        "def test_changed():\n    assert False\n", encoding="utf-8"
+    )
     digest = hashlib.sha256(host_target.read_bytes()).hexdigest()
     calls = []
 
@@ -232,7 +242,9 @@ def test_hash_mismatch_blocks_before_container_execution(tmp_path: Path) -> None
     assert calls == []
 
 
-def test_checkout_commit_mismatch_blocks_before_container_execution(tmp_path: Path) -> None:
+def test_checkout_commit_mismatch_blocks_before_container_execution(
+    tmp_path: Path,
+) -> None:
     target = tmp_path / "tests" / "test_example.py"
     target.parent.mkdir(parents=True)
     target.write_text("def test_ok():\n    assert True\n", encoding="utf-8")
@@ -249,7 +261,9 @@ def test_checkout_commit_mismatch_blocks_before_container_execution(tmp_path: Pa
     assert calls == []
 
 
-def test_symlink_target_is_rejected_even_when_it_resolves_inside_repository(tmp_path: Path) -> None:
+def test_symlink_target_is_rejected_even_when_it_resolves_inside_repository(
+    tmp_path: Path,
+) -> None:
     real = tmp_path / "tests" / "real_test.py"
     real.parent.mkdir(parents=True)
     real.write_text("def test_ok():\n    assert True\n", encoding="utf-8")
@@ -266,7 +280,9 @@ def test_symlink_target_is_rejected_even_when_it_resolves_inside_repository(tmp_
     assert calls == []
 
 
-def test_tampered_request_digest_blocks_before_container_execution(tmp_path: Path) -> None:
+def test_tampered_request_digest_blocks_before_container_execution(
+    tmp_path: Path,
+) -> None:
     target = tmp_path / "tests" / "test_example.py"
     target.parent.mkdir(parents=True)
     target.write_text("def test_ok():\n    assert True\n", encoding="utf-8")
