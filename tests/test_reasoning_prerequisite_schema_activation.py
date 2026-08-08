@@ -119,8 +119,11 @@ def test_postgres_malformed_partial_table_fails_closed():
     import psycopg
 
     dsn = os.environ["TEST_DATABASE_URL"]
-    with psycopg.connect(dsn, autocommit=True) as connection:
-        connection.execute("CREATE SCHEMA IF NOT EXISTS research_station")
+    with psycopg.connect(dsn) as connection:
+        # Simulate a damaged pre-existing prerequisite without permanently
+        # contaminating the shared disposable service used by later CLI checks.
+        connection.execute("DROP SCHEMA IF EXISTS research_station CASCADE")
+        connection.execute("CREATE SCHEMA research_station")
         connection.execute(
             "CREATE TABLE research_station.projects (project_id uuid PRIMARY KEY)"
         )
@@ -130,3 +133,4 @@ def test_postgres_malformed_partial_table_fails_closed():
         result = activation.classify_preflight(report, identities_match=True)
         assert result["status"] == "blocked"
         assert "MALFORMED_PARTIAL_PREREQUISITE_SCHEMA" in result["blockers"]
+        connection.rollback()
