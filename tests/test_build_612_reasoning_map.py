@@ -112,6 +112,7 @@ def test_forward_reasoning_map_builds_multistep_biological_pathway():
     assert deepest["confidence"] == 0.63175
     assert deepest["polarity"] == 1
     assert deepest["evidence"][0]["doi"] == "10.1/a"
+    assert deepest["traversal_directions"] == ["forward", "forward", "forward"]
     assert result["summary"]["causal_edge_count"] >= 3
     assert result["governance"]["canonical_graph_mutated"] is False
 
@@ -126,8 +127,11 @@ def test_backward_map_can_trace_environmental_cause_from_phenotype_pathway():
     )
     paths = {tuple(path["node_ids"]): path for path in result["paths"]}
     assert (3, 5) in paths
-    assert paths[(3, 5)]["polarity"] == -1
-    assert paths[(3, 5)]["traversal_direction"] == "backward"
+    path = paths[(3, 5)]
+    assert path["polarity"] == -1
+    assert path["traversal_direction"] == "backward"
+    assert path["traversal_directions"] == ["backward"]
+    assert path["explanation"] == "Cell expansion <--inhibits-- High VPD"
 
 
 def test_cycle_protection_never_repeats_node_in_path():
