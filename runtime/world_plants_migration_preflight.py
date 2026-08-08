@@ -16,7 +16,9 @@ from sqlalchemy.engine import Engine
 from app.database import get_engine
 
 MIGRATION_ID = "107_world_plants_release_staging"
-MIGRATION_PATH = Path(__file__).resolve().parents[1] / "migrations" / f"{MIGRATION_ID}.sql"
+MIGRATION_PATH = (
+    Path(__file__).resolve().parents[1] / "migrations" / f"{MIGRATION_ID}.sql"
+)
 REQUIRED_TABLE_COLUMNS: dict[str, frozenset[str]] = {
     "releases": frozenset(
         {
@@ -167,7 +169,9 @@ def inspect_world_plants_migration(engine: Engine | None = None) -> dict[str, An
 
     with target.connect() as connection:
         server_version = connection.execute(text("SHOW server_version")).scalar_one()
-        database_name = connection.execute(text("SELECT current_database()" )).scalar_one()
+        database_name = connection.execute(
+            text("SELECT current_database()")
+        ).scalar_one()
         schema_exists = bool(
             connection.execute(
                 text("SELECT to_regnamespace('taxonomy_pipeline') IS NOT NULL")
@@ -219,8 +223,7 @@ def inspect_world_plants_migration(engine: Engine | None = None) -> dict[str, An
     missing_columns = {
         table: sorted(required - present_columns.get(table, set()))
         for table, required in REQUIRED_TABLE_COLUMNS.items()
-        if required - present_columns.get(table, set())
-        and table in present_columns
+        if required - present_columns.get(table, set()) and table in present_columns
     }
     missing_indexes = sorted(REQUIRED_INDEXES - indexes)
     schema_complete = (
