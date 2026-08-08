@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
@@ -24,6 +24,11 @@ def _service() -> TaxonomyReleaseIntakeService:
     return TaxonomyReleaseIntakeService(root, maximum_bytes=maximum)
 
 
+def _active_baseline_path() -> Path | None:
+    value = os.environ.get("CALYX_TAXONOMY_ACTIVE_BASELINE_PATH", "").strip()
+    return Path(value) if value else None
+
+
 class StageRequest(BaseModel):
     batch_size: int = Field(default=500, ge=1, le=5000)
 
@@ -39,6 +44,7 @@ async def intake_release(
             source.filename or "taxonomy-release.csv",
             payload,
             expected_label=expected_label,
+            baseline_path=_active_baseline_path(),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -48,6 +54,20 @@ async def intake_release(
 def stage_release(release_id: str, request: StageRequest) -> dict:
     try:
         return _service().project_staging(release_id, batch_size=request.batch_size)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/{release_id}/review-queue")
+def release_review_queue(
+    release_id: str,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict:
+    try:
+        return _service().review_queue(release_id, offset=offset, limit=limit)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
