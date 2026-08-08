@@ -1,6 +1,6 @@
 # CALYX-468 — Post-publication monitoring and evidence-change review tasks
 
-Status: IMPLEMENTED / VALIDATION PENDING / GOVERNED REVIEW-ONLY
+Status: IMPLEMENTED / VALIDATED / GOVERNED REVIEW-ONLY
 
 ## Delivered
 
@@ -25,4 +25,14 @@ No automatic republication, production Knowledge Graph rewrite, scientific appro
 
 ## Validation
 
-Dedicated CI compiles the monitoring runtime/router/Mission Control surface, runs deterministic monitoring/API tests, asserts permanent no-republication/no-graph-rewrite/no-scientific-approval boundaries, runs Ruff, and checks diff hygiene. Record exact validation evidence here after the pull-request workflow completes.
+Initial implementation validation exposed one repository-wide integration failure: Ruff required the new Mission Control router import to be multiline-formatted. That failure was corrected before expansion.
+
+Corrected implementation commit `ed1e647a205d3c78dfb5933ed495b9eed2bde422` then passed all available gates:
+
+- CALYX Post Publication Monitoring 468: success; compile, 8 deterministic monitoring/API tests, permanent governance assertions, Ruff, and diff hygiene all passed.
+- CALYX Workflow Governance Audit: success.
+- CALYX-AUTONOMY-DEPLOYMENT-001: success after the import-format correction.
+- CALYX-SUPERVISED-PILOT-001: success after the same correction.
+- BUILD-088E publication pipeline operational readiness: success, including PostgreSQL readiness/regression validation.
+
+PR #636 remains draft/unmerged. This documentation-only validation-record commit remains subject to the same PR checks.
