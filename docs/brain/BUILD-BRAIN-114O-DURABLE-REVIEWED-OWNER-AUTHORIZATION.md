@@ -2,7 +2,7 @@
 
 ## Objective
 
-Integrate BUILD-BRAIN-114O with the hardened BUILD-BRAIN-114P durable proposal-review store so a future repository-proposal executor cannot rely on process-local review objects or caller-constructed authorization records.
+Integrate BUILD-BRAIN-114O with the hardened BUILD-BRAIN-114P durable proposal-review store so a future repository-proposal executor cannot rely on process-local review objects, caller-constructed authorization records, or a signing secret held by the autonomous runtime.
 
 ## Durable review chain
 
@@ -14,7 +14,9 @@ A standalone caller-constructed `ProposalAuthorizationRecord`, an unpersisted ap
 
 The request is deterministically bound to the exact proposal manifest digest, repository/base commit, `autonomy/proposal/*` branch, every postimage hash, validation receipt digests, durable review authorization digests, explicit allowlisted action set, and an expiry no more than 30 minutes in the future.
 
-The runtime gate is verifier-only. Owner grants must be produced outside this runtime surface. The signature must match the exact request digest, configured owner principal, and request expiry. The signed grant's own `issued_at → expires_at` lifetime must be positive and no longer than 30 minutes, preventing stale signed grants from being replayed into a later authorization window.
+A structural audit found a deeper trust-boundary flaw in the earlier HMAC design: even a class with no signing method could forge owner approval if the same autonomous runtime possessed the symmetric HMAC secret. The runtime therefore no longer receives or stores an owner signing secret. `GitMutationAuthorizationGate` accepts only an externally supplied `OwnerGrantSignatureVerifier` capability. Production authorization must provide a verifier whose signing authority remains outside the autonomous runtime; the concrete external verifier is a separate deployment/trust boundary and is not activated by this PR.
+
+The signed grant must match the exact request digest, configured owner principal, and request expiry. Its own `issued_at → expires_at` lifetime must be positive and no longer than 30 minutes, preventing stale signed grants from being replayed into a later authorization window. Focused tests keep HMAC only in a test-local verifier so the runtime source contains neither `hmac`, `hashlib`, a signing secret, nor a grant-minting method.
 
 ## Allowed future proposal actions
 
@@ -26,10 +28,10 @@ No merge or auto-merge, deployment, publication, taxonomy activation, production
 
 ## Validation
 
-The dedicated read-only workflow compiles the 114O and durable-store surfaces, Ruff-checks them, runs focused governed-persistence/review/owner-grant regressions, statically asserts verifier-only/non-mutation boundaries, and runs diff hygiene.
+The dedicated read-only workflow compiles the 114O and durable-store surfaces, Ruff-checks them, runs focused governed-persistence/review/external-verifier/owner-grant regressions, statically asserts that runtime code contains no signing secret or minting API, verifies non-mutation boundaries, and runs diff hygiene.
 
 Canonical CI issue #481 currently records hosted jobs terminating before step 1 with `steps=null`. Such runs are not code verdicts. This slice remains draft until 114N, 114P, and this exact 114O head receive executable CI and pass.
 
 ## Governance boundary
 
-Only after durable review evidence and executable validation are green should the project consider a bounded Git proposal executor that consumes this authorization and creates branch/commit/push/PR artifacts. Granting that repository mutation authority is a separate governance decision. Merge, deployment, publication, taxonomy activation, and production scientific-data mutation remain separate authorities even after proposal execution is enabled.
+Only after durable review evidence, a genuinely external owner-signature verifier, and executable validation are green should the project consider a bounded Git proposal executor that consumes this authorization and creates branch/commit/push/PR artifacts. Granting that repository mutation authority is a separate governance decision. Merge, deployment, publication, taxonomy activation, and production scientific-data mutation remain separate authorities even after proposal execution is enabled.
