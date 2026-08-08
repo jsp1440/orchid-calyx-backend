@@ -12,16 +12,7 @@ This registry lookup closes a confused-deputy gap in the earlier precursor desig
 
 ## Request binding
 
-A successful authorization request is deterministically bound to:
-
-- the exact 114M manifest digest;
-- repository and 40-character base commit;
-- `autonomy/proposal/*` branch;
-- every changed-file postimage SHA-256;
-- every validation receipt digest;
-- both authoritative 114N authorization digests;
-- the explicit allowlisted action set;
-- an expiry no more than 30 minutes in the future.
+A successful authorization request is deterministically bound to the exact 114M manifest digest, repository and 40-character base commit, `autonomy/proposal/*` branch, every changed-file postimage SHA-256, every validation receipt digest, both authoritative 114N authorization digests, the explicit allowlisted action set, and an expiry no more than 30 minutes in the future.
 
 Allowed future action names are limited to `create_branch`, `create_commit`, `push_branch`, and `open_pull_request`.
 
@@ -39,4 +30,4 @@ Actual branch/commit/push/PR creation is a separate governance milestone and is 
 
 Dedicated CI compiles the 114O/114N surfaces, runs Ruff, executes focused registry/review/owner-expiry regressions, statically asserts the non-mutation boundary, and runs diff hygiene.
 
-CI-INFRA-002 (#685) currently causes selected PR jobs to terminate before checkout with `steps=null`; such attempts are infrastructure evidence only and provide no code verdict. Keep this slice draft until exact-head CI executes real steps and passes.
+Canonical CI issue #481 currently records repository jobs terminating before checkout with `steps=null`; such attempts are infrastructure evidence only and provide no code verdict. Keep this slice draft until exact-head CI executes real steps and passes.
