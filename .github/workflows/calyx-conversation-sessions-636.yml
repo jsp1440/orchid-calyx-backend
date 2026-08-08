@@ -1,0 +1,83 @@
+name: CALYX Conversation Sessions 636
+
+on:
+  pull_request:
+    paths:
+      - "app/conversation_memory/**"
+      - "app/routers/calyx_operator_chat.py"
+      - "migrations/140_calyx_conversation_sessions.sql"
+      - "tests/test_calyx_conversation_sessions_636.py"
+      - "tests/test_calyx_continuum_conversation_634.py"
+      - "tests/test_calyx_conversation_graph_635.py"
+      - "docs/brain/CALYX-CONVERSATION-SESSIONS-636.md"
+      - ".github/workflows/calyx-conversation-sessions-636.yml"
+  workflow_dispatch:
+
+jobs:
+  conversation-sessions:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile persistent conversation surface
+        run: >-
+          python -m py_compile
+          app/conversation_memory/models.py
+          app/conversation_memory/service.py
+          app/routers/calyx_operator_chat.py
+          tests/test_calyx_conversation_sessions_636.py
+      - name: Persistent conversation and stacked regressions
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_conversation_sessions_636.py
+          tests/test_calyx_continuum_conversation_634.py
+          tests/test_calyx_conversation_graph_635.py
+      - name: Permanent conversation-memory non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          service = Path('app/conversation_memory/service.py').read_text()
+          models = Path('app/conversation_memory/models.py').read_text()
+          migration = Path('migrations/140_calyx_conversation_sessions.sql').read_text()
+          route = Path('app/routers/calyx_operator_chat.py').read_text()
+          required = (
+              '"data_status": "CONVERSATION_CONTEXT"',
+              '"evidence_authority": False',
+              '"scientific_publication_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+          )
+          missing = [item for item in required if item not in service]
+          if missing:
+              raise SystemExit(f'missing conversation-memory assertion(s): {missing}')
+          migration_required = (
+              "BEFORE UPDATE OR DELETE ON research_station.conversation_messages",
+              "CHECK (evidence_authority = FALSE)",
+              "CHECK (scientific_publication_authorized = FALSE)",
+              "CHECK (knowledge_graph_mutation_authorized = FALSE)",
+          )
+          missing = [item for item in migration_required if item not in migration]
+          if missing:
+              raise SystemExit(f'missing migration governance assertion(s): {missing}')
+          forbidden = (
+              'WritablePostgresGraphRepository',
+              'upsert_node(',
+              'upsert_edge(',
+              'publication_engine',
+              'INSERT INTO oc_graph',
+              'UPDATE oc_graph',
+              'DELETE FROM oc_graph',
+          )
+          haystack = '\n'.join((service, models, route))
+          present = [item for item in forbidden if item in haystack]
+          if present:
+              raise SystemExit(f'forbidden authority surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check app/conversation_memory/models.py app/conversation_memory/service.py app/routers/calyx_operator_chat.py tests/test_calyx_conversation_sessions_636.py
+          git diff --check
