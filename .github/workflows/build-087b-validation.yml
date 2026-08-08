@@ -6,6 +6,7 @@ on:
       - "app/scientific_interpretation/**"
       - "app/main.py"
       - "migrations/087b_context_preserving_interpretation.sql"
+      - "migrations/BUILD-051-owner-operations-console.sql"
       - "tests/test_build_087b_scientific_interpretation.py"
       - "tests/test_build_105_harvester_safety.py"
       - "tests/test_ci_baseline_001.py"
@@ -86,6 +87,10 @@ jobs:
               updated_at timestamptz NOT NULL DEFAULT now()
           );
           SQL
+        env:
+          BROAD_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
+      - name: Apply BUILD-051 owner-console schema to broad-suite database
+        run: psql "$BROAD_DATABASE_URL" -f migrations/BUILD-051-owner-operations-console.sql
         env:
           BROAD_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
       - name: Full backend suite diagnostic (non-blocking baseline debt)
