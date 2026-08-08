@@ -1,10 +1,10 @@
 """Durable, review-only occurrence persistence for CALYX issue #462.
 
-This module ingests bounded GBIF/iNaturalist occurrence records, preserves immutable
-raw source evidence, normalizes records deterministically, reconciles exact taxon
-identities against a reviewed taxonomy staging artifact, and projects normalized
-records into a resumable local staging artifact. It deliberately has no production
-Knowledge Graph mutation, taxonomy activation, or unbounded harvesting capability.
+Accepts explicit bounded GBIF/iNaturalist occurrence records, preserves immutable raw
+source evidence, normalizes deterministically, reconciles exact taxon identities
+against a reviewed taxonomy staging artifact, and projects records into resumable
+local staging. It has no production Knowledge Graph mutation, taxonomy activation,
+or unbounded harvesting capability.
 """
 from __future__ import annotations
 
@@ -14,13 +14,13 @@ import math
 import os
 import re
 import tempfile
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 from runtime.taxonomy_preflight import normalize
 
-OCCURRENCE_SCHEMA_VERSION = "1.0.0"
+OCCURRENCE_SCHEMA_VERSION = "1.0.1"
 SAFE_ID_RE = re.compile(r"[^A-Za-z0-9._-]+")
 SUPPORTED_SOURCES = {"gbif", "inaturalist"}
 
@@ -46,22 +46,40 @@ def _json(path: Path, payload: Any) -> None:
     _atomic_write(path, json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
 
 
-def _sha256_bytes(payload: bytes) -> str:
-    return hashlib.sha256(payload).hexdigest()
-
-
 def _stable_json(payload: Any) -> str:
     return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
-def _row_sha(payload: dict[str, Any]) -> str:
+def _digest_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _row_digest(payload: dict[str, Any]) -> str:
     return hashlib.sha256(_stable_json(payload).encode("utf-8")).hexdigest()
 
 
+def _nested(record: dict[str, Any], name: str) -> Any:
+    current: Any = record
+    for part in name.split("."):
+        if isinstance(current, dict):
+            match = next((key for key in current if str(key).casefold() == part.casefold()), None)
+            if match is None:
+                return None
+            current = current[match]
+            continue
+        if isinstance(current, (list, tuple)) and part.isdigit():
+            index = int(part)
+            if index >= len(current):
+                return None
+            current = current[index]
+            continue
+        return None
+    return current
+
+
 def _first(record: dict[str, Any], *names: str) -> Any:
-    folded = {str(key).casefold(): value for key, value in record.items()}
     for name in names:
-        value = folded.get(name.casefold())
+        value = _nested(record, name)
         if value is not None and str(value).strip() != "":
             return value
     return None
@@ -69,7 +87,7 @@ def _first(record: dict[str, Any], *names: str) -> Any:
 
 def _text(record: dict[str, Any], *names: str) -> str:
     value = _first(record, *names)
-    return normalize(value) if value is not None else ""
+    return normalize(str(value)) if value is not None else ""
 
 
 def _float(record: dict[str, Any], *names: str) -> float | None:
@@ -83,15 +101,15 @@ def _float(record: dict[str, Any], *names: str) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
-def _normalized_name(name: str) -> str:
-    return " ".join(normalize(name).casefold().split())
+def _norm_name(value: Any) -> str:
+    if value is None:
+        return ""
+    return " ".join(normalize(str(value)).casefold().split())
 
 
 def _source_record_id(source: str, record: dict[str, Any]) -> str:
-    if source == "gbif":
-        value = _text(record, "key", "gbifID", "occurrenceID")
-    else:
-        value = _text(record, "id", "uuid", "uri", "occurrenceID")
+    names = ("key", "gbifID", "occurrenceID") if source == "gbif" else ("id", "uuid", "uri", "occurrenceID")
+    value = _text(record, *names)
     if not value:
         raise ValueError(f"{source} occurrence record lacks a stable source identifier")
     return value
@@ -116,23 +134,23 @@ class OccurrenceBatchIdentity:
 
 
 class CanonicalTaxonIndex:
-    """Exact reviewed taxonomy lookup built from a local JSONL staging artifact."""
+    """Exact lookup over a reviewed taxonomy JSONL staging artifact."""
 
     def __init__(self, rows: Iterable[dict[str, Any]]) -> None:
-        self.by_name: dict[str, list[dict[str, str]]] = {}
         self.by_key: dict[str, dict[str, str]] = {}
+        self.by_name: dict[str, list[dict[str, str]]] = {}
         for row in rows:
-            taxon_key = normalize(row.get("taxon_key"))
-            name = normalize(row.get("scientific_name"))
-            if not taxon_key or not name:
+            taxon_key = normalize(str(row.get("taxon_key") or ""))
+            scientific_name = normalize(str(row.get("scientific_name") or ""))
+            if not taxon_key or not scientific_name:
                 continue
-            candidate = {
+            item = {
                 "canonical_taxon_id": taxon_key,
                 "taxon_key": taxon_key,
-                "scientific_name": name,
+                "scientific_name": scientific_name,
             }
-            self.by_key[taxon_key] = candidate
-            self.by_name.setdefault(_normalized_name(name), []).append(candidate)
+            self.by_key[taxon_key] = item
+            self.by_name.setdefault(_norm_name(scientific_name), []).append(item)
 
     @classmethod
     def from_path(cls, path: Path | None) -> "CanonicalTaxonIndex":
@@ -140,17 +158,13 @@ class CanonicalTaxonIndex:
             return cls([])
         if not path.is_file():
             raise ValueError("configured taxonomy staging artifact is not a regular file")
-        rows = [
-            json.loads(line)
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
         return cls(rows)
 
     def resolve(self, scientific_name: str, supplied_taxon_key: str = "") -> dict[str, Any]:
         if supplied_taxon_key and supplied_taxon_key in self.by_key:
             return {"state": "matched", **self.by_key[supplied_taxon_key], "method": "taxon_key"}
-        matches = self.by_name.get(_normalized_name(scientific_name), []) if scientific_name else []
+        matches = self.by_name.get(_norm_name(scientific_name), []) if scientific_name else []
         unique = {item["canonical_taxon_id"]: item for item in matches}
         if len(unique) == 1:
             item = next(iter(unique.values()))
@@ -166,30 +180,17 @@ class CanonicalTaxonIndex:
 
 
 class OccurrencePersistenceService:
-    def __init__(
-        self,
-        workspace: Path,
-        *,
-        maximum_records: int = 5000,
-        maximum_bytes: int = 25 * 1024 * 1024,
-    ) -> None:
+    def __init__(self, workspace: Path, *, maximum_records: int = 5000, maximum_bytes: int = 25 * 1024 * 1024) -> None:
         self.workspace = workspace
         self.maximum_records = maximum_records
         self.maximum_bytes = maximum_bytes
 
     def _batch_dir(self, batch_id: str) -> Path:
-        safe = SAFE_ID_RE.sub("_", batch_id)
-        if safe != batch_id or not batch_id:
+        if not batch_id or SAFE_ID_RE.sub("_", batch_id) != batch_id:
             raise ValueError("invalid batch_id")
         return self.workspace / "batches" / batch_id
 
-    def intake_records(
-        self,
-        source: str,
-        records: list[dict[str, Any]],
-        *,
-        taxonomy_staging_path: Path | None = None,
-    ) -> dict[str, Any]:
+    def intake_records(self, source: str, records: list[dict[str, Any]], *, taxonomy_staging_path: Path | None = None) -> dict[str, Any]:
         source_name = source.strip().casefold()
         if source_name not in SUPPORTED_SOURCES:
             raise ValueError("source must be gbif or inaturalist")
@@ -204,25 +205,24 @@ class OccurrencePersistenceService:
         raw_bytes = raw_text.encode("utf-8")
         if len(raw_bytes) > self.maximum_bytes:
             raise ValueError(f"occurrence batch exceeds maximum_bytes={self.maximum_bytes}")
-        digest = _sha256_bytes(raw_bytes)
+        digest = _digest_bytes(raw_bytes)
         batch_id = f"occ-{source_name}-{digest[:20]}"
         root = self._batch_dir(batch_id)
         raw_path = root / "raw.jsonl"
-        if raw_path.exists():
-            if raw_path.read_bytes() != raw_bytes:
-                raise RuntimeError("immutable occurrence batch digest collision")
-        else:
+        if raw_path.exists() and raw_path.read_bytes() != raw_bytes:
+            raise RuntimeError("immutable occurrence batch digest collision")
+        if not raw_path.exists():
             _atomic_write(raw_path, raw_text)
 
         index = CanonicalTaxonIndex.from_path(taxonomy_staging_path)
         normalized_rows: list[dict[str, Any]] = []
         review_queue: list[dict[str, Any]] = []
-        seen_source_ids: set[str] = set()
+        seen_ids: set[str] = set()
         for row_number, record in enumerate(records, start=1):
             source_id = _source_record_id(source_name, record)
-            if source_id in seen_source_ids:
+            if source_id in seen_ids:
                 raise ValueError(f"duplicate source record identifier in batch: {source_id}")
-            seen_source_ids.add(source_id)
+            seen_ids.add(source_id)
             scientific_name = _text(record, "scientificName", "taxon.name", "species_guess", "name")
             supplied_taxon_key = _text(record, "taxon_key", "taxonKey", "acceptedTaxonKey")
             latitude = _float(record, "decimalLatitude", "latitude", "geojson.coordinates.1")
@@ -232,7 +232,7 @@ class OccurrencePersistenceService:
                 uncertainty = None
             coordinate_state = _coordinate_state(latitude, longitude)
             reconciliation = index.resolve(scientific_name, supplied_taxon_key)
-            normalized_row: dict[str, Any] = {
+            row: dict[str, Any] = {
                 "schema_version": OCCURRENCE_SCHEMA_VERSION,
                 "source": source_name,
                 "source_record_id": source_id,
@@ -251,48 +251,43 @@ class OccurrencePersistenceService:
                 "basis_of_record": _text(record, "basisOfRecord", "quality_grade") or None,
                 "source_record": record,
             }
-            normalized_row["row_sha256"] = _row_sha(normalized_row)
-            normalized_rows.append(normalized_row)
+            row["row_sha256"] = _row_digest(row)
+            normalized_rows.append(row)
             reasons: list[str] = []
             if reconciliation["state"] != "matched":
                 reasons.append(f"taxon_{reconciliation['state']}")
             if coordinate_state == "invalid":
                 reasons.append("invalid_coordinates")
             if reasons:
-                review_queue.append(
-                    {
-                        "source": source_name,
-                        "source_record_id": source_id,
-                        "scientific_name": scientific_name,
-                        "row_sha256": normalized_row["row_sha256"],
-                        "reasons": reasons,
-                        "candidate_taxon_ids": reconciliation.get("candidate_ids", []),
-                        "review_state": "pending",
-                    }
-                )
+                review_queue.append({
+                    "source": source_name,
+                    "source_record_id": source_id,
+                    "scientific_name": scientific_name,
+                    "row_sha256": row["row_sha256"],
+                    "reasons": reasons,
+                    "candidate_taxon_ids": reconciliation.get("candidate_ids", []),
+                    "review_state": "pending",
+                })
 
         normalized_text = "".join(_stable_json(row) + "\n" for row in normalized_rows)
         normalized_sha = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
         identity = OccurrenceBatchIdentity(batch_id, source_name, digest, len(records))
         _atomic_write(root / "normalized.jsonl", normalized_text)
         _json(root / "review_queue.json", review_queue)
-        _json(
-            root / "manifest.json",
-            {
-                "schema_version": OCCURRENCE_SCHEMA_VERSION,
-                "identity": asdict(identity),
-                "normalized_sha256": normalized_sha,
-                "matched_taxa": sum(1 for row in normalized_rows if row["reconciliation_state"] == "matched"),
-                "unmatched_taxa": sum(1 for row in normalized_rows if row["reconciliation_state"] == "unmatched"),
-                "ambiguous_taxa": sum(1 for row in normalized_rows if row["reconciliation_state"] == "ambiguous"),
-                "invalid_coordinate_records": sum(1 for row in normalized_rows if row["coordinate_state"] == "invalid"),
-                "review_queue_count": len(review_queue),
-                "taxonomy_staging_configured": taxonomy_staging_path is not None,
-                "knowledge_graph_mutation_authorized": False,
-                "taxonomy_activation_authorized": False,
-                "unbounded_harvest_authorized": False,
-            },
-        )
+        _json(root / "manifest.json", {
+            "schema_version": OCCURRENCE_SCHEMA_VERSION,
+            "identity": asdict(identity),
+            "normalized_sha256": normalized_sha,
+            "matched_taxa": sum(row["reconciliation_state"] == "matched" for row in normalized_rows),
+            "unmatched_taxa": sum(row["reconciliation_state"] == "unmatched" for row in normalized_rows),
+            "ambiguous_taxa": sum(row["reconciliation_state"] == "ambiguous" for row in normalized_rows),
+            "invalid_coordinate_records": sum(row["coordinate_state"] == "invalid" for row in normalized_rows),
+            "review_queue_count": len(review_queue),
+            "taxonomy_staging_configured": taxonomy_staging_path is not None,
+            "knowledge_graph_mutation_authorized": False,
+            "taxonomy_activation_authorized": False,
+            "unbounded_harvest_authorized": False,
+        })
         if not (root / "checkpoint.json").exists():
             _json(root / "checkpoint.json", {"next_offset": 0, "complete": False, "projected_unique_rows": 0})
         return self.readiness(batch_id)
@@ -317,21 +312,18 @@ class OccurrencePersistenceService:
         if staging_path.exists():
             for line in staging_path.read_text(encoding="utf-8").splitlines():
                 if line.strip():
-                    row = json.loads(line)
-                    existing[row["row_sha256"]] = row
-        for row in rows[offset:end]:
-            existing.setdefault(row["row_sha256"], row)
+                    item = json.loads(line)
+                    existing[item["row_sha256"]] = item
+        for item in rows[offset:end]:
+            existing.setdefault(item["row_sha256"], item)
         ordered = sorted(existing.values(), key=lambda item: (item["source"], item["source_record_id"], item["row_sha256"]))
-        _atomic_write(staging_path, "".join(_stable_json(row) + "\n" for row in ordered))
-        _json(
-            checkpoint_path,
-            {
-                "next_offset": end,
-                "complete": end >= len(rows),
-                "projected_unique_rows": len(ordered),
-                "normalized_sha256": manifest["normalized_sha256"],
-            },
-        )
+        _atomic_write(staging_path, "".join(_stable_json(item) + "\n" for item in ordered))
+        _json(checkpoint_path, {
+            "next_offset": end,
+            "complete": end >= len(rows),
+            "projected_unique_rows": len(ordered),
+            "normalized_sha256": manifest["normalized_sha256"],
+        })
         return self.readiness(batch_id)
 
     def review_queue(self, batch_id: str, *, offset: int = 0, limit: int = 100) -> dict[str, Any]:
@@ -339,8 +331,7 @@ class OccurrencePersistenceService:
             raise ValueError("offset must be non-negative")
         if limit < 1 or limit > 500:
             raise ValueError("limit must be between 1 and 500")
-        root = self._batch_dir(batch_id)
-        path = root / "review_queue.json"
+        path = self._batch_dir(batch_id) / "review_queue.json"
         if not path.exists():
             raise FileNotFoundError(f"unknown occurrence batch: {batch_id}")
         queue = json.loads(path.read_text(encoding="utf-8"))
@@ -349,7 +340,7 @@ class OccurrencePersistenceService:
             "total": len(queue),
             "offset": offset,
             "limit": limit,
-            "items": queue[offset : offset + limit],
+            "items": queue[offset:offset + limit],
             "review_write_authorized": False,
         }
 
