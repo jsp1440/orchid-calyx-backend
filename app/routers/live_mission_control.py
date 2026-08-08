@@ -9,6 +9,7 @@ from fastapi import APIRouter
 
 from app.routers.calyx_operator_chat import router as chat_router
 from app.routers.calyx_runtime_controls import create_runtime_controls_router
+from app.routers.homepage_governance import router as homepage_governance_router
 from app.routers.species_dossier import router as species_dossier_router
 from app.security import verify_owner_or_api_key
 from runtime.governed_worker_loop import GovernedWorkerLoop
@@ -42,3 +43,4 @@ router.include_router(
     create_runtime_controls_router(get_runtime_controls, verify_owner_or_api_key)
 )
 router.include_router(species_dossier_router)
+router.include_router(homepage_governance_router)
