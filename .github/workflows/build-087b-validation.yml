@@ -9,6 +9,7 @@ on:
       - "tests/test_build_087b_scientific_interpretation.py"
       - "tests/test_ci_baseline_001.py"
       - "docs/BUILD-087B-IMPLEMENTATION-REPORT.md"
+      - "docs/brain/CI-BASELINE-001*.md"
       - ".github/workflows/build-087b-validation.yml"
   push:
     branches: [feature/build-087b-context-preserving-evidence-interpretation]
@@ -69,13 +70,30 @@ jobs:
           tests/test_build_087b_scientific_interpretation.py
         env:
           TEST_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_regression
+      - name: Provision broad-suite harvester safety schema
+        run: |
+          psql "$BROAD_DATABASE_URL" <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS oc_admin;
+          CREATE TABLE IF NOT EXISTS oc_admin.harvest_safety_state (
+              harvester_id text PRIMARY KEY,
+              last_cursor text,
+              circuit_open boolean NOT NULL DEFAULT false,
+              circuit_reason text,
+              last_run_mode text,
+              last_budget jsonb,
+              last_audit jsonb,
+              updated_at timestamptz NOT NULL DEFAULT now()
+          );
+          SQL
+        env:
+          BROAD_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
       - name: Full backend suite diagnostic (non-blocking baseline debt)
         continue-on-error: true
         run: >-
           env -u TEST_DATABASE_URL python -m pytest -q
           --ignore=tests/calyx_certification/test_deterministic_failure_round2.py
         env:
-          DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation
+          DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
       - name: Scientific interpretation package Ruff diagnostic
         continue-on-error: true
         run: python -m ruff check app/scientific_interpretation tests/test_build_087b_scientific_interpretation.py
