@@ -2,7 +2,7 @@
 
 Date: 2026-08-08
 Depends on: CALYX-631 registered dataset rows, CALYX-617 Scientific Computing, CALYX-453 Research Station, CALYX-448 Literature Intelligence, Evidence Retrieval 085B, Mission Control chat 003B.
-Status: bounded implementation pending exact-head validation; no merge, deployment, publication, external communication, or Knowledge Graph mutation authorized.
+Status: bounded implementation behavior validated; exact-head rerun pending after formatter-authored commit. No merge, deployment, publication, external communication, or Knowledge Graph mutation authorized.
 
 ## Goal
 
@@ -83,6 +83,16 @@ Dedicated CI compiles the new surface and runs:
 - Ruff and diff hygiene.
 
 Focused tests cover grounded evidence answers, no-evidence fail-closed behavior, metadata-only display-policy behavior, authenticated `/ask`, transcript recording, and owner-scope rejection.
+
+### Validation evidence
+
+- initial legacy Chat API failure was formatting-only; Ruff-required line wrapping was applied without semantic change;
+- corrected legacy Mission Control 003B chat lane passed;
+- governance audit passed;
+- CALYX-634 behavior plus Mission Control and Evidence Retrieval regressions passed `18 passed` on the corrected implementation;
+- permanent Ask-the-Continuum non-authority assertions passed;
+- the remaining failure on that run was changed-surface Ruff (`UP037`, `ISC004`), corrected by formatter commit `fbc912549867b854f4e663f22d2bb891079607f3`;
+- GitHub marked workflows on that Copilot-authored formatter head `action_required`; this documentation commit intentionally creates a user-authored exact head so normal Actions validation can execute again.
 
 ## RS-6 integration status
 
