@@ -58,10 +58,10 @@ The dedicated `BUILD-BRAIN-114N Proposal Authorization Validation` workflow is r
 - static assertions for producer derivation, self-approval/stale-manifest rejection, and permanent non-authorities;
 - event-aware `git diff --check` hygiene.
 
-The slice is stacked on BUILD-BRAIN-114M PR #667. Exact-head validation must be green against the current #667 parent before 114N is review-ready. Merge of either dependency remains a separate repository governance decision.
+BUILD-BRAIN-114M is now merged to `main` at `ab318d6d6c83d8cbfa8962bc9ef891ab14a96e3b`. PR #684 has therefore been retargeted directly to current `main`; it no longer depends on the historical #667 PR branch. Exact-head validation against this current-main merge context is required before 114N can become review-ready. Merge remains a separate repository governance decision.
 
 ## CI provenance
 
 The first PR-head matrix on `71ec524df0c2303f1cfa6650b446b9c19166e939` did not execute repository code. BUILD-BRAIN-114N run #1 (`31280952477`), CALYX-AGENT-003 run #275 (`31280952414`), and CALYX Workflow Governance run #536 (`31280952387`) each produced a failed job with `steps=null`; the 114N job log blob was not created. This is recorded as a pre-step runner/allocation incident, not a code/test failure. No validation claim is made from that attempt.
 
-This owner-authored Brain-only update intentionally retriggers the exact matrix without changing 114N runtime behavior. The next executable run, if jobs receive real steps, is authoritative for compile/lint/test status.
+This Brain update records the corrected current-main lineage and intentionally retriggers the PR matrix without changing 114N runtime behavior. The next run that receives real workflow steps is authoritative for compile/lint/test status.
