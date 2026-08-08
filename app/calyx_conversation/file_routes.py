@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+
+from app.security import verify_owner_or_api_key
 
 from .file_analysis import chart_spec, parse_tabular_file
 
-router = APIRouter(prefix="/calyx/dataset", tags=["calyx-file-analysis"])
+router = APIRouter(
+    prefix="/calyx/dataset",
+    tags=["calyx-file-analysis"],
+    dependencies=[Depends(verify_owner_or_api_key)],
+)
 
 
 @router.post("/upload-analyze")
