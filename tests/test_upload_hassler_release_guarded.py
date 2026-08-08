@@ -65,7 +65,9 @@ def test_execute_upload_verifies_readback_and_never_stages(tmp_path: Path, monke
             return httpx.Response(200, json={"token": "owner-token"})
         if request.url.path == "/api/mission-control/taxonomy/readiness":
             readiness_calls = sum(
-                1 for method, route in seen if method == "GET" and route.endswith("/readiness")
+                1
+                for method, route in seen
+                if method == "GET" and route.endswith("/readiness")
             )
             if readiness_calls == 1:
                 return httpx.Response(
