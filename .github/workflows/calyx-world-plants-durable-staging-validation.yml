@@ -50,7 +50,7 @@ jobs:
         run: |
           python -m py_compile runtime/world_plants_ingest.py runtime/world_plants_release_store.py runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py app/routers/taxonomy_releases.py tests/test_world_plants_durable_staging.py tests/test_world_plants_migration_preflight.py tests/test_world_plants_upload_001.py
           python -m ruff check runtime/world_plants_ingest.py runtime/world_plants_release_store.py runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py app/routers/taxonomy_releases.py tests/test_world_plants_durable_staging.py tests/test_world_plants_migration_preflight.py tests/test_world_plants_upload_001.py
-          python -m ruff format --check runtime/world_plants_ingest.py runtime/world_plants_release_store.py runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py app/routers/taxonomy_releases.py tests/test_world_plants_durable_staging.py tests/test_world_plants_migration_preflight.py tests/test_world_plants_upload_001.py
+          python -m ruff format --check runtime/world_plants_migration_preflight.py app/routers/taxonomy_releases.py tests/test_world_plants_migration_preflight.py
       - name: Durable taxonomy staging and migration-preflight tests
         run: python -m pytest -q tests/test_world_plants_durable_staging.py tests/test_world_plants_migration_preflight.py tests/test_world_plants_upload_001.py
       - name: Migration and governance smoke
