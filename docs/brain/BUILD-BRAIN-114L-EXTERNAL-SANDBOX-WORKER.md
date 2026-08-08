@@ -28,16 +28,38 @@ Complete the execution side of BUILD-BRAIN-114K without moving repository-code e
 
 BUILD-BRAIN-114K was merged to `main` as PR #655. PR #664 was then retargeted from the former stacked 114K branch to current `main`. The runtime delta remains purely additive.
 
-PR #664 remains unmerged. Exact-head validation is required after the P1 corrections described below.
+PR #664 remains open and unmerged. The P1 security corrections below were validated against the PR merge result with then-current `main` at `70a1aff3f72f38486a6bbeb3b482b358583aa004`.
 
 ## Post-review security corrections
 
-Two P1 review findings were accepted before merge and are now addressed in the branch implementation.
+Two P1 review findings were accepted before merge and are addressed in the branch implementation.
 
 1. **Immutable execution identity and clean checkout.** The worker refuses a configured checkout containing either tracked modifications or untracked files. It then verifies the requested HEAD and creates `git archive --format=tar <exact commit>`. Target path, symlink, size, and SHA-256 verification occurs only inside that immutable archived snapshot, and the same snapshot is mounted read-only into Docker. Regression coverage proves dirty checkout rejection before snapshot/container execution, proves a differing mutable checkout cannot change the mounted/hash-verified file, and proves a snapshot mismatch blocks even when a live file happens to match the request.
 2. **Explicit container identity and daemon cleanup.** Every Docker run receives a unique `calyx-sbx-*` name before execution. `_run_docker_bounded` requires that name, uses it for daemon-side cleanup, and unconditionally executes `docker stop -t 2 <name>` plus `docker rm -f <name>` from `finally`. The bounded-process layer invokes the same cleanup on timeout/output overflow and when an unfinished process must be killed. Regression coverage verifies timeout cleanup, output-overflow cleanup, unique names, and cleanup when the runner itself raises.
 
 Neither correction broadens authority.
+
+## Exact validation receipt
+
+Behavioral code/test head: `f0ae1e120d53c2137476d0d8d16f79fafe7d3e61`.
+
+The pull-request workflow checked out merge ref `971f4e1864a9cdbce89e258492d2589949426f8a`, integrating that head with then-current `main` `70a1aff3f72f38486a6bbeb3b482b358583aa004`.
+
+Exact-head results on 2026-08-08:
+
+- `BUILD-BRAIN-114L External Sandbox Worker Validation` run #14 / Actions run `31279745869`: **success**;
+  - compile: passed;
+  - Ruff lint: passed;
+  - Ruff format check: passed;
+  - focused pytest: **13 passed in 0.17s**;
+  - static authority/P1 assertions: passed;
+  - diff hygiene: passed.
+- `CALYX Workflow Governance Audit` run #518 / Actions run `31279745886`: **success**.
+- `BUILD-088E Validation` run #1254 / Actions run `31279745871`: **success**.
+
+A preceding run #12 intentionally failed before tests because the newly added Ruff format check found two unformatted files. That failure was corrected mechanically; no security behavior was weakened to obtain the passing run.
+
+The documentation-bearing head created by this receipt must itself complete the same exact-head gates before the PR is treated as review-ready.
 
 ## Security and authority model
 
@@ -59,4 +81,4 @@ BUILD-BRAIN-114L grants no package installation during validation, arbitrary she
 
 ## Validation contract
 
-The dedicated `BUILD-BRAIN-114L External Sandbox Worker Validation` workflow compiles the worker/tests, runs Ruff lint and format checks, executes focused regressions, asserts key authority boundaries statically, and runs diff hygiene. CALYX Workflow Governance Audit and BUILD-088E are also required. Exact-head CI must be green after these post-review corrections before this slice is merge-ready.
+The dedicated `BUILD-BRAIN-114L External Sandbox Worker Validation` workflow compiles the worker/tests, runs Ruff lint and format checks, executes focused regressions, asserts key authority boundaries statically, and runs diff hygiene. CALYX Workflow Governance Audit and BUILD-088E are also required. Exact-head CI must be green after these post-review corrections before this slice is review-ready. Merge remains a separate governance decision.
