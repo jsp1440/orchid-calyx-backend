@@ -64,9 +64,7 @@ def _vocabulary_compliance(nodes: list[Node], edges: list[Edge]) -> dict[str, An
     }
 
 
-def _provenance_completeness(
-    nodes: list[Node], edges: list[Edge]
-) -> dict[str, Any]:
+def _provenance_completeness(nodes: list[Node], edges: list[Edge]) -> dict[str, Any]:
     nodes_missing = sum(1 for n in nodes if not n.source_table or not n.source_pk)
     edges_missing = sum(1 for e in edges if not e.source_table)
     return {
@@ -90,9 +88,7 @@ def _causal_endpoint_violations(
     return violations
 
 
-def _cross_domain_consistency(
-    nodes: list[Node], edges: list[Edge]
-) -> dict[str, Any]:
+def _cross_domain_consistency(nodes: list[Node], edges: list[Edge]) -> dict[str, Any]:
     """Validate legacy taxon-domain edges and cross-scale causal relationships.
 
     Legacy non-taxonomy domain edges retain the original invariant: source is a

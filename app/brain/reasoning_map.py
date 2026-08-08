@@ -334,7 +334,11 @@ class ReasoningMapEngine:
         for predicate, traversal_direction, label in zip(
             predicates, traversal_directions, labels[1:]
         ):
-            arrow = f" <--{predicate}-- " if traversal_direction == "backward" else f" --{predicate}--> "
+            arrow = (
+                f" <--{predicate}-- "
+                if traversal_direction == "backward"
+                else f" --{predicate}--> "
+            )
             explanation_parts.extend((arrow, label))
         unique_directions = set(traversal_directions)
         aggregate_direction = (

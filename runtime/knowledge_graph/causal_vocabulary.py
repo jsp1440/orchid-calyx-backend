@@ -110,9 +110,7 @@ CAUSAL_RELATION_SEMANTICS: Final[dict[str, CausalRelationSemantics]] = {
 }
 
 CANONICAL_CAUSAL_EDGE_TYPES: Final[frozenset[str]] = frozenset(
-    name
-    for name, semantics in CAUSAL_RELATION_SEMANTICS.items()
-    if semantics["causal"]
+    name for name, semantics in CAUSAL_RELATION_SEMANTICS.items() if semantics["causal"]
 )
 
 CAUSAL_EVIDENCE_EDGE_TYPES: Final[frozenset[str]] = frozenset(

@@ -107,9 +107,7 @@ def test_causal_edge_with_unapproved_endpoint_fails_validation():
             node(1, "gene", "g1"),
             node(2, "image", "image1"),
         ],
-        edges=[
-            Edge(1, "promotes", 1, 2, "build_614_claims", "e1", "curated", 0.9)
-        ],
+        edges=[Edge(1, "promotes", 1, 2, "build_614_claims", "e1", "curated", 0.9)],
     )
     report = validate_graph(repo)
     assert report["cross_domain_consistency"]["mismatched_endpoint_edges"] == 1
