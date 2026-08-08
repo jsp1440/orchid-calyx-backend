@@ -10,6 +10,7 @@ from app.routers import scientific_analysis as analysis_router
 from runtime.research_station import ResearchStationService
 from runtime.scientific_analysis import ScientificAnalysisService
 from runtime.scientific_export_bundle import ScientificAnalysisExportService
+from runtime.scientific_export_history import ScientificAnalysisExportHistoryService
 
 
 def _route_fixture(tmp_path: Path):
@@ -39,7 +40,8 @@ def _route_fixture(tmp_path: Path):
         },
     )["analysis"]
     exports = ScientificAnalysisExportService(analysis=analysis)
-    return exports, owner, project_id, executed["analysis_id"]
+    history = ScientificAnalysisExportHistoryService(exports)
+    return exports, history, owner, project_id, executed["analysis_id"]
 
 
 def test_export_routes_are_registered_as_protected_analysis_surfaces():
@@ -54,6 +56,10 @@ def test_export_routes_are_registered_as_protected_analysis_surfaces():
         "POST",
     ) in route_methods
     assert (
+        "/brain/mission-control/research/analysis/projects/{project_id}/exports",
+        "GET",
+    ) in route_methods
+    assert (
         "/brain/mission-control/research/analysis/projects/{project_id}/exports/{export_id}",
         "GET",
     ) in route_methods
@@ -63,14 +69,22 @@ def test_export_routes_are_registered_as_protected_analysis_surfaces():
     ) in route_methods
 
 
-def test_protected_export_build_get_and_integrity_delegate_to_owner_scoped_service(
+def test_protected_export_build_discovery_get_and_integrity_delegate_to_owner_scoped_services(
     tmp_path, monkeypatch
 ):
-    exports, owner, project_id, analysis_id = _route_fixture(tmp_path)
+    exports, history, owner, project_id, analysis_id = _route_fixture(tmp_path)
     monkeypatch.setattr(analysis_router, "_export_instance", exports)
+    monkeypatch.setattr(analysis_router, "_export_history_instance", history)
 
     built = analysis_router.build_analysis_export(project_id, analysis_id, {"actor": owner})
     bundle = built["export"]
+    discovered = analysis_router.list_analysis_exports(
+        project_id,
+        {"actor": owner},
+        analysis_id=analysis_id,
+        limit=50,
+        offset=0,
+    )
     fetched = analysis_router.get_analysis_export(project_id, bundle["export_id"], {"actor": owner})
     integrity = analysis_router.verify_analysis_export(
         project_id,
@@ -78,6 +92,14 @@ def test_protected_export_build_get_and_integrity_delegate_to_owner_scoped_servi
         {"actor": owner},
     )
 
+    assert discovered["total"] == 1
+    assert discovered["analysis_id_filter"] == analysis_id
+    assert discovered["bundle_payloads_included"] is False
+    assert discovered["chronology_inferred"] is False
+    assert discovered["public_sharing_authorized"] is False
+    assert discovered["items"][0]["export_id"] == bundle["export_id"]
+    assert discovered["items"][0]["integrity_verified"] is True
+    assert "analysis" not in discovered["items"][0]
     assert bundle == fetched
     assert bundle["raw_dataset_rows_included"] is False
     assert bundle["diagnostic_payload_included"] is False
@@ -93,39 +115,50 @@ def test_protected_export_build_get_and_integrity_delegate_to_owner_scoped_servi
 
 
 def test_export_routes_fail_closed_without_owner_scope(tmp_path, monkeypatch):
-    exports, _owner, project_id, analysis_id = _route_fixture(tmp_path)
+    exports, history, _owner, project_id, analysis_id = _route_fixture(tmp_path)
     monkeypatch.setattr(analysis_router, "_export_instance", exports)
+    monkeypatch.setattr(analysis_router, "_export_history_instance", history)
 
     with pytest.raises(HTTPException) as caught:
         analysis_router.build_analysis_export(project_id, analysis_id, {})
-
     assert caught.value.status_code == 403
 
+    with pytest.raises(HTTPException) as discovery_caught:
+        analysis_router.list_analysis_exports(project_id, {}, analysis_id=None, limit=50, offset=0)
+    assert discovery_caught.value.status_code == 403
 
-def test_export_route_translates_invalid_export_id_to_unprocessable_entity(tmp_path, monkeypatch):
-    exports, owner, project_id, _analysis_id = _route_fixture(tmp_path)
+
+def test_export_route_translates_invalid_identifiers_to_unprocessable_entity(tmp_path, monkeypatch):
+    exports, history, owner, project_id, _analysis_id = _route_fixture(tmp_path)
     monkeypatch.setattr(analysis_router, "_export_instance", exports)
+    monkeypatch.setattr(analysis_router, "_export_history_instance", history)
 
     with pytest.raises(HTTPException) as caught:
         analysis_router.get_analysis_export(project_id, "../private", {"actor": owner})
-
     assert caught.value.status_code == 422
     assert "ANALYSIS_EXPORT_ID_INVALID" in str(caught.value.detail)
 
     with pytest.raises(HTTPException) as integrity_caught:
-        analysis_router.verify_analysis_export(
-            project_id,
-            "../private",
-            {"actor": owner},
-        )
-
+        analysis_router.verify_analysis_export(project_id, "../private", {"actor": owner})
     assert integrity_caught.value.status_code == 422
     assert "ANALYSIS_EXPORT_ID_INVALID" in str(integrity_caught.value.detail)
 
+    with pytest.raises(HTTPException) as history_caught:
+        analysis_router.list_analysis_exports(
+            project_id,
+            {"actor": owner},
+            analysis_id="../analysis",
+            limit=50,
+            offset=0,
+        )
+    assert history_caught.value.status_code == 422
+    assert "ANALYSIS_EXPORT_HISTORY_ANALYSIS_ID_INVALID" in str(history_caught.value.detail)
 
-def test_integrity_route_fails_closed_on_persisted_tampering(tmp_path, monkeypatch):
-    exports, owner, project_id, analysis_id = _route_fixture(tmp_path)
+
+def test_integrity_and_discovery_routes_fail_closed_on_persisted_tampering(tmp_path, monkeypatch):
+    exports, history, owner, project_id, analysis_id = _route_fixture(tmp_path)
     monkeypatch.setattr(analysis_router, "_export_instance", exports)
+    monkeypatch.setattr(analysis_router, "_export_history_instance", history)
     bundle = analysis_router.build_analysis_export(project_id, analysis_id, {"actor": owner})[
         "export"
     ]
@@ -136,12 +169,22 @@ def test_integrity_route_fails_closed_on_persisted_tampering(tmp_path, monkeypat
     persisted["scientific_publication_authorized"] = True
     path.write_text(json.dumps(persisted), encoding="utf-8")
 
-    with pytest.raises(HTTPException) as caught:
+    with pytest.raises(HTTPException) as integrity_caught:
         analysis_router.verify_analysis_export(
             project_id,
             bundle["export_id"],
             {"actor": owner},
         )
+    assert integrity_caught.value.status_code == 422
+    assert "ANALYSIS_EXPORT_INTEGRITY_MISMATCH" in str(integrity_caught.value.detail)
 
-    assert caught.value.status_code == 422
-    assert "ANALYSIS_EXPORT_INTEGRITY_MISMATCH" in str(caught.value.detail)
+    with pytest.raises(HTTPException) as discovery_caught:
+        analysis_router.list_analysis_exports(
+            project_id,
+            {"actor": owner},
+            analysis_id=None,
+            limit=50,
+            offset=0,
+        )
+    assert discovery_caught.value.status_code == 422
+    assert "ANALYSIS_EXPORT_INTEGRITY_MISMATCH" in str(discovery_caught.value.detail)
