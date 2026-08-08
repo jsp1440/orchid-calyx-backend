@@ -22,7 +22,7 @@ Even complete review evidence grants no Git mutation, commit, push, pull-request
 
 ## CI provenance
 
-CI-INFRA-002 (#685) currently causes selected PR jobs to terminate before checkout with `steps=null`. Such runs provide no code verdict. The exact-head 114N implementation remains draft until real workflow steps execute and pass.
+Canonical CI incident #481 currently records repository jobs terminating before checkout with `steps=null`. Such runs provide no code verdict. The exact-head 114N implementation remains draft until real workflow steps execute and pass.
 
 ## Next dependency
 
