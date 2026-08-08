@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.conversation_memory.models import ConversationMessage, ConversationSession
 from app.database import Base, get_db
-from app.research_workspace.models import Project, ProjectDocument
+from app.research_workspace.models import AuditEvent, Project, ProjectDocument
 from app.research_workspace.service import ResearchWorkspaceService
 from app.routers import calyx_conversation_sources as api
 from app.security import verify_owner_or_api_key
@@ -32,6 +32,7 @@ def make_client():
         tables=[
             Project.__table__,
             ProjectDocument.__table__,
+            AuditEvent.__table__,
             ConversationSession.__table__,
             ConversationMessage.__table__,
         ],
@@ -114,6 +115,10 @@ def test_persisted_source_can_be_linked_to_its_conversation_project_idempotently
         assert payload["knowledge_graph_mutation_authorized"] is False
         with SessionLocal() as db:
             assert db.query(ProjectDocument).count() == 1
+            events = db.query(AuditEvent).all()
+            assert len(events) == 1
+            assert events[0].action == "DOCUMENT_LINKED"
+            assert events[0].entity_id == "document-source"
     finally:
         api.ResearchWorkspaceService = original
 
