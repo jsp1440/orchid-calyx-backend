@@ -1,0 +1,66 @@
+name: BUILD-BRAIN-114L External Sandbox Worker Validation
+
+on:
+  pull_request:
+    paths:
+      - "runtime/sandbox_supervisor_worker.py"
+      - "tests/test_calyx_external_sandbox_supervisor_worker.py"
+      - "docs/brain/BUILD-BRAIN-114L-EXTERNAL-SANDBOX-WORKER.md"
+      - ".github/workflows/build-brain-114l-external-sandbox-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest ruff
+      - name: Compile external supervisor worker
+        run: |
+          python -m compileall -q runtime/sandbox_supervisor_worker.py tests/test_calyx_external_sandbox_supervisor_worker.py
+      - name: Ruff external supervisor worker
+        run: |
+          ruff check runtime/sandbox_supervisor_worker.py tests/test_calyx_external_sandbox_supervisor_worker.py
+          ruff format --check runtime/sandbox_supervisor_worker.py tests/test_calyx_external_sandbox_supervisor_worker.py
+      - name: Focused external supervisor regressions
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q tests/test_calyx_external_sandbox_supervisor_worker.py
+      - name: Static authority and P1 boundary assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("runtime/sandbox_supervisor_worker.py").read_text(encoding="utf-8")
+          assert "shell=True" not in source
+          assert "git push" not in source
+          assert "pull request" not in source.lower()
+          assert "--network\",\n            \"none" in source
+          assert "--read-only" in source
+          assert "--cap-drop" in source
+          assert "no-new-privileges" in source
+          assert "@sha256:" in source
+          assert "--untracked-files=all" in source
+          assert "SANDBOX_SUPERVISOR_CHECKOUT_DIRTY" in source
+          assert '"--name"' in source
+          assert '"stop", "-t", "2"' in source
+          assert '"rm", "-f"' in source
+          assert "git archive" not in source  # argv is structured; no shell command string
+          assert '["git", "-C", str(repo_root), "archive"' in source
+          PY
+      - name: Diff hygiene
+        run: |
+          git diff --check origin/${{ github.base_ref }}...HEAD
