@@ -26,6 +26,8 @@ Complete the execution side of BUILD-BRAIN-114K without moving repository-code e
 
 BUILD-BRAIN-114K was merged to `main` as PR #655. PR #664 was then retargeted from the former stacked 114K branch to current `main`. The runtime delta remains purely additive. This documentation synchronization commit intentionally changes no worker behavior and exists to force a fresh exact-head validation against the post-114K mainline merge context before merge.
 
+A second owner-authored synchronization on 2026-08-08 follows the OCU release-evidence and Python-runtime merges. It again changes documentation only and is used to obtain real, current-main validation evidence for the unchanged supervisor implementation after earlier automation-authored runs stopped at `action_required` before executing jobs.
+
 ## Security and authority model
 
 The application remains unable to execute repository code itself. BUILD-BRAIN-114K creates and persists the request and validates the returned evidence. BUILD-BRAIN-114L is the separately deployed execution worker. The two components therefore require separate credentials and runtime placement.
