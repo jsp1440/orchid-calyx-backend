@@ -15,18 +15,27 @@ SPEC.loader.exec_module(MODULE)
 
 def valid_artifact() -> dict:
     return {
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "verification": "OCU-SCI-007",
-        "started_at": "2026-08-07T00:00:00Z",
-        "completed_at": "2026-08-07T00:01:00Z",
+        "release_identity_contract": "OCU-RELEASE-IDENTITY-001",
+        "started_at": "2026-08-08T00:00:00Z",
+        "completed_at": "2026-08-08T00:01:00Z",
         "frontend_origin": "https://orchidcontinuum.org",
         "api_origin": "https://calyx.example.org/api",
         "frontend": {
             "url": "https://orchidcontinuum.org/university/lab",
             "status": 200,
             "canonical_app_shell": True,
+            "release_commit_sha": "a" * 40,
         },
         "backend": {
+            "release_identity": {
+                "contract": "OCU-RELEASE-IDENTITY-001",
+                "service": "orchid-calyx-backend",
+                "commit_sha": "b" * 40,
+                "attested": True,
+                "source": "CALYX_DEPLOYED_COMMIT",
+            },
             "readiness": dict(MODULE.EXPECTED_READINESS),
             "capability": {"enabled": True, "session_writes_enabled": False},
             "catalog": {
@@ -42,7 +51,9 @@ def valid_artifact() -> dict:
 
 class ReleaseEvidenceTests(unittest.TestCase):
     def test_passing_artifact_validates(self) -> None:
-        MODULE.validate_evidence(valid_artifact())
+        artifact = valid_artifact()
+        MODULE.validate_evidence(artifact)
+        self.assertEqual(MODULE.release_commits(artifact), ("a" * 40, "b" * 40))
 
     def test_failed_artifact_is_rejected(self) -> None:
         artifact = valid_artifact()
@@ -59,6 +70,24 @@ class ReleaseEvidenceTests(unittest.TestCase):
     def test_noncanonical_frontend_is_rejected(self) -> None:
         artifact = valid_artifact()
         artifact["frontend"]["canonical_app_shell"] = False
+        with self.assertRaises(MODULE.EvidenceError):
+            MODULE.validate_evidence(artifact)
+
+    def test_missing_frontend_release_identity_is_rejected(self) -> None:
+        artifact = valid_artifact()
+        artifact["frontend"].pop("release_commit_sha")
+        with self.assertRaises(MODULE.EvidenceError):
+            MODULE.validate_evidence(artifact)
+
+    def test_unattested_backend_release_identity_is_rejected(self) -> None:
+        artifact = valid_artifact()
+        artifact["backend"]["release_identity"]["attested"] = False
+        with self.assertRaises(MODULE.EvidenceError):
+            MODULE.validate_evidence(artifact)
+
+    def test_legacy_schema_is_rejected(self) -> None:
+        artifact = valid_artifact()
+        artifact["schema_version"] = "1.0.0"
         with self.assertRaises(MODULE.EvidenceError):
             MODULE.validate_evidence(artifact)
 
