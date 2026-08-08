@@ -2,8 +2,8 @@
 
 The service preserves caller-supplied source bytes immutably, normalizes ordinary
 headered taxonomy CSV plus the actual Hassler WorldOrchids layout without
-activating it, reuses the non-publishing preflight validator on a canonical UTF-8
-projection, builds a review queue, and projects bounded idempotent staging
+activating it, reuses the non-publishing preflight validator on canonical UTF-8
+projections, builds a review queue, and projects bounded idempotent staging
 artifacts. It has no production taxonomy, relink, Knowledge Graph publication, or
 scientific publication authority.
 """
@@ -29,7 +29,7 @@ from runtime.taxonomy_preflight import (
     validate,
 )
 
-INTAKE_SCHEMA_VERSION = "1.2.0"
+INTAKE_SCHEMA_VERSION = "1.3.0"
 RELEASE_ID_RE = re.compile(r"[^A-Za-z0-9._-]+")
 HASSLER_RANKS = {
     "F": "family",
@@ -42,6 +42,10 @@ HASSLER_RANKS = {
     "V": "variety",
     "FM": "form",
 }
+HASSLER_SPECIES_CODES = frozenset({"S", "SS", "V", "FM"})
+HASSLER_SPECIES_NAME_RE = re.compile(
+    r"^(?:[×x]?[A-Z][A-Za-z-]+)\s+(?:(?:×|x)\s*)?[a-z][a-z-]+"
+)
 SYNONYM_MARKER_RE = re.compile(r"(?:^|\s)=\s*")
 
 
@@ -194,8 +198,24 @@ def _release_taxon_key(row: dict[str, str]) -> str:
     return taxon_key(row)
 
 
-def _malformed_count(finding_counts: dict[str, int]) -> int:
-    return sum(count for key, count in finding_counts.items() if key.endswith(":malformed_taxon_name"))
+def _malformed_count(
+    finding_counts: dict[str, int],
+    rows: list[dict[str, str]],
+    hassler_layout: bool,
+) -> int:
+    if not hassler_layout:
+        return sum(
+            count
+            for key, count in finding_counts.items()
+            if key.endswith(":malformed_taxon_name")
+        )
+    return sum(
+        1
+        for row in rows
+        if _first(row, "Taxon") in HASSLER_SPECIES_CODES
+        and (name := scientific_name(row))
+        and not HASSLER_SPECIES_NAME_RE.match(name)
+    )
 
 
 @dataclass(frozen=True)
@@ -218,6 +238,15 @@ class TaxonomyReleaseIntakeService:
         if not release_id or RELEASE_ID_RE.sub("_", release_id) != release_id:
             raise ValueError("invalid release_id")
         return self.workspace / "releases" / release_id
+
+    def _canonicalize_baseline(self, root: Path, baseline_path: Path | None) -> tuple[Path | None, str | None, str | None]:
+        if baseline_path is None:
+            return None, None, None
+        baseline_bytes = baseline_path.read_bytes()
+        _, _, _, baseline_canonical = _load_source(baseline_bytes)
+        canonical_path = root / "baseline_canonical.psv"
+        _atomic_write(canonical_path, baseline_canonical)
+        return canonical_path, baseline_path.name, _sha256(baseline_bytes)
 
     def intake_bytes(
         self,
@@ -270,7 +299,8 @@ class TaxonomyReleaseIntakeService:
         hassler_layout = source_metadata["source_layout"] == "hassler_worldorchids"
         canonical_path = root / "canonical_source.psv"
         _atomic_write(canonical_path, canonical_text)
-        preflight = validate(canonical_path, baseline_path=baseline_path, policy=policy)
+        baseline_canonical, baseline_filename, baseline_sha256 = self._canonicalize_baseline(root, baseline_path)
+        preflight = validate(canonical_path, baseline_path=baseline_canonical, policy=policy)
 
         normalized_rows: list[dict[str, Any]] = []
         unresolved: list[dict[str, Any]] = []
@@ -327,7 +357,7 @@ class TaxonomyReleaseIntakeService:
         )
         normalized_sha = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
         status_payload = dict(sorted(status_counts.items()))
-        malformed_count = _malformed_count(preflight.finding_counts)
+        malformed_count = _malformed_count(preflight.finding_counts, rows, hassler_layout)
         _atomic_write(root / "normalized.jsonl", normalized_text)
         _json(root / "preflight.json", preflight.to_dict())
         _json(root / "review_queue.json", unresolved)
@@ -338,8 +368,8 @@ class TaxonomyReleaseIntakeService:
                 "identity": asdict(identity),
                 "source_metadata": source_metadata,
                 "canonical_source_sha256": _sha256(canonical_text.encode("utf-8")),
-                "baseline_filename": preflight.baseline_filename,
-                "baseline_sha256": preflight.baseline_sha256,
+                "baseline_filename": baseline_filename,
+                "baseline_sha256": baseline_sha256,
                 "preflight_status": preflight.status,
                 "preflight_run_id": preflight.run_id,
                 "preflight_metrics": preflight.metrics,
@@ -388,10 +418,7 @@ class TaxonomyReleaseIntakeService:
                     existing[record["row_sha256"]] = record
         for row in rows[offset:end]:
             existing.setdefault(row["row_sha256"], row)
-        ordered = sorted(
-            existing.values(),
-            key=lambda item: (item["row_number"], item["row_sha256"]),
-        )
+        ordered = sorted(existing.values(), key=lambda item: (item["row_number"], item["row_sha256"]))
         _atomic_write(
             staging_path,
             "".join(
