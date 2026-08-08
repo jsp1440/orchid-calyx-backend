@@ -1,0 +1,40 @@
+name: CALYX Hassler Guarded Upload Client Validation
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/upload_hassler_release_guarded.py'
+      - 'tests/test_upload_hassler_release_guarded.py'
+      - '.github/workflows/calyx-hassler-guarded-upload-client-validation.yml'
+      - 'docs/brain/CALYX-CORE-HASSLER-GUARDED-UPLOAD.md'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install validation dependencies
+        run: python -m pip install pytest ruff httpx
+      - name: Compile and lint
+        run: |
+          python -m py_compile scripts/upload_hassler_release_guarded.py tests/test_upload_hassler_release_guarded.py
+          python -m ruff check scripts/upload_hassler_release_guarded.py tests/test_upload_hassler_release_guarded.py
+          python -m ruff format --check scripts/upload_hassler_release_guarded.py tests/test_upload_hassler_release_guarded.py
+      - name: Guarded upload behavior tests
+        run: python -m pytest -q tests/test_upload_hassler_release_guarded.py
+      - name: Governance smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'UPLOAD_WORLD_ORCHIDS_26_08' scripts/upload_hassler_release_guarded.py
+          grep -q 'staging_invoked.*False' scripts/upload_hassler_release_guarded.py
+          grep -q 'taxonomy_activation_authorized.*False' scripts/upload_hassler_release_guarded.py
+          grep -q 'knowledge_graph_mutation_authorized.*False' scripts/upload_hassler_release_guarded.py
+          ! grep -q '/stage"' scripts/upload_hassler_release_guarded.py
