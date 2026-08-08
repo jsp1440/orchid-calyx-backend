@@ -1,0 +1,56 @@
+name: CALYX Conservation Evidence 466
+
+on:
+  pull_request:
+    paths:
+      - "runtime/conservation_evidence.py"
+      - "app/routers/conservation_evidence.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_conservation_evidence_466.py"
+      - "runtime/literature_acquisition.py"
+      - "tests/test_calyx_literature_acquisition_448.py"
+      - "docs/brain/CALYX-CONSERVATION-EVIDENCE-466.md"
+      - ".github/workflows/calyx-conservation-evidence-466.yml"
+  workflow_dispatch:
+
+jobs:
+  conservation-evidence:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile conservation surface
+        run: python -m py_compile runtime/conservation_evidence.py app/routers/conservation_evidence.py app/routers/live_mission_control.py tests/test_calyx_conservation_evidence_466.py
+      - name: Deterministic conservation and literature regressions
+        run: python -m pytest -q tests/test_calyx_conservation_evidence_466.py tests/test_calyx_literature_acquisition_448.py
+      - name: Permanent status and non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/conservation_evidence.py').read_text()
+          required = (
+              'CONSERVATION_IUCN_AUTHORITY_REQUIRED',
+              '"fabricated_iucn_status_authorized": False',
+              '"scientific_publication_authorized": False',
+              '"production_graph_mutation_authorized": False',
+              '"production_deployment_authorized": False',
+              '"production_graph_mutation_performed": False',
+              '"scientific_publication_performed": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing conservation governance assertion(s): {missing}')
+          forbidden = ('INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'requests.get(', 'requests.post(', 'httpx.get(', 'httpx.post(')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden conservation authority present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check --ignore UP037 runtime/conservation_evidence.py app/routers/conservation_evidence.py tests/test_calyx_conservation_evidence_466.py
+          git diff --check
