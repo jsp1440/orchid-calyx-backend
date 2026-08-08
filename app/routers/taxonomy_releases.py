@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.security import verify_owner_or_api_key
 from runtime.world_plants_readiness_api import build_taxonomy_readiness_report
 from runtime.world_plants_release_store import WorldPlantsReleaseStore
-from runtime.world_plants_staging import MAX_BATCH_SIZE, PostgresWorldPlantsStagingStore
+
+STAGING_MAX_BATCH_SIZE = 2_000
 
 
 def _intake_root() -> Path:
@@ -25,16 +25,16 @@ def _default_store() -> WorldPlantsReleaseStore:
     return WorldPlantsReleaseStore(_intake_root(), max_upload_bytes=limit)
 
 
-def _default_staging_store() -> PostgresWorldPlantsStagingStore:
+def _default_staging_store() -> Any:
+    from runtime.world_plants_staging import PostgresWorldPlantsStagingStore
+
     return PostgresWorldPlantsStagingStore()
 
 
 def create_taxonomy_release_router(
     get_store: Callable[[], WorldPlantsReleaseStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
-    get_staging_store: Callable[
-        [], PostgresWorldPlantsStagingStore
-    ] = _default_staging_store,
+    get_staging_store: Callable[[], Any] = _default_staging_store,
 ) -> APIRouter:
     router = APIRouter(tags=["taxonomy-releases"])
     releases = APIRouter(prefix="/api/mission-control/taxonomy/releases")
@@ -90,15 +90,17 @@ def create_taxonomy_release_router(
         batch_size: int = Form(default=1000),
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
-        if not 1 <= batch_size <= MAX_BATCH_SIZE:
+        if not 1 <= batch_size <= STAGING_MAX_BATCH_SIZE:
             raise HTTPException(
                 status_code=400,
-                detail=f"batch_size must be between 1 and {MAX_BATCH_SIZE}",
+                detail=f"batch_size must be between 1 and {STAGING_MAX_BATCH_SIZE}",
             )
         local_report = get_store().get(release_id)
         if local_report is None:
             raise HTTPException(status_code=404, detail="taxonomy release not found")
         try:
+            from sqlalchemy.exc import SQLAlchemyError
+
             payload = get_store().source_bytes(release_id)
             snapshot = local_report.get("snapshot", {})
             staging = get_staging_store()
@@ -137,6 +139,8 @@ def create_taxonomy_release_router(
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
         try:
+            from sqlalchemy.exc import SQLAlchemyError
+
             staging = get_staging_store()
             return {
                 "release_id": release_id,
