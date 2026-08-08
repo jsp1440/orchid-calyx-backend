@@ -1,17 +1,22 @@
 """Controlled vocabulary for the Orchid Continuum scientific Knowledge Graph.
 
 Node types and edge types are grouped into scientific *domains* so that a
-traversal can report domain coverage and explicit data gaps.  The existing
-production graph (``oc_graph.kg_nodes`` / ``oc_graph.kg_edges``) currently
-only populates the ``taxonomy`` domain (node types ``genus``/``taxon`` and
-edge types ``genus_contains_species``/``species_belongs_to_genus``).
+traversal can report domain coverage and explicit data gaps. The original
+production graph was taxon-centered; the causal-reasoning vocabulary extends
+that model across molecular biology, anatomy, physiology, development,
+environment, phenotype, cultivation, and biotic interactions.
 
-The additional node/edge types below are the canonical labels the graph
-publisher emits when a domain's relational source is ingested.  Nothing here
-is genus-specific; the vocabulary is reused for every taxon.
+Nothing in this vocabulary publishes scientific claims. It defines canonical
+labels and domain assignments that publishers and validators may accept.
 """
 
 from __future__ import annotations
+
+from .causal_vocabulary import (
+    CAUSAL_EVIDENCE_EDGE_TYPES,
+    CAUSAL_NODE_TYPE_DOMAIN,
+    CANONICAL_CAUSAL_EDGE_TYPES,
+)
 
 NODE_TYPE_DOMAIN: dict[str, str] = {
     "genus": "taxonomy",
@@ -41,6 +46,7 @@ NODE_TYPE_DOMAIN: dict[str, str] = {
     "lesson": "education",
     "chapter": "education",
     "figure": "education",
+    **CAUSAL_NODE_TYPE_DOMAIN,
 }
 
 EDGE_TYPE_DOMAIN: dict[str, str] = {
@@ -67,13 +73,36 @@ EDGE_TYPE_DOMAIN: dict[str, str] = {
     "explained_by": "education",
     "raises_question": "research",
     "tested_by_hypothesis": "research",
+    **{edge_type: "causal_reasoning" for edge_type in CANONICAL_CAUSAL_EDGE_TYPES},
+    **{edge_type: "evidence" for edge_type in CAUSAL_EVIDENCE_EDGE_TYPES},
 }
 
 ALL_DOMAINS: tuple[str, ...] = (
-    "taxonomy", "media", "occurrences", "geography", "habitat", "climate",
-    "elevation", "traits", "glossary", "literature", "evidence",
-    "pollinators", "mycorrhiza", "conservation", "molecular", "research",
+    "taxonomy",
+    "media",
+    "occurrences",
+    "geography",
+    "habitat",
+    "climate",
+    "elevation",
+    "traits",
+    "glossary",
+    "literature",
+    "evidence",
+    "pollinators",
+    "mycorrhiza",
+    "conservation",
+    "molecular",
+    "research",
     "education",
+    "anatomy",
+    "physiology",
+    "development",
+    "phenotype",
+    "environment",
+    "cultivation",
+    "biotic_interactions",
+    "causal_reasoning",
 )
 
 
