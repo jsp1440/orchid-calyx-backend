@@ -12,7 +12,9 @@ from app.calyx_orchestrator.sandbox_supervisor_evidence import (
     SupervisorValidationReceipt,
     ValidationRequestEnvelope,
 )
-from app.calyx_orchestrator.sandbox_supervisor_models import SandboxValidationRequestRecord
+from app.calyx_orchestrator.sandbox_supervisor_models import (
+    SandboxValidationRequestRecord,
+)
 from app.calyx_orchestrator.sandbox_supervisor_service import SandboxSupervisorService
 from app.database import Base
 
