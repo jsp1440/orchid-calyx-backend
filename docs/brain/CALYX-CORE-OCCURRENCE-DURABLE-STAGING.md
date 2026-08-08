@@ -80,4 +80,21 @@ The dedicated `CALYX Occurrence Durable Staging Validation` workflow uses dispos
 - existing Harvester V2 manager and GBIF plugin regressions;
 - Ruff, compile, diff hygiene and explicit no-`oc_graph` mutation smoke.
 
-Final exact-head run identifiers are recorded on PR #386's implementation PR before review disposition.
+### First validation attempt
+
+Run `31242207705` reached compile/Ruff and failed before behavior tests on one deterministic modernization rule: `Iterable` and `Mapping` needed to be imported from `collections.abc`. No persistence behavior test failed because those tests had not started.
+
+### Corrected implementation head
+
+Head `a81ad8898a5ec8ee5886ed511664ece3ae208e30` corrected only that import boundary and passed all three triggered checks:
+
+- `CALYX Occurrence Durable Staging Validation` run `31242288420`: **success**;
+  - PostgreSQL 16 service healthy;
+  - compile and Ruff: passed;
+  - durable occurrence tests: passed;
+  - existing Harvester V2 manager/GBIF regressions: passed;
+  - migration/no-graph-mutation smoke: passed;
+- `CALYX Workflow Governance Audit` run `31242288445`: **success**;
+- `BUILD-088E Validation` run `31242288429`: **success**.
+
+The documentation-bearing head must re-pass its triggered checks before final review disposition. Per issue #386, even a fully green PR remains unmerged until a separate owner decision.
