@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from .sandbox_supervisor_evidence import canonical_sha256
 
