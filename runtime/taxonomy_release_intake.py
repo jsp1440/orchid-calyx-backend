@@ -6,7 +6,7 @@ normalizes records into an evidence bundle, builds an unresolved-review queue,
 and projects normalized rows into a bounded local staging artifact.
 
 It deliberately has no production database, Knowledge Graph, taxonomy activation,
-or publication capability.  A successful intake can become ready for *review*;
+or publication capability. A successful intake can become ready for *review*;
 it can never become ready for promotion from this module.
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ from runtime.taxonomy_preflight import (
     validate,
 )
 
-INTAKE_SCHEMA_VERSION = "1.0.0"
+INTAKE_SCHEMA_VERSION = "1.1.0"
 RELEASE_ID_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -89,6 +89,14 @@ def _status(row: dict[str, str]) -> str:
     return value or "unresolved"
 
 
+def _malformed_count(finding_counts: dict[str, int]) -> int:
+    return sum(
+        count
+        for key, count in finding_counts.items()
+        if key.endswith(":malformed_taxon_name")
+    )
+
+
 @dataclass(frozen=True)
 class ReleaseIdentity:
     release_id: str
@@ -123,6 +131,9 @@ class TaxonomyReleaseIntakeService:
             raise ValueError("taxonomy source file is empty")
         if len(content) > self.maximum_bytes:
             raise ValueError(f"taxonomy source exceeds maximum_bytes={self.maximum_bytes}")
+        if baseline_path is not None and not baseline_path.is_file():
+            raise ValueError("configured taxonomy baseline is not a regular file")
+
         clean_name = _safe_filename(filename)
         digest = _sha256(content)
         release_id = f"rel-{digest[:20]}"
@@ -197,6 +208,8 @@ class TaxonomyReleaseIntakeService:
             json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n" for row in normalized_rows
         )
         normalized_sha = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
+        status_payload = dict(sorted(status_counts.items()))
+        malformed_count = _malformed_count(preflight.finding_counts)
         _atomic_write(root / "normalized.jsonl", normalized_text)
         _json(root / "preflight.json", preflight.to_dict())
         _json(root / "review_queue.json", unresolved)
@@ -205,11 +218,18 @@ class TaxonomyReleaseIntakeService:
             {
                 "schema_version": INTAKE_SCHEMA_VERSION,
                 "identity": asdict(identity),
+                "baseline_filename": preflight.baseline_filename,
+                "baseline_sha256": preflight.baseline_sha256,
                 "preflight_status": preflight.status,
                 "preflight_run_id": preflight.run_id,
+                "preflight_metrics": preflight.metrics,
+                "preflight_finding_counts": preflight.finding_counts,
                 "normalized_row_count": len(normalized_rows),
                 "normalized_sha256": normalized_sha,
-                "status_counts": dict(sorted(status_counts.items())),
+                "status_counts": status_payload,
+                "accepted_name_count": status_payload.get("accepted", 0),
+                "synonym_count": status_payload.get("synonym", 0),
+                "malformed_taxon_count": malformed_count,
                 "unresolved_review_count": len(unresolved),
                 "comparison": preflight.diff,
                 "taxonomy_activation_authorized": False,
@@ -264,6 +284,25 @@ class TaxonomyReleaseIntakeService:
         )
         return self.readiness(release_id)
 
+    def review_queue(self, release_id: str, *, offset: int = 0, limit: int = 100) -> dict[str, Any]:
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
+        if limit < 1 or limit > 500:
+            raise ValueError("limit must be between 1 and 500")
+        root = self._release_dir(release_id)
+        queue_path = root / "review_queue.json"
+        if not queue_path.exists():
+            raise FileNotFoundError(f"unknown taxonomy release: {release_id}")
+        queue = json.loads(queue_path.read_text(encoding="utf-8"))
+        return {
+            "release_id": release_id,
+            "total": len(queue),
+            "offset": offset,
+            "limit": limit,
+            "items": queue[offset : offset + limit],
+            "review_write_authorized": False,
+        }
+
     def readiness(self, release_id: str) -> dict[str, Any]:
         root = self._release_dir(release_id)
         manifest_path = root / "manifest.json"
@@ -279,10 +318,17 @@ class TaxonomyReleaseIntakeService:
             "schema_version": INTAKE_SCHEMA_VERSION,
             "release_id": release_id,
             "identity": manifest["identity"],
+            "source_sha256": manifest["identity"]["sha256"],
+            "baseline_filename": manifest.get("baseline_filename"),
+            "baseline_sha256": manifest.get("baseline_sha256"),
             "preflight_status": manifest["preflight_status"],
             "preflight_run_id": manifest["preflight_run_id"],
             "normalized_row_count": manifest["normalized_row_count"],
+            "normalized_sha256": manifest["normalized_sha256"],
             "status_counts": manifest["status_counts"],
+            "accepted_name_count": manifest["accepted_name_count"],
+            "synonym_count": manifest["synonym_count"],
+            "malformed_taxon_count": manifest["malformed_taxon_count"],
             "comparison": manifest.get("comparison"),
             "unresolved_review_count": len(unresolved),
             "staging_next_offset": int(checkpoint.get("next_offset", 0)),
