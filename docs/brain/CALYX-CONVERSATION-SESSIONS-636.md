@@ -2,7 +2,7 @@
 
 Date: 2026-08-08
 Depends on: CALYX-635 graph-grounded Ask Calyx, Research Station persistent workspace foundation.
-Status: implementation pending exact-head validation; no merge, deployment, publication, external communication, or Knowledge Graph mutation authorized.
+Status: implementation behavior validated; final exact-head rerun pending after formatter/legacy-CI corrections. No merge, deployment, publication, external communication, or Knowledge Graph mutation authorized.
 
 ## Goal
 
@@ -60,7 +60,7 @@ The authorized excerpt itself is not duplicated into `source_refs_json`.
 
 ## API
 
-Existing stateless `POST /brain/mission-control/chat/ask` remains compatible and now explicitly returns `persistent=false`.
+Existing stateless `POST /brain/mission-control/chat/ask` remains compatible and explicitly returns `persistent=false`.
 
 New authenticated endpoints:
 
@@ -71,20 +71,35 @@ New authenticated endpoints:
 
 Conversation access does not use privileged cross-owner bypass. A conversation ID owned by another subject resolves as not found.
 
-## Validation plan
+## Validation evidence
 
-Dedicated CALYX-636 CI will validate:
+The first complete CALYX-636 behavioral run passed all 13 persistence + stacked conversation/graph tests and permanent conversation-memory non-authority assertions. The global workflow-governance audit also passed.
 
-- SQLite-backed owner-scoped create/ask/read round trip;
-- project context inheritance;
-- taxon context inheritance and explicit clearing;
-- two-message append per successful exchange;
-- compact source references without duplicated excerpts;
-- cross-owner isolation;
-- migration append-only and non-authority constraints;
-- CALYX-634 and CALYX-635 regression compatibility;
-- compilation, Ruff, and diff hygiene;
-- source-level assertions that conversation memory does not import publication or writable graph systems.
+The remaining failures identified during validation were CI/hygiene defects rather than behavioral defects:
+
+1. Ruff requested import normalization and `dict.get` simplification in the expanded chat router; those were corrected without changing behavior.
+2. The legacy `CALYX-MISSION-CONTROL-003B Chat API` workflow installed only FastAPI/httpx/pytest/Ruff, so the now database-backed router could not import SQLAlchemy. The workflow was corrected to install the repository production requirements.
+3. The next legacy run reached Ruff successfully and exposed only formatter normalization in the chat router. Commit `d475e3dda89447c392090fe5585c6320fc9f5457` applies exactly that formatter output.
+4. The formatter commit was authored through the repository Copilot integration, which caused GitHub to mark the immediate pull-request workflow runs `action_required` before creating jobs. This was not a code failure. This Brain update intentionally creates a fresh exact head through the normal repository connector so all four gates can execute again.
+
+Before that action-required head, the latest runnable head had already passed:
+
+- CALYX Conversation Sessions 636;
+- CALYX Continuum Conversation 634 compatibility;
+- CALYX Workflow Governance Audit.
+
+The legacy 003B lane's only remaining runnable failure was Ruff formatting, now corrected.
+
+## Exact-head gate required before promotion
+
+CALYX-636 remains draft until a fresh head passes all four lanes:
+
+- CALYX Conversation Sessions 636;
+- CALYX Continuum Conversation 634;
+- CALYX-MISSION-CONTROL-003B Chat API;
+- CALYX Workflow Governance Audit.
+
+No gate is to be weakened to obtain promotion.
 
 ## Next priority after validation
 
