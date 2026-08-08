@@ -14,6 +14,7 @@ from runtime.scientific_comparison import ScientificComparisonService
 from runtime.scientific_dataset_snapshots import ScientificDatasetSnapshotService
 from runtime.scientific_diagnostics import ScientificDiagnosticsService
 from runtime.scientific_export_bundle import ScientificAnalysisExportService
+from runtime.scientific_export_history import ScientificAnalysisExportHistoryService
 from runtime.scientific_result_artifacts import ScientificResultArtifactService
 from runtime.scientific_runtime_readiness import scientific_runtime_readiness
 
@@ -37,6 +38,7 @@ _export_instance = ScientificAnalysisExportService(
     _diagnostics_instance,
     _result_artifact_instance,
 )
+_export_history_instance = ScientificAnalysisExportHistoryService(_export_instance)
 OwnerIdentity = Annotated[dict[str, object], Depends(verify_owner_or_api_key)]
 
 
@@ -70,6 +72,10 @@ def _result_artifacts() -> ScientificResultArtifactService:
 
 def _exports() -> ScientificAnalysisExportService:
     return _export_instance
+
+
+def _export_history() -> ScientificAnalysisExportHistoryService:
+    return _export_history_instance
 
 
 def _owner(identity: dict[str, object]) -> str:
@@ -285,6 +291,25 @@ def get_result_artifact(project_id: str, analysis_id: str, identity: OwnerIdenti
 @router.post("/projects/{project_id}/results/{analysis_id}/exports")
 def build_analysis_export(project_id: str, analysis_id: str, identity: OwnerIdentity) -> dict:
     return _translate(lambda: _exports().build(_owner(identity), project_id, analysis_id))
+
+
+@router.get("/projects/{project_id}/exports")
+def list_analysis_exports(
+    project_id: str,
+    identity: OwnerIdentity,
+    analysis_id: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    return _translate(
+        lambda: _export_history().list(
+            _owner(identity),
+            project_id,
+            analysis_id=analysis_id,
+            limit=limit,
+            offset=offset,
+        )
+    )
 
 
 @router.get("/projects/{project_id}/exports/{export_id}")
