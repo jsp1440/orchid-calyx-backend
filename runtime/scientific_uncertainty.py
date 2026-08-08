@@ -22,6 +22,29 @@ PYTHON_VERSION = platform.python_version()
 NUMPY_VERSION = version("numpy")
 SCIPY_VERSION = version("scipy")
 
+MEAN_CI_CANDIDATE_METHOD: dict[str, Any] = {
+    "method": "mean_ci.v1",
+    "name": "Population mean confidence interval",
+    "family": "uncertainty",
+    "version": "1.0.0-candidate",
+    "registered": False,
+    "inferential": True,
+    "p_value_capable": False,
+    "parameters": {
+        "column": "one declared numeric variable",
+        "confidence_level": sorted(SUPPORTED_CONFIDENCE_LEVELS),
+    },
+    "missing_policy": "complete_case",
+    "sidedness": "two_sided",
+    "distribution": "student_t",
+    "assumptions": [
+        "Observations are appropriately independent for the intended inference.",
+        "Population variance is unknown and estimated with the sample standard deviation.",
+        "For small samples, the population distribution should be approximately normal or otherwise scientifically justified for a Student-t mean interval.",
+        "The confidence level and target variable are declared before the interval is computed.",
+    ],
+}
+
 
 def _finite(value: Any, error: str) -> float:
     if isinstance(value, bool):
@@ -42,6 +65,50 @@ def numerical_environment() -> dict[str, str]:
         "python_version": PYTHON_VERSION,
         "numpy_version": NUMPY_VERSION,
         "scipy_version": SCIPY_VERSION,
+    }
+
+
+def normalize_mean_ci_candidate_parameters(value: Any) -> dict[str, Any]:
+    """Normalize the proposed Analysis Plan parameter contract without registering it."""
+    if not isinstance(value, dict):
+        raise TypeError("UNCERTAINTY_MEAN_CI_PARAMETERS_INVALID")
+    extras = sorted(set(value) - {"column", "confidence_level"})
+    if extras:
+        raise ValueError(f"UNCERTAINTY_MEAN_CI_PARAMETERS_UNSUPPORTED:{','.join(extras)}")
+    column = str(value.get("column") or "").strip()
+    if not column:
+        raise ValueError("UNCERTAINTY_MEAN_CI_COLUMN_REQUIRED")
+    confidence_level = _finite(
+        value.get("confidence_level"), "UNCERTAINTY_CONFIDENCE_LEVEL_INVALID"
+    )
+    if confidence_level not in SUPPORTED_CONFIDENCE_LEVELS:
+        raise ValueError("UNCERTAINTY_CONFIDENCE_LEVEL_UNSUPPORTED")
+    return {"column": column, "confidence_level": confidence_level}
+
+
+def validate_mean_ci_candidate_variable(
+    parameters: dict[str, Any], variables: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Require the candidate target to be a declared numeric variable with a unit."""
+    column = parameters["column"]
+    metadata = {
+        str(item.get("name") or "").strip(): item
+        for item in variables
+        if isinstance(item, dict)
+    }
+    if column not in metadata:
+        raise ValueError(f"UNCERTAINTY_MEAN_CI_VARIABLE_NOT_DECLARED:{column}")
+    variable = metadata[column]
+    if str(variable.get("kind") or "").strip().casefold() != "numeric":
+        raise ValueError("UNCERTAINTY_MEAN_CI_VARIABLE_NOT_NUMERIC")
+    unit = str(variable.get("unit") or "").strip()
+    if not unit:
+        raise ValueError("UNCERTAINTY_MEAN_CI_VARIABLE_UNIT_REQUIRED")
+    return {
+        "name": column,
+        "kind": "numeric",
+        "role": str(variable.get("role") or "").strip().casefold(),
+        "unit": unit,
     }
 
 
@@ -113,3 +180,41 @@ def mean_confidence_interval(values: Iterable[Any], confidence_level: float) -> 
         sample_sd=stdev(numeric),
         confidence_level=confidence_level,
     )
+
+
+def evaluate_mean_ci_candidate_rows(
+    *,
+    rows: list[dict[str, Any]],
+    parameters: dict[str, Any],
+    variables: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Evaluate candidate semantics on already-governed analytical rows.
+
+    This helper does not perform project/dataset binding and is intentionally not wired
+    to a router. The Research Analysis workflow must establish the final analytical row
+    population before a future live method can call this contract.
+    """
+    normalized = normalize_mean_ci_candidate_parameters(parameters)
+    variable = validate_mean_ci_candidate_variable(normalized, variables)
+    values: list[float] = []
+    missing = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            raise TypeError("UNCERTAINTY_MEAN_CI_ROWS_INVALID")
+        raw = row.get(normalized["column"])
+        if raw is None or raw == "":
+            missing += 1
+            continue
+        values.append(_finite(raw, "UNCERTAINTY_MEAN_CI_VALUE_INVALID"))
+    interval = mean_confidence_interval(values, normalized["confidence_level"])
+    return {
+        "method_candidate": MEAN_CI_CANDIDATE_METHOD["method"],
+        "method_candidate_registered": False,
+        "parameters": normalized,
+        "variable": variable,
+        "rows_received": len(rows),
+        "complete_values": len(values),
+        "missing_values": missing,
+        "missing_policy": "complete_case",
+        "interval": interval,
+    }
