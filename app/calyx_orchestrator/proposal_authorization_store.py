@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from .proposal_authorization import (
     ALLOWED_REVIEW_CLASSES,
     SCHEMA,
+    ProposalAuthorizationBuilder,
     ProposalAuthorizationRecord,
     ProposalAuthorizationRegistry,
     ProposalDecision,
@@ -30,9 +32,75 @@ class DurableProposalAuthorizationStore:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def record(
+    def record_review(
+        self,
+        *,
+        manifest_snapshot: Mapping[str, object],
+        patch_receipt: Mapping[str, object],
+        requested_by: str,
+        review_class: str,
+        reviewer_id: str,
+        reviewer_roles: Sequence[str],
+        decision: ProposalDecision | str,
+        rationale: str,
+        evidence_uris: Sequence[str],
+        decided_at: datetime,
+    ) -> ProposalAuthorizationRecord:
+        """Build through 114N governance, then persist the resulting exact decision."""
+        item = ProposalAuthorizationBuilder().build(
+            manifest_snapshot=manifest_snapshot,
+            patch_receipt=patch_receipt,
+            requested_by=requested_by,
+            review_class=review_class,
+            reviewer_id=reviewer_id,
+            reviewer_roles=reviewer_roles,
+            decision=decision,
+            rationale=rationale,
+            evidence_uris=evidence_uris,
+            decided_at=decided_at,
+        )
+        return self._persist(item)
+
+    def require(
+        self, *, manifest_digest: str, review_class: str
+    ) -> ProposalAuthorizationRecord:
+        digest = manifest_digest.strip().lower()
+        normalized_class = review_class.strip().lower()
+        if not _is_sha256(digest):
+            raise ValueError("PROPOSAL_AUTH_DURABLE_MANIFEST_DIGEST_INVALID")
+        if normalized_class not in ALLOWED_REVIEW_CLASSES:
+            raise ValueError("PROPOSAL_AUTH_DURABLE_REVIEW_CLASS_INVALID")
+        row = self._find(
+            manifest_digest=digest,
+            review_class=normalized_class,
+        )
+        if row is None:
+            raise LookupError("PROPOSAL_AUTH_DURABLE_RECORD_NOT_FOUND")
+        return self._decode(row)
+
+    def materialize_registry(
+        self, *, manifest_digest: str
+    ) -> ProposalAuthorizationRegistry:
+        digest = manifest_digest.strip().lower()
+        if not _is_sha256(digest):
+            raise ValueError("PROPOSAL_AUTH_DURABLE_MANIFEST_DIGEST_INVALID")
+        rows = self.db.scalars(
+            select(ProposalAuthorizationDecisionRecord)
+            .where(ProposalAuthorizationDecisionRecord.manifest_digest == digest)
+            .order_by(ProposalAuthorizationDecisionRecord.review_class.asc())
+        ).all()
+        registry = ProposalAuthorizationRegistry()
+        for row in rows:
+            registry.record(self._decode(row))
+        return registry
+
+    def _persist(
         self, item: ProposalAuthorizationRecord
     ) -> ProposalAuthorizationRecord:
+        if item.review_class not in ALLOWED_REVIEW_CLASSES:
+            raise PermissionError("PROPOSAL_AUTH_DURABLE_REVIEW_CLASS_INVALID")
+        if not _is_sha256(item.manifest_digest):
+            raise ValueError("PROPOSAL_AUTH_DURABLE_MANIFEST_DIGEST_INVALID")
         snapshot = item.snapshot()
         self._validate_snapshot(snapshot)
         existing = self._find(
@@ -73,39 +141,6 @@ class DurableProposalAuthorizationStore:
         self.db.refresh(row)
         return self._decode(row)
 
-    def require(
-        self, *, manifest_digest: str, review_class: str
-    ) -> ProposalAuthorizationRecord:
-        digest = manifest_digest.strip().lower()
-        normalized_class = review_class.strip().lower()
-        if not _is_sha256(digest):
-            raise ValueError("PROPOSAL_AUTH_DURABLE_MANIFEST_DIGEST_INVALID")
-        if normalized_class not in ALLOWED_REVIEW_CLASSES:
-            raise ValueError("PROPOSAL_AUTH_DURABLE_REVIEW_CLASS_INVALID")
-        row = self._find(
-            manifest_digest=digest,
-            review_class=normalized_class,
-        )
-        if row is None:
-            raise LookupError("PROPOSAL_AUTH_DURABLE_RECORD_NOT_FOUND")
-        return self._decode(row)
-
-    def materialize_registry(
-        self, *, manifest_digest: str
-    ) -> ProposalAuthorizationRegistry:
-        digest = manifest_digest.strip().lower()
-        if not _is_sha256(digest):
-            raise ValueError("PROPOSAL_AUTH_DURABLE_MANIFEST_DIGEST_INVALID")
-        rows = self.db.scalars(
-            select(ProposalAuthorizationDecisionRecord)
-            .where(ProposalAuthorizationDecisionRecord.manifest_digest == digest)
-            .order_by(ProposalAuthorizationDecisionRecord.review_class.asc())
-        ).all()
-        registry = ProposalAuthorizationRegistry()
-        for row in rows:
-            registry.record(self._decode(row))
-        return registry
-
     def _find(
         self, *, manifest_digest: str, review_class: str
     ) -> ProposalAuthorizationDecisionRecord | None:
@@ -145,6 +180,8 @@ class DurableProposalAuthorizationStore:
             raise PermissionError("PROPOSAL_AUTH_DURABLE_ROW_IDENTITY_MISMATCH")
         if raw.get("review_class") != row.review_class:
             raise PermissionError("PROPOSAL_AUTH_DURABLE_ROW_IDENTITY_MISMATCH")
+        if row.review_class not in ALLOWED_REVIEW_CLASSES:
+            raise PermissionError("PROPOSAL_AUTH_DURABLE_REVIEW_CLASS_INVALID")
 
         try:
             record = ProposalAuthorizationRecord(
