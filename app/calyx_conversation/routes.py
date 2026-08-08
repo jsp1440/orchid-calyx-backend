@@ -112,32 +112,18 @@ _ALLOWED_CONSTS = {"pi": math.pi, "e": math.e}
 def _eval_math(node: ast.AST) -> float:
     if isinstance(node, ast.Expression):
         return _eval_math(node.body)
-    if (
-        isinstance(node, ast.Constant)
-        and isinstance(node.value, (int, float))
-        and not isinstance(node.value, bool)
-    ):
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
         return float(node.value)
     if isinstance(node, ast.Name) and node.id in _ALLOWED_CONSTS:
         return float(_ALLOWED_CONSTS[node.id])
     if isinstance(node, ast.BinOp) and type(node.op) in _ALLOWED_BINOPS:
-        return float(
-            _ALLOWED_BINOPS[type(node.op)](
-                _eval_math(node.left), _eval_math(node.right)
-            )
-        )
+        return float(_ALLOWED_BINOPS[type(node.op)](_eval_math(node.left), _eval_math(node.right)))
     if isinstance(node, ast.UnaryOp) and type(node.op) in _ALLOWED_UNARY:
         return float(_ALLOWED_UNARY[type(node.op)](_eval_math(node.operand)))
-    if (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id in _ALLOWED_FUNCS
-    ):
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _ALLOWED_FUNCS:
         if node.keywords:
             raise ValueError("keyword arguments are not supported")
-        return float(
-            _ALLOWED_FUNCS[node.func.id](*[_eval_math(arg) for arg in node.args])
-        )
+        return float(_ALLOWED_FUNCS[node.func.id](*[_eval_math(arg) for arg in node.args]))
     raise TypeError("unsupported mathematical expression")
 
 
@@ -146,18 +132,7 @@ def safe_expression(expression: str) -> float:
         raise ValueError("expression too long")
     tree = ast.parse(expression, mode="eval")
     for node in ast.walk(tree):
-        if isinstance(
-            node,
-            (
-                ast.Attribute,
-                ast.Subscript,
-                ast.Lambda,
-                ast.Dict,
-                ast.ListComp,
-                ast.GeneratorExp,
-                ast.SetComp,
-            ),
-        ):
+        if isinstance(node, (ast.Attribute, ast.Subscript, ast.Lambda, ast.Dict, ast.ListComp, ast.GeneratorExp, ast.SetComp)):
             raise TypeError("unsupported mathematical expression")
     result = _eval_math(tree)
     if not math.isfinite(result):
@@ -165,13 +140,9 @@ def safe_expression(expression: str) -> float:
     return result
 
 
-def _paired_stats(
-    x: list[float], y: list[float]
-) -> tuple[float, float, float, float, float]:
+def _paired_stats(x: list[float], y: list[float]) -> tuple[float, float, float, float, float]:
     if len(x) != len(y) or len(x) < 2:
-        raise ValueError(
-            "x and y must have the same length and at least two observations"
-        )
+        raise ValueError("x and y must have the same length and at least two observations")
     mean_x = statistics.fmean(x)
     mean_y = statistics.fmean(y)
     sxx = sum((v - mean_x) ** 2 for v in x)
@@ -191,11 +162,7 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
         values = request.values
         if not values:
             raise ValueError("values are required")
-        quartiles = (
-            statistics.quantiles(values, n=4, method="inclusive")
-            if len(values) > 1
-            else [values[0]] * 3
-        )
+        quartiles = statistics.quantiles(values, n=4, method="inclusive") if len(values) > 1 else [values[0]] * 3
         result: dict[str, Any] = {
             "count": len(values),
             "sum": sum(values),
@@ -215,29 +182,18 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
     if op in {"correlation", "covariance", "linear_regression"}:
         mean_x, mean_y, sxx, syy, sxy = _paired_stats(request.x, request.y)
         if op == "covariance":
-            return {
-                "operation": op,
-                "result": sxy / (len(request.x) - 1),
-                "n": len(request.x),
-            }
+            return {"operation": op, "result": sxy / (len(request.x) - 1), "n": len(request.x)}
         if sxx == 0:
             raise ValueError("x has zero variance")
         if op == "correlation":
             if syy == 0:
                 raise ValueError("y has zero variance")
-            return {
-                "operation": op,
-                "result": sxy / math.sqrt(sxx * syy),
-                "n": len(request.x),
-            }
+            return {"operation": op, "result": sxy / math.sqrt(sxx * syy), "n": len(request.x)}
         slope = sxy / sxx
         intercept = mean_y - slope * mean_x
         r_squared = (sxy * sxy) / (sxx * syy) if syy else 1.0
         predictions = [intercept + slope * value for value in request.x]
-        residual_sum_squares = sum(
-            (observed - predicted) ** 2
-            for observed, predicted in zip(request.y, predictions)
-        )
+        residual_sum_squares = sum((observed - predicted) ** 2 for observed, predicted in zip(request.y, predictions))
         return {
             "operation": op,
             "result": {
@@ -255,12 +211,7 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
         old, new = request.values
         if old == 0:
             raise ValueError("old value cannot be zero")
-        return {
-            "operation": op,
-            "result": ((new - old) / old) * 100.0,
-            "old": old,
-            "new": new,
-        }
+        return {"operation": op, "result": ((new - old) / old) * 100.0, "old": old, "new": new}
 
     if op == "confidence_interval_mean":
         values = request.values
@@ -297,16 +248,8 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
     if op == "moving_average":
         if len(request.values) < request.window:
             raise ValueError("moving_average window cannot exceed number of values")
-        output = [
-            statistics.fmean(request.values[i : i + request.window])
-            for i in range(len(request.values) - request.window + 1)
-        ]
-        return {
-            "operation": op,
-            "result": output,
-            "window": request.window,
-            "n": len(request.values),
-        }
+        output = [statistics.fmean(request.values[i : i + request.window]) for i in range(len(request.values) - request.window + 1)]
+        return {"operation": op, "result": output, "window": request.window, "n": len(request.values)}
 
     raise ValueError("unsupported analysis operation")
 
@@ -343,37 +286,21 @@ def run_dataset_analysis(request: DatasetAnalysisRequest) -> dict[str, Any]:
                 "numeric_count": len(numeric),
             }
             if numeric:
-                summary = run_analysis(
-                    AnalysisRequest(operation="summary", values=numeric)
-                )["result"]
+                summary = run_analysis(AnalysisRequest(operation="summary", values=numeric))["result"]
                 column.update(summary)
             columns[name] = column
-        return {
-            "operation": request.operation,
-            "row_count": row_count,
-            "columns": columns,
-        }
+        return {"operation": request.operation, "row_count": row_count, "columns": columns}
 
-    numeric_columns = {
-        name: _numeric(values) for name, values in request.columns.items()
-    }
+    numeric_columns = {name: _numeric(values) for name, values in request.columns.items()}
     matrix: dict[str, dict[str, float | None]] = {}
     for left, left_values in numeric_columns.items():
         matrix[left] = {}
         for right, right_values in numeric_columns.items():
-            if (
-                len(left_values) != row_count
-                or len(right_values) != row_count
-                or row_count < 2
-            ):
+            if len(left_values) != row_count or len(right_values) != row_count or row_count < 2:
                 matrix[left][right] = None
                 continue
             try:
-                matrix[left][right] = run_analysis(
-                    AnalysisRequest(
-                        operation="correlation", x=left_values, y=right_values
-                    )
-                )["result"]
+                matrix[left][right] = run_analysis(AnalysisRequest(operation="correlation", x=left_values, y=right_values))["result"]
             except ValueError:
                 matrix[left][right] = None
     return {"operation": request.operation, "row_count": row_count, "matrix": matrix}
@@ -395,11 +322,7 @@ def run_graph_context(request: GraphContextRequest) -> dict[str, Any]:
         focal = repo.get_node(request.node_id)
     elif request.taxon_id:
         requested = {"type": "taxon_id", "value": request.taxon_id}
-        key = (
-            request.taxon_id
-            if ":" in request.taxon_id
-            else canonical_key("taxon", request.taxon_id)
-        )
+        key = request.taxon_id if ":" in request.taxon_id else canonical_key("taxon", request.taxon_id)
         focal = repo.get_node_by_key(key)
     elif request.genus:
         requested = {"type": "genus", "value": request.genus}
@@ -424,8 +347,7 @@ def run_brain_query(request: BrainQueryRequest) -> dict[str, Any]:
     if request.text:
         needle = request.text.casefold()
         nodes = [
-            node
-            for node in nodes
+            node for node in nodes
             if needle in node.canonical_key.casefold()
             or needle in str(getattr(node, "label", "")).casefold()
             or needle in str(getattr(node, "properties", {})).casefold()
@@ -435,8 +357,7 @@ def run_brain_query(request: BrainQueryRequest) -> dict[str, Any]:
     edges = []
     if request.edge_type and node_ids:
         edges = [
-            edge
-            for edge in repo.all_edges()
+            edge for edge in repo.all_edges()
             if edge.edge_type == request.edge_type and edge.from_node_id in node_ids
         ][: request.limit]
     return {
@@ -453,20 +374,12 @@ def _result_summary(result: dict[str, Any], index: int) -> str:
     if len(excerpt) > 420:
         excerpt = excerpt[:417].rstrip() + "..."
     citation = result.get("citation") or {}
-    source = (
-        citation.get("document_title")
-        or citation.get("source_type")
-        or "Orchid Continuum evidence"
-    )
+    source = citation.get("document_title") or citation.get("source_type") or "Orchid Continuum evidence"
     verification = result.get("verification_state") or "unknown"
-    return f"{index}. {title} — {source} [{verification}]" + (
-        f"\n   {excerpt}" if excerpt else ""
-    )
+    return f"{index}. {title} — {source} [{verification}]" + (f"\n   {excerpt}" if excerpt else "")
 
 
-def _retrieval(
-    message: str, mode: str, limit: int, internal_access: bool
-) -> dict[str, Any]:
+def _retrieval(message: str, mode: str, limit: int, internal_access: bool) -> dict[str, Any]:
     query = RetrievalQuery(
         text=message[:500],
         mode=mode,
@@ -489,37 +402,23 @@ def _compose_answer(
     results = retrieval.get("results", [])
     lines = ["Calyx searched the Orchid Continuum before answering."]
     if results:
-        lines.append(
-            f"I found {retrieval.get('total_eligible_results', len(results))} eligible indexed evidence objects; showing the top {len(results)}."
-        )
+        lines.append(f"I found {retrieval.get('total_eligible_results', len(results))} eligible indexed evidence objects; showing the top {len(results)}.")
         lines.append("")
-        lines.extend(
-            _result_summary(item, i) for i, item in enumerate(results, start=1)
-        )
+        lines.extend(_result_summary(item, i) for i, item in enumerate(results, start=1))
     else:
-        lines.append(
-            "I did not find an eligible indexed evidence object for this question yet. That is a knowledge-coverage result, not evidence that the answer is absent from the external literature."
-        )
+        lines.append("I did not find an eligible indexed evidence object for this question yet. That is a knowledge-coverage result, not evidence that the answer is absent from the external literature.")
     if graph is not None:
         lines.append("")
-        lines.append(
-            f"Knowledge Graph context: found={graph.get('found', True)}; nodes={len(graph.get('nodes', []))}; edges={len(graph.get('edges', []))}."
-        )
+        lines.append(f"Knowledge Graph context: found={graph.get('found', True)}; nodes={len(graph.get('nodes', []))}; edges={len(graph.get('edges', []))}.")
     if brain is not None:
         lines.append("")
-        lines.append(
-            f"Brain graph query: nodes={len(brain.get('nodes', []))}; edges={len(brain.get('edges', []))}."
-        )
+        lines.append(f"Brain graph query: nodes={len(brain.get('nodes', []))}; edges={len(brain.get('edges', []))}.")
     if analysis is not None:
         lines.append("")
-        lines.append(
-            f"Mathematical analysis: {analysis['operation']} = {analysis['result']}"
-        )
+        lines.append(f"Mathematical analysis: {analysis['operation']} = {analysis['result']}")
     if dataset is not None:
         lines.append("")
-        lines.append(
-            f"Dataset analysis: {dataset['operation']} over {dataset.get('row_count', 0)} rows."
-        )
+        lines.append(f"Dataset analysis: {dataset['operation']} over {dataset.get('row_count', 0)} rows.")
     lines.append("")
     lines.append("Question: " + message)
     return "\n".join(lines)
@@ -550,16 +449,12 @@ def _build_report(payload: ConversationRequest, answer: dict[str, Any]) -> str:
     out.write("## Evidence ledger\n\n")
     for i, result in enumerate(retrieval.get("results", []), start=1):
         citation = result.get("citation") or {}
-        out.write(
-            f"### {i}. {result.get('title') or result.get('object_type') or 'Evidence'}\n\n"
-        )
+        out.write(f"### {i}. {result.get('title') or result.get('object_type') or 'Evidence'}\n\n")
         out.write(f"- Object type: {result.get('object_type')}\n")
         out.write(f"- Verification: {result.get('verification_state')}\n")
         out.write(f"- Review state: {result.get('review_state')}\n")
         out.write(f"- Ranking score: {result.get('fused_score')}\n")
-        out.write(
-            f"- Source: {citation.get('document_title') or citation.get('source_type')}\n"
-        )
+        out.write(f"- Source: {citation.get('document_title') or citation.get('source_type')}\n")
         out.write(f"- Locator: {citation.get('locator')}\n")
         out.write(f"- Revision: {citation.get('revision_id')}\n\n")
     out.write("## Retrieval diagnostics\n\n")
@@ -569,49 +464,24 @@ def _build_report(payload: ConversationRequest, answer: dict[str, Any]) -> str:
     out.write(f"- Ranking version: {retrieval.get('ranking_configuration_version')}\n")
     out.write(f"- Elapsed ms: {retrieval.get('elapsed_ms')}\n")
     out.write("\n## Governance\n\n")
-    out.write(
-        "This report is an analytical artifact. Conversation and analysis do not automatically publish scientific claims or mutate canonical Knowledge Graph state.\n"
-    )
+    out.write("This report is an analytical artifact. Conversation and analysis do not automatically publish scientific claims or mutate canonical Knowledge Graph state.\n")
     return out.getvalue()
 
 
 def _execute(payload: ConversationRequest) -> dict[str, Any]:
     title = " ".join(payload.message.split())[:120]
-    conversation_id = STORE.create_or_touch(
-        payload.conversation_id, title=title, context=payload.context
-    )
+    conversation_id = STORE.create_or_touch(payload.conversation_id, title=title, context=payload.context)
     history = STORE.history_text(conversation_id) if payload.include_history else ""
-    operator_message = STORE.append(
-        conversation_id, "operator", payload.message, {"context": payload.context}
-    )
+    operator_message = STORE.append(conversation_id, "operator", payload.message, {"context": payload.context})
     try:
-        retrieval = _retrieval(
-            payload.message,
-            payload.retrieval_mode,
-            payload.limit,
-            payload.internal_access,
-        )
+        retrieval = _retrieval(payload.message, payload.retrieval_mode, payload.limit, payload.internal_access)
         analysis = run_analysis(payload.analysis) if payload.analysis else None
-        dataset = (
-            run_dataset_analysis(payload.dataset_analysis)
-            if payload.dataset_analysis
-            else None
-        )
-        graph = (
-            run_graph_context(payload.graph_context) if payload.graph_context else None
-        )
+        dataset = run_dataset_analysis(payload.dataset_analysis) if payload.dataset_analysis else None
+        graph = run_graph_context(payload.graph_context) if payload.graph_context else None
         brain = run_brain_query(payload.brain_query) if payload.brain_query else None
-    except (
-        ValueError,
-        TypeError,
-        SyntaxError,
-        ZeroDivisionError,
-        OverflowError,
-    ) as exc:
+    except (ValueError, TypeError, SyntaxError, ZeroDivisionError, OverflowError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    answer_text = _compose_answer(
-        payload.message, retrieval, analysis, dataset, graph, brain
-    )
+    answer_text = _compose_answer(payload.message, retrieval, analysis, dataset, graph, brain)
     evidence_summary = {
         "eligible_results": retrieval.get("total_eligible_results"),
         "shown_results": len(retrieval.get("results", [])),
@@ -624,11 +494,7 @@ def _execute(payload: ConversationRequest) -> dict[str, Any]:
         conversation_id,
         "calyx",
         answer_text,
-        {
-            "evidence": evidence_summary,
-            "analysis": analysis,
-            "dataset_operation": (dataset or {}).get("operation"),
-        },
+        {"evidence": evidence_summary, "analysis": analysis, "dataset_operation": (dataset or {}).get("operation")},
     )
     return {
         "conversation_id": conversation_id,
@@ -663,13 +529,7 @@ def analyze(payload: AnalysisRequest) -> dict[str, Any]:
     """Run deterministic mathematical/statistical analysis without arbitrary code execution."""
     try:
         return run_analysis(payload)
-    except (
-        ValueError,
-        TypeError,
-        SyntaxError,
-        ZeroDivisionError,
-        OverflowError,
-    ) as exc:
+    except (ValueError, TypeError, SyntaxError, ZeroDivisionError, OverflowError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
@@ -702,22 +562,15 @@ def brain_query(payload: BrainQueryRequest) -> dict[str, Any]:
 
 @router.get("/conversations")
 def recent_conversations(limit: int = Query(20, ge=1, le=100)) -> dict[str, Any]:
-    return {
-        "conversations": STORE.recent(limit=limit),
-        "persistence_mode": STORE.persistence_mode,
-    }
+    return {"conversations": STORE.recent(limit=limit), "persistence_mode": STORE.persistence_mode}
 
 
 @router.get("/conversations/{conversation_id}")
-def get_conversation(
-    conversation_id: str, message_limit: int = Query(100, ge=1, le=500)
-) -> dict[str, Any]:
+def get_conversation(conversation_id: str, message_limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
     try:
         conversation = STORE.get(conversation_id, message_limit=message_limit)
     except Exception as exc:
-        raise HTTPException(
-            status_code=422, detail="invalid conversation identifier"
-        ) from exc
+        raise HTTPException(status_code=422, detail="invalid conversation identifier") from exc
     if conversation is None:
         raise HTTPException(status_code=404, detail="conversation not found")
     conversation["persistence_mode"] = STORE.persistence_mode
