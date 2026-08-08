@@ -1,11 +1,11 @@
-# CALYX-639D — Exact-Head Validation
+# CALYX-639D — Focused Implementation Validation
 
-**Branch head validated:** `2931eb8deb085383a2d01d4adc73af14b1f08e86`  
+**Validated executable head:** `2931eb8deb085383a2d01d4adc73af14b1f08e86`  
 **Draft PR:** #640  
 **GitHub Actions run:** 31270468655  
 **Result:** PASS
 
-The dedicated `CALYX-639 Propagation Intelligence` workflow executed against the exact branch head and completed successfully.
+The dedicated `CALYX-639 Propagation Intelligence` workflow executed against implementation commit `2931eb8deb085383a2d01d4adc73af14b1f08e86` and completed successfully.
 
 Successful job: `propagation-contract`.
 
@@ -27,9 +27,11 @@ Successful validation steps:
    - `tests/test_terrestrial_orchid_propagation_comparators.py`
    - `tests/test_propagation_comparator_dataset.py`.
 
-The repository `CALYX Workflow Governance Audit` also completed successfully for the same head context.
+The repository `CALYX Workflow Governance Audit` also completed successfully in the same implementation-head context.
 
-This validation removes the prior exact-head CI infrastructure blocker. It does **not** authorize merge, deployment, scientific publication, destructive experimentation, or canonical Knowledge Graph mutation.
+After that successful run, this Brain validation record was added as a documentation-only commit. Therefore the current branch tip is newer than the validated executable commit, but no executable/test/workflow file changed after the successful run. The correct claim is **focused implementation validation passed**, not that a later documentation-only tip received a separate code run.
+
+This removes the prior focused implementation CI blocker. It does **not** authorize merge, deployment, scientific publication, destructive experimentation, or canonical Knowledge Graph mutation.
 
 Remaining blockers are scientific/dependency blockers rather than focused implementation-test failures:
 
