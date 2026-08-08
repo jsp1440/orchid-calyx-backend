@@ -26,8 +26,20 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
+def _collect_paths(router, outer_prefix: str = "") -> set:
+    """Recursively collect fully-qualified route paths, handling _IncludedRouter objects."""
+    paths: set = set()
+    for route in router.routes:
+        if hasattr(route, "path"):
+            paths.add(route.path)
+        elif hasattr(route, "original_router"):
+            for nested_path in _collect_paths(route.original_router):
+                paths.add(outer_prefix + nested_path)
+    return paths
+
+
 def test_operator_routes_are_mounted_through_current_calyx_core_router():
-    paths = {route.path for route in calyx_core_router.routes}
+    paths = _collect_paths(calyx_core_router, outer_prefix=getattr(calyx_core_router, "prefix", ""))
     assert "/api/mission-control/calyx-operator/missions" in paths
     assert "/api/mission-control/calyx-operator/ledgers/eligible" in paths
     assert "/api/mission-control/calyx-operator/publications" in paths

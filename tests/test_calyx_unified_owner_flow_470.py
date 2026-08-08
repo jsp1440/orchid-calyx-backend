@@ -71,8 +71,20 @@ def eligible():
     }
 
 
+def _collect_paths(router, outer_prefix: str = "") -> set:
+    """Recursively collect fully-qualified route paths from a router and its included sub-routers."""
+    paths: set = set()
+    for route in router.routes:
+        if hasattr(route, "path"):
+            paths.add(route.path)
+        elif hasattr(route, "original_router"):
+            for nested_path in _collect_paths(route.original_router):
+                paths.add(outer_prefix + nested_path)
+    return paths
+
+
 def test_routes_are_mounted_through_calyx_core():
-    paths = {route.path for route in calyx_core_router.routes}
+    paths = _collect_paths(calyx_core_router, outer_prefix=getattr(calyx_core_router, "prefix", ""))
     assert "/api/mission-control/calyx-owner-flow/start" in paths
     assert "/api/mission-control/calyx-owner-flow/{mission_id}" in paths
     assert "/api/mission-control/calyx-owner-flow/{mission_id}/review" in paths
