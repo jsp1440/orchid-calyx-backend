@@ -1,0 +1,78 @@
+name: CALYX World Plants Durable Staging Validation
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/world_plants_ingest.py'
+      - 'runtime/world_plants_release_store.py'
+      - 'runtime/world_plants_staging.py'
+      - 'runtime/world_plants_migration_preflight.py'
+      - 'app/routers/taxonomy_releases.py'
+      - 'migrations/107_world_plants_release_staging.sql'
+      - 'scripts/activate_world_plants_staging_schema.py'
+      - 'tests/test_world_plants_durable_staging.py'
+      - 'tests/test_world_plants_migration_preflight.py'
+      - 'tests/test_world_plants_upload_001.py'
+      - '.github/workflows/calyx-world-plants-durable-staging-validation.yml'
+      - '.github/workflows/calyx-taxonomy-107-production-activation.yml'
+      - '.github/activation/taxonomy-107-approved.txt'
+      - 'docs/brain/CALYX-CORE-HASSLER-RELEASE-STAGING.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: taxonomy_test
+          POSTGRES_PASSWORD: taxonomy_test
+          POSTGRES_DB: taxonomy_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taxonomy_test -d taxonomy_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PYTHONPATH: .
+      WORLD_PLANTS_STAGING_TEST_DATABASE_URL: postgresql+psycopg://taxonomy_test:taxonomy_test@localhost:5432/taxonomy_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install validation dependencies
+        run: python -m pip install -r requirements.txt pytest ruff httpx
+      - name: Compile and lint
+        run: |
+          python -m py_compile runtime/world_plants_ingest.py runtime/world_plants_release_store.py runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py scripts/activate_world_plants_staging_schema.py app/routers/taxonomy_releases.py tests/test_world_plants_durable_staging.py tests/test_world_plants_migration_preflight.py tests/test_world_plants_upload_001.py
+          python -m ruff check runtime/world_plants_ingest.py runtime/world_plants_release_store.py runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py scripts/activate_world_plants_staging_schema.py app/routers/taxonomy_releases.py tests/test_world_plants_durable_staging.py tests/test_world_plants_migration_preflight.py tests/test_world_plants_upload_001.py
+          python -m ruff format --check runtime/world_plants_migration_preflight.py scripts/activate_world_plants_staging_schema.py app/routers/taxonomy_releases.py tests/test_world_plants_migration_preflight.py
+      - name: Durable taxonomy staging and migration-preflight tests
+        run: python -m pytest -q tests/test_world_plants_durable_staging.py tests/test_world_plants_migration_preflight.py tests/test_world_plants_upload_001.py
+      - name: Guarded activation rehearsal on disposable PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import psycopg
+          with psycopg.connect(os.environ['WORLD_PLANTS_STAGING_TEST_DATABASE_URL'].replace('postgresql+psycopg://', 'postgresql://'), autocommit=True) as connection:
+              connection.execute('DROP SCHEMA IF EXISTS taxonomy_pipeline CASCADE')
+          PY
+          export DATABASE_URL="${WORLD_PLANTS_STAGING_TEST_DATABASE_URL/postgresql+psycopg:/postgresql:}"
+          python scripts/activate_world_plants_staging_schema.py
+          export CALYX_TAXONOMY_MIGRATION_CONFIRM=APPLY_107
+          python scripts/activate_world_plants_staging_schema.py --apply
+          python scripts/activate_world_plants_staging_schema.py --apply
+      - name: Migration and governance smoke
+        run: |
+          grep -q 'CREATE SCHEMA IF NOT EXISTS taxonomy_pipeline' migrations/107_world_plants_release_staging.sql
+          ! grep -Eq 'INSERT INTO[[:space:]]+oc_graph|UPDATE[[:space:]]+oc_graph|DELETE FROM[[:space:]]+oc_graph' migrations/107_world_plants_release_staging.sql runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py scripts/activate_world_plants_staging_schema.py
+          ! grep -Eq 'automatic_promotion[[:space:]]*=[[:space:]]*True|automatic_promotion": true' runtime/world_plants_staging.py runtime/world_plants_migration_preflight.py app/routers/taxonomy_releases.py

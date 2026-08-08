@@ -73,6 +73,13 @@ class WorldPlantsReleaseStore:
             return None
         return payload if isinstance(payload, dict) else None
 
+    def source_bytes(self, release_id: str) -> bytes:
+        """Return the exact inspected source bytes or raise for an unknown release."""
+        source_path = self.root / release_id / "source.bin"
+        if not source_path.is_file():
+            raise KeyError(f"taxonomy release source not found: {release_id}")
+        return source_path.read_bytes()
+
     def list_reports(self) -> list[dict[str, Any]]:
         if not self.root.exists():
             return []

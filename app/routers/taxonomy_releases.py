@@ -13,6 +13,8 @@ from app.security import verify_owner_or_api_key
 from runtime.world_plants_readiness_api import build_taxonomy_readiness_report
 from runtime.world_plants_release_store import WorldPlantsReleaseStore
 
+STAGING_MAX_BATCH_SIZE = 2_000
+
 
 def _intake_root() -> Path:
     return Path(os.getenv("CALYX_TAXONOMY_INTAKE_DIR", "/tmp/calyx/taxonomy-releases"))
@@ -23,9 +25,32 @@ def _default_store() -> WorldPlantsReleaseStore:
     return WorldPlantsReleaseStore(_intake_root(), max_upload_bytes=limit)
 
 
+def _default_staging_store() -> Any:
+    from runtime.world_plants_staging import PostgresWorldPlantsStagingStore
+
+    return PostgresWorldPlantsStagingStore()
+
+
+def _default_migration_preflight() -> dict[str, Any]:
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from runtime.world_plants_migration_preflight import inspect_world_plants_migration
+
+    try:
+        return inspect_world_plants_migration()
+    except SQLAlchemyError as exc:
+        raise RuntimeError(
+            "taxonomy migration preflight database check failed"
+        ) from exc
+
+
 def create_taxonomy_release_router(
     get_store: Callable[[], WorldPlantsReleaseStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
+    get_staging_store: Callable[[], Any] = _default_staging_store,
+    get_migration_preflight: Callable[
+        [], dict[str, Any]
+    ] = _default_migration_preflight,
 ) -> APIRouter:
     router = APIRouter(tags=["taxonomy-releases"])
     releases = APIRouter(prefix="/api/mission-control/taxonomy/releases")
@@ -35,6 +60,21 @@ def create_taxonomy_release_router(
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
         return build_taxonomy_readiness_report(intake_root=_intake_root())
+
+    @router.get("/api/mission-control/taxonomy/migration-preflight")
+    def taxonomy_migration_preflight(
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        try:
+            return get_migration_preflight()
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "taxonomy migration preflight is unavailable; verify the PostgreSQL "
+                    "connection before any production migration decision"
+                ),
+            ) from exc
 
     @releases.get("")
     def list_releases(
@@ -74,6 +114,77 @@ def create_taxonomy_release_router(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @releases.post("/{release_id}/stage")
+    def stage_release(
+        release_id: str,
+        batch_size: int = Form(default=1000),
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        if not 1 <= batch_size <= STAGING_MAX_BATCH_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"batch_size must be between 1 and {STAGING_MAX_BATCH_SIZE}",
+            )
+        local_report = get_store().get(release_id)
+        if local_report is None:
+            raise HTTPException(status_code=404, detail="taxonomy release not found")
+        try:
+            from sqlalchemy.exc import SQLAlchemyError
+
+            payload = get_store().source_bytes(release_id)
+            snapshot = local_report.get("snapshot", {})
+            staging = get_staging_store()
+            durable_release_id, parsed = staging.register_release(
+                payload,
+                version_label=str(snapshot.get("version_label", "unknown")),
+                filename=str(snapshot.get("filename", "world-orchids-release")),
+                acquired_at=str(snapshot.get("acquired_at", "unknown")),
+            )
+            if durable_release_id != release_id:
+                raise RuntimeError(
+                    "durable release checksum does not match inspected release"
+                )
+            receipt = staging.stage_next_batch(release_id, batch_size=batch_size)
+            return {
+                "receipt": receipt.as_dict(),
+                "inspection": parsed.summary(),
+                "checkpoint": staging.checkpoint(release_id),
+                "change_report": staging.change_report(release_id),
+                "activation": "blocked_pending_owner_approval",
+                "automatic_promotion": False,
+            }
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except SQLAlchemyError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="durable taxonomy staging is unavailable until migration 107 is activated",
+            ) from exc
+
+    @releases.get("/{release_id}/staging")
+    def staging_status(
+        release_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        try:
+            from sqlalchemy.exc import SQLAlchemyError
+
+            staging = get_staging_store()
+            return {
+                "release_id": release_id,
+                "checkpoint": staging.checkpoint(release_id),
+                "counts": staging.counts(release_id),
+                "change_report": staging.change_report(release_id),
+                "activation": "blocked_pending_owner_approval",
+                "automatic_promotion": False,
+            }
+        except (KeyError, SQLAlchemyError) as exc:
+            raise HTTPException(
+                status_code=404, detail="durable taxonomy staging state not found"
+            ) from exc
 
     router.include_router(releases)
     return router

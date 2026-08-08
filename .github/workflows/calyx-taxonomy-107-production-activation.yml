@@ -1,0 +1,83 @@
+name: CALYX Taxonomy 107 Production Activation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/activation/taxonomy-107-approved.txt'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Verify exact current main checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+
+      - name: Install activation dependency
+        run: python -m pip install 'psycopg[binary]'
+
+      - name: Apply migration 107 with explicit authorization
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CALYX_TAXONOMY_MIGRATION_CONFIRM: APPLY_107
+        run: python scripts/activate_world_plants_staging_schema.py --apply
+
+      - name: Upload activation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-taxonomy-migration-107-${{ github.sha }}
+          path: calyx-taxonomy-migration-107-activation.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Report activation receipt to issue 386
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/taxonomy-107-comment.md
+          import json
+          from pathlib import Path
+          p = Path('calyx-taxonomy-migration-107-activation.json')
+          if not p.exists():
+              print('CALYX taxonomy migration 107 production activation produced no receipt artifact.')
+          else:
+              r = json.loads(p.read_text())
+              print('CALYX taxonomy migration 107 production activation receipt')
+              print()
+              print(f"- main SHA: `${{ github.sha }}`")
+              print(f"- status: `{r.get('status')}`")
+              print(f"- migration SHA-256: `{r.get('migration_sha256')}`")
+              print(f"- activation complete: `{r.get('activation_complete')}`")
+              print(f"- production mutation attempted: `{r.get('production_database_mutation_attempted')}`")
+              print(f"- production mutation observed: `{r.get('production_database_mutation_observed')}`")
+              print(f"- taxonomy activation authorized: `{r.get('taxonomy_activation_authorized')}`")
+              print(f"- Knowledge Graph mutation authorized: `{r.get('knowledge_graph_mutation_authorized')}`")
+              print(f"- blockers: `{r.get('blockers')}`")
+              print(f"- artifact hash: `{r.get('artifact_hash')}`")
+          PY
+          gh issue comment 386 --repo '${{ github.repository }}' --body-file /tmp/taxonomy-107-comment.md
