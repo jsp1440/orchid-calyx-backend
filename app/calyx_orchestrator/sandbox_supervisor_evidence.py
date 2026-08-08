@@ -4,9 +4,10 @@ import hashlib
 import hmac
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from typing import Any
 
 SUPERVISOR_TOKEN_SHA256_ENV = "CALYX_SANDBOX_SUPERVISOR_TOKEN_SHA256"
 ALLOWED_PRESETS = frozenset({"pytest", "ruff"})
@@ -31,17 +32,14 @@ def canonical_sha256(payload: Mapping[str, Any]) -> str:
 
 @dataclass(frozen=True, slots=True)
 class SupervisorCredentialVerifier:
-    """Verify a supervisor bearer token without storing the bearer token itself.
-
-    The application receives only a SHA-256 verifier. The external supervisor owns
-    the high-entropy bearer token and can therefore authenticate submissions while
-    the application cannot recover the credential from configuration.
-    """
+    """Verify a supervisor bearer token without storing the bearer token itself."""
 
     expected_sha256: str
 
     @classmethod
-    def from_environ(cls, environ: Mapping[str, str] | None = None) -> "SupervisorCredentialVerifier":
+    def from_environ(
+        cls, environ: Mapping[str, str] | None = None
+    ) -> SupervisorCredentialVerifier:
         source = os.environ if environ is None else environ
         digest = str(source.get(SUPERVISOR_TOKEN_SHA256_ENV, "")).strip().lower()
         if not _is_sha256(digest):
@@ -63,7 +61,7 @@ class ValidationTarget:
     sha256: str
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "ValidationTarget":
+    def from_mapping(cls, value: Mapping[str, Any]) -> ValidationTarget:
         path = str(value.get("path") or "").strip()
         digest = str(value.get("sha256") or "").strip().lower()
         if not path or path.startswith("/") or ".." in path.split("/"):
@@ -97,7 +95,7 @@ class ValidationRequestEnvelope:
         preset: str,
         targets: list[Mapping[str, Any]],
         timeout_seconds: int,
-    ) -> "ValidationRequestEnvelope":
+    ) -> ValidationRequestEnvelope:
         normalized_repository = repository.strip()
         normalized_branch = branch.strip()
         normalized_commit = checkout_commit_sha.strip().lower()
@@ -106,7 +104,9 @@ class ValidationRequestEnvelope:
             raise ValueError("SANDBOX_VALIDATION_REPOSITORY_INVALID")
         if not normalized_branch.startswith("autonomy/"):
             raise PermissionError("SANDBOX_VALIDATION_AUTONOMY_BRANCH_REQUIRED")
-        if len(normalized_commit) != 40 or any(c not in "0123456789abcdef" for c in normalized_commit):
+        if len(normalized_commit) != 40 or any(
+            c not in "0123456789abcdef" for c in normalized_commit
+        ):
             raise ValueError("SANDBOX_VALIDATION_COMMIT_INVALID")
         if normalized_preset not in ALLOWED_PRESETS:
             raise ValueError("SANDBOX_VALIDATION_PRESET_NOT_ALLOWED")
@@ -115,7 +115,9 @@ class ValidationRequestEnvelope:
         parsed = tuple(ValidationTarget.from_mapping(item) for item in targets)
         if len({item.path for item in parsed}) != len(parsed):
             raise ValueError("SANDBOX_VALIDATION_DUPLICATE_TARGET")
-        if normalized_preset == "pytest" and any(not item.path.startswith("tests/") for item in parsed):
+        if normalized_preset == "pytest" and any(
+            not item.path.startswith("tests/") for item in parsed
+        ):
             raise PermissionError("SANDBOX_VALIDATION_PYTEST_TARGET_NOT_TEST")
         if not 1 <= timeout_seconds <= MAX_TIMEOUT_SECONDS:
             raise ValueError("SANDBOX_VALIDATION_TIMEOUT_INVALID")
@@ -157,12 +159,15 @@ class SupervisorValidationReceipt:
     issued_at: datetime
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "SupervisorValidationReceipt":
+    def from_mapping(cls, value: Mapping[str, Any]) -> SupervisorValidationReceipt:
         request_digest = str(value.get("request_digest") or "").strip().lower()
         policy_digest = str(value.get("policy_digest") or "").strip().lower()
         stdout_digest = str(value.get("stdout_sha256") or "").strip().lower()
         stderr_digest = str(value.get("stderr_sha256") or "").strip().lower()
-        if not all(_is_sha256(item) for item in (request_digest, policy_digest, stdout_digest, stderr_digest)):
+        if not all(
+            _is_sha256(item)
+            for item in (request_digest, policy_digest, stdout_digest, stderr_digest)
+        ):
             raise ValueError("SANDBOX_SUPERVISOR_RECEIPT_DIGEST_INVALID")
         authorization_id = str(value.get("authorization_id") or "").strip()
         evidence_uri = str(value.get("evidence_uri") or "").strip()
