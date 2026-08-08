@@ -59,6 +59,8 @@ Migration `107_world_plants_release_staging.sql` creates the isolated `taxonomy_
 
 Rows lacking a stable source number are never heuristically paired as renames. They remain explicit additions/removals for review. This preserves evidence/inference separation.
 
+Row checksums are indexed but deliberately **not unique**. The real Hassler source contains a duplicate taxon identity, and source-row evidence must be preserved rather than silently deduplicated. Replay idempotency is enforced by `(release_id, source_row_number)` while duplicate identities remain visible to the review queue.
+
 ## Mission Control contract
 
 The existing owner-authenticated upload remains:
@@ -77,6 +79,16 @@ The stage endpoint takes an already inspected release, verifies its checksum ide
 
 If migration 107 is not active, staging fails closed with an actionable 503 rather than falling back to ephemeral or production taxonomy mutation.
 
+The existing owner-authenticated readiness endpoint now returns concrete workflow state and the next executable job without requiring the owner to know hashes, workflow names, or server paths. States include:
+
+- `deployment_gates_blocking_intake` → `resolve_taxonomy_intake_gates`;
+- `ready_for_release_upload` → `upload_world_orchids_release`;
+- `release_inspected_staging_schema_blocked` → `verify_taxonomy_staging_schema` and explicit `production_database_migration` governance boundary;
+- `release_inspected_staging_smoke_required` → `verify_taxonomy_staging_smoke`;
+- `release_inspected_ready_for_bounded_staging` → `stage_next_taxonomy_batch` with maximum batch size 2,000.
+
+The readiness module remains dependency-light and read-only. PostgreSQL dependencies are lazy-loaded only when durable staging endpoints are invoked, preserving existing lightweight readiness/upload validation environments.
+
 ## Governance
 
 This build deliberately does **not** implement an activation endpoint.
@@ -92,7 +104,7 @@ It does not:
 - run an unbounded staging operation;
 - apply migration 107 to production.
 
-Every response keeps `automatic_promotion=false`. Taxonomy activation remains an explicit owner governance boundary after review.
+Every response keeps `automatic_promotion=false`. Taxonomy activation remains an explicit owner governance boundary after review. Applying migration 107 to the production database is also recorded by Mission Control as a governance boundary rather than being performed implicitly.
 
 ## Validation design
 
@@ -103,7 +115,7 @@ The dedicated `CALYX World Plants Durable Staging Validation` workflow uses disp
 - bounded staging and checkpoint resume;
 - process/store restart recovery;
 - replay produces zero new rows after completion;
-- duplicate identities enter the review queue;
+- duplicate source rows remain preserved while duplicate identities enter the review queue;
 - accepted-name candidates require review;
 - comparison categories remain evidence-backed;
 - legacy Mission Control upload tests continue to pass;
@@ -111,4 +123,32 @@ The dedicated `CALYX World Plants Durable Staging Validation` workflow uses disp
 - migration and runtime contain no `oc_graph` mutation;
 - no automatic-promotion path exists.
 
-Issue #386 requires an implementation PR and stop-before-merge. This build therefore remains unmerged even after exact-head validation succeeds.
+## Validation history and corrective work
+
+Validation was treated as a hard gate before expansion.
+
+1. Legacy taxonomy workflows first exposed formatter-only differences in the router; formatting was corrected without changing behavior.
+2. The readiness workflow then exposed a dependency regression because SQLAlchemy was imported eagerly by a previously dependency-light router. Durable staging dependencies were moved behind lazy imports, restoring the established upload/readiness contract.
+3. The dedicated staging workflow exposed an import-layout Ruff violation; it was corrected.
+4. Static review against the real release exposed an invalid unique row-checksum assumption. Because the real source contains duplicate taxon evidence, the checksum became a non-unique index while source-row identity remains the idempotency key.
+5. The dedicated validation harness then exposed its own missing `httpx` test dependency; the harness was corrected rather than altering application code.
+6. PostgreSQL staging tests subsequently passed, including duplicate-row preservation, restart/resume and replay behavior.
+7. Mission Control readiness was extended with deterministic pipeline state and next-job reporting, then its formatting/test regressions were corrected before proceeding.
+
+Exact implementation head validated before this Brain receipt: `3cb24c1e8d366142276f7caa7072985649bfb221`.
+
+Successful exact-head runs:
+
+- `CALYX World Plants Durable Staging Validation` run **#9** — success;
+- `CALYX-TAXONOMY-READINESS-API-001` run **#14** — success;
+- `WORLD-PLANTS-UPLOAD-001` run **#71** — success;
+- `CALYX Workflow Governance Audit` run **#225** — success;
+- `BUILD-088E Validation` run **#1126** — success.
+
+This Brain update changes documentation only. The resulting documentation-bearing head must also pass the same applicable gates before the PR is considered review-ready.
+
+## Current boundary
+
+Issue #386 requires an implementation PR and stop-before-merge. PR #619 therefore remains open, draft, and unmerged even after exact-head validation succeeds.
+
+The next production step would be application and verification of migration 107 so the real inspected release can enter durable bounded staging. That is a production database mutation and remains outside this autonomous implementation turn absent explicit owner approval. Taxonomy activation remains separately blocked until the completed change report and review queue have been reviewed and owner approval is explicitly recorded.
