@@ -1,6 +1,6 @@
 # CALYX-456 — Grant and funding opportunity intelligence workspace
 
-Status: IMPLEMENTED / GOVERNED REVIEW-ONLY
+Status: IMPLEMENTED / EXACT-HEAD VALIDATED / GOVERNED REVIEW-ONLY
 
 ## Delivered
 
@@ -10,8 +10,9 @@ Status: IMPLEMENTED / GOVERNED REVIEW-ONLY
 - Explicit explanations for every score component plus missing-information flags.
 - Eligibility is never inferred when the source record is incomplete; missing eligibility is recorded as `unknown` and blocks review readiness.
 - Review-only narrative and budget-outline drafts registered as immutable artifacts linked to the official opportunity source.
+- Repeated draft generation is content-stable and safe against immutable-registry conflicts.
 - Protected Mission Control APIs for profiles, opportunities, assessment, drafts, and readiness.
-- Dedicated fixture tests and CI covering provenance preservation, deterministic scoring, missing eligibility, sensitive-data rejection, review-only drafts, governance boundaries, and protected API round trips.
+- Dedicated fixture tests and CI covering provenance preservation, deterministic scoring, missing eligibility, sensitive-data rejection, review-only drafts, immutable artifact stability, governance boundaries, and protected API round trips.
 
 ## Governance boundaries
 
@@ -23,4 +24,13 @@ This slice does not submit grants, make binding commitments, contact funders, fa
 
 ## Validation
 
-Dedicated CI compiles the funding runtime/router/Mission Control surface, runs deterministic tests, asserts permanent no-submission/no-outreach/no-secret/no-deployment boundaries, runs Ruff, and checks diff hygiene. The branch remains review-only until exact-head validation completes.
+Exact-head validation completed on commit `d44193f40ae155d335bcc92905e735c4a95476bc`.
+
+- CALYX Grant Funding 456: success; compile, 8 deterministic tests, permanent governance assertions, Ruff, and diff hygiene all passed.
+- CALYX Workflow Governance Audit: success.
+- CALYX-AUTONOMY-DEPLOYMENT-001: success.
+- CALYX-SUPERVISED-PILOT-001: success.
+- CALYX Literature Acquisition 448 dependency regression: success.
+- CALYX Research Station 453 dependency regression: success.
+
+PR #613 remains draft/unmerged and targets `feature/calyx-research-station-453` because the funding workspace depends on Research Station and its artifact/review foundations.
