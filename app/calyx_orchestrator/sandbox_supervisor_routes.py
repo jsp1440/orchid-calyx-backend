@@ -38,6 +38,7 @@ class CreateValidationRequest(BaseModel):
 class SupervisorClaimRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     worker_id: str = Field(min_length=1, max_length=240)
+    lease_seconds: int = Field(default=300, ge=60, le=600)
 
 
 class SupervisorCompleteRequest(BaseModel):
@@ -81,6 +82,8 @@ def create_validation_request(
             timeout_seconds=payload.timeout_seconds,
         )
         return SandboxSupervisorService.public_snapshot(record)
+    except LookupError as exc:
+        raise HTTPException(404, detail={"code": str(exc)}) from exc
     except (PermissionError, TypeError, ValueError) as exc:
         raise HTTPException(422, detail={"code": str(exc)}) from exc
 
@@ -101,7 +104,10 @@ def claim_validation_request(
     x_calyx_sandbox_supervisor_token: Annotated[str | None, Header()] = None,
 ) -> dict:
     _require_supervisor(x_calyx_sandbox_supervisor_token)
-    record = SandboxSupervisorService(db).claim_next(worker_id=payload.worker_id)
+    record = SandboxSupervisorService(db).claim_next(
+        worker_id=payload.worker_id,
+        lease_seconds=payload.lease_seconds,
+    )
     if record is None:
         return {"claimed": False, "request": None}
     return {"claimed": True, "request": SandboxSupervisorService.supervisor_claim_snapshot(record)}
