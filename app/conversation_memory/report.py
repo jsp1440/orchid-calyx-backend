@@ -113,6 +113,7 @@ def build_conversation_markdown(conversation: dict[str, Any]) -> str:
                     "",
                     f"- Result ID: `{_text(source.get('result_id'))}`",
                     f"- Object type: `{_text(source.get('object_type'))}`",
+                    f"- Document ID: `{_text(citation.get('document_id'))}`",
                     f"- Document: {_text(citation.get('document_title'))}",
                     f"- Revision: `{_text(citation.get('revision_id'))}`",
                     f"- Identifier: `{_text(citation.get('identifier'))}`",
