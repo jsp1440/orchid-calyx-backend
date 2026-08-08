@@ -5,10 +5,12 @@ on:
     paths:
       - "runtime/recalcitrant_orchid_propagation.py"
       - "runtime/propagation_research_dataset.py"
+      - "runtime/terrestrial_orchid_propagation_comparators.py"
       - "runtime/router_fastapi.py"
       - "tests/test_recalcitrant_orchid_propagation.py"
       - "tests/test_recalcitrant_orchid_propagation_api.py"
       - "tests/test_propagation_research_dataset.py"
+      - "tests/test_terrestrial_orchid_propagation_comparators.py"
       - "docs/brain/CALYX-639-recalcitrant-orchid-propagation.md"
       - ".github/workflows/calyx-639-propagation.yml"
   workflow_dispatch:
@@ -32,6 +34,7 @@ jobs:
           python -m py_compile
           runtime/recalcitrant_orchid_propagation.py
           runtime/propagation_research_dataset.py
+          runtime/terrestrial_orchid_propagation_comparators.py
           runtime/router_fastapi.py
       - name: Run CALYX-639 tests
         env:
@@ -41,3 +44,4 @@ jobs:
           tests/test_recalcitrant_orchid_propagation.py
           tests/test_recalcitrant_orchid_propagation_api.py
           tests/test_propagation_research_dataset.py
+          tests/test_terrestrial_orchid_propagation_comparators.py
