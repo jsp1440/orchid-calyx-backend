@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from typing import ClassVar
 
 from ..context import PipelineContext
 from ..ingest import read_text_exact
@@ -21,7 +22,7 @@ class GlossaryExtractor(Extractor):
     name = "glossary"
     version = "0.1.0"
 
-    _entity_types = {
+    _entity_types: ClassVar[set[str]] = {
         "anatomical_structure",
         "trait",
         "method",
