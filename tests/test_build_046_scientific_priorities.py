@@ -1,4 +1,5 @@
-from app.main import JOB_PRIORITIES, MODULE_REGISTRY, SCIENTIFIC_MODULES, run_job_logic
+from app.main import JOB_PRIORITIES, MODULE_REGISTRY, SCIENTIFIC_MODULES
+from runtime.science_registry import audit_result
 
 
 def test_scientific_modules_rank_above_judging_and_awards():
@@ -27,14 +28,17 @@ def test_job_priority_map_prefers_science_over_society_modules():
 
 
 def test_scientific_audit_results_are_provenance_first():
-    result = run_job_logic("audit_missing_pollinator_data")
+    result = audit_result("pollination", mission_type="audit_missing_pollinator_data")
 
-    assert result["module"] == "pollinator_relationships"
-    assert result["source"]
-    assert result["provenance"]
-    assert "confidence" in result
-    assert result["claim_type"] == "coverage_gap_audit"
+    assert result["department_id"] == "pollination"
+    assert result["mission_type"] == "audit_missing_pollinator_data"
+    assert result["provenance_status"] == "required_before_claim_promotion"
+    assert result["confidence"] == "audit_only"
     assert result["review_status"] == "unreviewed"
-    assert result["citation"]
-    assert result["claims"] == []
-    assert result["unsupported_claims_promoted"] is False
+    assert result["promoted_claims"] is False
+    assert result["findings"]
+    finding = result["findings"][0]
+    assert finding["claim_type"] == "coverage_gap_audit"
+    assert finding["source"]
+    assert finding["confidence"] == "audit_only"
+    assert finding["review_status"] == "unreviewed"
