@@ -50,8 +50,27 @@ BUILD-BRAIN-114M performs no Git command, commit, branch creation, push, pull-re
 
 ## Validation contract
 
-The dedicated BUILD-BRAIN-114M workflow compiles the manifest and persisted-record lookup surfaces, runs Ruff lint and format checks, executes focused proposal regressions, statically asserts the absence of Git/network mutation mechanisms and the presence of persisted-evidence authority checks, and runs event-aware diff hygiene. CALYX Workflow Governance Audit and BUILD-088E remain required. Exact-head CI must be green against the current hardened BUILD-BRAIN-114L base before the slice is considered review-ready. Merge remains a separate governance decision.
+The dedicated BUILD-BRAIN-114M workflow compiles the manifest and persisted-record lookup surfaces, runs Ruff lint and format checks, executes focused proposal regressions, statically asserts the absence of Git/network mutation mechanisms and the presence of persisted-evidence authority checks, and runs event-aware diff hygiene. CALYX Workflow Governance Audit and BUILD-BRAIN-114K / CALYX agent integration validation remain required. Exact-head CI must be green against the current hardened BUILD-BRAIN-114L base before the slice is considered review-ready. Merge remains a separate governance decision.
 
 ## Exact-head validation provenance
 
-The Ruff-only correction at `7ba47cc9f1f03aa9e5a166aa30e2ad301279142b` was authored by an automation identity, after which GitHub classified the subsequent pull-request workflows as `action_required` before creating any jobs. This Brain update intentionally creates a repository-owner-authored documentation head without changing runtime behavior so the same exact stacked validation matrix can execute normally. A passing result must still cover BUILD-BRAIN-114M, BUILD-BRAIN-114K, CALYX agent validation, and workflow governance on the new head before review-readiness is claimed.
+The Ruff-only correction at `7ba47cc9f1f03aa9e5a166aa30e2ad301279142b` was authored by an automation identity, after which GitHub classified the subsequent pull-request workflows as `action_required` before creating any jobs. A repository-owner-authored documentation head restored executable validation. The first real rerun exposed formatter-only drift in three files; those exact Ruff formatting changes were applied without behavioral changes.
+
+### Certified runtime head
+
+Runtime/test head `f88567759a201a63478a476f304b7ec47514316b` was validated through PR merge ref `dd952c258f9fd88377637f9e52f9e849f56ebe10`, which merged that head into hardened BUILD-BRAIN-114L parent `c5a244c89992d240d7e1f3c40730a9ccab161f74` for validation.
+
+Validation results:
+
+- BUILD-BRAIN-114M Git Proposal Manifest Validation #12 — **success** (`31280551196`)
+  - compile — pass
+  - Ruff lint — pass
+  - Ruff format — pass (`3 files already formatted`)
+  - focused proposal regressions — **17 passed in 0.40s**
+  - non-mutation / evidence-authority assertions — pass
+  - event-aware diff hygiene — pass
+- BUILD-BRAIN-114K Validation #20 — **success** (`31280551201`)
+- CALYX-AGENT-003 Validation #272 — **success** (`31280551195`)
+- CALYX Workflow Governance Audit #529 — **success** (`31280551199`)
+
+The validated slice remains proposal-only. These passing receipts grant no commit, push, pull-request creation, merge, deployment, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation authority. PR #667 remains unmerged pending the separate governance decision for its dependency chain.
