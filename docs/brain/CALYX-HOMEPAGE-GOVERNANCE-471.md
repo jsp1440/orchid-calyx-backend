@@ -1,6 +1,6 @@
 # CALYX-471 — Homepage audit, redesign specification, and release governance
 
-Status: IMPLEMENTED / VALIDATION PENDING / GOVERNED RELEASE-ONLY
+Status: IMPLEMENTED / VALIDATED / GOVERNED RELEASE-ONLY
 
 ## Delivered
 
@@ -28,4 +28,14 @@ Tests and validation use fixtures only and do not activate a live homepage, depl
 
 ## Validation
 
-Dedicated CI compiles the homepage governance surface, runs CALYX-471 tests plus CALYX-467 species-dossier regressions, asserts permanent no-auto-deployment/no-unreviewed-activation boundaries, runs Ruff, and checks diff hygiene. Record exact-head validation evidence here after the pull-request workflow completes.
+Initial CI passed compilation, 17 combined CALYX-471 + CALYX-467 tests, and governance assertions, then correctly stopped on Ruff `TRY004`: a missing validation-check object is a type error, not a value error. That defect was fixed before any further expansion.
+
+Corrected implementation commit `5703935cd2aba446632365875b1826505c828f91` then passed all available gates:
+
+- CALYX Homepage Governance 471: success; compile, 17 combined homepage + species-dossier tests, permanent release-governance assertions, Ruff, and diff hygiene all passed.
+- CALYX Species Dossier 467 dependency regression: success.
+- CALYX Workflow Governance Audit: success.
+- CALYX-SUPERVISED-PILOT-001: success.
+- CALYX-AUTONOMY-DEPLOYMENT-001: success, including Mission Control formatting and regression checks.
+
+PR #638 remains draft/unmerged and targets `feature/calyx-species-dossier-467`. This documentation-only evidence commit remains subject to the same PR checks.
