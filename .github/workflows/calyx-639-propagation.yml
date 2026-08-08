@@ -15,6 +15,7 @@ on:
       - "tests/test_terrestrial_orchid_propagation_comparators.py"
       - "tests/test_propagation_comparator_dataset.py"
       - "tests/test_australian_diurideae_propagation_bridge.py"
+      - "tests/test_australian_diurideae_propagation_api.py"
       - "docs/brain/CALYX-639-recalcitrant-orchid-propagation.md"
       - "docs/brain/CALYX-639B-terrestrial-vegetative-plb-comparators.md"
       - "docs/brain/CALYX-639C-propagation-comparator-dataset.md"
@@ -57,3 +58,4 @@ jobs:
           tests/test_terrestrial_orchid_propagation_comparators.py
           tests/test_propagation_comparator_dataset.py
           tests/test_australian_diurideae_propagation_bridge.py
+          tests/test_australian_diurideae_propagation_api.py
