@@ -2,7 +2,7 @@
 
 Date: 2026-08-08
 Depends on: CALYX-635 graph-grounded Ask Calyx, Research Station persistent workspace foundation.
-Status: implementation behavior validated; final exact-head rerun pending after formatter/legacy-CI corrections. No merge, deployment, publication, external communication, or Knowledge Graph mutation authorized.
+Status: implementation validated and PR #646 promoted to review on exact head `c9bde5c476b65baa096e848349ec16e3be630bb1`. No merge, deployment, publication, external communication, or Knowledge Graph mutation authorized.
 
 ## Goal
 
@@ -73,36 +73,26 @@ Conversation access does not use privileged cross-owner bypass. A conversation I
 
 ## Validation evidence
 
-The first complete CALYX-636 behavioral run passed all 13 persistence + stacked conversation/graph tests and permanent conversation-memory non-authority assertions. The global workflow-governance audit also passed.
-
-The remaining failures identified during validation were CI/hygiene defects rather than behavioral defects:
-
-1. Ruff requested import normalization and `dict.get` simplification in the expanded chat router; those were corrected without changing behavior.
-2. The legacy `CALYX-MISSION-CONTROL-003B Chat API` workflow installed only FastAPI/httpx/pytest/Ruff, so the now database-backed router could not import SQLAlchemy. The workflow was corrected to install the repository production requirements.
-3. The next legacy run reached Ruff successfully and exposed only formatter normalization in the chat router. Commit `d475e3dda89447c392090fe5585c6320fc9f5457` applies exactly that formatter output.
-4. The formatter commit was authored through the repository Copilot integration, which caused GitHub to mark the immediate pull-request workflow runs `action_required` before creating jobs. This was not a code failure. This Brain update intentionally creates a fresh exact head through the normal repository connector so all four gates can execute again.
-
-Before that action-required head, the latest runnable head had already passed:
+Exact head `c9bde5c476b65baa096e848349ec16e3be630bb1` passed all required lanes:
 
 - CALYX Conversation Sessions 636;
 - CALYX Continuum Conversation 634 compatibility;
-- CALYX Workflow Governance Audit.
-
-The legacy 003B lane's only remaining runnable failure was Ruff formatting, now corrected.
-
-## Exact-head gate required before promotion
-
-CALYX-636 remains draft until a fresh head passes all four lanes:
-
-- CALYX Conversation Sessions 636;
-- CALYX Continuum Conversation 634;
 - CALYX-MISSION-CONTROL-003B Chat API;
 - CALYX Workflow Governance Audit.
 
-No gate is to be weakened to obtain promotion.
+The CALYX-636 lane includes the persistence + stacked conversation/graph suite and permanent conversation-memory non-authority assertions. An earlier complete behavioral run recorded 13 passing persistence/conversation/graph tests before the final CI hygiene corrections.
 
-## Next priority after validation
+Validation exposed and corrected CI/hygiene defects without broadening authority:
 
-Expose persistent session creation/list/history in Research Station so the project-scoped Ask Calyx page can reopen a prior research thread and continue it through the persistent endpoint.
+1. Ruff import normalization and `dict.get` simplification in the expanded chat router.
+2. The legacy 003B workflow previously installed only FastAPI/httpx/pytest/Ruff and could not import the production SQLAlchemy-backed router. It now installs `requirements.txt` plus test tooling.
+3. Ruff formatter normalization was applied to the chat router.
+4. A Copilot-authored formatter commit temporarily produced GitHub `action_required` workflow states with no jobs. A normal connector-authored Brain commit created fresh runnable checks; the resulting exact head passed all four gates.
+
+PR #646 was then marked ready for review. It remains unmerged and non-production.
+
+## Research Station integration
+
+RS-9 was started immediately after backend validation. Its purpose is to expose CALYX-636 session creation, listing, reopening, history, and persistent follow-up inside the project-scoped Ask Calyx workspace while keeping dialogue visibly labeled as non-evidence research context.
 
 Persistent dialogue is research context, not scientific evidence.
