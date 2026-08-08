@@ -1,0 +1,33 @@
+name: CALYX-639 Propagation Intelligence
+
+on:
+  pull_request:
+    paths:
+      - "runtime/recalcitrant_orchid_propagation.py"
+      - "runtime/router_fastapi.py"
+      - "tests/test_recalcitrant_orchid_propagation.py"
+      - "tests/test_recalcitrant_orchid_propagation_api.py"
+      - "docs/brain/CALYX-639-recalcitrant-orchid-propagation.md"
+      - ".github/workflows/calyx-639-propagation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  propagation-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt pytest
+      - name: Compile propagation modules
+        run: python -m py_compile runtime/recalcitrant_orchid_propagation.py runtime/router_fastapi.py
+      - name: Run CALYX-639 tests
+        env:
+          PYTHONPATH: .
+        run: pytest -q tests/test_recalcitrant_orchid_propagation.py tests/test_recalcitrant_orchid_propagation_api.py
