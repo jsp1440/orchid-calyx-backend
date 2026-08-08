@@ -14,6 +14,7 @@ from runtime.scientific_diagnostics import ScientificDiagnosticsService
 from runtime.scientific_result_artifacts import ScientificResultArtifactService
 
 EXPORT_SCHEMA_VERSION = "calyx-scientific-analysis-export/v1"
+EXPORT_INTEGRITY_SCHEMA_VERSION = "calyx-scientific-analysis-export-integrity/v1"
 
 
 def _stable(payload: Any) -> str:
@@ -149,6 +150,59 @@ class ScientificAnalysisExportService:
             if analysis.get(analysis_key) != receipt.get(receipt_key):
                 raise ValueError("ANALYSIS_EXPORT_RECEIPT_IDENTITY_MISMATCH")
 
+    @staticmethod
+    def _verify_integrity(
+        bundle: dict[str, Any], project_id: str, export_id: str
+    ) -> dict[str, Any]:
+        core = {
+            key: value
+            for key, value in bundle.items()
+            if key not in {"export_id", "export_sha256"}
+        }
+        recomputed_sha256 = _sha(core)
+        expected_export_id = f"analysis-export-{recomputed_sha256[:24]}"
+        analysis = bundle.get("analysis")
+        analysis_id = str(bundle.get("analysis_id") or "").strip()
+        privacy_contract_matches = (
+            bundle.get("raw_dataset_rows_included") is False
+            and bundle.get("diagnostic_payload_included") is False
+            and bundle.get("private_research_artifact") is True
+            and bundle.get("export_is_not_publication") is True
+            and bundle.get("scientific_publication_authorized") is False
+            and bundle.get("knowledge_graph_mutation_authorized") is False
+        )
+        identity_matches = (
+            bundle.get("schema_version") == EXPORT_SCHEMA_VERSION
+            and bundle.get("profile") == "private_reproducibility_bundle"
+            and bundle.get("project_id") == project_id
+            and bundle.get("export_id") == export_id
+            and bundle.get("export_sha256") == recomputed_sha256
+            and expected_export_id == export_id
+            and isinstance(analysis, dict)
+            and analysis.get("analysis_id") == analysis_id
+        )
+        if not identity_matches or not privacy_contract_matches:
+            raise ValueError("ANALYSIS_EXPORT_INTEGRITY_MISMATCH")
+        return {
+            "schema_version": EXPORT_INTEGRITY_SCHEMA_VERSION,
+            "project_id": project_id,
+            "analysis_id": analysis_id,
+            "export_id": export_id,
+            "export_sha256": recomputed_sha256,
+            "verified": True,
+            "content_hash_matches": True,
+            "export_id_matches_content_hash": True,
+            "analysis_identity_matches": True,
+            "privacy_contract_matches": True,
+            "raw_dataset_rows_included": False,
+            "diagnostic_payload_included": False,
+            "private_research_artifact": True,
+            "export_is_not_publication": True,
+            "scientific_publication_authorized": False,
+            "knowledge_graph_mutation_authorized": False,
+            "integrity_verification_is_not_publication_authority": True,
+        }
+
     def build(self, owner_id: str, project_id: str, analysis_id: str) -> dict[str, Any]:
         clean_analysis_id = _clean_identifier(analysis_id, "ANALYSIS_EXPORT_ANALYSIS_ID_INVALID")
         analysis = self.analysis.get(owner_id, project_id, clean_analysis_id)
@@ -223,6 +277,7 @@ class ScientificAnalysisExportService:
         path = root / "analysis_exports" / f"{export_id}.json"
         if path.exists():
             existing = json.loads(path.read_text(encoding="utf-8"))
+            self._verify_integrity(existing, project_id, export_id)
             if existing != bundle:
                 raise ValueError("ANALYSIS_EXPORT_IMMUTABLE_CONFLICT")
             return {"created": False, "export": existing}
@@ -237,6 +292,15 @@ class ScientificAnalysisExportService:
         if not path.exists():
             raise FileNotFoundError(clean_export_id)
         bundle = json.loads(path.read_text(encoding="utf-8"))
-        if bundle.get("export_id") != clean_export_id or bundle.get("project_id") != project_id:
-            raise ValueError("ANALYSIS_EXPORT_IDENTITY_MISMATCH")
+        self._verify_integrity(bundle, project_id, clean_export_id)
         return bundle
+
+    def verify(self, owner_id: str, project_id: str, export_id: str) -> dict[str, Any]:
+        clean_export_id = _clean_identifier(export_id, "ANALYSIS_EXPORT_ID_INVALID")
+        if not clean_export_id.startswith("analysis-export-"):
+            raise ValueError("ANALYSIS_EXPORT_ID_INVALID")
+        path = self._root(owner_id, project_id) / "analysis_exports" / f"{clean_export_id}.json"
+        if not path.exists():
+            raise FileNotFoundError(clean_export_id)
+        bundle = json.loads(path.read_text(encoding="utf-8"))
+        return self._verify_integrity(bundle, project_id, clean_export_id)
