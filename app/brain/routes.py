@@ -23,11 +23,13 @@ from runtime.knowledge_graph import PostgresGraphRepository
 from .education_design_routes import router as education_design_router
 from .ledger_bridge import InferenceLedgerBridge
 from .reasoning import InferenceEngine, InferenceType
+from .reasoning_map import ReasoningMapEngine
 from .schemas import (
     ConnectRequest,
     GraphQuery,
     InferenceLedgerSubmission,
     InferRequest,
+    ReasoningMapRequest,
 )
 
 router = APIRouter(
@@ -121,6 +123,26 @@ def infer(
     return _infer(
         repository, request.subject_node_id, request.inference_type, request.limit
     )
+
+
+@router.post("/reasoning-map")
+def reasoning_map(
+    request: ReasoningMapRequest, repository: GraphRepositoryDependency
+) -> dict[str, Any]:
+    """Build a deterministic, evidence-bearing causal pathway over the Knowledge Graph."""
+    try:
+        return ReasoningMapEngine(repository).build(
+            request.subject_node_id,
+            direction=request.direction,
+            profile=request.profile,
+            max_depth=request.max_depth,
+            limit=request.limit,
+            edge_types=request.edge_types,
+            causal_only=request.causal_only,
+        )
+    except Exception as exc:
+        _translate(exc)
+        raise
 
 
 @router.post(
