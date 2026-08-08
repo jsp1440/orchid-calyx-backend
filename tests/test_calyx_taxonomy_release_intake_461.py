@@ -9,7 +9,6 @@ from app.routers import taxonomy_release_intake as api
 from app.security import verify_owner_or_api_key
 from runtime.taxonomy_release_intake import TaxonomyReleaseIntakeService
 
-
 CANDIDATE = b"""taxon_id,scientific_name,status,accepted_name_id
 1,Cattleya labiata,accepted,
 2,Laelia purpurata,accepted,
