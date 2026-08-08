@@ -1,0 +1,63 @@
+name: CALYX Harvester Command 455
+
+on:
+  pull_request:
+    paths:
+      - "runtime/harvester_command_center.py"
+      - "runtime/harvester_control.py"
+      - "app/routers/harvester_command_center.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_harvester_command_455.py"
+      - "tests/test_build_049_harvester_control.py"
+      - "docs/brain/CALYX-HARVESTER-COMMAND-455.md"
+      - ".github/workflows/calyx-harvester-command-455.yml"
+  workflow_dispatch:
+
+jobs:
+  harvester-command-center:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile command-center surface
+        run: >-
+          python -m py_compile
+          runtime/harvester_command_center.py
+          runtime/harvester_control.py
+          app/routers/harvester_command_center.py
+          app/routers/live_mission_control.py
+          tests/test_calyx_harvester_command_455.py
+      - name: Deterministic command-center and control-plane regressions
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_harvester_command_455.py
+          tests/test_build_049_harvester_control.py
+      - name: Permanent governed no-write assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/harvester_command_center.py').read_text()
+          required = (
+              '"provider_scraping_from_command_center": False',
+              '"production_deployment_authorized": False',
+              '"production_data_test_mutation_authorized": False',
+              '"secrets_exposed": False',
+              'execute=False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing harvester governance assertion(s): {missing}')
+          forbidden = ('requests.get(', 'requests.post(', 'httpx.get(', 'httpx.post(', 'INSERT INTO oc_graph', 'UPDATE oc_graph')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden command-center surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check --ignore UP037 runtime/harvester_command_center.py app/routers/harvester_command_center.py tests/test_calyx_harvester_command_455.py
+          git diff --check
