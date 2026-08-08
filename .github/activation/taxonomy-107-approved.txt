@@ -1,0 +1,15 @@
+CALYX taxonomy migration 107 production activation authorization
+
+Owner authorization recorded in ChatGPT conversation on 2026-08-08:
+"yes go on migration"
+
+Authorized action: apply additive migration 107_world_plants_release_staging.sql to the protected production DATABASE_URL and verify the resulting taxonomy_pipeline schema.
+
+Not authorized by this marker:
+- taxonomy release activation
+- canonical species replacement
+- Knowledge Graph mutation
+- scientific publication
+- unbounded harvesting
+
+This marker is intentionally immutable after the authorized activation. The production workflow triggers only when this file is first added to main.
