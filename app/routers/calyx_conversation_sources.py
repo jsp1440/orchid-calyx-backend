@@ -32,7 +32,9 @@ class ConversationSourceLinkRequest(BaseModel):
 def _owner(identity: dict[str, object]) -> str:
     actor = str(identity.get("subject") or identity.get("actor") or "").strip()
     if not actor:
-        raise HTTPException(status_code=403, detail="Calyx conversation owner scope unavailable")
+        raise HTTPException(
+            status_code=403, detail="Calyx conversation owner scope unavailable"
+        )
     return actor
 
 
@@ -42,7 +44,9 @@ def _source_ref(conversation: dict[str, Any], result_id: str) -> dict[str, Any]:
         for source in message.get("source_refs") or []:
             if str(source.get("result_id") or "").strip() == target:
                 return dict(source)
-    raise HTTPException(status_code=404, detail={"code": "CONVERSATION_SOURCE_NOT_FOUND"})
+    raise HTTPException(
+        status_code=404, detail={"code": "CONVERSATION_SOURCE_NOT_FOUND"}
+    )
 
 
 def _document_identity(source: dict[str, Any]) -> tuple[str, str | None]:

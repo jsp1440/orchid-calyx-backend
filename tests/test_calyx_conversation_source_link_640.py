@@ -39,7 +39,9 @@ def make_client():
     )
     SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     with SessionLocal() as db:
-        project = Project(owner_subject="owner-640", title="Source project", description="")
+        project = Project(
+            owner_subject="owner-640", title="Source project", description=""
+        )
         db.add(project)
         db.flush()
         conversation = ConversationSession(
@@ -135,7 +137,9 @@ def test_source_link_rejects_unknown_source_and_missing_document_identity():
 
         with SessionLocal() as db:
             message = db.query(ConversationMessage).one()
-            message.source_refs_json = [{"result_id": "without-document", "citation": {}}]
+            message.source_refs_json = [
+                {"result_id": "without-document", "citation": {}}
+            ]
             db.commit()
         unavailable = client.post(
             f"/brain/mission-control/chat/conversations/{conversation_id}/sources/without-document/project-link",
