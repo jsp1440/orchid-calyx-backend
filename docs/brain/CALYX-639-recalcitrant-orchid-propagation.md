@@ -79,7 +79,7 @@ Every propagation API response remains non-publication-authoritative. Matrix res
 
 ## Research Station dataset integration
 
-`runtime/propagation_research_dataset.py` now converts the propagation evidence into a deterministic Research Station-compatible analytical package.
+`runtime/propagation_research_dataset.py` converts the propagation evidence into a deterministic Research Station-compatible analytical package.
 
 The adapter provides:
 
@@ -92,13 +92,7 @@ The adapter provides:
 - a `ResearchStationService.add_dataset`-compatible registration packet containing dataset id, title, checksum, schema reference and provenance;
 - explicit readiness state showing that registration metadata can be prepared now while row persistence remains unavailable on the CALYX-453 dependency branch.
 
-The generated dataset id is:
-
-`dataset-thelymitra-variegata-propagation-v1`
-
-The schema reference is:
-
-`calyx://schemas/propagation-evidence-dataset/v1`
+The generated dataset id is `dataset-thelymitra-variegata-propagation-v1` and the schema reference is `calyx://schemas/propagation-evidence-dataset/v1`.
 
 ### Dependency boundary
 
@@ -116,11 +110,7 @@ This is a working integration contract without bypassing the existing dependency
 
 ## Validation state
 
-The branch now contains three focused test groups:
-
-1. propagation-engine deterministic tests;
-2. protected API contract tests;
-3. Research Station dataset adapter tests.
+The branch contains three focused test groups: propagation-engine deterministic tests, protected API contract tests, and Research Station dataset adapter tests.
 
 The dataset-adapter tests assert:
 
@@ -133,9 +123,11 @@ The dataset-adapter tests assert:
 - the registration packet matches the Research Station dataset contract;
 - readiness refuses to claim row persistence and names CALYX-631 as the dependency.
 
-`.github/workflows/calyx-639-propagation.yml` now compiles both propagation modules and runs all three focused test files. GitHub Actions execution remains an external validation dependency; a run must be observed on the exact branch head before CI is represented as passed.
+`.github/workflows/calyx-639-propagation.yml` compiles both propagation modules and runs all three focused test files. The workflow path filter includes the new module and tests.
 
-A local repository test run was not available in this environment because the local GitHub CLI/private checkout is unavailable. This limitation is recorded rather than substituting an ungrounded success claim.
+**Exact-head external validation:** no GitHub Actions workflow run exists for commit `b4ef7cd0def80b4feeaa99dda74489585537644e` as observed immediately after the dataset/Brain integration. CI is therefore **not passed** and must remain an external infrastructure blocker until a run exists and succeeds.
+
+A local repository test run was also unavailable in this environment because the GitHub CLI/private checkout is unavailable. This limitation is recorded rather than substituting an ungrounded success claim.
 
 ## Current reproduction blockers
 
@@ -162,7 +154,7 @@ A living Queen of Sheba plant or tuber must not become sacrificial method-develo
 
 ## Relationship to Research Station and Analysis Engine
 
-CALYX-639 is now connected structurally to the Research Station contract rather than merely naming it as a future destination. The dataset package can be registered through CALYX-453 metadata semantics, and its row checksum is compatible with CALYX-617 analysis-plan validation. Immutable row transport remains delegated to CALYX-631 rather than being reimplemented here.
+CALYX-639 is connected structurally to the Research Station contract rather than merely naming it as a future destination. The dataset package can be registered through CALYX-453 metadata semantics, and its row checksum is compatible with CALYX-617 analysis-plan validation. Immutable row transport remains delegated to CALYX-631 rather than being reimplemented here.
 
 No scientific publication, canonical Knowledge Graph mutation, taxonomy activation, destructive experiment, production deployment or merge is authorized by this build.
 
