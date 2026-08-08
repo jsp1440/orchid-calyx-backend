@@ -143,26 +143,25 @@ class ConversationStore:
     def get(self, conversation_id: str, *, message_limit: int = 100) -> dict[str, Any] | None:
         if self.dsn:
             self.ensure_schema()
-            with psycopg.connect(self.dsn, row_factory=dict_row) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT conversation_id::text, title, created_at, updated_at, context, status FROM calyx_conversations WHERE conversation_id=%s::uuid",
-                        (conversation_id,),
-                    )
-                    conversation = cur.fetchone()
-                    if conversation is None:
-                        return None
-                    cur.execute(
-                        """
-                        SELECT message_id::text, conversation_id::text, role, content, created_at, metadata
-                        FROM calyx_conversation_messages
-                        WHERE conversation_id=%s::uuid
-                        ORDER BY created_at ASC
-                        LIMIT %s
-                        """,
-                        (conversation_id, message_limit),
-                    )
-                    messages = [dict(row) for row in cur.fetchall()]
+            with psycopg.connect(self.dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT conversation_id::text, title, created_at, updated_at, context, status FROM calyx_conversations WHERE conversation_id=%s::uuid",
+                    (conversation_id,),
+                )
+                conversation = cur.fetchone()
+                if conversation is None:
+                    return None
+                cur.execute(
+                    """
+                    SELECT message_id::text, conversation_id::text, role, content, created_at, metadata
+                    FROM calyx_conversation_messages
+                    WHERE conversation_id=%s::uuid
+                    ORDER BY created_at ASC
+                    LIMIT %s
+                    """,
+                    (conversation_id, message_limit),
+                )
+                messages = [dict(row) for row in cur.fetchall()]
             result = dict(conversation)
             result["messages"] = messages
             return result
@@ -176,21 +175,20 @@ class ConversationStore:
     def recent(self, *, limit: int = 20) -> list[dict[str, Any]]:
         if self.dsn:
             self.ensure_schema()
-            with psycopg.connect(self.dsn, row_factory=dict_row) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT c.conversation_id::text, c.title, c.created_at, c.updated_at, c.context, c.status,
-                               COUNT(m.message_id)::int AS message_count
-                        FROM calyx_conversations c
-                        LEFT JOIN calyx_conversation_messages m ON m.conversation_id=c.conversation_id
-                        GROUP BY c.conversation_id
-                        ORDER BY c.updated_at DESC
-                        LIMIT %s
-                        """,
-                        (limit,),
-                    )
-                    return [dict(row) for row in cur.fetchall()]
+            with psycopg.connect(self.dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT c.conversation_id::text, c.title, c.created_at, c.updated_at, c.context, c.status,
+                           COUNT(m.message_id)::int AS message_count
+                    FROM calyx_conversations c
+                    LEFT JOIN calyx_conversation_messages m ON m.conversation_id=c.conversation_id
+                    GROUP BY c.conversation_id
+                    ORDER BY c.updated_at DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                return [dict(row) for row in cur.fetchall()]
 
         with self._lock:
             rows = []
