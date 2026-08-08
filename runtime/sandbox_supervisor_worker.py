@@ -10,10 +10,11 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 from uuid import uuid4
 
 MAX_CAPTURE_BYTES = 262_144
@@ -91,11 +92,11 @@ def _validate_image_digest(value: str) -> str:
 def _request_digest(request: Mapping[str, Any]) -> str:
     targets = request.get("targets")
     if not isinstance(targets, list):
-        raise ValueError("SANDBOX_SUPERVISOR_TARGETS_INVALID")
+        raise TypeError("SANDBOX_SUPERVISOR_TARGETS_INVALID")
     normalized_targets = []
     for item in targets:
         if not isinstance(item, Mapping):
-            raise ValueError("SANDBOX_SUPERVISOR_TARGET_INVALID")
+            raise TypeError("SANDBOX_SUPERVISOR_TARGET_INVALID")
         normalized_targets.append(
             {
                 "path": str(item.get("path") or "").strip(),
@@ -125,7 +126,7 @@ class WorkerConfig:
     docker_binary: str
 
     @classmethod
-    def from_environ(cls, environ: Mapping[str, str] | None = None) -> "WorkerConfig":
+    def from_environ(cls, environ: Mapping[str, str] | None = None) -> WorkerConfig:
         source = os.environ if environ is None else environ
         token = str(source.get("CALYX_SANDBOX_SUPERVISOR_TOKEN", "")).strip()
         if len(token) < 32:
@@ -208,7 +209,7 @@ class SandboxSupervisorWorker:
             return {"executed": False, "reason": "no_request"}
         request = claim.get("request")
         if not isinstance(request, dict):
-            raise RuntimeError("SANDBOX_SUPERVISOR_CLAIM_MALFORMED")
+            raise TypeError("SANDBOX_SUPERVISOR_CLAIM_MALFORMED")
         receipt = self._process_claim(request)
         completion = self._complete(request, receipt)
         return {
@@ -269,7 +270,7 @@ class SandboxSupervisorWorker:
             else:
                 outcome = "delivered"
             return self._receipt(request_digest=request_digest, outcome=outcome, result=result)
-        except (LookupError, PermissionError, RuntimeError, ValueError) as exc:
+        except (LookupError, PermissionError, RuntimeError, TypeError, ValueError) as exc:
             reason = str(exc).encode("utf-8", errors="replace")
             return self._receipt(
                 request_digest=request_digest,
@@ -302,7 +303,7 @@ class SandboxSupervisorWorker:
         seen: set[str] = set()
         for item in raw_targets:
             if not isinstance(item, dict):
-                raise ValueError("SANDBOX_SUPERVISOR_TARGET_INVALID")
+                raise TypeError("SANDBOX_SUPERVISOR_TARGET_INVALID")
             path = str(item.get("path") or "").strip()
             expected_hash = str(item.get("sha256") or "").strip().lower()
             if path in seen or not path or path.startswith("/") or ".." in Path(path).parts:
@@ -409,7 +410,7 @@ class SandboxSupervisorWorker:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310
+            with urllib.request.urlopen(request, timeout=20) as response:
                 raw = response.read(1_048_577)
         except urllib.error.HTTPError as exc:
             raise RuntimeError(f"SANDBOX_SUPERVISOR_API_HTTP_{exc.code}") from exc
@@ -419,7 +420,7 @@ class SandboxSupervisorWorker:
             raise RuntimeError("SANDBOX_SUPERVISOR_API_RESPONSE_TOO_LARGE")
         value = json.loads(raw.decode("utf-8"))
         if not isinstance(value, dict):
-            raise RuntimeError("SANDBOX_SUPERVISOR_API_RESPONSE_INVALID")
+            raise TypeError("SANDBOX_SUPERVISOR_API_RESPONSE_INVALID")
         return value
 
 
