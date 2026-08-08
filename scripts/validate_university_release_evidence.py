@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ EXPECTED_READINESS = {
     "calyx_model_calls_enabled": False,
     "human_review_required": True,
 }
+FULL_GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 class EvidenceError(ValueError):
@@ -29,9 +31,27 @@ def _require(condition: bool, message: str) -> None:
         raise EvidenceError(message)
 
 
+def release_commits(data: dict[str, Any]) -> tuple[str, str]:
+    frontend = data.get("frontend") or {}
+    backend = data.get("backend") or {}
+    identity = backend.get("release_identity") or {}
+    frontend_sha = str(frontend.get("release_commit_sha", "")).strip().lower()
+    backend_sha = str(identity.get("commit_sha", "")).strip().lower()
+    _require(bool(FULL_GIT_SHA.fullmatch(frontend_sha)), "frontend release commit must be a full Git SHA")
+    _require(identity.get("contract") == "OCU-RELEASE-IDENTITY-001", "backend release identity contract mismatch")
+    _require(identity.get("service") == "orchid-calyx-backend", "backend release identity service mismatch")
+    _require(identity.get("attested") is True, "backend release identity must be attested")
+    _require(bool(FULL_GIT_SHA.fullmatch(backend_sha)), "backend release commit must be a full Git SHA")
+    return frontend_sha, backend_sha
+
+
 def validate_evidence(data: dict[str, Any]) -> None:
-    _require(data.get("schema_version") == "1.0.0", "schema_version must be 1.0.0")
+    _require(data.get("schema_version") == "1.1.0", "schema_version must be 1.1.0")
     _require(data.get("verification") == "OCU-SCI-007", "verification must be OCU-SCI-007")
+    _require(
+        data.get("release_identity_contract") == "OCU-RELEASE-IDENTITY-001",
+        "release_identity_contract must be OCU-RELEASE-IDENTITY-001",
+    )
     _require(data.get("result") == "pass", "release evidence result must be pass")
     _require(bool(data.get("started_at")), "started_at is required")
     _require(bool(data.get("completed_at")), "completed_at is required")
@@ -56,6 +76,7 @@ def validate_evidence(data: dict[str, Any]) -> None:
     _require(catalog.get("laboratory_id") == EXPECTED_LAB, "unexpected laboratory id")
     _require(int(backend.get("chapter_sections", 0)) > 0, "chapter must contain sections")
     _require(int(backend.get("laboratory_evidence_items", 0)) > 0, "laboratory must contain evidence")
+    release_commits(data)
 
 
 def evidence_digest(path: Path) -> str:
@@ -75,8 +96,11 @@ def main() -> int:
     except (OSError, json.JSONDecodeError, EvidenceError, ValueError, TypeError) as exc:
         print(f"INVALID: {exc}", file=sys.stderr)
         return 1
+    frontend_sha, backend_sha = release_commits(data)
     digest = evidence_digest(path)
     print("VALID: OCU-SCI-007 production evidence")
+    print(f"FRONTEND_RELEASE_SHA={frontend_sha}")
+    print(f"BACKEND_RELEASE_SHA={backend_sha}")
     print(f"OCU_UNIVERSITY_RELEASE_EVIDENCE_ID={digest}")
     return 0
 
