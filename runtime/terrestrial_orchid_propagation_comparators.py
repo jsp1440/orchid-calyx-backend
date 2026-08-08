@@ -89,11 +89,39 @@ def comparator_sources() -> tuple[ComparatorSource, ...]:
                 "threatened endemic terrestrial orchid; propagation and attempted reintroduction"
             ),
         ),
+        ComparatorSource(
+            source_id="tu-2025-hemipilia-cucullata",
+            title=(
+                "Asymbiotic Germination and Leaf Explant-Based Regeneration of the "
+                "Endangered Medicinal Orchid Hemipilia cucullata from Mature Seeds"
+            ),
+            taxon="Hemipilia cucullata",
+            year=2025,
+            doi="10.3791/68541",
+            pmid="41052007",
+            evidence_completeness="pubmed_abstract_verified",
+            terrestrial_orchid=True,
+            conservation_context="endangered terrestrial orchid; ex situ propagation",
+        ),
+        ComparatorSource(
+            source_id="fu-2026-anoectochilus-roxburghii",
+            title=(
+                "Efficient plant regeneration via protocorm-like body induction from "
+                "stem nodes in Anoectochilus roxburghii"
+            ),
+            taxon="Anoectochilus roxburghii",
+            year=2026,
+            doi="10.1186/s12870-026-09210-5",
+            pmid=None,
+            evidence_completeness="publisher_open_access_abstract_verified",
+            terrestrial_orchid=True,
+            conservation_context="endangered medicinal terrestrial orchid; conservation propagation",
+        ),
     )
 
 
 def comparator_observations() -> tuple[ComparatorObservation, ...]:
-    """Encode only quantitative/method facts stated in the verified PubMed abstracts."""
+    """Encode only quantitative/method facts stated in verified primary-source abstracts."""
     return (
         ComparatorObservation(
             observation_id="sp-nodal-plb-001",
@@ -186,6 +214,36 @@ def comparator_observations() -> tuple[ComparatorObservation, ...]:
             quantitative_value=98.0,
             quantitative_unit="percent PLBs converted to plantlets",
         ),
+        ComparatorObservation(
+            observation_id="hc-leaf-plb-001",
+            source_id="tu-2025-hemipilia-cucullata",
+            taxon="Hemipilia cucullata",
+            explant="sterile leaf explant",
+            explant_origin="in vitro plantlet generated through the study propagation pathway",
+            response="PLB induction from leaf explants",
+            treatment=(
+                ("basal_medium", "Murashige and Skoog"),
+                ("BA", "3 mg/L"),
+                ("NAA", "0.2 mg/L"),
+            ),
+            quantitative_value=44.3,
+            quantitative_unit="percent PLB induction; reported ± 5.1%",
+        ),
+        ComparatorObservation(
+            observation_id="ar-meristem-plb-001",
+            source_id="fu-2026-anoectochilus-roxburghii",
+            taxon="Anoectochilus roxburghii",
+            explant="axillary bud meristem",
+            explant_origin="stem segment explant with node after sterile-material initiation culture",
+            response="direct PLB induction without intervening callus",
+            treatment=(
+                ("6-BA", "1.5 mg/L"),
+                ("NAA", "1.0 mg/L"),
+                ("kinetin", "0.1 mg/L"),
+            ),
+            quantitative_value=30.0,
+            quantitative_unit="proliferation coefficient reported as greater than 30.0",
+        ),
     )
 
 
@@ -219,11 +277,21 @@ def vegetative_plb_bridge_assessment() -> dict[str, Any]:
     vegetative = [
         item
         for item in observations
-        if item.explant in {"nodal explant", "leaf explant", "root segment", "axillary bud"}
+        if item.explant
+        in {
+            "nodal explant",
+            "leaf explant",
+            "root segment",
+            "axillary bud",
+            "sterile leaf explant",
+            "axillary bud meristem",
+        }
     ]
     positive = [item for item in vegetative if item.direction != "negative_for_plb_induction"]
     negative = [item for item in vegetative if item.direction == "negative_for_plb_induction"]
     taxa = sorted({item.taxon for item in positive})
+    meristem = [item for item in positive if "meristem" in item.explant]
+    rhizome_linked = [item for item in positive if "rhizome" in item.explant_origin]
     return {
         "schema_version": COMPARATOR_SCHEMA_VERSION,
         "question": (
@@ -234,13 +302,18 @@ def vegetative_plb_bridge_assessment() -> dict[str, Any]:
         "positive_vegetative_observation_ids": [item.observation_id for item in positive],
         "negative_or_noninductive_observation_ids": [item.observation_id for item in negative],
         "supporting_taxa": taxa,
+        "direct_meristem_to_plb_comparator_ids": [item.observation_id for item in meristem],
+        "rhizome_linked_vegetative_comparator_ids": [
+            item.observation_id for item in rhizome_linked
+        ],
         "direct_thelymitra_evidence": False,
         "prediction_of_thelymitra_success": False,
         "interpretation": (
-            "Vegetative explants can enter PLB pathways in other terrestrial orchids, "
-            "so the proposed Thelymitra vegetative-entry experiment has biological "
-            "precedent. The evidence does not establish explant choice, medium, response "
-            "rate, or feasibility for Thelymitra variegata."
+            "Vegetative explants, including an axillary-bud meristem, can enter PLB "
+            "pathways in other terrestrial orchids. This provides direct comparative "
+            "precedent for testing a Thelymitra vegetative-entry pathway, but does not "
+            "establish explant choice, medium, response rate, or feasibility for "
+            "Thelymitra variegata."
         ),
         "scientific_review_required": True,
         "publication_authority": False,
