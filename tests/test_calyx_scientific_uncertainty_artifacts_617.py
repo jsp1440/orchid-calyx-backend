@@ -5,7 +5,9 @@ import copy
 import pytest
 
 from runtime.scientific_uncertainty import mean_confidence_interval
-from runtime.scientific_uncertainty_artifacts import build_mean_ci_result_artifact_candidate
+from runtime.scientific_uncertainty_artifacts import (
+    build_mean_ci_result_artifact_candidate,
+)
 
 
 def _artifact():
