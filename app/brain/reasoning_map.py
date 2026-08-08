@@ -208,7 +208,9 @@ class ReasoningMapEngine:
             raise ValueError("REASONING_MAP_LIMIT_OUT_OF_RANGE")
 
         nodes_by_id = {node.kg_node_id: node for node in self.repository.all_nodes()}
-        all_edges = sorted(self.repository.all_edges(), key=lambda item: item.kg_edge_id)
+        all_edges = sorted(
+            self.repository.all_edges(), key=lambda item: item.kg_edge_id
+        )
         selected = [
             edge
             for edge in all_edges
@@ -224,14 +226,18 @@ class ReasoningMapEngine:
         used_edge_ids: set[int] = set()
         used_node_ids: set[int] = {subject_id}
         layers: dict[int, set[int]] = {0: {subject_id}}
-        queue: list[tuple[int, list[int], list[Edge]]] = [(subject_id, [subject_id], [])]
+        queue: list[tuple[int, list[int], list[Edge]]] = [
+            (subject_id, [subject_id], [])
+        ]
 
         while queue and len(paths) < limit:
             current_id, node_path, edge_path = queue.pop(0)
             depth = len(edge_path)
             if depth >= max_depth:
                 continue
-            candidates = self._candidate_edges(current_id, outgoing, incoming, direction)
+            candidates = self._candidate_edges(
+                current_id, outgoing, incoming, direction
+            )
             for edge, next_id, traversal_direction in candidates:
                 if next_id in node_path:
                     continue
@@ -239,7 +245,9 @@ class ReasoningMapEngine:
                     continue
                 next_edges = edge_path + [edge]
                 next_nodes = node_path + [next_id]
-                path = self._serialize_path(next_nodes, next_edges, nodes_by_id, traversal_direction)
+                path = self._serialize_path(
+                    next_nodes, next_edges, nodes_by_id, traversal_direction
+                )
                 paths.append(path)
                 used_edge_ids.add(edge.kg_edge_id)
                 used_node_ids.add(next_id)
@@ -275,10 +283,14 @@ class ReasoningMapEngine:
                 "edge_count": len(mapped_edges),
                 "path_count": len(paths),
                 "causal_edge_count": sum(
-                    1 for edge in mapped_edges if relation_semantics(edge.edge_type).causal
+                    1
+                    for edge in mapped_edges
+                    if relation_semantics(edge.edge_type).causal
                 ),
                 "evidence_edge_count": sum(
-                    1 for edge in mapped_edges if relation_semantics(edge.edge_type).role == "evidence"
+                    1
+                    for edge in mapped_edges
+                    if relation_semantics(edge.edge_type).role == "evidence"
                 ),
             },
             "governance": {
@@ -312,7 +324,10 @@ class ReasoningMapEngine:
         target = nodes_by_id.get(edge.to_node_id)
         if source is None or target is None:
             return False
-        return source.node_type in allowed_node_types or target.node_type in allowed_node_types
+        return (
+            source.node_type in allowed_node_types
+            or target.node_type in allowed_node_types
+        )
 
     @staticmethod
     def _candidate_edges(
@@ -324,13 +339,17 @@ class ReasoningMapEngine:
         candidates: list[tuple[Edge, int, str]] = []
         if direction in {ReasoningDirection.FORWARD, ReasoningDirection.BOTH}:
             candidates.extend(
-                (edge, edge.to_node_id, "forward") for edge in outgoing.get(node_id, [])
+                (edge, edge.to_node_id, "forward")
+                for edge in outgoing.get(node_id, [])
             )
         if direction in {ReasoningDirection.BACKWARD, ReasoningDirection.BOTH}:
             candidates.extend(
-                (edge, edge.from_node_id, "backward") for edge in incoming.get(node_id, [])
+                (edge, edge.from_node_id, "backward")
+                for edge in incoming.get(node_id, [])
             )
-        return sorted(candidates, key=lambda item: (item[0].kg_edge_id, item[1], item[2]))
+        return sorted(
+            candidates, key=lambda item: (item[0].kg_edge_id, item[1], item[2])
+        )
 
     @staticmethod
     def _serialize_edge(edge: Edge) -> dict[str, Any]:
