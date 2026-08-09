@@ -6,14 +6,19 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, text
 
-from runtime.occurrence_persistence import PostgresOccurrencePersistence
+from runtime.occurrence_persistence import (
+    CANONICAL_PROJECTION_BLOCKER,
+    PostgresOccurrencePersistence,
+)
 
 DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="PostgreSQL test URL required")
 
 
 def _apply(engine, filename: str) -> None:
-    sql = (Path(__file__).parents[1] / "migrations" / filename).read_text(encoding="utf-8")
+    sql = (Path(__file__).parents[1] / "migrations" / filename).read_text(
+        encoding="utf-8"
+    )
     with engine.begin() as connection:
         connection.exec_driver_sql(sql)
 
@@ -24,8 +29,12 @@ def engine():
     with instance.begin() as connection:
         connection.exec_driver_sql("DROP SCHEMA IF EXISTS occurrence_pipeline CASCADE")
         connection.exec_driver_sql("DROP SCHEMA IF EXISTS taxonomy_pipeline CASCADE")
-    _apply(instance, "107_world_plants_release_staging.sql")
-    _apply(instance, "108_occurrence_reconciliation_runs.sql")
+    for migration in (
+        "107_world_plants_release_staging.sql",
+        "108_occurrence_reconciliation_runs.sql",
+        "109_occurrence_taxonomy_context_guard.sql",
+    ):
+        _apply(instance, migration)
     yield instance
     instance.dispose()
 
@@ -46,29 +55,43 @@ def _seed_taxonomy(engine, release_id: str = "a" * 64) -> str:
             ),
             {"release_id": release_id, "payload": b"fixture"},
         )
-        for row_number, code, name in (
-            (1, "WP-1", "Laelia anceps"),
-            (2, "WP-2", "Cattleya mossiae"),
+        connection.execute(
+            text(
+                """
+                INSERT INTO taxonomy_pipeline.staging_checkpoints (
+                    release_id, next_row_index, staged_count, completed
+                ) VALUES (:release_id, 2, 2, true)
+                """
+            ),
+            {"release_id": release_id},
+        )
+        for row_number, rank_code, number, name in (
+            (1, "S", "WP-1", "Laelia anceps"),
+            (2, "S", "WP-2", "Cattleya mossiae"),
         ):
             connection.execute(
                 text(
                     """
                     INSERT INTO taxonomy_pipeline.staged_taxa (
-                        release_id, source_row_number, taxon_code, scientific_name,
-                        row_checksum, normalized_payload
+                        release_id, source_row_number, taxon_code, world_plants_number,
+                        scientific_name, row_checksum, normalized_payload
                     ) VALUES (
-                        :release_id, :row_number, :code, :name, :checksum,
-                        CAST(:payload AS jsonb)
+                        :release_id, :row_number, :rank_code, :number, :name,
+                        :checksum, CAST(:payload AS jsonb)
                     )
                     """
                 ),
                 {
                     "release_id": release_id,
                     "row_number": row_number,
-                    "code": code,
+                    "rank_code": rank_code,
+                    "number": number,
                     "name": name,
                     "checksum": f"{row_number:064x}",
-                    "payload": f'{{"taxon_code":"{code}","name":"{name}"}}',
+                    "payload": (
+                        f'{{"taxon_code":"{rank_code}",'
+                        f'"world_plants_number":"{number}","name":"{name}"}}'
+                    ),
                 },
             )
     return release_id
@@ -79,7 +102,8 @@ def _records() -> list[dict[str, object]]:
         {
             "source_record_id": "gbif-1",
             "scientific_name": "Laelia anceps",
-            "taxon_key": "WP-1",
+            "taxon_key": "GBIF-999",
+            "world_plants_number": "WP-1",
             "latitude": 19.4,
             "longitude": -99.1,
             "coordinate_uncertainty_m": 25,
@@ -89,6 +113,7 @@ def _records() -> list[dict[str, object]]:
         {
             "source_record_id": "gbif-2",
             "scientific_name": "Cattleya mossiae",
+            "taxon_key": "GBIF-1000",
             "latitude": 10.1,
             "longitude": -66.9,
             "license": "CC0",
@@ -97,7 +122,9 @@ def _records() -> list[dict[str, object]]:
     ]
 
 
-def test_exact_replay_is_idempotent_and_preserves_taxonomy_binding(engine) -> None:
+def test_exact_replay_preserves_source_taxonomy_without_inventing_canonical_id(
+    engine,
+) -> None:
     release_id = _seed_taxonomy(engine)
     store = PostgresOccurrencePersistence(engine)
 
@@ -114,10 +141,33 @@ def test_exact_replay_is_idempotent_and_preserves_taxonomy_binding(engine) -> No
     assert first.review_count == 0
     assert replay.staged_count == 2
     assert replay.duplicate_skipped == 2
-    status = store.run_status(first.run_id)
-    assert status["taxonomy_release_id"] == release_id
-    assert status["ready_for_production_graph_mutation"] is False
-    assert status["taxonomy_activation_authorized"] is False
+    assert first.canonical_projection_ready is False
+    assert first.canonical_projection_blocker == CANONICAL_PROJECTION_BLOCKER
+
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(
+                text(
+                    "SELECT source_record_id, provider_taxon_key, world_plants_number, "
+                    "source_taxonomy_record_id, canonical_taxon_id, reconciliation_state, "
+                    "reconciliation_method FROM occurrence_pipeline.staged_occurrences "
+                    "WHERE run_id = :run_id ORDER BY source_record_id"
+                ),
+                {"run_id": first.run_id},
+            )
+            .mappings()
+            .all()
+        )
+    assert rows[0]["provider_taxon_key"] == "GBIF-999"
+    assert rows[0]["world_plants_number"] == "WP-1"
+    assert rows[0]["source_taxonomy_record_id"].endswith(":row:1")
+    assert rows[0]["reconciliation_method"] == "world_plants_number"
+    assert rows[1]["reconciliation_method"] == "scientific_name_exact"
+    assert all(row["canonical_taxon_id"] is None for row in rows)
+    assert all(
+        row["reconciliation_state"] == "source_matched_canonical_pending"
+        for row in rows
+    )
 
 
 def test_taxonomy_review_change_creates_new_run_and_preserves_old_evidence(engine) -> None:
@@ -134,9 +184,9 @@ def test_taxonomy_review_change_creates_new_run_and_preserves_old_evidence(engin
                 INSERT INTO taxonomy_pipeline.review_queue (
                     release_id, review_key, category, summary, evidence
                 ) VALUES (
-                    :release_id, 'duplicate:WP-1:Laelia anceps', 'duplicate_identity',
+                    :release_id, 'duplicate:S:Laelia anceps', 'duplicate_identity',
                     'review Laelia identity',
-                    '{"taxon_code":"WP-1","name":"Laelia anceps"}'::jsonb
+                    '{"taxon_code":"S","name":"Laelia anceps"}'::jsonb
                 )
                 """
             ),
@@ -165,7 +215,7 @@ def test_taxonomy_review_change_creates_new_run_and_preserves_old_evidence(engin
             ),
             {"run_id": second.run_id},
         ).scalar_one()
-    assert old_state == "resolved"
+    assert old_state == "source_matched_canonical_pending"
     assert new_state == "taxonomy_review_required"
 
 
@@ -194,7 +244,9 @@ def test_resolved_taxonomy_review_changes_context_without_blocking_match(engine)
     assert receipt.review_count == 0
 
 
-def test_invalid_coordinates_enter_review_without_losing_taxon_resolution(engine) -> None:
+def test_invalid_coordinates_enter_review_without_losing_source_taxonomy_match(
+    engine,
+) -> None:
     release_id = _seed_taxonomy(engine)
     store = PostgresOccurrencePersistence(engine)
     records = [_records()[0] | {"latitude": 999, "longitude": -99.1}]
@@ -203,14 +255,19 @@ def test_invalid_coordinates_enter_review_without_losing_taxon_resolution(engine
     )
     assert receipt.review_count == 1
     with engine.connect() as connection:
-        row = connection.execute(
-            text(
-                "SELECT reconciliation_state, normalized_payload FROM occurrence_pipeline.staged_occurrences "
-                "WHERE run_id = :run_id"
-            ),
-            {"run_id": receipt.run_id},
-        ).mappings().one()
-    assert row["reconciliation_state"] == "resolved"
+        row = (
+            connection.execute(
+                text(
+                    "SELECT reconciliation_state, canonical_taxon_id, normalized_payload "
+                    "FROM occurrence_pipeline.staged_occurrences WHERE run_id = :run_id"
+                ),
+                {"run_id": receipt.run_id},
+            )
+            .mappings()
+            .one()
+        )
+    assert row["reconciliation_state"] == "source_matched_canonical_pending"
+    assert row["canonical_taxon_id"] is None
     assert row["normalized_payload"]["coordinate_state"] == "invalid"
 
 
@@ -227,3 +284,27 @@ def test_run_identity_is_bound_to_taxonomy_release(engine) -> None:
     assert first.run_id != second.run_id
     assert first.taxonomy_release_id != second.taxonomy_release_id
     assert first.taxonomy_context_sha256 != second.taxonomy_context_sha256
+
+
+def test_rank_code_is_never_used_as_taxon_identity(engine) -> None:
+    release_id = _seed_taxonomy(engine)
+    store = PostgresOccurrencePersistence(engine)
+    receipt = store.reconcile_batch(
+        _records(), source="gbif", job_key="rank-safety", taxonomy_release_id=release_id
+    )
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(
+                text(
+                    "SELECT source_taxon_rank_code, source_taxonomy_record_id, "
+                    "canonical_taxon_id FROM occurrence_pipeline.staged_occurrences "
+                    "WHERE run_id = :run_id ORDER BY source_record_id"
+                ),
+                {"run_id": receipt.run_id},
+            )
+            .mappings()
+            .all()
+        )
+    assert {row["source_taxon_rank_code"] for row in rows} == {"S"}
+    assert all(row["source_taxonomy_record_id"] != "S" for row in rows)
+    assert all(row["canonical_taxon_id"] is None for row in rows)
