@@ -6,6 +6,7 @@ on:
       - "app/calyx_orchestrator/git_proposal_mutation_executor.py"
       - "app/calyx_orchestrator/git_proposal_mutation_journal.py"
       - "tests/test_calyx_git_proposal_mutation_journal_114t.py"
+      - "tests/test_calyx_git_proposal_mutation_dependency_policy_114s.py"
       - "docs/brain/BUILD-BRAIN-114T-DURABLE-PROPOSAL-MUTATION-JOURNAL.md"
       - ".github/workflows/build-brain-114t-durable-proposal-mutation-journal.yml"
   workflow_dispatch:
@@ -31,15 +32,15 @@ jobs:
           pip install pytest ruff
       - name: Compile journal surfaces
         run: |
-          python -m compileall -q app/calyx_orchestrator/git_proposal_mutation_executor.py app/calyx_orchestrator/git_proposal_mutation_journal.py tests/test_calyx_git_proposal_mutation_journal_114t.py
+          python -m compileall -q app/calyx_orchestrator/git_proposal_mutation_executor.py app/calyx_orchestrator/git_proposal_mutation_journal.py tests/test_calyx_git_proposal_mutation_journal_114t.py tests/test_calyx_git_proposal_mutation_dependency_policy_114s.py
       - name: Ruff journal surfaces
         run: |
-          ruff check app/calyx_orchestrator/git_proposal_mutation_executor.py app/calyx_orchestrator/git_proposal_mutation_journal.py tests/test_calyx_git_proposal_mutation_journal_114t.py
-          ruff format --check app/calyx_orchestrator/git_proposal_mutation_executor.py app/calyx_orchestrator/git_proposal_mutation_journal.py tests/test_calyx_git_proposal_mutation_journal_114t.py
+          ruff check app/calyx_orchestrator/git_proposal_mutation_executor.py app/calyx_orchestrator/git_proposal_mutation_journal.py tests/test_calyx_git_proposal_mutation_journal_114t.py tests/test_calyx_git_proposal_mutation_dependency_policy_114s.py
+          ruff format --check app/calyx_orchestrator/git_proposal_mutation_executor.py app/calyx_orchestrator/git_proposal_mutation_journal.py tests/test_calyx_git_proposal_mutation_journal_114t.py tests/test_calyx_git_proposal_mutation_dependency_policy_114s.py
       - name: Focused journal regressions
         env:
           PYTHONPATH: .
-        run: pytest -q tests/test_calyx_git_proposal_mutation_journal_114t.py tests/test_calyx_git_proposal_mutation_executor_114s.py
+        run: pytest -q tests/test_calyx_git_proposal_mutation_journal_114t.py tests/test_calyx_git_proposal_mutation_executor_114s.py tests/test_calyx_git_proposal_mutation_dependency_policy_114s.py
       - name: Static authority boundary
         run: |
           python - <<'PY'
