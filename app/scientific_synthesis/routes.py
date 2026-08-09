@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
-from fastapi import APIRouter
+import requests
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from .discovery import (
+    BibliographicVerificationService,
+    CrossrefProvider,
+    LiteratureDiscoveryService,
+)
 from .models import (
     ArticleDraft,
     ArticleSentence,
@@ -19,6 +26,9 @@ from .models import (
 from .service import ScientificSynthesisService
 
 SERVICE = ScientificSynthesisService()
+CROSSREF = CrossrefProvider(mailto=os.getenv("CROSSREF_MAILTO"))
+DISCOVERY = LiteratureDiscoveryService((CROSSREF,))
+VERIFICATION = BibliographicVerificationService(CROSSREF)
 router = APIRouter(prefix="/synthesis", tags=["scientific-synthesis"])
 
 
@@ -90,6 +100,41 @@ class SynthesisValidationIn(BaseModel):
     evidence_rows: list[EvidenceRowIn]
     claims: list[ClaimIn]
     article: ArticleDraftIn
+
+
+class DiscoveryIn(BaseModel):
+    question: str = Field(min_length=1)
+    rows_per_provider: int = Field(default=20, ge=1, le=100)
+
+
+class DoiVerificationIn(BaseModel):
+    doi: str = Field(min_length=1)
+
+
+def _external_operation(operation):
+    try:
+        return operation()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "LITERATURE_PROVIDER_UNAVAILABLE", "provider": "crossref"},
+        ) from exc
+
+
+@router.post("/discovery/search")
+def discover_literature(payload: DiscoveryIn):
+    return _external_operation(
+        lambda: DISCOVERY.discover(
+            payload.question, rows_per_provider=payload.rows_per_provider
+        )
+    )
+
+
+@router.post("/discovery/verify-doi")
+def verify_doi(payload: DoiVerificationIn):
+    return _external_operation(lambda: VERIFICATION.verify_doi(payload.doi))
 
 
 @router.post("/validate")
@@ -166,9 +211,12 @@ def validate_synthesis(payload: SynthesisValidationIn):
 def health():
     return {
         "status": "ok",
-        "validator_version": "CALYX-SYN-001",
+        "validator_version": "CALYX-SYN-003",
         "generates_prose": False,
         "requires_claim_grounding": True,
         "requires_verified_article_sources": True,
+        "literature_discovery": True,
+        "search_results_are_evidence": False,
+        "authoritative_doi_verification": True,
         "publishes_knowledge": False,
     }
