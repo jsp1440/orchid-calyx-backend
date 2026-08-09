@@ -20,20 +20,39 @@ def _scope(candidate: dict[str, Any]) -> dict[str, Any]:
     graph_contract = dict(qualifiers.get("graph_contract") or {})
     declared_scope = qualifiers.get("causal_scope")
     normalized_scope = normalize_causal_scope(declared_scope)
+    experimental_context = json.loads(
+        json.dumps(
+            qualifiers.get("experimental_context") or {}, sort_keys=True, default=str
+        )
+    )
+    quantitative_context = json.loads(
+        json.dumps(
+            qualifiers.get("quantitative_context") or {}, sort_keys=True, default=str
+        )
+    )
     return {
         "source_key": graph_contract.get("source_key"),
         "target_key": graph_contract.get("target_key"),
         "causal_scope": normalized_scope,
         "applicability_identity": causal_scope_identity(normalized_scope),
+        "experimental_context": experimental_context,
+        "quantitative_context": quantitative_context,
     }
 
 
 def _scope_identity(scope: dict[str, Any]) -> dict[str, Any]:
-    return {
+    identity = {
         "source_key": scope.get("source_key"),
         "target_key": scope.get("target_key"),
         "causal_scope": scope.get("applicability_identity"),
     }
+    if (
+        isinstance(identity.get("causal_scope"), dict)
+        and identity["causal_scope"].get("scope_class") == "unknown"
+    ):
+        identity["experimental_context"] = scope.get("experimental_context", {})
+        identity["quantitative_context"] = scope.get("quantitative_context", {})
+    return identity
 
 
 def _scope_id(scope: dict[str, Any]) -> str:
