@@ -248,5 +248,5 @@ def test_evidence_and_timezone_are_required() -> None:
             decision="approved",
             rationale="Reviewed exact proposal evidence.",
             evidence_uris=("review:ticket-123",),
-            decided_at=datetime(2026, 8, 8, 22, 0),
+            decided_at=datetime.fromisoformat("2026-08-08T22:00:00"),
         )
