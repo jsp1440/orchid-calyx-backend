@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 from app.conversation_memory.report import build_conversation_markdown
 from app.conversation_memory.service import ConversationMemoryService
@@ -64,7 +65,7 @@ class Repo:
 
 
 class Provider:
-    metadata = {"provider": "fixture"}
+    metadata: ClassVar[dict[str, str]] = {"provider": "fixture"}
 
     def embed_batch(self, values):
         return [[1.0] for _ in values]
