@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-
 MISSION_STATES = ("draft", "awaiting_approval", "approved", "queued", "running", "paused", "completed", "failed", "cancelled", "expired", "superseded", "blocked")
 JOB_STATES = ("pending", "available", "claimed", "running", "succeeded", "retry_wait", "failed", "cancelled", "dead_lettered", "blocked", "skipped")
 
@@ -64,6 +63,20 @@ class MissionType:
 
 
 MISSION_TYPES: dict[str, MissionType] = {
+    "brain_scientific_mission": MissionType(
+        "brain_scientific_mission",
+        "brain_scientific_mission",
+        risk_level="medium",
+        write_scope="scientific_artifacts_only",
+        allowed_database_schemas=(
+            "oc_missions",
+            "oc_candidate_knowledge",
+            "oc_scientific_interpretation",
+            "reasoning_ledger",
+        ),
+        human_approval_required=True,
+        audit_requirements=("mission_event", "scientific_artifact_ids"),
+    ),
     "system_health_check": MissionType("system_health_check", "system_health_check", allowed_database_schemas=("oc_missions", "oc_graph")),
     "telemetry_snapshot": MissionType("telemetry_snapshot", "telemetry_snapshot", allowed_database_schemas=("oc_missions",)),
     "intake_batch_review": MissionType("intake_batch_review", "not_implemented_safe_block", risk_level="medium"),
