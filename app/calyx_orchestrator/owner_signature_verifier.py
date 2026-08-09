@@ -18,7 +18,8 @@ SIGNING_DOMAIN = b"calyx-owner-grant-v1\x00"
 _KEY_ID = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 
 
-def _canonical_payload_bytes(payload: Mapping[str, Any]) -> bytes:
+def owner_grant_signing_bytes(payload: Mapping[str, Any]) -> bytes:
+    """Canonical domain-separated bytes an external owner signer must sign."""
     encoded = json.dumps(
         payload,
         sort_keys=True,
@@ -150,7 +151,7 @@ class Ed25519OwnerGrantSignatureVerifier:
                 encoded_signature,
                 expected_length=64,
             )
-            message = _canonical_payload_bytes(payload)
+            message = owner_grant_signing_bytes(payload)
             key.public_key.verify(signature_bytes, message)
         except (InvalidSignature, TypeError, ValueError):
             return False
