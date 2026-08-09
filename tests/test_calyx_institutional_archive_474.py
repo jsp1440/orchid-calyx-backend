@@ -9,6 +9,7 @@ from app.archive.activation import (
     ArchiveActivationInspector,
 )
 from app.archive.policy import ArchivePolicy
+from app.calyx_orchestrator.artifact_registry import ImmutableArtifactRegistry
 
 
 class _Result:
@@ -87,17 +88,25 @@ def test_activation_certifies_complete_schema_without_authorizing_import(monkeyp
 
 def test_sanitized_activation_evidence_is_content_addressed_and_path_free(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("DATABASE_URL", "postgresql://configured-but-not-exposed")
+    artifacts = ImmutableArtifactRegistry()
     inspector = ArchiveActivationInspector(
         _Registry(tables=REQUIRED_ARCHIVE_TABLES, columns=REQUIRED_HARDENING_COLUMNS),
+        artifacts=artifacts,
         policy_factory=lambda: _policy(tmp_path),
     )
-    receipt = inspector.sanitized_evidence()
-    assert receipt["sanitized"] is True
-    assert receipt["contains_secrets"] is False
-    assert receipt["contains_source_paths"] is False
-    assert receipt["artifact"]["artifact_id"].startswith("archive-activation:")
-    assert str(tmp_path) not in str(receipt)
-    assert "postgresql://" not in str(receipt)
+    first = inspector.sanitized_evidence()
+    second = inspector.sanitized_evidence()
+    assert first["sanitized"] is True
+    assert first["contains_secrets"] is False
+    assert first["contains_source_paths"] is False
+    assert first["artifact"]["artifact_id"].startswith("archive-activation:")
+    assert first["activation"]["evidence_digest"] == second["activation"]["evidence_digest"]
+    assert first["artifact"]["artifact_id"] == second["artifact"]["artifact_id"]
+    assert first["artifact"]["checksum"] == second["artifact"]["checksum"]
+    assert first["artifact"]["created"] is True
+    assert second["artifact"]["created"] is False
+    assert str(tmp_path) not in str(first)
+    assert "postgresql://" not in str(first)
 
 
 def test_contract_inventory_reuses_archive_contracts_and_forbids_graph_write():
