@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -27,7 +28,7 @@ class GitProposalPlanOperation:
     parameters: Mapping[str, Any]
 
     def payload(self) -> dict[str, Any]:
-        return {"action": self.action, "parameters": dict(self.parameters)}
+        return {"action": self.action, "parameters": copy.deepcopy(dict(self.parameters))}
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +38,7 @@ class GitProposalExecutionPlan:
     authorization_request_digest: str
     repository: str
     base_commit_sha: str
+    base_ref: str
     proposed_branch: str
     change_hashes: tuple[tuple[str, str], ...]
     validation_receipt_digests: tuple[str, ...]
@@ -57,6 +59,7 @@ class GitProposalExecutionPlan:
             "authorization_request_digest": self.authorization_request_digest,
             "repository": self.repository,
             "base_commit_sha": self.base_commit_sha,
+            "base_ref": self.base_ref,
             "proposed_branch": self.proposed_branch,
             "change_hashes": [
                 {"path": path, "after_sha256": digest}
@@ -112,17 +115,14 @@ class GitProposalExecutionPlanner:
             manifest_snapshot,
             review_store=review_store,
             actions=request.actions,
+            base_ref=request.base_ref,
             expires_at=request.expires_at,
             now=now,
         )
         if expected_request.snapshot() != request.snapshot():
             raise PermissionError("GIT_PROPOSAL_PLAN_AUTHORIZATION_REQUEST_MISMATCH")
 
-        verified_grant = authorization_gate.verify_grant(
-            request,
-            grant_mapping,
-            now=now,
-        )
+        verified_grant = authorization_gate.verify_grant(request, grant_mapping)
 
         commit_title = str(manifest_snapshot.get("commit_title") or "").strip()
         pr_title = str(manifest_snapshot.get("pr_title") or "").strip()
@@ -151,6 +151,7 @@ class GitProposalExecutionPlanner:
             authorization_request_digest=request.request_digest,
             repository=request.repository,
             base_commit_sha=request.base_commit_sha,
+            base_ref=request.base_ref,
             proposed_branch=request.proposed_branch,
             change_hashes=request.change_hashes,
             validation_receipt_digests=request.validation_receipt_digests,
@@ -213,6 +214,7 @@ class GitProposalExecutionPlanner:
         elif action == "open_pull_request":
             parameters = {
                 "repository": request.repository,
+                "base_ref": request.base_ref,
                 "base_commit_sha": request.base_commit_sha,
                 "head_branch": request.proposed_branch,
                 "pr_title": pr_title,
