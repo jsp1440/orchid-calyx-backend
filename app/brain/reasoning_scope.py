@@ -41,41 +41,120 @@ def evaluate_scope(
 ) -> dict[str, Any]:
     claim = normalize_causal_scope(claim_scope)
     if query_scope is None:
-        return {"status":"not_evaluated","applicable":None,"claim_scope":claim,"query_scope":None,"matched_dimensions":[],"mismatched_dimensions":[],"unresolved_dimensions":[]}
+        return {
+            "status": "not_evaluated",
+            "applicable": None,
+            "claim_scope": claim,
+            "query_scope": None,
+            "matched_dimensions": [],
+            "mismatched_dimensions": [],
+            "unresolved_dimensions": [],
+        }
+
     query = normalize_causal_scope(query_scope)
     if claim["scope_class"] == "global":
-        return {"status":"applicable","applicable":True,"claim_scope":claim,"query_scope":query,"matched_dimensions":["global"],"mismatched_dimensions":[],"unresolved_dimensions":[]}
+        return {
+            "status": "applicable",
+            "applicable": True,
+            "claim_scope": claim,
+            "query_scope": query,
+            "matched_dimensions": ["global"],
+            "mismatched_dimensions": [],
+            "unresolved_dimensions": [],
+        }
     if claim["scope_class"] == "unknown":
-        return {"status":"indeterminate","applicable":None,"claim_scope":claim,"query_scope":query,"matched_dimensions":[],"mismatched_dimensions":[],"unresolved_dimensions":["claim_scope_unknown"]}
-    matched=[]; mismatched=[]; unresolved=[]
+        return {
+            "status": "indeterminate",
+            "applicable": None,
+            "claim_scope": claim,
+            "query_scope": query,
+            "matched_dimensions": [],
+            "mismatched_dimensions": [],
+            "unresolved_dimensions": ["claim_scope_unknown"],
+        }
+
+    matched: list[str] = []
+    mismatched: list[str] = []
+    unresolved: list[str] = []
     for dimension in _LIST_DIMENSIONS:
-        claim_values=set(claim[dimension]); query_values=set(query[dimension])
-        if not claim_values: continue
-        if not query_values: unresolved.append(dimension)
-        elif claim_values.intersection(query_values): matched.append(dimension)
-        else: mismatched.append(dimension)
+        claim_values = set(claim[dimension])
+        query_values = set(query[dimension])
+        if not claim_values:
+            continue
+        if not query_values:
+            unresolved.append(dimension)
+        elif claim_values.intersection(query_values):
+            matched.append(dimension)
+        else:
+            mismatched.append(dimension)
+
     for dimension in _MAP_DIMENSIONS:
-        claim_values=claim[dimension]; query_values=query[dimension]
-        if not claim_values: continue
-        if not query_values: unresolved.append(dimension); continue
-        compatibility=_mapping_compatibility(claim_values, query_values)
-        if compatibility=="match": matched.append(dimension)
-        elif compatibility=="mismatch": mismatched.append(dimension)
-        else: unresolved.append(dimension)
-    if mismatched: status, applicable="out_of_scope",False
-    elif unresolved: status, applicable="indeterminate",None
-    else: status, applicable="applicable",True
-    return {"status":status,"applicable":applicable,"claim_scope":claim,"query_scope":query,"matched_dimensions":sorted(matched),"mismatched_dimensions":sorted(mismatched),"unresolved_dimensions":sorted(unresolved)}
+        claim_values = claim[dimension]
+        query_values = query[dimension]
+        if not claim_values:
+            continue
+        if not query_values:
+            unresolved.append(dimension)
+            continue
+        compatibility = _mapping_compatibility(claim_values, query_values)
+        if compatibility == "match":
+            matched.append(dimension)
+        elif compatibility == "mismatch":
+            mismatched.append(dimension)
+        else:
+            unresolved.append(dimension)
+
+    if mismatched:
+        status, applicable = "out_of_scope", False
+    elif unresolved:
+        status, applicable = "indeterminate", None
+    else:
+        status, applicable = "applicable", True
+    return {
+        "status": status,
+        "applicable": applicable,
+        "claim_scope": claim,
+        "query_scope": query,
+        "matched_dimensions": sorted(matched),
+        "mismatched_dimensions": sorted(mismatched),
+        "unresolved_dimensions": sorted(unresolved),
+    }
 
 
-def evaluate_edge_scope(edge: Edge, query_scope: dict[str, Any] | CausalScope | None) -> dict[str, Any]:
+def evaluate_edge_scope(
+    edge: Edge,
+    query_scope: dict[str, Any] | CausalScope | None,
+) -> dict[str, Any]:
     return evaluate_scope(_edge_scope(edge), query_scope)
 
 
-def evaluate_path_scope(edges: Iterable[Edge], query_scope: dict[str, Any] | CausalScope | None) -> dict[str, Any]:
-    ordered_edges=list(edges); evaluations=[evaluate_edge_scope(edge,query_scope) for edge in ordered_edges]; statuses=[item["status"] for item in evaluations]
-    if query_scope is None: status, applicable="not_evaluated",None
-    elif "out_of_scope" in statuses: status, applicable="out_of_scope",False
-    elif "indeterminate" in statuses: status, applicable="indeterminate",None
-    else: status, applicable="applicable",True
-    return {"status":status,"applicable":applicable,"edge_evaluations":evaluations,"out_of_scope_edge_ids":[edge.kg_edge_id for edge,evaluation in zip(ordered_edges,evaluations,strict=True) if evaluation["status"]=="out_of_scope"],"indeterminate_edge_ids":[edge.kg_edge_id for edge,evaluation in zip(ordered_edges,evaluations,strict=True) if evaluation["status"]=="indeterminate"]}
+def evaluate_path_scope(
+    edges: Iterable[Edge],
+    query_scope: dict[str, Any] | CausalScope | None,
+) -> dict[str, Any]:
+    ordered_edges = list(edges)
+    evaluations = [evaluate_edge_scope(edge, query_scope) for edge in ordered_edges]
+    statuses = [item["status"] for item in evaluations]
+    if query_scope is None:
+        status, applicable = "not_evaluated", None
+    elif "out_of_scope" in statuses:
+        status, applicable = "out_of_scope", False
+    elif "indeterminate" in statuses:
+        status, applicable = "indeterminate", None
+    else:
+        status, applicable = "applicable", True
+    return {
+        "status": status,
+        "applicable": applicable,
+        "edge_evaluations": evaluations,
+        "out_of_scope_edge_ids": [
+            edge.kg_edge_id
+            for edge, evaluation in zip(ordered_edges, evaluations, strict=True)
+            if evaluation["status"] == "out_of_scope"
+        ],
+        "indeterminate_edge_ids": [
+            edge.kg_edge_id
+            for edge, evaluation in zip(ordered_edges, evaluations, strict=True)
+            if evaluation["status"] == "indeterminate"
+        ],
+    }
