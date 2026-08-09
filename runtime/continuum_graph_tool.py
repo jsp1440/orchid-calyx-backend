@@ -80,7 +80,9 @@ class ReadOnlyKnowledgeGraphTool:
                     canonical_key=key,
                     reason="TAXON_NOT_FOUND_IN_GRAPH",
                 )
-            traversal = traverse(repo, focal, depth=int(depth), limit=int(limit), offset=0)
+            traversal = traverse(
+                repo, focal, depth=int(depth), limit=int(limit), offset=0
+            )
         except psycopg.Error as exc:
             return self._status(
                 "unavailable",
