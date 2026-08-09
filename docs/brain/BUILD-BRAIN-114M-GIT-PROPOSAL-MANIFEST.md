@@ -24,15 +24,23 @@ The effective trust chain is:
 
 ## Current-main R3 reconstruction
 
-PR #761 / BUILD-BRAIN-114M-R2 became 11 commits behind current `main`. A merge-base-to-current-main audit found that those 11 commits touched only Harvester Command Center files and **none of the nine BUILD-BRAIN-114M trust-root files**. The R3 branch `fix/brain-114m-r3-current-main` therefore rebuilds the exact hardened R2 file set directly on current `main` rather than carrying stale ancestry forward.
+PR #772 / branch `fix/brain-114m-r3-current-main` is the authoritative current-main trust root. PR #761 / BUILD-BRAIN-114M-R2 became 11 commits behind current `main`. A merge-base-to-current-main audit found those intervening commits touched Harvester Command Center files and none of the nine BUILD-BRAIN-114M trust-root files, so R3 reapplies the hardened trust-root delta directly on the newer main lineage rather than carrying stale ancestry.
 
-The R3 reconstruction preserves the trusted R2 implementation bytes for the trust-root files while retaining every intervening current-main change. The branch is not merge-authorized until its exact unchanged head receives executable focused BUILD-BRAIN-114M validation plus relevant broad regressions and has no unresolved review findings. Zero-step GitHub Actions failures under hosted-runner incident #481 are infrastructure evidence only and are not counted as pass or fail results.
+At the current checkpoint, historical/current-parent branches #761, #762, #763, #765, #766, #767 and attempted #771 have been closed unmerged because they are rooted in the superseded #761 lineage. Retargeting #771 directly to #772 produced a non-mergeable 15-file diff, confirming that the downstream ancestry must not be reused mechanically. The next safe dependency path is therefore to rebuild BUILD-BRAIN-114N directly on the exact #772 head, then rebuild 114P, 114O, 114Q and plan-only 114R in order.
 
-Downstream BUILD-BRAIN-114N/114P/114O/114Q/114R branches must be rebuilt on the exact merged R3 trust root before they are authoritative.
+No downstream review, authorization, signature or execution-plan branch is authoritative until it is reconstructed on this exact R3 root.
+
+## Validation state
+
+Exact-head BUILD-BRAIN-114M run `31293261883`, job `93194059066`, terminated before step 1 with `steps=null` and no logs URL. Checkout, dependency installation, compilation, Ruff, pytest, static authority checks and diff hygiene did not execute. BUILD-088E, Workflow Governance and the other triggered validation lanes failed in the same hosted-runner allocation window.
+
+This is another reproduction of canonical incident #481 and is infrastructure evidence only. The R3 branch remains draft/unmerged until an executable exact-head run passes its focused and broad gates.
 
 ## Permanent non-authorities
 
 BUILD-BRAIN-114M performs no Git command, branch creation, commit, push, pull-request creation, merge, deployment, scientific publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation. It stores no credentials and performs no network calls. Isolated workspace mutation is confined to the already-governed disposable workspace role and requires explicit durable mutation intent.
+
+BUILD-BRAIN-114S—the first real branch/commit/push/open-PR executor—remains outside the authorized implementation boundary and requires an explicit owner governance decision.
 
 ## Validation contract
 
