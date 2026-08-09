@@ -2,7 +2,11 @@
 
 ## Status
 
-Reconstructed on `feature/build-619-reasoning-scope-evaluation-r2` directly from the executable-green BUILD-618-R2 chain. The stale original BUILD-619 stack is not used as the integration path.
+Reconstructed on `feature/build-619-reasoning-scope-evaluation-r2` directly from the executable-green BUILD-618-R2 chain. Replacement PR #788 supersedes the stale original BUILD-619 stack.
+
+The exact executable-green code head is `54c282199c7d38f43861c1270a8be070426be7e3`. Dedicated BUILD-619 run `31301980652` passed compile, Ruff lint/format, scoped reasoning regressions, BUILD-618 causal-scope regressions, BUILD-612 reasoning-map regressions, scoped-route verification, and hygiene. Applicable broad checks also passed on the same head: Workflow Governance, Canonical Brain, CALYX Agent 001/003/004, CALYX Core Rebase, Journalism MVP, Education Design, Calyx Brain Integration, and CALYX Brain End-to-End Certification.
+
+Executable CI exposed three correctable integration findings before readiness: an import-format issue, a single test formatting drift, and a missing `httpx` test dependency required by the inherited BUILD-612 FastAPI TestClient regression suite. All were corrected before accepting behavioral validation; no scientific or governance gate was weakened.
 
 ## Purpose
 
