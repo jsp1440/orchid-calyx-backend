@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.brain.causal_scope import CausalScope, normalize_causal_scope
 from app.candidate_knowledge.dependencies import get_candidate_components
 from app.candidate_knowledge.models import CandidateKind, EvidenceInput, SourceAnchor
 from runtime.knowledge_graph.causal_vocabulary import (
@@ -52,6 +53,7 @@ class MechanisticCandidateRequest(BaseModel):
     revision_id: int = Field(gt=0)
     extraction_run_id: int = Field(gt=0)
     source_anchors: list[MechanisticEvidenceAnchor] = Field(min_length=1)
+    causal_scope: CausalScope = Field(default_factory=CausalScope)
     experimental_context: dict[str, Any] = Field(default_factory=dict)
     quantitative_context: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, Any] = Field(default_factory=dict)
@@ -84,6 +86,7 @@ def _candidate_graph(
     if target_type not in CAUSAL_REASONING_NODE_TYPES:
         raise ValueError(f"UNAPPROVED_CAUSAL_TARGET_TYPE:{target_type}")
 
+    causal_scope = normalize_causal_scope(payload.causal_scope)
     source_pk = _stable_source_pk(payload.source)
     target_pk = _stable_source_pk(payload.target)
     source = Node(
@@ -124,6 +127,7 @@ def _candidate_graph(
         payload={
             "reasoning_id": payload.reasoning_id,
             "candidate_only": True,
+            "causal_scope": causal_scope,
             "experimental_context": payload.experimental_context,
             "quantitative_context": payload.quantitative_context,
             "provenance": payload.provenance,
@@ -140,11 +144,13 @@ def _candidate_graph(
         "edges": [edge.to_dict()],
         "validation": validation,
         "semantics": dict(semantics),
+        "causal_scope": causal_scope,
         "governance": {
             "candidate_only": True,
             "review_required": True,
             "canonical_graph_mutated": False,
             "automatically_published": False,
+            "unknown_scope_never_means_global": True,
         },
     }
     qualifiers = {
@@ -159,6 +165,7 @@ def _candidate_graph(
             "polarity": semantics["polarity"],
             "causal": semantics["causal"],
         },
+        "causal_scope": causal_scope,
         "experimental_context": payload.experimental_context,
         "quantitative_context": payload.quantitative_context,
         "provenance": payload.provenance,
