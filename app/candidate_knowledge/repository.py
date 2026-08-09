@@ -161,6 +161,15 @@ class MemoryCandidateRepository:
         if not rationale.strip():
             raise ValueError("DECISION_RATIONALE_REQUIRED")
         review = self.reviews[review_id]
+        conflict = None
+        if decision == "RESOLVE_CONFLICT":
+            conflict_id = (review.get("evidence") or {}).get("conflict_id")
+            conflict = self.conflicts.get(conflict_id)
+            if conflict is None or conflict.get("state") != "OPEN":
+                raise ValueError("OPEN_CONFLICT_REQUIRED")
+            if review.get("candidate_id") not in conflict.get("candidate_ids", []):
+                raise ValueError("REVIEW_CONFLICT_IDENTITY_MISMATCH")
+
         resolved_at = now()
         review.update(
             state="RESOLVED",
@@ -186,13 +195,7 @@ class MemoryCandidateRepository:
                 else "CHANGES_REQUESTED"
             )
             candidate["published"] = False
-        if decision == "RESOLVE_CONFLICT":
-            conflict_id = (review.get("evidence") or {}).get("conflict_id")
-            conflict = self.conflicts.get(conflict_id)
-            if conflict is None or conflict.get("state") != "OPEN":
-                raise ValueError("OPEN_CONFLICT_REQUIRED")
-            if review.get("candidate_id") not in conflict.get("candidate_ids", []):
-                raise ValueError("REVIEW_CONFLICT_IDENTITY_MISMATCH")
+        if conflict is not None:
             conflict.update(
                 state="RESOLVED",
                 resolution_review_id=review_id,
