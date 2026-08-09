@@ -2,7 +2,7 @@
 
 ## Status
 
-R5 reconstruction directly on BUILD-BRAIN-114N-R6 PR #781 exact validated head `079cf0bd003092767742ec63d5469dd069105fd4`. Draft and unmerged. Parent exact-head BUILD-BRAIN-114N, CALYX-AGENT-003, and Workflow Governance validation are green.
+R5 reconstruction directly on BUILD-BRAIN-114N-R6 PR #781 exact validated head `079cf0bd003092767742ec63d5469dd069105fd4`. Draft and unmerged. Parent exact-head BUILD-BRAIN-114N, CALYX-AGENT-003, and Workflow Governance validation are green. R5 implementation validation is also green after correcting the only discovered blocker: Ruff formatter drift in the model, durable store, and durable regression file.
 
 ## Objective
 
@@ -10,7 +10,7 @@ Persist governed repository-proposal review evidence durably and verify it on ev
 
 ## Current lineage
 
-`#772 BUILD-BRAIN-114M-R3 → #781 BUILD-BRAIN-114N-R6 → this BUILD-BRAIN-114P-R5`.
+`#772 BUILD-BRAIN-114M-R3 → #781 BUILD-BRAIN-114N-R6 → #782 BUILD-BRAIN-114P-R5`.
 
 The parent chain includes canonical assignment inputs, durable execution identity, canonical receipt input-checksum recomputation, exact governed patch input/output agreement, manifest v2, `patch_program_job_id`, requester/producer separation, role-qualified operational/security review semantics, immutable per-class review evidence, and distinct-reviewer completion requirements.
 
@@ -34,7 +34,7 @@ The durable-review fixture computes the execution receipt input checksum with `c
 
 Focused regressions cover durable reload, idempotent replay, conflicting replacement, payload/row and patch-evidence tampering, dual-review reconstruction, self-approval, missing patch evidence, and canonical assignment-input binding. Dedicated CI is read-only, validates the migration contract, and statically rejects Git/GitHub mutation primitives.
 
-R5 requires executable exact-head BUILD-BRAIN-114P validation plus relevant parent/broad regressions before any downstream reconstruction. Failures are fixed before expansion.
+Exact implementation head `e4bc960659ff2f1d3cc27aba669e6d7f7201b7e3` passed BUILD-BRAIN-114P run `31296479728` end to end: dependency installation, compile, Ruff check and format, focused durable regressions, migration contract, static trust/authority assertions, and diff hygiene. The same exact head also passed CALYX-AGENT-003 run `31296479733` and Workflow Governance run `31296479735`. This documentation-only commit records that receipt and intentionally becomes the new R5 head; it must receive its own exact-head executable validation before serving as the parent for 114O.
 
 ## Governance boundary
 
@@ -42,4 +42,4 @@ No Git command, branch creation, commit, push, pull-request creation, merge/auto
 
 ## Next dependency
 
-BUILD-BRAIN-114O must be rebuilt directly on this exact validated R5 head before owner authorization, public-key verification, and plan-only 114R can again be authoritative. Actual Git/GitHub side-effect execution remains a separate owner-governance decision.
+BUILD-BRAIN-114O must be rebuilt directly on the exact validated R5 head before owner authorization, public-key verification, and plan-only 114R can again be authoritative. Actual Git/GitHub side-effect execution remains a separate owner-governance decision.
