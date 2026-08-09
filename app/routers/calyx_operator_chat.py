@@ -80,7 +80,9 @@ def _resolved_context(
     }
 
 
-def _private_exchange(question: str, answer: str) -> tuple[dict[str, Any], dict[str, Any]]:
+def _private_exchange(
+    question: str, answer: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Create response metadata without copying authenticated research into the public transcript."""
     private_chat = GovernedOperatorChat()
     operator_message = private_chat.receive(question)
@@ -134,7 +136,9 @@ def ask_the_continuum(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    operator_message, calyx_message = _private_exchange(request.question, result["answer"])
+    operator_message, calyx_message = _private_exchange(
+        request.question, result["answer"]
+    )
     return {
         **result,
         "owner": owner,
