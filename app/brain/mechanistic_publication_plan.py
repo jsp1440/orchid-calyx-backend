@@ -14,6 +14,8 @@ from runtime.knowledge_graph.models import Edge, Node
 from runtime.knowledge_graph.repository import InMemoryGraphRepository
 from runtime.knowledge_graph.validation import validate_graph
 
+from .mechanistic_contradictions import candidate_contradiction_ids
+
 
 def _digest(value: Any) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
@@ -170,12 +172,7 @@ def plan_mechanistic_candidate_publication(
     candidate_id: int,
     components: tuple[Any, Any] | None = None,
 ) -> dict[str, Any]:
-    """Produce a deterministic, non-executing graph publication plan.
-
-    This function has no graph repository dependency and no write path. It only
-    translates an already-reviewed mechanistic candidate into projected node/edge
-    operations for a later controlled publication gate.
-    """
+    """Produce a deterministic, non-executing graph publication plan."""
 
     repository, _service = components or get_candidate_components()
     candidate = _candidate(repository, candidate_id)
@@ -194,6 +191,10 @@ def plan_mechanistic_candidate_publication(
 
     blockers.extend(_open_review_blockers(repository, candidate_id))
     blockers.extend(_open_conflict_blockers(repository, candidate_id))
+    blockers.extend(
+        f"mechanistic_contradiction:{contradiction_id}"
+        for contradiction_id in candidate_contradiction_ids(repository, candidate_id)
+    )
 
     nodes, edges, graph_blockers = _graph_from_candidate(candidate)
     blockers.extend(graph_blockers)
