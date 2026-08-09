@@ -6,7 +6,6 @@ from typing import Any
 
 from app.literature_extraction.models import PaperKnowledge
 from app.literature_extraction.source_binding import CanonicalLiteratureSourceBinding
-
 from .models import (
     BibliographicRecord,
     EvidenceAnchor,
@@ -20,6 +19,51 @@ VERIFIED = {
     VerificationState.VERIFIED_AUTHORITY,
     VerificationState.VERIFIED_PUBLISHER,
 }
+
+
+def _clean(value: str | None) -> str:
+    return " ".join((value or "").split()).casefold()
+
+
+def _normalize_doi(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = value.strip().lower()
+    for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix) :].strip()
+    return normalized or None
+
+
+def _bibliography_matches_paper(
+    paper: PaperKnowledge, bibliography: BibliographicRecord
+) -> bool:
+    paper_dois = {
+        normalized
+        for identifier in paper.metadata.identifiers
+        if identifier.scheme == "doi"
+        if (normalized := _normalize_doi(identifier.value)) is not None
+    }
+    bibliography_doi = _normalize_doi(bibliography.doi)
+    if paper_dois:
+        return bibliography_doi in paper_dois
+    if paper.metadata.title:
+        return _clean(bibliography.title) == _clean(paper.metadata.title)
+    return False
+
+
+def _expected_integrity_proof(
+    *, evidence: Any, anchor_id: int, source_hash: str
+) -> dict[str, Any]:
+    return {
+        "anchor_id": anchor_id,
+        "source_hash": source_hash,
+        "excerpt_hash": hashlib.sha256(evidence.excerpt.encode()).hexdigest(),
+        "char_start": evidence.span.char_start,
+        "char_end": evidence.span.char_end,
+        "section_id": evidence.span.section_id,
+        "evidence_type": evidence.evidence_type,
+    }
 
 
 class EvidenceMatrixBuilder:
@@ -43,6 +87,8 @@ class EvidenceMatrixBuilder:
             bibliography.verification_identifier or ""
         ).strip():
             raise ValueError("BIBLIOGRAPHIC_VERIFICATION_PROVENANCE_REQUIRED")
+        if not _bibliography_matches_paper(paper, bibliography):
+            raise ValueError("BIBLIOGRAPHIC_PAPER_IDENTITY_UNPROVEN")
         if not binding.evidence_integrity:
             raise ValueError("SOURCE_INTEGRITY_PROOF_REQUIRED")
         binding.validate_against_paper(paper)
@@ -66,7 +112,12 @@ class EvidenceMatrixBuilder:
                 anchor_id = binding.anchor_ids.get(evidence_id)
                 if evidence is None or proof is None or anchor_id is None:
                     raise ValueError("SOURCE_BOUND_EVIDENCE_REQUIRED")
-                if proof.get("anchor_id") != anchor_id:
+                expected_proof = _expected_integrity_proof(
+                    evidence=evidence,
+                    anchor_id=anchor_id,
+                    source_hash=paper.source.content_hash,
+                )
+                if proof != expected_proof:
                     raise ValueError("SOURCE_INTEGRITY_PROOF_MISMATCH")
                 anchors.append(
                     EvidenceAnchor(
