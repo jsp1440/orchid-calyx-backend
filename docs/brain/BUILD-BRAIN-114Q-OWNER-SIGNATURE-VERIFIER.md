@@ -2,7 +2,7 @@
 
 ## Status
 
-R5 reconstruction directly on BUILD-BRAIN-114O-R5 PR #783 exact validated head `7a17565bc92f94537cfd461967c87e9fdd8cba8d`. Draft and unmerged. Parent exact-head BUILD-BRAIN-114O, CALYX-AGENT-003, and Workflow Governance validation are green.
+R5 reconstruction directly on BUILD-BRAIN-114O-R5 PR #783 exact validated head `7a17565bc92f94537cfd461967c87e9fdd8cba8d`. Draft and unmerged. Implementation head `8a61384a2218dee17e6fe204c6df78dad7e9dd92` received executable exact-head focused and broad validation after correcting import-order and Ruff-format findings.
 
 ## Objective
 
@@ -10,7 +10,7 @@ Replace the test-only owner grant verification capability with a concrete public
 
 ## Current dependency chain
 
-`#772 BUILD-BRAIN-114M-R3 → #781 BUILD-BRAIN-114N-R6 → #782 BUILD-BRAIN-114P-R5 → #783 BUILD-BRAIN-114O-R5 → this BUILD-BRAIN-114Q-R5`.
+`#772 BUILD-BRAIN-114M-R3 → #781 BUILD-BRAIN-114N-R6 → #782 BUILD-BRAIN-114P-R5 → #783 BUILD-BRAIN-114O-R5 → #784 BUILD-BRAIN-114Q-R5`.
 
 Historical #779 / R4 is source material only because it is rooted in superseded #775 ancestry. R5 reapplies only the six intended public-key verification files directly on the exact validated #783 head.
 
@@ -30,8 +30,18 @@ This build verifies owner grants only. It performs and grants no Git command, br
 
 Dedicated read-only CI compiles and lints the verifier and current owner-authorization gate, runs focused Ed25519 and 114O regressions, verifies public-key-only configuration and v2 provenance, and checks diff hygiene. `cryptography>=44,<46` is added as the bounded dependency required for Ed25519 verification.
 
-R5 must receive executable exact-head BUILD-BRAIN-114Q validation plus relevant broad regressions before plan-only 114R reconstruction. Failures are corrected before expansion.
+Exact implementation head `8a61384a2218dee17e6fe204c6df78dad7e9dd92` completed all five PR-triggered validation workflows successfully:
+
+- BUILD-BRAIN-114Q Owner Signature Verifier Validation run `31297371497` — success; compile, Ruff lint/format, focused Ed25519 + 114O regressions, public-key-only/v2 provenance assertions, and diff hygiene all passed.
+- BUILD-BRAIN-114O Durable Reviewed Owner Authorization Validation run `31297371492` — success.
+- CALYX-AGENT-003 Validation run `31297371499` — success.
+- Python Runtime Contract run `31297371519` — success.
+- CALYX Workflow Governance Audit run `31297371485` — success.
+
+Earlier executable failures were real code-quality findings rather than infrastructure failures: run 10 exposed import ordering; run 11 exposed Ruff formatting drift. Both were corrected before the successful exact-head implementation run.
+
+This documentation commit changes no runtime behavior and must itself receive the same applicable read-only validation before BUILD-BRAIN-114R is reconstructed.
 
 ## Next dependency
 
-After exact-head validation, BUILD-BRAIN-114R may be rebuilt directly on this R5 head as a deterministic plan-only execution layer. Actual Git/GitHub side-effect execution remains outside this chain and requires an explicit owner governance decision.
+After this documentation head validates, BUILD-BRAIN-114R may be rebuilt directly on the exact validated #784 head as a deterministic plan-only execution layer. Actual Git/GitHub side-effect execution remains outside this chain and requires an explicit owner governance decision.
