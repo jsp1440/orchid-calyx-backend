@@ -192,9 +192,7 @@ def _manifest(patch_program_job_id: str) -> dict[str, object]:
                 "request_digest": "d" * 64,
                 "receipt_digest": "e" * 64,
                 "policy_digest": "f" * 64,
-                "target_hashes": [
-                    {"path": "app/example.py", "sha256": PATCH_AFTER}
-                ],
+                "target_hashes": [{"path": "app/example.py", "sha256": PATCH_AFTER}],
             }
         ],
         "commit_title": "Bounded change",
