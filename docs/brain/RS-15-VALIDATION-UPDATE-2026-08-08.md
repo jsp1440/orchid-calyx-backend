@@ -10,7 +10,7 @@ This record supplements `RS-12-15-CALYX-SOURCE-WORKFLOW-HANDOFF.md` and captures
 - Base: `feature/research-calyx-source-archive-14`.
 - PR remains draft, mergeable, unmerged, and non-production.
 - Latest runtime head: `ccd53a40af6b62d4182c3e2bedecacdbaee39e45`.
-- Documentation head after recording the latest correction: `9ecf1248c750f140e37ff0558f063d9e08ca0225`.
+- Frontend documentation was updated after the runtime correction to record the repeated pre-step CI failures; those documentation-only commits do not alter runtime behavior.
 
 ## Runtime corrections completed
 
@@ -80,6 +80,8 @@ Recent exact runtime heads:
 - `45c7250bfc40f86b279152011ded94bdafc31902`: fail-closed project-link state and accurate partial-success reporting; run `31290965679`, job `93187920005`, failed with `steps: null`;
 - `ccd53a40af6b62d4182c3e2bedecacdbaee39e45`: stale-project async guards plus project-link retry; run `31291028502`, job `93188099034`, failed with `steps: null`.
 
+Documentation-only heads also reproduced the same signature, including runs `31291057324` / job `93188183032` and `31291118700` / job `93188354590`.
+
 No checkout, formatting, lint, test, build, or application step executed on those runs.
 
 Controlled diagnostics remain decisive:
@@ -103,7 +105,7 @@ Do not:
 ## Recovery sequence
 
 1. Restore private-repository hosted Actions execution at the account/repository administrative layer.
-2. Run the unchanged latest RS-15 head through the complete Research Station gate.
+2. Run the unchanged latest RS-15 code through the complete Research Station gate.
 3. Fix any real formatter/lint/Vitest/build failure before expanding scope.
 4. Promote PR #17 only after one exact head is fully green.
 5. Only then proceed to RS-16 or another source-archive capability.
