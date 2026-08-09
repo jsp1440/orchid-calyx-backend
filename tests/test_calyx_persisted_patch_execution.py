@@ -40,6 +40,7 @@ PATCH_CONTENT = "print('bounded change')\n"
 PATCH_BYTES = PATCH_CONTENT.encode("utf-8")
 PATCH_AFTER = hashlib.sha256(PATCH_BYTES).hexdigest()
 PATCH_BEFORE = "b" * 64
+INPUT_CHECKSUM = "1" * 64
 
 
 def _db() -> Session:
@@ -133,7 +134,7 @@ def _completed_job(
         executor_key=executor_key,
         state=ExecutionState.DELIVERED,
         outcome=TerminalOutcome.DELIVERED,
-        input_checksum="input",
+        input_checksum=INPUT_CHECKSUM,
         output_checksum=canonical_checksum(output),
         output=output,
         evidence_uris=("github:issue/692",),
@@ -156,6 +157,7 @@ def test_resolves_real_persisted_isolated_patch_execution() -> None:
         assert resolved.repository == REPOSITORY
         assert resolved.branch == BRANCH
         assert resolved.executor_key == IsolatedWorkspacePatchExecutor.executor_key
+        assert resolved.input_checksum == INPUT_CHECKSUM
         assert resolved.output_checksum == canonical_checksum(_output())
         assert resolved.output["checkout_commit_sha"] == COMMIT
 
@@ -214,6 +216,34 @@ def test_coherently_rehashed_output_still_must_match_governed_patch_inputs() -> 
         with pytest.raises(
             PermissionError, match="PATCH_PROGRAM_JOB_INPUT_OUTPUT_MISMATCH"
         ):
+            PersistedPatchExecutionService(db).get_completed(
+                program_job_id=completed.program_job_id
+            )
+
+
+def test_persisted_receipt_identity_must_match_program_job_row() -> None:
+    with _db() as db:
+        completed = _completed_job(db)
+        evidence = json.loads(completed.evidence_json or "{}")
+        evidence["assignment_id"] = "other-job"
+        completed.evidence_json = json.dumps(evidence, sort_keys=True)
+        db.commit()
+        with pytest.raises(
+            PermissionError, match="PATCH_PROGRAM_JOB_RECEIPT_IDENTITY_MISMATCH"
+        ):
+            PersistedPatchExecutionService(db).get_completed(
+                program_job_id=completed.program_job_id
+            )
+
+
+def test_persisted_input_checksum_must_be_canonical_sha256() -> None:
+    with _db() as db:
+        completed = _completed_job(db)
+        evidence = json.loads(completed.evidence_json or "{}")
+        evidence["input_checksum"] = "not-a-checksum"
+        completed.evidence_json = json.dumps(evidence, sort_keys=True)
+        db.commit()
+        with pytest.raises(ValueError, match="PATCH_PROGRAM_JOB_INPUT_CHECKSUM_INVALID"):
             PersistedPatchExecutionService(db).get_completed(
                 program_job_id=completed.program_job_id
             )
