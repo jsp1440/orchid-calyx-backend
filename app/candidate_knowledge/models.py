@@ -16,6 +16,7 @@ class CandidateKind(StrEnum):
     MEASUREMENT = "MEASUREMENT"
     MOLECULAR_MARKER = "MOLECULAR_MARKER"
     CULTIVATION_OBSERVATION = "CULTIVATION_OBSERVATION"
+    MECHANISTIC_RELATIONSHIP = "MECHANISTIC_RELATIONSHIP"
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,11 @@ class SourceAnchor:
     def __post_init__(self) -> None:
         if self.anchor_id <= 0:
             raise ValueError("EXACT_SOURCE_ANCHOR_REQUIRED")
-        if self.char_start is not None and self.char_end is not None and self.char_end < self.char_start:
+        if (
+            self.char_start is not None
+            and self.char_end is not None
+            and self.char_end < self.char_start
+        ):
             raise ValueError("INVALID_SOURCE_ANCHOR_RANGE")
 
 

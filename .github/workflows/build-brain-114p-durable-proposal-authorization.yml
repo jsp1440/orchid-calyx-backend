@@ -22,7 +22,21 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: calyx_114p
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d calyx_114p"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,9 +72,49 @@ jobs:
               "UNIQUE (manifest_digest, review_class)",
               "authorization_digest VARCHAR(64) NOT NULL UNIQUE",
               "CHECK (review_class IN ('operational', 'security'))",
+              "BEFORE UPDATE OR DELETE ON calyx_proposal_authorization_decisions",
+              "ERRCODE = '55000'",
           )
           for marker in required:
               assert marker in sql, marker
+          PY
+      - name: PostgreSQL immutable-row contract
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/calyx_114p
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import psycopg
+
+          sql = Path("migrations/20260808_calyx_proposal_authorization_decisions.sql").read_text(encoding="utf-8")
+          with psycopg.connect("postgresql://postgres:postgres@localhost:5432/calyx_114p") as conn:
+              conn.execute(sql)
+              conn.commit()
+              conn.execute(
+                  """
+                  INSERT INTO calyx_proposal_authorization_decisions
+                      (record_id, manifest_digest, review_class, authorization_digest, payload_json)
+                  VALUES (%s, %s, %s, %s, %s)
+                  """,
+                  ("114p-immutable-test", "a" * 64, "security", "b" * 64, "{}"),
+              )
+              conn.commit()
+              for statement in (
+                  "UPDATE calyx_proposal_authorization_decisions SET payload_json='tampered' WHERE record_id='114p-immutable-test'",
+                  "DELETE FROM calyx_proposal_authorization_decisions WHERE record_id='114p-immutable-test'",
+              ):
+                  try:
+                      conn.execute(statement)
+                      conn.commit()
+                  except psycopg.Error as exc:
+                      assert exc.sqlstate == "55000", exc.sqlstate
+                      conn.rollback()
+                  else:
+                      raise AssertionError("immutable review row mutation unexpectedly succeeded")
+              row = conn.execute(
+                  "SELECT payload_json FROM calyx_proposal_authorization_decisions WHERE record_id='114p-immutable-test'"
+              ).fetchone()
+              assert row == ("{}",)
           PY
       - name: Static durable trust and authority boundary
         run: |
@@ -82,6 +136,8 @@ jobs:
           for marker in forbidden:
               assert marker not in combined, marker
           assert "PersistedPatchExecutionService" in source
+          assert "self.db.expire_all()" in source
+          assert "PROPOSAL_AUTH_DURABLE_REVIEWER_SEPARATION_REQUIRED" in source
           assert "patch_receipt" not in source
           assert "patch_program_job_id" in source
           assert 'MANIFEST_SCHEMA = "calyx-git-proposal-manifest-v2"' in auth

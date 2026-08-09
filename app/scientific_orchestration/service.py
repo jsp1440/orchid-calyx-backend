@@ -5,7 +5,7 @@ import json
 from copy import deepcopy
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any
+from typing import Any, ClassVar
 
 from app.evidence_aggregation.models import CandidateInput
 
@@ -80,10 +80,13 @@ class MemoryScientificOrchestrationRepository:
 class GovernedScientificOrchestrationService:
     """Risk-based orchestration that governs promotion rather than processing."""
 
-    HIGH_IMPACT_KINDS = {
+    HIGH_IMPACT_KINDS: ClassVar[set[str]] = {
         "CONSERVATION_ASSERTION",
         "CONSERVATION_ACTION",
         "TAXON_NAME_USAGE",
+    }
+    SCIENTIFIC_INFERENCE_KINDS: ClassVar[set[str]] = {
+        "MECHANISTIC_RELATIONSHIP",
     }
 
     def __init__(
@@ -175,7 +178,9 @@ class GovernedScientificOrchestrationService:
     def _risk_class(
         self, candidates: list[dict[str, Any]], aggregates: list[dict[str, Any]]
     ) -> RiskClass:
-        if any(candidate.get("kind") in self.HIGH_IMPACT_KINDS for candidate in candidates):
+        if any(
+            candidate.get("kind") in self.HIGH_IMPACT_KINDS for candidate in candidates
+        ):
             return RiskClass.LEVEL_4_HIGH_IMPACT
         if any(
             aggregate.get("contradictory_evidence_count", 0) > 0
@@ -184,10 +189,20 @@ class GovernedScientificOrchestrationService:
             for aggregate in aggregates
         ):
             return RiskClass.LEVEL_3_CONFLICTING_OR_AMBIGUOUS
-        minimum_confidence = min(float(item.get("confidence", 0.5)) for item in candidates)
+        if any(
+            candidate.get("kind") in self.SCIENTIFIC_INFERENCE_KINDS
+            for candidate in candidates
+        ):
+            return RiskClass.LEVEL_2_SCIENTIFIC_INFERENCE
+        minimum_confidence = min(
+            float(item.get("confidence", 0.5)) for item in candidates
+        )
         if minimum_confidence < 0.6:
             return RiskClass.LEVEL_2_SCIENTIFIC_INFERENCE
-        if all(item.get("kind") in {"SPECIMEN_REFERENCE", "OCCURRENCE"} for item in candidates):
+        if all(
+            item.get("kind") in {"SPECIMEN_REFERENCE", "OCCURRENCE"}
+            for item in candidates
+        ):
             return RiskClass.LEVEL_0_DETERMINISTIC_METADATA
         return RiskClass.LEVEL_1_ROUTINE_SCIENTIFIC
 
