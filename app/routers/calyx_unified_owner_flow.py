@@ -133,8 +133,17 @@ def _publication_outcome(artifact: dict[str, Any], created: bool) -> dict[str, A
     graph = gate.get("graph") or {}
     graph_version = graph.get("graph_version_id")
     audit = gate.get("audit") or gate.get("audit_result") or gate.get("validation")
+    publication_status = str(artifact.get("publication_status") or "").strip().lower()
+    if not created:
+        result = "NO_OP_DUPLICATE_REPLAY"
+    elif publication_status == "published":
+        result = "PUBLISHED"
+    elif publication_status == "rejected":
+        result = "PUBLICATION_REJECTED"
+    else:
+        result = "PUBLICATION_NOT_COMPLETED"
     return {
-        "result": "PUBLISHED" if created else "NO_OP_DUPLICATE_REPLAY",
+        "result": result,
         "created": created,
         "duplicate_replay_no_op": not created,
         "publication_status": artifact.get("publication_status"),
@@ -271,12 +280,17 @@ def publish_owner_flow(mission_id: str, payload: OwnerFlowPublicationRequest, re
             note=payload.publication_note,
         ),
     )
+    outcome = _publication_outcome(artifact, created)
+    if outcome["result"] == "NO_OP_DUPLICATE_REPLAY":
+        plain_status = "This exact reviewed ledger was already published, so the replay made no change."
+    elif outcome["result"] == "PUBLISHED":
+        plain_status = "The explicitly confirmed reviewed ledger was submitted through the supervised publication gate and published."
+    elif outcome["result"] == "PUBLICATION_REJECTED":
+        plain_status = "The supervised publication gate rejected this reviewed ledger. No successful graph publication was recorded."
+    else:
+        plain_status = "The supervised publication attempt did not report a completed publication. Review the returned status before taking any further action."
     return {
         "mission_id": mission_id,
-        **_publication_outcome(artifact, created),
-        "plain_language_status": (
-            "This exact reviewed ledger was already published, so the replay made no change."
-            if not created
-            else "The explicitly confirmed reviewed ledger was submitted through the supervised publication gate."
-        ),
+        **outcome,
+        "plain_language_status": plain_status,
     }
