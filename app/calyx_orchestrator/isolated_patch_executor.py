@@ -315,10 +315,15 @@ class IsolatedWorkspacePatchExecutor:
             payload = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID") from exc
-        if not isinstance(payload, dict) or payload.get("schema") != ROLLBACK_JOURNAL_SCHEMA:
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema") != ROLLBACK_JOURNAL_SCHEMA
+        ):
             raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID")
         checksum = str(payload.get("journal_checksum") or "")
-        core = {key: value for key, value in payload.items() if key != "journal_checksum"}
+        core = {
+            key: value for key, value in payload.items() if key != "journal_checksum"
+        }
         if checksum != canonical_checksum(core):
             raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_CHECKSUM_MISMATCH")
         entries = payload.get("entries")
@@ -349,7 +354,9 @@ class IsolatedWorkspacePatchExecutor:
                 try:
                     before_bytes = base64.b64decode(encoded_before, validate=True)
                 except (ValueError, TypeError) as exc:
-                    raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID") from exc
+                    raise RuntimeError(
+                        "ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID"
+                    ) from exc
                 if hashlib.sha256(before_bytes).hexdigest() != before_sha:
                     raise RuntimeError(
                         "ISOLATED_PATCH_ROLLBACK_PREIMAGE_CHECKSUM_MISMATCH"
@@ -364,7 +371,9 @@ class IsolatedWorkspacePatchExecutor:
                 raise RuntimeError(f"ISOLATED_PATCH_ROLLBACK_STATE_DIVERGED:{path}")
             prepared.append(
                 PreparedPatch(
-                    spec=PatchSpec(path=path, before_sha256=before_sha, content_utf8=""),
+                    spec=PatchSpec(
+                        path=path, before_sha256=before_sha, content_utf8=""
+                    ),
                     target=target,
                     before_sha256=before_sha,
                     after_sha256=after_sha,
@@ -547,9 +556,7 @@ class IsolatedWorkspacePatchExecutor:
                         handle.flush()
                         os.fsync(handle.fileno())
                     os.replace(temporary, item.target)
-                    IsolatedWorkspacePatchExecutor._fsync_directory(
-                        item.target.parent
-                    )
+                    IsolatedWorkspacePatchExecutor._fsync_directory(item.target.parent)
                 finally:
                     try:
                         os.unlink(temporary)
