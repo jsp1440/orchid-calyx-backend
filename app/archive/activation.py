@@ -143,9 +143,8 @@ class ArchiveActivationInspector:
         if not roots_configured:
             blockers.append("ARCHIVE_ALLOWED_ROOTS_NOT_CONFIGURED")
 
-        base = {
+        identity = {
             "schema_version": SCHEMA_VERSION,
-            "generated_at": self._now(),
             "database_configured": database_configured,
             "archive_schema_complete": not missing_tables,
             "hardening_complete": not missing_columns,
@@ -159,8 +158,11 @@ class ArchiveActivationInspector:
             "missing_hardening_columns": missing_columns,
             "blockers": tuple(blockers),
         }
-        digest = self._digest(base)
-        return ArchiveActivationEvidence(**base, evidence_digest=digest)
+        return ArchiveActivationEvidence(
+            generated_at=self._now(),
+            evidence_digest=self._digest(identity),
+            **identity,
+        )
 
     def contract_inventory(self) -> dict[str, Any]:
         return {
@@ -176,7 +178,14 @@ class ArchiveActivationInspector:
 
     def sanitized_evidence(self) -> dict[str, Any]:
         evidence = asdict(self.inspect())
-        content = json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        artifact_evidence = {
+            key: value for key, value in evidence.items() if key != "generated_at"
+        }
+        content = json.dumps(
+            artifact_evidence,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
         result = self.artifacts.register(
             ArtifactRegistration(
                 artifact_id=f"archive-activation:{evidence['evidence_digest']}",
