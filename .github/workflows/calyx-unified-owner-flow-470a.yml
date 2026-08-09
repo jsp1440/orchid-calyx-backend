@@ -1,0 +1,82 @@
+name: CALYX Unified Owner Flow 470A
+
+on:
+  pull_request:
+    paths:
+      - "app/routers/calyx_unified_owner_flow.py"
+      - "app/routers/calyx_core.py"
+      - "tests/test_calyx_unified_owner_flow_470.py"
+      - "tests/test_calyx_unified_owner_flow_470_rejection.py"
+      - "tests/test_calyx_unified_owner_flow_470_workspace.py"
+      - "tests/test_calyx_unified_owner_flow_470_reconciliation.py"
+      - "tests/test_calyx_core_rebase_004.py"
+      - "docs/brain/CALYX-UNIFIED-OWNER-FLOW-470A.md"
+      - ".github/workflows/calyx-unified-owner-flow-470a.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unified-owner-flow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile owner flow surface
+        run: >-
+          python -m py_compile
+          app/routers/calyx_unified_owner_flow.py
+          app/routers/calyx_core.py
+          tests/test_calyx_unified_owner_flow_470.py
+          tests/test_calyx_unified_owner_flow_470_rejection.py
+          tests/test_calyx_unified_owner_flow_470_workspace.py
+          tests/test_calyx_unified_owner_flow_470_reconciliation.py
+      - name: Unified owner flow and existing operator regressions
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_unified_owner_flow_470.py
+          tests/test_calyx_unified_owner_flow_470_rejection.py
+          tests/test_calyx_unified_owner_flow_470_workspace.py
+          tests/test_calyx_unified_owner_flow_470_reconciliation.py
+          tests/test_calyx_core_rebase_004.py
+      - name: Permanent supervised-publication governance assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('app/routers/calyx_unified_owner_flow.py').read_text()
+          required = (
+              'EXPLICIT_OWNER_CONFIRMATION_REQUIRED',
+              '"automatic_publication": False',
+              '"automatic_scientific_approval": False',
+              '"owner_copied_identifiers": False',
+              'NO_OP_DUPLICATE_REPLAY',
+              'PUBLICATION_REJECTED',
+              'discover_eligible_ledgers',
+              '_resolve_project_id',
+              '_durable_mission_view',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing owner-flow governance assertion(s): {missing}')
+          forbidden = (
+              'automatic_publication": True',
+              'automatic_scientific_approval": True',
+              'INSERT INTO oc_graph',
+              'UPDATE oc_graph',
+              'DELETE FROM oc_graph',
+          )
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden owner-flow authority present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check app/routers/calyx_unified_owner_flow.py tests/test_calyx_unified_owner_flow_470.py tests/test_calyx_unified_owner_flow_470_rejection.py tests/test_calyx_unified_owner_flow_470_workspace.py tests/test_calyx_unified_owner_flow_470_reconciliation.py
+          git diff --check
