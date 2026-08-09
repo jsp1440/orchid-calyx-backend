@@ -6,6 +6,19 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 
+from .git_proposal_manifest import (
+    MAX_CHANGES,
+    MAX_SUMMARY,
+    MAX_TITLE,
+    GitProposalManifest,
+    GitProposalManifestBuilder,
+    ProposedChange,
+    VerifiedValidation,
+    _bounded_text,
+    _is_git_sha,
+    _is_sha256,
+    _valid_git_branch,
+)
 from .persisted_patch_execution import PersistedPatchExecutionService
 from .sandbox_supervisor_evidence import canonical_sha256
 
@@ -21,12 +34,6 @@ class ProposalDecision(StrEnum):
     REJECTED = "rejected"
 
 
-def _is_sha256(value: str) -> bool:
-    return len(value) == 64 and all(
-        character in "0123456789abcdef" for character in value
-    )
-
-
 def _nonempty(value: Any, *, code: str, maximum: int = 256) -> str:
     normalized = str(value or "").strip()
     if not normalized or len(normalized) > maximum or "\x00" in normalized:
@@ -34,16 +41,131 @@ def _nonempty(value: Any, *, code: str, maximum: int = 256) -> str:
     return normalized
 
 
-def _manifest_payload(snapshot: Mapping[str, Any]) -> dict[str, Any]:
-    payload = dict(snapshot)
-    supplied_digest = str(payload.pop("manifest_digest", "") or "").strip().lower()
+def _validated_manifest_snapshot(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    """Reconstruct and verify canonical 114M manifest invariants before review."""
+    supplied = dict(snapshot)
+    supplied_digest = str(supplied.get("manifest_digest") or "").strip().lower()
     if not _is_sha256(supplied_digest):
         raise ValueError("PROPOSAL_AUTH_MANIFEST_DIGEST_INVALID")
+    payload = {key: value for key, value in supplied.items() if key != "manifest_digest"}
     if payload.get("schema") != MANIFEST_SCHEMA:
         raise ValueError("PROPOSAL_AUTH_MANIFEST_SCHEMA_INVALID")
     if canonical_sha256(payload) != supplied_digest:
         raise PermissionError("PROPOSAL_AUTH_MANIFEST_DIGEST_MISMATCH")
-    return {**payload, "manifest_digest": supplied_digest}
+
+    patch_program_job_id = _nonempty(
+        payload.get("patch_program_job_id"),
+        code="PROPOSAL_AUTH_PATCH_PROGRAM_JOB_ID_REQUIRED",
+    )
+    repository = _nonempty(
+        payload.get("repository"), code="PROPOSAL_AUTH_REPOSITORY_INVALID"
+    )
+    if "/" not in repository:
+        raise ValueError("PROPOSAL_AUTH_REPOSITORY_INVALID")
+    base_commit = str(payload.get("base_commit_sha") or "").strip().lower()
+    if not _is_git_sha(base_commit):
+        raise ValueError("PROPOSAL_AUTH_BASE_COMMIT_INVALID")
+    source_branch = _nonempty(
+        payload.get("source_autonomy_branch"),
+        code="PROPOSAL_AUTH_SOURCE_BRANCH_INVALID",
+    )
+    proposed_branch = _nonempty(
+        payload.get("proposed_branch"), code="PROPOSAL_AUTH_PROPOSED_BRANCH_INVALID"
+    )
+    if not source_branch.startswith("autonomy/") or not _valid_git_branch(source_branch):
+        raise PermissionError("PROPOSAL_AUTH_SOURCE_BRANCH_INVALID")
+    if (
+        not proposed_branch.startswith("autonomy/proposal/")
+        or proposed_branch == source_branch
+        or not _valid_git_branch(proposed_branch)
+    ):
+        raise PermissionError("PROPOSAL_AUTH_PROPOSED_BRANCH_INVALID")
+    patch_checksum = str(payload.get("patch_output_checksum") or "").strip().lower()
+    if not _is_sha256(patch_checksum):
+        raise ValueError("PROPOSAL_AUTH_PATCH_CHECKSUM_INVALID")
+
+    raw_changes = payload.get("changes")
+    if not isinstance(raw_changes, list) or not 1 <= len(raw_changes) <= MAX_CHANGES:
+        raise ValueError("PROPOSAL_AUTH_CHANGE_COUNT_INVALID")
+    if any(not isinstance(item, Mapping) for item in raw_changes):
+        raise TypeError("PROPOSAL_AUTH_CHANGE_INVALID")
+    changes = tuple(ProposedChange.from_mapping(item) for item in raw_changes)
+    if len({change.path for change in changes}) != len(changes):
+        raise ValueError("PROPOSAL_AUTH_DUPLICATE_CHANGE")
+
+    raw_validations = payload.get("validations")
+    if not isinstance(raw_validations, list) or not raw_validations:
+        raise PermissionError("PROPOSAL_AUTH_VALIDATION_REQUIRED")
+    validations: list[VerifiedValidation] = []
+    for raw_validation in raw_validations:
+        if not isinstance(raw_validation, Mapping):
+            raise TypeError("PROPOSAL_AUTH_VALIDATION_INVALID")
+        preset = _nonempty(
+            raw_validation.get("preset"),
+            code="PROPOSAL_AUTH_VALIDATION_PRESET_INVALID",
+        )
+        request_digest = str(raw_validation.get("request_digest") or "").strip().lower()
+        receipt_digest = str(raw_validation.get("receipt_digest") or "").strip().lower()
+        policy_digest = str(raw_validation.get("policy_digest") or "").strip().lower()
+        if not all(_is_sha256(value) for value in (request_digest, receipt_digest, policy_digest)):
+            raise ValueError("PROPOSAL_AUTH_VALIDATION_DIGEST_INVALID")
+        raw_targets = raw_validation.get("targets")
+        if not isinstance(raw_targets, list) or not raw_targets:
+            raise ValueError("PROPOSAL_AUTH_VALIDATION_TARGETS_INVALID")
+        target_hashes: list[tuple[str, str]] = []
+        for raw_target in raw_targets:
+            if not isinstance(raw_target, Mapping):
+                raise TypeError("PROPOSAL_AUTH_VALIDATION_TARGET_INVALID")
+            path = _nonempty(
+                raw_target.get("path"), code="PROPOSAL_AUTH_VALIDATION_TARGET_INVALID"
+            )
+            digest = str(raw_target.get("sha256") or "").strip().lower()
+            if not _is_sha256(digest):
+                raise ValueError("PROPOSAL_AUTH_VALIDATION_TARGET_INVALID")
+            target_hashes.append((path, digest))
+        if len({path for path, _ in target_hashes}) != len(target_hashes):
+            raise ValueError("PROPOSAL_AUTH_VALIDATION_DUPLICATE_TARGET")
+        validations.append(
+            VerifiedValidation(
+                preset=preset,
+                request_digest=request_digest,
+                receipt_digest=receipt_digest,
+                policy_digest=policy_digest,
+                target_hashes=tuple(sorted(target_hashes)),
+            )
+        )
+    canonical_validations = tuple(
+        sorted(validations, key=lambda item: (item.preset, item.request_digest))
+    )
+    GitProposalManifestBuilder._require_change_coverage(changes, canonical_validations)
+
+    manifest = GitProposalManifest(
+        patch_program_job_id=patch_program_job_id,
+        repository=repository,
+        base_commit_sha=base_commit,
+        source_autonomy_branch=source_branch,
+        proposed_branch=proposed_branch,
+        patch_output_checksum=patch_checksum,
+        changes=changes,
+        validations=canonical_validations,
+        commit_title=_bounded_text(
+            payload.get("commit_title"), field="COMMIT_TITLE", maximum=MAX_TITLE
+        ),
+        pr_title=_bounded_text(
+            payload.get("pr_title"), field="PR_TITLE", maximum=MAX_TITLE
+        ),
+        summary=_bounded_text(
+            payload.get("summary"), field="SUMMARY", maximum=MAX_SUMMARY
+        ),
+    )
+    canonical = manifest.snapshot()
+    if supplied != canonical:
+        raise PermissionError("PROPOSAL_AUTH_NONCANONICAL_MANIFEST")
+    return canonical
+
+
+def _manifest_payload(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    return _validated_manifest_snapshot(snapshot)
 
 
 def _normalize_timestamp(value: datetime) -> str:
@@ -153,31 +275,12 @@ class ProposalAuthorizationBuilder:
         decided_at: datetime,
     ) -> ProposalAuthorizationRecord:
         manifest = _manifest_payload(manifest_snapshot)
-        patch_program_job_id = _nonempty(
-            manifest.get("patch_program_job_id"),
-            code="PROPOSAL_AUTH_PATCH_PROGRAM_JOB_ID_REQUIRED",
-        )
-        repository = _nonempty(
-            manifest.get("repository"), code="PROPOSAL_AUTH_REPOSITORY_INVALID"
-        )
-        base_commit = str(manifest.get("base_commit_sha") or "").strip().lower()
-        if len(base_commit) != 40 or any(
-            character not in "0123456789abcdef" for character in base_commit
-        ):
-            raise ValueError("PROPOSAL_AUTH_BASE_COMMIT_INVALID")
-        source_branch = _nonempty(
-            manifest.get("source_autonomy_branch"),
-            code="PROPOSAL_AUTH_SOURCE_BRANCH_INVALID",
-        )
-        proposed_branch = _nonempty(
-            manifest.get("proposed_branch"),
-            code="PROPOSAL_AUTH_PROPOSED_BRANCH_INVALID",
-        )
-        patch_checksum = (
-            str(manifest.get("patch_output_checksum") or "").strip().lower()
-        )
-        if not _is_sha256(patch_checksum):
-            raise ValueError("PROPOSAL_AUTH_PATCH_CHECKSUM_INVALID")
+        patch_program_job_id = manifest["patch_program_job_id"]
+        repository = manifest["repository"]
+        base_commit = manifest["base_commit_sha"]
+        source_branch = manifest["source_autonomy_branch"]
+        proposed_branch = manifest["proposed_branch"]
+        patch_checksum = manifest["patch_output_checksum"]
 
         producer_id = self._verify_persisted_patch(
             program_job_id=patch_program_job_id,
