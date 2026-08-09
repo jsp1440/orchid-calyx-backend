@@ -7,8 +7,10 @@ network calls, publishes science, or mutates the production Knowledge Graph.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
+import zipfile
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -19,6 +21,8 @@ SUPPORTED_MEDIA_TYPES = {
     "png": "image/png",
 }
 MAX_ASSET_BYTES = 25 * 1024 * 1024
+MAX_PPTX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+MAX_PPTX_MEMBERS = 5000
 MAX_ESTIMATED_COST_USD = 25.0
 SAFE_LICENSES = {"cc0", "cc-by-4.0", "cc-by-sa-4.0", "public-domain", "internal-reviewed"}
 
@@ -93,15 +97,24 @@ class FigureBrief:
         _clean_text(self.purpose, field="purpose", maximum=4000)
         if not self.required_labels:
             raise ValueError("REQUIRED_LABELS_REQUIRED")
-        if len(set(label.casefold() for label in self.required_labels)) != len(self.required_labels):
+        cleaned_labels = tuple(_clean_text(label, field="required_label", maximum=300) for label in self.required_labels)
+        if cleaned_labels != self.required_labels:
+            raise ValueError("REQUIRED_LABELS_MUST_BE_CANONICAL")
+        if len(set(label.casefold() for label in cleaned_labels)) != len(cleaned_labels):
             raise ValueError("DUPLICATE_REQUIRED_LABEL")
         if not self.source_records:
             raise ValueError("SOURCE_RECORDS_REQUIRED")
         for source in self.source_records:
             source.validate()
-        formats = {item.casefold() for item in self.output_formats}
-        if not formats or not formats.issubset(SUPPORTED_FORMATS):
+        if not self.output_formats:
+            raise ValueError("OUTPUT_FORMAT_REQUIRED")
+        if any(item != item.casefold().strip() for item in self.output_formats):
+            raise ValueError("OUTPUT_FORMAT_MUST_BE_CANONICAL")
+        formats = set(self.output_formats)
+        if not formats.issubset(SUPPORTED_FORMATS):
             raise ValueError("OUTPUT_FORMAT_NOT_SUPPORTED")
+        if len(formats) != len(self.output_formats):
+            raise ValueError("DUPLICATE_OUTPUT_FORMAT")
         if self.estimated_cost_usd < 0 or self.estimated_cost_usd > MAX_ESTIMATED_COST_USD:
             raise ValueError("ESTIMATED_COST_EXCEEDS_BOUND")
         if self.publication_authorized:
@@ -176,9 +189,12 @@ class AssistedFigureGateway:
         semantic_hotspots: list[dict[str, Any]] | None = None,
     ) -> ImportedFigureAsset:
         package = self.brief_package(brief_id)
+        brief = self._briefs[brief_id]
         normalized_format = format.casefold().strip()
         if normalized_format not in SUPPORTED_FORMATS:
             raise ValueError("OUTPUT_FORMAT_NOT_SUPPORTED")
+        if normalized_format not in brief.output_formats:
+            raise ValueError("OUTPUT_FORMAT_NOT_REQUESTED")
         if not content or len(content) > MAX_ASSET_BYTES:
             raise ValueError("ASSET_SIZE_INVALID")
         self._validate_signature(normalized_format, content)
@@ -218,18 +234,20 @@ class AssistedFigureGateway:
 
     def readiness(self, brief_id: str) -> dict[str, Any]:
         package = self.brief_package(brief_id)
+        brief = self._briefs[brief_id]
         digest = str(package["brief_digest"])
         assets = sorted(
             (asset for asset in self._assets.values() if asset.brief_digest == digest),
             key=lambda item: item.asset_id,
         )
-        required_formats = set(self._briefs[brief_id].output_formats)
+        required_formats = set(brief.output_formats)
         imported_formats = {item.format for item in assets}
+        missing_formats = sorted(required_formats - imported_formats)
         blockers: list[str] = []
         if not assets:
             blockers.append("ASSISTED_EXPORT_NOT_IMPORTED")
-        if not required_formats.intersection(imported_formats):
-            blockers.append("REQUIRED_OUTPUT_FORMAT_MISSING")
+        if missing_formats:
+            blockers.append("REQUIRED_OUTPUT_FORMATS_MISSING")
         blockers.extend(["SCIENTIFIC_REVIEW_REQUIRED", "LICENSING_REVIEW_REQUIRED"])
         return {
             "brief_id": brief_id,
@@ -237,6 +255,7 @@ class AssistedFigureGateway:
             "asset_count": len(assets),
             "asset_ids": [item.asset_id for item in assets],
             "imported_formats": sorted(imported_formats),
+            "missing_formats": missing_formats,
             "blockers": blockers,
             "decision": "REVIEW_ONLY" if assets else "HOLD",
             "ready_for_scientific_review": bool(assets),
@@ -249,17 +268,53 @@ class AssistedFigureGateway:
 
     @staticmethod
     def _validate_signature(format: str, content: bytes) -> None:
-        if format == "png" and not content.startswith(b"\x89PNG\r\n\x1a\n"):
-            raise ValueError("PNG_SIGNATURE_INVALID")
-        if format == "pptx" and not content.startswith(b"PK"):
-            raise ValueError("PPTX_SIGNATURE_INVALID")
+        if format == "png":
+            if not content.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise ValueError("PNG_SIGNATURE_INVALID")
+            return
+        if format == "pptx":
+            AssistedFigureGateway._validate_pptx(content)
+            return
         if format == "svg":
             prefix = content[:4096].lstrip().lower()
+            lowered = content.lower()
             if b"<svg" not in prefix:
                 raise ValueError("SVG_SIGNATURE_INVALID")
-            forbidden = (b"<script", b"javascript:", b"onload=", b"onerror=")
-            if any(token in content.lower() for token in forbidden):
+            forbidden = (
+                b"<script",
+                b"javascript:",
+                b"onload=",
+                b"onerror=",
+                b"<!doctype",
+                b"<!entity",
+                b'href="http:',
+                b'href="https:',
+                b"href='http:",
+                b"href='https:",
+            )
+            if any(token in lowered for token in forbidden):
                 raise ValueError("SVG_ACTIVE_CONTENT_FORBIDDEN")
+
+    @staticmethod
+    def _validate_pptx(content: bytes) -> None:
+        if not content.startswith(b"PK"):
+            raise ValueError("PPTX_SIGNATURE_INVALID")
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                infos = archive.infolist()
+                if len(infos) > MAX_PPTX_MEMBERS:
+                    raise ValueError("PPTX_MEMBER_LIMIT_EXCEEDED")
+                total_uncompressed = sum(max(0, info.file_size) for info in infos)
+                if total_uncompressed > MAX_PPTX_UNCOMPRESSED_BYTES:
+                    raise ValueError("PPTX_EXPANSION_LIMIT_EXCEEDED")
+                names = {info.filename for info in infos}
+                required = {"[Content_Types].xml", "ppt/presentation.xml"}
+                if not required.issubset(names):
+                    raise ValueError("PPTX_STRUCTURE_INVALID")
+                if any(name.startswith("/") or ".." in name.split("/") for name in names):
+                    raise ValueError("PPTX_PATH_INVALID")
+        except zipfile.BadZipFile as exc:
+            raise ValueError("PPTX_SIGNATURE_INVALID") from exc
 
     @staticmethod
     def _validate_hotspots(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
