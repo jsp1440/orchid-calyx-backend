@@ -48,7 +48,7 @@ def list_org_shows(org_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/organizations/{org_id}/shows", response_model=ShowOut)
-def create_org_show(org_id: str, payload: OrganizationCreate, db: Session = Depends(get_db)):
+def create_org_show(org_id: str, payload: ShowCreate, db: Session = Depends(get_db)):
     org = db.execute(select(Organization).where(Organization.id == org_id)).scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
