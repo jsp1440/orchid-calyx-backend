@@ -1,6 +1,6 @@
 # CALYX-473 — Orchid show, judging, entries, awards, and event operations
 
-Status: IMPLEMENTED / VALIDATION PENDING / HUMAN-JUDGED
+Status: IMPLEMENTED / VALIDATION RETRYING / HUMAN-JUDGED
 
 ## Delivered
 
@@ -27,4 +27,6 @@ No payment processing is implemented. Vendor records explicitly report payment a
 
 ## Validation
 
-Dedicated CI compiles the show runtime/router/Mission Control surface, runs CALYX-473 plus CALYX-472 regressions, enforces permanent human-judging/privacy/no-payment boundaries, runs Ruff, and checks diff hygiene. Exact-head validation evidence will be recorded after the pull-request workflow completes.
+Dedicated CI compiles the show runtime/router/Mission Control surface, runs CALYX-473 plus CALYX-472 regressions, enforces permanent human-judging/privacy/no-payment boundaries, runs Ruff, and checks diff hygiene.
+
+The first pull-request validation attempt failed before any job step started. CALYX-473, CALYX-472, supervised-pilot, and autonomy workflows all returned failed jobs with no steps, and the job-log blob was unavailable. This is consistent with a hosted-runner provisioning failure rather than a code/test failure. No assertion or validation gate was weakened. This documentation commit intentionally triggers a clean retry; exact-head evidence must be recorded only after a runner executes the workflow steps.
