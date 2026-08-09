@@ -21,6 +21,7 @@ ALLOWED_ACTIONS = (
     "open_pull_request",
 )
 MAX_TTL_SECONDS = 1800
+MAX_SIGNATURE_LENGTH = 512
 
 
 class OwnerGrantSignatureVerifier(Protocol):
@@ -46,6 +47,14 @@ def _nonempty(value: object, *, code: str) -> str:
     if not normalized or "\x00" in normalized or len(normalized) > 256:
         raise ValueError(code)
     return normalized
+
+
+def _valid_signature_envelope(value: str) -> bool:
+    return (
+        16 <= len(value) <= MAX_SIGNATURE_LENGTH
+        and "\x00" not in value
+        and all(32 <= ord(character) < 127 for character in value)
+    )
 
 
 def _parse_utc(value: str) -> datetime:
@@ -95,10 +104,14 @@ def _require_authoritative_reviews(
     status = proposal_review_status(registry, manifest_digest=manifest_digest)
     if not status.review_evidence_complete:
         raise PermissionError(status.code)
+
     records: list[ProposalAuthorizationRecord] = []
     for review_class in REQUIRED_REVIEW_CLASSES:
         try:
-            record = store.require(manifest_digest=manifest_digest, review_class=review_class)
+            record = store.require(
+                manifest_digest=manifest_digest,
+                review_class=review_class,
+            )
         except LookupError as exc:
             raise PermissionError("GIT_AUTHORIZATION_REQUIRED_REVIEWS_MISSING") from exc
         record.verify_for_manifest(manifest_snapshot)
@@ -107,6 +120,7 @@ def _require_authoritative_reviews(
         if review_class not in record.reviewer_roles:
             raise PermissionError("GIT_AUTHORIZATION_REVIEWER_ROLE_REQUIRED")
         records.append(record)
+
     reviewer_ids = {record.reviewer_id for record in records}
     if len(reviewer_ids) != len(REQUIRED_REVIEW_CLASSES):
         raise PermissionError("GIT_AUTHORIZATION_REVIEWER_SEPARATION_REQUIRED")
@@ -179,10 +193,12 @@ class GitMutationAuthorizationGrant:
             approved_by=str(value.get("approved_by") or "").strip(),
             issued_at=str(value.get("issued_at") or "").strip(),
             expires_at=str(value.get("expires_at") or "").strip(),
-            signature=str(value.get("signature") or "").strip().lower(),
+            signature=str(value.get("signature") or "").strip(),
         )
-        if not _is_sha256(grant.request_digest) or not _is_sha256(grant.signature):
+        if not _is_sha256(grant.request_digest):
             raise ValueError("GIT_AUTHORIZATION_GRANT_DIGEST_INVALID")
+        if not _valid_signature_envelope(grant.signature):
+            raise ValueError("GIT_AUTHORIZATION_GRANT_SIGNATURE_INVALID")
         if grant.decision not in {"approved", "denied"}:
             raise ValueError("GIT_AUTHORIZATION_GRANT_DECISION_INVALID")
         if not grant.approved_by:
@@ -203,7 +219,12 @@ class GitMutationAuthorizationGrant:
 class GitMutationAuthorizationGate:
     """Verify durable reviewed owner authorization; never mutate Git or hold signing secrets."""
 
-    def __init__(self, *, owner_principal: str, signature_verifier: OwnerGrantSignatureVerifier) -> None:
+    def __init__(
+        self,
+        *,
+        owner_principal: str,
+        signature_verifier: OwnerGrantSignatureVerifier,
+    ) -> None:
         principal = owner_principal.strip()
         if not principal:
             raise ValueError("GIT_AUTHORIZATION_OWNER_PRINCIPAL_REQUIRED")
@@ -224,9 +245,15 @@ class GitMutationAuthorizationGate:
         _verify_manifest_non_authority(manifest_snapshot)
         digest = _manifest_digest(manifest_snapshot)
         reviews = _require_authoritative_reviews(manifest_snapshot, review_store)
-        normalized_actions = tuple(dict.fromkeys(str(action).strip() for action in actions))
-        if not normalized_actions or any(action not in ALLOWED_ACTIONS for action in normalized_actions):
+
+        normalized_actions = tuple(
+            dict.fromkeys(str(action).strip() for action in actions)
+        )
+        if not normalized_actions or any(
+            action not in ALLOWED_ACTIONS for action in normalized_actions
+        ):
             raise PermissionError("GIT_AUTHORIZATION_ACTION_NOT_ALLOWED")
+
         patch_program_job_id = _nonempty(
             manifest_snapshot.get("patch_program_job_id"),
             code="GIT_AUTHORIZATION_PATCH_PROGRAM_JOB_ID_REQUIRED",
@@ -234,7 +261,9 @@ class GitMutationAuthorizationGate:
         if any(record.patch_program_job_id != patch_program_job_id for record in reviews):
             raise PermissionError("GIT_AUTHORIZATION_PATCH_JOB_REVIEW_MISMATCH")
         repository = str(manifest_snapshot.get("repository") or "").strip()
-        base_commit = str(manifest_snapshot.get("base_commit_sha") or "").strip().lower()
+        base_commit = (
+            str(manifest_snapshot.get("base_commit_sha") or "").strip().lower()
+        )
         proposed_branch = str(manifest_snapshot.get("proposed_branch") or "").strip()
         if not repository or "/" not in repository:
             raise ValueError("GIT_AUTHORIZATION_REPOSITORY_INVALID")
@@ -242,12 +271,14 @@ class GitMutationAuthorizationGate:
             raise ValueError("GIT_AUTHORIZATION_BASE_COMMIT_INVALID")
         if not proposed_branch.startswith("autonomy/proposal/"):
             raise PermissionError("GIT_AUTHORIZATION_PROPOSAL_BRANCH_INVALID")
+
         raw_changes = manifest_snapshot.get("changes")
         raw_validations = manifest_snapshot.get("validations")
         if not isinstance(raw_changes, list) or not raw_changes:
             raise ValueError("GIT_AUTHORIZATION_CHANGES_REQUIRED")
         if not isinstance(raw_validations, list) or not raw_validations:
             raise ValueError("GIT_AUTHORIZATION_VALIDATIONS_REQUIRED")
+
         changes: list[tuple[str, str]] = []
         for item in raw_changes:
             if not isinstance(item, Mapping):
@@ -257,6 +288,7 @@ class GitMutationAuthorizationGate:
             if not path or not _is_sha256(after):
                 raise ValueError("GIT_AUTHORIZATION_CHANGE_INVALID")
             changes.append((path, after))
+
         receipts: list[str] = []
         for item in raw_validations:
             if not isinstance(item, Mapping):
@@ -265,11 +297,13 @@ class GitMutationAuthorizationGate:
             if not _is_sha256(receipt):
                 raise ValueError("GIT_AUTHORIZATION_VALIDATION_RECEIPT_INVALID")
             receipts.append(receipt)
+
         current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         expiry = _parse_utc(expires_at)
         ttl = (expiry - current).total_seconds()
         if ttl <= 0 or ttl > MAX_TTL_SECONDS:
             raise PermissionError("GIT_AUTHORIZATION_EXPIRY_INVALID")
+
         return GitMutationAuthorizationRequest(
             manifest_digest=digest,
             patch_program_job_id=patch_program_job_id,
@@ -278,7 +312,9 @@ class GitMutationAuthorizationGate:
             proposed_branch=proposed_branch,
             change_hashes=tuple(sorted(changes)),
             validation_receipt_digests=tuple(sorted(receipts)),
-            review_authorization_digests=tuple(record.authorization_digest for record in reviews),
+            review_authorization_digests=tuple(
+                record.authorization_digest for record in reviews
+            ),
             actions=normalized_actions,
             expires_at=expiry.isoformat(),
         )
@@ -308,7 +344,10 @@ class GitMutationAuthorizationGate:
             or current >= expiry
         ):
             raise PermissionError("GIT_AUTHORIZATION_GRANT_EXPIRED_OR_INVALID")
-        if not self._signature_verifier.verify(payload=grant.signing_payload(), signature=grant.signature):
+        if not self._signature_verifier.verify(
+            payload=grant.signing_payload(),
+            signature=grant.signature,
+        ):
             raise PermissionError("GIT_AUTHORIZATION_SIGNATURE_INVALID")
         if grant.decision != "approved":
             raise PermissionError("GIT_AUTHORIZATION_NOT_APPROVED")
