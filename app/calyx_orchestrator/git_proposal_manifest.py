@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .executor import canonical_checksum
+from .persisted_patch_execution import PersistedPatchExecutionService
 from .sandbox_supervisor_evidence import (
     SupervisorValidationReceipt,
     ValidationRequestEnvelope,
@@ -13,7 +13,7 @@ from .sandbox_supervisor_evidence import (
 )
 from .sandbox_supervisor_service import SandboxSupervisorService
 
-SCHEMA = "calyx-git-proposal-manifest-v1"
+SCHEMA = "calyx-git-proposal-manifest-v2"
 MAX_CHANGES = 8
 MAX_TITLE = 120
 MAX_SUMMARY = 4_000
@@ -138,6 +138,7 @@ class VerifiedValidation:
 
 @dataclass(frozen=True, slots=True)
 class GitProposalManifest:
+    patch_program_job_id: str
     repository: str
     base_commit_sha: str
     source_autonomy_branch: str
@@ -152,6 +153,7 @@ class GitProposalManifest:
     def payload(self) -> dict[str, Any]:
         return {
             "schema": SCHEMA,
+            "patch_program_job_id": self.patch_program_job_id,
             "repository": self.repository,
             "base_commit_sha": self.base_commit_sha,
             "source_autonomy_branch": self.source_autonomy_branch,
@@ -182,11 +184,12 @@ class GitProposalManifest:
 
 
 class GitProposalManifestBuilder:
-    """Build a proposal only from exact patch and persisted supervisor evidence."""
+    """Build a proposal only from persisted patch and supervisor evidence."""
 
     def __init__(
         self,
         supervisor_service: SandboxSupervisorService,
+        patch_execution_service: PersistedPatchExecutionService,
         *,
         allowed_policy_digests: Sequence[str],
     ) -> None:
@@ -196,34 +199,29 @@ class GitProposalManifestBuilder:
         if not normalized or any(not _is_sha256(value) for value in normalized):
             raise ValueError("GIT_PROPOSAL_ALLOWED_POLICY_DIGESTS_INVALID")
         self._supervisor_service = supervisor_service
+        self._patch_execution_service = patch_execution_service
         self._allowed_policy_digests = normalized
 
     def build(
         self,
         *,
-        patch_receipt: Mapping[str, Any],
+        patch_program_job_id: str,
         validations: Sequence[Mapping[str, Any]],
         proposed_branch: str,
         commit_title: str,
         pr_title: str,
         summary: str,
     ) -> GitProposalManifest:
-        output = patch_receipt.get("output")
-        if not isinstance(output, Mapping):
-            raise TypeError("GIT_PROPOSAL_PATCH_OUTPUT_REQUIRED")
-        if output.get("status") != "delivered" or not bool(output.get("executed")):
-            raise PermissionError("GIT_PROPOSAL_AUTHORITATIVE_PATCH_REQUIRED")
-        if output.get("mode") != "authoritative_isolated_workspace_patch":
-            raise PermissionError("GIT_PROPOSAL_PATCH_MODE_INVALID")
-        if not bool(output.get("workspace_isolated")) or not bool(
-            output.get("workspace_disposable")
-        ):
-            raise PermissionError("GIT_PROPOSAL_ISOLATED_WORKSPACE_REQUIRED")
-        if bool(output.get("commit_created")):
-            raise PermissionError("GIT_PROPOSAL_PREEXISTING_COMMIT_PROHIBITED")
+        try:
+            patch_execution = self._patch_execution_service.get_completed(
+                program_job_id=patch_program_job_id
+            )
+        except (LookupError, PermissionError, TypeError, ValueError) as exc:
+            raise PermissionError("GIT_PROPOSAL_PERSISTED_PATCH_REQUIRED") from exc
 
-        repository = str(output.get("repository") or "").strip()
-        source_branch = str(output.get("branch") or "").strip()
+        output = patch_execution.output
+        repository = patch_execution.repository
+        source_branch = patch_execution.branch
         base_commit = str(output.get("checkout_commit_sha") or "").strip().lower()
         if not repository or "/" not in repository:
             raise ValueError("GIT_PROPOSAL_REPOSITORY_INVALID")
@@ -250,14 +248,6 @@ class GitProposalManifestBuilder:
         if len({change.path for change in changes}) != len(changes):
             raise ValueError("GIT_PROPOSAL_DUPLICATE_CHANGE")
 
-        output_checksum = (
-            str(patch_receipt.get("output_checksum") or "").strip().lower()
-        )
-        if not _is_sha256(output_checksum) or output_checksum != canonical_checksum(
-            dict(output)
-        ):
-            raise PermissionError("GIT_PROPOSAL_PATCH_OUTPUT_CHECKSUM_MISMATCH")
-
         verified = tuple(
             self._verify_validation(
                 entry,
@@ -272,11 +262,12 @@ class GitProposalManifestBuilder:
         self._require_change_coverage(changes, verified)
 
         return GitProposalManifest(
+            patch_program_job_id=patch_execution.program_job_id,
             repository=repository,
             base_commit_sha=base_commit,
             source_autonomy_branch=source_branch,
             proposed_branch=proposal_branch,
-            patch_output_checksum=output_checksum,
+            patch_output_checksum=patch_execution.output_checksum,
             changes=changes,
             validations=tuple(
                 sorted(verified, key=lambda item: (item.preset, item.request_digest))
