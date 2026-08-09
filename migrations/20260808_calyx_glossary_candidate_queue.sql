@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS oc_concepts.glossary_candidates (
     reviewed_by TEXT NULL,
     review_rationale TEXT NULL,
     reviewed_at TIMESTAMPTZ NULL,
+    automatic_concept_promotion BOOLEAN NOT NULL DEFAULT FALSE,
+    knowledge_graph_publication_authorized BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     revised_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT ck_glossary_candidate_state CHECK (
@@ -20,7 +22,9 @@ CREATE TABLE IF NOT EXISTS oc_concepts.glossary_candidates (
             'UNRESOLVED', 'CANDIDATES', 'AMBIGUOUS', 'MATCHED_PENDING_REVIEW',
             'REVIEWED_MATCH', 'NEW_CONCEPT_CANDIDATE', 'REJECTED'
         )
-    )
+    ),
+    CONSTRAINT ck_glossary_candidate_no_auto_promotion CHECK (automatic_concept_promotion = FALSE),
+    CONSTRAINT ck_glossary_candidate_no_graph_publication CHECK (knowledge_graph_publication_authorized = FALSE)
 );
 
 CREATE INDEX IF NOT EXISTS ix_glossary_candidates_state
@@ -36,6 +40,9 @@ CREATE TABLE IF NOT EXISTS oc_concepts.glossary_figure_requests (
     purpose TEXT NOT NULL,
     source_candidate_id VARCHAR(64) NULL REFERENCES oc_concepts.glossary_candidates(candidate_id),
     review_state VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    figure_is_scientific_evidence BOOLEAN NOT NULL DEFAULT FALSE,
+    automatic_generation_authorized BOOLEAN NOT NULL DEFAULT FALSE,
+    automatic_publication_authorized BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     revised_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT ck_glossary_figure_type CHECK (
@@ -43,7 +50,10 @@ CREATE TABLE IF NOT EXISTS oc_concepts.glossary_figure_requests (
             'DIAGRAM', 'SKETCH', 'COLOR_ILLUSTRATION', 'PHOTO_SET',
             'ANIMATION', 'COMPARISON_PLATE', 'DISSECTION'
         )
-    )
+    ),
+    CONSTRAINT ck_glossary_figure_not_evidence CHECK (figure_is_scientific_evidence = FALSE),
+    CONSTRAINT ck_glossary_figure_no_auto_generation CHECK (automatic_generation_authorized = FALSE),
+    CONSTRAINT ck_glossary_figure_no_auto_publication CHECK (automatic_publication_authorized = FALSE)
 );
 
 CREATE INDEX IF NOT EXISTS ix_glossary_figure_requests_concept
