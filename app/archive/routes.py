@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.archive.activation import ArchiveActivationInspector
 from app.archive.checkpoint import CheckpointStore
 from app.archive.control import ArchiveRunControl
 from app.archive.execution import get_archive_dispatcher
@@ -81,6 +82,21 @@ def cancel_archive(run_id: UUID):
 @router.post("/recover-stale", dependencies=[Depends(verify_owner_or_api_key)])
 def recover_stale_archive_runs():
     return {"recovered": ArchiveRunControl().recover_stale_runs()}
+
+
+@router.get("/activation/status", dependencies=[Depends(verify_owner_or_api_key)])
+def archive_activation_status():
+    return asdict(ArchiveActivationInspector().inspect())
+
+
+@router.get("/activation/contracts", dependencies=[Depends(verify_owner_or_api_key)])
+def archive_activation_contracts():
+    return ArchiveActivationInspector().contract_inventory()
+
+
+@router.post("/activation/evidence", dependencies=[Depends(verify_owner_or_api_key)])
+def archive_activation_evidence():
+    return ArchiveActivationInspector().sanitized_evidence()
 
 
 @router.get("/status")
