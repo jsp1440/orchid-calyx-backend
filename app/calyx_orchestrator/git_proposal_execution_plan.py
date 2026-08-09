@@ -21,16 +21,21 @@ ACTION_ORDER = (
 )
 
 
+def _actions_form_dependency_prefix(actions: tuple[str, ...]) -> bool:
+    authorized = frozenset(actions)
+    if not authorized or len(authorized) != len(actions):
+        return False
+    required = frozenset(ACTION_ORDER[: len(authorized)])
+    return authorized == required
+
+
 @dataclass(frozen=True, slots=True)
 class GitProposalPlanOperation:
     action: str
     parameters: Mapping[str, Any]
 
     def payload(self) -> dict[str, Any]:
-        return {
-            "action": self.action,
-            "parameters": dict(self.parameters),
-        }
+        return {"action": self.action, "parameters": dict(self.parameters)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,10 +64,7 @@ class GitProposalExecutionPlan:
             "repository": self.repository,
             "base_commit_sha": self.base_commit_sha,
             "proposed_branch": self.proposed_branch,
-            "change_hashes": [
-                {"path": path, "after_sha256": digest}
-                for path, digest in self.change_hashes
-            ],
+            "change_hashes": [{"path": path, "after_sha256": digest} for path, digest in self.change_hashes],
             "validation_receipt_digests": list(self.validation_receipt_digests),
             "review_authorization_digests": list(self.review_authorization_digests),
             "owner_approved_by": self.owner_approved_by,
@@ -118,12 +120,10 @@ class GitProposalExecutionPlanner:
         )
         if expected_request.snapshot() != request.snapshot():
             raise PermissionError("GIT_PROPOSAL_PLAN_AUTHORIZATION_REQUEST_MISMATCH")
+        if not _actions_form_dependency_prefix(request.actions):
+            raise PermissionError("GIT_PROPOSAL_PLAN_ACTION_DEPENDENCY_INVALID")
 
-        verified_grant = authorization_gate.verify_grant(
-            request,
-            grant_mapping,
-            now=now,
-        )
+        verified_grant = authorization_gate.verify_grant(request, grant_mapping, now=now)
 
         commit_title = str(manifest_snapshot.get("commit_title") or "").strip()
         pr_title = str(manifest_snapshot.get("pr_title") or "").strip()
@@ -156,9 +156,7 @@ class GitProposalExecutionPlanner:
             review_authorization_digests=request.review_authorization_digests,
             owner_approved_by=verified_grant.approved_by,
             owner_grant_expires_at=verified_grant.expires_at,
-            owner_grant_signature_digest=canonical_sha256(
-                {"signature": verified_grant.signature}
-            ),
+            owner_grant_signature_digest=canonical_sha256({"signature": verified_grant.signature}),
             commit_title=commit_title,
             pr_title=pr_title,
             summary=summary,
@@ -175,27 +173,17 @@ class GitProposalExecutionPlanner:
         summary: str,
     ) -> GitProposalPlanOperation:
         if action == "create_branch":
-            parameters: dict[str, Any] = {
-                "repository": request.repository,
-                "base_commit_sha": request.base_commit_sha,
-                "branch": request.proposed_branch,
-            }
+            parameters: dict[str, Any] = {"repository": request.repository, "base_commit_sha": request.base_commit_sha, "branch": request.proposed_branch}
         elif action == "create_commit":
             parameters = {
                 "repository": request.repository,
                 "branch": request.proposed_branch,
                 "base_commit_sha": request.base_commit_sha,
-                "change_hashes": [
-                    {"path": path, "after_sha256": digest}
-                    for path, digest in request.change_hashes
-                ],
+                "change_hashes": [{"path": path, "after_sha256": digest} for path, digest in request.change_hashes],
                 "commit_title": commit_title,
             }
         elif action == "push_branch":
-            parameters = {
-                "repository": request.repository,
-                "branch": request.proposed_branch,
-            }
+            parameters = {"repository": request.repository, "branch": request.proposed_branch}
         elif action == "open_pull_request":
             parameters = {
                 "repository": request.repository,
