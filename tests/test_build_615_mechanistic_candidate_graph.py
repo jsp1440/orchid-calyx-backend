@@ -8,6 +8,11 @@ from app.brain.mechanistic_candidates import (
 )
 from app.candidate_knowledge.repository import MemoryCandidateRepository
 from app.candidate_knowledge.service import CandidateExtractionService
+from app.evidence_aggregation.models import CANDIDATE_TYPE_MAP, AggregateType
+from app.scientific_orchestration.service import (
+    GovernedScientificOrchestrationService,
+    RiskClass,
+)
 
 
 def payload(**overrides):
@@ -52,6 +57,16 @@ def components():
     repository = MemoryCandidateRepository()
     service = CandidateExtractionService(repository)
     return repository, service
+
+
+class AtomicMemoryCandidateRepository(MemoryCandidateRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.atomic_calls = 0
+
+    def atomic(self, operation):
+        self.atomic_calls += 1
+        return operation()
 
 
 def test_valid_mechanistic_claim_enters_review_required_candidate_knowledge():
@@ -138,3 +153,64 @@ def test_endpoint_attributes_cannot_override_candidate_only_governance_marker():
     source_node = result["graph_preview"]["nodes"][0]
     assert source_node["payload"]["candidate_only"] is True
     assert source_node["payload"]["wavelength_nm"] == 450
+
+
+def test_handoff_uses_repository_atomic_boundary_when_available():
+    repository = AtomicMemoryCandidateRepository()
+    service = CandidateExtractionService(repository)
+    result = handoff_mechanistic_candidate(payload(), (repository, service))
+    assert result["state"] == "COMPLETED"
+    assert repository.atomic_calls == 1
+
+
+def test_exact_duplicate_returns_existing_candidate_id():
+    repository, service = components()
+    request = payload()
+    first = handoff_mechanistic_candidate(request, (repository, service))
+    second = handoff_mechanistic_candidate(request, (repository, service))
+    assert first["candidate_ids"]
+    assert second["candidate_ids"] == first["candidate_ids"]
+
+
+def test_whitespace_only_target_label_is_rejected_before_persistence():
+    repository, service = components()
+    request = payload(
+        target={"node_type": "physiology", "label": "   ", "stable_key": "blank"}
+    )
+    with pytest.raises(ValueError, match="MECHANISTIC_TARGET_LABEL_REQUIRED"):
+        handoff_mechanistic_candidate(request, (repository, service))
+    assert repository.candidates == []
+    assert repository.runs == {}
+
+
+def test_graph_preview_uses_synthetic_provenance_not_candidate_table_identity():
+    repository, service = components()
+    result = handoff_mechanistic_candidate(payload(), (repository, service))
+    for node in result["graph_preview"]["nodes"]:
+        assert (
+            node["provenance"]["source_table"]
+            == "synthetic.mechanistic_candidate_preview"
+        )
+        assert node["payload"]["preview_provenance"]["source_object_id"] == 11
+        assert node["payload"]["preview_provenance"]["revision_id"] == 12
+    edge = result["graph_preview"]["edges"][0]
+    assert (
+        edge["provenance"]["source_table"] == "synthetic.mechanistic_candidate_preview"
+    )
+
+
+def test_mechanistic_candidates_have_dedicated_aggregate_type():
+    assert (
+        CANDIDATE_TYPE_MAP["MECHANISTIC_RELATIONSHIP"]
+        is AggregateType.MECHANISTIC_RELATIONSHIP_AGGREGATE
+    )
+
+
+def test_high_confidence_mechanistic_claim_still_requires_inference_review():
+    service = GovernedScientificOrchestrationService.__new__(
+        GovernedScientificOrchestrationService
+    )
+    risk = service._risk_class(
+        [{"kind": "MECHANISTIC_RELATIONSHIP", "confidence": 0.99}], []
+    )
+    assert risk is RiskClass.LEVEL_2_SCIENTIFIC_INFERENCE

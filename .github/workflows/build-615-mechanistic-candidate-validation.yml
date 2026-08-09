@@ -5,6 +5,8 @@ on:
     paths:
       - 'app/brain/mechanistic_candidates.py'
       - 'app/candidate_knowledge/models.py'
+      - 'app/evidence_aggregation/models.py'
+      - 'app/scientific_orchestration/service.py'
       - 'app/parallel_platform/routes.py'
       - 'runtime/knowledge_graph/causal_vocabulary.py'
       - 'runtime/knowledge_graph/validation.py'
@@ -34,6 +36,8 @@ jobs:
           python -m py_compile
           app/brain/mechanistic_candidates.py
           app/candidate_knowledge/models.py
+          app/evidence_aggregation/models.py
+          app/scientific_orchestration/service.py
           app/parallel_platform/routes.py
           tests/test_build_615_mechanistic_candidate_graph.py
       - name: Ruff
@@ -41,6 +45,8 @@ jobs:
           ruff check
           app/brain/mechanistic_candidates.py
           app/candidate_knowledge/models.py
+          app/evidence_aggregation/models.py
+          app/scientific_orchestration/service.py
           app/parallel_platform/routes.py
           tests/test_build_615_mechanistic_candidate_graph.py
       - name: Formatting
@@ -48,6 +54,8 @@ jobs:
           ruff format --check
           app/brain/mechanistic_candidates.py
           app/candidate_knowledge/models.py
+          app/evidence_aggregation/models.py
+          app/scientific_orchestration/service.py
           app/parallel_platform/routes.py
           tests/test_build_615_mechanistic_candidate_graph.py
       - name: BUILD-615 behavioral regressions

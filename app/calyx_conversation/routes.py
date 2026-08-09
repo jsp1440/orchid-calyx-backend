@@ -231,6 +231,17 @@ def run_analysis(request: AnalysisRequest) -> dict[str, Any]:
                 "standard_error": standard_error,
                 "method": "normal-approximation",
                 "n": len(values),
+                "approximation_only": True,
+                "canonical_scientific_method": False,
+                "research_grade": False,
+                "p_value_generated": False,
+                "scientific_interpretation_generated": False,
+                "governed_research_method": "CALYX-617 Student-t mean confidence interval (not yet live)",
+                "warning": (
+                    "Approximation-only convenience interval. Do not treat this normal-approximation "
+                    "result as the governed Research Station confidence interval; small-sample mean "
+                    "inference requires the CALYX-617 Student-t method."
+                ),
             },
         }
 
@@ -604,6 +615,14 @@ def capabilities() -> dict[str, Any]:
             "confidence_interval_mean",
             "moving_average",
         ],
+        "analysis_method_notes": {
+            "confidence_interval_mean": {
+                "status": "approximation_only",
+                "canonical_scientific_method": False,
+                "distribution": "normal",
+                "governed_research_equivalent": "CALYX-617 Student-t mean confidence interval (pending activation)",
+            }
+        },
         "dataset_analysis": ["describe", "correlation_matrix"],
         "knowledge_sources": ["evidence_index", "knowledge_graph", "brain_graph"],
         "conversation_persistence": STORE.persistence_mode,
