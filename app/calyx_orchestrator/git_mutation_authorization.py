@@ -51,11 +51,7 @@ def _nonempty(value: object, *, code: str) -> str:
 
 def _bounded_signature(value: object) -> str:
     signature = str(value or "").strip()
-    if (
-        not signature
-        or "\x00" in signature
-        or len(signature) > MAX_SIGNATURE_CHARS
-    ):
+    if not signature or "\x00" in signature or len(signature) > MAX_SIGNATURE_CHARS:
         raise ValueError("GIT_AUTHORIZATION_GRANT_SIGNATURE_INVALID")
     return signature
 
