@@ -1,11 +1,11 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.scientific_synthesis import routes as synthesis_routes
 from app.scientific_synthesis.discovery import (
     BibliographicVerificationService,
     LiteratureDiscoveryService,
 )
-from app.scientific_synthesis import routes as synthesis_routes
 
 
 class FakeProvider:
