@@ -78,9 +78,7 @@ def build_activation_decision_packet(store: Any, release_id: str) -> dict[str, A
 
     ready_for_owner_decision = not blockers
     decision_state = (
-        "READY_FOR_OWNER_ACTIVATION_DECISION"
-        if ready_for_owner_decision
-        else "HOLD"
+        "READY_FOR_OWNER_ACTIVATION_DECISION" if ready_for_owner_decision else "HOLD"
     )
 
     return {
@@ -98,9 +96,7 @@ def build_activation_decision_packet(store: Any, release_id: str) -> dict[str, A
             "baseline_release_id": (
                 report.get("baseline_release_id") if report_present else None
             ),
-            "summary": (
-                dict(report.get("summary") or {}) if report_present else None
-            ),
+            "summary": (dict(report.get("summary") or {}) if report_present else None),
             "interpretation_note": (
                 report.get("interpretation_note") if report_present else None
             ),
