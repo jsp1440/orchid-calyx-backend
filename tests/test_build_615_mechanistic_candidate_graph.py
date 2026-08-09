@@ -213,6 +213,6 @@ def test_high_confidence_mechanistic_claim_still_requires_inference_review():
         GovernedScientificOrchestrationService
     )
     risk = service._risk_class(
-        [{"kind": "MECHANISTIC_RELATIONSHIP", "confidence": 0.99}]
+        [{"kind": "MECHANISTIC_RELATIONSHIP", "confidence": 0.99}], []
     )
     assert risk is RiskClass.LEVEL_2_SCIENTIFIC_INFERENCE
