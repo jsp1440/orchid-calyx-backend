@@ -93,9 +93,15 @@ class DurableGitProposalMutationJournal:
             if event_index != latest_row.event_index + 1:
                 raise ValueError("GIT_PROPOSAL_JOURNAL_EVENT_GAP")
             prior_count = len(latest.completed_actions)
-            if tuple(receipt.completed_actions[:prior_count]) != latest.completed_actions:
+            if (
+                tuple(receipt.completed_actions[:prior_count])
+                != latest.completed_actions
+            ):
                 raise ValueError("GIT_PROPOSAL_JOURNAL_COMPLETED_ACTIONS_REGRESSED")
-            if tuple(receipt.operation_evidence[:prior_count]) != latest.operation_evidence:
+            if (
+                tuple(receipt.operation_evidence[:prior_count])
+                != latest.operation_evidence
+            ):
                 raise ValueError("GIT_PROPOSAL_JOURNAL_EVIDENCE_HISTORY_CHANGED")
 
         payload = {
@@ -229,21 +235,15 @@ class DurableGitProposalMutationJournal:
             raise PermissionError("GIT_PROPOSAL_JOURNAL_ACTION_ORDER_INVALID")
         for action, item in zip(completed, evidence, strict=True):
             if not isinstance(item, Mapping) or item.get("action") != action:
-                raise PermissionError(
-                    "GIT_PROPOSAL_JOURNAL_EVIDENCE_ACTION_MISMATCH"
-                )
+                raise PermissionError("GIT_PROPOSAL_JOURNAL_EVIDENCE_ACTION_MISMATCH")
             raw_payload = item.get("payload")
-            supplied_evidence = str(
-                item.get("evidence_digest") or ""
-            ).strip().lower()
+            supplied_evidence = str(item.get("evidence_digest") or "").strip().lower()
             if not isinstance(raw_payload, Mapping) or not _is_sha256(
                 supplied_evidence
             ):
                 raise PermissionError("GIT_PROPOSAL_JOURNAL_EVIDENCE_INVALID")
             if canonical_sha256(raw_payload) != supplied_evidence:
-                raise PermissionError(
-                    "GIT_PROPOSAL_JOURNAL_EVIDENCE_DIGEST_MISMATCH"
-                )
+                raise PermissionError("GIT_PROPOSAL_JOURNAL_EVIDENCE_DIGEST_MISMATCH")
 
     @classmethod
     def _decode(
@@ -285,9 +285,7 @@ class DurableGitProposalMutationJournal:
                 proposed_branch=str(raw["proposed_branch"]),
                 base_commit_sha=str(raw["base_commit_sha"]),
                 status=str(raw["status"]),
-                completed_actions=tuple(
-                    str(item) for item in raw["completed_actions"]
-                ),
+                completed_actions=tuple(str(item) for item in raw["completed_actions"]),
                 operation_evidence=evidence,
                 failure_code=(
                     None
