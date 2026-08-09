@@ -5,6 +5,7 @@ import json
 from collections import defaultdict
 from typing import Any
 
+from app.brain.causal_scope import normalize_causal_scope
 from app.candidate_knowledge.dependencies import get_candidate_components
 from app.candidate_knowledge.models import CandidateKind
 from runtime.knowledge_graph.causal_vocabulary import causal_relation_semantics
@@ -17,10 +18,13 @@ def _stable_json(value: Any) -> str:
 def _scope(candidate: dict[str, Any]) -> dict[str, Any]:
     qualifiers = dict(candidate.get("qualifiers") or {})
     graph_contract = dict(qualifiers.get("graph_contract") or {})
+    causal_scope = normalize_causal_scope(qualifiers.get("causal_scope"))
     return {
         "source_key": graph_contract.get("source_key"),
         "target_key": graph_contract.get("target_key"),
-        "taxon_scope": qualifiers.get("taxon_scope"),
+        "causal_scope": causal_scope,
+        # Experimental/quantitative context remains part of contradiction identity
+        # because legacy BUILD-615 candidates may predate the explicit scope model.
         "experimental_context": qualifiers.get("experimental_context", {}),
         "quantitative_context": qualifiers.get("quantitative_context", {}),
     }
@@ -60,7 +64,9 @@ def analyze_mechanistic_contradictions(
 
         qualifiers = dict(candidate.get("qualifiers") or {})
         contract = dict(qualifiers.get("graph_contract") or {})
-        relationship = str(contract.get("relationship") or candidate.get("predicate") or "").strip().lower()
+        relationship = str(
+            contract.get("relationship") or candidate.get("predicate") or ""
+        ).strip().lower()
         semantics = causal_relation_semantics(relationship)
         if semantics is None or not semantics["causal"]:
             skipped.append(
@@ -72,7 +78,18 @@ def analyze_mechanistic_contradictions(
             )
             continue
 
-        scope = _scope(candidate)
+        try:
+            scope = _scope(candidate)
+        except ValueError as exc:
+            skipped.append(
+                {
+                    "candidate_id": candidate.get("candidate_id"),
+                    "reason": "invalid_causal_scope",
+                    "detail": str(exc),
+                }
+            )
+            continue
+
         if not scope["source_key"] or not scope["target_key"]:
             skipped.append(
                 {
@@ -134,7 +151,8 @@ def analyze_mechanistic_contradictions(
         )
 
     return {
-        "contract": "calyx-mechanistic-contradictions-v1",
+        "contract": "calyx-mechanistic-contradictions-v2",
+        "scope_contract": "calyx-causal-scope-v1",
         "graph_mutation": False,
         "candidate_mutation": False,
         "contradiction_count": len(contradictions),
