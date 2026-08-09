@@ -23,7 +23,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install focused dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install pytest ruff
       - name: Compile changed Python
         run: python -m compileall runtime/world_plants_activation_decision.py app/routers/taxonomy_releases.py tests/test_world_plants_activation_decision.py
       - name: Focused activation-decision regressions
