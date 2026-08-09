@@ -1,0 +1,56 @@
+name: BUILD-BRAIN-114Q Owner Signature Verifier Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/calyx_orchestrator/git_mutation_authorization.py"
+      - "app/calyx_orchestrator/owner_signature_verifier.py"
+      - "tests/test_calyx_owner_signature_verifier_114q.py"
+      - "tests/test_calyx_git_mutation_authorization_114o.py"
+      - "requirements.txt"
+      - "docs/brain/BUILD-BRAIN-114Q-OWNER-SIGNATURE-VERIFIER.md"
+      - ".github/workflows/build-brain-114q-owner-signature-verifier.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile and lint
+        run: |
+          python -m compileall -q app/calyx_orchestrator/git_mutation_authorization.py app/calyx_orchestrator/owner_signature_verifier.py tests/test_calyx_owner_signature_verifier_114q.py
+          ruff check app/calyx_orchestrator/git_mutation_authorization.py app/calyx_orchestrator/owner_signature_verifier.py tests/test_calyx_owner_signature_verifier_114q.py
+          ruff format --check app/calyx_orchestrator/git_mutation_authorization.py app/calyx_orchestrator/owner_signature_verifier.py tests/test_calyx_owner_signature_verifier_114q.py
+      - name: Focused regressions
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q tests/test_calyx_owner_signature_verifier_114q.py tests/test_calyx_git_mutation_authorization_114o.py tests/test_calyx_durable_proposal_authorization.py
+      - name: Public-key-only and non-mutation assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          verifier = Path("app/calyx_orchestrator/owner_signature_verifier.py").read_text()
+          gate = Path("app/calyx_orchestrator/git_mutation_authorization.py").read_text()
+          assert "Ed25519PublicKey" in verifier
+          assert "Ed25519PrivateKey" not in verifier
+          assert 'SIGNING_DOMAIN = b"calyx-owner-grant-v1\\x00"' in verifier
+          assert "MAX_SIGNATURE_LENGTH" in gate
+          assert "signature=str(value.get(\"signature\") or \"\").strip()," in gate
+          forbidden = ("subprocess", "git push", "git commit", "create_pull_request", "merge_pull_request")
+          for marker in forbidden:
+              assert marker not in verifier + gate, marker
+          PY
+      - run: git diff --check
