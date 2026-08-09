@@ -146,7 +146,7 @@ def test_scope_binds_observation_to_plant_time_and_location():
     assert scope["taxa"] == ["phalaenopsis bellina"]
     assert scope["cultivation_context"]["plant_record_key"] == "conservatory-plant-42"
     assert scope["cultivation_context"]["location_key"] == "greenhouse-east-bench"
-    assert scope["cultivation_context"]["observed_at"].startswith("2026-08-08T18:30:00")
+    assert scope["cultivation_context"]["observed_at"].startswith("2026-08-08t18:30:00")
     assert scope["population_context"] == {
         "n": 1,
         "plant_record_key": "conservatory-plant-42",
