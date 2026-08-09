@@ -11,6 +11,7 @@ on:
       - "tests/test_calyx_git_proposal_execution_plan_114r.py"
       - "tests/test_calyx_git_proposal_action_dependencies_114r.py"
       - "tests/test_calyx_owner_signature_verifier_114q.py"
+      - "tests/test_calyx_git_mutation_authorization_114o.py"
       - "docs/brain/BUILD-BRAIN-114R-GIT-PROPOSAL-EXECUTION-PLAN.md"
       - "docs/brain/BUILD-BRAIN-114M-R1-TO-114R-CURRENT-PARENT-HANDOFF.md"
       - ".github/workflows/build-brain-114r-git-proposal-execution-plan.yml"
@@ -35,13 +36,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest ruff
-      - name: Compile 114R planning surface
+      - name: Compile authorization and 114R planning surfaces
         run: |
-          python -m compileall -q app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_proposal_execution_plan_114r.py tests/test_calyx_git_proposal_action_dependencies_114r.py
-      - name: Ruff 114R planning surface
+          python -m compileall -q app/calyx_orchestrator/git_mutation_authorization.py app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_mutation_authorization_114o.py tests/test_calyx_owner_signature_verifier_114q.py tests/test_calyx_git_proposal_execution_plan_114r.py tests/test_calyx_git_proposal_action_dependencies_114r.py
+      - name: Ruff authorization and 114R planning surfaces
         run: |
-          ruff check app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_proposal_execution_plan_114r.py tests/test_calyx_git_proposal_action_dependencies_114r.py
-          ruff format --check app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_proposal_execution_plan_114r.py tests/test_calyx_git_proposal_action_dependencies_114r.py
+          ruff check app/calyx_orchestrator/git_mutation_authorization.py app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_mutation_authorization_114o.py tests/test_calyx_owner_signature_verifier_114q.py tests/test_calyx_git_proposal_execution_plan_114r.py tests/test_calyx_git_proposal_action_dependencies_114r.py
+          ruff format --check app/calyx_orchestrator/git_mutation_authorization.py app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_mutation_authorization_114o.py tests/test_calyx_owner_signature_verifier_114q.py tests/test_calyx_git_proposal_execution_plan_114r.py tests/test_calyx_git_proposal_action_dependencies_114r.py
       - name: Focused planning regressions
         env:
           PYTHONPATH: .
@@ -53,10 +54,13 @@ jobs:
           from pathlib import Path
 
           source = Path("app/calyx_orchestrator/git_proposal_execution_plan.py").read_text(encoding="utf-8")
+          gate = Path("app/calyx_orchestrator/git_mutation_authorization.py").read_text(encoding="utf-8")
           tests = Path("tests/test_calyx_git_proposal_execution_plan_114r.py").read_text(encoding="utf-8")
           for marker in (
               'SCHEMA = "calyx-git-proposal-execution-plan-v2"',
               "patch_program_job_id",
+              "base_ref",
+              "copy.deepcopy",
               "plan_only",
               "git_mutation_performed",
               "owner_grant_verified",
@@ -64,7 +68,18 @@ jobs:
               "GIT_PROPOSAL_PLAN_ACTION_PREREQUISITE_MISSING",
           ):
               assert marker in source, marker
+          for marker in (
+              "base_ref: str",
+              '"base_ref": self.base_ref',
+              "GIT_AUTHORIZATION_BASE_REF_INVALID",
+              "GIT_AUTHORIZATION_BASE_REF_CONFLICT",
+              "clock: Callable[[], datetime] | None",
+          ):
+              assert marker in gate, marker
+          assert "authorization_gate.verify_grant(request, grant_mapping)" in source
           assert "assignment_inputs_for_program_job" in tests
+          assert "test_snapshot_mutation_cannot_change_frozen_plan_or_digest" in tests
+          assert "test_base_ref_is_owner_authorized_and_cannot_be_changed_after_grant" in tests
           for marker in (
               "subprocess",
               "git push",
