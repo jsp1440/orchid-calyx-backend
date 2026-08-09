@@ -74,7 +74,9 @@ def test_valid_mechanistic_claim_enters_review_required_candidate_knowledge():
     assert candidate["predicate"] == "promotes"
     assert candidate["review_state"] == "REQUIRED"
     assert candidate["published"] is False
-    assert candidate["qualifiers"]["graph_contract"]["source_node_type"] == "environment"
+    assert (
+        candidate["qualifiers"]["graph_contract"]["source_node_type"] == "environment"
+    )
     assert candidate["qualifiers"]["graph_contract"]["target_node_type"] == "physiology"
     assert candidate["qualifiers"]["quantitative_context"]["wavelength_nm"] == 450
     assert repository.evidence_links[0]["anchor"]["anchor_id"] == 14
