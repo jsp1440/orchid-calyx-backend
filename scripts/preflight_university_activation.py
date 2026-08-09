@@ -47,6 +47,28 @@ REQUIRED_CONSTRAINT_FRAGMENTS = (
     "publication_performed = false",
 )
 
+# Columns that must carry NOT NULL in the catalog to enforce their CHECK constraints.
+# A hand-created table whose columns are nullable silently bypasses CHECK constraints
+# for NULL inputs, making the schema appear valid while governance guarantees are absent.
+REQUIRED_NOT_NULL_COLUMNS: dict[str, set[str]] = {
+    "lab_sessions": {
+        "session_id", "laboratory_id", "chapter_id", "learner_actor", "status",
+        "current_stage", "revision", "publication_allowed",
+        "automatic_candidate_knowledge", "human_review_required", "created_at", "updated_at",
+    },
+    "session_events": {
+        "event_id", "session_id", "sequence_no", "event_type", "stage", "payload",
+        "actor", "session_revision", "created_at",
+    },
+    "session_reviews": {
+        "review_id", "session_id", "reviewer_actor", "reviewer_capability",
+        "reviewer_roles", "reviewer_qualifications", "decision",
+        "reviewed_revision", "candidate_knowledge_promoted", "publication_performed", "created_at",
+    },
+}
+
+PREFLIGHT_STATEMENT_TIMEOUT_MS = 30_000
+
 
 def _release_evidence_state(path: Path | None) -> dict[str, Any]:
     configured = os.getenv("OCU_UNIVERSITY_RELEASE_EVIDENCE_ID", "").strip()
@@ -123,17 +145,23 @@ def _database_state(database_url: str | None) -> dict[str, Any]:
         return {"configured": False, "reachable": False, "schema_valid": False}
     try:
         with psycopg.connect(database_url, row_factory=dict_row, connect_timeout=10) as conn, conn.cursor() as cur:
+            cur.execute(f"SET statement_timeout = '{PREFLIGHT_STATEMENT_TIMEOUT_MS}ms'")
             cur.execute(
                 """
-                SELECT table_name, column_name
+                SELECT table_name, column_name, is_nullable
                 FROM information_schema.columns
                 WHERE table_schema='oc_university'
                   AND table_name IN ('lab_sessions','session_events','session_reviews')
                 """
             )
             found: dict[str, set[str]] = {name: set() for name in REQUIRED_COLUMNS}
+            nullable_found: dict[str, set[str]] = {name: set() for name in REQUIRED_NOT_NULL_COLUMNS}
             for row in cur.fetchall():
-                found[str(row["table_name"])].add(str(row["column_name"]))
+                tname = str(row["table_name"])
+                cname = str(row["column_name"])
+                found[tname].add(cname)
+                if str(row["is_nullable"]).upper() == "YES":
+                    nullable_found[tname].add(cname)
             cur.execute(
                 """
                 SELECT pg_get_constraintdef(c.oid) AS definition
@@ -152,12 +180,18 @@ def _database_state(database_url: str | None) -> dict[str, Any]:
         if required - found.get(table, set())
     }
     missing_constraints = [fragment for fragment in REQUIRED_CONSTRAINT_FRAGMENTS if fragment not in constraint_text]
+    nullable_required = {
+        table: sorted(required & nullable_found.get(table, set()))
+        for table, required in REQUIRED_NOT_NULL_COLUMNS.items()
+        if required & nullable_found.get(table, set())
+    }
     return {
         "configured": True,
         "reachable": True,
-        "schema_valid": not missing_columns and not missing_constraints,
+        "schema_valid": not missing_columns and not missing_constraints and not nullable_required,
         "missing_columns": missing_columns,
         "missing_constraint_fragments": missing_constraints,
+        "nullable_required_columns": nullable_required,
     }
 
 

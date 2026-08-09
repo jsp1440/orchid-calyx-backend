@@ -14,6 +14,7 @@ from psycopg.conninfo import conninfo_to_dict
 from scripts.preflight_university_activation import (
     REQUIRED_COLUMNS,
     REQUIRED_CONSTRAINT_FRAGMENTS,
+    REQUIRED_NOT_NULL_COLUMNS,
     preflight,
 )
 
@@ -76,15 +77,18 @@ def _schema_state_on_connection(conn: psycopg.Connection) -> dict[str, Any]:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT table_name, column_name
+            SELECT table_name, column_name, is_nullable
             FROM information_schema.columns
             WHERE table_schema='oc_university'
               AND table_name IN ('lab_sessions','session_events','session_reviews')
             """
         )
         found: dict[str, set[str]] = {name: set() for name in REQUIRED_COLUMNS}
-        for table_name, column_name in cur.fetchall():
+        nullable_found: dict[str, set[str]] = {name: set() for name in REQUIRED_NOT_NULL_COLUMNS}
+        for table_name, column_name, is_nullable in cur.fetchall():
             found[str(table_name)].add(str(column_name))
+            if str(is_nullable).upper() == "YES":
+                nullable_found[str(table_name)].add(str(column_name))
         cur.execute(
             """
             SELECT pg_get_constraintdef(c.oid)
@@ -100,10 +104,16 @@ def _schema_state_on_connection(conn: psycopg.Connection) -> dict[str, Any]:
         if required - found.get(table, set())
     }
     missing_constraints = [fragment for fragment in REQUIRED_CONSTRAINT_FRAGMENTS if fragment not in constraint_text]
+    nullable_required = {
+        table: sorted(required & nullable_found.get(table, set()))
+        for table, required in REQUIRED_NOT_NULL_COLUMNS.items()
+        if required & nullable_found.get(table, set())
+    }
     return {
-        "schema_valid": not missing_columns and not missing_constraints,
+        "schema_valid": not missing_columns and not missing_constraints and not nullable_required,
         "missing_columns": missing_columns,
         "missing_constraint_fragments": missing_constraints,
+        "nullable_required_columns": nullable_required,
     }
 
 

@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import psycopg
 
 from scripts import apply_university_durable_migration as runner
+from scripts import preflight_university_activation as preflight_mod
 
 READY_PREFLIGHT = {
     "ready_to_apply_migration": True,
@@ -262,6 +263,88 @@ class GuardedMigrationRunnerContractTests(unittest.TestCase):
         self.assertTrue(
             all(call_item.args[0] != migration_sql for call_item in cursor.execute.call_args_list)
         )
+
+
+class SchemaValidationNullabilityTests(unittest.TestCase):
+    """Unit tests for NOT NULL enforcement in schema state checks."""
+
+    def _make_conn(self, rows: list[tuple[str, str, str]], constraint_rows: list[tuple[str]]) -> MagicMock:
+        """Build a minimal mock psycopg connection whose cursor returns given catalog rows."""
+        conn = MagicMock()
+        cur = MagicMock()
+        conn.cursor.return_value.__enter__ = MagicMock(return_value=cur)
+        conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        cur.fetchall.side_effect = [rows, constraint_rows]
+        return conn
+
+    def test_nullable_publication_control_column_fails_schema_check(self) -> None:
+        # Simulate a table where human_review_required exists but is nullable.
+        rows = [
+            ("lab_sessions", col, "NO")
+            for col in runner.REQUIRED_COLUMNS["lab_sessions"]
+            if col != "human_review_required"
+        ] + [("lab_sessions", "human_review_required", "YES")]  # nullable — invalid
+        for tbl, cols in runner.REQUIRED_COLUMNS.items():
+            if tbl != "lab_sessions":
+                rows += [(tbl, col, "NO") for col in cols]
+        # All required constraint fragments present
+        constraint_text = " ".join(
+            f"check ({frag})" for frag in runner.REQUIRED_CONSTRAINT_FRAGMENTS
+        )
+        conn = self._make_conn(rows, [(constraint_text,)])
+        state = runner._schema_state_on_connection(conn)
+        self.assertFalse(state["schema_valid"], "nullable required column must invalidate schema")
+        self.assertIn("lab_sessions", state["nullable_required_columns"])
+        self.assertIn("human_review_required", state["nullable_required_columns"]["lab_sessions"])
+
+    def test_all_required_not_null_columns_pass(self) -> None:
+        # All columns present and NOT NULL, all constraint fragments present.
+        rows = [
+            (tbl, col, "NO")
+            for tbl, cols in runner.REQUIRED_COLUMNS.items()
+            for col in cols
+        ]
+        constraint_text = " ".join(
+            f"check ({frag})" for frag in runner.REQUIRED_CONSTRAINT_FRAGMENTS
+        )
+        conn = self._make_conn(rows, [(constraint_text,)])
+        state = runner._schema_state_on_connection(conn)
+        self.assertTrue(state["schema_valid"])
+        self.assertFalse(state["nullable_required_columns"])
+
+
+class PreflightStatementTimeoutTests(unittest.TestCase):
+    """Verify that _database_state applies a statement timeout before catalog queries."""
+
+    def _make_preflight_mocks(self) -> tuple[MagicMock, MagicMock, MagicMock]:
+        connect = MagicMock()
+        conn = MagicMock()
+        cur = MagicMock()
+        connect.return_value.__enter__.return_value = conn
+        connect.return_value.__exit__.return_value = False
+        conn.cursor.return_value.__enter__.return_value = cur
+        conn.cursor.return_value.__exit__.return_value = False
+        cur.fetchall.side_effect = [[], []]
+        return connect, conn, cur
+
+    def test_preflight_database_state_sets_statement_timeout(self) -> None:
+        connect, _conn, cur = self._make_preflight_mocks()
+        with patch.object(preflight_mod.psycopg, "connect", connect):
+            preflight_mod._database_state("postgresql://db.example.org/orchid")
+        expected_timeout = f"SET statement_timeout = '{preflight_mod.PREFLIGHT_STATEMENT_TIMEOUT_MS}ms'"
+        first_call = cur.execute.call_args_list[0]
+        self.assertEqual(first_call, call(expected_timeout))
+
+    def test_preflight_database_state_timeout_precedes_catalog_queries(self) -> None:
+        connect, _conn, cur = self._make_preflight_mocks()
+        with patch.object(preflight_mod.psycopg, "connect", connect):
+            preflight_mod._database_state("postgresql://db.example.org/orchid")
+        calls = [str(c) for c in cur.execute.call_args_list]
+        timeout_idx = next((i for i, c in enumerate(calls) if "statement_timeout" in c), None)
+        catalog_idx = next((i for i, c in enumerate(calls) if "information_schema" in c), None)
+        self.assertIsNotNone(timeout_idx, "SET statement_timeout should be called")
+        self.assertIsNotNone(catalog_idx, "catalog query should be called")
+        self.assertLess(timeout_idx, catalog_idx, "statement_timeout must be set before catalog queries")
 
 
 @unittest.skipUnless(
