@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from runtime.environmental_intelligence import EnvironmentalIntelligenceService
 
 
@@ -34,6 +36,18 @@ def test_environmental_record_preserves_source_license_and_state(tmp_path: Path)
     assert item["production_graph_mutation_authorized"] is False
 
 
+def test_environmental_record_replay_is_idempotent_and_conflicts_fail_closed(tmp_path: Path):
+    service = EnvironmentalIntelligenceService(tmp_path)
+    first = service.register_record("owner-a", record("r1", cell_id="cell-a"), actor="owner-a")
+    replay = service.register_record("owner-a", record("r1", cell_id="cell-a"), actor="owner-a")
+    assert replay["record_digest"] == first["record_digest"]
+    assert replay["created_at"] == first["created_at"]
+    conflicting = record("r1", cell_id="cell-a")
+    conflicting["habitat"] = ["cloud forest"]
+    with pytest.raises(ValueError, match="ENV_IMMUTABLE_RECORD_CONFLICT"):
+        service.register_record("owner-a", conflicting, actor="owner-a")
+
+
 def test_envelope_separates_observed_and_modeled_and_warns_sampling_bias(tmp_path: Path):
     service = EnvironmentalIntelligenceService(tmp_path)
     service.register_record("owner-a", record("r1", cell_id="same"), actor="owner-a")
@@ -52,6 +66,29 @@ def test_unreviewed_records_are_explicitly_flagged(tmp_path: Path):
     envelope = service.assemble_envelope("owner-a", "taxon:laelia-anceps")
     assert envelope["review_basis"] == "candidate_records"
     assert "UNREVIEWED_RECORDS_USED" in envelope["sampling_bias_warnings"]
+
+
+def test_rejected_records_never_contribute_to_envelope(tmp_path: Path):
+    service = EnvironmentalIntelligenceService(tmp_path)
+    service.register_record("owner-a", record("good", cell_id="a", reviewed=False), actor="owner-a")
+    service.register_record("owner-a", record("bad", cell_id="b", reviewed=False), actor="owner-a")
+    service.review_record("owner-a", "bad", state="rejected", reviewer="owner-a", rationale="bad evidence")
+    envelope = service.assemble_envelope("owner-a", "taxon:laelia-anceps")
+    assert envelope["record_count"] == 1
+    assert envelope["rejected_record_count"] == 1
+    assert envelope["source_uris"] == ["doi:10.0000/good"]
+
+
+def test_accepted_name_conflict_is_explicit_not_arbitrarily_selected(tmp_path: Path):
+    service = EnvironmentalIntelligenceService(tmp_path)
+    service.register_record("owner-a", record("r1", cell_id="a"), actor="owner-a")
+    second = record("r2", cell_id="b")
+    second["accepted_name"] = "Laelia anceps subsp. dawsonii"
+    service.register_record("owner-a", second, actor="owner-a")
+    envelope = service.assemble_envelope("owner-a", "taxon:laelia-anceps")
+    assert envelope["accepted_name"] is None
+    assert len(envelope["accepted_names"]) == 2
+    assert "ACCEPTED_NAME_CONFLICT" in envelope["sampling_bias_warnings"]
 
 
 def test_atlas_handoff_is_provenance_bearing_and_nonpublishing(tmp_path: Path):
