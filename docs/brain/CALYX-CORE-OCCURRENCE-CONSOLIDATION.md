@@ -69,7 +69,13 @@ The safe pre-activation contract is:
 
 This also clarifies issue #386 acceptance. A bounded fixture may prove the complete **candidate canonical mapping path** before activation, but production-grade canonical IDs must come from the governed durable canonical taxonomy, not be minted locally by the occurrence pipeline.
 
-One remaining semantic hardening item is to align #732's exact-name normalization with BUILD-065 `canonical_name_of()` authorship stripping. Until that is implemented and executable CI is restored, authored-name variants that lack a World Plants number should remain conservative rather than being treated as proven canonical matches.
+### Shared canonical-name semantics
+
+#732 now imports and reuses BUILD-065 `canonical_name_of()` for occurrence/source-name matching and taxonomy-review name blocking. This removes the prior semantic drift where simple whitespace/case normalization retained authorship.
+
+An occurrence such as `Laelia anceps Lindl.` can therefore match the staged Hassler source taxon `Laelia anceps` by the same canonical-name semantics already used by the canonical taxonomy layer. The match still yields only the exact release-scoped Hassler source record; `canonical_taxon_id` remains null and `CANONICAL_TAXON_CROSSWALK_NOT_ACTIVATED` remains in force.
+
+A focused PostgreSQL regression now proves authored-name matching resolves the expected source row while preserving the provider key and refusing to manufacture a durable OC canonical ID.
 
 ## Taxonomy context identity
 
@@ -89,7 +95,7 @@ The run ID is content-addressed from the source/job/input digest/taxonomy-contex
 Matching is conservative:
 
 1. explicit unique World Plants number, when supplied;
-2. unique exact normalized accepted/scientific name;
+2. unique exact BUILD-065-normalized accepted/scientific name;
 3. otherwise ambiguous/unresolved review.
 
 Open taxonomy review evidence can force `taxonomy_review_required`. Resolved/dismissed review records remain in the context digest but do not block matching.
@@ -123,7 +129,8 @@ PostgreSQL 16 tests now cover:
 - incomplete taxonomy staging rejection;
 - taxonomy source-SHA mismatch rejection;
 - exact replay idempotency;
-- source-taxonomy matching by World Plants number and exact name;
+- source-taxonomy matching by World Plants number and exact BUILD-065-normalized name;
+- authored occurrence names resolving through `canonical_name_of()` without minting canonical IDs;
 - provider-key/source-taxonomy/canonical-ID separation;
 - explicit proof that rank code `S` is never used as taxon identity;
 - canonical taxon ID remains null with machine blocker until crosswalk activation;
@@ -143,7 +150,11 @@ After the taxonomy-completeness guard, head `b3aaee864d98556c9f7da1fcc84e2ebc3ab
 
 After the P1 identity correction, exact head `73ec717ab1eaa0924a20504dc25178808eebe4d4` triggered run `31291272155`, job `93188753221`; it again failed before step 1 with `steps=null`.
 
-Those runs do not validate the code. Fresh executable exact-head CI is required before any release decision.
+After the BUILD-065 registry audit/documentation update, head `d14299b969e1074f47f6db0917916989f21559db` triggered run `31291733479`, job `93189986670`; it again failed before checkout with `steps=null`.
+
+The authored-name integration commits are `a92488b49b66baa5ac73a9d7baed8c49c87dfc92` (runtime) and `2cd096bc91aeda2456c6fed1713201d4a2a11135` (regression). A fresh executable exact-head run is still required after this Brain update.
+
+None of the pre-step runs validate the code.
 
 ## Governance boundary
 
@@ -161,10 +172,9 @@ This replacement cannot:
 
 ## Release plan
 
-1. Obtain executable exact-head CI on the corrected identity model.
-2. Align exact-name normalization with BUILD-065 authorship stripping and add a focused regression.
-3. Fix demonstrated failures before expanding.
-4. If green, make #732 the single occurrence-persistence authority.
-5. Close #599 and #610 unmerged as superseded.
-6. Merge only through normal validated release governance.
-7. Continue #386 toward its remaining durable canonical crosswalk/activation/species-API proof; those production mutations require their own explicit owner decision.
+1. Obtain executable exact-head CI on the corrected identity/name model.
+2. Fix demonstrated failures before expanding.
+3. If green, make #732 the single occurrence-persistence authority.
+4. Close #599 and #610 unmerged as superseded.
+5. Merge only through normal validated release governance and the #384/#386 stop-before-merge rule.
+6. Continue #386 toward its remaining durable canonical crosswalk/activation/species-API proof; those production mutations require their own explicit owner decision.
