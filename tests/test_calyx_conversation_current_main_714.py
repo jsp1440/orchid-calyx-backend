@@ -225,7 +225,10 @@ def test_current_main_routes_and_migration_governance_are_present():
     source_paths = {route.path for route in source_router.routes}
     assert "/brain/mission-control/chat/ask" in chat_paths
     assert "/brain/mission-control/chat/conversations" in chat_paths
-    assert "/brain/mission-control/chat/conversations/{conversation_id}/report" in chat_paths
+    assert (
+        "/brain/mission-control/chat/conversations/{conversation_id}/report"
+        in chat_paths
+    )
     assert (
         "/brain/mission-control/chat/conversations/{conversation_id}/sources/{result_id}/project-link"
         in source_paths
