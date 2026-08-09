@@ -160,9 +160,7 @@ def _completed_job(
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
     root = tmp_path / "worktree"
     (root / ".git" / "refs" / "heads" / "autonomy").mkdir(parents=True)
-    (root / ".git" / "HEAD").write_text(
-        f"ref: refs/heads/{BRANCH}\n", encoding="ascii"
-    )
+    (root / ".git" / "HEAD").write_text(f"ref: refs/heads/{BRANCH}\n", encoding="ascii")
     (root / ".git" / "refs" / "heads" / "autonomy" / "work-123").write_text(
         COMMIT + "\n", encoding="ascii"
     )
@@ -236,11 +234,17 @@ def test_real_program_cycle_can_execute_and_persist_isolated_patch(
             registry=registry,
         )
         assert result.completed_jobs == 1
-        assert result.jobs[0].executor_key == IsolatedWorkspacePatchExecutor.executor_key
+        assert (
+            result.jobs[0].executor_key == IsolatedWorkspacePatchExecutor.executor_key
+        )
         assert result.jobs[0].workspace_mutation is True
-        assert (root / "app" / "example.py").read_text(encoding="utf-8") == PATCH_CONTENT
+        assert (root / "app" / "example.py").read_text(
+            encoding="utf-8"
+        ) == PATCH_CONTENT
 
-        completed = db.query(CalyxProgramJob).filter_by(program_id=program.program_id).one()
+        completed = (
+            db.query(CalyxProgramJob).filter_by(program_id=program.program_id).one()
+        )
         resolved = PersistedPatchExecutionService(db).get_completed(
             program_job_id=completed.program_job_id
         )
@@ -303,7 +307,9 @@ def test_wrong_executor_identity_is_rejected() -> None:
 def test_repository_or_branch_mismatch_is_rejected() -> None:
     with _db() as db:
         completed = _completed_job(db, output_repository="other/repository")
-        with pytest.raises(PermissionError, match="PATCH_PROGRAM_JOB_IDENTITY_MISMATCH"):
+        with pytest.raises(
+            PermissionError, match="PATCH_PROGRAM_JOB_IDENTITY_MISMATCH"
+        ):
             PersistedPatchExecutionService(db).get_completed(
                 program_job_id=completed.program_job_id
             )
@@ -362,7 +368,9 @@ def test_persisted_input_checksum_must_be_canonical_sha256() -> None:
         evidence["input_checksum"] = "not-a-checksum"
         completed.evidence_json = json.dumps(evidence, sort_keys=True)
         db.commit()
-        with pytest.raises(ValueError, match="PATCH_PROGRAM_JOB_INPUT_CHECKSUM_INVALID"):
+        with pytest.raises(
+            ValueError, match="PATCH_PROGRAM_JOB_INPUT_CHECKSUM_INVALID"
+        ):
             PersistedPatchExecutionService(db).get_completed(
                 program_job_id=completed.program_job_id
             )

@@ -41,9 +41,7 @@ def _persisted_job_inputs(job: CalyxProgramJob) -> dict[str, object]:
         raise ValueError("PROGRAM_JOB_INPUT_KEY_INVALID")
     reserved = sorted(set(value) & RESERVED_JOB_INPUT_KEYS)
     if reserved:
-        raise PermissionError(
-            f"PROGRAM_JOB_INPUT_RESERVED_KEY:{','.join(reserved)}"
-        )
+        raise PermissionError(f"PROGRAM_JOB_INPUT_RESERVED_KEY:{','.join(reserved)}")
     return value
 
 

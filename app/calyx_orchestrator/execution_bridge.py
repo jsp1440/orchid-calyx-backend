@@ -69,12 +69,18 @@ class LeaseExecutionBridge:
             "evidence_uris": list(receipt.evidence_uris),
             "blocker_code": receipt.blocker_code,
         }
-        blocker = receipt.blocker_code if receipt.state != ExecutionState.DELIVERED else None
+        blocker = (
+            receipt.blocker_code if receipt.state != ExecutionState.DELIVERED else None
+        )
         human_action = None
         if receipt.state == ExecutionState.TIMED_OUT:
-            human_action = "Inspect timeout evidence and submit a bounded governed retry."
+            human_action = (
+                "Inspect timeout evidence and submit a bounded governed retry."
+            )
         elif receipt.state == ExecutionState.BLOCKED:
-            human_action = "Resolve the recorded executor blocker before retrying this job."
+            human_action = (
+                "Resolve the recorded executor blocker before retrying this job."
+            )
         elif receipt.state == ExecutionState.CANCELLED:
             human_action = "Confirm whether the cancelled job should remain closed or be revised and retried."
 
@@ -139,7 +145,11 @@ class LeaseExecutionBridge:
         job = self.db.get(CalyxProgramJob, program_job_id)
         if job is None:
             raise LookupError("PROGRAM_JOB_NOT_FOUND")
-        if job.status != "running" or job.lease_owner != worker_id or job.lease_token != lease_token:
+        if (
+            job.status != "running"
+            or job.lease_owner != worker_id
+            or job.lease_token != lease_token
+        ):
             raise PermissionError("STALE_PROGRAM_JOB_LEASE")
         program = self.db.get(CalyxProgram, job.program_id)
         if program is None:

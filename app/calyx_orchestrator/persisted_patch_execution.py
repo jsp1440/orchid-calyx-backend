@@ -184,12 +184,10 @@ class PersistedPatchExecutionService:
             normalized_changes.append(
                 {
                     "path": str(item.get("path") or "").strip(),
-                    "before_sha256": str(
-                        item.get("before_sha256") or ""
-                    ).strip().lower(),
-                    "after_sha256": str(
-                        item.get("after_sha256") or ""
-                    ).strip().lower(),
+                    "before_sha256": str(item.get("before_sha256") or "")
+                    .strip()
+                    .lower(),
+                    "after_sha256": str(item.get("after_sha256") or "").strip().lower(),
                     "created": bool(item.get("created")),
                     "size_bytes": item.get("size_bytes"),
                 }
