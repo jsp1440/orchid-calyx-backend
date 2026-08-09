@@ -35,6 +35,9 @@ class ScientificInferenceEnvelope:
     conflict_summary: dict[str, int]
     assumptions: tuple[str, ...] = ()
     known_limitations: tuple[str, ...] = ()
+    confidence_interpretation: str = "HEURISTIC_EVIDENCE_SUPPORT_INDEX"
+    confidence_is_probability: bool = False
+    confidence_calibrated: bool = False
     review_required: bool = True
     reviewed_conclusion: bool = False
     published: bool = False
@@ -49,6 +52,8 @@ class ScientificInferenceEnvelope:
             raise ValueError("CANONICAL_EVIDENCE_AGGREGATES_REQUIRED")
         if not 0.0 <= self.confidence_score <= 1.0:
             raise ValueError("INVALID_INFERENCE_CONFIDENCE")
+        if self.confidence_is_probability or self.confidence_calibrated:
+            raise ValueError("INFERENCE_CONFIDENCE_IS_NOT_A_CALIBRATED_PROBABILITY")
         if self.reviewed_conclusion or self.published:
             raise ValueError("INFERENCE_ENVELOPE_CANNOT_SELF_PROMOTE")
         if self.scientific_publication_authorized or self.knowledge_graph_mutation_authorized:
