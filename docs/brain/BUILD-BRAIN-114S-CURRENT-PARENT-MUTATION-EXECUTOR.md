@@ -18,6 +18,8 @@ Executable actions must be a non-empty prefix of `create_branch -> create_commit
 
 Push evidence must equal the exact verified create-commit SHA. Pull-request evidence must identify the exact authorized head/base and the same verified commit SHA. Missing commit continuity is a failure, not a reason to skip verification.
 
+A follow-up static audit found a Python type-boundary edge case in PR identity evidence: `bool` is a subclass of `int`, so an `isinstance(value, int)` check can accept `True` as pull request number 1. The executor now requires `type(pull_request_number) is int` and a value greater than zero. A focused regression verifies boolean PR identifiers fail closed after branch, commit, and push evidence and before accepting PR completion.
+
 ## Side-effect boundary
 
 The executor receives a narrow injected adapter and loads no token, credential, private owner key, subprocess, Git CLI, or HTTP client itself. The adapter protocol exposes no merge, auto-merge, deployment, publication, taxonomy, production database, or Knowledge Graph mutation method.
@@ -26,6 +28,8 @@ Remote partial failures are not represented as rollback. The executor raises a r
 
 ## Validation state
 
-Focused tests cover the current durable patch-job lineage, full branch/commit/push/PR flow, dependency closure, wrong pushed commit rejection, and partial-failure evidence. The dedicated workflow runs the corrected 114R regression suite and 114S regressions together.
+Focused tests cover the current durable patch-job lineage, full branch/commit/push/PR flow, dependency closure, wrong pushed commit rejection, strict PR identifier typing, and partial-failure evidence. The dedicated workflow runs the corrected 114R regression suite and 114S regressions together.
 
-Canonical hosted-runner incident #481 remains the executable-validation blocker. No live GitHub adapter, credential activation, merge, deployment, publication, taxonomy activation, production DB mutation, or production KG mutation is authorized while exact-head jobs terminate before step 1.
+Canonical hosted-runner incident #481 remains the executable-validation blocker. Controlled probes now isolate the failure to private-repository hosted-runner allocation under the personal account: public-repository Ubuntu/Windows probes execute, while private backend/Brain probes fail before step 1. Do not spend further blind reruns; the remaining unblock is account-level Actions usage/budget/payment/private-Actions configuration or a web-UI allocation annotation not exposed through the connector.
+
+No live GitHub adapter, credential activation, merge, deployment, publication, taxonomy activation, production DB mutation, or production KG mutation is authorized while exact-head jobs terminate before step 1.
