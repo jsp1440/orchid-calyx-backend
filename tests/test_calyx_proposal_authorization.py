@@ -213,10 +213,13 @@ def test_rejection_is_immutable_for_manifest_and_review_class() -> None:
     approved = _build(decision=ProposalDecision.APPROVED)
     with pytest.raises(ValueError, match="AUTHORITATIVE_DECISION_ALREADY_RECORDED"):
         registry.record(approved)
-    assert registry.require(
-        manifest_digest=rejected.manifest_digest,
-        review_class=rejected.review_class,
-    ).decision == ProposalDecision.REJECTED
+    assert (
+        registry.require(
+            manifest_digest=rejected.manifest_digest,
+            review_class=rejected.review_class,
+        ).decision
+        == ProposalDecision.REJECTED
+    )
 
 
 def test_review_class_is_limited_to_governed_repository_classes() -> None:
