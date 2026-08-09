@@ -60,6 +60,14 @@ def _evidence_for_candidate(repository: Any, candidate_id: int) -> list[dict[str
     ]
 
 
+def _canonical_source_pk(node_type: str, canonical_key: str) -> str | None:
+    prefix = f"{node_type}:"
+    if not canonical_key.startswith(prefix):
+        return None
+    source_pk = canonical_key[len(prefix) :].strip()
+    return source_pk or None
+
+
 def _graph_from_candidate(
     candidate: dict[str, Any],
 ) -> tuple[list[Node], list[Edge], list[str]]:
@@ -86,6 +94,13 @@ def _graph_from_candidate(
     if not target_key:
         blockers.append("missing_target_key")
 
+    source_pk = _canonical_source_pk(source_type, source_key)
+    target_pk = _canonical_source_pk(target_type, target_key)
+    if source_key and source_pk is None:
+        blockers.append("invalid_source_canonical_key")
+    if target_key and target_pk is None:
+        blockers.append("invalid_target_canonical_key")
+
     semantics = causal_relation_semantics(relationship)
     if semantics is None or not semantics["causal"]:
         blockers.append(f"invalid_causal_relationship:{relationship or 'missing'}")
@@ -93,10 +108,10 @@ def _graph_from_candidate(
     if blockers:
         return [], [], blockers
 
+    assert source_pk is not None
+    assert target_pk is not None
     confidence = float(candidate.get("confidence", 0.0))
     candidate_id = int(candidate["candidate_id"])
-    source_source_pk = source_key.split(":", 1)[1]
-    target_source_pk = target_key.split(":", 1)[1]
     common_payload = {
         "candidate_id": candidate_id,
         "reasoning_id": qualifiers.get("reasoning_id"),
@@ -112,7 +127,7 @@ def _graph_from_candidate(
         canonical_key=source_key,
         display_label=str(candidate.get("normalized_subject") or source_key),
         source_table="oc_candidate_knowledge.candidates",
-        source_pk=source_source_pk,
+        source_pk=source_pk,
         evidence_class="reviewed_mechanistic_candidate",
         confidence_score=confidence,
         confidence_label="reviewed_candidate",
@@ -124,7 +139,7 @@ def _graph_from_candidate(
         canonical_key=target_key,
         display_label=str(candidate.get("object_value") or target_key),
         source_table="oc_candidate_knowledge.candidates",
-        source_pk=target_source_pk,
+        source_pk=target_pk,
         evidence_class="reviewed_mechanistic_candidate",
         confidence_score=confidence,
         confidence_label="reviewed_candidate",
