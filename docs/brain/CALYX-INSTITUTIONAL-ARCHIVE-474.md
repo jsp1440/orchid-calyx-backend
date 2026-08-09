@@ -1,6 +1,6 @@
 # CALYX-474 — Institutional archive activation and governed ingestion
 
-Status: IMPLEMENTED / VALIDATION PENDING / STAGING-READY ONLY
+Status: IMPLEMENTED / VALIDATION BLOCKED BY GITHUB HOSTED RUNNER / STAGING-READY ONLY
 
 ## Delivered
 
@@ -37,4 +37,6 @@ An empty blocker list means the backend is structurally ready for a bounded, aut
 
 ## Validation
 
-Dedicated CI compiles the activation/routes surface, runs CALYX-474 tests together with BUILD-080 migration and BUILD-080C archive-hardening regressions, asserts secret/path sanitization and permanent no-production-import/no-graph-publication boundaries, runs Ruff, and checks diff hygiene. Exact-head validation evidence will be recorded after the pull-request workflow completes.
+Dedicated CI compiles the activation/routes surface, runs CALYX-474 tests together with BUILD-080 migration and BUILD-080C archive-hardening regressions, asserts secret/path sanitization and permanent no-production-import/no-graph-publication boundaries, runs Ruff, and checks diff hygiene.
+
+Two consecutive CALYX-474 workflow attempts on exact implementation heads failed before any job step executed (`steps=null`), matching the contemporaneous pre-step failures affecting BUILD-080, BUILD-088E, CALYX Workflow Governance Audit, CALYX-473, CALYX-472, supervised-pilot, and autonomy workflows. This is a GitHub-hosted runner provisioning blocker rather than executed test evidence. No workflow assertion was weakened or bypassed. Expansion beyond #474 is paused until executable validation is available.
