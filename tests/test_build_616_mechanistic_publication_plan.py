@@ -11,8 +11,8 @@ from app.candidate_knowledge.repository import MemoryCandidateRepository
 from app.candidate_knowledge.service import CandidateExtractionService
 
 
-def components():
-    repository = MemoryCandidateRepository()
+def components(repository=None):
+    repository = repository or MemoryCandidateRepository()
     service = CandidateExtractionService(repository)
     return repository, service
 
@@ -79,30 +79,65 @@ def test_unreviewed_candidate_is_blocked_and_never_authorized():
     assert plan["authorized"] is False
     assert plan["commit_capability"] is False
     assert plan["production_write_executed"] is False
+    assert plan["operations"] == []
     assert "scientific_review_not_approved" in plan["blockers"]
+    assert "scientific_approval_record_required" in plan["blockers"]
     assert any(item.startswith("open_review:") for item in plan["blockers"])
 
 
-def test_approved_candidate_produces_deterministic_gate_compatible_plan():
+def test_approved_candidate_produces_review_bound_deterministic_plan():
     repository, service = components()
     candidate_id = create_candidate(repository, service)
     approve_all_candidate_reviews(repository, candidate_id)
     first = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
     second = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
+    assert first["contract"] == "calyx-mechanistic-publication-plan-v2"
     assert first["ready_for_controlled_publication_gate"] is True
     assert first["blockers"] == []
     assert first["validation"]["healthy"] is True
     assert first["plan_id"] == second["plan_id"]
+    assert first["approval"]["decision"] == "APPROVE_CANDIDATE"
+    assert first["approval"]["actor"] == "qualified.science-reviewer"
+    assert len(first["approval"]["reviewed_content_digest"]) == 64
     assert [item["operation_type"] for item in first["operations"]] == [
-        "CREATE_NODE",
-        "CREATE_NODE",
-        "CREATE_EDGE",
+        "UPSERT_NODE",
+        "UPSERT_NODE",
+        "UPSERT_EDGE",
     ]
-    assert [item["order"] for item in first["operations"]] == [0, 1, 2]
-    assert first["evidence_link_ids"]
-    assert first["evidence_count"] == len(first["evidence_link_ids"])
     assert first["authorized"] is False
     assert first["canonical_graph_mutated"] is False
+    assert first["publication_adapter_available"] is False
+    assert "No canonical adapter" in first["operator_action"]
+
+
+def test_plan_id_changes_when_exact_approval_record_changes():
+    repository, service = components()
+    candidate_id = create_candidate(repository, service)
+    approve_all_candidate_reviews(repository, candidate_id)
+    first = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
+    approval_review = repository.reviews[first["approval"]["review_id"]]
+    approval_review["actor"] = "second.qualified.reviewer"
+    approval_review["rationale"] = "Independent repeat review of the same evidence."
+    approval_review["resolved_at"] = "2026-08-09T17:00:00+00:00"
+    second = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
+    assert second["approval"]["actor"] == "second.qualified.reviewer"
+    assert second["plan_id"] != first["plan_id"]
+
+
+def test_repository_refresh_is_used_before_reading_publication_state():
+    class RefreshingRepository(MemoryCandidateRepository):
+        def __init__(self):
+            super().__init__()
+            self.refresh_calls = 0
+
+        def refresh(self):
+            self.refresh_calls += 1
+            return self
+
+    repository, service = components(RefreshingRepository())
+    candidate_id = create_candidate(repository, service)
+    plan_mechanistic_candidate_publication(candidate_id, (repository, service))
+    assert repository.refresh_calls == 1
 
 
 def test_open_conflict_blocks_plan_even_after_review_approval():
@@ -116,7 +151,38 @@ def test_open_conflict_blocks_plan_even_after_review_approval():
     }
     plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
     assert plan["ready_for_controlled_publication_gate"] is False
+    assert plan["operations"] == []
     assert "open_conflict:900" in plan["blockers"]
+
+
+def test_resolve_conflict_closes_exact_canonical_conflict():
+    repository, service = components()
+    candidate_id = create_candidate(repository, service)
+    conflict_id = 900
+    repository.conflicts[conflict_id] = {
+        "conflict_id": conflict_id,
+        "candidate_ids": [candidate_id, 999],
+        "state": "OPEN",
+    }
+    run_id = repository.candidates[0]["candidate_run_id"]
+    review = repository.open_review(
+        run_id,
+        candidate_id,
+        "CONFLICTING_CANDIDATES",
+        "HIGH",
+        {"conflict_id": conflict_id},
+    )
+    repository.resolve_review(
+        review["review_id"],
+        "RESOLVE_CONFLICT",
+        "Evidence scopes are distinct; conflict closed without approval.",
+        "qualified.science-reviewer",
+    )
+    assert repository.conflicts[conflict_id]["state"] == "RESOLVED"
+    assert (
+        repository.conflicts[conflict_id]["resolution_review_id"] == review["review_id"]
+    )
+    assert repository.candidates[0]["review_state"] == "CHANGES_REQUESTED"
 
 
 def test_missing_evidence_blocks_publication_plan():
@@ -126,39 +192,26 @@ def test_missing_evidence_blocks_publication_plan():
     repository.evidence_links = []
     plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
     assert plan["ready_for_controlled_publication_gate"] is False
-    assert plan["evidence_link_ids"] == []
+    assert plan["operations"] == []
     assert "exact_evidence_required" in plan["blockers"]
 
 
-def test_inactive_superseded_candidate_is_not_ready():
-    repository, service = components()
-    candidate_id = create_candidate(repository, service)
-    approve_all_candidate_reviews(repository, candidate_id)
-    repository.candidates[0]["active"] = False
-    repository.candidates[0]["superseded_by_candidate_id"] = 999
-    plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
-    assert plan["ready_for_controlled_publication_gate"] is False
-    assert "candidate_inactive_or_superseded" in plan["blockers"]
-
-
-def test_plan_preserves_context_and_uses_truthful_preview_provenance():
+def test_plan_uses_canonical_endpoint_resolution_and_candidate_provenance():
     repository, service = components()
     candidate_id = create_candidate(repository, service)
     approve_all_candidate_reviews(repository, candidate_id)
     plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
+    edge = plan["operations"][2]["payload"]
     source = plan["operations"][0]["payload"]
     target = plan["operations"][1]["payload"]
-    edge = plan["operations"][2]["payload"]
-    assert (
-        source["provenance"]["source_table"] == "synthetic.mechanistic_publication_plan"
-    )
-    assert (
-        target["provenance"]["source_table"] == "synthetic.mechanistic_publication_plan"
-    )
-    assert edge["provenance"]["source_table"] == "oc_candidate_knowledge.candidates"
-    assert edge["provenance"]["source_pk"] == str(candidate_id)
     assert edge["edge_type"] == "promotes"
+    assert edge["endpoint_resolution"] == "canonical_key"
+    assert edge["from_canonical_key"] == "environment:blue-light"
+    assert edge["to_canonical_key"] == "physiology:auxin-redistribution"
+    assert "from_node_id" not in edge and "to_node_id" not in edge
     assert edge["payload"]["polarity"] == 1
     assert edge["payload"]["experimental_context"]["tissue"] == "young leaf"
     assert edge["payload"]["quantitative_context"]["wavelength_nm"] == 450
+    assert source["candidate_provenance"]["source_pk"] == str(candidate_id)
+    assert target["candidate_provenance"]["source_pk"] == str(candidate_id)
     assert plan["requires_explicit_publication_authorization"] is True

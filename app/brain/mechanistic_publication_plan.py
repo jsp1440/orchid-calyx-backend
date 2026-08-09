@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from typing import Any
 
 from app.candidate_knowledge.dependencies import get_candidate_components
@@ -22,6 +23,12 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _refresh(repository: Any) -> None:
+    refresh = getattr(repository, "refresh", None)
+    if refresh is not None:
+        refresh()
+
+
 def _candidate(repository: Any, candidate_id: int) -> dict[str, Any]:
     candidate = next(
         (
@@ -33,15 +40,57 @@ def _candidate(repository: Any, candidate_id: int) -> dict[str, Any]:
     )
     if candidate is None:
         raise LookupError("MECHANISTIC_CANDIDATE_NOT_FOUND")
-    return candidate
+    return deepcopy(candidate)
 
 
-def _open_review_blockers(repository: Any, candidate_id: int) -> list[str]:
+def _candidate_reviews(repository: Any, candidate_id: int) -> list[dict[str, Any]]:
+    return [
+        deepcopy(review)
+        for review in repository.reviews.values()
+        if review.get("candidate_id") == candidate_id
+    ]
+
+
+def _open_review_blockers(reviews: list[dict[str, Any]]) -> list[str]:
     return sorted(
         f"open_review:{review['category']}:{review['review_id']}"
-        for review in repository.reviews.values()
-        if review.get("candidate_id") == candidate_id and review.get("state") == "OPEN"
+        for review in reviews
+        if review.get("state") == "OPEN"
     )
+
+
+def _approval_snapshot(
+    candidate: dict[str, Any],
+    reviews: list[dict[str, Any]],
+    evidence_link_ids: list[int],
+) -> dict[str, Any] | None:
+    resolved = [
+        review
+        for review in reviews
+        if review.get("state") == "RESOLVED" and review.get("resolved_at")
+    ]
+    if not resolved:
+        return None
+    latest = max(
+        resolved,
+        key=lambda item: (str(item.get("resolved_at") or ""), int(item["review_id"])),
+    )
+    if latest.get("decision") != "APPROVE_CANDIDATE":
+        return None
+    reviewed_content = {
+        "candidate_id": int(candidate["candidate_id"]),
+        "candidate_hash": candidate.get("candidate_hash"),
+        "candidate_version": candidate.get("version"),
+        "evidence_link_ids": evidence_link_ids,
+    }
+    return {
+        "review_id": int(latest["review_id"]),
+        "decision": latest["decision"],
+        "actor": str(latest.get("actor") or ""),
+        "resolved_at": str(latest.get("resolved_at") or ""),
+        "rationale_digest": _digest(str(latest.get("rationale") or "")),
+        "reviewed_content_digest": _digest(reviewed_content),
+    }
 
 
 def _open_conflict_blockers(repository: Any, candidate_id: int) -> list[str]:
@@ -55,7 +104,7 @@ def _open_conflict_blockers(repository: Any, candidate_id: int) -> list[str]:
 
 def _evidence_for_candidate(repository: Any, candidate_id: int) -> list[dict[str, Any]]:
     return [
-        link
+        deepcopy(link)
         for link in repository.evidence_links
         if link.get("candidate_id") == candidate_id
     ]
@@ -111,15 +160,25 @@ def _graph_from_candidate(
     assert target_pk is not None
     confidence = float(candidate.get("confidence", 0.0))
     candidate_id = int(candidate["candidate_id"])
-    preview_source = "synthetic.mechanistic_publication_plan"
+    reviewed = candidate.get("review_state") == "APPROVED"
+    evidence_class = (
+        "reviewed_mechanistic_candidate" if reviewed else "candidate_mechanistic_claim"
+    )
+    confidence_label = "reviewed_candidate" if reviewed else "candidate"
+    candidate_provenance = {
+        "source_table": "oc_candidate_knowledge.candidates",
+        "source_pk": str(candidate_id),
+    }
     common_payload = {
         "candidate_id": candidate_id,
+        "candidate_provenance": candidate_provenance,
         "experimental_context": qualifiers.get("experimental_context", {}),
         "quantitative_context": qualifiers.get("quantitative_context", {}),
         "provenance": qualifiers.get("provenance", {}),
-        "reviewed_candidate": True,
+        "reviewed_candidate": reviewed,
         "publication_plan_only": True,
     }
+    preview_source = "synthetic.mechanistic_publication_plan"
     source = Node(
         kg_node_id=1,
         node_type=source_type,
@@ -127,9 +186,9 @@ def _graph_from_candidate(
         display_label=str(candidate.get("normalized_subject") or source_key),
         source_table=preview_source,
         source_pk=source_pk,
-        evidence_class="reviewed_mechanistic_candidate",
+        evidence_class=evidence_class,
         confidence_score=confidence,
-        confidence_label="reviewed_candidate",
+        confidence_label=confidence_label,
         payload=common_payload,
     )
     target = Node(
@@ -139,9 +198,9 @@ def _graph_from_candidate(
         display_label=str(candidate.get("object_value") or target_key),
         source_table=preview_source,
         source_pk=target_pk,
-        evidence_class="reviewed_mechanistic_candidate",
+        evidence_class=evidence_class,
         confidence_score=confidence,
-        confidence_label="reviewed_candidate",
+        confidence_label=confidence_label,
         payload=common_payload,
     )
     edge = Edge(
@@ -149,14 +208,16 @@ def _graph_from_candidate(
         edge_type=relationship,
         from_node_id=1,
         to_node_id=2,
-        source_table="oc_candidate_knowledge.candidates",
+        source_table=preview_source,
         source_pk=str(candidate_id),
-        evidence_class="reviewed_mechanistic_candidate",
+        evidence_class=evidence_class,
         confidence_score=confidence,
-        confidence_label="reviewed_candidate",
-        rule_name="BUILD_616_MECHANISTIC_PUBLICATION_PLAN_V1",
+        confidence_label=confidence_label,
+        rule_name="BUILD_616_MECHANISTIC_PUBLICATION_PLAN_V2",
         payload={
             **common_payload,
+            "source_canonical_key": source_key,
+            "target_canonical_key": target_key,
             "role": semantics["role"],
             "polarity": semantics["polarity"],
             "causal": semantics["causal"],
@@ -165,13 +226,83 @@ def _graph_from_candidate(
     return [source, target], [edge], []
 
 
+def _publication_operations(
+    candidate: dict[str, Any], nodes: list[Node], edges: list[Edge]
+) -> list[dict[str, Any]]:
+    candidate_id = int(candidate["candidate_id"])
+    candidate_provenance = {
+        "source_table": "oc_candidate_knowledge.candidates",
+        "source_pk": str(candidate_id),
+    }
+    source, target = nodes
+    edge = edges[0]
+    return [
+        {
+            "order": 0,
+            "operation_type": "UPSERT_NODE",
+            "object_key": source.canonical_key,
+            "payload": {
+                "node_type": source.node_type,
+                "canonical_key": source.canonical_key,
+                "display_label": source.display_label,
+                "confidence_score": source.confidence_score,
+                "confidence_label": source.confidence_label,
+                "evidence_class": source.evidence_class,
+                "candidate_provenance": candidate_provenance,
+                "payload": dict(source.payload),
+            },
+        },
+        {
+            "order": 1,
+            "operation_type": "UPSERT_NODE",
+            "object_key": target.canonical_key,
+            "payload": {
+                "node_type": target.node_type,
+                "canonical_key": target.canonical_key,
+                "display_label": target.display_label,
+                "confidence_score": target.confidence_score,
+                "confidence_label": target.confidence_label,
+                "evidence_class": target.evidence_class,
+                "candidate_provenance": candidate_provenance,
+                "payload": dict(target.payload),
+            },
+        },
+        {
+            "order": 2,
+            "operation_type": "UPSERT_EDGE",
+            "object_key": f"mechanistic-candidate:{candidate_id}:{edge.edge_type}",
+            "payload": {
+                "edge_type": edge.edge_type,
+                "endpoint_resolution": "canonical_key",
+                "from_canonical_key": source.canonical_key,
+                "to_canonical_key": target.canonical_key,
+                "confidence_score": edge.confidence_score,
+                "confidence_label": edge.confidence_label,
+                "evidence_class": edge.evidence_class,
+                "candidate_provenance": candidate_provenance,
+                "rule_name": edge.rule_name,
+                "payload": dict(edge.payload),
+            },
+        },
+    ]
+
+
 def plan_mechanistic_candidate_publication(
     candidate_id: int,
     components: tuple[Any, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return a deterministic plan only; never authorize or execute publication."""
+    """Return a deterministic, fresh, review-bound plan; never execute publication."""
     repository, _service = components or get_candidate_components()
+    _refresh(repository)
     candidate = _candidate(repository, candidate_id)
+    reviews = _candidate_reviews(repository, candidate_id)
+    evidence = _evidence_for_candidate(repository, candidate_id)
+    evidence_link_ids = sorted(
+        int(link["evidence_link_id"])
+        for link in evidence
+        if link.get("evidence_link_id")
+    )
+    approval = _approval_snapshot(candidate, reviews, evidence_link_ids)
     blockers: list[str] = []
 
     if candidate.get("kind") != CandidateKind.MECHANISTIC_RELATIONSHIP.value:
@@ -180,18 +311,14 @@ def plan_mechanistic_candidate_publication(
         blockers.append("candidate_inactive_or_superseded")
     if candidate.get("review_state") != "APPROVED":
         blockers.append("scientific_review_not_approved")
+    if approval is None:
+        blockers.append("scientific_approval_record_required")
     if bool(candidate.get("published")):
         blockers.append("candidate_already_published")
-
-    evidence = _evidence_for_candidate(repository, candidate_id)
-    evidence_link_ids = sorted(
-        int(link["evidence_link_id"])
-        for link in evidence
-        if link.get("evidence_link_id")
-    )
     if not evidence_link_ids:
         blockers.append("exact_evidence_required")
-    blockers.extend(_open_review_blockers(repository, candidate_id))
+
+    blockers.extend(_open_review_blockers(reviews))
     blockers.extend(_open_conflict_blockers(repository, candidate_id))
     blockers.extend(
         f"mechanistic_contradiction:{contradiction_id}"
@@ -211,43 +338,25 @@ def plan_mechanistic_candidate_publication(
             blockers.append("projected_graph_validation_failed")
 
     blockers = sorted(set(blockers))
-    operations: list[dict[str, Any]] = []
-    if not graph_blockers:
-        operations = [
-            {
-                "order": 0,
-                "operation_type": "CREATE_NODE",
-                "object_key": nodes[0].canonical_key,
-                "payload": nodes[0].to_dict(),
-            },
-            {
-                "order": 1,
-                "operation_type": "CREATE_NODE",
-                "object_key": nodes[1].canonical_key,
-                "payload": nodes[1].to_dict(),
-            },
-            {
-                "order": 2,
-                "operation_type": "CREATE_EDGE",
-                "object_key": f"mechanistic-candidate:{candidate_id}:{edges[0].edge_type}",
-                "payload": edges[0].to_dict(),
-            },
-        ]
-
+    ready = not blockers and bool(validation.get("healthy"))
+    operations = _publication_operations(candidate, nodes, edges) if ready else []
     plan_core = {
         "candidate_id": candidate_id,
         "candidate_hash": candidate.get("candidate_hash"),
         "evidence_link_ids": evidence_link_ids,
+        "approval": approval,
         "operations": operations,
         "blockers": blockers,
         "validation_healthy": bool(validation.get("healthy")),
     }
-    ready = not blockers and bool(validation.get("healthy"))
     return {
-        "contract": "calyx-mechanistic-publication-plan-v1",
+        "contract": "calyx-mechanistic-publication-plan-v2",
         "candidate_id": candidate_id,
+        "candidate_hash": candidate.get("candidate_hash"),
+        "approval": approval,
         "plan_id": _digest(plan_core),
         "ready_for_controlled_publication_gate": ready,
+        "publication_adapter_available": False,
         "authorized": False,
         "commit_capability": False,
         "production_write_executed": False,
@@ -259,7 +368,8 @@ def plan_mechanistic_candidate_publication(
         "validation": validation,
         "blockers": blockers,
         "operator_action": (
-            "Translate this reviewed plan into the existing Reasoning Ledger publication contract and obtain explicit authorization."
+            "Retain this immutable plan as reviewed publication-readiness evidence. "
+            "No canonical adapter currently accepts this plan for execution."
             if ready
             else "Resolve all blockers, preserve evidence, and regenerate the plan."
         ),
