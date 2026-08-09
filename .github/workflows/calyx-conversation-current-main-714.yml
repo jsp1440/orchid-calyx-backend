@@ -8,6 +8,7 @@ on:
       - "app/mission_control_registration.py"
       - "app/routers/calyx_conversation_sources.py"
       - "app/routers/calyx_operator_chat.py"
+      - "app/routers/live_mission_control.py"
       - "runtime/continuum_conversation.py"
       - "runtime/continuum_graph_tool.py"
       - "migrations/140_calyx_conversation_sessions.sql"
@@ -41,6 +42,7 @@ jobs:
           app/mission_control_registration.py
           app/routers/calyx_operator_chat.py
           app/routers/calyx_conversation_sources.py
+          app/routers/live_mission_control.py
           runtime/continuum_conversation.py
           runtime/continuum_graph_tool.py
           tests/test_calyx_conversation_current_main_714.py
@@ -87,6 +89,6 @@ jobs:
           PY
       - name: Ruff and diff hygiene
         run: |
-          python -m ruff check app/conversation_memory app/mission_control_registration.py app/routers/calyx_operator_chat.py app/routers/calyx_conversation_sources.py runtime/continuum_conversation.py runtime/continuum_graph_tool.py tests/test_calyx_conversation_current_main_714.py
-          python -m ruff format --check app/conversation_memory app/mission_control_registration.py app/routers/calyx_operator_chat.py app/routers/calyx_conversation_sources.py runtime/continuum_conversation.py runtime/continuum_graph_tool.py tests/test_calyx_conversation_current_main_714.py
+          python -m ruff check app/conversation_memory app/mission_control_registration.py app/routers/calyx_operator_chat.py app/routers/calyx_conversation_sources.py app/routers/live_mission_control.py runtime/continuum_conversation.py runtime/continuum_graph_tool.py tests/test_calyx_conversation_current_main_714.py
+          python -m ruff format --check app/conversation_memory app/mission_control_registration.py app/routers/calyx_operator_chat.py app/routers/calyx_conversation_sources.py app/routers/live_mission_control.py runtime/continuum_conversation.py runtime/continuum_graph_tool.py tests/test_calyx_conversation_current_main_714.py
           git diff --check
