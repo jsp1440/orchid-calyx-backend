@@ -6,6 +6,7 @@ from typing import Any
 
 from app.literature_extraction.models import PaperKnowledge
 from app.literature_extraction.source_binding import CanonicalLiteratureSourceBinding
+
 from .models import (
     BibliographicRecord,
     EvidenceAnchor,
