@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections import Counter
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from .models import InferenceDomain, InferenceState, ScientificInferenceEnvelope
 
