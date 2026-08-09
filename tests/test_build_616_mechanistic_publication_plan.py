@@ -99,7 +99,7 @@ def test_approved_candidate_produces_review_bound_deterministic_plan():
     assert first["approval"]["decision"] == "APPROVE_CANDIDATE"
     assert first["approval"]["actor"] == "qualified.science-reviewer"
     assert len(first["approval"]["reviewed_content_digest"]) == 64
-    assert [item["operation"] for item in first["operations"]] == [
+    assert [item["operation_type"] for item in first["operations"]] == [
         "UPSERT_NODE",
         "UPSERT_NODE",
         "UPSERT_EDGE",
@@ -179,7 +179,9 @@ def test_resolve_conflict_closes_exact_canonical_conflict():
         "qualified.science-reviewer",
     )
     assert repository.conflicts[conflict_id]["state"] == "RESOLVED"
-    assert repository.conflicts[conflict_id]["resolution_review_id"] == review["review_id"]
+    assert (
+        repository.conflicts[conflict_id]["resolution_review_id"] == review["review_id"]
+    )
     assert repository.candidates[0]["review_state"] == "CHANGES_REQUESTED"
 
 
