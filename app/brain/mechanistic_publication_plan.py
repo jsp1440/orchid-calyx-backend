@@ -95,6 +95,8 @@ def _graph_from_candidate(
 
     confidence = float(candidate.get("confidence", 0.0))
     candidate_id = int(candidate["candidate_id"])
+    source_source_pk = source_key.split(":", 1)[1]
+    target_source_pk = target_key.split(":", 1)[1]
     common_payload = {
         "candidate_id": candidate_id,
         "reasoning_id": qualifiers.get("reasoning_id"),
@@ -110,7 +112,7 @@ def _graph_from_candidate(
         canonical_key=source_key,
         display_label=str(candidate.get("normalized_subject") or source_key),
         source_table="oc_candidate_knowledge.candidates",
-        source_pk=str(candidate_id),
+        source_pk=source_source_pk,
         evidence_class="reviewed_mechanistic_candidate",
         confidence_score=confidence,
         confidence_label="reviewed_candidate",
@@ -122,7 +124,7 @@ def _graph_from_candidate(
         canonical_key=target_key,
         display_label=str(candidate.get("object_value") or target_key),
         source_table="oc_candidate_knowledge.candidates",
-        source_pk=str(candidate_id),
+        source_pk=target_source_pk,
         evidence_class="reviewed_mechanistic_candidate",
         confidence_score=confidence,
         confidence_label="reviewed_candidate",
