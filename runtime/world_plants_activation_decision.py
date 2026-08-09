@@ -14,14 +14,14 @@ from sqlalchemy import text
 CONTRACT_VERSION = "calyx-taxonomy-activation-decision/v1"
 
 
-def _open_review_items(store: Any, release_id: str) -> list[dict[str, Any]]:
+def _review_items(store: Any, release_id: str) -> list[dict[str, Any]]:
     with store.engine.connect() as connection:
         rows = (
             connection.execute(
                 text(
                     "SELECT review_key, category, summary, evidence, status, updated_at "
                     "FROM taxonomy_pipeline.review_queue "
-                    "WHERE release_id = :release_id AND status = 'open' "
+                    "WHERE release_id = :release_id "
                     "ORDER BY category, review_key"
                 ),
                 {"release_id": release_id},
@@ -50,22 +50,31 @@ def build_activation_decision_packet(store: Any, release_id: str) -> dict[str, A
     checkpoint = store.checkpoint(release_id)
     counts = store.counts(release_id)
     report = store.change_report(release_id)
-    open_reviews = _open_review_items(store, release_id)
+    review_items = _review_items(store, release_id)
 
     snapshot = dict(release.get("snapshot") or {})
     expected_rows = int(snapshot.get("row_count") or 0)
     staged_rows = int(counts.get("staged") or 0)
-    staging_complete = bool(checkpoint.get("completed")) and expected_rows > 0 and staged_rows == expected_rows
+    staging_complete = (
+        bool(checkpoint.get("completed"))
+        and expected_rows > 0
+        and staged_rows == expected_rows
+    )
     report_present = isinstance(report, dict)
-    review_count = len(open_reviews)
+    open_reviews = [item for item in review_items if item["status"] == "open"]
+    disposition_reviews = [
+        item for item in review_items if item["status"] in {"resolved", "dismissed"}
+    ]
 
     blockers: list[str] = []
     if not staging_complete:
         blockers.append("STAGING_INCOMPLETE")
     if not report_present:
         blockers.append("CHANGE_REPORT_MISSING")
-    if review_count:
+    if open_reviews:
         blockers.append("OPEN_TAXONOMY_REVIEW_ITEMS")
+    if disposition_reviews:
+        blockers.append("REVIEW_DISPOSITION_PROVENANCE_UNAVAILABLE")
 
     ready_for_owner_decision = not blockers
     decision_state = (
@@ -86,12 +95,28 @@ def build_activation_decision_packet(store: Any, release_id: str) -> dict[str, A
             "complete": staging_complete,
         },
         "comparison": {
-            "baseline_release_id": report.get("baseline_release_id") if report_present else None,
-            "summary": dict(report.get("summary") or {}) if report_present else None,
-            "interpretation_note": report.get("interpretation_note") if report_present else None,
+            "baseline_release_id": (
+                report.get("baseline_release_id") if report_present else None
+            ),
+            "summary": (
+                dict(report.get("summary") or {}) if report_present else None
+            ),
+            "interpretation_note": (
+                report.get("interpretation_note") if report_present else None
+            ),
         },
-        "open_review_count": review_count,
-        "open_review_items": open_reviews,
+        "review": {
+            "items": review_items,
+            "open_count": len(open_reviews),
+            "disposition_without_durable_provenance_count": len(disposition_reviews),
+            "durable_reviewer_identity_available": False,
+            "durable_rationale_available": False,
+            "note": (
+                "Migration 107 records review status but not reviewer identity, rationale, "
+                "decision timestamp, or evidence hash. Resolved/dismissed statuses therefore "
+                "cannot by themselves satisfy scientific activation review."
+            ),
+        },
         "decision_state": decision_state,
         "blockers": blockers,
         "ready_for_owner_activation_decision": ready_for_owner_decision,
