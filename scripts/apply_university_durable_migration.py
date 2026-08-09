@@ -26,8 +26,12 @@ class MigrationGuardError(RuntimeError):
     pass
 
 
+def migration_digest_for_bytes(payload: bytes) -> str:
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
 def migration_digest() -> str:
-    return "sha256:" + hashlib.sha256(MIGRATION.read_bytes()).hexdigest()
+    return migration_digest_for_bytes(MIGRATION.read_bytes())
 
 
 def safe_database_identity(database_url: str) -> dict[str, str | None]:
@@ -128,10 +132,21 @@ def apply_migration(
     confirm_migration_sha256: str,
     confirm_database_target: str,
 ) -> dict[str, Any]:
+    # Snapshot the exact bytes that may be executed before preflight/confirmation.
+    # The plan independently hashes the repository file; equality below detects
+    # any file change between snapshot and guarded plan generation. Execution
+    # then uses only this confirmed snapshot, closing the checksum TOCTOU gap.
+    migration_bytes = MIGRATION.read_bytes()
+    snapshot_digest = migration_digest_for_bytes(migration_bytes)
+
     migration_plan = plan(release_evidence=release_evidence, database_url=database_url)
     expected_digest = str(migration_plan["migration"]["sha256"])
     expected_target = str(migration_plan["database_confirmation_target"])
 
+    _require(
+        snapshot_digest == expected_digest,
+        "migration file changed during guarded apply; regenerate the dry-run plan and confirmations",
+    )
     _require(
         confirm_migration_sha256.strip().lower() == expected_digest,
         "exact migration SHA-256 confirmation is required",
@@ -154,7 +169,11 @@ def apply_migration(
             "mutations_performed": False,
         }
 
-    sql = MIGRATION.read_text(encoding="utf-8")
+    try:
+        sql = migration_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise MigrationGuardError("confirmed migration payload is not valid UTF-8") from exc
+
     post_state: dict[str, Any]
     try:
         with psycopg.connect(database_url) as conn:
@@ -212,7 +231,16 @@ def main() -> int:
             result = plan(release_evidence=args.release_evidence, database_url=args.database_url)
     except (OSError, MigrationGuardError, ValueError) as exc:
         if args.json_output:
-            print(json.dumps({"contract": "OCU-SCI-009N-MIGRATION-RUNNER-001", "result": "blocked", "error": str(exc)}, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "contract": "OCU-SCI-009N-MIGRATION-RUNNER-001",
+                        "result": "blocked",
+                        "error": str(exc),
+                    },
+                    indent=2,
+                )
+            )
         else:
             print(f"BLOCKED: {exc}")
         return 1
