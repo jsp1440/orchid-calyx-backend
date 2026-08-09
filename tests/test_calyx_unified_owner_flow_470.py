@@ -10,6 +10,8 @@ from app.routers import calyx_unified_owner_flow as flow
 from app.routers.calyx_core import router as calyx_core_router
 from app.security import verify_owner_or_api_key
 
+PROJECT_ID = "11111111-1111-4111-8111-111111111111"
+
 
 class FakeDb:
     def rollback(self):
@@ -29,7 +31,7 @@ def mission(*, review_status: str = "HUMAN_REVIEW_REQUIRED"):
         "mission_id": "mission-laelia",
         "question": flow.LAELIA_ANCEPS_QUESTION,
         "tenant_id": "owner-a",
-        "project_id": "laelia-anceps-demonstration",
+        "project_id": PROJECT_ID,
         "state": "AWAITING_HUMAN_REVIEW",
         "current_stage": "eligible_for_publication_state",
         "steps_executed": 9,
@@ -57,7 +59,7 @@ def eligible():
         "eligible_ledgers": [
             {
                 "ledger_id": "ledger-laelia",
-                "project_id": "laelia-anceps-demonstration",
+                "project_id": PROJECT_ID,
                 "title": "Laelia anceps evidence review",
                 "version": 5,
                 "review_content_hash": "a" * 64,
@@ -80,13 +82,14 @@ def test_routes_are_mounted_through_calyx_core():
     assert "/api/mission-control/calyx-owner-flow/{mission_id}/publish" in paths
 
 
-def test_start_is_bounded_laelia_mission_and_no_auto_publication(monkeypatch):
+def test_start_resolves_workspace_before_bounded_mission(monkeypatch):
     captured = {}
 
     def fake_start(**kwargs):
         captured.update(kwargs)
         return mission()
 
+    monkeypatch.setattr(flow, "_resolve_project_id", lambda db, owner, requested: (PROJECT_ID, True))
     monkeypatch.setattr(flow.BRAIN_MISSION_SERVICE, "start", fake_start)
     monkeypatch.setattr(flow, "_persist_mission_ledger", lambda db, owner, item: None)
     response = client().post("/api/mission-control/calyx-owner-flow/start", json={})
@@ -94,7 +97,13 @@ def test_start_is_bounded_laelia_mission_and_no_auto_publication(monkeypatch):
     body = response.json()
     assert captured["question"] == flow.LAELIA_ANCEPS_QUESTION
     assert captured["tenant_id"] == "owner-a"
+    assert captured["project_id"] == PROJECT_ID
     assert captured["max_steps"] <= 10
+    assert body["workspace_project"] == {
+        "project_id": PROJECT_ID,
+        "created_for_flow": True,
+        "owner_copied_project_id": False,
+    }
     assert body["automatic_scientific_approval"] is False
     assert body["automatic_publication"] is False
     assert body["mission"]["private_reasoning_exposed"] is False
