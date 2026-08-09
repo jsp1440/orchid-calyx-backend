@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 OWNER_VERIFY_KEYS_ENV = "CALYX_OWNER_VERIFY_KEYS_JSON"
@@ -50,6 +51,13 @@ def _normalize_key_id(value: str) -> str:
     return key_id
 
 
+def _raw_public_key(key: Ed25519PublicKey) -> bytes:
+    return key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class OwnerVerificationKey:
     key_id: str
@@ -75,12 +83,18 @@ class Ed25519OwnerGrantSignatureVerifier:
         revoked_key_ids: frozenset[str] = frozenset(),
     ) -> None:
         normalized: dict[str, OwnerVerificationKey] = {}
+        material_owner: dict[bytes, str] = {}
         for supplied_id, key in keys.items():
             key_id = _normalize_key_id(str(supplied_id))
             if key.key_id != key_id:
                 raise ValueError("OWNER_SIGNATURE_KEY_ID_MISMATCH")
             if key_id in normalized:
                 raise ValueError("OWNER_SIGNATURE_DUPLICATE_KEY")
+            material = _raw_public_key(key.public_key)
+            existing_id = material_owner.get(material)
+            if existing_id is not None and existing_id != key_id:
+                raise ValueError("OWNER_SIGNATURE_DUPLICATE_KEY_MATERIAL")
+            material_owner[material] = key_id
             normalized[key_id] = key
         if not normalized:
             raise ValueError("OWNER_SIGNATURE_KEYRING_EMPTY")

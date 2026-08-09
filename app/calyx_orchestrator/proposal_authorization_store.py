@@ -88,6 +88,7 @@ class DurableProposalAuthorizationStore:
             select(ProposalAuthorizationDecisionRecord)
             .where(ProposalAuthorizationDecisionRecord.manifest_digest == digest)
             .order_by(ProposalAuthorizationDecisionRecord.review_class.asc())
+            .execution_options(populate_existing=True)
         ).all()
         registry = ProposalAuthorizationRegistry()
         for row in rows:
@@ -141,16 +142,19 @@ class DurableProposalAuthorizationStore:
         self, *, manifest_digest: str, review_class: str
     ) -> ProposalAuthorizationDecisionRecord | None:
         return self.db.scalar(
-            select(ProposalAuthorizationDecisionRecord).where(
+            select(ProposalAuthorizationDecisionRecord)
+            .where(
                 ProposalAuthorizationDecisionRecord.manifest_digest == manifest_digest,
                 ProposalAuthorizationDecisionRecord.review_class == review_class,
             )
+            .execution_options(populate_existing=True)
         )
 
     def _verified_record(
         self, row: ProposalAuthorizationDecisionRecord
     ) -> ProposalAuthorizationRecord:
         record = self._decode(row)
+        self.db.expire_all()
         try:
             persisted = self._patch_execution_service.get_completed(
                 program_job_id=record.patch_program_job_id
@@ -237,4 +241,11 @@ class DurableProposalAuthorizationStore:
 
         if record.snapshot() != raw:
             raise PermissionError("PROPOSAL_AUTH_DURABLE_PAYLOAD_SHAPE_MISMATCH")
+        if record.review_class not in record.reviewer_roles:
+            raise PermissionError("PROPOSAL_AUTH_DURABLE_REVIEWER_ROLE_REQUIRED")
+        if record.reviewer_id in {record.requested_by, record.producer_id}:
+            raise PermissionError("PROPOSAL_AUTH_DURABLE_REVIEWER_SEPARATION_REQUIRED")
+        canonical_roles = tuple(sorted(set(record.reviewer_roles)))
+        if not canonical_roles or record.reviewer_roles != canonical_roles:
+            raise PermissionError("PROPOSAL_AUTH_DURABLE_REVIEWER_ROLES_NONCANONICAL")
         return record

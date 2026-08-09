@@ -16,5 +16,22 @@ CREATE INDEX IF NOT EXISTS ix_calyx_proposal_authorization_manifest
 CREATE INDEX IF NOT EXISTS ix_calyx_proposal_authorization_review_class
     ON calyx_proposal_authorization_decisions(review_class);
 
+CREATE OR REPLACE FUNCTION reject_calyx_proposal_authorization_decision_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'calyx_proposal_authorization_decisions rows are immutable'
+        USING ERRCODE = '55000';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_calyx_proposal_authorization_decisions_immutable
+    ON calyx_proposal_authorization_decisions;
+CREATE TRIGGER trg_calyx_proposal_authorization_decisions_immutable
+    BEFORE UPDATE OR DELETE ON calyx_proposal_authorization_decisions
+    FOR EACH ROW
+    EXECUTE FUNCTION reject_calyx_proposal_authorization_decision_mutation();
+
 COMMENT ON TABLE calyx_proposal_authorization_decisions IS
-    'Immutable BUILD-BRAIN-114N repository-proposal review decisions. Records are digest-verified on read and grant no Git/GitHub mutation authority by themselves.';
+    'Immutable BUILD-BRAIN-114N repository-proposal review decisions. INSERT-only rows are digest-verified on read and grant no Git/GitHub mutation authority by themselves.';
