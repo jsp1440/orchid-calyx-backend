@@ -178,7 +178,9 @@ class GovernedScientificOrchestrationService:
     def _risk_class(
         self, candidates: list[dict[str, Any]], aggregates: list[dict[str, Any]]
     ) -> RiskClass:
-        if any(candidate.get("kind") in self.HIGH_IMPACT_KINDS for candidate in candidates):
+        if any(
+            candidate.get("kind") in self.HIGH_IMPACT_KINDS for candidate in candidates
+        ):
             return RiskClass.LEVEL_4_HIGH_IMPACT
         if any(
             aggregate.get("contradictory_evidence_count", 0) > 0
@@ -192,7 +194,9 @@ class GovernedScientificOrchestrationService:
             for candidate in candidates
         ):
             return RiskClass.LEVEL_2_SCIENTIFIC_INFERENCE
-        minimum_confidence = min(float(item.get("confidence", 0.5)) for item in candidates)
+        minimum_confidence = min(
+            float(item.get("confidence", 0.5)) for item in candidates
+        )
         if minimum_confidence < 0.6:
             return RiskClass.LEVEL_2_SCIENTIFIC_INFERENCE
         if all(
