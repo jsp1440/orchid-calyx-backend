@@ -99,20 +99,25 @@ def _receipt(
     source: dict[str, Any],
     status: str,
     upload_invoked: bool,
-    production_mutation: bool,
+    production_mutation: bool | None,
+    mutation_state: str,
     readback_verified: bool,
-    post: dict[str, Any],
+    post: dict[str, Any] | None = None,
+    error: str | None = None,
 ) -> dict[str, Any]:
+    post = post or {}
     receipt = {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "status": status,
         "source": source,
         "release_id": EXPECTED_SHA256,
         "upload_invoked": upload_invoked,
         "production_mutation": production_mutation,
+        "mutation_state": mutation_state,
         "readback_verified": readback_verified,
         "post_upload_pipeline_state": post.get("pipeline_state"),
         "next_job": post.get("next_job"),
+        "error": error,
         "staging_invoked": False,
         "taxonomy_activation_authorized": False,
         "knowledge_graph_mutation_authorized": False,
@@ -139,9 +144,6 @@ def execute_upload(
         headers = {"Authorization": f"Bearer {token}"}
         release_path = f"/api/mission-control/taxonomy/releases/{EXPECTED_SHA256}"
 
-        # Idempotency is checked before any mutating request. A 200 must be the
-        # exact immutable durable release; a 404 is the only state that permits
-        # the upload path. Other statuses fail closed.
         existing = client.get(release_path, headers=headers)
         if existing.status_code == 200:
             _assert_release_report(existing.json())
@@ -151,6 +153,7 @@ def execute_upload(
                 status="NO_OP_ALREADY_PRESENT",
                 upload_invoked=False,
                 production_mutation=False,
+                mutation_state="NONE",
                 readback_verified=True,
                 post=post,
             )
@@ -170,36 +173,58 @@ def execute_upload(
                 "Mission Control next job is not upload_world_orchids_release"
             )
 
-        with source_path.open("rb") as handle:
-            uploaded = client.post(
-                "/api/mission-control/taxonomy/releases/inspect",
-                headers=headers,
-                data={
-                    "version_label": VERSION_LABEL,
-                    "acquired_at": ACQUIRED_AT,
-                    "notes": "Guarded real Hassler release intake; no staging or activation authorized.",
-                },
-                files={"file": (EXPECTED_FILENAME, handle, "text/csv")},
+        upload_invoked = False
+        mutation_confirmed = False
+        try:
+            with source_path.open("rb") as handle:
+                upload_invoked = True
+                uploaded = client.post(
+                    "/api/mission-control/taxonomy/releases/inspect",
+                    headers=headers,
+                    data={
+                        "version_label": VERSION_LABEL,
+                        "acquired_at": ACQUIRED_AT,
+                        "notes": "Guarded real Hassler release intake; no staging or activation authorized.",
+                    },
+                    files={"file": (EXPECTED_FILENAME, handle, "text/csv")},
+                )
+            uploaded.raise_for_status()
+            upload_report = uploaded.json()
+            _assert_release_report(upload_report)
+            mutation_confirmed = True
+
+            readback = client.get(release_path, headers=headers)
+            readback.raise_for_status()
+            _assert_release_report(readback.json())
+
+            post = _post_intake_state(client, headers)
+            if post.get("pipeline_state") != "release_inspected_staging_smoke_required":
+                raise RuntimeError("post-upload readiness did not stop at staging smoke")
+            if post.get("next_job", {}).get("job") != "verify_taxonomy_staging_smoke":
+                raise RuntimeError("post-upload next job is not staging smoke verification")
+        except Exception as exc:
+            if not upload_invoked:
+                raise
+            return _receipt(
+                source=source,
+                status=(
+                    "MUTATED_VERIFICATION_FAILED"
+                    if mutation_confirmed
+                    else "UPLOAD_RESULT_UNKNOWN"
+                ),
+                upload_invoked=True,
+                production_mutation=True if mutation_confirmed else None,
+                mutation_state="CONFIRMED" if mutation_confirmed else "UNKNOWN",
+                readback_verified=False,
+                error=f"{type(exc).__name__}: {exc}",
             )
-        uploaded.raise_for_status()
-        upload_report = uploaded.json()
-        _assert_release_report(upload_report)
-
-        readback = client.get(release_path, headers=headers)
-        readback.raise_for_status()
-        _assert_release_report(readback.json())
-
-        post = _post_intake_state(client, headers)
-        if post.get("pipeline_state") != "release_inspected_staging_smoke_required":
-            raise RuntimeError("post-upload readiness did not stop at staging smoke")
-        if post.get("next_job", {}).get("job") != "verify_taxonomy_staging_smoke":
-            raise RuntimeError("post-upload next job is not staging smoke verification")
 
         return _receipt(
             source=source,
             status="passed",
             upload_invoked=True,
             production_mutation=True,
+            mutation_state="CONFIRMED",
             readback_verified=True,
             post=post,
         )
@@ -222,11 +247,12 @@ def main() -> int:
     source = validate_source(args.source)
     if not args.execute:
         report = {
-            "schema_version": "1.1",
+            "schema_version": "1.2",
             "status": "dry_run_passed",
             "source": source,
             "upload_invoked": False,
             "production_mutation": False,
+            "mutation_state": "NONE",
             "staging_invoked": False,
             "taxonomy_activation_authorized": False,
             "knowledge_graph_mutation_authorized": False,
@@ -252,7 +278,7 @@ def main() -> int:
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     print(json.dumps(report, indent=2, sort_keys=True))
-    return 0
+    return 2 if report["status"] in {"MUTATED_VERIFICATION_FAILED", "UPLOAD_RESULT_UNKNOWN"} else 0
 
 
 if __name__ == "__main__":
