@@ -102,11 +102,11 @@ class EvidenceMatrixBuilder:
         for record in sorted(
             paper.normalized_evidence_records, key=lambda value: value.record_id
         ):
-            if not record.evidence_ids:
-                continue
             claim = claims.get(record.source_claim_id)
             if claim is None:
                 raise ValueError("SOURCE_CLAIM_NOT_FOUND")
+            if not record.evidence_ids:
+                raise ValueError("SOURCE_BOUND_EVIDENCE_REQUIRED")
             anchors: list[EvidenceAnchor] = []
             for evidence_id in sorted(record.evidence_ids):
                 evidence = evidence_by_id.get(evidence_id)
