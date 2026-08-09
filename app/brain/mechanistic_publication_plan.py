@@ -24,7 +24,11 @@ def _digest(value: Any) -> str:
 
 def _candidate(repository: Any, candidate_id: int) -> dict[str, Any]:
     candidate = next(
-        (item for item in repository.candidates if item["candidate_id"] == candidate_id),
+        (
+            item
+            for item in repository.candidates
+            if item["candidate_id"] == candidate_id
+        ),
         None,
     )
     if candidate is None:
@@ -43,18 +47,32 @@ def _open_review_blockers(repository: Any, candidate_id: int) -> list[str]:
 def _open_conflict_blockers(repository: Any, candidate_id: int) -> list[str]:
     blockers: list[str] = []
     for conflict_id, conflict in repository.conflicts.items():
-        if conflict.get("state") == "OPEN" and candidate_id in conflict.get("candidate_ids", []):
+        if conflict.get("state") == "OPEN" and candidate_id in conflict.get(
+            "candidate_ids", []
+        ):
             blockers.append(f"open_conflict:{conflict_id}")
     return sorted(blockers)
 
 
 def _evidence_for_candidate(repository: Any, candidate_id: int) -> list[dict[str, Any]]:
     return [
-        link for link in repository.evidence_links if link.get("candidate_id") == candidate_id
+        link
+        for link in repository.evidence_links
+        if link.get("candidate_id") == candidate_id
     ]
 
 
-def _graph_from_candidate(candidate: dict[str, Any]) -> tuple[list[Node], list[Edge], list[str]]:
+def _canonical_source_pk(node_type: str, canonical_key: str) -> str | None:
+    prefix = f"{node_type}:"
+    if not canonical_key.startswith(prefix):
+        return None
+    source_pk = canonical_key[len(prefix) :].strip()
+    return source_pk or None
+
+
+def _graph_from_candidate(
+    candidate: dict[str, Any],
+) -> tuple[list[Node], list[Edge], list[str]]:
     blockers: list[str] = []
     qualifiers = dict(candidate.get("qualifiers") or {})
     contract = dict(qualifiers.get("graph_contract") or {})
@@ -63,7 +81,11 @@ def _graph_from_candidate(candidate: dict[str, Any]) -> tuple[list[Node], list[E
     target_type = str(contract.get("target_node_type") or "").strip().lower()
     source_key = str(contract.get("source_key") or "").strip()
     target_key = str(contract.get("target_key") or "").strip()
-    relationship = str(contract.get("relationship") or candidate.get("predicate") or "").strip().lower()
+    relationship = (
+        str(contract.get("relationship") or candidate.get("predicate") or "")
+        .strip()
+        .lower()
+    )
 
     if source_type not in CAUSAL_REASONING_NODE_TYPES:
         blockers.append(f"invalid_source_type:{source_type or 'missing'}")
@@ -74,6 +96,13 @@ def _graph_from_candidate(candidate: dict[str, Any]) -> tuple[list[Node], list[E
     if not target_key:
         blockers.append("missing_target_key")
 
+    source_pk = _canonical_source_pk(source_type, source_key)
+    target_pk = _canonical_source_pk(target_type, target_key)
+    if source_key and source_pk is None:
+        blockers.append("invalid_source_canonical_key")
+    if target_key and target_pk is None:
+        blockers.append("invalid_target_canonical_key")
+
     semantics = causal_relation_semantics(relationship)
     if semantics is None or not semantics["causal"]:
         blockers.append(f"invalid_causal_relationship:{relationship or 'missing'}")
@@ -81,6 +110,8 @@ def _graph_from_candidate(candidate: dict[str, Any]) -> tuple[list[Node], list[E
     if blockers:
         return [], [], blockers
 
+    assert source_pk is not None
+    assert target_pk is not None
     confidence = float(candidate.get("confidence", 0.0))
     candidate_id = int(candidate["candidate_id"])
     common_payload = {
@@ -98,7 +129,7 @@ def _graph_from_candidate(candidate: dict[str, Any]) -> tuple[list[Node], list[E
         canonical_key=source_key,
         display_label=str(candidate.get("normalized_subject") or source_key),
         source_table="oc_candidate_knowledge.candidates",
-        source_pk=str(candidate_id),
+        source_pk=source_pk,
         evidence_class="reviewed_mechanistic_candidate",
         confidence_score=confidence,
         confidence_label="reviewed_candidate",
@@ -110,7 +141,7 @@ def _graph_from_candidate(candidate: dict[str, Any]) -> tuple[list[Node], list[E
         canonical_key=target_key,
         display_label=str(candidate.get("object_value") or target_key),
         source_table="oc_candidate_knowledge.candidates",
-        source_pk=str(candidate_id),
+        source_pk=target_pk,
         evidence_class="reviewed_mechanistic_candidate",
         confidence_score=confidence,
         confidence_label="reviewed_candidate",
@@ -191,7 +222,9 @@ def plan_mechanistic_candidate_publication(
         "candidate_id": candidate_id,
         "candidate_hash": candidate.get("candidate_hash"),
         "evidence_link_ids": sorted(
-            int(link["evidence_link_id"]) for link in evidence if link.get("evidence_link_id")
+            int(link["evidence_link_id"])
+            for link in evidence
+            if link.get("evidence_link_id")
         ),
         "operations": operations,
         "blockers": blockers,
