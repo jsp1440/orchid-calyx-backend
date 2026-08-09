@@ -69,7 +69,9 @@ def _stable_source_pk(endpoint: MechanisticEndpoint) -> str:
     return f"candidate-{digest[:24]}"
 
 
-def _candidate_graph(payload: MechanisticCandidateRequest) -> tuple[dict[str, Any], dict[str, Any]]:
+def _candidate_graph(
+    payload: MechanisticCandidateRequest,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     relationship = payload.relationship.strip().lower()
     semantics = causal_relation_semantics(relationship)
     if semantics is None or not semantics["causal"]:
@@ -94,7 +96,7 @@ def _candidate_graph(payload: MechanisticCandidateRequest) -> tuple[dict[str, An
         evidence_class="candidate_mechanistic_claim",
         confidence_score=payload.confidence,
         confidence_label="candidate",
-        payload={"candidate_only": True, **payload.source.attributes},
+        payload={**payload.source.attributes, "candidate_only": True},
     )
     target = Node(
         kg_node_id=2,
@@ -106,7 +108,7 @@ def _candidate_graph(payload: MechanisticCandidateRequest) -> tuple[dict[str, An
         evidence_class="candidate_mechanistic_claim",
         confidence_score=payload.confidence,
         confidence_label="candidate",
-        payload={"candidate_only": True, **payload.target.attributes},
+        payload={**payload.target.attributes, "candidate_only": True},
     )
     edge = Edge(
         kg_edge_id=1,
