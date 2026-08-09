@@ -8,9 +8,11 @@ Record validation-independent repository cleanup completed while canonical priva
 
 No blind RS-15 retry was issued.
 
-The current active BUILD-BRAIN trust root is PR #772 (`BUILD-BRAIN-114M-R3`), rebuilt directly on current backend `main` after #761 drifted behind. Its exact head advanced during this checkpoint to `06f3bc3a98d579af62906dd463609968b7bf23f2`.
+The current active BUILD-BRAIN trust root is PR #772 (`BUILD-BRAIN-114M-R3`), rebuilt directly on current backend `main` after #761 drifted behind. Its exact audited head is `06f3bc3a98d579af62906dd463609968b7bf23f2`.
 
 The dedicated BUILD-BRAIN-114M workflow on that exact head is run `31293419153`, job `93194537448`. The job completed `failure` with `steps=null`; no checkout, compile, Ruff, pytest, or diff-hygiene step executed. The same head also had pre-step failures in BUILD-BRAIN-108-113A, BUILD-BRAIN-114I, BUILD-BRAIN-114A, BUILD-088E, CALYX Workflow Governance, and CALYX-AGENT-003.
+
+OCU-SCI-009N current head `c4971efde2288440381c5061c5595886bc7d127d` likewise triggered OCU University Migration Runner run `31293733300`, job `93195318464`, with `steps=null`; Durable Foundation `31293733266`, BUILD-088E `31293733293`, and Workflow Governance `31293733296` failed before step 1 on the same head.
 
 Therefore private hosted-runner execution has not recovered. These are infrastructure results only and are not code pass/fail evidence.
 
@@ -81,13 +83,29 @@ The focused workflow includes compile, Ruff check/format, three focused test fil
 
 ## OCU-SCI-009N migration-runner authority
 
-A new current-main successor now exists:
+Current authority:
 
-- #777 `OCU-SCI-009N v4: guarded migration refresh on latest main`, based directly on backend `main` commit `6dc9466442e7d5172269a451691b3e9bf5e0b5c7`.
+- #777 `OCU-SCI-009N v4: guarded migration refresh on latest main`, based directly on backend `main` commit `6dc9466442e7d5172269a451691b3e9bf5e0b5c7`;
+- exact current runtime/test head `c4971efde2288440381c5061c5595886bc7d127d`;
+- prior #748 v3 is closed unmerged as superseded.
 
-The prior #748 v3 draft drifted 11 commits behind and has been closed unmerged as superseded. #777 remains draft and is the sole active migration-runner authority. It must not merge or apply a production migration until the PostgreSQL apply/verification/rollback tests, migration invariants, Durable Foundation, BUILD-088E, review audit, and final current-main comparison all execute and pass.
+### Concurrency/idempotency defect found and fixed
 
-No production migration, taxonomy activation, deployment, publication, production database mutation, or production Knowledge Graph mutation was performed by this cleanup.
+Static safety review found that the initial v4 runner only checked `schema_already_valid` before acquiring its transaction-scoped advisory lock. Two legitimate operators could both see an invalid schema and plan an apply. Operator A could acquire the lock and complete the migration; Operator B would then acquire the lock but, without re-reading schema state, would replay the idempotent SQL and report `mutations_performed=true`. The SQL uses `IF NOT EXISTS`, so this was not destructive, but it violated the runner's truthful idempotent no-op contract and performed unnecessary database statements.
+
+Correction on #777:
+
+- after acquiring `pg_advisory_xact_lock`, the runner re-reads durable schema state inside the same transaction;
+- if schema is already valid at that point, it executes no migration SQL and returns `already_valid_noop_after_lock` with `mutations_performed=false`;
+- otherwise it executes the exact confirmed migration bytes, verifies the durable schema before transaction completion, and returns `applied_and_verified` only after successful verification;
+- focused regression `test_concurrent_winner_becomes_noop_after_advisory_lock` asserts the advisory lock is acquired and the migration SQL body is not executed when another operator won the race;
+- the ordinary apply-path mock now explicitly models locked-state invalid followed by post-apply valid schema.
+
+The migration remains dry-run by default and still requires exact migration SHA-256 confirmation, exact sanitized database-target confirmation, migration-stage preflight, bounded connect/lock/statement timeouts, transactional advisory locking, same-transaction verification, and rollback on failed verification.
+
+Exact-head validation is still infrastructure-blocked: run `31293733300`, job `93195318464`, `steps=null`. No PostgreSQL test or application step executed. PR #777 remains draft/unmerged and no production migration has been applied.
+
+#777 must not merge or apply a production migration until PostgreSQL apply/verification/rollback tests (including the post-lock no-op race), migration invariants, Durable Foundation, BUILD-088E, review audit, and final current-main comparison all execute and pass.
 
 ## Supersession rule
 
