@@ -208,3 +208,8 @@ def audit_history(artifact_type: str, artifact_id: int):
 @router.get("/health")
 def health():
     return {"status": "ok", "three_layers_separate": True, "publishes_graph": False, "immutable_evidence": True}
+
+
+from app.scientific_synthesis.routes import router as scientific_synthesis_router
+
+router.include_router(scientific_synthesis_router)
