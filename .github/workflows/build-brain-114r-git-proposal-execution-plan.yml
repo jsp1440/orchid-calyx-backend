@@ -8,6 +8,7 @@ on:
       - "app/calyx_orchestrator/owner_signature_verifier.py"
       - "app/calyx_orchestrator/proposal_authorization_store.py"
       - "tests/test_calyx_git_proposal_execution_plan_114r.py"
+      - "tests/test_calyx_git_proposal_action_dependencies_114r.py"
       - "tests/test_calyx_owner_signature_verifier_114q.py"
       - "docs/brain/BUILD-BRAIN-114R-GIT-PROPOSAL-EXECUTION-PLAN.md"
       - ".github/workflows/build-brain-114r-git-proposal-execution-plan.yml"
@@ -34,16 +35,16 @@ jobs:
           pip install pytest ruff
       - name: Compile 114R planning surface
         run: |
-          python -m compileall -q app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_proposal_execution_plan_114r.py
+          python -m compileall -q app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_proposal_execution_plan_114r.py tests/test_calyx_git_proposal_action_dependencies_114r.py
       - name: Ruff 114R planning surface
         run: |
-          ruff check app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_proposal_execution_plan_114r.py
-          ruff format --check app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_proposal_execution_plan_114r.py
+          ruff check app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_proposal_execution_plan_114r.py tests/test_calyx_git_proposal_action_dependencies_114r.py
+          ruff format --check app/calyx_orchestrator/git_proposal_execution_plan.py tests/test_calyx_git_proposal_execution_plan_114r.py tests/test_calyx_git_proposal_action_dependencies_114r.py
       - name: Focused planning regressions
         env:
           PYTHONPATH: .
         run: |
-          pytest -q tests/test_calyx_git_proposal_execution_plan_114r.py tests/test_calyx_owner_signature_verifier_114q.py tests/test_calyx_git_mutation_authorization_114o.py
+          pytest -q tests/test_calyx_git_proposal_execution_plan_114r.py tests/test_calyx_git_proposal_action_dependencies_114r.py tests/test_calyx_owner_signature_verifier_114q.py tests/test_calyx_git_mutation_authorization_114o.py
       - name: Planning-only v2 provenance assertions
         run: |
           python - <<'PY'
@@ -57,6 +58,7 @@ jobs:
               "git_mutation_performed",
               "owner_grant_verified",
               "authorization_request_digest",
+              "GIT_PROPOSAL_PLAN_ACTION_PREREQUISITE_MISSING",
           ):
               assert marker in source, marker
           for marker in (
