@@ -173,7 +173,9 @@ class ProposalAuthorizationBuilder:
             manifest.get("proposed_branch"),
             code="PROPOSAL_AUTH_PROPOSED_BRANCH_INVALID",
         )
-        patch_checksum = str(manifest.get("patch_output_checksum") or "").strip().lower()
+        patch_checksum = (
+            str(manifest.get("patch_output_checksum") or "").strip().lower()
+        )
         if not _is_sha256(patch_checksum):
             raise ValueError("PROPOSAL_AUTH_PATCH_CHECKSUM_INVALID")
 
@@ -289,7 +291,9 @@ class ProposalAuthorizationRegistry:
         existing = self.records.get(key)
         if existing is not None:
             if existing != item:
-                raise ValueError("PROPOSAL_AUTH_AUTHORITATIVE_DECISION_ALREADY_RECORDED")
+                raise ValueError(
+                    "PROPOSAL_AUTH_AUTHORITATIVE_DECISION_ALREADY_RECORDED"
+                )
             return existing
         self.records[key] = item
         return item
