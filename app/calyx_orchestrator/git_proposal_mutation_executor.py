@@ -25,7 +25,9 @@ FINAL_ACTION = "open_pull_request"
 
 
 def _is_git_sha(value: str) -> bool:
-    return len(value) == 40 and all(character in "0123456789abcdef" for character in value)
+    return len(value) == 40 and all(
+        character in "0123456789abcdef" for character in value
+    )
 
 
 class GitProposalMutationAdapter(Protocol):
@@ -117,7 +119,9 @@ class GitProposalMutationExecutor:
         adapter: GitProposalMutationAdapter,
         repository_allowlist: Sequence[str],
     ) -> None:
-        normalized = frozenset(item.strip() for item in repository_allowlist if item.strip())
+        normalized = frozenset(
+            item.strip() for item in repository_allowlist if item.strip()
+        )
         if not normalized:
             raise ValueError("GIT_PROPOSAL_EXECUTOR_REPOSITORY_ALLOWLIST_REQUIRED")
         self._adapter = adapter
@@ -161,6 +165,7 @@ class GitProposalMutationExecutor:
         evidence: list[GitProposalOperationEvidence] = []
         completed: list[str] = []
         plan_digest = plan.plan_digest
+        expected_commit_sha: str | None = None
 
         for operation in plan.operations:
             try:
@@ -172,6 +177,7 @@ class GitProposalMutationExecutor:
                     plan=plan,
                     operation=operation,
                     raw=raw,
+                    expected_commit_sha=expected_commit_sha,
                 )
             except Exception as exc:
                 code = getattr(exc, "code", None) or exc.__class__.__name__
@@ -185,8 +191,14 @@ class GitProposalMutationExecutor:
                 raise GitProposalMutationError(str(code), receipt) from exc
             evidence.append(item)
             completed.append(operation.action)
+            if operation.action == "create_commit":
+                expected_commit_sha = str(item.payload["commit_sha"]).lower()
 
-        status = "completed" if completed and completed[-1] == FINAL_ACTION else "completed_subset"
+        status = (
+            "completed"
+            if completed and completed[-1] == FINAL_ACTION
+            else "completed_subset"
+        )
         return self._receipt(
             plan=plan,
             status=status,
@@ -221,6 +233,7 @@ class GitProposalMutationExecutor:
         plan: GitProposalExecutionPlan,
         operation: GitProposalPlanOperation,
         raw: Mapping[str, Any],
+        expected_commit_sha: str | None,
     ) -> GitProposalOperationEvidence:
         if not isinstance(raw, Mapping):
             raise TypeError("GIT_PROPOSAL_EXECUTOR_EVIDENCE_INVALID")
@@ -256,12 +269,17 @@ class GitProposalMutationExecutor:
             commit = str(payload.get("commit_sha") or "").strip().lower()
             if not _is_git_sha(commit):
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_PUSH_COMMIT_INVALID")
+            if expected_commit_sha is not None and commit != expected_commit_sha:
+                raise PermissionError("GIT_PROPOSAL_EXECUTOR_PUSH_COMMIT_MISMATCH")
         elif action == "open_pull_request":
             head = str(payload.get("head_branch") or "").strip()
             base = str(payload.get("base_commit_sha") or "").strip().lower()
+            head_commit = str(payload.get("head_commit_sha") or "").strip().lower()
             pr_number = payload.get("pull_request_number")
             if head != plan.proposed_branch or base != plan.base_commit_sha:
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_PR_TARGET_MISMATCH")
+            if expected_commit_sha is not None and head_commit != expected_commit_sha:
+                raise PermissionError("GIT_PROPOSAL_EXECUTOR_PR_COMMIT_MISMATCH")
             if not isinstance(pr_number, int) or pr_number <= 0:
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_PR_NUMBER_INVALID")
         else:
