@@ -45,9 +45,12 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+
           source = Path("app/concepts/glossary.py").read_text(encoding="utf-8")
+          repository = Path("app/concepts/glossary_repositories.py").read_text(encoding="utf-8")
           router = Path("app/concepts/routers.py").read_text(encoding="utf-8")
           sql = Path("migrations/20260808_calyx_glossary_candidate_queue.sql").read_text(encoding="utf-8")
+
           for marker in (
               '"automatic_concept_promotion": False',
               '"knowledge_graph_publication_authorized": False',
@@ -55,15 +58,30 @@ jobs:
               '"figure_is_scientific_evidence": False',
               '"automatic_generation_authorized": False',
               '"automatic_publication_authorized": False',
+              "GLOSSARY_REVIEW_DECISION_IMMUTABLE",
           ):
               assert marker in source, marker
+
+          for marker in (
+              "glossary_candidate_review_events",
+              "decision_digest",
+              "resolution_state NOT IN",
+              "GLOSSARY_REVIEW_DECISION_IMMUTABLE",
+          ):
+              assert marker in repository, marker
+
           assert "verify_owner_or_api_key" in router
           for marker in (
               "REVIEWED_MATCH",
               "NEW_CONCEPT_CANDIDATE",
               "AMBIGUOUS",
+              "glossary_candidate_review_events",
+              "decision_digest VARCHAR(64) PRIMARY KEY",
               "automatic_concept_promotion BOOLEAN NOT NULL DEFAULT FALSE",
+              "knowledge_graph_publication_authorized BOOLEAN NOT NULL DEFAULT FALSE",
               "figure_is_scientific_evidence BOOLEAN NOT NULL DEFAULT FALSE",
+              "automatic_generation_authorized BOOLEAN NOT NULL DEFAULT FALSE",
+              "automatic_publication_authorized BOOLEAN NOT NULL DEFAULT FALSE",
           ):
               assert marker in sql, marker
           PY
