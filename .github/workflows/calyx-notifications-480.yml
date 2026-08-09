@@ -1,0 +1,36 @@
+name: CALYX Notifications 480
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/notification_service.py'
+      - 'app/routers/notification_service.py'
+      - 'app/routers/live_mission_control.py'
+      - 'tests/test_calyx_notifications_480.py'
+      - 'docs/brain/CALYX-NOTIFICATIONS-480.md'
+      - '.github/workflows/calyx-notifications-480.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  notification-service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install focused dependencies
+        run: pip install pytest fastapi
+      - name: Compile notification surface
+        run: python -m py_compile runtime/notification_service.py app/routers/notification_service.py app/routers/live_mission_control.py tests/test_calyx_notifications_480.py
+      - name: Deterministic notification tests
+        run: pytest -q tests/test_calyx_notifications_480.py
+      - name: Permanent provider-neutral and no-commitment assertions
+        run: |
+          grep -q 'unsolicited_external_messaging_authorized.*False' runtime/notification_service.py
+          grep -q 'autonomous_commitment_authorized.*False' runtime/notification_service.py
+          grep -q 'provider_secret_storage_authorized.*False' runtime/notification_service.py
+          grep -q 'live_provider_send_authorized.*False' runtime/notification_service.py
