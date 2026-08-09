@@ -56,9 +56,7 @@ class OwnerVerificationKey:
     public_key: Ed25519PublicKey
 
     @classmethod
-    def from_base64url(
-        cls, *, key_id: str, public_key: str
-    ) -> OwnerVerificationKey:
+    def from_base64url(cls, *, key_id: str, public_key: str) -> OwnerVerificationKey:
         normalized_id = _normalize_key_id(key_id)
         raw = _decode_base64url(public_key, expected_length=32)
         return cls(
@@ -140,9 +138,7 @@ class Ed25519OwnerGrantSignatureVerifier:
             key = self._keys.get(key_id)
             if key is None:
                 return False
-            signature_bytes = _decode_base64url(
-                encoded_signature, expected_length=64
-            )
+            signature_bytes = _decode_base64url(encoded_signature, expected_length=64)
             key.public_key.verify(
                 signature_bytes,
                 owner_grant_signing_bytes(payload),
@@ -155,9 +151,7 @@ class Ed25519OwnerGrantSignatureVerifier:
     def active_key_ids(self) -> tuple[str, ...]:
         return tuple(
             sorted(
-                key_id
-                for key_id in self._keys
-                if key_id not in self._revoked_key_ids
+                key_id for key_id in self._keys if key_id not in self._revoked_key_ids
             )
         )
 
