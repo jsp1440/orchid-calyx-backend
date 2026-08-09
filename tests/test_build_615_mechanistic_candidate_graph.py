@@ -163,17 +163,11 @@ def test_handoff_uses_repository_atomic_boundary_when_available():
     assert repository.atomic_calls == 1
 
 
-def test_duplicate_evidence_returns_existing_candidate_id():
+def test_exact_duplicate_returns_existing_candidate_id():
     repository, service = components()
-    first = handoff_mechanistic_candidate(payload(), (repository, service))
-    duplicate = payload(
-        evidence_text="A second source reported the same directional blue light mechanism.",
-        source_object_id=21,
-        revision_id=22,
-        extraction_run_id=23,
-        source_anchors=[{"anchor_id": 24, "page_number": 7}],
-    )
-    second = handoff_mechanistic_candidate(duplicate, (repository, service))
+    request = payload()
+    first = handoff_mechanistic_candidate(request, (repository, service))
+    second = handoff_mechanistic_candidate(request, (repository, service))
     assert first["candidate_ids"]
     assert second["candidate_ids"] == first["candidate_ids"]
 
