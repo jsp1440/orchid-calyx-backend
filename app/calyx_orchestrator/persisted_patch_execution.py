@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
+from .assignment_factory import assignment_inputs_for_program_job
 from .execution_bridge import decode_receipt_evidence
 from .executor import canonical_checksum
 from .isolated_patch_executor import ISOLATED_PATCH_ROLE, IsolatedWorkspacePatchExecutor
-from .program_models import CalyxProgramJob
+from .program_models import CalyxProgram, CalyxProgramJob
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +80,14 @@ class PersistedPatchExecutionService:
         input_checksum = str(evidence.get("input_checksum") or "").strip().lower()
         if not _is_sha256(input_checksum):
             raise ValueError("PATCH_PROGRAM_JOB_INPUT_CHECKSUM_INVALID")
+        program = self.db.get(CalyxProgram, job.program_id)
+        if program is None:
+            raise LookupError("PATCH_PROGRAM_NOT_FOUND")
+        expected_input_checksum = canonical_checksum(
+            assignment_inputs_for_program_job(program, job)
+        )
+        if input_checksum != expected_input_checksum:
+            raise PermissionError("PATCH_PROGRAM_JOB_INPUT_CHECKSUM_MISMATCH")
 
         output = evidence.get("output")
         if not isinstance(output, Mapping):
