@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest ruff
+        run: pip install -r requirements.txt pytest httpx ruff
       - name: Compile
         run: >-
           python -m py_compile
