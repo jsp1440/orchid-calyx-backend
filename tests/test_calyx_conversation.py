@@ -71,6 +71,12 @@ def test_confidence_interval_mean():
     )
     assert result["result"]["lower"] < 12 < result["result"]["upper"]
     assert result["result"]["method"] == "normal-approximation"
+    assert result["result"]["approximation_only"] is True
+    assert result["result"]["canonical_scientific_method"] is False
+    assert result["result"]["research_grade"] is False
+    assert result["result"]["p_value_generated"] is False
+    assert result["result"]["scientific_interpretation_generated"] is False
+    assert "Student-t" in result["result"]["warning"]
 
 
 def test_moving_average():

@@ -33,5 +33,22 @@ jobs:
         run: python -m pytest -q tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py tests/test_build_613_calyx_reasoning_context.py
       - name: Lint Calyx analysis slice
         run: ruff check app/calyx_conversation tests/test_calyx_conversation.py tests/test_calyx_file_analysis.py tests/test_build_613_calyx_reasoning_context.py
+      - name: Verify confidence interval governance
+        run: |
+          python - <<'PY'
+          from app.calyx_conversation.routes import AnalysisRequest, capabilities, run_analysis
+          result = run_analysis(AnalysisRequest(operation='confidence_interval_mean', values=[1.0, 2.0], confidence=0.95))['result']
+          assert result['method'] == 'normal-approximation'
+          assert result['approximation_only'] is True
+          assert result['canonical_scientific_method'] is False
+          assert result['research_grade'] is False
+          assert result['p_value_generated'] is False
+          assert result['scientific_interpretation_generated'] is False
+          assert 'Student-t' in result['warning']
+          note = capabilities()['analysis_method_notes']['confidence_interval_mean']
+          assert note['status'] == 'approximation_only'
+          assert note['canonical_scientific_method'] is False
+          assert note['distribution'] == 'normal'
+          PY
       - name: Verify router import
         run: python -c "from app.routers.calyx_core import router; paths={getattr(r, 'path', '') for r in router.routes}; assert '/api/calyx/query' in paths; assert '/api/calyx/reasoning-map' in paths; assert '/api/calyx/reasoning-query' in paths; assert '/api/calyx/dataset/upload-analyze' in paths; assert '/api/calyx/dataset/upload-report' in paths"
