@@ -1,0 +1,35 @@
+name: CALYX Performance 476
+
+on:
+  pull_request:
+    paths:
+      - 'app/performance_governance.py'
+      - 'app/routers/performance_readiness.py'
+      - 'app/routers/live_mission_control.py'
+      - 'tests/test_calyx_performance_476.py'
+      - 'docs/brain/CALYX-PERFORMANCE-OBSERVABILITY-476.md'
+      - '.github/workflows/calyx-performance-476.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  performance-observability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install focused dependencies
+        run: pip install pytest fastapi psycopg[binary]
+      - name: Compile
+        run: python -m py_compile app/performance_governance.py app/routers/performance_readiness.py app/routers/live_mission_control.py tests/test_calyx_performance_476.py
+      - name: Deterministic performance tests
+        run: pytest -q tests/test_calyx_performance_476.py
+      - name: Permanent no-production-benchmark and no-index-migration assertions
+        run: |
+          grep -q 'production_load_test_authorized.*False' app/performance_governance.py
+          grep -q 'index_migration_authorized.*False' app/performance_governance.py
+          grep -q 'fabricated_benchmarks.*False' app/performance_governance.py
