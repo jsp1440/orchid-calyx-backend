@@ -32,7 +32,9 @@ def _scope_id(scope: dict[str, Any]) -> str:
 
 def _evidence_count(repository: Any, candidate_id: int) -> int:
     return sum(
-        1 for item in repository.evidence_links if item.get("candidate_id") == candidate_id
+        1
+        for item in repository.evidence_links
+        if item.get("candidate_id") == candidate_id
     )
 
 
@@ -60,9 +62,11 @@ def analyze_mechanistic_contradictions(
 
         qualifiers = dict(candidate.get("qualifiers") or {})
         contract = dict(qualifiers.get("graph_contract") or {})
-        relationship = str(
-            contract.get("relationship") or candidate.get("predicate") or ""
-        ).strip().lower()
+        relationship = (
+            str(contract.get("relationship") or candidate.get("predicate") or "")
+            .strip()
+            .lower()
+        )
         semantics = causal_relation_semantics(relationship)
         if semantics is None or not semantics["causal"]:
             skipped.append(
@@ -101,7 +105,9 @@ def analyze_mechanistic_contradictions(
         if not positive or not negative:
             continue
 
-        candidate_ids = sorted(int(item["candidate"]["candidate_id"]) for item in members)
+        candidate_ids = sorted(
+            int(item["candidate"]["candidate_id"]) for item in members
+        )
         contradiction_id = hashlib.sha256(
             f"mechanistic-contradiction:{scope_hash}:{','.join(map(str, candidate_ids))}".encode()
         ).hexdigest()
