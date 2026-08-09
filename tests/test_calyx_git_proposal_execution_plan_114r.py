@@ -14,21 +14,44 @@ from sqlalchemy.orm import Session
 from app.calyx_orchestrator.assignment_factory import assignment_inputs_for_program_job
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
 from app.calyx_orchestrator.execution_bridge import LeaseExecutionBridge
-from app.calyx_orchestrator.executor import ExecutionReceipt, ExecutionState, canonical_checksum
-from app.calyx_orchestrator.git_mutation_authorization import GRANT_SCHEMA, GitMutationAuthorizationGate
-from app.calyx_orchestrator.git_proposal_execution_plan import GitProposalExecutionPlanner
-from app.calyx_orchestrator.isolated_patch_executor import ISOLATED_PATCH_ROLE, IsolatedWorkspacePatchExecutor
+from app.calyx_orchestrator.executor import (
+    ExecutionReceipt,
+    ExecutionState,
+    canonical_checksum,
+)
+from app.calyx_orchestrator.git_mutation_authorization import (
+    GRANT_SCHEMA,
+    GitMutationAuthorizationGate,
+)
+from app.calyx_orchestrator.git_proposal_execution_plan import (
+    GitProposalExecutionPlanner,
+)
+from app.calyx_orchestrator.isolated_patch_executor import (
+    ISOLATED_PATCH_ROLE,
+    IsolatedWorkspacePatchExecutor,
+)
 from app.calyx_orchestrator.owner_signature_verifier import (
     Ed25519OwnerGrantSignatureVerifier,
     OwnerVerificationKey,
     owner_grant_signing_bytes,
 )
-from app.calyx_orchestrator.program_models import CalyxProgram, CalyxProgramDependency, CalyxProgramJob
-from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
+from app.calyx_orchestrator.program_models import (
+    CalyxProgram,
+    CalyxProgramDependency,
+    CalyxProgramJob,
+)
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
 from app.calyx_orchestrator.proposal_authorization import ProposalDecision
-from app.calyx_orchestrator.proposal_authorization_models import ProposalAuthorizationDecisionRecord
-from app.calyx_orchestrator.proposal_authorization_store import DurableProposalAuthorizationStore
+from app.calyx_orchestrator.proposal_authorization_models import (
+    ProposalAuthorizationDecisionRecord,
+)
+from app.calyx_orchestrator.proposal_authorization_store import (
+    DurableProposalAuthorizationStore,
+)
 from app.calyx_orchestrator.sandbox_supervisor_evidence import canonical_sha256
 from app.database import Base
 
@@ -169,7 +192,9 @@ def _manifest(patch_program_job_id: str) -> dict[str, object]:
                 "request_digest": "d" * 64,
                 "receipt_digest": "e" * 64,
                 "policy_digest": "f" * 64,
-                "target_hashes": [{"path": "app/example.py", "sha256": PATCH_AFTER}],
+                "target_hashes": [
+                    {"path": "app/example.py", "sha256": PATCH_AFTER}
+                ],
             }
         ],
         "commit_title": "Bounded change",
