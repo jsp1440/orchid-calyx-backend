@@ -282,7 +282,7 @@ DEFAULT_FRAGMENTS: dict[str, dict[str, str]] = {
     },
     "conversation_sessions": {
         "conversation_id": "gen_random_uuid",
-        "title": "'New conversation'::text",
+        "title": "'Calyx conversation'::text",
         "created_at": "now()",
         "updated_at": "now()",
         "version": "1",
