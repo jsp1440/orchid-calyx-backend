@@ -5,7 +5,7 @@ import json
 import os
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from typing import Any, Callable, ContextManager
+from typing import Any, Callable
 
 from app.archive.policy import ArchivePolicy, ArchivePolicyError
 from app.archive.registry import ArchiveRegistry
