@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+import importlib.util
 import os
+from pathlib import Path
 
 import psycopg
 import pytest
 
-from scripts import research_station_conversation_activation as activation
+ACTIVATION_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "scripts"
+    / "research_station_conversation_activation.py"
+)
+ACTIVATION_SPEC = importlib.util.spec_from_file_location(
+    "research_station_conversation_activation",
+    ACTIVATION_PATH,
+)
+assert ACTIVATION_SPEC is not None and ACTIVATION_SPEC.loader is not None
+activation = importlib.util.module_from_spec(ACTIVATION_SPEC)
+ACTIVATION_SPEC.loader.exec_module(activation)
 
 
 def _dsn() -> str:
