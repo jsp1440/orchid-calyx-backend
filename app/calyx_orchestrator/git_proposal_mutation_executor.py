@@ -30,6 +30,12 @@ def _is_git_sha(value: str) -> bool:
     )
 
 
+def _actions_form_dependency_prefix(actions: Sequence[str]) -> bool:
+    """Mutation plans may only execute a dependency-closed prefix of ACTION_ORDER."""
+    normalized = tuple(actions)
+    return bool(normalized) and normalized == ACTION_ORDER[: len(normalized)]
+
+
 class GitProposalMutationAdapter(Protocol):
     """Narrow proposal-only mutation capability injected by a trusted boundary.
 
@@ -156,11 +162,10 @@ class GitProposalMutationExecutor:
             raise ValueError("GIT_PROPOSAL_EXECUTOR_BASE_COMMIT_INVALID")
 
         actions = tuple(operation.action for operation in plan.operations)
-        if not actions or any(action not in ALLOWED_ACTIONS for action in actions):
+        if any(action not in ALLOWED_ACTIONS for action in actions):
             raise PermissionError("GIT_PROPOSAL_EXECUTOR_ACTION_NOT_ALLOWED")
-        canonical = tuple(action for action in ACTION_ORDER if action in actions)
-        if actions != canonical or len(actions) != len(set(actions)):
-            raise PermissionError("GIT_PROPOSAL_EXECUTOR_ACTION_ORDER_INVALID")
+        if not _actions_form_dependency_prefix(actions):
+            raise PermissionError("GIT_PROPOSAL_EXECUTOR_ACTION_DEPENDENCY_INVALID")
 
         evidence: list[GitProposalOperationEvidence] = []
         completed: list[str] = []
@@ -269,7 +274,7 @@ class GitProposalMutationExecutor:
             commit = str(payload.get("commit_sha") or "").strip().lower()
             if not _is_git_sha(commit):
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_PUSH_COMMIT_INVALID")
-            if expected_commit_sha is not None and commit != expected_commit_sha:
+            if expected_commit_sha is None or commit != expected_commit_sha:
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_PUSH_COMMIT_MISMATCH")
         elif action == "open_pull_request":
             head = str(payload.get("head_branch") or "").strip()
@@ -278,7 +283,7 @@ class GitProposalMutationExecutor:
             pr_number = payload.get("pull_request_number")
             if head != plan.proposed_branch or base != plan.base_commit_sha:
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_PR_TARGET_MISMATCH")
-            if expected_commit_sha is not None and head_commit != expected_commit_sha:
+            if expected_commit_sha is None or head_commit != expected_commit_sha:
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_PR_COMMIT_MISMATCH")
             if not isinstance(pr_number, int) or pr_number <= 0:
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_PR_NUMBER_INVALID")
