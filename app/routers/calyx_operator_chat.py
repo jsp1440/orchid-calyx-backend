@@ -80,6 +80,14 @@ def _resolved_context(
     }
 
 
+def _private_exchange(question: str, answer: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Create response metadata without copying authenticated research into the public transcript."""
+    private_chat = GovernedOperatorChat()
+    operator_message = private_chat.receive(question)
+    calyx_message = private_chat.reply(answer)
+    return operator_message.as_dict(), calyx_message.as_dict()
+
+
 @router.get("/status")
 def chat_status() -> dict[str, Any]:
     return {
@@ -117,7 +125,6 @@ def ask_the_continuum(
     request: AskContinuumRequest, identity: OwnerIdentity
 ) -> dict[str, Any]:
     owner = _owner(identity)
-    operator_message = _chat.receive(request.question)
     try:
         result = _continuum.ask(
             request.question,
@@ -127,13 +134,13 @@ def ask_the_continuum(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    calyx_message = _chat.reply(result["answer"])
+    operator_message, calyx_message = _private_exchange(request.question, result["answer"])
     return {
         **result,
         "owner": owner,
-        "operator_message_id": operator_message.message_id,
-        "calyx_message_id": calyx_message.message_id,
-        "requires_approval": calyx_message.requires_approval,
+        "operator_message_id": operator_message["message_id"],
+        "calyx_message_id": calyx_message["message_id"],
+        "requires_approval": calyx_message["requires_approval"],
         "persistent": False,
     }
 
@@ -244,8 +251,7 @@ def ask_persistent_conversation(
             tool_trace=result["tool_trace"],
         ),
     )
-    _chat.receive(request.question)
-    calyx_message = _chat.reply(result["answer"])
+    _, calyx_message = _private_exchange(request.question, result["answer"])
     return {
         **result,
         "owner": owner,
@@ -255,7 +261,7 @@ def ask_persistent_conversation(
         "conversation_history_is_evidence": False,
         "persisted_messages": persisted["messages"],
         "conversation": persisted["conversation"],
-        "requires_approval": calyx_message.requires_approval,
+        "requires_approval": calyx_message["requires_approval"],
     }
 
 
