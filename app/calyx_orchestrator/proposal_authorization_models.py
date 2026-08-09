@@ -26,7 +26,9 @@ class ProposalAuthorizationDecisionRecord(Base):
     )
     manifest_digest: Mapped[str] = mapped_column(String(64), index=True)
     review_class: Mapped[str] = mapped_column(String(40), index=True)
-    authorization_digest: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    authorization_digest: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True
+    )
     payload_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
