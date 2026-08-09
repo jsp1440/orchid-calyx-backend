@@ -9,7 +9,12 @@ from app.routers.health import add_mission_control_cors_headers
 from app.security import verify_owner_or_api_key
 
 from .dependencies import get_concept_service
-from .glossary import CandidateState, FigureRequestType, GlossaryCandidateInput, GlossaryService
+from .glossary import (
+    CandidateState,
+    FigureRequestType,
+    GlossaryCandidateInput,
+    GlossaryService,
+)
 from .glossary_dependencies import get_glossary_service
 from .services import ConceptRegistryService
 
@@ -44,7 +49,11 @@ class FigureRequestBody(BaseModel):
     request_type: FigureRequestType
     audience: str = Field(min_length=1, max_length=300)
     purpose: str = Field(min_length=1, max_length=4000)
-    source_candidate_id: str | None = Field(default=None, min_length=64, max_length=64)
+    source_candidate_id: str | None = Field(
+        default=None,
+        min_length=64,
+        max_length=64,
+    )
 
 
 def _translate_error(exc: Exception) -> None:
@@ -65,7 +74,10 @@ def search_concepts(
     q: str = Query(..., min_length=1, max_length=300),
     language: str | None = Query(default=None, min_length=2, max_length=35),
     limit: int = Query(default=25, ge=1, le=100),
-    service: Annotated[ConceptRegistryService, Depends(get_concept_service)] = None,
+    service: Annotated[
+        ConceptRegistryService,
+        Depends(get_concept_service),
+    ] = None,
 ) -> dict[str, Any]:
     try:
         return service.search_concepts(q, language=language, limit=limit)
@@ -77,7 +89,10 @@ def search_concepts(
 @router.post("/glossary/candidates")
 def intake_glossary_candidate(
     body: GlossaryCandidateRequest,
-    service: Annotated[GlossaryService, Depends(get_glossary_service)] = None,
+    service: Annotated[
+        GlossaryService,
+        Depends(get_glossary_service),
+    ] = None,
 ) -> dict[str, Any]:
     try:
         return service.intake(GlossaryCandidateInput(**body.model_dump()))
@@ -90,7 +105,10 @@ def intake_glossary_candidate(
 def list_glossary_candidates(
     state: CandidateState | None = None,
     limit: int = Query(default=100, ge=1, le=200),
-    service: Annotated[GlossaryService, Depends(get_glossary_service)] = None,
+    service: Annotated[
+        GlossaryService,
+        Depends(get_glossary_service),
+    ] = None,
 ) -> list[dict[str, Any]]:
     try:
         return service.list_candidates(state=state, limit=limit)
@@ -103,7 +121,10 @@ def list_glossary_candidates(
 def review_glossary_candidate(
     candidate_id: str,
     body: GlossaryReviewRequest,
-    service: Annotated[GlossaryService, Depends(get_glossary_service)] = None,
+    service: Annotated[
+        GlossaryService,
+        Depends(get_glossary_service),
+    ] = None,
 ) -> dict[str, Any]:
     try:
         return service.review_candidate(
@@ -121,7 +142,10 @@ def review_glossary_candidate(
 @router.get("/glossary/entries/{concept_id}")
 def canonical_glossary_entry(
     concept_id: UUID,
-    service: Annotated[GlossaryService, Depends(get_glossary_service)] = None,
+    service: Annotated[
+        GlossaryService,
+        Depends(get_glossary_service),
+    ] = None,
 ) -> dict[str, Any]:
     try:
         return service.glossary_entry(concept_id)
@@ -133,7 +157,10 @@ def canonical_glossary_entry(
 @router.post("/glossary/figure-requests")
 def create_glossary_figure_request(
     body: FigureRequestBody,
-    service: Annotated[GlossaryService, Depends(get_glossary_service)] = None,
+    service: Annotated[
+        GlossaryService,
+        Depends(get_glossary_service),
+    ] = None,
 ) -> dict[str, Any]:
     try:
         return service.create_figure_request(**body.model_dump())
@@ -146,10 +173,16 @@ def create_glossary_figure_request(
 def list_glossary_figure_requests(
     concept_id: UUID | None = None,
     limit: int = Query(default=100, ge=1, le=200),
-    service: Annotated[GlossaryService, Depends(get_glossary_service)] = None,
+    service: Annotated[
+        GlossaryService,
+        Depends(get_glossary_service),
+    ] = None,
 ) -> list[dict[str, Any]]:
     try:
-        return service.list_figure_requests(concept_id=concept_id, limit=limit)
+        return service.list_figure_requests(
+            concept_id=concept_id,
+            limit=limit,
+        )
     except Exception as exc:
         _translate_error(exc)
         raise
@@ -159,7 +192,10 @@ def list_glossary_figure_requests(
 def list_concept_labels(
     id_or_uri: str,
     language: str | None = Query(default=None, min_length=2, max_length=35),
-    service: Annotated[ConceptRegistryService, Depends(get_concept_service)] = None,
+    service: Annotated[
+        ConceptRegistryService,
+        Depends(get_concept_service),
+    ] = None,
 ) -> list[dict[str, Any]]:
     try:
         labels = service.list_labels(id_or_uri)
@@ -175,7 +211,10 @@ def list_concept_labels(
 def list_concept_definitions(
     id_or_uri: str,
     language: str | None = Query(default=None, min_length=2, max_length=35),
-    service: Annotated[ConceptRegistryService, Depends(get_concept_service)] = None,
+    service: Annotated[
+        ConceptRegistryService,
+        Depends(get_concept_service),
+    ] = None,
 ) -> list[dict[str, Any]]:
     try:
         definitions = service.list_definitions(id_or_uri)
@@ -190,7 +229,10 @@ def list_concept_definitions(
 @router.get("/{id_or_uri:path}")
 def get_concept(
     id_or_uri: str,
-    service: Annotated[ConceptRegistryService, Depends(get_concept_service)],
+    service: Annotated[
+        ConceptRegistryService,
+        Depends(get_concept_service),
+    ],
 ) -> dict[str, Any]:
     try:
         return service.get_concept(id_or_uri)
