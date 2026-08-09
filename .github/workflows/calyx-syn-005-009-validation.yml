@@ -1,0 +1,39 @@
+name: CALYX-SYN-005-009 Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/scientific_synthesis/pipeline.py"
+      - "app/scientific_synthesis/pipeline_routes.py"
+      - "app/scientific_interpretation/routes.py"
+      - "tests/test_calyx_syn_005_009_research_article.py"
+      - ".github/workflows/calyx-syn-005-009-validation.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+      - name: Lint research-to-article implementation
+        run: |
+          ruff check \
+            app/scientific_synthesis/pipeline.py \
+            app/scientific_synthesis/pipeline_routes.py \
+            app/scientific_interpretation/routes.py \
+            tests/test_calyx_syn_005_009_research_article.py
+      - name: Run research-to-article and grounding regressions
+        run: |
+          pytest -q \
+            tests/test_calyx_syn_005_009_research_article.py \
+            tests/test_calyx_syn_004_evidence_matrix.py \
+            tests/test_calyx_syn_001_scientific_synthesis.py \
+            tests/test_calyx_syn_001_routes.py
+      - name: Import application
+        run: python -c "import app.main"
