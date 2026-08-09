@@ -8,6 +8,7 @@ on:
       - "tests/test_calyx_unified_owner_flow_470.py"
       - "tests/test_calyx_unified_owner_flow_470_rejection.py"
       - "tests/test_calyx_unified_owner_flow_470_workspace.py"
+      - "tests/test_calyx_unified_owner_flow_470_reconciliation.py"
       - "tests/test_calyx_core_rebase_004.py"
       - "docs/brain/CALYX-UNIFIED-OWNER-FLOW-470A.md"
       - ".github/workflows/calyx-unified-owner-flow-470a.yml"
@@ -36,12 +37,14 @@ jobs:
           tests/test_calyx_unified_owner_flow_470.py
           tests/test_calyx_unified_owner_flow_470_rejection.py
           tests/test_calyx_unified_owner_flow_470_workspace.py
+          tests/test_calyx_unified_owner_flow_470_reconciliation.py
       - name: Unified owner flow and existing operator regressions
         run: >-
           python -m pytest -q
           tests/test_calyx_unified_owner_flow_470.py
           tests/test_calyx_unified_owner_flow_470_rejection.py
           tests/test_calyx_unified_owner_flow_470_workspace.py
+          tests/test_calyx_unified_owner_flow_470_reconciliation.py
           tests/test_calyx_core_rebase_004.py
       - name: Permanent supervised-publication governance assertions
         run: |
@@ -57,6 +60,7 @@ jobs:
               'PUBLICATION_REJECTED',
               'discover_eligible_ledgers',
               '_resolve_project_id',
+              '_durable_mission_view',
           )
           missing = [item for item in required if item not in text]
           if missing:
@@ -74,5 +78,5 @@ jobs:
           PY
       - name: Changed-surface Ruff and diff hygiene
         run: |
-          python -m ruff check app/routers/calyx_unified_owner_flow.py tests/test_calyx_unified_owner_flow_470.py tests/test_calyx_unified_owner_flow_470_rejection.py tests/test_calyx_unified_owner_flow_470_workspace.py
+          python -m ruff check app/routers/calyx_unified_owner_flow.py tests/test_calyx_unified_owner_flow_470.py tests/test_calyx_unified_owner_flow_470_rejection.py tests/test_calyx_unified_owner_flow_470_workspace.py tests/test_calyx_unified_owner_flow_470_reconciliation.py
           git diff --check
