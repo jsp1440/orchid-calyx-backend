@@ -1,0 +1,50 @@
+name: CALYX Taxonomy Activation Decision 386
+
+on:
+  pull_request:
+    paths:
+      - "runtime/world_plants_activation_decision.py"
+      - "app/routers/taxonomy_releases.py"
+      - "tests/test_world_plants_activation_decision.py"
+      - "docs/brain/CALYX-TAXONOMY-ACTIVATION-DECISION-386.md"
+      - ".github/workflows/calyx-taxonomy-activation-decision-386.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused dependencies
+        run: pip install -r requirements.txt
+      - name: Compile changed Python
+        run: python -m compileall runtime/world_plants_activation_decision.py app/routers/taxonomy_releases.py tests/test_world_plants_activation_decision.py
+      - name: Focused activation-decision regressions
+        run: pytest -q tests/test_world_plants_activation_decision.py
+      - name: Ruff
+        run: ruff check runtime/world_plants_activation_decision.py app/routers/taxonomy_releases.py tests/test_world_plants_activation_decision.py
+      - name: Permanent non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path("runtime/world_plants_activation_decision.py").read_text()
+          required = [
+              '"activation_authorized": False',
+              '"activation_invoked": False',
+              '"automatic_promotion": False',
+              '"production_taxonomy_mutation_authorized": False',
+              '"knowledge_graph_mutation_authorized": False',
+              '"scientific_publication_authorized": False',
+              '"read_only": True',
+          ]
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f"missing non-authority assertions: {missing}")
+          PY
