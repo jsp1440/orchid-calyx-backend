@@ -9,8 +9,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from app.calyx_orchestrator.git_mutation_authorization import (
-    GitMutationAuthorizationGrant,
     GitMutationAuthorizationGate,
+    GitMutationAuthorizationGrant,
     GitMutationAuthorizationRequest,
 )
 from app.calyx_orchestrator.owner_signature_verifier import (
