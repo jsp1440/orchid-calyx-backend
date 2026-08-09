@@ -1,10 +1,10 @@
-# CALYX-470A — Unified owner flow on current main
+# CALYX-470A/470B — Unified owner flow on current main
 
-Status: IMPLEMENTED / VALIDATION PENDING
+Status: IMPLEMENTED / EXECUTABLE VALIDATION PENDING
 
 ## Purpose
 
-Rebuild the useful owner-experience facade from stale PR #637 directly on current `main` without carrying its 173-commit-old history.
+Rebuild the useful owner-experience facade from stale history directly on current `main` without carrying unrelated or obsolete commits. CALYX-470B is the authoritative current-main reconstruction of the reviewed CALYX-470A implementation.
 
 ## Delivered
 
@@ -21,11 +21,28 @@ Rebuild the useful owner-experience facade from stale PR #637 directly on curren
 - Graph version and audit outcome are shown only when returned by the governed publication gate; the facade never invents them.
 - Focused browser/API regressions cover start, canonical workspace reuse/create/validation, status, durable review-state reconciliation, review, candidate discovery, confirmation gating, successful publication projection, governed publication rejection, and duplicate replay.
 
+## CALYX-470B current-main reconstruction
+
+On 2026-08-08 the reviewed additive files from CALYX-470A were reconstructed onto exact current `main` parent `7f5bec2fb8092739a8e5fc5ce55ebc9008a9171e` instead of rebasing the 17-commit historical branch.
+
+The following reviewed blobs were reused byte-for-byte:
+
+- `app/routers/calyx_unified_owner_flow.py` — `e2a4d57ea3e3de42999cc0cbb9a2f4e40f92c7f4`
+- `tests/test_calyx_unified_owner_flow_470.py` — `301544e23688b5cbbcf9faf0a63bc28e8b23c9e7`
+- `tests/test_calyx_unified_owner_flow_470_reconciliation.py` — `78893af495d49cc2986ef90a619a86184ffc7c26`
+- `tests/test_calyx_unified_owner_flow_470_rejection.py` — `6a8c9a5e6c2e495140dbecbca456e61248b53641`
+- `tests/test_calyx_unified_owner_flow_470_workspace.py` — `05f056ba34534f9f2830e607b7dfb1a2b459b0a3`
+- `.github/workflows/calyx-unified-owner-flow-470a.yml` — `915dd7540dc13c289dfe2da53641ed763732d9b6`
+
+The shared `app/routers/calyx_core.py` was **not** copied from the old branch. It was edited against current `main`, and the final compare shows exactly two added lines: the unified-owner-flow router import and include. An intermediate accidental `ShowCreate` request-type regression was detected before PR creation, repaired, and the subsequent `main` comparison confirmed zero unrelated router deletions or modifications.
+
 ## Governance
 
 Automatic scientific approval and automatic publication remain disabled. A real production publication, deployment, taxonomy activation, credential change, schema mutation, or uncontrolled production Knowledge Graph mutation is outside this implementation and remains a separate explicit owner decision.
 
 The publication endpoint may call the existing governed publication service only after explicit owner confirmation and fresh owner-scoped eligibility discovery. Tests replace the production gate/service and do not perform a real graph publication.
+
+Parent epic #384 additionally states that agents open PRs and stop before merge. Therefore this reconstruction remains draft/unmerged unless the owner explicitly authorizes its merge after exact-head executable validation.
 
 ## Integration
 
@@ -35,7 +52,7 @@ The Brain mission remains authoritative for bounded scientific evidence and inte
 
 ## Static compatibility findings resolved
 
-During current-main reconciliation three stale-branch defects were found and corrected before merge:
+During current-main reconciliation three stale-branch defects were found and corrected before the original CALYX-470A freeze:
 
 1. The old default project identifier `laelia-anceps-demonstration` was not a valid Research Workspace UUID and could allow Brain execution to run before durable ledger handoff failed. CALYX-470A resolves or creates the canonical project first.
 2. `ReasoningLedgerPublicationService.publish()` can return a newly recorded `rejected` artifact when the governed graph gate rejects publication. CALYX-470A distinguishes `PUBLISHED`, `PUBLICATION_REJECTED`, `PUBLICATION_NOT_COMPLETED`, and `NO_OP_DUPLICATE_REPLAY` rather than treating every newly created artifact as a successful publication.
@@ -45,13 +62,13 @@ The in-memory and operational Reasoning Ledger services both derive ledger ident
 
 ## Validation gate
 
-Merge only after the exact unchanged head passes real executable jobs for:
+Merge only after the exact unchanged CALYX-470B head passes real executable jobs for:
 
 - CALYX Unified Owner Flow 470A;
 - CALYX-CORE-REBASE-004 Validation;
 - BUILD-088E Validation;
 - every additional workflow triggered by the shared Calyx Core router.
 
-A GitHub Actions job with no executed steps is infrastructure evidence only and does not satisfy this gate.
+A GitHub Actions job with no executed steps is infrastructure evidence only and does not satisfy this gate. Issue #481 remains the canonical hosted-runner blocker if jobs return `steps=null`.
 
 Update this record with the exact validated head and merge commit after completion.
