@@ -32,7 +32,8 @@ class DurableProposalAuthorizationStore:
 
     def __init__(self, db: Session) -> None:
         self.db = db
-        self._builder = ProposalAuthorizationBuilder(PersistedPatchExecutionService(db))
+        self._patch_execution_service = PersistedPatchExecutionService(db)
+        self._builder = ProposalAuthorizationBuilder(self._patch_execution_service)
 
     def record_review(
         self,
@@ -76,7 +77,7 @@ class DurableProposalAuthorizationStore:
         )
         if row is None:
             raise LookupError("PROPOSAL_AUTH_DURABLE_RECORD_NOT_FOUND")
-        return self._decode(row)
+        return self._verified_record(row)
 
     def materialize_registry(
         self, *, manifest_digest: str
@@ -91,7 +92,7 @@ class DurableProposalAuthorizationStore:
         ).all()
         registry = ProposalAuthorizationRegistry()
         for row in rows:
-            registry.record(self._decode(row))
+            registry.record(self._verified_record(row))
         return registry
 
     def _persist(
@@ -108,7 +109,7 @@ class DurableProposalAuthorizationStore:
             review_class=item.review_class,
         )
         if existing is not None:
-            persisted = self._decode(existing)
+            persisted = self._verified_record(existing)
             if persisted != item:
                 raise ValueError(
                     "PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED"
@@ -132,14 +133,14 @@ class DurableProposalAuthorizationStore:
             )
             if winner is None:
                 raise
-            persisted = self._decode(winner)
+            persisted = self._verified_record(winner)
             if persisted != item:
                 raise ValueError(
                     "PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED"
                 )
             return persisted
         self.db.refresh(row)
-        return self._decode(row)
+        return self._verified_record(row)
 
     def _find(
         self, *, manifest_digest: str, review_class: str
@@ -150,6 +151,40 @@ class DurableProposalAuthorizationStore:
                 ProposalAuthorizationDecisionRecord.review_class == review_class,
             )
         )
+
+    def _verified_record(
+        self, row: ProposalAuthorizationDecisionRecord
+    ) -> ProposalAuthorizationRecord:
+        record = self._decode(row)
+        try:
+            persisted = self._patch_execution_service.get_completed(
+                program_job_id=record.patch_program_job_id
+            )
+        except (LookupError, PermissionError, TypeError, ValueError) as exc:
+            raise PermissionError(
+                "PROPOSAL_AUTH_DURABLE_PATCH_EVIDENCE_UNAVAILABLE"
+            ) from exc
+
+        base_commit = str(
+            persisted.output.get("checkout_commit_sha") or ""
+        ).strip().lower()
+        identity = (
+            persisted.repository,
+            persisted.branch,
+            base_commit,
+            persisted.output_checksum,
+            f"executor:{persisted.executor_key}",
+        )
+        recorded = (
+            record.repository,
+            record.source_autonomy_branch,
+            record.base_commit_sha,
+            record.patch_output_checksum,
+            record.producer_id,
+        )
+        if identity != recorded:
+            raise PermissionError("PROPOSAL_AUTH_DURABLE_PATCH_EVIDENCE_MISMATCH")
+        return record
 
     @staticmethod
     def _validate_snapshot(snapshot: Mapping[str, object]) -> None:
