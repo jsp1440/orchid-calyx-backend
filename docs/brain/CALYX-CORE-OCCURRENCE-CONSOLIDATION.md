@@ -4,129 +4,144 @@ Date: 2026-08-08
 Parent: #384
 Primary issue: #386
 Related packet: #462
-Supersedes overlapping draft implementations: #599 and #610 after successful validation/merge of this replacement.
+Candidate replacement PR: #732
 
 ## Objective
 
-Remove the split occurrence-persistence authority created by two independently correct but incomplete draft lanes:
+Remove the split occurrence-persistence authority created by two independently useful but incomplete drafts:
 
-- PR #610 supplied durable PostgreSQL occurrence staging, checkpoints, canonical IDs, and review persistence, but its reconciliation identity was not bound to exact taxonomy-review evidence.
-- PR #599 supplied content-addressed raw/reconciliation identity and fail-closed taxonomy-review semantics, but used a separate local-file workspace and stale taxonomy branch ancestry rather than the merged PostgreSQL taxonomy pipeline.
+- #610 supplied durable PostgreSQL staging/checkpoints/review persistence but did not bind reconciliation identity to exact taxonomy-review evidence.
+- #599 supplied content-addressed reconciliation and fail-closed taxonomy-review semantics but used a local workspace and stale taxonomy ancestry.
 
-This current-main replacement combines the strongest properties of both and binds occurrence interpretation directly to the merged taxonomy schema from PR #619 / migration 107.
+The replacement binds bounded occurrence evidence to the merged #619 `taxonomy_pipeline` release/review evidence and preserves historical interpretations as immutable reconciliation runs.
 
 ## Canonical architecture
 
-`bounded occurrence batch + exact completed taxonomy release/review context → immutable reconciliation run → staged occurrence evidence + review queue + checkpoint`
+`bounded occurrence batch + exact completed taxonomy release/review context → immutable reconciliation run → source-taxonomy match/review evidence + checkpoint`
 
-`migrations/108_occurrence_reconciliation_runs.sql` adds staging-only PostgreSQL tables:
+Migration 108 adds staging-only PostgreSQL tables:
 
 - `occurrence_pipeline.reconciliation_runs`
 - `occurrence_pipeline.staged_occurrences`
 - `occurrence_pipeline.review_queue`
 - `occurrence_pipeline.checkpoints`
 
-Corrective migration `109_occurrence_taxonomy_context_guard.sql` adds a database-level trigger requiring the selected taxonomy release to have:
+Migration 109 adds a database trigger requiring:
 
-- a valid staged/review-required/reviewed release state;
+- taxonomy release state in `staged`, `review_required`, or `reviewed`;
 - a completed `taxonomy_pipeline.staging_checkpoints` row;
-- the exact source SHA-256 recorded by the taxonomy release.
+- exact taxonomy source SHA-256 agreement.
 
-This closes a static-review defect found before executable CI: the initial consolidation could otherwise have persisted occurrence interpretation against a partially staged taxonomy release if at least one staged taxon existed.
+## Critical scientific identity correction
 
-Every run stores:
+Static audit found a P1 defect after the first draft was opened: the implementation incorrectly treated Hassler `taxon_code` as a taxon identifier.
+
+That assumption is false. `runtime/world_plants_ingest.py` defines `taxon_code` as the rank code and constrains it to values such as `F`, `G`, `S`, `SS`, `V`, and `FM`. The authoritative World Plants crosswalk logic instead prioritizes a unique non-empty `world_plants_number`, then exact normalized name plus rank.
+
+The replacement was corrected before merge or executable validation:
+
+- provider `taxon_key` is preserved only as provider provenance;
+- an explicitly supplied `world_plants_number` may resolve a unique Hassler source record;
+- otherwise an exact unique accepted/scientific name may resolve a Hassler source record;
+- source matches are stored as release-scoped `source_taxonomy_record_id` plus `world_plants_number` and `source_taxon_rank_code`;
+- `taxon_code` is never stored as `canonical_taxon_id`;
+- `canonical_taxon_id` remains null until a governed canonical Orchid Continuum crosswalk/activation exists;
+- matched rows use `source_matched_canonical_pending` and carry machine blocker `CANONICAL_TAXON_CROSSWALK_NOT_ACTIVATED`;
+- ambiguity, unresolved identity, or open taxonomy-review evidence enters the review queue.
+
+This distinction is intentional: a strong Hassler source match is scientific provenance, but it is not permission to manufacture a canonical OC taxon identity.
+
+## Taxonomy context identity
+
+Every reconciliation run stores:
 
 - bounded input-batch SHA-256;
-- exact taxonomy release ID;
-- taxonomy source SHA-256;
-- deterministic digest of taxonomy review evidence and review status;
-- open taxonomy-review count;
+- exact taxonomy release ID and source SHA-256;
+- deterministic taxonomy-review digest/status;
+- open-review count;
 - combined taxonomy-context SHA-256;
 - reconciliation schema version.
 
-The run ID is derived from the source, job key, exact input-batch digest, exact taxonomy-context digest, and schema version. Reprocessing identical occurrence evidence against changed taxonomy/review evidence therefore creates a new immutable run instead of overwriting prior scientific interpretation.
+The run ID is content-addressed from the source/job/input digest/taxonomy-context digest/schema version. A changed taxonomy release or review state therefore creates a new run instead of overwriting historical occurrence interpretation.
 
-## Taxonomy reconciliation
+## Source-taxonomy matching
 
-`runtime/occurrence_persistence.py` reads only the merged `taxonomy_pipeline` staging/review schema.
+Matching is conservative:
 
-Resolution is fail-closed:
+1. explicit unique World Plants number, when supplied;
+2. unique exact normalized accepted/scientific name;
+3. otherwise ambiguous/unresolved review.
 
-- exact supplied taxon key resolves only when it is unique and not implicated in an open taxonomy review;
-- exact scientific name resolves only when it maps to one canonical staged taxon and is not implicated in an open taxonomy review;
-- ambiguous names enter occurrence review;
-- open duplicate/accepted-name taxonomy review evidence can force `taxonomy_review_required`;
-- resolved/dismissed taxonomy review records remain part of the context digest but do not block matching;
-- the database refuses to create a reconciliation run until taxonomy staging is complete.
+Open taxonomy review evidence can force `taxonomy_review_required`. Resolved/dismissed review records remain in the context digest but do not block matching.
 
-This preserves historical evidence when taxonomy review status changes and prevents partial taxonomy state from becoming occurrence evidence.
+No fuzzy name matching is used and provider-specific taxon keys are never assumed to equal World Plants identifiers.
 
 ## Occurrence evidence
 
-Each staged record preserves:
+Each staged row preserves:
 
 - source and stable source record ID;
-- scientific/accepted name and supplied taxon key;
-- canonical taxon ID when resolved;
-- reconciliation state/method;
-- coordinates and uncertainty state;
-- locality, event, collector, license and basis-of-record fields;
-- full raw JSON evidence;
-- raw SHA-256;
-- normalized payload containing the exact taxonomy release/context binding.
+- provider taxon key separately;
+- scientific/accepted name;
+- optional supplied World Plants number;
+- resolved Hassler source-taxonomy record ID, World Plants number and rank code when available;
+- nullable canonical taxon ID;
+- reconciliation state/method and canonical-projection blocker;
+- coordinates, coordinate uncertainty/state, locality, event, collector, license and basis-of-record;
+- full raw JSON plus SHA-256;
+- normalized payload bound to exact taxonomy release/context.
 
-Invalid coordinates do not erase an otherwise valid taxon reconciliation; they produce a separate review reason.
-
-## Replay and historical integrity
-
-Exact replay of an existing input/taxonomy context returns the existing run and does not duplicate staged rows. A changed taxonomy release, open review item, or review status changes the taxonomy-context digest and therefore generates a distinct run while leaving prior rows unchanged.
-
-The schema deliberately keys staged and review rows by `run_id`, not merely source record ID. This prevents a new taxonomy interpretation from mutating historical occurrence evidence.
+Invalid coordinates produce a separate review reason without erasing a valid source-taxonomy match.
 
 ## Validation contract
 
 Dedicated workflow: `.github/workflows/calyx-occurrence-consolidated-validation.yml`.
 
-PostgreSQL 16 tests cover:
+PostgreSQL 16 tests now cover:
 
-- migration 107 → 108 application;
-- migration 109 rejection of incomplete taxonomy staging;
-- migration 109 acceptance of completed review-required taxonomy;
+- migration 107 → 108 → 109;
+- incomplete taxonomy staging rejection;
 - taxonomy source-SHA mismatch rejection;
 - exact replay idempotency;
-- exact taxonomy-release binding;
-- changed taxonomy-review evidence creating a new run;
-- preservation of the old reconciliation state after taxonomy review changes;
-- resolved taxonomy review not blocking clean matching;
-- invalid-coordinate review without loss of taxon resolution;
+- source-taxonomy matching by World Plants number and exact name;
+- provider-key/source-taxonomy/canonical-ID separation;
+- explicit proof that rank code `S` is never used as taxon identity;
+- canonical taxon ID remains null with machine blocker until crosswalk activation;
+- changed taxonomy-review evidence creates a distinct run and preserves prior evidence;
+- resolved review does not block clean source matching;
+- invalid-coordinate review does not erase source-taxonomy match;
 - existing bounded occurrence-staging regression;
-- compile, Ruff, diff hygiene and permanent non-authority assertions.
+- compile, Ruff, diff hygiene, and non-authority assertions.
 
-Executable validation evidence must come from real workflow steps. `steps=null`, `action_required`, or zero-job runs are infrastructure evidence only and may not be represented as a pass or code failure.
+Executable validation evidence must come from real workflow steps. `steps=null`, zero-job, or `action_required` runs are infrastructure evidence only.
 
-Initial PR #732 head `6154364c528b1781b9587998ec6bf7c1a9ca9440` triggered dedicated run `31290627123`; job `93187001446` failed before step 1 with `steps=null`. This reproduces repository CI incident #481 and is not a code verdict. The branch was then hardened with the migration-109 taxonomy-completeness guard before further expansion.
+## Validation history
 
-While the branch was being built, `main` advanced by 11 commits to `7f5bec2fb8092739a8e5fc5ce55ebc9008a9171e`. Comparison showed the intervening changes were confined to the Reasoning Ledger prerequisite activation gate and did not overlap this occurrence surface.
+Initial #732 head `6154364c528b1781b9587998ec6bf7c1a9ca9440` triggered run `31290627123`, job `93187001446`; it failed before step 1 with `steps=null`.
+
+After the taxonomy-completeness guard, head `b3aaee864d98556c9f7da1fcc84e2ebc3abe592a` triggered run `31290722659`, job `93187242006`; the job and a bounded rerun (`93187377905`) again failed before step 1 with `steps=null`.
+
+Those runs do not validate the code. The subsequent P1 identity correction requires a fresh executable exact-head run before any release decision.
 
 ## Governance boundary
 
-This replacement has no operation that:
+This replacement cannot:
 
-- activates taxonomy;
-- promotes a taxonomy release;
-- mutates `oc_graph` or the production Knowledge Graph;
-- publishes scientific conclusions;
-- performs an unbounded GBIF/iNaturalist harvest;
-- deploys production code;
-- approves review items.
+- activate taxonomy or create the canonical crosswalk;
+- promote a taxonomy release;
+- approve review items;
+- mutate `oc_graph` / the production Knowledge Graph;
+- publish scientific conclusions;
+- perform an unbounded GBIF/iNaturalist harvest;
+- deploy production code.
 
-`automatic_promotion=false` is enforced at the database layer for every reconciliation run.
+`automatic_promotion=false` is database-enforced.
 
 ## Release plan
 
-1. Obtain executable exact-head CI for this replacement.
-2. Fix any demonstrated failures before expanding scope.
-3. If green, make this the single authoritative occurrence-persistence PR.
-4. Close #599 and #610 as superseded without merging their divergent implementations.
-5. Merge this replacement only after exact-head validation and ordinary review gates are satisfied.
-6. Continue #386 toward its remaining owner-governed taxonomy activation/species-API proof; no activation is authorized by this build.
+1. Obtain executable exact-head CI on the corrected identity model.
+2. Fix demonstrated failures before expanding.
+3. If green, make #732 the single occurrence-persistence authority.
+4. Close #599 and #610 unmerged as superseded.
+5. Merge only through normal validated release governance.
+6. Continue #386 toward its remaining canonical crosswalk/activation/species-API proof; those production mutations require their own explicit owner decision.
