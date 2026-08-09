@@ -28,7 +28,10 @@ class GitProposalPlanOperation:
     parameters: Mapping[str, Any]
 
     def payload(self) -> dict[str, Any]:
-        return {"action": self.action, "parameters": copy.deepcopy(dict(self.parameters))}
+        return {
+            "action": self.action,
+            "parameters": copy.deepcopy(dict(self.parameters)),
+        }
 
 
 @dataclass(frozen=True, slots=True)
