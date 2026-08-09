@@ -48,7 +48,10 @@ def _b64url(value: bytes) -> str:
 
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[ProposalAuthorizationDecisionRecord.__table__])
+    Base.metadata.create_all(
+        engine,
+        tables=[ProposalAuthorizationDecisionRecord.__table__],
+    )
     return Session(engine)
 
 
@@ -114,7 +117,9 @@ def _manifest() -> dict:
                 "request_digest": "d" * 64,
                 "receipt_digest": "e" * 64,
                 "policy_digest": "f" * 64,
-                "target_hashes": [{"path": "app/example.py", "sha256": "c" * 64}],
+                "target_hashes": [
+                    {"path": "app/example.py", "sha256": "c" * 64}
+                ],
             }
         ],
         "commit_title": "Bounded change",
@@ -171,7 +176,12 @@ def _authorization(store: DurableProposalAuthorizationStore):
     request = gate.build_request(
         _manifest(),
         review_store=store,
-        actions=("create_branch", "create_commit", "push_branch", "open_pull_request"),
+        actions=(
+            "create_branch",
+            "create_commit",
+            "push_branch",
+            "open_pull_request",
+        ),
         expires_at=(NOW + timedelta(minutes=15)).isoformat(),
         now=NOW,
     )
@@ -184,7 +194,10 @@ def _authorization(store: DurableProposalAuthorizationStore):
         "expires_at": request.expires_at,
     }
     signature = private.sign(owner_grant_signing_bytes(unsigned))
-    grant = {**unsigned, "signature": f"ed25519:{key.key_id}:{_b64url(signature)}"}
+    grant = {
+        **unsigned,
+        "signature": f"ed25519:{key.key_id}:{_b64url(signature)}",
+    }
     plan = GitProposalExecutionPlanner.build(
         manifest_snapshot=_manifest(),
         review_store=store,
@@ -197,9 +210,16 @@ def _authorization(store: DurableProposalAuthorizationStore):
 
 
 class FakeMutationAdapter:
-    def __init__(self, *, fail_action: str | None = None, divergent: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_action: str | None = None,
+        divergent: bool = False,
+        wrong_push_commit: bool = False,
+    ) -> None:
         self.fail_action = fail_action
         self.divergent = divergent
+        self.wrong_push_commit = wrong_push_commit
         self.calls: list[str] = []
 
     def apply_proposal_operation(self, *, plan_digest: str, operation):
@@ -226,12 +246,14 @@ class FakeMutationAdapter:
                 "change_hashes": changes,
             }
         if operation.action == "push_branch":
-            return {**common, "commit_sha": COMMIT_SHA}
+            commit = "8" * 40 if self.wrong_push_commit else COMMIT_SHA
+            return {**common, "commit_sha": commit}
         if operation.action == "open_pull_request":
             return {
                 **common,
                 "head_branch": "autonomy/proposal/work-123",
                 "base_commit_sha": BASE_COMMIT,
+                "head_commit_sha": COMMIT_SHA,
                 "pull_request_number": 1234,
             }
         raise AssertionError(operation.action)
@@ -258,7 +280,12 @@ def _execute(adapter: FakeMutationAdapter, *, plan=None, now=None):
 def test_successful_flow_is_canonical_and_never_grants_merge_authority() -> None:
     adapter = FakeMutationAdapter()
     receipt = _execute(adapter)
-    assert adapter.calls == ["create_branch", "create_commit", "push_branch", "open_pull_request"]
+    assert adapter.calls == [
+        "create_branch",
+        "create_commit",
+        "push_branch",
+        "open_pull_request",
+    ]
     assert receipt.status == "completed"
     snapshot = receipt.snapshot()
     assert snapshot["completed_actions"] == adapter.calls
@@ -275,7 +302,10 @@ def test_tampered_plan_is_rejected_before_adapter_call() -> None:
     gate, request, grant, plan = _authorization(store)
     tampered = replace(plan, pr_title="tampered")
     adapter = FakeMutationAdapter()
-    executor = GitProposalMutationExecutor(adapter=adapter, repository_allowlist=(REPOSITORY,))
+    executor = GitProposalMutationExecutor(
+        adapter=adapter,
+        repository_allowlist=(REPOSITORY,),
+    )
     with pytest.raises(PermissionError, match="PLAN_MISMATCH"):
         executor.execute(
             plan=tampered,
@@ -306,6 +336,16 @@ def test_divergent_commit_postimage_fails_closed_with_partial_receipt() -> None:
     assert adapter.calls == ["create_branch", "create_commit"]
 
 
+def test_push_must_reference_exact_created_commit() -> None:
+    adapter = FakeMutationAdapter(wrong_push_commit=True)
+    with pytest.raises(GitProposalMutationError) as raised:
+        _execute(adapter)
+    receipt = raised.value.receipt
+    assert receipt.status == "partial_failure"
+    assert receipt.completed_actions == ("create_branch", "create_commit")
+    assert adapter.calls == ["create_branch", "create_commit", "push_branch"]
+
+
 def test_remote_failure_preserves_completed_side_effect_evidence() -> None:
     adapter = FakeMutationAdapter(fail_action="push_branch")
     with pytest.raises(GitProposalMutationError) as raised:
@@ -321,7 +361,10 @@ def test_repository_allowlist_is_enforced_before_mutation() -> None:
     store = _store()
     gate, request, grant, plan = _authorization(store)
     adapter = FakeMutationAdapter()
-    executor = GitProposalMutationExecutor(adapter=adapter, repository_allowlist=("other/repo",))
+    executor = GitProposalMutationExecutor(
+        adapter=adapter,
+        repository_allowlist=("other/repo",),
+    )
     with pytest.raises(PermissionError, match="REPOSITORY_NOT_ALLOWED"):
         executor.execute(
             plan=plan,
