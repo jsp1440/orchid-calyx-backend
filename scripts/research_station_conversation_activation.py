@@ -477,15 +477,12 @@ def _trigger_locations(connection, trigger_name: str) -> list[dict[str, str]]:
         """,
         (trigger_name,),
     ).fetchall()
-    return [
-        {"schema": row[0], "table": row[1], "definition": row[2]} for row in rows
-    ]
+    return [{"schema": row[0], "table": row[1], "definition": row[2]} for row in rows]
 
 
 def inspect_contract(connection) -> dict[str, Any]:
     tables = {
-        table: _table_report(connection, table)
-        for table in (*TABLES_101, *TABLES_140)
+        table: _table_report(connection, table) for table in (*TABLES_101, *TABLES_140)
     }
     reports_101 = [tables[table] for table in TABLES_101]
     reports_140 = [tables[table] for table in TABLES_140]
@@ -533,8 +530,7 @@ def inspect_contract(connection) -> dict[str, Any]:
     ):
         blockers.append("AUDIT_TRIGGER_NAME_COLLISION")
     if any(
-        (item["schema"], item["table"])
-        != ("research_station", "conversation_messages")
+        (item["schema"], item["table"]) != ("research_station", "conversation_messages")
         for item in conversation_triggers
     ):
         blockers.append("CONVERSATION_TRIGGER_NAME_COLLISION")
@@ -543,8 +539,7 @@ def inspect_contract(connection) -> dict[str, Any]:
         valid_audit = [
             item
             for item in audit_triggers
-            if (item["schema"], item["table"])
-            == ("research_station", "audit_events")
+            if (item["schema"], item["table"]) == ("research_station", "audit_events")
             and "BEFORE DELETE OR UPDATE" in item["definition"]
             and "research_station.reject_audit_mutation()" in item["definition"]
         ]
@@ -586,14 +581,11 @@ def inspect_contract(connection) -> dict[str, Any]:
         blocker.startswith(("MIGRATION_101_", "AUDIT_")) for blocker in blockers
     )
     complete_140 = columns_140 and not any(
-        blocker.startswith(("MIGRATION_140_", "CONVERSATION_"))
-        for blocker in blockers
+        blocker.startswith(("MIGRATION_140_", "CONVERSATION_")) for blocker in blockers
     )
     complete = complete_101 and complete_140 and not blockers
     safe_resume = not blockers and (
-        (not any_101 and not any_140)
-        or (complete_101 and not any_140)
-        or complete
+        (not any_101 and not any_140) or (complete_101 and not any_140) or complete
     )
     if complete:
         state = "COMPLETE_101_140"
@@ -664,8 +656,7 @@ def apply_chain(
         preflight = classify_preflight(before, identities_match=True)
         if preflight["status"] == "blocked":
             raise RuntimeError(
-                "RESEARCH_STATION_PREFLIGHT_BLOCKED:"
-                + ",".join(preflight["blockers"])
+                "RESEARCH_STATION_PREFLIGHT_BLOCKED:" + ",".join(preflight["blockers"])
             )
         if preflight["status"] == "passed":
             return {
@@ -694,8 +685,7 @@ def apply_chain(
         after = inspect_contract(connection)
         if not after["complete"]:
             raise RuntimeError(
-                "MIGRATION_140_POSTCONDITION_FAILED:"
-                + ",".join(after["blockers"])
+                "MIGRATION_140_POSTCONDITION_FAILED:" + ",".join(after["blockers"])
             )
         if inject_failure_after == "140":
             raise RuntimeError("INTENTIONAL_FAILURE_AFTER_140")
@@ -720,8 +710,7 @@ def run_profile(database_url: str, apply: bool, evidence_path: Path) -> int:
     identities = migration_identity_report()
     identities_match = all(item["matches"] for item in identities.values())
     confirmation_present = (
-        os.environ.get("CALYX_RESEARCH_STATION_CONFIRM", "").strip()
-        == CONFIRMATION
+        os.environ.get("CALYX_RESEARCH_STATION_CONFIRM", "").strip() == CONFIRMATION
     )
     receipt: dict[str, Any] = {
         "schema_version": "1.0",
@@ -737,9 +726,7 @@ def run_profile(database_url: str, apply: bool, evidence_path: Path) -> int:
             "lock_id": POSTGRES_VALIDATION_LOCK_ID,
         },
         "transaction_scope": "single_transaction_101_through_140_postconditions",
-        "production_database_mutation_authorized": bool(
-            apply and confirmation_present
-        ),
+        "production_database_mutation_authorized": bool(apply and confirmation_present),
         "production_database_mutation_attempted": False,
         "publication_authorized": False,
         "knowledge_graph_mutation_authorized": False,
@@ -779,15 +766,11 @@ def run_profile(database_url: str, apply: bool, evidence_path: Path) -> int:
         receipt["applied_migrations"] = result["applied_migrations"]
         receipt["contract_after"] = result["contract_after"]
         receipt["activation_complete"] = result["contract_after"]["complete"]
-        receipt["status"] = (
-            "passed" if receipt["activation_complete"] else "blocked"
-        )
+        receipt["status"] = "passed" if receipt["activation_complete"] else "blocked"
         receipt["activation_required"] = False
         receipt["ready_to_apply"] = False
         receipt["blockers"] = (
-            []
-            if receipt["activation_complete"]
-            else ["POST_APPLY_CONTRACT_INCOMPLETE"]
+            [] if receipt["activation_complete"] else ["POST_APPLY_CONTRACT_INCOMPLETE"]
         )
         _write_receipt(evidence_path, receipt)
         return 0 if receipt["activation_complete"] else 2
