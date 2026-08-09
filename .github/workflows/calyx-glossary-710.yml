@@ -49,18 +49,23 @@ jobs:
           router = Path("app/concepts/routers.py").read_text(encoding="utf-8")
           sql = Path("migrations/20260808_calyx_glossary_candidate_queue.sql").read_text(encoding="utf-8")
           for marker in (
-              "automatic_concept_promotion\": False",
-              "knowledge_graph_publication_authorized\": False",
-              "generated_definition\": False",
-              "figure_is_scientific_evidence\": False",
-              "automatic_generation_authorized\": False",
-              "automatic_publication_authorized\": False",
+              '"automatic_concept_promotion": False',
+              '"knowledge_graph_publication_authorized": False',
+              '"generated_definition": False',
+              '"figure_is_scientific_evidence": False',
+              '"automatic_generation_authorized": False',
+              '"automatic_publication_authorized": False',
           ):
               assert marker in source, marker
           assert "verify_owner_or_api_key" in router
-          assert "REVIEWED_MATCH" in sql
-          assert "NEW_CONCEPT_CANDIDATE" in sql
-          assert "AMBIGUOUS" in sql
+          for marker in (
+              "REVIEWED_MATCH",
+              "NEW_CONCEPT_CANDIDATE",
+              "AMBIGUOUS",
+              "automatic_concept_promotion BOOLEAN NOT NULL DEFAULT FALSE",
+              "figure_is_scientific_evidence BOOLEAN NOT NULL DEFAULT FALSE",
+          ):
+              assert marker in sql, marker
           PY
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
