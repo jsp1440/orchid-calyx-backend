@@ -14,12 +14,18 @@ from sqlalchemy.orm import Session
 from app.calyx_orchestrator.assignment_factory import assignment_inputs_for_program_job
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
 from app.calyx_orchestrator.execution_bridge import LeaseExecutionBridge
-from app.calyx_orchestrator.executor import ExecutionReceipt, ExecutionState, canonical_checksum
+from app.calyx_orchestrator.executor import (
+    ExecutionReceipt,
+    ExecutionState,
+    canonical_checksum,
+)
 from app.calyx_orchestrator.git_mutation_authorization import (
     GRANT_SCHEMA,
     GitMutationAuthorizationGate,
 )
-from app.calyx_orchestrator.git_proposal_execution_plan import GitProposalExecutionPlanner
+from app.calyx_orchestrator.git_proposal_execution_plan import (
+    GitProposalExecutionPlanner,
+)
 from app.calyx_orchestrator.isolated_patch_executor import (
     ISOLATED_PATCH_ROLE,
     IsolatedWorkspacePatchExecutor,
