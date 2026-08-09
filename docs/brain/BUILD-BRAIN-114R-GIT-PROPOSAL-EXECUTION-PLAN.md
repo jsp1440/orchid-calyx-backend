@@ -4,7 +4,7 @@
 
 **IMPLEMENTED / VALIDATED on current canonical 114Q mainline.** PR #785 is reconstructed directly on merged BUILD-BRAIN-114Q `main` commit `f0c23c76425d52f9ade57711a9f9019a14787868`, not on the superseded pre-merge feature-stack ancestry. Historical #767 and earlier 114R branches are source material only.
 
-Exact validated code head: `6086ac5449e12fcfc82917f54eac85a43535bd37`.
+Exact validated code head: `f1ee23de67166050681f54e7c8b22f1f6623eb3d`.
 
 This Brain checkpoint records the actual failure-first repair sequence and changes no runtime behavior. It must itself receive applicable exact-head validation before merge.
 
@@ -42,7 +42,11 @@ A future executor therefore has no authority to guess the default branch or infe
 
 ### P2 — frozen-plan snapshot mutation — IMPLEMENTED / VALIDATED
 
-`GitProposalPlanOperation.payload()` now deep-copies nested operation parameters. A caller mutating a returned payload or snapshot cannot mutate the stored plan parameters or silently change the subsequent plan digest.
+`GitProposalPlanOperation.payload()` deep-copies nested operation parameters. A caller mutating a returned payload or snapshot cannot mutate the stored plan parameters or silently change the subsequent plan digest.
+
+### Signature text canonicalization — IMPLEMENTED / VALIDATED
+
+A failure-first regression exposed a Base64URL equivalence edge case: modifying unused trailing encoding bits can produce different text that decodes to identical Ed25519 signature bytes. The public-key verifier now accepts only unpadded canonical Base64URL text by decoding and re-encoding before verification. One signature byte sequence therefore has one accepted textual representation. This preserves cryptographic byte verification while removing textual ambiguity in signature identity and audit evidence.
 
 ## Deterministic plan v2
 
@@ -54,25 +58,25 @@ Operations use canonical dependency order: `create_branch`, `create_commit`, `pu
 
 ## Failure-first repair record
 
-The current-main reconstruction exposed real executable failures; none were hosted-runner failures:
+The current-main reconstruction exposed real executable findings; none were hosted-runner failures:
 
-1. **DEPENDENCY / CONTRACT + TEST** — making `base_ref` mandatory correctly broke inherited 114O/114Q fixtures that had not yet been migrated to the stronger authorization contract. Those fixtures were updated; `base_ref` was not weakened or defaulted.
+1. **DEPENDENCY / CONTRACT + TEST** — mandatory `base_ref` correctly broke inherited 114O/114Q fixtures that had not yet migrated to the stronger authorization contract. The fixtures were updated; `base_ref` was not weakened or defaulted.
 2. **CODE / STYLE** — Ruff import ordering failed in the 114R regression surface and was corrected without behavioral change.
-3. **CODE / STYLE** — Ruff required the deep-copy payload return to be reformatted. The deep-copy safety behavior was preserved exactly.
-4. After those repairs, the focused behavioral planning suite, inherited 114O/114Q authorization suites, broad orchestration checks, publication-readiness regression, and workflow governance all reached executable code and passed.
+3. **CODE / STYLE** — Ruff required the deep-copy payload return to be reformatted. Deep-copy safety behavior was preserved exactly.
+4. **TEST / CRYPTO ENCODING** — an invalid-signature test changed only the final Base64URL character and could accidentally preserve the same decoded signature bytes. Rather than rely on ambiguous textual aliases, the 114Q verifier was strengthened to require canonical unpadded Base64URL encodings. The inherited 114Q suite and 114R planning suite both pass under the stronger rule.
 
 ## Validation
 
-Exact code head `6086ac5449e12fcfc82917f54eac85a43535bd37` passed the applicable validation surface:
+Exact code head `f1ee23de67166050681f54e7c8b22f1f6623eb3d` passed all applicable validation:
 
-- BUILD-BRAIN-114R Git Proposal Execution Plan Validation `31329015792` — success; compile, Ruff lint/format, focused planning regressions, planning-only v2 provenance assertions, and diff hygiene passed.
-- BUILD-BRAIN-114O Durable Reviewed Owner Authorization Validation `31329015795` — success.
-- BUILD-BRAIN-114Q Owner Signature Verifier Validation `31329015819` — success; focused owner-verification regressions and public-key-only provenance checks passed.
-- CALYX-AGENT-003 Validation `31329015798` — success.
-- BUILD-088E Validation `31329015799` — success.
-- CALYX Workflow Governance Audit `31329015822` — success.
+- BUILD-BRAIN-114R Git Proposal Execution Plan Validation `31329145290` — success; compile, Ruff lint/format, focused planning regressions, planning-only v2 provenance assertions, and diff hygiene passed.
+- BUILD-BRAIN-114O Durable Reviewed Owner Authorization Validation `31329145280` — success.
+- BUILD-BRAIN-114Q Owner Signature Verifier Validation `31329145260` — success under canonical Base64URL enforcement.
+- CALYX-AGENT-003 Validation `31329145281` — success.
+- BUILD-088E Validation `31329145283` — success.
+- CALYX Workflow Governance Audit `31329145278` — success.
 
-Hosted GitHub Actions runners allocated and executed normally. These results are application/test validation evidence, not infrastructure-only outcomes.
+Hosted GitHub Actions runners allocated and executed normally. These are application/test validation results, not infrastructure-only outcomes.
 
 ## Permanent non-authorities
 
