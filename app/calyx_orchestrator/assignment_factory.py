@@ -5,6 +5,7 @@ import json
 from sqlalchemy.orm import Session
 
 from .executor import ExecutorCapability, GovernedAssignment
+from .isolated_patch_executor import ISOLATED_PATCH_ROLE
 from .program_models import CalyxProgram, CalyxProgramJob
 
 SAFE_ASSIGNMENT_CAPABILITIES = (
@@ -12,6 +13,7 @@ SAFE_ASSIGNMENT_CAPABILITIES = (
     ExecutorCapability.PRODUCE_RECEIPT.value,
     ExecutorCapability.COLLECT_EVIDENCE_URIS.value,
 )
+ISOLATED_PATCH_CAPABILITIES = (*SAFE_ASSIGNMENT_CAPABILITIES, "workspace_write")
 RESERVED_JOB_INPUT_KEYS = frozenset(
     {
         "program_job_id",
@@ -45,25 +47,14 @@ def _persisted_job_inputs(job: CalyxProgramJob) -> dict[str, object]:
     return value
 
 
-def governed_assignment_from_claimed_job(
-    db: Session,
-    *,
-    owner: str,
+def assignment_inputs_for_program_job(
+    program: CalyxProgram,
     job: CalyxProgramJob,
-    timeout_seconds: int = 300,
-) -> GovernedAssignment:
-    program = db.get(CalyxProgram, job.program_id)
-    if program is None or program.owner != owner:
-        raise LookupError("PROGRAM_NOT_FOUND")
-    if program.status != "running" or program.paused:
-        raise PermissionError("PROGRAM_NOT_EXECUTABLE")
-    if job.status != "running" or not job.lease_owner or not job.lease_token or not job.lease_expires_at:
-        raise PermissionError("LIVE_PROGRAM_JOB_LEASE_REQUIRED")
-    if timeout_seconds <= 0:
-        raise ValueError("ASSIGNMENT_TIMEOUT_INVALID")
-
+) -> dict[str, object]:
+    """Build the canonical assignment-input object from durable program/job state."""
     persisted_inputs = _persisted_job_inputs(job)
-    inputs = {
+    isolated_patch = job.role_key == ISOLATED_PATCH_ROLE and bool(job.mutating)
+    return {
         "program": {
             "program_id": program.program_id,
             "title": program.title,
@@ -81,7 +72,11 @@ def governed_assignment_from_claimed_job(
             **persisted_inputs,
         },
         "governance": {
-            "mode": "bounded_dry_run",
+            "mode": (
+                "bounded_isolated_workspace_mutation"
+                if isolated_patch
+                else "bounded_dry_run"
+            ),
             "external_execution_authorized": False,
             "repository_code_execution_authorized": False,
             "automatic_merge_authorized": False,
@@ -90,6 +85,43 @@ def governed_assignment_from_claimed_job(
             "production_graph_mutation_authorized": False,
         },
     }
+
+
+def assignment_capabilities_for_role(
+    role_key: str,
+    *,
+    mutating_intent: bool,
+) -> tuple[str, ...]:
+    if role_key == ISOLATED_PATCH_ROLE:
+        if not mutating_intent:
+            raise PermissionError("ISOLATED_PATCH_MUTATING_JOB_REQUIRED")
+        return ISOLATED_PATCH_CAPABILITIES
+    return SAFE_ASSIGNMENT_CAPABILITIES
+
+
+def governed_assignment_from_claimed_job(
+    db: Session,
+    *,
+    owner: str,
+    job: CalyxProgramJob,
+    timeout_seconds: int = 300,
+) -> GovernedAssignment:
+    program = db.get(CalyxProgram, job.program_id)
+    if program is None or program.owner != owner:
+        raise LookupError("PROGRAM_NOT_FOUND")
+    if program.status != "running" or program.paused:
+        raise PermissionError("PROGRAM_NOT_EXECUTABLE")
+    if (
+        job.status != "running"
+        or not job.lease_owner
+        or not job.lease_token
+        or not job.lease_expires_at
+    ):
+        raise PermissionError("LIVE_PROGRAM_JOB_LEASE_REQUIRED")
+    if timeout_seconds <= 0:
+        raise ValueError("ASSIGNMENT_TIMEOUT_INVALID")
+
+    inputs = assignment_inputs_for_program_job(program, job)
     assignment = GovernedAssignment(
         assignment_id=job.program_job_id,
         program_id=program.program_id,
@@ -97,7 +129,10 @@ def governed_assignment_from_claimed_job(
         role_key=job.role_key,
         objective=job.title,
         inputs=inputs,
-        requested_capabilities=SAFE_ASSIGNMENT_CAPABILITIES,
+        requested_capabilities=assignment_capabilities_for_role(
+            job.role_key,
+            mutating_intent=bool(job.mutating),
+        ),
         evidence_uris=(
             f"calyx:program/{program.program_id}",
             f"calyx:program-job/{job.program_job_id}",
