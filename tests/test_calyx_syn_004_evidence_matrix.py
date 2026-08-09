@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -21,10 +22,10 @@ def _source(path: Path) -> Path:
     return path
 
 
-def _bibliography(*, verified=True):
+def _bibliography(*, verified=True, title="Orchid Foliar Study"):
     return BibliographicRecord(
         source_id="doi:10.1000/orchid.4",
-        title="Orchid Foliar Study",
+        title=title,
         authors=("Ada Researcher",),
         year=2026,
         journal="Journal of Orchid Science",
@@ -91,6 +92,18 @@ async def test_unverified_bibliography_cannot_create_scientific_matrix(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_wrong_verified_bibliography_cannot_bind_to_paper(tmp_path: Path):
+    paper, binding = await _paper_and_binding(tmp_path)
+
+    with pytest.raises(ValueError, match="BIBLIOGRAPHIC_PAPER_IDENTITY_UNPROVEN"):
+        EvidenceMatrixBuilder().build(
+            paper=paper,
+            binding=binding,
+            bibliography=_bibliography(title="Different Orchid Paper"),
+        )
+
+
+@pytest.mark.asyncio
 async def test_missing_integrity_proof_blocks_matrix(tmp_path: Path):
     paper, binding = await _paper_and_binding(tmp_path)
     unsafe = CanonicalLiteratureSourceBinding(
@@ -105,6 +118,20 @@ async def test_missing_integrity_proof_blocks_matrix(tmp_path: Path):
     with pytest.raises(ValueError, match="SOURCE_INTEGRITY_PROOF_REQUIRED"):
         EvidenceMatrixBuilder().build(
             paper=paper, binding=unsafe, bibliography=_bibliography()
+        )
+
+
+@pytest.mark.asyncio
+async def test_tampered_integrity_proof_blocks_matrix(tmp_path: Path):
+    paper, binding = await _paper_and_binding(tmp_path)
+    evidence_id = next(iter(binding.evidence_integrity))
+    integrity = {key: dict(value) for key, value in binding.evidence_integrity.items()}
+    integrity[evidence_id]["excerpt_hash"] = "0" * 64
+    tampered = replace(binding, evidence_integrity=integrity)
+
+    with pytest.raises(ValueError, match="SOURCE_INTEGRITY_PROOF_MISMATCH"):
+        EvidenceMatrixBuilder().build(
+            paper=paper, binding=tampered, bibliography=_bibliography()
         )
 
 
