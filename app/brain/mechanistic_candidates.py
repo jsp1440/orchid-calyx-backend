@@ -171,7 +171,6 @@ def _candidate_graph(
         },
     }
     qualifiers = {
-        "reasoning_id": payload.reasoning_id,
         "graph_contract": {
             "source_node_type": source_type,
             "source_key": source.canonical_key,
