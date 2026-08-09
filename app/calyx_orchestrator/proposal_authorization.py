@@ -47,7 +47,9 @@ def _validated_manifest_snapshot(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     supplied_digest = str(supplied.get("manifest_digest") or "").strip().lower()
     if not _is_sha256(supplied_digest):
         raise ValueError("PROPOSAL_AUTH_MANIFEST_DIGEST_INVALID")
-    payload = {key: value for key, value in supplied.items() if key != "manifest_digest"}
+    payload = {
+        key: value for key, value in supplied.items() if key != "manifest_digest"
+    }
     if payload.get("schema") != MANIFEST_SCHEMA:
         raise ValueError("PROPOSAL_AUTH_MANIFEST_SCHEMA_INVALID")
     if canonical_sha256(payload) != supplied_digest:
@@ -72,7 +74,9 @@ def _validated_manifest_snapshot(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     proposed_branch = _nonempty(
         payload.get("proposed_branch"), code="PROPOSAL_AUTH_PROPOSED_BRANCH_INVALID"
     )
-    if not source_branch.startswith("autonomy/") or not _valid_git_branch(source_branch):
+    if not source_branch.startswith("autonomy/") or not _valid_git_branch(
+        source_branch
+    ):
         raise PermissionError("PROPOSAL_AUTH_SOURCE_BRANCH_INVALID")
     if (
         not proposed_branch.startswith("autonomy/proposal/")
@@ -107,7 +111,10 @@ def _validated_manifest_snapshot(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         request_digest = str(raw_validation.get("request_digest") or "").strip().lower()
         receipt_digest = str(raw_validation.get("receipt_digest") or "").strip().lower()
         policy_digest = str(raw_validation.get("policy_digest") or "").strip().lower()
-        if not all(_is_sha256(value) for value in (request_digest, receipt_digest, policy_digest)):
+        if not all(
+            _is_sha256(value)
+            for value in (request_digest, receipt_digest, policy_digest)
+        ):
             raise ValueError("PROPOSAL_AUTH_VALIDATION_DIGEST_INVALID")
         raw_targets = raw_validation.get("targets")
         if not isinstance(raw_targets, list) or not raw_targets:
