@@ -11,6 +11,7 @@ from app.security import verify_owner_or_api_key
 from .dependencies import get_concept_service
 from .glossary import (
     FigureRequestType,
+    GlossaryResolutionState,
     PostgresGlossaryRepository,
     ScientificLanguageService,
 )
@@ -83,12 +84,15 @@ def intake_glossary_candidate(
 
 @router.get("/glossary/candidates")
 def list_glossary_candidates(
-    resolution_state: str | None = Query(default=None, max_length=80),
+    resolution_state: GlossaryResolutionState | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     service: Annotated[ScientificLanguageService, Depends(get_scientific_language_service)] = None,
 ) -> list[dict[str, Any]]:
     try:
-        return service.list_candidates(resolution_state=resolution_state, limit=limit)
+        return service.list_candidates(
+            resolution_state=resolution_state.value if resolution_state else None,
+            limit=limit,
+        )
     except Exception as exc:
         _translate_error(exc)
         raise
@@ -110,13 +114,13 @@ def list_glossary_figure_queue(
         raise
 
 
-@router.get("/glossary/{id_or_uri:path}/entry")
+@router.get("/glossary/by-id/{concept_id}/entry")
 def get_glossary_entry(
-    id_or_uri: str,
+    concept_id: UUID,
     service: Annotated[ScientificLanguageService, Depends(get_scientific_language_service)],
 ) -> dict[str, Any]:
     try:
-        return service.glossary_entry(id_or_uri)
+        return service.glossary_entry(concept_id)
     except Exception as exc:
         _translate_error(exc)
         raise
