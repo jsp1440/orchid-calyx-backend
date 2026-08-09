@@ -46,6 +46,12 @@ def request() -> MechanisticCandidateRequest:
                     "locator": {"confidence": 0.99},
                 }
             ],
+            "causal_scope": {
+                "scope_class": "bounded",
+                "tissues": ["young leaf"],
+                "developmental_stages": ["expansion"],
+                "treatments": {"wavelength_nm": 450},
+            },
             "experimental_context": {"tissue": "young leaf"},
             "quantitative_context": {"wavelength_nm": 450},
             "provenance": {"doi": "10.0000/example"},
@@ -72,9 +78,7 @@ def approve_all_candidate_reviews(repository, candidate_id: int) -> None:
 def test_unreviewed_candidate_is_blocked_and_never_authorized():
     repository, service = components()
     candidate_id = create_candidate(repository, service)
-
     plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
-
     assert plan["ready_for_controlled_publication_gate"] is False
     assert plan["authorized"] is False
     assert plan["commit_capability"] is False
@@ -87,19 +91,13 @@ def test_approved_candidate_produces_deterministic_three_operation_plan():
     repository, service = components()
     candidate_id = create_candidate(repository, service)
     approve_all_candidate_reviews(repository, candidate_id)
-
     first = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
     second = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
-
     assert first["ready_for_controlled_publication_gate"] is True
     assert first["blockers"] == []
     assert first["validation"]["healthy"] is True
     assert first["plan_id"] == second["plan_id"]
-    assert [item["operation"] for item in first["operations"]] == [
-        "UPSERT_NODE",
-        "UPSERT_NODE",
-        "UPSERT_EDGE",
-    ]
+    assert [item["operation"] for item in first["operations"]] == ["UPSERT_NODE", "UPSERT_NODE", "UPSERT_EDGE"]
     assert first["authorized"] is False
     assert first["canonical_graph_mutated"] is False
 
@@ -108,14 +106,8 @@ def test_open_conflict_blocks_plan_even_after_review_approval():
     repository, service = components()
     candidate_id = create_candidate(repository, service)
     approve_all_candidate_reviews(repository, candidate_id)
-    repository.conflicts[900] = {
-        "conflict_id": 900,
-        "candidate_ids": [candidate_id, 999],
-        "state": "OPEN",
-    }
-
+    repository.conflicts[900] = {"conflict_id": 900, "candidate_ids": [candidate_id, 999], "state": "OPEN"}
     plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
-
     assert plan["ready_for_controlled_publication_gate"] is False
     assert "open_conflict:900" in plan["blockers"]
 
@@ -125,9 +117,7 @@ def test_missing_evidence_blocks_publication_plan():
     candidate_id = create_candidate(repository, service)
     approve_all_candidate_reviews(repository, candidate_id)
     repository.evidence_links = []
-
     plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
-
     assert plan["ready_for_controlled_publication_gate"] is False
     assert "exact_evidence_required" in plan["blockers"]
 
@@ -136,12 +126,12 @@ def test_plan_preserves_causal_context_without_write_authority():
     repository, service = components()
     candidate_id = create_candidate(repository, service)
     approve_all_candidate_reviews(repository, candidate_id)
-
     plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
     edge = plan["operations"][2]["payload"]
-
     assert edge["edge_type"] == "promotes"
     assert edge["payload"]["polarity"] == 1
+    assert edge["payload"]["causal_scope"]["scope_class"] == "bounded"
+    assert edge["payload"]["causal_scope"]["tissues"] == ["young leaf"]
     assert edge["payload"]["experimental_context"]["tissue"] == "young leaf"
     assert edge["payload"]["quantitative_context"]["wavelength_nm"] == 450
     assert plan["requires_explicit_publication_authorization"] is True
