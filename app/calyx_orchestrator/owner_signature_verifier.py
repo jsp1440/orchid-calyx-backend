@@ -32,13 +32,16 @@ def owner_grant_signing_bytes(payload: Mapping[str, Any]) -> bytes:
 
 def _decode_base64url(value: str, *, expected_length: int | None = None) -> bytes:
     text = value.strip()
-    if not text:
+    if not text or "=" in text:
         raise ValueError("OWNER_SIGNATURE_BASE64_INVALID")
     padding = "=" * (-len(text) % 4)
     try:
         decoded = base64.b64decode(text + padding, altchars=b"-_", validate=True)
     except (ValueError, TypeError) as exc:
         raise ValueError("OWNER_SIGNATURE_BASE64_INVALID") from exc
+    canonical = base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii")
+    if canonical != text:
+        raise ValueError("OWNER_SIGNATURE_BASE64_NONCANONICAL")
     if expected_length is not None and len(decoded) != expected_length:
         raise ValueError("OWNER_SIGNATURE_LENGTH_INVALID")
     return decoded
