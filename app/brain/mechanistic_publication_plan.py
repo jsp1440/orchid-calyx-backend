@@ -174,13 +174,20 @@ def plan_mechanistic_candidate_publication(
 
     if candidate.get("kind") != CandidateKind.MECHANISTIC_RELATIONSHIP.value:
         blockers.append("candidate_kind_not_mechanistic")
+    if not candidate.get("active", True):
+        blockers.append("candidate_inactive_or_superseded")
     if candidate.get("review_state") != "APPROVED":
         blockers.append("scientific_review_not_approved")
     if bool(candidate.get("published")):
         blockers.append("candidate_already_published")
 
     evidence = _evidence_for_candidate(repository, candidate_id)
-    if not evidence:
+    evidence_link_ids = sorted(
+        int(link["evidence_link_id"])
+        for link in evidence
+        if link.get("evidence_link_id")
+    )
+    if not evidence_link_ids:
         blockers.append("exact_evidence_required")
     blockers.extend(_open_review_blockers(repository, candidate_id))
     blockers.extend(_open_conflict_blockers(repository, candidate_id))
@@ -201,19 +208,30 @@ def plan_mechanistic_candidate_publication(
     operations: list[dict[str, Any]] = []
     if not graph_blockers:
         operations = [
-            {"operation": "UPSERT_NODE", "payload": nodes[0].to_dict()},
-            {"operation": "UPSERT_NODE", "payload": nodes[1].to_dict()},
-            {"operation": "UPSERT_EDGE", "payload": edges[0].to_dict()},
+            {
+                "order": 0,
+                "operation_type": "CREATE_NODE",
+                "object_key": nodes[0].canonical_key,
+                "payload": nodes[0].to_dict(),
+            },
+            {
+                "order": 1,
+                "operation_type": "CREATE_NODE",
+                "object_key": nodes[1].canonical_key,
+                "payload": nodes[1].to_dict(),
+            },
+            {
+                "order": 2,
+                "operation_type": "CREATE_EDGE",
+                "object_key": f"mechanistic-candidate:{candidate_id}:{edges[0].edge_type}",
+                "payload": edges[0].to_dict(),
+            },
         ]
 
     plan_core = {
         "candidate_id": candidate_id,
         "candidate_hash": candidate.get("candidate_hash"),
-        "evidence_link_ids": sorted(
-            int(link["evidence_link_id"])
-            for link in evidence
-            if link.get("evidence_link_id")
-        ),
+        "evidence_link_ids": evidence_link_ids,
         "operations": operations,
         "blockers": blockers,
         "validation_healthy": bool(validation.get("healthy")),
@@ -229,12 +247,13 @@ def plan_mechanistic_candidate_publication(
         "production_write_executed": False,
         "canonical_graph_mutated": False,
         "requires_explicit_publication_authorization": True,
-        "evidence_count": len(evidence),
+        "evidence_count": len(evidence_link_ids),
+        "evidence_link_ids": evidence_link_ids,
         "operations": operations,
         "validation": validation,
         "blockers": blockers,
         "operator_action": (
-            "Submit this immutable plan to the existing controlled publication gate for explicit authorization."
+            "Translate this reviewed plan into the existing Reasoning Ledger publication contract and obtain explicit authorization."
             if ready
             else "Resolve all blockers, preserve evidence, and regenerate the plan."
         ),
