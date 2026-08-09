@@ -157,10 +157,10 @@ class LiteratureDiscoveryService:
         year = _year(item)
         journal = _first_text(item.get("container-title"))
         provider_record_id = doi or hashlib.sha256(
-            f"{title.casefold()}\x1f{year}\x1f{'|'.join(authors).casefold()}".encode("utf-8")
+            f"{title.casefold()}\x1f{year}\x1f{'|'.join(authors).casefold()}".encode()
         ).hexdigest()
         candidate_id = hashlib.sha256(
-            f"{provider}\x1f{provider_record_id}".encode("utf-8")
+            f"{provider}\x1f{provider_record_id}".encode()
         ).hexdigest()
         return DiscoveryCandidate(
             candidate_id=candidate_id,
@@ -211,7 +211,7 @@ class LiteratureDiscoveryService:
                         for item in ordered
                     ),
                 )
-            ).encode("utf-8")
+            ).encode()
         ).hexdigest()
         return manifest
 
