@@ -284,7 +284,7 @@ class GitProposalMutationExecutor:
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_PR_TARGET_MISMATCH")
             if expected_commit_sha is None or head_commit != expected_commit_sha:
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_PR_COMMIT_MISMATCH")
-            if not isinstance(pr_number, int) or pr_number <= 0:
+            if type(pr_number) is not int or pr_number <= 0:
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_PR_NUMBER_INVALID")
         else:
             raise PermissionError("GIT_PROPOSAL_EXECUTOR_ACTION_NOT_ALLOWED")
