@@ -11,11 +11,7 @@ from .models import AnalysisPlan, CompileIntentIn, DataIntelligenceError
 from .repository import FileDatasetRepository
 from .service import DataIntelligenceService
 
-router = APIRouter(
-    prefix="/data",
-    tags=["data-intelligence"],
-    dependencies=[Depends(verify_owner_or_api_key)],
-)
+router = APIRouter(prefix="/data", tags=["data-intelligence"])
 Auth = Annotated[dict, Depends(verify_owner_or_api_key)]
 
 
@@ -33,8 +29,15 @@ def _service() -> DataIntelligenceService:
 
 def _translate(exc: Exception) -> None:
     if isinstance(exc, DataIntelligenceError):
-        status = 404 if exc.code in {"DATASET_VERSION_NOT_FOUND", "ANALYSIS_NOT_FOUND"} else 422
-        raise HTTPException(status, detail={"code": exc.code, "details": exc.details}) from exc
+        status = (
+            404
+            if exc.code in {"DATASET_VERSION_NOT_FOUND", "ANALYSIS_NOT_FOUND"}
+            else 422
+        )
+        raise HTTPException(
+            status,
+            detail={"code": exc.code, "details": exc.details},
+        ) from exc
     raise exc
 
 
@@ -61,13 +64,29 @@ async def ingest_dataset(
         raise
 
 
-@router.get("/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/profile")
-def get_profile(project_id: str, dataset_id: str, version_id: str, auth: Auth):
+@router.get(
+    "/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/profile"
+)
+def get_profile(
+    project_id: str,
+    dataset_id: str,
+    version_id: str,
+    auth: Auth,
+):
     owner = _subject(auth)
     service = _service()
     try:
-        dataset = service.repository.get(owner, project_id, dataset_id, version_id)
-        return service.profile(owner=owner, project_id=project_id, dataset=dataset)
+        dataset = service.repository.get(
+            owner,
+            project_id,
+            dataset_id,
+            version_id,
+        )
+        return service.profile(
+            owner=owner,
+            project_id=project_id,
+            dataset=dataset,
+        )
     except Exception as exc:
         _translate(exc)
         raise
@@ -78,7 +97,12 @@ def compile_plan(project_id: str, payload: CompileIntentIn, auth: Auth):
     owner = _subject(auth)
     service = _service()
     try:
-        service.repository.get(owner, project_id, payload.dataset.dataset_id, payload.dataset.version_id)
+        service.repository.get(
+            owner,
+            project_id,
+            payload.dataset.dataset_id,
+            payload.dataset.version_id,
+        )
         return service.compile_intent(
             dataset_id=payload.dataset.dataset_id,
             version_id=payload.dataset.version_id,
@@ -93,14 +117,19 @@ def compile_plan(project_id: str, payload: CompileIntentIn, auth: Auth):
 def execute_plan(project_id: str, plan: AnalysisPlan, auth: Auth):
     owner = _subject(auth)
     try:
-        return _service().execute(owner=owner, project_id=project_id, plan=plan)
+        return _service().execute(
+            owner=owner,
+            project_id=project_id,
+            plan=plan,
+        )
     except Exception as exc:
         _translate(exc)
         raise
 
 
 @router.get(
-    "/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/analyses/{analysis_id}"
+    "/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/"
+    "analyses/{analysis_id}"
 )
 def get_analysis(
     project_id: str,
@@ -112,7 +141,11 @@ def get_analysis(
     owner = _subject(auth)
     try:
         return _service().repository.get_analysis(
-            owner, project_id, dataset_id, version_id, analysis_id
+            owner,
+            project_id,
+            dataset_id,
+            version_id,
+            analysis_id,
         )
     except Exception as exc:
         _translate(exc)
@@ -120,7 +153,8 @@ def get_analysis(
 
 
 @router.post(
-    "/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/analyses/{analysis_id}/rerun"
+    "/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/"
+    "analyses/{analysis_id}/rerun"
 )
 def rerun_analysis(
     project_id: str,
