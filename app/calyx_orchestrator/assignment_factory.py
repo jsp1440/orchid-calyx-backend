@@ -53,7 +53,7 @@ def assignment_inputs_for_program_job(
 ) -> dict[str, object]:
     """Build the canonical assignment-input object from durable program/job state."""
     persisted_inputs = _persisted_job_inputs(job)
-    isolated_patch = job.role_key == ISOLATED_PATCH_ROLE
+    isolated_patch = job.role_key == ISOLATED_PATCH_ROLE and bool(job.mutating)
     return {
         "program": {
             "program_id": program.program_id,
@@ -87,8 +87,14 @@ def assignment_inputs_for_program_job(
     }
 
 
-def assignment_capabilities_for_role(role_key: str) -> tuple[str, ...]:
+def assignment_capabilities_for_role(
+    role_key: str,
+    *,
+    mutating_intent: bool,
+) -> tuple[str, ...]:
     if role_key == ISOLATED_PATCH_ROLE:
+        if not mutating_intent:
+            raise PermissionError("ISOLATED_PATCH_MUTATING_JOB_REQUIRED")
         return ISOLATED_PATCH_CAPABILITIES
     return SAFE_ASSIGNMENT_CAPABILITIES
 
@@ -123,7 +129,10 @@ def governed_assignment_from_claimed_job(
         role_key=job.role_key,
         objective=job.title,
         inputs=inputs,
-        requested_capabilities=assignment_capabilities_for_role(job.role_key),
+        requested_capabilities=assignment_capabilities_for_role(
+            job.role_key,
+            mutating_intent=bool(job.mutating),
+        ),
         evidence_uris=(
             f"calyx:program/{program.program_id}",
             f"calyx:program-job/{job.program_job_id}",
