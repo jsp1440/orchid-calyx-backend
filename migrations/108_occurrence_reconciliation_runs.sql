@@ -27,10 +27,15 @@ CREATE TABLE IF NOT EXISTS occurrence_pipeline.staged_occurrences (
     source_record_id text NOT NULL,
     scientific_name text NOT NULL,
     accepted_name text,
-    supplied_taxon_key text,
+    provider_taxon_key text,
+    supplied_world_plants_number text,
+    source_taxonomy_record_id text,
+    world_plants_number text,
+    source_taxon_rank_code text,
     canonical_taxon_id text,
     reconciliation_state text NOT NULL,
     reconciliation_method text NOT NULL,
+    canonical_projection_blocker text,
     latitude double precision,
     longitude double precision,
     coordinate_uncertainty_m double precision,
@@ -44,9 +49,15 @@ CREATE TABLE IF NOT EXISTS occurrence_pipeline.staged_occurrences (
     raw_payload jsonb NOT NULL,
     normalized_payload jsonb NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (run_id, source_record_id)
+    PRIMARY KEY (run_id, source_record_id),
+    CHECK (
+        reconciliation_state <> 'source_matched_canonical_pending'
+        OR (source_taxonomy_record_id IS NOT NULL AND canonical_taxon_id IS NULL)
+    )
 );
 
+CREATE INDEX IF NOT EXISTS idx_occurrence_staged_source_taxonomy
+    ON occurrence_pipeline.staged_occurrences (run_id, source_taxonomy_record_id);
 CREATE INDEX IF NOT EXISTS idx_occurrence_staged_canonical_taxon
     ON occurrence_pipeline.staged_occurrences (run_id, canonical_taxon_id);
 CREATE INDEX IF NOT EXISTS idx_occurrence_staged_reconciliation
@@ -58,7 +69,7 @@ CREATE TABLE IF NOT EXISTS occurrence_pipeline.review_queue (
     scientific_name text NOT NULL,
     reason text NOT NULL,
     reconciliation_state text NOT NULL,
-    candidate_taxon_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+    candidate_source_taxonomy_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
     status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved', 'dismissed')),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
