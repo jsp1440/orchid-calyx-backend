@@ -28,7 +28,9 @@ def test_dependency_closed_action_prefixes_are_allowed() -> None:
         ("create_branch", "create_commit", "open_pull_request"),
     ],
 )
-def test_sparse_or_out_of_dependency_actions_fail_closed(actions: tuple[str, ...]) -> None:
+def test_sparse_or_out_of_dependency_actions_fail_closed(
+    actions: tuple[str, ...],
+) -> None:
     with pytest.raises(PermissionError, match="ACTION_PREREQUISITE_MISSING"):
         GitProposalExecutionPlanner._require_dependency_closed_actions(actions)
 
