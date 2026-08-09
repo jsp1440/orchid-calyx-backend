@@ -135,12 +135,10 @@ def test_plan_preserves_context_and_uses_truthful_preview_provenance():
     target = plan["operations"][1]["payload"]
     edge = plan["operations"][2]["payload"]
     assert (
-        source["provenance"]["source_table"]
-        == "synthetic.mechanistic_publication_plan"
+        source["provenance"]["source_table"] == "synthetic.mechanistic_publication_plan"
     )
     assert (
-        target["provenance"]["source_table"]
-        == "synthetic.mechanistic_publication_plan"
+        target["provenance"]["source_table"] == "synthetic.mechanistic_publication_plan"
     )
     assert edge["provenance"]["source_table"] == "oc_candidate_knowledge.candidates"
     assert edge["provenance"]["source_pk"] == str(candidate_id)
