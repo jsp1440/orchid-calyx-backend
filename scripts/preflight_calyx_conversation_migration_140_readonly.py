@@ -146,90 +146,89 @@ def main() -> None:
         write_receipt(receipt)
         return
 
-    with psycopg.connect(url, options="-c default_transaction_read_only=on") as conn:
-        with conn.transaction():
-            read_only = conn.execute("SHOW transaction_read_only").fetchone()[0]
-            if read_only != "on":
-                raise RuntimeError(f"read-only guard failed: {read_only}")
-            receipt["postgresql_version"] = conn.execute("SHOW server_version").fetchone()[0]
-            receipt["server_version_num"] = conn.execute("SHOW server_version_num").fetchone()[0]
-            receipt["current_user"] = conn.execute("SELECT current_user").fetchone()[0]
-            receipt["session_user"] = conn.execute("SELECT session_user").fetchone()[0]
-            receipt["read_only_guard"] = read_only
-            receipt["pgcrypto"] = conn.execute("SELECT extversion FROM pg_extension WHERE extname='pgcrypto'").fetchone()
-            receipt["research_station_schema"] = bool(conn.execute("SELECT 1 FROM pg_namespace WHERE nspname='research_station'").fetchone())
-            objects: dict[str, Any] = {}
-            for table in ("projects", "conversation_sessions", "conversation_messages"):
-                exists = relation(conn, f"research_station.{table}") is not None
-                objects[table] = {
-                    "exists": exists,
-                    "columns": columns(conn, table) if exists else [],
-                    "constraints": constraints(conn, table) if exists else [],
-                    "indexes": indexes(conn, table) if exists else [],
-                    "triggers": triggers(conn, table) if exists else [],
-                    "privileges": privileges(conn, table) if exists else [],
-                }
-            receipt["objects"] = objects
-            receipt["immutable_trigger_locations"] = immutable_trigger_locations(conn)
-            receipt["reject_function"] = conn.execute(
-                "SELECT to_regprocedure('research_station.reject_conversation_message_mutation()')::text"
-            ).fetchone()[0]
-            receipt["schema_owner"] = conn.execute("SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='research_station'").fetchone()
-            receipt["relevant_roles"] = [r[0] for r in conn.execute(
-                "SELECT DISTINCT grantee FROM information_schema.table_privileges WHERE table_schema='research_station' ORDER BY grantee"
-            ).fetchall()]
-            projects = objects["projects"]
-            receipt["migration_101_prerequisite_compatible"] = bool(
-                projects["exists"]
-                and any(c["column_name"] == "project_id" and c["data_type"] == "uuid" for c in projects["columns"])
-                and any("PRIMARY KEY (project_id)" in c["definition"] for c in projects["constraints"])
-            )
-            target_exists = [objects[x]["exists"] for x in ("conversation_sessions", "conversation_messages")]
-            receipt["target_state"] = "ABSENT" if target_exists == [False, False] else (
-                "BOTH_PRESENT" if target_exists == [True, True] else "PARTIAL"
-            )
-            receipt["target_contract"] = {
-                table: classify_columns(objects[table]["columns"], expected_columns) if objects[table]["exists"] else {
-                    "missing_columns": sorted(expected_columns),
-                    "wrong_types": [],
-                    "extra_columns": [],
-                }
-                for table, expected_columns in EXPECTED_TARGET_COLUMNS.items()
+    with psycopg.connect(url, options="-c default_transaction_read_only=on") as conn, conn.transaction():
+        read_only = conn.execute("SHOW transaction_read_only").fetchone()[0]
+        if read_only != "on":
+            raise RuntimeError(f"read-only guard failed: {read_only}")
+        receipt["postgresql_version"] = conn.execute("SHOW server_version").fetchone()[0]
+        receipt["server_version_num"] = conn.execute("SHOW server_version_num").fetchone()[0]
+        receipt["current_user"] = conn.execute("SELECT current_user").fetchone()[0]
+        receipt["session_user"] = conn.execute("SELECT session_user").fetchone()[0]
+        receipt["read_only_guard"] = read_only
+        receipt["pgcrypto"] = conn.execute("SELECT extversion FROM pg_extension WHERE extname='pgcrypto'").fetchone()
+        receipt["research_station_schema"] = bool(conn.execute("SELECT 1 FROM pg_namespace WHERE nspname='research_station'").fetchone())
+        objects: dict[str, Any] = {}
+        for table in ("projects", "conversation_sessions", "conversation_messages"):
+            exists = relation(conn, f"research_station.{table}") is not None
+            objects[table] = {
+                "exists": exists,
+                "columns": columns(conn, table) if exists else [],
+                "constraints": constraints(conn, table) if exists else [],
+                "indexes": indexes(conn, table) if exists else [],
+                "triggers": triggers(conn, table) if exists else [],
+                "privileges": privileges(conn, table) if exists else [],
             }
-            unexpected_trigger_locations = [
-                trigger
-                for trigger in receipt["immutable_trigger_locations"]
-                if (trigger["schema"], trigger["table"]) != IMMUTABLE_TRIGGER_RELATION
-            ]
-            expected_trigger_present = any(
-                (trigger["schema"], trigger["table"]) == IMMUTABLE_TRIGGER_RELATION
-                for trigger in receipt["immutable_trigger_locations"]
+        receipt["objects"] = objects
+        receipt["immutable_trigger_locations"] = immutable_trigger_locations(conn)
+        receipt["reject_function"] = conn.execute(
+            "SELECT to_regprocedure('research_station.reject_conversation_message_mutation()')::text"
+        ).fetchone()[0]
+        receipt["schema_owner"] = conn.execute("SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='research_station'").fetchone()
+        receipt["relevant_roles"] = [r[0] for r in conn.execute(
+            "SELECT DISTINCT grantee FROM information_schema.table_privileges WHERE table_schema='research_station' ORDER BY grantee"
+        ).fetchall()]
+        projects = objects["projects"]
+        receipt["migration_101_prerequisite_compatible"] = bool(
+            projects["exists"]
+            and any(c["column_name"] == "project_id" and c["data_type"] == "uuid" for c in projects["columns"])
+            and any("PRIMARY KEY (project_id)" in c["definition"] for c in projects["constraints"])
+        )
+        target_exists = [objects[x]["exists"] for x in ("conversation_sessions", "conversation_messages")]
+        receipt["target_state"] = "ABSENT" if target_exists == [False, False] else (
+            "BOTH_PRESENT" if target_exists == [True, True] else "PARTIAL"
+        )
+        receipt["target_contract"] = {
+            table: classify_columns(objects[table]["columns"], expected_columns) if objects[table]["exists"] else {
+                "missing_columns": sorted(expected_columns),
+                "wrong_types": [],
+                "extra_columns": [],
+            }
+            for table, expected_columns in EXPECTED_TARGET_COLUMNS.items()
+        }
+        unexpected_trigger_locations = [
+            trigger
+            for trigger in receipt["immutable_trigger_locations"]
+            if (trigger["schema"], trigger["table"]) != IMMUTABLE_TRIGGER_RELATION
+        ]
+        expected_trigger_present = any(
+            (trigger["schema"], trigger["table"]) == IMMUTABLE_TRIGGER_RELATION
+            for trigger in receipt["immutable_trigger_locations"]
+        )
+        incompatibilities: list[str] = []
+        if not receipt["migration_101_prerequisite_compatible"]:
+            incompatibilities.append("MIGRATION_101_PREREQUISITE_INCOMPATIBLE")
+        if receipt["target_state"] == "PARTIAL":
+            incompatibilities.append("TARGET_TABLES_PARTIAL")
+        if receipt["target_state"] == "BOTH_PRESENT":
+            malformed_targets = any(
+                details["missing_columns"] or details["wrong_types"] or details["extra_columns"]
+                for details in receipt["target_contract"].values()
             )
-            incompatibilities: list[str] = []
-            if not receipt["migration_101_prerequisite_compatible"]:
-                incompatibilities.append("MIGRATION_101_PREREQUISITE_INCOMPATIBLE")
-            if receipt["target_state"] == "PARTIAL":
-                incompatibilities.append("TARGET_TABLES_PARTIAL")
-            if receipt["target_state"] == "BOTH_PRESENT":
-                malformed_targets = any(
-                    details["missing_columns"] or details["wrong_types"] or details["extra_columns"]
-                    for details in receipt["target_contract"].values()
-                )
-                if malformed_targets:
-                    incompatibilities.append("TARGET_TABLES_MALFORMED")
-                if receipt["reject_function"] is None:
-                    incompatibilities.append("IMMUTABLE_REJECT_FUNCTION_MISSING")
-                if not expected_trigger_present:
-                    incompatibilities.append("IMMUTABLE_TRIGGER_MISSING_ON_TARGET")
-            if unexpected_trigger_locations:
-                incompatibilities.append("IMMUTABLE_TRIGGER_NAME_COLLISION")
-            receipt["production_mutation_attempted"] = False
-            if incompatibilities:
-                receipt["status"] = "FAILED_INCOMPATIBLE_PRODUCTION_STATE"
-                receipt["incompatibilities"] = incompatibilities
-                receipt["unexpected_trigger_locations"] = unexpected_trigger_locations
-            else:
-                receipt["status"] = "VERIFIED_READ_ONLY_IN_PRODUCTION"
+            if malformed_targets:
+                incompatibilities.append("TARGET_TABLES_MALFORMED")
+            if receipt["reject_function"] is None:
+                incompatibilities.append("IMMUTABLE_REJECT_FUNCTION_MISSING")
+            if not expected_trigger_present:
+                incompatibilities.append("IMMUTABLE_TRIGGER_MISSING_ON_TARGET")
+        if unexpected_trigger_locations:
+            incompatibilities.append("IMMUTABLE_TRIGGER_NAME_COLLISION")
+        receipt["production_mutation_attempted"] = False
+        if incompatibilities:
+            receipt["status"] = "FAILED_INCOMPATIBLE_PRODUCTION_STATE"
+            receipt["incompatibilities"] = incompatibilities
+            receipt["unexpected_trigger_locations"] = unexpected_trigger_locations
+        else:
+            receipt["status"] = "VERIFIED_READ_ONLY_IN_PRODUCTION"
 
     write_receipt(receipt)
     if receipt["status"] == "FAILED_INCOMPATIBLE_PRODUCTION_STATE":
