@@ -13,6 +13,7 @@ Operationalize issue #710 without creating a second concept registry. Literature
 - preservation of candidate concept IDs from both exact IDs and lexical candidate matches, without guessing which candidate is correct;
 - no automatic conversion of exact lexical resolution into canonical approval;
 - human-only reviewed-match decision requiring an existing canonical concept;
+- reviewer identity derived from the authenticated owner/API-key principal rather than caller-supplied review metadata;
 - terminal review-decision immutability: exact replay is idempotent and a conflicting replacement fails closed;
 - append-only, digest-keyed review events written transactionally with the terminal candidate decision;
 - canonical glossary projection that reads labels and audience-specific definitions from `app.concepts` rather than duplicating them;
@@ -27,7 +28,7 @@ Candidate identity binds the normalized source URI, source revision ID, source S
 
 A `CANDIDATES` or `AMBIGUOUS` lexical result retains every concept ID supplied by the canonical search result. It never silently collapses that set to a single concept. A `RESOLVED` lexical result becomes only `MATCHED_PENDING_REVIEW`.
 
-## Canonical identity boundary
+## Canonical identity and review boundary
 
 `ConceptRegistryService` remains authoritative. This layer does not create a concept, label, definition, or canonical concept status. Human review may mark a candidate as:
 
@@ -35,7 +36,9 @@ A `CANDIDATES` or `AMBIGUOUS` lexical result retains every concept ID supplied b
 - `NEW_CONCEPT_CANDIDATE` without creating the concept; or
 - `REJECTED`.
 
-Once one of those terminal decisions exists, an identical replay returns the existing decision. A different later decision is rejected with `GLOSSARY_REVIEW_DECISION_IMMUTABLE`. The PostgreSQL repository applies the terminal-state guard in the same UPDATE predicate and records the accepted decision in `oc_concepts.glossary_candidate_review_events` under a deterministic SHA-256 decision digest. This protects the governance boundary against concurrent replacement as well as process-local mistakes.
+The review API does not accept a caller-provided actor field. It resolves the reviewer from `verify_owner_or_api_key`: owner sessions contribute their signed owner identity and API-key calls contribute the established backend API principal. This prevents a valid authenticated caller from forging a different reviewer identity in the durable review record.
+
+Once one of the terminal decisions exists, an identical replay returns the existing decision. A different later decision is rejected with `GLOSSARY_REVIEW_DECISION_IMMUTABLE`. The PostgreSQL repository applies the terminal-state guard in the same UPDATE predicate and records the accepted decision in `oc_concepts.glossary_candidate_review_events` under a deterministic SHA-256 decision digest. This protects the governance boundary against concurrent replacement as well as process-local mistakes.
 
 Actual concept creation/activation remains governed by the existing Concept Registry workflow.
 
@@ -60,6 +63,7 @@ This slice does not:
 - automatically create or activate canonical concepts;
 - invent definitions or pronunciation;
 - choose an ambiguous concept match;
+- accept caller-forged reviewer identity;
 - replace an accepted terminal human review decision;
 - publish candidates or figures;
 - mutate the production Knowledge Graph;
@@ -72,6 +76,6 @@ This slice does not:
 
 Dedicated workflow: `CALYX Glossary 710 Validation`.
 
-The workflow compiles and Ruff-checks the glossary runtime/repository/router surfaces, runs the focused glossary regressions plus existing BUILD-SEM-002B lexical-service regressions, statically asserts the non-authority and immutable-review contracts, and runs diff hygiene.
+The workflow compiles and Ruff-checks the glossary runtime/repository/router surfaces, runs the focused glossary regressions plus existing BUILD-SEM-002B lexical-service regressions, statically asserts authenticated reviewer binding, non-authority flags, and immutable-review contracts, and runs diff hygiene.
 
 The repository-wide hosted-runner incident #481 may cause jobs to terminate before step 1 with `steps=null`. Such a run is infrastructure evidence only and is not a compile/lint/test verdict. Keep the PR draft and unmerged until this exact head receives executable validation.
