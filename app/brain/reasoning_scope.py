@@ -15,11 +15,13 @@ def _edge_scope(edge: Edge) -> dict[str, Any]:
     return normalize_causal_scope(payload.get("causal_scope"))
 
 
-def _mapping_compatible(claim: dict[str, Any], query: dict[str, Any]) -> bool:
-    for key, requested in query.items():
-        if key in claim and claim[key] != requested:
-            return False
-    return True
+def _mapping_compatibility(claim: dict[str, Any], query: dict[str, Any]) -> str:
+    shared = set(claim).intersection(query)
+    if not shared:
+        return "unresolved"
+    if any(claim[key] != query[key] for key in shared):
+        return "mismatch"
+    return "match"
 
 
 def evaluate_scope(
@@ -82,10 +84,14 @@ def evaluate_scope(
             continue
         if not query_values:
             unresolved.append(dimension)
-        elif _mapping_compatible(claim_values, query_values):
+            continue
+        compatibility = _mapping_compatibility(claim_values, query_values)
+        if compatibility == "match":
             matched.append(dimension)
-        else:
+        elif compatibility == "mismatch":
             mismatched.append(dimension)
+        else:
+            unresolved.append(dimension)
 
     if mismatched:
         status, applicable = "out_of_scope", False
@@ -112,7 +118,8 @@ def evaluate_path_scope(
     edges: Iterable[Edge],
     query_scope: dict[str, Any] | CausalScope | None,
 ) -> dict[str, Any]:
-    evaluations = [evaluate_edge_scope(edge, query_scope) for edge in edges]
+    ordered_edges = list(edges)
+    evaluations = [evaluate_edge_scope(edge, query_scope) for edge in ordered_edges]
     statuses = [item["status"] for item in evaluations]
     if query_scope is None:
         status, applicable = "not_evaluated", None
@@ -128,12 +135,12 @@ def evaluate_path_scope(
         "edge_evaluations": evaluations,
         "out_of_scope_edge_ids": [
             edge.kg_edge_id
-            for edge, evaluation in zip(edges, evaluations)
+            for edge, evaluation in zip(ordered_edges, evaluations)
             if evaluation["status"] == "out_of_scope"
         ],
         "indeterminate_edge_ids": [
             edge.kg_edge_id
-            for edge, evaluation in zip(edges, evaluations)
+            for edge, evaluation in zip(ordered_edges, evaluations)
             if evaluation["status"] == "indeterminate"
         ],
     }
