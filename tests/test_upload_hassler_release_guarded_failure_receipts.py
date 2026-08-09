@@ -45,7 +45,9 @@ def test_successful_mutation_with_failed_readback_returns_failure_receipt(
         nonlocal release_gets
         if request.url.path == "/api/mission-control/owner/session-token":
             return httpx.Response(200, json={"token": "owner-token"})
-        release_path = f"/api/mission-control/taxonomy/releases/{guarded.EXPECTED_SHA256}"
+        release_path = (
+            f"/api/mission-control/taxonomy/releases/{guarded.EXPECTED_SHA256}"
+        )
         if request.url.path == release_path:
             release_gets += 1
             if release_gets == 1:
