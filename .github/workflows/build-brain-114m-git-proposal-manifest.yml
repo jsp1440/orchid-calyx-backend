@@ -8,6 +8,7 @@ on:
       - "app/calyx_orchestrator/git_proposal_manifest.py"
       - "app/calyx_orchestrator/persisted_patch_execution.py"
       - "app/calyx_orchestrator/sandbox_supervisor_service.py"
+      - "tests/test_calyx_assignment_capabilities_114m_r1.py"
       - "tests/test_calyx_git_proposal_manifest.py"
       - "tests/test_calyx_persisted_patch_execution.py"
       - "docs/brain/BUILD-BRAIN-114M-GIT-PROPOSAL-MANIFEST.md"
@@ -35,16 +36,16 @@ jobs:
           pip install pytest ruff
       - name: Compile proposal manifest surface
         run: |
-          python -m compileall -q app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
+          python -m compileall -q app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
       - name: Ruff proposal manifest surface
         run: |
-          ruff check app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
-          ruff format --check app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
+          ruff check app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
+          ruff format --check app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
       - name: Focused proposal manifest regressions
         env:
           PYTHONPATH: .
         run: |
-          pytest -q tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
+          pytest -q tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
       - name: Non-mutation and evidence-authority assertions
         run: |
           python - <<'PY'
