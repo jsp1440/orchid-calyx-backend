@@ -51,7 +51,9 @@ class ConversationCreateRequest(BaseModel):
 def _owner(identity: dict[str, object]) -> str:
     actor = str(identity.get("subject") or identity.get("actor") or "").strip()
     if not actor:
-        raise HTTPException(status_code=403, detail="Calyx conversation owner scope unavailable")
+        raise HTTPException(
+            status_code=403, detail="Calyx conversation owner scope unavailable"
+        )
     return actor
 
 
@@ -63,14 +65,18 @@ def _memory_call(db: Session, operation):
         raise HTTPException(status_code=exc.status, detail={"code": exc.code}) from exc
 
 
-def _resolved_context(stored: dict[str, Any], requested: dict[str, Any]) -> dict[str, Any]:
+def _resolved_context(
+    stored: dict[str, Any], requested: dict[str, Any]
+) -> dict[str, Any]:
     def value(key: str, fallback: Any) -> Any:
         return requested.get(key, fallback)
 
     return {
         "active_project_id": value("active_project_id", stored.get("project_id")),
         "active_taxon_id": value("active_taxon_id", stored.get("active_taxon_id")),
-        "active_document_id": value("active_document_id", stored.get("active_document_id")),
+        "active_document_id": value(
+            "active_document_id", stored.get("active_document_id")
+        ),
     }
 
 
@@ -101,11 +107,15 @@ def post_operator_message(request: OperatorMessageRequest) -> dict[str, Any]:
 
 @router.post("/replies")
 def post_calyx_reply(request: CalyxReplyRequest) -> dict[str, Any]:
-    return _chat.reply(request.content, proposed_action=request.proposed_action).as_dict()
+    return _chat.reply(
+        request.content, proposed_action=request.proposed_action
+    ).as_dict()
 
 
 @router.post("/ask")
-def ask_the_continuum(request: AskContinuumRequest, identity: OwnerIdentity) -> dict[str, Any]:
+def ask_the_continuum(
+    request: AskContinuumRequest, identity: OwnerIdentity
+) -> dict[str, Any]:
     owner = _owner(identity)
     operator_message = _chat.receive(request.question)
     try:
