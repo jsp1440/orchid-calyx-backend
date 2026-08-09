@@ -7,9 +7,9 @@ import json
 import os
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 
 from scripts.preflight_university_activation import (
     REQUIRED_COLUMNS,
@@ -20,6 +20,9 @@ from scripts.preflight_university_activation import (
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "migrations" / "ocu_sci_008_durable_sessions.sql"
 ADVISORY_LOCK_KEY = 730090014  # OCU-SCI-009N, transaction scoped.
+CONNECT_TIMEOUT_SECONDS = 10
+LOCK_TIMEOUT_MS = 15_000
+STATEMENT_TIMEOUT_MS = 60_000
 
 
 class MigrationGuardError(RuntimeError):
@@ -35,11 +38,19 @@ def migration_digest() -> str:
 
 
 def safe_database_identity(database_url: str) -> dict[str, str | None]:
-    parsed = urlparse(database_url)
+    """Return a credential-free identity for URL or libpq keyword conninfo."""
+    try:
+        params = conninfo_to_dict(database_url)
+    except psycopg.ProgrammingError as exc:
+        raise MigrationGuardError("database connection string is invalid") from exc
+
+    host = params.get("host") or params.get("hostaddr")
+    port = params.get("port")
+    database = params.get("dbname")
     return {
-        "hostname": parsed.hostname,
-        "port": str(parsed.port) if parsed.port is not None else None,
-        "database": parsed.path.lstrip("/") or None,
+        "hostname": str(host) if host else None,
+        "port": str(port) if port else None,
+        "database": str(database) if database else None,
     }
 
 
@@ -49,13 +60,22 @@ def database_confirmation_target(database_url: str) -> str:
     database = identity["database"] or ""
     port = f":{identity['port']}" if identity["port"] else ""
     if not hostname or not database:
-        raise MigrationGuardError("database URL must include a hostname and database name")
+        raise MigrationGuardError("database connection string must include a hostname and database name")
     return f"{hostname}{port}/{database}"
 
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise MigrationGuardError(message)
+
+
+def _set_transaction_timeouts(cur: psycopg.Cursor) -> None:
+    """Bound advisory-lock and DDL waits for the guarded transaction."""
+    cur.execute("SELECT set_config('lock_timeout', %s, true)", (f"{LOCK_TIMEOUT_MS}ms",))
+    cur.execute(
+        "SELECT set_config('statement_timeout', %s, true)",
+        (f"{STATEMENT_TIMEOUT_MS}ms",),
+    )
 
 
 def _schema_state_on_connection(conn: psycopg.Connection) -> dict[str, Any]:
@@ -113,6 +133,11 @@ def plan(*, release_evidence: Path, database_url: str) -> dict[str, Any]:
         },
         "database": safe_database_identity(database_url),
         "database_confirmation_target": target,
+        "timeouts": {
+            "connect_seconds": CONNECT_TIMEOUT_SECONDS,
+            "lock_ms": LOCK_TIMEOUT_MS,
+            "statement_ms": STATEMENT_TIMEOUT_MS,
+        },
         "migration_stage_preflight": {
             "ready": bool(readiness.get("ready_to_apply_migration")),
             "blockers": blockers,
@@ -176,9 +201,17 @@ def apply_migration(
 
     post_state: dict[str, Any]
     try:
-        with psycopg.connect(database_url) as conn:
+        # Autocommit keeps transaction ownership explicit: only conn.transaction()
+        # below may commit the migration. Connection acquisition and lock/DDL waits
+        # are independently bounded so an operator invocation cannot hang forever.
+        with psycopg.connect(
+            database_url,
+            autocommit=True,
+            connect_timeout=CONNECT_TIMEOUT_SECONDS,
+        ) as conn:
             with conn.transaction():
                 with conn.cursor() as cur:
+                    _set_transaction_timeouts(cur)
                     cur.execute("SELECT pg_advisory_xact_lock(%s)", (ADVISORY_LOCK_KEY,))
                     cur.execute(sql)
                 post_state = _schema_state_on_connection(conn)
@@ -253,6 +286,7 @@ def main() -> int:
         print(f"SHA-256: {result['migration']['sha256']}")
         print(f"Database: {result['database']}")
         print(f"Database confirmation target: {result['database_confirmation_target']}")
+        print(f"Timeouts: {result['timeouts']}")
         if not args.apply:
             print(f"Ready to apply: {result['migration_stage_preflight']['ready']}")
             print(f"Schema already valid: {result['schema_already_valid']}")
