@@ -19,7 +19,11 @@ Therefore manifest drift, review drift, authorization drift, expired/revoked own
 
 ## Repository and action confinement
 
-The executor requires an explicit repository allowlist and rejects any proposal branch outside `autonomy/proposal/*`. It accepts only the four canonical proposal actions and requires canonical dependency order without duplicates.
+The executor requires an explicit repository allowlist and rejects any proposal branch outside `autonomy/proposal/*`. It accepts only the four canonical proposal actions.
+
+Implementation review found that canonical ordering alone was insufficient: a sparse authorization such as `create_branch + open_pull_request` could skip the commit/push prerequisites and leave the PR head commit underconstrained. The hardened executor now requires the action set to be a non-empty dependency-closed prefix of the canonical sequence. Therefore permitted sets are only branch; branch+commit; branch+commit+push; or the complete branch+commit+push+PR sequence. Gaps, reordering, duplicates, and empty plans fail before adapter invocation.
+
+The same dependency-closure rule is now enforced in BUILD-BRAIN-114R when the plan is compiled, and 114S rechecks it immediately before mutation as defense in depth.
 
 The injected `GitProposalMutationAdapter` protocol exposes one proposal-operation method and deliberately exposes no merge, auto-merge, deployment, publication, database, taxonomy, or Knowledge Graph mutation API. The executor core itself loads no GitHub token, credential, private key, or deployment secret.
 
@@ -36,7 +40,9 @@ Additional checks are action-specific:
 - push evidence must identify the **same exact commit SHA** returned by the verified create-commit evidence;
 - pull-request evidence must identify the exact head branch/base commit, the **same exact verified commit SHA**, and a positive PR number.
 
-The commit-continuity checks were added during implementation review before expansion. They prevent a mutation adapter from creating an authorized commit but then pushing or opening a PR against a different commit while returning superficially valid evidence.
+Push and PR verification now fails if no verified create-commit SHA exists, rather than conditionally skipping continuity checks.
+
+The commit-continuity and dependency-closure checks were added during implementation review before production activation. Together they prevent a mutation adapter from skipping required predecessors or from creating an authorized commit but then pushing/opening a PR against a different commit.
 
 A divergent remote state therefore fails closed instead of being silently treated as idempotent success.
 
@@ -67,10 +73,8 @@ Those remain independent governance authorities.
 
 ## Validation
 
-Focused regressions cover successful canonical branch→commit→push→PR execution through a fake adapter, fresh-plan mismatch rejection, expired owner grant rejection before mutation, repository allowlist enforcement, divergent commit-postimage rejection, wrong pushed-commit rejection, and partial-failure evidence preservation.
+Focused regressions cover successful canonical branch→commit→push→PR execution through a fake adapter, fresh-plan mismatch rejection, expired owner grant rejection before mutation, repository allowlist enforcement, divergent commit-postimage rejection, wrong pushed-commit rejection, dependency-prefix acceptance/rejection, and partial-failure evidence preservation.
 
-The dedicated CI also statically asserts that the executor core contains no subprocess/Git CLI, requests/HTTP client, GitHub credential loader, merge/auto-merge marker, deployment executor, or production mutation path.
+The dedicated CI includes the dependency-policy regression and statically asserts that the executor core contains no subprocess/Git CLI, requests/HTTP client, GitHub credential loader, merge/auto-merge marker, deployment executor, or production mutation path.
 
-Exact-head GitHub Actions was attempted after implementation and again after commit-continuity hardening. On code head `fdda21d8bd2a20c87b7c1fafcb894e5ec075db52`, dedicated run `31290576039`, job `93186874704`, terminated before workflow step 1 with `steps=null`. CALYX-AGENT-003 and Workflow Governance Audit on the same head failed in the same pre-step infrastructure mode. No checkout, compile, Ruff, pytest, or authority assertion executed, so these are not treated as code verdicts.
-
-Canonical CI incident #481 remains the blocker for executable exact-head validation.
+Exact-head GitHub Actions remains blocked by canonical incident #481. Jobs terminate before workflow step 1 with `steps=null`; therefore checkout, compile, Ruff, pytest, and authority assertions are still not executable evidence. No live adapter or production credential activation is appropriate until this exact hardened head receives real CI.
