@@ -66,38 +66,54 @@ REPORT = {
 }
 
 
+def _item(status: str) -> dict:
+    return {
+        "review_key": "duplicate:S:Gastrochilus wenchuanensis",
+        "category": "duplicate_identity",
+        "summary": "Duplicate taxon identity requires review",
+        "evidence": {"count": 2},
+        "status": status,
+        "updated_at": "2026-08-08T20:00:00+00:00",
+    }
+
+
 def test_open_review_items_hold_activation_decision(monkeypatch):
     store = FakeStore(completed=True, staged=34724, rows=34724, report=REPORT)
-    monkeypatch.setattr(
-        decision,
-        "_open_review_items",
-        lambda store, release_id: [
-            {
-                "review_key": "duplicate:S:Gastrochilus wenchuanensis",
-                "category": "duplicate_identity",
-                "summary": "Duplicate taxon identity requires review",
-                "evidence": {"count": 2},
-                "status": "open",
-                "updated_at": "2026-08-08T20:00:00+00:00",
-            }
-        ],
-    )
+    monkeypatch.setattr(decision, "_review_items", lambda store, release_id: [_item("open")])
 
     packet = decision.build_activation_decision_packet(store, "release-1")
 
     assert packet["decision_state"] == "HOLD"
     assert packet["ready_for_owner_activation_decision"] is False
     assert packet["blockers"] == ["OPEN_TAXONOMY_REVIEW_ITEMS"]
-    assert packet["open_review_count"] == 1
+    assert packet["review"]["open_count"] == 1
     assert packet["activation_authorized"] is False
     assert packet["activation_invoked"] is False
     assert packet["production_taxonomy_mutation_authorized"] is False
     assert packet["knowledge_graph_mutation_authorized"] is False
 
 
-def test_completed_reviewed_evidence_is_ready_only_for_owner_decision(monkeypatch):
+def test_status_only_resolution_is_not_accepted_as_durable_scientific_review(monkeypatch):
     store = FakeStore(completed=True, staged=34724, rows=34724, report=REPORT)
-    monkeypatch.setattr(decision, "_open_review_items", lambda store, release_id: [])
+    monkeypatch.setattr(
+        decision,
+        "_review_items",
+        lambda store, release_id: [_item("resolved")],
+    )
+
+    packet = decision.build_activation_decision_packet(store, "release-1")
+
+    assert packet["decision_state"] == "HOLD"
+    assert packet["blockers"] == ["REVIEW_DISPOSITION_PROVENANCE_UNAVAILABLE"]
+    assert packet["review"]["open_count"] == 0
+    assert packet["review"]["disposition_without_durable_provenance_count"] == 1
+    assert packet["review"]["durable_reviewer_identity_available"] is False
+    assert packet["review"]["durable_rationale_available"] is False
+
+
+def test_no_review_items_is_ready_only_for_owner_decision(monkeypatch):
+    store = FakeStore(completed=True, staged=34724, rows=34724, report=REPORT)
+    monkeypatch.setattr(decision, "_review_items", lambda store, release_id: [])
 
     packet = decision.build_activation_decision_packet(store, "release-1")
 
@@ -112,7 +128,7 @@ def test_completed_reviewed_evidence_is_ready_only_for_owner_decision(monkeypatc
 
 def test_incomplete_staging_and_missing_report_fail_closed(monkeypatch):
     store = FakeStore(completed=False, staged=2000, rows=34724, report=None)
-    monkeypatch.setattr(decision, "_open_review_items", lambda store, release_id: [])
+    monkeypatch.setattr(decision, "_review_items", lambda store, release_id: [])
 
     packet = decision.build_activation_decision_packet(store, "release-1")
 
@@ -123,7 +139,7 @@ def test_incomplete_staging_and_missing_report_fail_closed(monkeypatch):
 
 def test_owner_gated_activation_decision_route_is_read_only(monkeypatch):
     store = FakeStore(completed=True, staged=34724, rows=34724, report=REPORT)
-    monkeypatch.setattr(decision, "_open_review_items", lambda store, release_id: [])
+    monkeypatch.setattr(decision, "_review_items", lambda store, release_id: [])
 
     app = FastAPI()
     app.include_router(
