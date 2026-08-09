@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,6 +21,7 @@ from app.calyx_orchestrator.sandbox_supervisor_evidence import canonical_sha256
 
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 BASE_COMMIT = "a" * 40
+PATCH_JOB_ID = "11111111-1111-1111-1111-111111111111"
 NOW = datetime(2026, 8, 8, 22, 0, tzinfo=timezone.utc)
 SECRET = b"s" * 32
 OWNER = "principal:owner"
@@ -52,21 +54,26 @@ def _patch_output() -> dict:
     }
 
 
-def _patch_receipt() -> dict:
-    output = _patch_output()
-    return {
-        "executor_key": "isolated_workspace_patcher_v1",
-        "state": "delivered",
-        "outcome": "delivered",
-        "output": output,
-        "output_checksum": canonical_checksum(output),
-    }
+class _PersistedPatchService:
+    def get_completed(self, *, program_job_id: str):
+        if program_job_id != PATCH_JOB_ID:
+            raise LookupError("PERSISTED_PATCH_EXECUTION_NOT_FOUND")
+        output = _patch_output()
+        return SimpleNamespace(
+            program_job_id=PATCH_JOB_ID,
+            repository=REPOSITORY,
+            branch="autonomy/work-123",
+            executor_key="isolated_workspace_patcher_v1",
+            output_checksum=canonical_checksum(output),
+            output=output,
+        )
 
 
 def _manifest() -> dict:
     output = _patch_output()
     payload = {
-        "schema": "calyx-git-proposal-manifest-v1",
+        "schema": "calyx-git-proposal-manifest-v2",
+        "patch_program_job_id": PATCH_JOB_ID,
         "repository": REPOSITORY,
         "base_commit_sha": BASE_COMMIT,
         "source_autonomy_branch": "autonomy/work-123",
@@ -114,9 +121,8 @@ def _review(
     reviewer: str,
     decision: ProposalDecision = ProposalDecision.APPROVED,
 ):
-    return ProposalAuthorizationBuilder().build(
+    return ProposalAuthorizationBuilder(_PersistedPatchService()).build(
         manifest_snapshot=_manifest(),
-        patch_receipt=_patch_receipt(),
         requested_by="principal:requester",
         review_class=review_class,
         reviewer_id=reviewer,
@@ -224,9 +230,10 @@ def test_unregistered_review_object_cannot_satisfy_gate() -> None:
         _request(registry)
 
 
-def test_request_binds_reviews_and_grants_no_merge_or_deploy_authority() -> None:
+def test_request_binds_patch_job_reviews_and_grants_no_merge_or_deploy_authority() -> None:
     request = _request(_registry())
     snapshot = request.snapshot()
+    assert snapshot["patch_program_job_id"] == PATCH_JOB_ID
     assert len(snapshot["review_authorization_digests"]) == 2
     assert snapshot["merge_authorized"] is False
     assert snapshot["automatic_merge_authorized"] is False
