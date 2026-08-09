@@ -24,7 +24,10 @@ from app.reasoning_publication.gateway import ExistingKnowledgeGraphPublicationG
 from app.reasoning_publication.service import ReasoningLedgerPublicationService
 from app.research_workspace.models import Project
 from app.research_workspace.schemas import ProjectCreate
-from app.research_workspace.service import ResearchWorkspaceError, ResearchWorkspaceService
+from app.research_workspace.service import (
+    ResearchWorkspaceError,
+    ResearchWorkspaceService,
+)
 from app.routers.calyx_operator_workflow import (
     BRAIN_MISSION_SERVICE,
     _mission_for_owner,
