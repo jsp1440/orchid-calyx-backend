@@ -51,6 +51,26 @@ The replacement was corrected before merge or executable validation:
 
 This distinction is intentional: a strong Hassler source match is scientific provenance, but it is not permission to manufacture a canonical OC taxon identity.
 
+## BUILD-065 canonical-registry reconciliation
+
+A follow-up audit traced the existing canonical taxonomy implementation in `runtime/knowledge_graph/canonical_taxonomy.py`.
+
+That module confirms the owner decision that World Plants/Hassler is the canonical taxonomic backbone and supplies shared canonical-name/rank semantics. However, its `CanonicalTaxon.canonical_id` values are generated in memory while `build_canonical_registry()` iterates a supplied release. They are not a demonstrated durable production identifier contract that occurrence staging may safely persist before activation.
+
+Therefore #732 deliberately does **not** copy those transient integers into `occurrence_pipeline.staged_occurrences.canonical_taxon_id`.
+
+The safe pre-activation contract is:
+
+1. preserve the provider taxon key as provider provenance;
+2. resolve and preserve the exact Hassler source-taxonomy record using World Plants number or conservative name evidence;
+3. preserve the release/review context that produced that source match;
+4. leave canonical OC identity nullable and machine-blocked until a governed durable canonical crosswalk/activation maps the source record to the production canonical taxonomy;
+5. never use a rank code, row-order-generated registry integer, or fuzzy name inference as a durable canonical ID.
+
+This also clarifies issue #386 acceptance. A bounded fixture may prove the complete **candidate canonical mapping path** before activation, but production-grade canonical IDs must come from the governed durable canonical taxonomy, not be minted locally by the occurrence pipeline.
+
+One remaining semantic hardening item is to align #732's exact-name normalization with BUILD-065 `canonical_name_of()` authorship stripping. Until that is implemented and executable CI is restored, authored-name variants that lack a World Plants number should remain conservative rather than being treated as proven canonical matches.
+
 ## Taxonomy context identity
 
 Every reconciliation run stores:
@@ -121,7 +141,9 @@ Initial #732 head `6154364c528b1781b9587998ec6bf7c1a9ca9440` triggered run `3129
 
 After the taxonomy-completeness guard, head `b3aaee864d98556c9f7da1fcc84e2ebc3abe592a` triggered run `31290722659`, job `93187242006`; the job and a bounded rerun (`93187377905`) again failed before step 1 with `steps=null`.
 
-Those runs do not validate the code. The subsequent P1 identity correction requires a fresh executable exact-head run before any release decision.
+After the P1 identity correction, exact head `73ec717ab1eaa0924a20504dc25178808eebe4d4` triggered run `31291272155`, job `93188753221`; it again failed before step 1 with `steps=null`.
+
+Those runs do not validate the code. Fresh executable exact-head CI is required before any release decision.
 
 ## Governance boundary
 
@@ -140,8 +162,9 @@ This replacement cannot:
 ## Release plan
 
 1. Obtain executable exact-head CI on the corrected identity model.
-2. Fix demonstrated failures before expanding.
-3. If green, make #732 the single occurrence-persistence authority.
-4. Close #599 and #610 unmerged as superseded.
-5. Merge only through normal validated release governance.
-6. Continue #386 toward its remaining canonical crosswalk/activation/species-API proof; those production mutations require their own explicit owner decision.
+2. Align exact-name normalization with BUILD-065 authorship stripping and add a focused regression.
+3. Fix demonstrated failures before expanding.
+4. If green, make #732 the single occurrence-persistence authority.
+5. Close #599 and #610 unmerged as superseded.
+6. Merge only through normal validated release governance.
+7. Continue #386 toward its remaining durable canonical crosswalk/activation/species-API proof; those production mutations require their own explicit owner decision.
