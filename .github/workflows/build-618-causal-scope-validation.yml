@@ -92,7 +92,11 @@ jobs:
           ):
               assert marker in scope, marker
           assert "applicability_identity" in contradictions
-          assert "experimental_context" not in contradictions.split("def _scope_identity", 1)[1].split("def _scope_id", 1)[0]
+          identity_block = contradictions.split("def _scope_identity", 1)[1].split("def _scope_id", 1)[0]
+          assert '"causal_scope": scope.get("applicability_identity")' in identity_block
+          assert '== "unknown"' in identity_block
+          assert 'identity["experimental_context"]' in identity_block
+          assert 'identity["quantitative_context"]' in identity_block
           assert "publication_scope_blockers" in publication
           assert '"publication_adapter_available": False' in publication
           assert '"operations": operations' in publication
