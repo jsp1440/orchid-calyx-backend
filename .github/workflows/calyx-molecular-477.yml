@@ -1,0 +1,36 @@
+name: CALYX Molecular Evidence 477
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/molecular_evidence.py'
+      - 'app/routers/molecular_evidence.py'
+      - 'app/routers/live_mission_control.py'
+      - 'tests/test_calyx_molecular_477.py'
+      - 'docs/brain/CALYX-MOLECULAR-EVIDENCE-477.md'
+      - '.github/workflows/calyx-molecular-477.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  molecular-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install focused dependencies
+        run: pip install pytest fastapi
+      - name: Compile molecular surface
+        run: python -m py_compile runtime/molecular_evidence.py app/routers/molecular_evidence.py app/routers/live_mission_control.py tests/test_calyx_molecular_477.py
+      - name: Deterministic molecular evidence tests
+        run: pytest -q tests/test_calyx_molecular_477.py
+      - name: Permanent scientific-governance assertions
+        run: |
+          grep -q 'live_sequence_harvesting_authorized.*False' runtime/molecular_evidence.py
+          grep -q 'phylogenetic_truth_claim_authorized.*False' runtime/molecular_evidence.py
+          grep -q 'scientific_publication_authorized.*False' runtime/molecular_evidence.py
+          grep -q 'production_graph_mutation_authorized.*False' runtime/molecular_evidence.py
