@@ -13,6 +13,7 @@ def aggregate(
     *,
     aggregate_id: int = 1,
     aggregate_type: str = "TAXON_IDENTITY_AGGREGATE",
+    aggregate_status: str = "SUPPORTED",
     review_state: str = "APPROVED",
     verification_state: str = "VERIFIED",
     supporting: int = 2,
@@ -26,7 +27,7 @@ def aggregate(
         "aggregate_version_id": aggregate_id * 10,
         "aggregate_type": aggregate_type,
         "identity_hash": f"hash-{aggregate_id}",
-        "aggregate_status": "SUPPORTED",
+        "aggregate_status": aggregate_status,
         "review_state": review_state,
         "verification_state": verification_state,
         "published": False,
@@ -71,11 +72,16 @@ def test_taxonomic_inference_preserves_evidence_and_has_no_publication_authority
     assert result.source_anchor_refs[0]["source_anchor_ids"] == (10000,)
     assert result.confidence_score >= 0.8
     assert result.confidence_band == "HIGH"
+    assert result.confidence_interpretation == "HEURISTIC_EVIDENCE_SUPPORT_INDEX"
+    assert result.confidence_is_probability is False
+    assert result.confidence_calibrated is False
     assert result.review_required is True
     assert result.reviewed_conclusion is False
     assert result.published is False
     assert result.scientific_publication_authorized is False
     assert result.knowledge_graph_mutation_authorized is False
+    assert result.provenance["confidence_is_probability"] is False
+    assert result.provenance["confidence_calibrated"] is False
     assert result.provenance["inference_is_not_source_evidence"] is True
 
 
@@ -139,6 +145,48 @@ def test_unreviewed_evidence_cannot_become_candidate_conclusion():
 
     assert result.state == InferenceState.REVIEW_REQUIRED
     assert "HUMAN_REVIEW_INCOMPLETE" in result.known_limitations
+    assert result.review_required is True
+
+
+@pytest.mark.parametrize("status", ["WITHDRAWN", "SUPERSEDED"])
+def test_withdrawn_or_superseded_aggregate_fails_closed(status: str):
+    service = ScientificInferenceService()
+    result = service.build(
+        domain=InferenceDomain.GENERAL,
+        statement="This inference must not advance from inactive evidence.",
+        aggregates=[aggregate(aggregate_status=status)],
+    )
+
+    assert result.state == InferenceState.INSUFFICIENT_EVIDENCE
+    assert f"AGGREGATE_STATUS_{status}" in result.known_limitations
+    assert result.reviewed_conclusion is False
+    assert result.published is False
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "NEEDS_REVIEW",
+        "TAXONOMICALLY_AMBIGUOUS",
+        "METHOD_DEPENDENT",
+        "GEOGRAPHICALLY_LIMITED",
+        "TEMPORALLY_LIMITED",
+        "MIXED_EVIDENCE",
+        "CONFLICTING",
+        "LIMITED_EVIDENCE",
+        "SINGLE_SOURCE",
+    ],
+)
+def test_review_consensus_statuses_cannot_become_clean_candidate(status: str):
+    service = ScientificInferenceService()
+    result = service.build(
+        domain=InferenceDomain.GENERAL,
+        statement="This inference remains review-bound by aggregate consensus status.",
+        aggregates=[aggregate(aggregate_status=status)],
+    )
+
+    assert result.state == InferenceState.REVIEW_REQUIRED
+    assert f"AGGREGATE_STATUS_{status}" in result.known_limitations
     assert result.review_required is True
 
 
