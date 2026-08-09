@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from app.calyx_orchestrator.assignment_factory import governed_assignment_from_claimed_job
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
 from app.calyx_orchestrator.execution_bridge import LeaseExecutionBridge
 from app.calyx_orchestrator.executor import (
@@ -14,6 +16,7 @@ from app.calyx_orchestrator.executor import (
     ExecutionState,
     canonical_checksum,
 )
+from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
 from app.calyx_orchestrator.isolated_patch_executor import (
     ISOLATED_PATCH_ROLE,
     IsolatedWorkspacePatchExecutor,
@@ -21,6 +24,7 @@ from app.calyx_orchestrator.isolated_patch_executor import (
 from app.calyx_orchestrator.persisted_patch_execution import (
     PersistedPatchExecutionService,
 )
+from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
     CalyxProgramDependency,
@@ -40,7 +44,6 @@ PATCH_CONTENT = "print('bounded change')\n"
 PATCH_BYTES = PATCH_CONTENT.encode("utf-8")
 PATCH_AFTER = hashlib.sha256(PATCH_BYTES).hexdigest()
 PATCH_BEFORE = "b" * 64
-INPUT_CHECKSUM = "1" * 64
 
 
 def _db() -> Session:
@@ -56,12 +59,12 @@ def _db() -> Session:
     return Session(engine)
 
 
-def _patch_inputs() -> dict[str, object]:
+def _patch_inputs(*, before_sha256: str = PATCH_BEFORE) -> dict[str, object]:
     return {
         "patches": [
             {
                 "path": "app/example.py",
-                "before_sha256": PATCH_BEFORE,
+                "before_sha256": before_sha256,
                 "content_utf8": PATCH_CONTENT,
             }
         ]
@@ -126,6 +129,11 @@ def _completed_job(
     repository.start(owner="owner", program_id=program.program_id)
     claimed = PersistentProgramWorker(db).claim(worker_id="worker")
     assert claimed is not None and claimed.lease_token
+    assignment = governed_assignment_from_claimed_job(
+        db,
+        owner="owner",
+        job=claimed,
+    )
     output = _output(repository=output_repository, branch=output_branch)
     receipt = ExecutionReceipt(
         assignment_id=claimed.program_job_id,
@@ -134,7 +142,7 @@ def _completed_job(
         executor_key=executor_key,
         state=ExecutionState.DELIVERED,
         outcome=TerminalOutcome.DELIVERED,
-        input_checksum=INPUT_CHECKSUM,
+        input_checksum=assignment.verified_input_checksum(),
         output_checksum=canonical_checksum(output),
         output=output,
         evidence_uris=("github:issue/692",),
@@ -147,6 +155,34 @@ def _completed_job(
     )
 
 
+def _workspace(tmp_path: Path) -> tuple[Path, str]:
+    root = tmp_path / "worktree"
+    (root / ".git" / "refs" / "heads" / "autonomy").mkdir(parents=True)
+    (root / ".git" / "HEAD").write_text(
+        f"ref: refs/heads/{BRANCH}\n", encoding="ascii"
+    )
+    (root / ".git" / "refs" / "heads" / "autonomy" / "work-123").write_text(
+        COMMIT + "\n", encoding="ascii"
+    )
+    (root / "app").mkdir()
+    before = "print('before')\n"
+    (root / "app" / "example.py").write_text(before, encoding="utf-8")
+    (root / ".calyx-isolated-workspace.json").write_text(
+        json.dumps(
+            {
+                "schema": "calyx-isolated-workspace-v1",
+                "repository": REPOSITORY,
+                "branch": BRANCH,
+                "disposable": True,
+                "workspace_write_authorized": True,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    return root, hashlib.sha256(before.encode("utf-8")).hexdigest()
+
+
 def test_resolves_real_persisted_isolated_patch_execution() -> None:
     with _db() as db:
         completed = _completed_job(db)
@@ -157,9 +193,90 @@ def test_resolves_real_persisted_isolated_patch_execution() -> None:
         assert resolved.repository == REPOSITORY
         assert resolved.branch == BRANCH
         assert resolved.executor_key == IsolatedWorkspacePatchExecutor.executor_key
-        assert resolved.input_checksum == INPUT_CHECKSUM
+        assert len(resolved.input_checksum) == 64
         assert resolved.output_checksum == canonical_checksum(_output())
         assert resolved.output["checkout_commit_sha"] == COMMIT
+
+
+def test_real_program_cycle_can_execute_and_persist_isolated_patch(
+    tmp_path: Path,
+) -> None:
+    root, before_sha = _workspace(tmp_path)
+    with _db() as db:
+        repository = PersistentProgramRepository(db)
+        program = repository.create_program(
+            owner="owner",
+            title="real isolated patch cycle",
+            objective="prove assignment capability to persisted receipt integration",
+            jobs=[
+                ProgramJobSpec(
+                    "patch",
+                    ISOLATED_PATCH_ROLE,
+                    "bounded isolated patch",
+                    REPOSITORY,
+                    BRANCH,
+                    True,
+                    inputs=_patch_inputs(before_sha256=before_sha),
+                )
+            ],
+            dependencies=[],
+        )
+        repository.start(owner="owner", program_id=program.program_id)
+        registry = AuthoritativeExecutorRegistry(
+            workspace_root=root,
+            repository_name=REPOSITORY,
+        )
+        result = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="worker",
+            max_jobs=1,
+            registry=registry,
+        )
+        assert result.completed_jobs == 1
+        assert result.jobs[0].executor_key == IsolatedWorkspacePatchExecutor.executor_key
+        assert result.jobs[0].workspace_mutation is True
+        assert (root / "app" / "example.py").read_text(encoding="utf-8") == PATCH_CONTENT
+
+        completed = db.query(CalyxProgramJob).filter_by(program_id=program.program_id).one()
+        resolved = PersistedPatchExecutionService(db).get_completed(
+            program_job_id=completed.program_job_id
+        )
+        assert resolved.output["changes"][0]["after_sha256"] == PATCH_AFTER
+        evidence = json.loads(completed.evidence_json or "{}")
+        assert evidence["input_checksum"] == resolved.input_checksum
+
+
+def test_isolated_patch_assignment_gets_workspace_write_only_for_patch_role() -> None:
+    with _db() as db:
+        repository = PersistentProgramRepository(db)
+        patch_program = repository.create_program(
+            owner="owner",
+            title="patch",
+            objective="patch",
+            jobs=[
+                ProgramJobSpec(
+                    "patch",
+                    ISOLATED_PATCH_ROLE,
+                    "patch",
+                    REPOSITORY,
+                    BRANCH,
+                    True,
+                    inputs=_patch_inputs(),
+                )
+            ],
+            dependencies=[],
+        )
+        repository.start(owner="owner", program_id=patch_program.program_id)
+        patch_job = PersistentProgramWorker(db).claim(worker_id="worker")
+        assert patch_job is not None
+        patch_assignment = governed_assignment_from_claimed_job(
+            db, owner="owner", job=patch_job
+        )
+        assert "workspace_write" in patch_assignment.requested_capabilities
+        assert patch_assignment.inputs["governance"]["mode"] == (
+            "bounded_isolated_workspace_mutation"
+        )
 
 
 def test_missing_or_wrong_role_patch_job_is_rejected() -> None:
@@ -244,6 +361,19 @@ def test_persisted_input_checksum_must_be_canonical_sha256() -> None:
         completed.evidence_json = json.dumps(evidence, sort_keys=True)
         db.commit()
         with pytest.raises(ValueError, match="PATCH_PROGRAM_JOB_INPUT_CHECKSUM_INVALID"):
+            PersistedPatchExecutionService(db).get_completed(
+                program_job_id=completed.program_job_id
+            )
+
+
+def test_valid_shape_but_wrong_input_checksum_is_rejected() -> None:
+    with _db() as db:
+        completed = _completed_job(db)
+        evidence = json.loads(completed.evidence_json or "{}")
+        evidence["input_checksum"] = "0" * 64
+        completed.evidence_json = json.dumps(evidence, sort_keys=True)
+        db.commit()
+        with pytest.raises(PermissionError, match="PATCH_PROGRAM_JOB_INPUT_CHECKSUM_MISMATCH"):
             PersistedPatchExecutionService(db).get_completed(
                 program_job_id=completed.program_job_id
             )
