@@ -17,7 +17,7 @@ This current-main replacement combines the strongest properties of both and bind
 
 ## Canonical architecture
 
-`bounded occurrence batch + exact taxonomy release/review context → immutable reconciliation run → staged occurrence evidence + review queue + checkpoint`
+`bounded occurrence batch + exact completed taxonomy release/review context → immutable reconciliation run → staged occurrence evidence + review queue + checkpoint`
 
 `migrations/108_occurrence_reconciliation_runs.sql` adds staging-only PostgreSQL tables:
 
@@ -25,6 +25,14 @@ This current-main replacement combines the strongest properties of both and bind
 - `occurrence_pipeline.staged_occurrences`
 - `occurrence_pipeline.review_queue`
 - `occurrence_pipeline.checkpoints`
+
+Corrective migration `109_occurrence_taxonomy_context_guard.sql` adds a database-level trigger requiring the selected taxonomy release to have:
+
+- a valid staged/review-required/reviewed release state;
+- a completed `taxonomy_pipeline.staging_checkpoints` row;
+- the exact source SHA-256 recorded by the taxonomy release.
+
+This closes a static-review defect found before executable CI: the initial consolidation could otherwise have persisted occurrence interpretation against a partially staged taxonomy release if at least one staged taxon existed.
 
 Every run stores:
 
@@ -48,9 +56,10 @@ Resolution is fail-closed:
 - exact scientific name resolves only when it maps to one canonical staged taxon and is not implicated in an open taxonomy review;
 - ambiguous names enter occurrence review;
 - open duplicate/accepted-name taxonomy review evidence can force `taxonomy_review_required`;
-- resolved/dismissed taxonomy review records remain part of the context digest but do not block matching.
+- resolved/dismissed taxonomy review records remain part of the context digest but do not block matching;
+- the database refuses to create a reconciliation run until taxonomy staging is complete.
 
-This preserves historical evidence when taxonomy review status changes.
+This preserves historical evidence when taxonomy review status changes and prevents partial taxonomy state from becoming occurrence evidence.
 
 ## Occurrence evidence
 
@@ -81,6 +90,9 @@ Dedicated workflow: `.github/workflows/calyx-occurrence-consolidated-validation.
 PostgreSQL 16 tests cover:
 
 - migration 107 → 108 application;
+- migration 109 rejection of incomplete taxonomy staging;
+- migration 109 acceptance of completed review-required taxonomy;
+- taxonomy source-SHA mismatch rejection;
 - exact replay idempotency;
 - exact taxonomy-release binding;
 - changed taxonomy-review evidence creating a new run;
@@ -91,6 +103,10 @@ PostgreSQL 16 tests cover:
 - compile, Ruff, diff hygiene and permanent non-authority assertions.
 
 Executable validation evidence must come from real workflow steps. `steps=null`, `action_required`, or zero-job runs are infrastructure evidence only and may not be represented as a pass or code failure.
+
+Initial PR #732 head `6154364c528b1781b9587998ec6bf7c1a9ca9440` triggered dedicated run `31290627123`; job `93187001446` failed before step 1 with `steps=null`. This reproduces repository CI incident #481 and is not a code verdict. The branch was then hardened with the migration-109 taxonomy-completeness guard before further expansion.
+
+While the branch was being built, `main` advanced by 11 commits to `7f5bec2fb8092739a8e5fc5ce55ebc9008a9171e`. Comparison showed the intervening changes were confined to the Reasoning Ledger prerequisite activation gate and did not overlap this occurrence surface.
 
 ## Governance boundary
 
