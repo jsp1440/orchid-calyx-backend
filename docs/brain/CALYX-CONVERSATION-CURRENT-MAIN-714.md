@@ -1,6 +1,6 @@
 # CALYX Conversation Current-Main Reconstruction 714
 
-Status: IMPLEMENTED ON CURRENT MAIN / EXECUTABLE CI BLOCKED BY #481
+Status: IMPLEMENTED / MERGEABLE / EXECUTABLE CI BLOCKED BY #481
 
 ## Purpose
 
@@ -22,6 +22,8 @@ Reconstruct the useful Ask Calyx conversation stack directly on the current `mai
 ## Current-main reconstruction discipline
 
 The v2 reconstruction starts from current `main` rather than rebasing the old conversation branch mechanically. Added conversation files were reconstructed from the reviewed #714 implementation. Shared files were reapplied against the current `main` versions so unrelated intervening changes are not overwritten.
+
+`main` advanced again while the reconstruction was being written. GitHub recomputed PR #743 against the newer base and reports it mergeable. The conversation branch remains draft because exact-head executable validation has not run.
 
 The resulting delta intentionally remains limited to conversation memory, source linking, exact document scoping, read-only graph context, Mission Control registration, migration, tests, CI, and Brain documentation.
 
@@ -45,8 +47,8 @@ Dedicated workflow: `CALYX Conversation Current Main 714`.
 
 The executable gate compiles all reconstructed surfaces, runs the focused current-main regression plus existing Mission Control and Evidence Retrieval regressions, asserts governance invariants, checks that document scope cannot cross-match revision/parent namespaces, runs Ruff, and checks diff hygiene.
 
-Repository-wide GitHub-hosted Actions remain affected by canonical incident #481, where private-repository jobs can fail before step 1 with `steps=null`. Such a run is infrastructure evidence only and is not treated as a code pass or failure.
+Exact-head run `31291452328`, job `93189239334`, terminated before step 1 with `steps=null`. The BUILD-088E, Mission Control 003B/003C, and Workflow Governance jobs triggered on the same head also failed in the same hosted-runner window. This reproduces canonical private-repository runner incident #481 and is infrastructure evidence only; no compile, lint, test, or governance assertion executed.
 
 ## Supersession
 
-This current-main v2 reconstruction is the authoritative continuation path for the Ask Calyx conversation capability. Once its exact-head comparison and CI status are recorded, the older #714 branch should remain unmerged and be closed as superseded rather than revived through stale ancestry.
+PR #743 is the authoritative continuation path for the Ask Calyx conversation capability and is currently mergeable. The older PR #714 must remain unmerged and should be closed as superseded rather than revived through stale ancestry.
