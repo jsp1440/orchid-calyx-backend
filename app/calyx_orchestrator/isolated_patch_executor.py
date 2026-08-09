@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -21,6 +22,9 @@ from .repository_evidence_executor import RepositoryEvidenceExecutor
 ISOLATED_PATCH_ROLE = "isolated_workspace_patcher"
 ISOLATION_MARKER = ".calyx-isolated-workspace.json"
 ISOLATION_SCHEMA = "calyx-isolated-workspace-v1"
+ROLLBACK_JOURNAL_SCHEMA = "calyx-isolated-rollback-v1"
+ROLLBACK_JOURNAL_PREFIX = ".calyx-isolated-rollback-"
+ROLLBACK_JOURNAL_SUFFIX = ".json"
 ALLOWED_PATH_PREFIXES = ("app/", "tests/", "docs/brain/")
 SUPPORTED_CAPABILITIES = frozenset(
     {"validate_input", "produce_receipt", "collect_evidence_uris", "workspace_write"}
@@ -28,6 +32,7 @@ SUPPORTED_CAPABILITIES = frozenset(
 MAX_PATCH_FILES = 8
 MAX_FILE_BYTES = 500_000
 MAX_TOTAL_BYTES = 1_500_000
+MAX_JOURNAL_BYTES = 2_500_000
 ABSENT_PREIMAGE = "absent"
 
 
@@ -49,7 +54,7 @@ class PreparedPatch:
 
 
 class IsolatedWorkspacePatchExecutor:
-    """Bounded local file mutation in an explicitly disposable engineering worktree."""
+    """Bounded, crash-recoverable mutation in a disposable engineering worktree."""
 
     executor_key = "isolated_workspace_patcher_v1"
 
@@ -66,7 +71,6 @@ class IsolatedWorkspacePatchExecutor:
         self.workspace_root = reader.workspace_root
         self.repository_name = reader.repository_name
         self._reader = reader
-        self._rollback_journal: dict[str, tuple[PreparedPatch, ...]] = {}
 
     def execute(self, assignment: GovernedAssignment) -> ExecutionReceipt:
         if assignment.role_key != ISOLATED_PATCH_ROLE:
@@ -109,6 +113,12 @@ class IsolatedWorkspacePatchExecutor:
         if checkout.branch != branch:
             raise PermissionError("ISOLATED_PATCH_REVISION_MISMATCH")
         self._verify_isolation_marker(repository=repository, branch=branch)
+        self._recover_for_retry(
+            assignment_id=assignment.assignment_id,
+            repository=repository,
+            branch=branch,
+            checkout_commit_sha=checkout.commit_sha,
+        )
 
         raw_patches = job.get("patches")
         if not isinstance(raw_patches, list) or not raw_patches:
@@ -126,9 +136,15 @@ class IsolatedWorkspacePatchExecutor:
         if total_bytes > MAX_TOTAL_BYTES:
             raise ValueError("ISOLATED_PATCH_TOTAL_BYTES_EXCEEDED")
 
-        self._apply_prepared(prepared)
-        self._rollback_journal[assignment.assignment_id] = prepared
+        self._persist_rollback_journal(
+            assignment_id=assignment.assignment_id,
+            repository=repository,
+            branch=branch,
+            checkout_commit_sha=checkout.commit_sha,
+            prepared=prepared,
+        )
         try:
+            self._apply_prepared(prepared)
             checkout_after = self._reader._checkout_identity()
             if checkout_after != checkout:
                 raise RuntimeError("ISOLATED_PATCH_CHECKOUT_CHANGED_DURING_WRITE")
@@ -153,6 +169,7 @@ class IsolatedWorkspacePatchExecutor:
                 "checkout_commit_sha": checkout.commit_sha,
                 "workspace_isolated": True,
                 "workspace_disposable": True,
+                "crash_recovery_journal": True,
                 "changes": changes,
                 "file_count": len(changes),
                 "total_written_bytes": total_bytes,
@@ -187,16 +204,180 @@ class IsolatedWorkspacePatchExecutor:
             raise
 
     def finalize(self, assignment_id: str) -> None:
-        """Forget rollback material only after durable lease completion succeeds."""
-        self._rollback_journal.pop(assignment_id, None)
+        """Delete rollback material only after durable lease completion succeeds."""
+        self._delete_journal(self._journal_path(assignment_id))
 
     def rollback(self, assignment_id: str) -> bool:
-        """Restore the exact preimage for a delivered but not durably completed patch."""
-        prepared = self._rollback_journal.pop(assignment_id, None)
-        if prepared is None:
+        """Restore an interrupted patch from its durable rollback journal."""
+        journal_path = self._journal_path(assignment_id)
+        if not journal_path.exists():
             return False
-        self._rollback(list(prepared))
+        journal = self._load_journal(journal_path)
+        self._restore_journal(journal)
+        self._delete_journal(journal_path)
         return True
+
+    def _recover_for_retry(
+        self,
+        *,
+        assignment_id: str,
+        repository: str,
+        branch: str,
+        checkout_commit_sha: str,
+    ) -> None:
+        journals = sorted(self.workspace_root.glob(f"{ROLLBACK_JOURNAL_PREFIX}*{ROLLBACK_JOURNAL_SUFFIX}"))
+        expected_path = self._journal_path(assignment_id)
+        unexpected = [path for path in journals if path != expected_path]
+        if unexpected:
+            raise RuntimeError("ISOLATED_PATCH_PENDING_RECOVERY_CONFLICT")
+        if not expected_path.exists():
+            return
+        journal = self._load_journal(expected_path)
+        if (
+            journal["assignment_id"] != assignment_id
+            or journal["repository"] != repository
+            or journal["branch"] != branch
+            or journal["checkout_commit_sha"] != checkout_commit_sha
+        ):
+            raise RuntimeError("ISOLATED_PATCH_RECOVERY_IDENTITY_MISMATCH")
+        self._restore_journal(journal)
+        self._delete_journal(expected_path)
+
+    def _journal_path(self, assignment_id: str) -> Path:
+        token = hashlib.sha256(assignment_id.encode("utf-8")).hexdigest()[:32]
+        return self.workspace_root / f"{ROLLBACK_JOURNAL_PREFIX}{token}{ROLLBACK_JOURNAL_SUFFIX}"
+
+    def _persist_rollback_journal(
+        self,
+        *,
+        assignment_id: str,
+        repository: str,
+        branch: str,
+        checkout_commit_sha: str,
+        prepared: tuple[PreparedPatch, ...],
+    ) -> None:
+        entries = [
+            {
+                "path": item.spec.path,
+                "before_sha256": item.before_sha256,
+                "after_sha256": item.after_sha256,
+                "before_content_b64": (
+                    base64.b64encode(item.before_bytes).decode("ascii")
+                    if item.before_bytes is not None
+                    else None
+                ),
+            }
+            for item in prepared
+        ]
+        core = {
+            "schema": ROLLBACK_JOURNAL_SCHEMA,
+            "assignment_id": assignment_id,
+            "repository": repository,
+            "branch": branch,
+            "checkout_commit_sha": checkout_commit_sha,
+            "entries": entries,
+        }
+        payload = {**core, "journal_checksum": canonical_checksum(core)}
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        if len(encoded) > MAX_JOURNAL_BYTES:
+            raise ValueError("ISOLATED_PATCH_ROLLBACK_JOURNAL_TOO_LARGE")
+        target = self._journal_path(assignment_id)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".calyx-rollback-stage-", dir=self.workspace_root
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, target)
+            self._fsync_directory(self.workspace_root)
+        finally:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
+    def _load_journal(self, path: Path) -> dict[str, Any]:
+        raw = path.read_bytes()
+        if not raw or len(raw) > MAX_JOURNAL_BYTES:
+            raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID")
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID") from exc
+        if not isinstance(payload, dict) or payload.get("schema") != ROLLBACK_JOURNAL_SCHEMA:
+            raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID")
+        checksum = str(payload.get("journal_checksum") or "")
+        core = {key: value for key, value in payload.items() if key != "journal_checksum"}
+        if checksum != canonical_checksum(core):
+            raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_CHECKSUM_MISMATCH")
+        entries = payload.get("entries")
+        if not isinstance(entries, list) or not 1 <= len(entries) <= MAX_PATCH_FILES:
+            raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID")
+        return payload
+
+    def _restore_journal(self, journal: dict[str, Any]) -> None:
+        entries = journal["entries"]
+        prepared: list[PreparedPatch] = []
+        for raw_entry in entries:
+            if not isinstance(raw_entry, dict):
+                raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID")
+            path = str(raw_entry.get("path") or "").strip()
+            before_sha = str(raw_entry.get("before_sha256") or "").strip().lower()
+            after_sha = str(raw_entry.get("after_sha256") or "").strip().lower()
+            encoded_before = raw_entry.get("before_content_b64")
+            target = self._validated_target(path)
+            if not _is_sha256(after_sha):
+                raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID")
+            if before_sha == ABSENT_PREIMAGE:
+                if encoded_before is not None:
+                    raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID")
+                before_bytes = None
+            else:
+                if not _is_sha256(before_sha) or not isinstance(encoded_before, str):
+                    raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID")
+                try:
+                    before_bytes = base64.b64decode(encoded_before, validate=True)
+                except (ValueError, TypeError) as exc:
+                    raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID") from exc
+                if hashlib.sha256(before_bytes).hexdigest() != before_sha:
+                    raise RuntimeError("ISOLATED_PATCH_ROLLBACK_PREIMAGE_CHECKSUM_MISMATCH")
+            current = target.read_bytes() if target.exists() else None
+            current_sha = (
+                hashlib.sha256(current).hexdigest() if current is not None else ABSENT_PREIMAGE
+            )
+            if current_sha not in {before_sha, after_sha}:
+                raise RuntimeError(f"ISOLATED_PATCH_ROLLBACK_STATE_DIVERGED:{path}")
+            prepared.append(
+                PreparedPatch(
+                    spec=PatchSpec(path=path, before_sha256=before_sha, content_utf8=""),
+                    target=target,
+                    before_sha256=before_sha,
+                    after_sha256=after_sha,
+                    before_bytes=before_bytes,
+                    after_bytes=b"",
+                )
+            )
+        self._rollback(prepared)
+
+    @staticmethod
+    def _delete_journal(path: Path) -> None:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return
+        IsolatedWorkspacePatchExecutor._fsync_directory(path.parent)
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        descriptor = os.open(path, flags)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
     def _verify_isolation_marker(self, *, repository: str, branch: str) -> None:
         try:
@@ -324,6 +505,7 @@ class IsolatedWorkspacePatchExecutor:
             try:
                 for item, temporary in staged:
                     os.replace(temporary, item.target)
+                    self._fsync_directory(item.target.parent)
                     applied.append(item)
             except Exception:
                 self._rollback(applied)
@@ -344,7 +526,21 @@ class IsolatedWorkspacePatchExecutor:
                 except FileNotFoundError:
                     pass
             else:
-                item.target.write_bytes(item.before_bytes)
+                descriptor, temporary = tempfile.mkstemp(
+                    prefix=".calyx-rollback-", dir=item.target.parent
+                )
+                try:
+                    with os.fdopen(descriptor, "wb") as handle:
+                        handle.write(item.before_bytes)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    os.replace(temporary, item.target)
+                    IsolatedWorkspacePatchExecutor._fsync_directory(item.target.parent)
+                finally:
+                    try:
+                        os.unlink(temporary)
+                    except FileNotFoundError:
+                        pass
 
 
 def _is_sha256(value: str) -> bool:
