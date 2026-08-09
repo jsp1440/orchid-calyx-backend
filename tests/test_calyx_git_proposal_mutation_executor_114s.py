@@ -4,7 +4,9 @@ from datetime import timedelta
 
 import pytest
 
-from app.calyx_orchestrator.git_proposal_execution_plan import GitProposalExecutionPlanner
+from app.calyx_orchestrator.git_proposal_execution_plan import (
+    GitProposalExecutionPlanner,
+)
 from app.calyx_orchestrator.git_proposal_mutation_executor import (
     GitProposalMutationError,
     GitProposalMutationExecutor,
