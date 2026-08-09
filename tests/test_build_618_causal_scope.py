@@ -225,6 +225,34 @@ def test_narrative_scope_metadata_cannot_split_a_real_contradiction():
     assert report["contradiction_count"] == 1
 
 
+def test_unknown_scope_narrative_context_cannot_split_a_real_contradiction():
+    repository, service = components()
+    positive = request("promotes", reasoning_id="unknown-positive").model_copy(
+        update={
+            "source_object_id": 11,
+            "revision_id": 12,
+            "extraction_run_id": 13,
+            "source_anchors": [{"anchor_id": 14}],
+            "experimental_context": {"tissue": "leaf"},
+            "quantitative_context": {"wavelength_nm": 450},
+        }
+    )
+    negative = request("inhibits", reasoning_id="unknown-negative").model_copy(
+        update={
+            "source_object_id": 21,
+            "revision_id": 22,
+            "extraction_run_id": 23,
+            "source_anchors": [{"anchor_id": 24}],
+            "experimental_context": {"tissue": "root"},
+            "quantitative_context": {"wavelength_nm": 660},
+        }
+    )
+    handoff_mechanistic_candidate(positive, (repository, service))
+    handoff_mechanistic_candidate(negative, (repository, service))
+    report = analyze_mechanistic_contradictions((repository, service))
+    assert report["contradiction_count"] == 1
+
+
 def test_narrative_difference_blocks_both_approved_claims_from_publication():
     repository, service = components()
     positive = handoff_mechanistic_candidate(

@@ -41,18 +41,11 @@ def _scope(candidate: dict[str, Any]) -> dict[str, Any]:
 
 
 def _scope_identity(scope: dict[str, Any]) -> dict[str, Any]:
-    identity = {
+    return {
         "source_key": scope.get("source_key"),
         "target_key": scope.get("target_key"),
         "causal_scope": scope.get("applicability_identity"),
     }
-    if (
-        isinstance(identity.get("causal_scope"), dict)
-        and identity["causal_scope"].get("scope_class") == "unknown"
-    ):
-        identity["experimental_context"] = scope.get("experimental_context", {})
-        identity["quantitative_context"] = scope.get("quantitative_context", {})
-    return identity
 
 
 def _scope_id(scope: dict[str, Any]) -> str:
