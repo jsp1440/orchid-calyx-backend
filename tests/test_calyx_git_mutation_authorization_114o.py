@@ -49,6 +49,7 @@ from app.database import Base
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 BRANCH = "autonomy/work-123"
 BASE_COMMIT = "a" * 40
+BASE_REF = "main"
 PATCH_CONTENT = "print('bounded owner change')\n"
 PATCH_BYTES = PATCH_CONTENT.encode("utf-8")
 PATCH_BEFORE = "b" * 64
@@ -292,6 +293,7 @@ def _request(store: DurableProposalAuthorizationStore, patch_program_job_id: str
             "push_branch",
             "open_pull_request",
         ),
+        base_ref=BASE_REF,
         expires_at=(NOW + timedelta(minutes=15)).isoformat(),
         now=NOW,
     )
@@ -361,6 +363,7 @@ def test_request_binds_patch_job_and_durable_reviews_without_merge_authority() -
     request = _request(store, patch_job_id)
     snapshot = request.snapshot()
     assert snapshot["patch_program_job_id"] == patch_job_id
+    assert snapshot["base_ref"] == BASE_REF
     assert len(snapshot["review_authorization_digests"]) == 2
     assert snapshot["merge_authorized"] is False
     assert snapshot["automatic_merge_authorized"] is False
@@ -378,6 +381,7 @@ def test_merge_action_is_not_allowlisted() -> None:
             _manifest(patch_job_id),
             review_store=store,
             actions=("merge_pull_request",),
+            base_ref=BASE_REF,
             expires_at=(NOW + timedelta(minutes=15)).isoformat(),
             now=NOW,
         )
@@ -479,6 +483,7 @@ def test_manifest_tampering_invalidates_request() -> None:
             manifest,
             review_store=store,
             actions=("open_pull_request",),
+            base_ref=BASE_REF,
             expires_at=(NOW + timedelta(minutes=15)).isoformat(),
             now=NOW,
         )
