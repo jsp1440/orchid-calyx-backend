@@ -12,4 +12,10 @@ The planner preserves endpoint canonical identity (`canonical_key == node_type:s
 
 Dedicated validation covers BUILD-616 behavior, merged BUILD-615 regressions, causal vocabulary/Reasoning Map regressions, route verification, lint/format/compile, and hygiene.
 
+## Executable validation checkpoint
+
+The first R2 validation sequence reached a Copilot-authored formatting-only head `e261f23c47803cde16e8e5a05eb246987556fbda`. GitHub classified all pull-request workflows for that head as `action_required` and created no jobs, so those runs are not executable validation evidence. The formatting diff only wrapped long Python expressions and did not alter publication-planning semantics or authority.
+
+This Brain checkpoint advances the same formatted tree through the repository-authenticated execution lane so the exact publication-planner state can receive real CI. Readiness still requires executable BUILD-616 validation, relevant broad regressions, and no unresolved review findings.
+
 No contradiction resolution, review approval, semantic-index authority, Knowledge Graph mutation, production database mutation, taxonomy activation, deployment, or automatic scientific publication is granted.
