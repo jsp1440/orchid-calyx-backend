@@ -48,6 +48,7 @@ def request() -> MechanisticCandidateRequest:
                     "locator": {"confidence": 0.99},
                 }
             ],
+            "causal_scope": {"scope_class": "bounded", "tissues": ["young leaf"]},
             "experimental_context": {"tissue": "young leaf"},
             "quantitative_context": {"wavelength_nm": 450},
             "provenance": {"doi": "10.0000/example"},
@@ -92,7 +93,7 @@ def test_approved_candidate_produces_review_bound_deterministic_plan():
     first = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
     second = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
     assert first["contract"] == "calyx-mechanistic-publication-plan-v2"
-    assert first["ready_for_controlled_publication_gate"] is True
+    assert first["ready_for_controlled_publication_gate"] is True, first["blockers"]
     assert first["blockers"] == []
     assert first["validation"]["healthy"] is True
     assert first["plan_id"] == second["plan_id"]
@@ -214,4 +215,5 @@ def test_plan_uses_canonical_endpoint_resolution_and_candidate_provenance():
     assert edge["payload"]["quantitative_context"]["wavelength_nm"] == 450
     assert source["candidate_provenance"]["source_pk"] == str(candidate_id)
     assert target["candidate_provenance"]["source_pk"] == str(candidate_id)
+    assert source["payload"]["causal_scope"]["tissues"] == ["young leaf"]
     assert plan["requires_explicit_publication_authorization"] is True

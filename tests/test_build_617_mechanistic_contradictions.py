@@ -52,6 +52,7 @@ def payload(
                     "char_end": 64,
                 }
             ],
+            "causal_scope": {"scope_class": "bounded", "tissues": [tissue]},
             "experimental_context": {"tissue": tissue, "stage": "expansion"},
             "quantitative_context": {"wavelength_nm": 450},
         }
