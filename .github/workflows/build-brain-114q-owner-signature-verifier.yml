@@ -49,14 +49,17 @@ jobs:
           from pathlib import Path
           verifier = Path("app/calyx_orchestrator/owner_signature_verifier.py").read_text(encoding="utf-8")
           gate = Path("app/calyx_orchestrator/git_mutation_authorization.py").read_text(encoding="utf-8")
-          for marker in ("Ed25519PublicKey", "owner_grant_signing_bytes", "CALYX_OWNER_VERIFY_KEYS_JSON", "CALYX_OWNER_REVOKED_KEY_IDS"):
+          tests = Path("tests/test_calyx_owner_signature_verifier_114q.py").read_text(encoding="utf-8")
+          for marker in ("Ed25519PublicKey", "owner_grant_signing_bytes", "CALYX_OWNER_VERIFY_KEYS_JSON", "CALYX_OWNER_REVOKED_KEY_IDS", "OWNER_SIGNATURE_DUPLICATE_KEY_MATERIAL"):
               assert marker in verifier, marker
           for marker in ("Ed25519PrivateKey", "generate_private_key", "hmac", "private_key", "sign_grant", "mint_grant"):
               assert marker not in verifier, marker
           assert 'REQUEST_SCHEMA = "calyx-git-mutation-authorization-request-v2"' in gate
           assert 'MANIFEST_SCHEMA = "calyx-git-proposal-manifest-v2"' in gate
           assert "patch_program_job_id" in gate
-          assert 'signature=str(value.get("signature") or "").strip()' in gate
+          assert "_bounded_signature" in gate
+          assert "clock: Callable[[], datetime] | None" in gate
+          assert "DUPLICATE_KEY_MATERIAL" in tests
           PY
       - name: Diff hygiene
         env:
