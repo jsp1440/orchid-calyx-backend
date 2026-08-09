@@ -1,0 +1,35 @@
+name: CALYX-SYN-003 Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/scientific_synthesis/**"
+      - "tests/test_calyx_syn_003_literature_discovery.py"
+      - ".github/workflows/calyx-syn-003-validation.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+      - name: Lint literature discovery and synthesis routes
+        run: |
+          ruff check \
+            app/scientific_synthesis/discovery.py \
+            app/scientific_synthesis/routes.py \
+            tests/test_calyx_syn_003_literature_discovery.py
+      - name: Run discovery and synthesis regressions
+        run: |
+          pytest -q \
+            tests/test_calyx_syn_003_literature_discovery.py \
+            tests/test_calyx_syn_001_scientific_synthesis.py \
+            tests/test_calyx_syn_001_routes.py
+      - name: Import application
+        run: python -c "import app.main"
