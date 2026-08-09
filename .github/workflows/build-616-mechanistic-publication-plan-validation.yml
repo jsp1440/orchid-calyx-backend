@@ -11,6 +11,8 @@ on:
       - 'runtime/knowledge_graph/validation.py'
       - 'tests/test_build_616_mechanistic_publication_plan.py'
       - 'tests/test_build_615_mechanistic_candidate_graph.py'
+      - 'tests/test_build_086a_candidate_knowledge.py'
+      - 'docs/brain/BUILD-616-MECHANISTIC-PUBLICATION-PLAN.md'
       - '.github/workflows/build-616-mechanistic-publication-plan-validation.yml'
   workflow_dispatch:
 
@@ -31,15 +33,32 @@ jobs:
         run: pip install -r requirements.txt pytest httpx ruff
       - name: Compile BUILD-616 slice
         run: >-
-          python -m py_compile app/brain/mechanistic_publication_plan.py app/brain/mechanistic_candidates.py app/parallel_platform/routes.py tests/test_build_616_mechanistic_publication_plan.py
+          python -m py_compile
+          app/brain/mechanistic_publication_plan.py
+          app/brain/mechanistic_candidates.py
+          app/candidate_knowledge/repository.py
+          app/parallel_platform/routes.py
+          tests/test_build_616_mechanistic_publication_plan.py
       - name: Ruff
         run: >-
-          ruff check app/brain/mechanistic_publication_plan.py app/brain/mechanistic_candidates.py app/parallel_platform/routes.py tests/test_build_616_mechanistic_publication_plan.py
+          ruff check
+          app/brain/mechanistic_publication_plan.py
+          app/brain/mechanistic_candidates.py
+          app/candidate_knowledge/repository.py
+          app/parallel_platform/routes.py
+          tests/test_build_616_mechanistic_publication_plan.py
       - name: Formatting
         run: >-
-          ruff format --check app/brain/mechanistic_publication_plan.py app/brain/mechanistic_candidates.py app/parallel_platform/routes.py tests/test_build_616_mechanistic_publication_plan.py
+          ruff format --check
+          app/brain/mechanistic_publication_plan.py
+          app/brain/mechanistic_candidates.py
+          app/candidate_knowledge/repository.py
+          app/parallel_platform/routes.py
+          tests/test_build_616_mechanistic_publication_plan.py
       - name: BUILD-616 behavioral regressions
         run: python -m pytest -q tests/test_build_616_mechanistic_publication_plan.py
+      - name: Candidate Knowledge review regressions
+        run: python -m pytest -q tests/test_build_086a_candidate_knowledge.py
       - name: BUILD-615 prerequisite regressions
         run: python -m pytest -q tests/test_build_615_mechanistic_candidate_graph.py
       - name: Causal vocabulary regressions
