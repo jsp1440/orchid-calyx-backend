@@ -13,19 +13,20 @@ Rebuild the useful owner-experience facade from stale history directly on curren
 - Project resolution happens before mission execution, preventing a mission from completing in memory and then failing only at durable Reasoning Ledger handoff because of an invalid/nonexistent project.
 - Operator status exposes mission plan, evidence, contradictions, gaps, confidence, blockers, validation state, durable ledger state, eligible-publication state, and Calyx Core certification summary without private chain-of-thought.
 - Mutable review-facing mission fields are reconciled from the durable Reasoning Ledger and current eligibility discovery. A stale in-memory mission snapshot cannot continue to report `HUMAN_REVIEW_REQUIRED`, an old ledger version, or `eligible=false` after the durable ledger has been reviewed and become eligible.
+- Displayed review state is now also bound to the **current durable ledger version and `review_content_hash`**. Historical approvals from an older ledger version/hash are ignored for the current status view and the mission returns to `HUMAN_REVIEW_REQUIRED` until the current content is reviewed.
 - Review derives authenticated reviewer identity and the current durable ledger version on the server.
 - Publication-candidate discovery derives the exact current ledger ID, version, and review-content hash through the owner-scoped eligibility service; the owner does not copy hashes, IDs, workflow names, or server paths.
 - Supervised publication checks `explicit_owner_confirmation=true` before discovery or publication-service invocation.
 - Duplicate replay is surfaced explicitly as `NO_OP_DUPLICATE_REPLAY`.
 - Publication result semantics are derived from the authoritative publication artifact, not merely the service's `created` flag. A governed Knowledge Graph gate rejection is reported as `PUBLICATION_REJECTED`; it is never mislabeled `PUBLISHED`.
 - Graph version and audit outcome are shown only when returned by the governed publication gate; the facade never invents them.
-- Focused browser/API regressions cover start, canonical workspace reuse/create/validation, status, durable review-state reconciliation, review, candidate discovery, confirmation gating, successful publication projection, governed publication rejection, and duplicate replay.
+- Focused browser/API regressions cover start, canonical workspace reuse/create/validation, status, durable review-state reconciliation, stale-approval invalidation, review, candidate discovery, confirmation gating, successful publication projection, governed publication rejection, and duplicate replay.
 
 ## CALYX-470B current-main reconstruction
 
 On 2026-08-08 the reviewed additive files from CALYX-470A were reconstructed onto exact current `main` parent `7f5bec2fb8092739a8e5fc5ce55ebc9008a9171e` instead of rebasing the 17-commit historical branch.
 
-The following reviewed blobs were reused byte-for-byte:
+The initial reviewed blobs were:
 
 - `app/routers/calyx_unified_owner_flow.py` — `e2a4d57ea3e3de42999cc0cbb9a2f4e40f92c7f4`
 - `tests/test_calyx_unified_owner_flow_470.py` — `301544e23688b5cbbcf9faf0a63bc28e8b23c9e7`
@@ -35,6 +36,8 @@ The following reviewed blobs were reused byte-for-byte:
 - `.github/workflows/calyx-unified-owner-flow-470a.yml` — `915dd7540dc13c289dfe2da53641ed763732d9b6`
 
 The shared `app/routers/calyx_core.py` was **not** copied from the old branch. It was edited against current `main`, and the final compare shows exactly two added lines: the unified-owner-flow router import and include. An intermediate accidental `ShowCreate` request-type regression was detected before PR creation, repaired, and the subsequent `main` comparison confirmed zero unrelated router deletions or modifications.
+
+Subsequent static governance review on 2026-08-08 found and corrected a stale-approval projection defect. The current implementation filters durable review decisions to the exact current ledger `version` plus `review_content_hash` before displaying a review outcome. A regression now proves an approval for version N/hash A is not displayed as current after the ledger becomes version N+1/hash B.
 
 ## Governance
 
@@ -52,11 +55,14 @@ The Brain mission remains authoritative for bounded scientific evidence and inte
 
 ## Static compatibility findings resolved
 
-During current-main reconciliation three stale-branch defects were found and corrected before the original CALYX-470A freeze:
+During current-main reconciliation and subsequent static governance review, four defects were found and corrected before release:
 
 1. The old default project identifier `laelia-anceps-demonstration` was not a valid Research Workspace UUID and could allow Brain execution to run before durable ledger handoff failed. CALYX-470A resolves or creates the canonical project first.
 2. `ReasoningLedgerPublicationService.publish()` can return a newly recorded `rejected` artifact when the governed graph gate rejects publication. CALYX-470A distinguishes `PUBLISHED`, `PUBLICATION_REJECTED`, `PUBLICATION_NOT_COMPLETED`, and `NO_OP_DUPLICATE_REPLAY` rather than treating every newly created artifact as a successful publication.
 3. The in-memory Brain mission snapshot is intentionally not mutated by durable ledger review. CALYX-470A therefore overlays review status, durable ledger version, and publication eligibility from the durable ledger/current eligibility when producing the operator view, preventing contradictory post-review instructions.
+4. The first CALYX-470B durable-view implementation selected the last historical review decision without checking whether its `ledger_version` and `reviewed_content_hash` still matched the current ledger. That could display a stale `APPROVED` state after evidence/content changed. The corrected view accepts only decisions bound to the current version/hash and otherwise reports `HUMAN_REVIEW_REQUIRED`.
+
+The duplicate-replay path was also re-audited against the authoritative publication service. `ReasoningLedgerPublicationService.publish()` returns `created=False` only when the persisted artifact status is already `PUBLISHED`; rejected artifacts are sent through the governed gate again. Therefore `NO_OP_DUPLICATE_REPLAY` remains correctly limited to a previously published exact artifact.
 
 The in-memory and operational Reasoning Ledger services both derive ledger identity through the same deterministic `(tenant, project, title)` identity function, so the current-main durable handoff preserves ledger identity after canonical project resolution.
 
