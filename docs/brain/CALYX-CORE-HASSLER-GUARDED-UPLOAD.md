@@ -38,13 +38,28 @@ Dry-run is the default. A production upload requires all of:
 6. `CALYX_OWNER_ACCESS_CODE`;
 7. exact confirmation token `CALYX_HASSLER_UPLOAD_CONFIRMATION=UPLOAD_WORLD_ORCHIDS_26_08`.
 
-Before upload it authenticates through the existing owner session endpoint and requires live Mission Control to report `ready_for_upload=true` with next job `upload_world_orchids_release`.
+### Idempotent replay hardening
+
+Static review of the initial current-main rebuild found a production-operator defect: the client checked the generic readiness next-job before checking whether the exact immutable release already existed. If the release had already been uploaded, Mission Control would correctly advance beyond `upload_world_orchids_release`, but the client would treat that healthy state as an error and could not prove a safe replay.
+
+The corrected flow is now:
+
+1. authenticate with the existing owner-session endpoint;
+2. `GET /api/mission-control/taxonomy/releases/{EXPECTED_SHA256}` **before any mutating request**;
+3. if the response is 200, require the exact durable PostgreSQL identity and return `NO_OP_ALREADY_PRESENT` with `upload_invoked=false` and `production_mutation=false`;
+4. if the response is 404, and only 404, continue to the live upload-readiness gate;
+5. any other response fails closed;
+6. after a first upload, read back the exact release again and verify post-intake readiness.
+
+An existing report with mismatched SHA/name/version/acquisition date, automatic promotion, or non-PostgreSQL durability is rejected before any POST.
+
+Before a first upload the client requires live Mission Control to report `ready_for_upload=true` with next job `upload_world_orchids_release`.
 
 The only production write it can invoke is:
 
 `POST /api/mission-control/taxonomy/releases/inspect`
 
-After upload it verifies:
+After a first upload it verifies:
 
 - release ID equals the exact SHA-256;
 - snapshot SHA-256 matches;
@@ -55,7 +70,9 @@ After upload it verifies:
 - Mission Control advances only to `release_inspected_staging_smoke_required`;
 - next job is `verify_taxonomy_staging_smoke`.
 
-The client does not call the staging endpoint and records:
+For an already-present exact release, the client does not force the pipeline backward to the upload state. It preserves and reports the server-current next job, which may legitimately be staging smoke, bounded staging, review, or a later governed state.
+
+The client never calls the staging endpoint and records:
 
 - `staging_invoked=false`;
 - `taxonomy_activation_authorized=false`;
@@ -68,9 +85,12 @@ The client does not call the staging endpoint and records:
 
 - checksum drift fails closed;
 - an automatic-promotion response is rejected;
+- a first upload requires an initial 404 readback and live upload readiness;
+- successful first upload must round-trip immutable release identity;
+- successful first upload stops at staging-smoke readiness;
+- exact already-present durable release returns deterministic no-op without POST;
+- mismatched already-present release fails before POST;
 - blocked readiness prevents upload entirely;
-- successful upload must round-trip immutable release identity;
-- successful upload stops at staging-smoke readiness;
 - no `/stage` request is issued.
 
 `.github/workflows/calyx-hassler-guarded-upload-client-validation.yml` runs compile, Ruff, focused tests, and a governance smoke. It has no production credentials and cannot execute a real upload.
@@ -79,17 +99,21 @@ The stale #661 exact head previously passed its focused workflow, workflow-gover
 
 ## Current validation state
 
-PR #734 was opened from current `main` at base `7f5bec2fb8092739a8e5fc5ce55ebc9008a9171e` with initial head `5793a42acfb0a37a7f6c45a5eee5c160d67bec90`.
+PR #734 was opened from current `main` at base `7f5bec2fb8092739a8e5fc5ce55ebc9008a9171e`.
 
 Its first hosted validation attempts were created but failed before runner checkout. The dedicated `CALYX Hassler Guarded Upload Client Validation` run `31290720716` produced job `93187237107` with `steps=null`; BUILD-088E and Workflow Governance on the same head showed the same infrastructure pattern. This is tracked as the repository hosted-runner incident and is not counted as compile/lint/test evidence.
 
-The implementation remains draft and unmerged until an exact unchanged head obtains executable CI and passes the focused validation plus BUILD-088E. No production upload or staging action was attempted.
+The idempotent replay correction was implemented after that initial infrastructure-only run. The current branch must therefore receive fresh executable exact-head CI after the correction before it can be considered validated.
+
+The implementation remains draft and unmerged. No production upload or staging action was attempted.
 
 ## Governance boundary
 
-This implementation does **not** authorize or perform the production upload. The upload stores immutable release bytes and metadata in the production `taxonomy_pipeline` schema, so it is a production database mutation requiring explicit owner approval separate from generic autonomous implementation instructions.
+This implementation does **not** authorize or perform the production upload. The first upload stores immutable release bytes and metadata in the production `taxonomy_pipeline` schema, so it is a production database mutation requiring explicit owner approval separate from generic autonomous implementation instructions.
 
-After an authorized upload/readback succeeds, bounded staging smoke remains a separate state-changing step. Taxonomy activation, canonical species mutation, Knowledge Graph mutation, and scientific publication remain independently blocked.
+An exact already-present readback is read-only and results in `NO_OP_ALREADY_PRESENT`; it does not itself require a new mutation.
+
+After an authorized first upload/readback succeeds, bounded staging smoke remains a separate state-changing step. Taxonomy activation, canonical species mutation, Knowledge Graph mutation, and scientific publication remain independently blocked.
 
 ## Required disposition
 
