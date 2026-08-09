@@ -1,4 +1,4 @@
-# RS-15 Validation Update — 2026-08-08 19:40 PT
+# RS-15 Validation Update — 2026-08-08 19:55 PT
 
 ## Scope
 
@@ -9,48 +9,39 @@ This record supplements `RS-12-15-CALYX-SOURCE-WORKFLOW-HANDOFF.md` and captures
 - PR: `jsp1440/orchid-research-station#17` — RS-15 bounded Calyx Source Archive pagination.
 - Base: `feature/research-calyx-source-archive-14`.
 - PR remains draft, mergeable, unmerged, and non-production.
-- Latest runtime head: `ccd53a40af6b62d4182c3e2bedecacdbaee39e45`.
-- Frontend documentation was updated after the runtime correction to record the repeated pre-step CI failures; those documentation-only commits do not alter runtime behavior.
+- Latest runtime head: `7ac7fc430ec1518b91e8c8d4eca3e43ddd597238`.
+- Previous runtime sequencing head: `95ce5ba76d8ebd09decb1430760197824e4ac1d9`.
+- Frontend documentation is tracked separately from runtime behavior and must not be treated as runtime validation.
 
 ## Runtime corrections completed
 
-A deeper component review identified three related UI-state correctness risks in the independently loaded project-document-link state.
+A deeper component review identified and closed multiple related UI-state correctness risks in the independently loaded project-document-link and conversation-page state.
 
 ### 1. Independent error state
 
-The earlier RS-15 component allowed project document-link loading and paginated conversation loading to share one `error` state. A conversation-page load could therefore clear a document-link failure even though document-link state determines whether a persisted source is already saved.
-
-This was corrected by introducing a dedicated `documentError` channel.
+Project document-link loading and paginated conversation loading no longer share one error channel. A conversation-page load cannot silently clear a document-link failure that affects saved-source state.
 
 ### 2. Fail closed when project-link state is unknown
 
-An empty local document array is not equivalent to a successfully loaded project with zero document links. Before the latest hardening, conversation data could render before project document links finished loading, making an already-linked exact source temporarily appear saveable.
+An empty local document array is not treated as equivalent to a successfully loaded project with zero links. Exact source-save actions remain disabled until authoritative project-link state has loaded. The UI reports `Checking project links…` while pending and `Project links unavailable` after failure, with an explicit bounded retry action.
 
-The current implementation now:
+### 3. Accurate partial-success reporting
 
-- tracks whether project document links have loaded successfully;
-- disables exact source-save actions until link state is known;
-- reports `Checking project links…` while link state is pending;
-- reports `Project links unavailable` when the link request has failed;
-- exposes a bounded explicit `Retry project links` action after failure;
-- keeps save actions disabled after a failed post-save refresh until project links load successfully again.
+Source linking and its follow-up project-link refresh are separate operations. If CALYX-640 saves the source but the refresh fails, the UI reports `saved, refresh failed` rather than falsely reporting the source save itself as failed.
 
-Backend CALYX-640 idempotence already prevents duplicate-link corruption, but the frontend now fails closed instead of relying on that backend property to compensate for uncertain UI state.
+### 4. Stale-project isolation
 
-### 3. Accurate partial-success reporting and stale-project isolation
+Async save/refresh completions are guarded by the originating project ID. A stale Project A operation cannot overwrite Project B document state, notices, errors, or save-state cleanup after navigation.
 
-A source-link request and its follow-up project-link refresh are separate operations. If the source link succeeds but the refresh fails, reporting the entire save as failed is inaccurate and can encourage unnecessary retries.
+### 5. Newest-request-wins document-link sequencing
 
-The current implementation now reports that the governed source was saved while the project-link status refresh failed. It does not claim the save itself failed.
+Runtime head `95ce5ba76d8ebd09decb1430760197824e4ac1d9` adds a monotonic document-request sequence. Only the newest project-link request for the active project may update authoritative document state. If two retries overlap, an older success or failure is ignored after a newer request has begun. This closes the race where an older failed retry could overwrite a newer successful retry.
 
-The component also guards asynchronous save/refresh completions by the originating project ID. If the operator navigates from Project A to Project B while a Project A operation is in flight, the stale Project A completion cannot:
+The same head adds a synchronous `savingKeyRef` guard so rapid repeated clicks cannot start duplicate source-link requests during the interval before React state rerenders. The backend remains idempotent, but the frontend no longer relies on backend idempotence to compensate for the pre-render duplicate-submit window.
 
-- overwrite Project B document-link state;
-- write a Project A notice/error into Project B;
-- clear a Project B save indicator;
-- re-enable save controls from stale Project A state.
+### 6. Project-scoped pagination reset
 
-Project changes clear stale local project-link state before the new project load is considered authoritative.
+Runtime head `7ac7fc430ec1518b91e8c8d4eca3e43ddd597238` resets conversation offset, total, and loaded conversation details whenever `projectId` changes. Project B therefore opens at its newest page instead of inheriting an older-page offset from Project A. This also prevents stale Project A counts/details from being treated as Project B pagination state during the transition.
 
 These changes do not alter source identity, provenance authority, conversation evidence status, publication authority, or Knowledge Graph mutation authority.
 
@@ -58,17 +49,16 @@ These changes do not alter source identity, provenance authority, conversation e
 
 While private hosted runners remain unavailable:
 
-- manual PR-diff review completed;
+- manual PR-diff and async-flow review completed;
 - focused pagination tests cover first page, final partial page, oversized offset, negative offset, empty archive, and misaligned positive offsets;
 - earlier pagination property validation passed 42,220 cases after page-boundary normalization;
 - the actual `calyxSourceArchive.ts` helper compiled successfully with `tsc 5.8.3 --strict` against the imported conversation contract;
 - emitted helper JavaScript passed 263,304 boundary/property cases plus source-archive filtering smoke coverage;
 - the corrected `CalyxSourceArchive.tsx` integration surface was reconstructed against the real internal conversation, source-identity, document-scope, conversation-client, and Research Workspace link signatures;
-- the independent-error-state version passed strict TypeScript integration compilation;
-- the fail-closed plus stale-project-guard version also passed strict TypeScript integration compilation;
-- static async-flow review confirms stale project completions are checked before mutating document state, notices, errors, or save-state cleanup.
+- the independent-error-state and fail-closed/stale-project-guard revisions passed strict TypeScript integration compilation;
+- subsequent static state-machine review identified and closed the overlapping-retry race, pre-rerender duplicate-save window, and inherited cross-project conversation offset.
 
-The first local helper compile attempt encountered only a container fixture limitation (`@types/node` unavailable for a Node-typed harness); compiling the production helper separately succeeded. These supplemental checks do not replace canonical repository formatting, lint, Vitest, and production-build validation.
+These supplemental checks do not replace canonical repository formatting, lint, Vitest, and production-build validation.
 
 ## Private Actions blocker remains active
 
@@ -76,21 +66,21 @@ Private-repository Research Station CI still fails before project code is reache
 
 Recent exact runtime heads:
 
-- `a338aa676d879b19a83069dc36a88057cd091a8a`: independent document-error channel; run `31290518440`, job `93186733706`, failed with `steps: null`;
-- `45c7250bfc40f86b279152011ded94bdafc31902`: fail-closed project-link state and accurate partial-success reporting; run `31290965679`, job `93187920005`, failed with `steps: null`;
-- `ccd53a40af6b62d4182c3e2bedecacdbaee39e45`: stale-project async guards plus project-link retry; run `31291028502`, job `93188099034`, failed with `steps: null`.
+- `a338aa676d879b19a83069dc36a88057cd091a8a`: independent document-error channel; run `31290518440`, job `93186733706`, `steps: null`;
+- `45c7250bfc40f86b279152011ded94bdafc31902`: fail-closed project-link state and accurate partial-success reporting; run `31290965679`, job `93187920005`, `steps: null`;
+- `ccd53a40af6b62d4182c3e2bedecacdbaee39e45`: stale-project async guards plus retry; run `31291028502`, job `93188099034`, `steps: null`;
+- `95ce5ba76d8ebd09decb1430760197824e4ac1d9`: newest-request-wins sequencing and synchronous save serialization; run `31291445521`, job `93189218483`, `steps: null`;
+- `7ac7fc430ec1518b91e8c8d4eca3e43ddd597238`: project-boundary pagination reset; no workflow run had appeared at the first post-commit check, so no conclusion is recorded until a run exists.
 
-Documentation-only heads also reproduced the same signature, including runs `31291057324` / job `93188183032` and `31291118700` / job `93188354590`.
-
-No checkout, formatting, lint, test, build, or application step executed on those runs.
+No checkout, formatting, lint, test, build, or application step has executed on the failed runs above.
 
 Controlled diagnostics remain decisive:
 
 - public `jsp1440/orchid-continuum-frontend` executes equivalent Ubuntu and Windows hosted-runner probes;
-- private `jsp1440/orchid-calyx-backend` fails the probes before step 1;
-- private `jsp1440/Orchid-Continuum-Brain` fails the probes before step 1.
+- private `jsp1440/orchid-calyx-backend` fails those probes before step 1;
+- private `jsp1440/Orchid-Continuum-Brain` fails those probes before step 1.
 
-The failure therefore follows private repositories under the personal account rather than RS-15 code, one repository workflow, Linux, Windows, checkout, language setup, or GitHub-hosted runners generally. Canonical infrastructure incident remains backend issue #481.
+The failure follows private repositories under the personal account rather than RS-15 code, one repository workflow, Linux, Windows, checkout, language setup, or GitHub-hosted runners generally. Canonical infrastructure incident remains backend issue #481.
 
 ## Governance boundary
 
@@ -105,7 +95,7 @@ Do not:
 ## Recovery sequence
 
 1. Restore private-repository hosted Actions execution at the account/repository administrative layer.
-2. Run the unchanged latest RS-15 code through the complete Research Station gate.
+2. Run the unchanged latest RS-15 runtime head through the complete Research Station gate.
 3. Fix any real formatter/lint/Vitest/build failure before expanding scope.
 4. Promote PR #17 only after one exact head is fully green.
 5. Only then proceed to RS-16 or another source-archive capability.
