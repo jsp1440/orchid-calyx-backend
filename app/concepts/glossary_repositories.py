@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
@@ -9,6 +11,24 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .repositories import concept_database_url
+
+_FINAL_STATES = ("REVIEWED_MATCH", "NEW_CONCEPT_CANDIDATE", "REJECTED")
+
+
+def _decision_digest(candidate_id: str, updates: Mapping[str, Any]) -> str:
+    payload = {
+        "candidate_id": candidate_id,
+        "resolution_state": updates["resolution_state"],
+        "reviewed_concept_id": str(updates.get("reviewed_concept_id") or ""),
+        "reviewed_by": updates["reviewed_by"],
+        "review_rationale": updates["review_rationale"],
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 class PostgresGlossaryRepository:
@@ -40,11 +60,18 @@ class PostgresGlossaryRepository:
                 RETURNING *
                 """,
                 (
-                    row["candidate_id"], row["term"], row["normalized_term"],
-                    row["language"], row["source_uri"], row["source_revision_id"],
-                    row["source_checksum"], row["evidence_span_id"],
-                    row["resolution_state"], Jsonb(row["matched_concept_ids"]),
-                    row.get("reviewed_concept_id"), row.get("reviewed_by"),
+                    row["candidate_id"],
+                    row["term"],
+                    row["normalized_term"],
+                    row["language"],
+                    row["source_uri"],
+                    row["source_revision_id"],
+                    row["source_checksum"],
+                    row["evidence_span_id"],
+                    row["resolution_state"],
+                    Jsonb(row["matched_concept_ids"]),
+                    row.get("reviewed_concept_id"),
+                    row.get("reviewed_by"),
                     row.get("review_rationale"),
                 ),
             )
@@ -55,43 +82,120 @@ class PostgresGlossaryRepository:
                 "SELECT * FROM oc_concepts.glossary_candidates WHERE candidate_id=%s",
                 (row["candidate_id"],),
             )
-            return cur.fetchone()
+            existing = cur.fetchone()
+            if existing is None:
+                raise RuntimeError("GLOSSARY_CANDIDATE_UPSERT_FAILED")
+            return existing
 
-    def list_candidates(self, *, state: str | None, limit: int) -> list[dict[str, Any]]:
+    def list_candidates(
+        self,
+        *,
+        state: str | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
         with self._connect() as conn, conn.cursor() as cur:
             if state is None:
                 cur.execute(
-                    "SELECT * FROM oc_concepts.glossary_candidates ORDER BY created_at, candidate_id LIMIT %s",
+                    """
+                    SELECT * FROM oc_concepts.glossary_candidates
+                    ORDER BY created_at, candidate_id
+                    LIMIT %s
+                    """,
                     (limit,),
                 )
             else:
                 cur.execute(
-                    "SELECT * FROM oc_concepts.glossary_candidates WHERE resolution_state=%s ORDER BY created_at, candidate_id LIMIT %s",
+                    """
+                    SELECT * FROM oc_concepts.glossary_candidates
+                    WHERE resolution_state=%s
+                    ORDER BY created_at, candidate_id
+                    LIMIT %s
+                    """,
                     (state, limit),
                 )
             return list(cur.fetchall())
 
-    def review_candidate(self, candidate_id: str, updates: Mapping[str, Any]) -> dict[str, Any] | None:
+    def review_candidate(
+        self,
+        candidate_id: str,
+        updates: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        decision_digest = _decision_digest(candidate_id, updates)
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
                 UPDATE oc_concepts.glossary_candidates
-                SET resolution_state=%s, reviewed_concept_id=%s, reviewed_by=%s,
-                    review_rationale=%s, reviewed_at=NOW(), revised_at=NOW()
+                SET resolution_state=%s,
+                    reviewed_concept_id=%s,
+                    reviewed_by=%s,
+                    review_rationale=%s,
+                    reviewed_at=NOW(),
+                    revised_at=NOW()
                 WHERE candidate_id=%s
+                  AND resolution_state NOT IN (
+                    'REVIEWED_MATCH', 'NEW_CONCEPT_CANDIDATE', 'REJECTED'
+                  )
                 RETURNING *
                 """,
                 (
-                    updates["resolution_state"], updates.get("reviewed_concept_id"),
-                    updates["reviewed_by"], updates["review_rationale"], candidate_id,
+                    updates["resolution_state"],
+                    updates.get("reviewed_concept_id"),
+                    updates["reviewed_by"],
+                    updates["review_rationale"],
+                    candidate_id,
                 ),
             )
-            return cur.fetchone()
+            result = cur.fetchone()
+            if result is None:
+                cur.execute(
+                    """
+                    SELECT * FROM oc_concepts.glossary_candidates
+                    WHERE candidate_id=%s
+                    """,
+                    (candidate_id,),
+                )
+                existing = cur.fetchone()
+                if existing is None:
+                    return None
+                existing_digest = _decision_digest(
+                    candidate_id,
+                    {
+                        "resolution_state": existing["resolution_state"],
+                        "reviewed_concept_id": existing.get("reviewed_concept_id"),
+                        "reviewed_by": existing.get("reviewed_by"),
+                        "review_rationale": existing.get("review_rationale"),
+                    },
+                )
+                if existing_digest == decision_digest:
+                    return existing
+                raise ValueError("GLOSSARY_REVIEW_DECISION_IMMUTABLE")
+
+            cur.execute(
+                """
+                INSERT INTO oc_concepts.glossary_candidate_review_events
+                  (decision_digest, candidate_id, resolution_state,
+                   reviewed_concept_id, reviewed_by, review_rationale)
+                VALUES (%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (decision_digest) DO NOTHING
+                """,
+                (
+                    decision_digest,
+                    candidate_id,
+                    updates["resolution_state"],
+                    updates.get("reviewed_concept_id"),
+                    updates["reviewed_by"],
+                    updates["review_rationale"],
+                ),
+            )
+            return result
 
     def get_figure_request(self, request_id: str) -> dict[str, Any] | None:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT * FROM oc_concepts.glossary_figure_requests WHERE request_id=%s",
+                """
+                SELECT * FROM oc_concepts.glossary_figure_requests
+                WHERE request_id=%s
+                """,
                 (request_id,),
             )
             return cur.fetchone()
@@ -108,8 +212,12 @@ class PostgresGlossaryRepository:
                 RETURNING *
                 """,
                 (
-                    row["request_id"], row["concept_id"], row["request_type"],
-                    row["audience"], row["purpose"], row.get("source_candidate_id"),
+                    row["request_id"],
+                    row["concept_id"],
+                    row["request_type"],
+                    row["audience"],
+                    row["purpose"],
+                    row.get("source_candidate_id"),
                     row["review_state"],
                 ),
             )
@@ -117,21 +225,41 @@ class PostgresGlossaryRepository:
             if result is not None:
                 return result
             cur.execute(
-                "SELECT * FROM oc_concepts.glossary_figure_requests WHERE request_id=%s",
+                """
+                SELECT * FROM oc_concepts.glossary_figure_requests
+                WHERE request_id=%s
+                """,
                 (row["request_id"],),
             )
-            return cur.fetchone()
+            existing = cur.fetchone()
+            if existing is None:
+                raise RuntimeError("GLOSSARY_FIGURE_REQUEST_UPSERT_FAILED")
+            return existing
 
-    def list_figure_requests(self, *, concept_id: UUID | None, limit: int) -> list[dict[str, Any]]:
+    def list_figure_requests(
+        self,
+        *,
+        concept_id: UUID | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
         with self._connect() as conn, conn.cursor() as cur:
             if concept_id is None:
                 cur.execute(
-                    "SELECT * FROM oc_concepts.glossary_figure_requests ORDER BY created_at, request_id LIMIT %s",
+                    """
+                    SELECT * FROM oc_concepts.glossary_figure_requests
+                    ORDER BY created_at, request_id
+                    LIMIT %s
+                    """,
                     (limit,),
                 )
             else:
                 cur.execute(
-                    "SELECT * FROM oc_concepts.glossary_figure_requests WHERE concept_id=%s ORDER BY created_at, request_id LIMIT %s",
+                    """
+                    SELECT * FROM oc_concepts.glossary_figure_requests
+                    WHERE concept_id=%s
+                    ORDER BY created_at, request_id
+                    LIMIT %s
+                    """,
                     (concept_id, limit),
                 )
             return list(cur.fetchall())
