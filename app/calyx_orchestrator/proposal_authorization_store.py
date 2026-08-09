@@ -110,9 +110,7 @@ class DurableProposalAuthorizationStore:
         if existing is not None:
             persisted = self._verified_record(existing)
             if persisted != item:
-                raise ValueError(
-                    "PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED"
-                )
+                raise ValueError("PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED")
             return persisted
 
         row = ProposalAuthorizationDecisionRecord(
@@ -134,9 +132,7 @@ class DurableProposalAuthorizationStore:
                 raise
             persisted = self._verified_record(winner)
             if persisted != item:
-                raise ValueError(
-                    "PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED"
-                )
+                raise ValueError("PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED")
             return persisted
         self.db.refresh(row)
         return self._verified_record(row)
@@ -164,9 +160,9 @@ class DurableProposalAuthorizationStore:
                 "PROPOSAL_AUTH_DURABLE_PATCH_EVIDENCE_UNAVAILABLE"
             ) from exc
 
-        base_commit = str(
-            persisted.output.get("checkout_commit_sha") or ""
-        ).strip().lower()
+        base_commit = (
+            str(persisted.output.get("checkout_commit_sha") or "").strip().lower()
+        )
         identity = (
             persisted.repository,
             persisted.branch,
