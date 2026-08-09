@@ -9,6 +9,7 @@ on:
       - "app/calyx_orchestrator/owner_signature_verifier.py"
       - "app/calyx_orchestrator/proposal_authorization_store.py"
       - "tests/test_calyx_git_proposal_mutation_executor_114s.py"
+      - "tests/test_calyx_git_proposal_mutation_dependency_policy_114s.py"
       - "tests/test_calyx_git_proposal_execution_plan_114r.py"
       - "docs/brain/BUILD-BRAIN-114S-GIT-PROPOSAL-MUTATION-EXECUTOR.md"
       - ".github/workflows/build-brain-114s-git-proposal-mutation-executor.yml"
@@ -35,16 +36,16 @@ jobs:
           pip install pytest ruff
       - name: Compile executor surfaces
         run: |
-          python -m compileall -q app/calyx_orchestrator/git_proposal_mutation_executor.py tests/test_calyx_git_proposal_mutation_executor_114s.py
+          python -m compileall -q app/calyx_orchestrator/git_proposal_mutation_executor.py tests/test_calyx_git_proposal_mutation_executor_114s.py tests/test_calyx_git_proposal_mutation_dependency_policy_114s.py
       - name: Ruff executor surfaces
         run: |
-          ruff check app/calyx_orchestrator/git_proposal_mutation_executor.py tests/test_calyx_git_proposal_mutation_executor_114s.py
-          ruff format --check app/calyx_orchestrator/git_proposal_mutation_executor.py tests/test_calyx_git_proposal_mutation_executor_114s.py
+          ruff check app/calyx_orchestrator/git_proposal_mutation_executor.py tests/test_calyx_git_proposal_mutation_executor_114s.py tests/test_calyx_git_proposal_mutation_dependency_policy_114s.py
+          ruff format --check app/calyx_orchestrator/git_proposal_mutation_executor.py tests/test_calyx_git_proposal_mutation_executor_114s.py tests/test_calyx_git_proposal_mutation_dependency_policy_114s.py
       - name: Focused executor regressions
         env:
           PYTHONPATH: .
         run: |
-          pytest -q tests/test_calyx_git_proposal_mutation_executor_114s.py tests/test_calyx_git_proposal_execution_plan_114r.py
+          pytest -q tests/test_calyx_git_proposal_mutation_executor_114s.py tests/test_calyx_git_proposal_mutation_dependency_policy_114s.py tests/test_calyx_git_proposal_execution_plan_114r.py
       - name: Authority boundary assertions
         run: |
           python - <<'PY'
@@ -57,6 +58,7 @@ jobs:
               "autonomy/proposal/",
               "GitProposalMutationAdapter",
               "partial_failure",
+              "_actions_form_dependency_prefix",
           )
           for marker in required:
               assert marker in source, marker
