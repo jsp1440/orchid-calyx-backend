@@ -200,9 +200,7 @@ def _manifest(patch_program_job_id: str) -> dict:
                 "request_digest": "d" * 64,
                 "receipt_digest": "e" * 64,
                 "policy_digest": "f" * 64,
-                "target_hashes": [
-                    {"path": "app/example.py", "sha256": PATCH_AFTER}
-                ],
+                "target_hashes": [{"path": "app/example.py", "sha256": PATCH_AFTER}],
             }
         ],
         "commit_title": "Bounded change",
@@ -254,9 +252,7 @@ def _store(
         "principal:shared-reviewer" if same_reviewer else "principal:ops-reviewer"
     )
     security_reviewer = (
-        "principal:shared-reviewer"
-        if same_reviewer
-        else "principal:security-reviewer"
+        "principal:shared-reviewer" if same_reviewer else "principal:security-reviewer"
     )
     _record_review(
         store,
@@ -342,9 +338,7 @@ def test_tampered_persisted_review_cannot_satisfy_gate() -> None:
         )
     )
     assert row is not None
-    row.payload_json = row.payload_json.replace(
-        "security review complete.", "tampered"
-    )
+    row.payload_json = row.payload_json.replace("security review complete.", "tampered")
     store.db.commit()
     with pytest.raises(PermissionError, match="PROPOSAL_AUTH_DURABLE"):
         _request(store, patch_job_id)
