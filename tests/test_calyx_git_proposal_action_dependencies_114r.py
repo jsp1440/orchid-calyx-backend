@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.calyx_orchestrator.git_proposal_execution_plan import GitProposalExecutionPlanner
+from app.calyx_orchestrator.git_proposal_execution_plan import (
+    GitProposalExecutionPlanner,
+)
 
 
 def test_dependency_closed_action_prefixes_are_allowed() -> None:
