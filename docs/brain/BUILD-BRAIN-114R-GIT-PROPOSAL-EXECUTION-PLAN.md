@@ -6,7 +6,7 @@
 
 Exact validated code head: `f1ee23de67166050681f54e7c8b22f1f6623eb3d`.
 
-This Brain checkpoint records the actual failure-first repair sequence and changes no runtime behavior. It must itself receive applicable exact-head validation before merge.
+Final Brain-documented head `712197af9724a9864cd8518354f529b76c008245` passed all six applicable exact-head workflows before merge readiness.
 
 ## Objective
 
@@ -69,12 +69,21 @@ The current-main reconstruction exposed real executable findings; none were host
 
 Exact code head `f1ee23de67166050681f54e7c8b22f1f6623eb3d` passed all applicable validation:
 
-- BUILD-BRAIN-114R Git Proposal Execution Plan Validation `31329145290` — success; compile, Ruff lint/format, focused planning regressions, planning-only v2 provenance assertions, and diff hygiene passed.
+- BUILD-BRAIN-114R Git Proposal Execution Plan Validation `31329145290` — success.
 - BUILD-BRAIN-114O Durable Reviewed Owner Authorization Validation `31329145280` — success.
-- BUILD-BRAIN-114Q Owner Signature Verifier Validation `31329145260` — success under canonical Base64URL enforcement.
+- BUILD-BRAIN-114Q Owner Signature Verifier Validation `31329145260` — success.
 - CALYX-AGENT-003 Validation `31329145281` — success.
 - BUILD-088E Validation `31329145283` — success.
 - CALYX Workflow Governance Audit `31329145278` — success.
+
+Final Brain-documented head `712197af9724a9864cd8518354f529b76c008245` also passed all six applicable exact-head workflows:
+
+- BUILD-BRAIN-114R `31329195937` — success.
+- BUILD-BRAIN-114O `31329195893` — success.
+- BUILD-BRAIN-114Q `31329195895` — success.
+- CALYX-AGENT-003 `31329195918` — success.
+- BUILD-088E `31329195915` — success.
+- CALYX Workflow Governance Audit `31329195926` — success.
 
 Hosted GitHub Actions runners allocated and executed normally. These are application/test validation results, not infrastructure-only outcomes.
 
