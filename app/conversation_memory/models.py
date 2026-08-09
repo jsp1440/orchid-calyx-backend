@@ -46,10 +46,14 @@ class ConversationSession(Base):
         ForeignKey("research_station.projects.project_id"),
         nullable=True,
     )
-    title: Mapped[str] = mapped_column(String(160), nullable=False, default="Calyx conversation")
+    title: Mapped[str] = mapped_column(
+        String(160), nullable=False, default="Calyx conversation"
+    )
     active_taxon_id: Mapped[str | None] = mapped_column(Text)
     active_document_id: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
@@ -60,7 +64,9 @@ class ConversationSession(Base):
 class ConversationMessage(Base):
     __tablename__ = "conversation_messages"
     __table_args__ = (
-        CheckConstraint("role IN ('OPERATOR','CALYX')", name="ck_rs_conversation_message_role"),
+        CheckConstraint(
+            "role IN ('OPERATOR','CALYX')", name="ck_rs_conversation_message_role"
+        ),
         CheckConstraint(
             "data_status = 'CONVERSATION_CONTEXT'",
             name="ck_rs_conversation_message_status",
@@ -99,6 +105,12 @@ class ConversationMessage(Base):
         String(32), nullable=False, default="CONVERSATION_CONTEXT"
     )
     evidence_authority: Mapped[bool] = mapped_column(nullable=False, default=False)
-    scientific_publication_authorized: Mapped[bool] = mapped_column(nullable=False, default=False)
-    knowledge_graph_mutation_authorized: Mapped[bool] = mapped_column(nullable=False, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    scientific_publication_authorized: Mapped[bool] = mapped_column(
+        nullable=False, default=False
+    )
+    knowledge_graph_mutation_authorized: Mapped[bool] = mapped_column(
+        nullable=False, default=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
