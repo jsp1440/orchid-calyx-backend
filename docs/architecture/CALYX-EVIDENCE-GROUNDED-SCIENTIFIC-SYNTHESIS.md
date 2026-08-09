@@ -9,8 +9,8 @@ The authoring layer is downstream of evidence and interpretation. It may change 
 ## Governing invariants
 
 1. Search results are candidates, not evidence.
-2. A source cited in a publication artifact must be bibliographically verified against an authoritative registry or publisher record.
-3. Evidence must retain immutable source revision identity, locator, source content hash, and excerpt hash.
+2. A source cited in a publication artifact must be bibliographically verified against an authoritative registry or publisher record, with nonblank provider and verification identifier.
+3. Evidence must retain immutable source revision identity, a usable locator, source content hash, and excerpt hash; blank revision IDs or empty/blank-only locators block readiness.
 4. Direct scientific claims require primary experimental support.
 5. Commercial claims, expert practice, observations, controlled experiments, direct tracer studies, and mechanistic inference remain distinct evidence classes.
 6. Scientific prose must carry claim-level grounding; every scientific sentence must resolve to one or more synthesis claims.
@@ -33,6 +33,8 @@ This build establishes the first executable grounding contract:
 - `app/scientific_synthesis/service.py`
   - deterministic validation fingerprint
   - verification gate for article bibliography
+  - provider/identifier provenance requirement for verified bibliography records
+  - anchor identity, source revision, usable locator, source hash, and excerpt-hash checks
   - primary-evidence requirement for direct claims
   - explicit inference-rationale requirement
   - sentence-to-claim and claim-to-evidence integrity checks
@@ -42,7 +44,7 @@ This build establishes the first executable grounding contract:
   - authenticated API mounted below Scientific Interpretation
   - `POST /api/scientific-interpretation/synthesis/validate`
   - `GET /api/scientific-interpretation/synthesis/health`
-- regressions for verified primary evidence, unverified-source blocking, ungrounded prose blocking, commercial-only direct-claim blocking, inference labeling, deterministic fingerprints, and route mounting.
+- regressions for verified primary evidence, unsupported verified-state blocking, incomplete-anchor blocking, unverified-source blocking, ungrounded prose blocking, commercial-only direct-claim blocking, inference labeling, deterministic fingerprints, and route mounting.
 
 The validator deliberately does **not** generate prose and does **not** search the web. It is the safety boundary that later discovery and authoring components must satisfy.
 
