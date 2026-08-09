@@ -288,6 +288,33 @@ def create_taxonomy_release_router(
                 detail="durable taxonomy staging is unavailable until migration 107 is verified",
             ) from exc
 
+    @releases.get("/{release_id}/activation-decision")
+    def activation_decision(
+        release_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        durable = _try_durable_store(get_durable_store)
+        if durable is None:
+            raise HTTPException(
+                status_code=503,
+                detail="durable taxonomy evidence is unavailable until migration 107 is verified",
+            )
+        try:
+            from runtime.world_plants_activation_decision import (
+                build_activation_decision_packet,
+            )
+
+            return build_activation_decision_packet(durable, release_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="taxonomy release not found") from exc
+        except Exception as exc:
+            if not _is_sqlalchemy_error(exc):
+                raise
+            raise HTTPException(
+                status_code=503,
+                detail="taxonomy activation decision evidence is unavailable",
+            ) from exc
+
     router.include_router(releases)
     return router
 
