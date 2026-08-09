@@ -17,7 +17,9 @@ def components():
     return repository, CandidateExtractionService(repository)
 
 
-def request(relationship: str, scope: dict, reasoning_id: str) -> MechanisticCandidateRequest:
+def request(
+    relationship: str, scope: dict, reasoning_id: str
+) -> MechanisticCandidateRequest:
     return MechanisticCandidateRequest.model_validate(
         {
             "reasoning_id": reasoning_id,
@@ -38,9 +40,7 @@ def request(relationship: str, scope: dict, reasoning_id: str) -> MechanisticCan
             "source_object_id": 11 if relationship == "promotes" else 21,
             "revision_id": 12 if relationship == "promotes" else 22,
             "extraction_run_id": 13 if relationship == "promotes" else 23,
-            "source_anchors": [
-                {"anchor_id": 14 if relationship == "promotes" else 24}
-            ],
+            "source_anchors": [{"anchor_id": 14 if relationship == "promotes" else 24}],
             "causal_scope": scope,
         }
     )
@@ -62,9 +62,7 @@ def test_bounded_scope_rejects_semantically_empty_mapping_bounds(mapping):
     with pytest.raises(
         ValueError, match="BOUNDED_CAUSAL_SCOPE_REQUIRES_APPLICABILITY_BOUNDS"
     ):
-        CausalScope.model_validate(
-            {"scope_class": "bounded", "environments": mapping}
-        )
+        CausalScope.model_validate({"scope_class": "bounded", "environments": mapping})
 
 
 def test_mapping_scope_normalizes_keys_values_nested_collections_and_scope_id():
@@ -118,7 +116,9 @@ def test_equivalent_categorical_mapping_scope_forms_real_contradiction():
 
 
 def test_conflicting_keys_that_collapse_to_same_canonical_key_are_rejected():
-    with pytest.raises(ValueError, match="AMBIGUOUS_CAUSAL_SCOPE_MAPPING_KEY:temperature"):
+    with pytest.raises(
+        ValueError, match="AMBIGUOUS_CAUSAL_SCOPE_MAPPING_KEY:temperature"
+    ):
         CausalScope.model_validate(
             {
                 "scope_class": "bounded",
