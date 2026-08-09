@@ -3,7 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.brain.local_observation_context import local_observation_history
-from app.brain.local_observations import LocalObservationRequest, handoff_local_observation
+from app.brain.local_observations import (
+    LocalObservationRequest,
+    handoff_local_observation,
+)
 from app.brain.mechanistic_candidates import (
     MechanisticCandidateRequest,
     handoff_mechanistic_candidate,
