@@ -4,7 +4,6 @@ import csv
 import hashlib
 import io
 import json
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,8 +13,6 @@ from typing import Any
 from openpyxl import load_workbook
 
 from .models import DataIntelligenceError
-
-_SAFE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,20 +48,38 @@ class FileDatasetRepository:
         self.root = Path(root)
         self._lock = RLock()
 
-    def _part(self, value: str, code: str) -> str:
+    @staticmethod
+    def _scope_key(value: str, code: str) -> str:
         value = value.strip()
-        if not value or not _SAFE.match(value) or value in {".", ".."}:
+        if not value:
+            raise DataIntelligenceError(code)
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
+
+    @staticmethod
+    def _digest_part(value: str, code: str, *, lengths: set[int]) -> str:
+        value = value.strip().casefold()
+        if len(value) not in lengths or any(char not in "0123456789abcdef" for char in value):
             raise DataIntelligenceError(code)
         return value
 
     def _scope(self, owner: str, project_id: str) -> Path:
-        return self.root / self._part(owner, "INVALID_OWNER") / self._part(project_id, "INVALID_PROJECT_ID")
+        return (
+            self.root
+            / self._scope_key(owner, "INVALID_OWNER")
+            / self._scope_key(project_id, "INVALID_PROJECT_ID")
+        )
 
-    def _version_dir(self, owner: str, project_id: str, dataset_id: str, version_id: str) -> Path:
+    def _version_dir(
+        self,
+        owner: str,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
+    ) -> Path:
         return (
             self._scope(owner, project_id)
-            / self._part(dataset_id, "INVALID_DATASET_ID")
-            / self._part(version_id, "INVALID_VERSION_ID")
+            / self._digest_part(dataset_id, "INVALID_DATASET_ID", lengths={32})
+            / self._digest_part(version_id, "INVALID_VERSION_ID", lengths={64})
         )
 
     @staticmethod
@@ -73,7 +88,11 @@ class FileDatasetRepository:
 
     @staticmethod
     def _dataset_id(owner: str, project_id: str, logical_name: str) -> str:
-        payload = f"{owner}\x1f{project_id}\x1f{logical_name.strip().casefold()}".encode("utf-8")
+        payload = (
+            f"{owner}\x1f{project_id}\x1f{logical_name.strip().casefold()}".encode(
+                "utf-8"
+            )
+        )
         return hashlib.sha256(payload).hexdigest()[:32]
 
     def ingest(
@@ -87,9 +106,13 @@ class FileDatasetRepository:
     ) -> tuple[DatasetVersion, bool]:
         suffix = Path(filename).suffix.lower()
         if suffix not in {".csv", ".xlsx"}:
-            raise DataIntelligenceError("UNSUPPORTED_DATASET_FORMAT", {"suffix": suffix})
+            raise DataIntelligenceError(
+                "UNSUPPORTED_DATASET_FORMAT", {"suffix": suffix}
+            )
         if not data:
             raise DataIntelligenceError("EMPTY_DATASET")
+        if not logical_name.strip():
+            raise DataIntelligenceError("DATASET_NAME_REQUIRED")
         dataset_id = self._dataset_id(owner, project_id, logical_name)
         version_id = self._hash(data)
         directory = self._version_dir(owner, project_id, dataset_id, version_id)
@@ -116,14 +139,27 @@ class FileDatasetRepository:
             self._write_json(metadata_path, metadata.to_dict())
             return metadata, True
 
-    def get(self, owner: str, project_id: str, dataset_id: str, version_id: str) -> DatasetVersion:
+    def get(
+        self,
+        owner: str,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
+    ) -> DatasetVersion:
         path = self._version_dir(owner, project_id, dataset_id, version_id) / "dataset.json"
         if not path.is_file():
             raise DataIntelligenceError("DATASET_VERSION_NOT_FOUND")
-        return DatasetVersion(**json.loads(path.read_text(encoding="utf-8")))
+        metadata = DatasetVersion(**json.loads(path.read_text(encoding="utf-8")))
+        if metadata.owner != owner or metadata.project_id != project_id:
+            raise DataIntelligenceError("DATASET_SCOPE_MISMATCH")
+        return metadata
 
     def read_rows(
-        self, owner: str, project_id: str, dataset_id: str, version_id: str
+        self,
+        owner: str,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
     ) -> tuple[list[str], list[dict[str, Any]]]:
         metadata = self.get(owner, project_id, dataset_id, version_id)
         directory = self._version_dir(owner, project_id, dataset_id, version_id)
@@ -140,36 +176,76 @@ class FileDatasetRepository:
             if any(not value for value in columns) or len(set(columns)) != len(columns):
                 raise DataIntelligenceError("DATASET_COLUMNS_INVALID")
             return columns, [dict(row) for row in reader]
-        workbook = load_workbook(directory / "source.xlsx", read_only=True, data_only=True)
+
+        workbook = load_workbook(
+            directory / "source.xlsx", read_only=True, data_only=True
+        )
         try:
             sheet = workbook.active
             iterator = sheet.iter_rows(values_only=True)
             header = next(iterator, None)
             if not header:
                 raise DataIntelligenceError("DATASET_HEADER_REQUIRED")
-            columns = [str(value).strip() if value is not None else "" for value in header]
+            columns = [
+                str(value).strip() if value is not None else "" for value in header
+            ]
             if any(not value for value in columns) or len(set(columns)) != len(columns):
                 raise DataIntelligenceError("DATASET_COLUMNS_INVALID")
             rows = [
-                {columns[index]: row[index] if index < len(row) else None for index in range(len(columns))}
+                {
+                    columns[index]: row[index] if index < len(row) else None
+                    for index in range(len(columns))
+                }
                 for row in iterator
             ]
             return columns, rows
         finally:
             workbook.close()
 
-    def profile_path(self, owner: str, project_id: str, dataset_id: str, version_id: str) -> Path:
+    def profile_path(
+        self,
+        owner: str,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
+    ) -> Path:
         return self._version_dir(owner, project_id, dataset_id, version_id) / "profile.json"
 
-    def save_profile(self, owner: str, project_id: str, dataset_id: str, version_id: str, profile: dict[str, Any]) -> None:
-        self._write_json(self.profile_path(owner, project_id, dataset_id, version_id), profile)
+    def save_profile(
+        self,
+        owner: str,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
+        profile: dict[str, Any],
+    ) -> None:
+        self._write_json(
+            self.profile_path(owner, project_id, dataset_id, version_id), profile
+        )
 
-    def get_profile(self, owner: str, project_id: str, dataset_id: str, version_id: str) -> dict[str, Any] | None:
+    def get_profile(
+        self,
+        owner: str,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
+    ) -> dict[str, Any] | None:
         path = self.profile_path(owner, project_id, dataset_id, version_id)
         return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
 
-    def analysis_dir(self, owner: str, project_id: str, dataset_id: str, version_id: str, analysis_id: str) -> Path:
-        return self._version_dir(owner, project_id, dataset_id, version_id) / "analyses" / self._part(analysis_id, "INVALID_ANALYSIS_ID")
+    def analysis_dir(
+        self,
+        owner: str,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
+        analysis_id: str,
+    ) -> Path:
+        return (
+            self._version_dir(owner, project_id, dataset_id, version_id)
+            / "analyses"
+            / self._digest_part(analysis_id, "INVALID_ANALYSIS_ID", lengths={40})
+        )
 
     def save_analysis(
         self,
@@ -183,17 +259,35 @@ class FileDatasetRepository:
         table_bytes: bytes,
         chart_bytes: bytes | None,
     ) -> dict[str, str]:
-        directory = self.analysis_dir(owner, project_id, dataset_id, version_id, analysis_id)
+        directory = self.analysis_dir(
+            owner, project_id, dataset_id, version_id, analysis_id
+        )
         directory.mkdir(parents=True, exist_ok=True)
-        artifacts = {"table.json": self._write_bytes(directory / "table.json", table_bytes)}
+        artifacts = {
+            "table.json": self._write_bytes(directory / "table.json", table_bytes)
+        }
         if chart_bytes is not None:
-            artifacts["chart.svg"] = self._write_bytes(directory / "chart.svg", chart_bytes)
+            artifacts["chart.svg"] = self._write_bytes(
+                directory / "chart.svg", chart_bytes
+            )
         final_manifest = {**manifest, "artifact_hashes": artifacts}
         self._write_json(directory / "manifest.json", final_manifest)
         return artifacts
 
-    def get_analysis(self, owner: str, project_id: str, dataset_id: str, version_id: str, analysis_id: str) -> dict[str, Any]:
-        path = self.analysis_dir(owner, project_id, dataset_id, version_id, analysis_id) / "manifest.json"
+    def get_analysis(
+        self,
+        owner: str,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
+        analysis_id: str,
+    ) -> dict[str, Any]:
+        path = (
+            self.analysis_dir(
+                owner, project_id, dataset_id, version_id, analysis_id
+            )
+            / "manifest.json"
+        )
         if not path.is_file():
             raise DataIntelligenceError("ANALYSIS_NOT_FOUND")
         return json.loads(path.read_text(encoding="utf-8"))
@@ -207,5 +301,14 @@ class FileDatasetRepository:
 
     @classmethod
     def _write_json(cls, path: Path, payload: dict[str, Any]) -> None:
-        data = (json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False, default=str) + "\n").encode("utf-8")
+        data = (
+            json.dumps(
+                payload,
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+                default=str,
+            )
+            + "\n"
+        ).encode("utf-8")
         cls._write_bytes(path, data)
