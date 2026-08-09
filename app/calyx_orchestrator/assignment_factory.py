@@ -14,6 +14,7 @@ SAFE_ASSIGNMENT_CAPABILITIES = (
     ExecutorCapability.COLLECT_EVIDENCE_URIS.value,
 )
 ISOLATED_PATCH_CAPABILITIES = (*SAFE_ASSIGNMENT_CAPABILITIES, "workspace_write")
+# Durable job identity remains authoritative; persisted inputs may not override these keys.
 RESERVED_JOB_INPUT_KEYS = frozenset(
     {
         "program_job_id",
