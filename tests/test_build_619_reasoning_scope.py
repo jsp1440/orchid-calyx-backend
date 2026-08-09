@@ -84,6 +84,22 @@ def test_scoped_reasoning_map_retains_out_of_scope_paths_transparently():
     assert result["governance"]["out_of_scope_paths_are_retained_for_transparency"] is True
 
 
+def test_empty_reasoning_map_is_not_safe_to_generalize():
+    repo = InMemoryGraphRepository(
+        [node(1, "environment", "environment:cool", "Cool nights")],
+        [],
+    )
+    request = ScopedReasoningMapRequest.model_validate(
+        {
+            "subject_node_id": 1,
+            "applicability_scope": {"scope_class": "bounded", "tissues": ["leaf"]},
+        }
+    )
+    result = build_scoped_reasoning_map(repo, request)
+    assert result["paths"] == []
+    assert result["scope_summary"]["safe_to_generalize"] is False
+
+
 def test_global_claim_scope_applies_to_bounded_query():
     result = evaluate_scope(
         {"scope_class": "global", "global_justification": "Supported across tested orchid lineages."},
