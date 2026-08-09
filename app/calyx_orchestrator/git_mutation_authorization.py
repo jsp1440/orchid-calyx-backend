@@ -22,6 +22,7 @@ ALLOWED_ACTIONS = (
 )
 MAX_TTL_SECONDS = 1800
 MAX_SIGNATURE_CHARS = 8192
+FORBIDDEN_REF_CHARS = frozenset(" ~^:?*[\\")
 
 
 class OwnerGrantSignatureVerifier(Protocol):
@@ -40,6 +41,29 @@ def _is_git_sha(value: str) -> bool:
     return len(value) == 40 and all(
         character in "0123456789abcdef" for character in value
     )
+
+
+def _valid_git_branch(value: str) -> bool:
+    if (
+        not value
+        or value == "@"
+        or value.startswith("/")
+        or value.endswith(("/", "."))
+        or "//" in value
+        or ".." in value
+        or "@{" in value
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
+        or any(character in FORBIDDEN_REF_CHARS for character in value)
+    ):
+        return False
+    for component in value.split("/"):
+        if (
+            not component
+            or component.startswith(".")
+            or component.endswith((".", ".lock"))
+        ):
+            return False
+    return True
 
 
 def _nonempty(value: object, *, code: str) -> str:
@@ -139,6 +163,7 @@ class GitMutationAuthorizationRequest:
     patch_program_job_id: str
     repository: str
     base_commit_sha: str
+    base_ref: str
     proposed_branch: str
     change_hashes: tuple[tuple[str, str], ...]
     validation_receipt_digests: tuple[str, ...]
@@ -153,6 +178,7 @@ class GitMutationAuthorizationRequest:
             "patch_program_job_id": self.patch_program_job_id,
             "repository": self.repository,
             "base_commit_sha": self.base_commit_sha,
+            "base_ref": self.base_ref,
             "proposed_branch": self.proposed_branch,
             "change_hashes": [
                 {"path": path, "after_sha256": digest}
@@ -242,6 +268,7 @@ class GitMutationAuthorizationGate:
         *,
         review_store: DurableProposalAuthorizationStore,
         actions: Sequence[str],
+        base_ref: str,
         expires_at: str,
         now: datetime | None = None,
     ) -> GitMutationAuthorizationRequest:
@@ -267,11 +294,16 @@ class GitMutationAuthorizationGate:
         base_commit = (
             str(manifest_snapshot.get("base_commit_sha") or "").strip().lower()
         )
+        target_base_ref = str(base_ref or "").strip()
         proposed_branch = str(manifest_snapshot.get("proposed_branch") or "").strip()
         if not repository or "/" not in repository:
             raise ValueError("GIT_AUTHORIZATION_REPOSITORY_INVALID")
         if not _is_git_sha(base_commit):
             raise ValueError("GIT_AUTHORIZATION_BASE_COMMIT_INVALID")
+        if not _valid_git_branch(target_base_ref):
+            raise ValueError("GIT_AUTHORIZATION_BASE_REF_INVALID")
+        if target_base_ref == proposed_branch:
+            raise PermissionError("GIT_AUTHORIZATION_BASE_REF_CONFLICT")
         if not proposed_branch.startswith("autonomy/proposal/"):
             raise PermissionError("GIT_AUTHORIZATION_PROPOSAL_BRANCH_INVALID")
         raw_changes = manifest_snapshot.get("changes")
@@ -307,6 +339,7 @@ class GitMutationAuthorizationGate:
             patch_program_job_id=patch_program_job_id,
             repository=repository,
             base_commit_sha=base_commit,
+            base_ref=target_base_ref,
             proposed_branch=proposed_branch,
             change_hashes=tuple(sorted(changes)),
             validation_receipt_digests=tuple(sorted(receipts)),
