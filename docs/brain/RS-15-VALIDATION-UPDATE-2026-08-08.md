@@ -1,8 +1,8 @@
-# RS-15 Validation Update — 2026-08-08 20:11 PT
+# RS-15 Validation Update — 2026-08-08 20:14 PT
 
 ## Scope
 
-This record supplements `RS-12-15-CALYX-SOURCE-WORKFLOW-HANDOFF.md` and captures the exact RS-15 runtime hardening, supplemental validation, and private-repository CI boundary.
+This record supplements `RS-12-15-CALYX-SOURCE-WORKFLOW-HANDOFF.md` and captures the exact RS-15 runtime hardening, supplemental validation, private-repository CI boundary, and validation-independent repository hygiene completed while hosted execution is unavailable.
 
 ## Current Research Station state
 
@@ -76,7 +76,17 @@ Recent exact runtime heads:
 
 No checkout, formatting, lint, test, build, or application step executed on those failed runs.
 
-Canonical incident #481 now also records a fresh-`main` private backend successor whose dedicated migration-runner and governance workflows fail before checkout. That independent reproduction rules out stale branch history and explicitly concludes that further application commits or blind CI retries are not productive until a private-repository workflow obtains real steps or the personal-account Actions administrative state is inspected.
+Canonical incident #481 also records a fresh-`main` private backend successor whose dedicated migration-runner and governance workflows fail before checkout. That independent reproduction rules out stale branch history and explicitly concludes that further application commits or blind CI retries are not productive until a private-repository workflow obtains real steps or the personal-account Actions administrative state is inspected.
+
+### 20:14 PT natural recovery probe
+
+No blind RS-15 rerun was issued. Instead, the newest independently created private backend PR was inspected for a natural recovery signal.
+
+- BUILD-BRAIN-114O-R2 PR #750 head `205d284766c0503388238e96586dafd3ad5f33c0` was created after the prior RS-15 checkpoint.
+- Its dedicated BUILD-BRAIN-114O workflow run `31292010930` produced job `93190692695` with `steps: null` and failure before step 1.
+- Governance and CALYX-AGENT-003 runs on the same new head also failed.
+
+Therefore private hosted execution remained unavailable at 20:14 PT without consuming an RS-15 retry.
 
 Controlled diagnostics remain decisive:
 
@@ -85,6 +95,21 @@ Controlled diagnostics remain decisive:
 - private `jsp1440/Orchid-Continuum-Brain` fails those probes before step 1.
 
 The failure follows private repositories under the personal account rather than RS-15 code, one repository workflow, Linux, Windows, checkout, language setup, or GitHub-hosted runners generally. Canonical infrastructure incident remains backend issue #481.
+
+## Validation-independent repository hygiene
+
+Because executable CI is unavailable, only supersession cleanup with an explicit authoritative replacement is safe.
+
+Completed:
+
+- closed BUILD-BRAIN-114O PR #724 unmerged because authoritative BUILD-BRAIN-114O-R2 PR #750 explicitly replaces it on the strengthened #747 → #749 trust chain;
+- preserved the historical branch as provenance and recorded why it must not be merged independently.
+
+Not closed:
+
+- replacement candidates whose own PR text conditions closure of older drafts on executable green validation remain open. For example, occurrence consolidation PR #732 explicitly says #599 and #610 should close only after #732 validates; that condition is not met.
+
+This distinction prevents stale branches from remaining falsely authoritative while also avoiding premature closure of fallback evidence before a replacement is actually validated.
 
 ## Governance boundary
 
@@ -95,7 +120,8 @@ Do not:
 - make a private repository public as a CI workaround;
 - enable paid Actions overage, change a payment method, or increase a hard-stop Actions budget without owner decision;
 - interpret conversation text as evidence or authorize scientific publication / Knowledge Graph mutation through this work;
-- add further RS-15 application commits solely to probe a pre-step runner-allocation failure.
+- add further RS-15 application commits solely to probe a pre-step runner-allocation failure;
+- close older implementation PRs when the replacement explicitly conditions supersession on a future successful executable validation gate.
 
 ## Recovery sequence
 
