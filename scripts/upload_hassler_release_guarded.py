@@ -199,9 +199,13 @@ def execute_upload(
 
             post = _post_intake_state(client, headers)
             if post.get("pipeline_state") != "release_inspected_staging_smoke_required":
-                raise RuntimeError("post-upload readiness did not stop at staging smoke")
+                raise RuntimeError(
+                    "post-upload readiness did not stop at staging smoke"
+                )
             if post.get("next_job", {}).get("job") != "verify_taxonomy_staging_smoke":
-                raise RuntimeError("post-upload next job is not staging smoke verification")
+                raise RuntimeError(
+                    "post-upload next job is not staging smoke verification"
+                )
         except Exception as exc:
             if not upload_invoked:
                 raise
@@ -278,7 +282,11 @@ def main() -> int:
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     print(json.dumps(report, indent=2, sort_keys=True))
-    return 2 if report["status"] in {"MUTATED_VERIFICATION_FAILED", "UPLOAD_RESULT_UNKNOWN"} else 0
+    return (
+        2
+        if report["status"] in {"MUTATED_VERIFICATION_FAILED", "UPLOAD_RESULT_UNKNOWN"}
+        else 0
+    )
 
 
 if __name__ == "__main__":
