@@ -225,7 +225,11 @@ class IsolatedWorkspacePatchExecutor:
         branch: str,
         checkout_commit_sha: str,
     ) -> None:
-        journals = sorted(self.workspace_root.glob(f"{ROLLBACK_JOURNAL_PREFIX}*{ROLLBACK_JOURNAL_SUFFIX}"))
+        journals = sorted(
+            self.workspace_root.glob(
+                f"{ROLLBACK_JOURNAL_PREFIX}*{ROLLBACK_JOURNAL_SUFFIX}"
+            )
+        )
         expected_path = self._journal_path(assignment_id)
         unexpected = [path for path in journals if path != expected_path]
         if unexpected:
@@ -245,7 +249,9 @@ class IsolatedWorkspacePatchExecutor:
 
     def _journal_path(self, assignment_id: str) -> Path:
         token = hashlib.sha256(assignment_id.encode("utf-8")).hexdigest()[:32]
-        return self.workspace_root / f"{ROLLBACK_JOURNAL_PREFIX}{token}{ROLLBACK_JOURNAL_SUFFIX}"
+        return self.workspace_root / (
+            f"{ROLLBACK_JOURNAL_PREFIX}{token}{ROLLBACK_JOURNAL_SUFFIX}"
+        )
 
     def _persist_rollback_journal(
         self,
@@ -278,7 +284,9 @@ class IsolatedWorkspacePatchExecutor:
             "entries": entries,
         }
         payload = {**core, "journal_checksum": canonical_checksum(core)}
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
         if len(encoded) > MAX_JOURNAL_BYTES:
             raise ValueError("ISOLATED_PATCH_ROLLBACK_JOURNAL_TOO_LARGE")
         target = self._journal_path(assignment_id)
@@ -323,7 +331,7 @@ class IsolatedWorkspacePatchExecutor:
         prepared: list[PreparedPatch] = []
         for raw_entry in entries:
             if not isinstance(raw_entry, dict):
-                raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID")
+                raise TypeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID")
             path = str(raw_entry.get("path") or "").strip()
             before_sha = str(raw_entry.get("before_sha256") or "").strip().lower()
             after_sha = str(raw_entry.get("after_sha256") or "").strip().lower()
@@ -343,10 +351,14 @@ class IsolatedWorkspacePatchExecutor:
                 except (ValueError, TypeError) as exc:
                     raise RuntimeError("ISOLATED_PATCH_ROLLBACK_JOURNAL_INVALID") from exc
                 if hashlib.sha256(before_bytes).hexdigest() != before_sha:
-                    raise RuntimeError("ISOLATED_PATCH_ROLLBACK_PREIMAGE_CHECKSUM_MISMATCH")
+                    raise RuntimeError(
+                        "ISOLATED_PATCH_ROLLBACK_PREIMAGE_CHECKSUM_MISMATCH"
+                    )
             current = target.read_bytes() if target.exists() else None
             current_sha = (
-                hashlib.sha256(current).hexdigest() if current is not None else ABSENT_PREIMAGE
+                hashlib.sha256(current).hexdigest()
+                if current is not None
+                else ABSENT_PREIMAGE
             )
             if current_sha not in {before_sha, after_sha}:
                 raise RuntimeError(f"ISOLATED_PATCH_ROLLBACK_STATE_DIVERGED:{path}")
@@ -535,7 +547,9 @@ class IsolatedWorkspacePatchExecutor:
                         handle.flush()
                         os.fsync(handle.fileno())
                     os.replace(temporary, item.target)
-                    IsolatedWorkspacePatchExecutor._fsync_directory(item.target.parent)
+                    IsolatedWorkspacePatchExecutor._fsync_directory(
+                        item.target.parent
+                    )
                 finally:
                     try:
                         os.unlink(temporary)
