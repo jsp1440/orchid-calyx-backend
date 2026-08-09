@@ -68,7 +68,7 @@ def _rollback_workspace_mutation(
         return "WORKSPACE_ROLLBACK_UNAVAILABLE"
     try:
         rollback(assignment_id)
-    except Exception as exc:  # pragma: no cover - defensive fail-closed boundary
+    except Exception as exc:  # noqa: BLE001 - fail closed across executor boundary
         return f"WORKSPACE_ROLLBACK_FAILED:{type(exc).__name__}:{exc}"
     return None
 
