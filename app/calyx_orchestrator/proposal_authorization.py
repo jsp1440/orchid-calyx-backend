@@ -22,7 +22,9 @@ class ProposalDecision(StrEnum):
 
 
 def _is_sha256(value: str) -> bool:
-    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+    return len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
 
 
 def _nonempty(value: Any, *, code: str, maximum: int = 256) -> str:
@@ -112,13 +114,20 @@ class ProposalAuthorizationRecord:
         if verified["manifest_digest"] != self.manifest_digest:
             raise PermissionError("PROPOSAL_AUTH_STALE_MANIFEST")
         identity = (
-            verified.get("patch_program_job_id"), verified.get("repository"),
-            verified.get("base_commit_sha"), verified.get("source_autonomy_branch"),
-            verified.get("proposed_branch"), verified.get("patch_output_checksum"),
+            verified.get("patch_program_job_id"),
+            verified.get("repository"),
+            verified.get("base_commit_sha"),
+            verified.get("source_autonomy_branch"),
+            verified.get("proposed_branch"),
+            verified.get("patch_output_checksum"),
         )
         recorded = (
-            self.patch_program_job_id, self.repository, self.base_commit_sha,
-            self.source_autonomy_branch, self.proposed_branch, self.patch_output_checksum,
+            self.patch_program_job_id,
+            self.repository,
+            self.base_commit_sha,
+            self.source_autonomy_branch,
+            self.proposed_branch,
+            self.patch_output_checksum,
         )
         if identity != recorded:
             raise PermissionError("PROPOSAL_AUTH_MANIFEST_IDENTITY_MISMATCH")
@@ -131,63 +140,139 @@ class ProposalAuthorizationBuilder:
         self._patch_execution_service = patch_execution_service
 
     def build(
-        self, *, manifest_snapshot: Mapping[str, Any], requested_by: str,
-        review_class: str, reviewer_id: str, reviewer_roles: Sequence[str],
-        decision: ProposalDecision | str, rationale: str,
-        evidence_uris: Sequence[str], decided_at: datetime,
+        self,
+        *,
+        manifest_snapshot: Mapping[str, Any],
+        requested_by: str,
+        review_class: str,
+        reviewer_id: str,
+        reviewer_roles: Sequence[str],
+        decision: ProposalDecision | str,
+        rationale: str,
+        evidence_uris: Sequence[str],
+        decided_at: datetime,
     ) -> ProposalAuthorizationRecord:
         manifest = _manifest_payload(manifest_snapshot)
-        patch_program_job_id = _nonempty(manifest.get("patch_program_job_id"), code="PROPOSAL_AUTH_PATCH_PROGRAM_JOB_ID_REQUIRED")
-        repository = _nonempty(manifest.get("repository"), code="PROPOSAL_AUTH_REPOSITORY_INVALID")
+        patch_program_job_id = _nonempty(
+            manifest.get("patch_program_job_id"),
+            code="PROPOSAL_AUTH_PATCH_PROGRAM_JOB_ID_REQUIRED",
+        )
+        repository = _nonempty(
+            manifest.get("repository"), code="PROPOSAL_AUTH_REPOSITORY_INVALID"
+        )
         base_commit = str(manifest.get("base_commit_sha") or "").strip().lower()
-        if len(base_commit) != 40 or any(character not in "0123456789abcdef" for character in base_commit):
+        if len(base_commit) != 40 or any(
+            character not in "0123456789abcdef" for character in base_commit
+        ):
             raise ValueError("PROPOSAL_AUTH_BASE_COMMIT_INVALID")
-        source_branch = _nonempty(manifest.get("source_autonomy_branch"), code="PROPOSAL_AUTH_SOURCE_BRANCH_INVALID")
-        proposed_branch = _nonempty(manifest.get("proposed_branch"), code="PROPOSAL_AUTH_PROPOSED_BRANCH_INVALID")
+        source_branch = _nonempty(
+            manifest.get("source_autonomy_branch"),
+            code="PROPOSAL_AUTH_SOURCE_BRANCH_INVALID",
+        )
+        proposed_branch = _nonempty(
+            manifest.get("proposed_branch"),
+            code="PROPOSAL_AUTH_PROPOSED_BRANCH_INVALID",
+        )
         patch_checksum = str(manifest.get("patch_output_checksum") or "").strip().lower()
         if not _is_sha256(patch_checksum):
             raise ValueError("PROPOSAL_AUTH_PATCH_CHECKSUM_INVALID")
+
         producer_id = self._verify_persisted_patch(
-            program_job_id=patch_program_job_id, repository=repository,
-            source_branch=source_branch, base_commit=base_commit, patch_checksum=patch_checksum,
+            program_job_id=patch_program_job_id,
+            repository=repository,
+            source_branch=source_branch,
+            base_commit=base_commit,
+            patch_checksum=patch_checksum,
         )
         requester = _nonempty(requested_by, code="PROPOSAL_AUTH_REQUESTER_REQUIRED")
         reviewer = _nonempty(reviewer_id, code="PROPOSAL_AUTH_REVIEWER_REQUIRED")
         normalized_class = str(review_class or "").strip().lower()
         if normalized_class not in ALLOWED_REVIEW_CLASSES:
             raise PermissionError("PROPOSAL_AUTH_REVIEW_CLASS_NOT_ALLOWED")
-        roles = tuple(sorted({_nonempty(role, code="PROPOSAL_AUTH_REVIEWER_ROLE_INVALID") for role in reviewer_roles}))
+        roles = tuple(
+            sorted(
+                {
+                    _nonempty(role, code="PROPOSAL_AUTH_REVIEWER_ROLE_INVALID")
+                    for role in reviewer_roles
+                }
+            )
+        )
         if normalized_class not in roles:
             raise PermissionError("PROPOSAL_AUTH_REVIEWER_ROLE_REQUIRED")
         if reviewer in {requester, producer_id}:
             raise PermissionError("PROPOSAL_AUTH_SELF_APPROVAL_PROHIBITED")
+
         try:
             normalized_decision = ProposalDecision(str(decision).strip().lower())
         except ValueError as exc:
             raise ValueError("PROPOSAL_AUTH_DECISION_INVALID") from exc
-        normalized_rationale = _nonempty(rationale, code="PROPOSAL_AUTH_RATIONALE_REQUIRED", maximum=MAX_RATIONALE)
-        evidence = tuple(sorted({_nonempty(uri, code="PROPOSAL_AUTH_EVIDENCE_URI_INVALID", maximum=1_024) for uri in evidence_uris}))
-        if not evidence or len(evidence) > MAX_EVIDENCE_URIS or any(":" not in uri for uri in evidence):
+        normalized_rationale = _nonempty(
+            rationale,
+            code="PROPOSAL_AUTH_RATIONALE_REQUIRED",
+            maximum=MAX_RATIONALE,
+        )
+        evidence = tuple(
+            sorted(
+                {
+                    _nonempty(
+                        uri,
+                        code="PROPOSAL_AUTH_EVIDENCE_URI_INVALID",
+                        maximum=1_024,
+                    )
+                    for uri in evidence_uris
+                }
+            )
+        )
+        if (
+            not evidence
+            or len(evidence) > MAX_EVIDENCE_URIS
+            or any(":" not in uri for uri in evidence)
+        ):
             raise ValueError("PROPOSAL_AUTH_EVIDENCE_INVALID")
+
         record = ProposalAuthorizationRecord(
-            manifest_digest=manifest["manifest_digest"], patch_program_job_id=patch_program_job_id,
-            repository=repository, base_commit_sha=base_commit, source_autonomy_branch=source_branch,
-            proposed_branch=proposed_branch, patch_output_checksum=patch_checksum,
-            producer_id=producer_id, requested_by=requester, review_class=normalized_class,
-            reviewer_id=reviewer, reviewer_roles=roles, decision=normalized_decision,
-            rationale=normalized_rationale, evidence_uris=evidence,
+            manifest_digest=manifest["manifest_digest"],
+            patch_program_job_id=patch_program_job_id,
+            repository=repository,
+            base_commit_sha=base_commit,
+            source_autonomy_branch=source_branch,
+            proposed_branch=proposed_branch,
+            patch_output_checksum=patch_checksum,
+            producer_id=producer_id,
+            requested_by=requester,
+            review_class=normalized_class,
+            reviewer_id=reviewer,
+            reviewer_roles=roles,
+            decision=normalized_decision,
+            rationale=normalized_rationale,
+            evidence_uris=evidence,
             decided_at=_normalize_timestamp(decided_at),
         )
         record.verify_for_manifest(manifest_snapshot)
         return record
 
-    def _verify_persisted_patch(self, *, program_job_id: str, repository: str, source_branch: str, base_commit: str, patch_checksum: str) -> str:
+    def _verify_persisted_patch(
+        self,
+        *,
+        program_job_id: str,
+        repository: str,
+        source_branch: str,
+        base_commit: str,
+        patch_checksum: str,
+    ) -> str:
         try:
-            persisted = self._patch_execution_service.get_completed(program_job_id=program_job_id)
+            persisted = self._patch_execution_service.get_completed(
+                program_job_id=program_job_id
+            )
         except (LookupError, PermissionError, TypeError, ValueError) as exc:
             raise PermissionError("PROPOSAL_AUTH_PERSISTED_PATCH_REQUIRED") from exc
         output = persisted.output
-        identity = (persisted.repository, persisted.branch, str(output.get("checkout_commit_sha") or "").strip().lower(), persisted.output_checksum)
+        identity = (
+            persisted.repository,
+            persisted.branch,
+            str(output.get("checkout_commit_sha") or "").strip().lower(),
+            persisted.output_checksum,
+        )
         if identity != (repository, source_branch, base_commit, patch_checksum):
             raise PermissionError("PROPOSAL_AUTH_PERSISTED_PATCH_MISMATCH")
         return f"executor:{persisted.executor_key}"
@@ -195,7 +280,9 @@ class ProposalAuthorizationBuilder:
 
 @dataclass(slots=True)
 class ProposalAuthorizationRegistry:
-    records: dict[tuple[str, str], ProposalAuthorizationRecord] = field(default_factory=dict)
+    records: dict[tuple[str, str], ProposalAuthorizationRecord] = field(
+        default_factory=dict
+    )
 
     def record(self, item: ProposalAuthorizationRecord) -> ProposalAuthorizationRecord:
         key = (item.manifest_digest, item.review_class)
@@ -207,7 +294,9 @@ class ProposalAuthorizationRegistry:
         self.records[key] = item
         return item
 
-    def require(self, *, manifest_digest: str, review_class: str) -> ProposalAuthorizationRecord:
+    def require(
+        self, *, manifest_digest: str, review_class: str
+    ) -> ProposalAuthorizationRecord:
         try:
             return self.records[(manifest_digest, review_class)]
         except KeyError as exc:
