@@ -16,7 +16,10 @@ SECRET_REFERENCES = (
     "DATABASE_URL",
 )
 REDACTED = "[REDACTED]"
-_SECRET_PATTERN = re.compile(r"(?i)(api[_-]?key|token|secret|password|authorization|cookie|database_url)\s*[:=]\s*([^\s,;]+)")
+_HEADER_SECRET_PATTERN = re.compile(r"(?im)\b(authorization|cookie)\b\s*:\s*([^\r\n]+)")
+_SECRET_PATTERN = re.compile(
+    r"(?i)\b(api[_-]?key|token|secret|password|database_url)\b\s*[:=]\s*([^\s,;]+)"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +46,12 @@ class SecurityReadiness:
 
 def redact_sensitive(value: str) -> str:
     """Best-effort log redaction; never use this as an authorization boundary."""
-    return _SECRET_PATTERN.sub(lambda match: f"{match.group(1)}={REDACTED}", value)
+    redacted = _HEADER_SECRET_PATTERN.sub(
+        lambda match: f"{match.group(1)}: {REDACTED}", value
+    )
+    return _SECRET_PATTERN.sub(
+        lambda match: f"{match.group(1)}={REDACTED}", redacted
+    )
 
 
 class SecurityGovernanceInspector:
@@ -88,7 +96,12 @@ class SecurityGovernanceInspector:
             "merge_authorized": False,
             "findings": tuple(findings),
         }
-        digest_payload = {**base, "findings": [asdict(item) for item in findings]}
+        digest_payload = {
+            key: value
+            for key, value in base.items()
+            if key != "generated_at" and key != "findings"
+        }
+        digest_payload["findings"] = [asdict(item) for item in findings]
         return SecurityReadiness(**base, digest=self._digest(digest_payload))
 
     def public_payload(self) -> dict[str, Any]:
