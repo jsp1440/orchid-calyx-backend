@@ -23,6 +23,7 @@ from app.calyx_orchestrator.owner_signature_verifier import (
 
 NOW = datetime(2026, 8, 8, 23, 30, tzinfo=timezone.utc)
 OWNER = "principal:owner"
+BASE_REF = "main"
 
 
 def _b64url(value: bytes) -> str:
@@ -53,6 +54,7 @@ def _request() -> GitMutationAuthorizationRequest:
         patch_program_job_id="patch-job-123",
         repository="jsp1440/orchid-calyx-backend",
         base_commit_sha="b" * 40,
+        base_ref=BASE_REF,
         proposed_branch="autonomy/proposal/work-123",
         change_hashes=(("app/example.py", "c" * 64),),
         validation_receipt_digests=("d" * 64,),
@@ -80,6 +82,25 @@ def test_request_digest_binds_durable_patch_program_job_id() -> None:
         patch_program_job_id="patch-job-other",
         repository=original.repository,
         base_commit_sha=original.base_commit_sha,
+        base_ref=original.base_ref,
+        proposed_branch=original.proposed_branch,
+        change_hashes=original.change_hashes,
+        validation_receipt_digests=original.validation_receipt_digests,
+        review_authorization_digests=original.review_authorization_digests,
+        actions=original.actions,
+        expires_at=original.expires_at,
+    )
+    assert original.request_digest != changed.request_digest
+
+
+def test_request_digest_binds_base_ref() -> None:
+    original = _request()
+    changed = GitMutationAuthorizationRequest(
+        manifest_digest=original.manifest_digest,
+        patch_program_job_id=original.patch_program_job_id,
+        repository=original.repository,
+        base_commit_sha=original.base_commit_sha,
+        base_ref="release",
         proposed_branch=original.proposed_branch,
         change_hashes=original.change_hashes,
         validation_receipt_digests=original.validation_receipt_digests,
