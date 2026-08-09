@@ -22,9 +22,16 @@ class PersistedPatchExecution:
     repository: str
     branch: str
     executor_key: str
+    input_checksum: str
     output_checksum: str
     output: dict[str, object]
     evidence_uris: tuple[str, ...]
+
+
+def _is_sha256(value: str) -> bool:
+    return len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
 
 
 class PersistedPatchExecutionService:
@@ -53,6 +60,14 @@ class PersistedPatchExecutionService:
         evidence = decode_receipt_evidence(job)
         if evidence.get("receipt_type") != "execution":
             raise PermissionError("PATCH_PROGRAM_JOB_RECEIPT_INVALID")
+        receipt_identity = (
+            str(evidence.get("assignment_id") or "").strip(),
+            str(evidence.get("program_id") or "").strip(),
+            str(evidence.get("job_key") or "").strip(),
+        )
+        if receipt_identity != (job.program_job_id, job.program_id, job.job_key):
+            raise PermissionError("PATCH_PROGRAM_JOB_RECEIPT_IDENTITY_MISMATCH")
+
         executor_key = str(evidence.get("executor_key") or "").strip()
         if executor_key != IsolatedWorkspacePatchExecutor.executor_key:
             raise PermissionError("PATCH_PROGRAM_JOB_EXECUTOR_INVALID")
@@ -61,14 +76,16 @@ class PersistedPatchExecutionService:
         if evidence.get("blocker_code") not in {None, ""}:
             raise PermissionError("PATCH_PROGRAM_JOB_BLOCKED")
 
+        input_checksum = str(evidence.get("input_checksum") or "").strip().lower()
+        if not _is_sha256(input_checksum):
+            raise ValueError("PATCH_PROGRAM_JOB_INPUT_CHECKSUM_INVALID")
+
         output = evidence.get("output")
         if not isinstance(output, Mapping):
             raise TypeError("PATCH_PROGRAM_JOB_OUTPUT_REQUIRED")
         output_dict = dict(output)
         output_checksum = str(evidence.get("output_checksum") or "").strip().lower()
-        if len(output_checksum) != 64 or any(
-            character not in "0123456789abcdef" for character in output_checksum
-        ):
+        if not _is_sha256(output_checksum):
             raise ValueError("PATCH_PROGRAM_JOB_OUTPUT_CHECKSUM_INVALID")
         if output_checksum != canonical_checksum(output_dict):
             raise PermissionError("PATCH_PROGRAM_JOB_OUTPUT_CHECKSUM_MISMATCH")
@@ -102,6 +119,7 @@ class PersistedPatchExecutionService:
             repository=job.repository,
             branch=str(job.branch),
             executor_key=executor_key,
+            input_checksum=input_checksum,
             output_checksum=output_checksum,
             output=output_dict,
             evidence_uris=evidence_uris,
