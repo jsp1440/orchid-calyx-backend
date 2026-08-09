@@ -1,42 +1,86 @@
-# RS-15 Validation Update — 2026-08-08 19:28 PT
+# RS-15 Validation Update — 2026-08-08 19:40 PT
 
 ## Scope
 
-This record supplements `RS-12-15-CALYX-SOURCE-WORKFLOW-HANDOFF.md` and captures the latest exact RS-15 runtime hardening and private-repository CI state.
+This record supplements `RS-12-15-CALYX-SOURCE-WORKFLOW-HANDOFF.md` and captures the latest exact RS-15 runtime hardening, supplemental validation, and private-repository CI state.
 
 ## Current Research Station state
 
 - PR: `jsp1440/orchid-research-station#17` — RS-15 bounded Calyx Source Archive pagination.
 - Base: `feature/research-calyx-source-archive-14`.
 - PR remains draft, mergeable, unmerged, and non-production.
-- Runtime head after latest robustness correction: `a338aa676d879b19a83069dc36a88057cd091a8a`.
-- Documentation head after recording the correction: `b16cad8e3774a15225812a212cb0dff867687b67`.
+- Latest runtime head: `ccd53a40af6b62d4182c3e2bedecacdbaee39e45`.
+- Documentation head after recording the latest correction: `9ecf1248c750f140e37ff0558f063d9e08ca0225`.
 
-## Runtime correction completed
+## Runtime corrections completed
 
-A component-level review found that RS-15 had two independent asynchronous loads—project document links and paginated conversations—sharing one `error` state. Conversation pagination clears its error state at the start of each page request, so a document-link loading failure could be hidden even though document-link state controls whether a persisted source is displayed as already saved.
+A deeper component review identified three related UI-state correctness risks in the independently loaded project-document-link state.
 
-The runtime head `a338aa676d879b19a83069dc36a88057cd091a8a` corrects this by:
+### 1. Independent error state
 
-- adding an independent `documentError` state for project document-link loading;
-- clearing only that error when a new document-link load begins;
-- preserving conversation/action errors independently;
-- explicitly rendering a project-document-link failure message;
-- clearing the document error after a successful post-save document refresh.
+The earlier RS-15 component allowed project document-link loading and paginated conversation loading to share one `error` state. A conversation-page load could therefore clear a document-link failure even though document-link state determines whether a persisted source is already saved.
 
-This does not change source identity, source-save authority, conversation evidence status, publication authority, or Knowledge Graph mutation authority. It is a UI reliability correction only.
+This was corrected by introducing a dedicated `documentError` channel.
+
+### 2. Fail closed when project-link state is unknown
+
+An empty local document array is not equivalent to a successfully loaded project with zero document links. Before the latest hardening, conversation data could render before project document links finished loading, making an already-linked exact source temporarily appear saveable.
+
+The current implementation now:
+
+- tracks whether project document links have loaded successfully;
+- disables exact source-save actions until link state is known;
+- reports `Checking project links…` while link state is pending;
+- reports `Project links unavailable` when the link request has failed;
+- exposes a bounded explicit `Retry project links` action after failure;
+- keeps save actions disabled after a failed post-save refresh until project links load successfully again.
+
+Backend CALYX-640 idempotence already prevents duplicate-link corruption, but the frontend now fails closed instead of relying on that backend property to compensate for uncertain UI state.
+
+### 3. Accurate partial-success reporting and stale-project isolation
+
+A source-link request and its follow-up project-link refresh are separate operations. If the source link succeeds but the refresh fails, reporting the entire save as failed is inaccurate and can encourage unnecessary retries.
+
+The current implementation now reports that the governed source was saved while the project-link status refresh failed. It does not claim the save itself failed.
+
+The component also guards asynchronous save/refresh completions by the originating project ID. If the operator navigates from Project A to Project B while a Project A operation is in flight, the stale Project A completion cannot:
+
+- overwrite Project B document-link state;
+- write a Project A notice/error into Project B;
+- clear a Project B save indicator;
+- re-enable save controls from stale Project A state.
+
+Project changes clear stale local project-link state before the new project load is considered authoritative.
+
+These changes do not alter source identity, provenance authority, conversation evidence status, publication authority, or Knowledge Graph mutation authority.
 
 ## Supplemental validation completed
 
-Before the latest component correction, the actual RS-15 `calyxSourceArchive.ts` helper was compiled successfully with `tsc 5.8.3 --strict` against its imported conversation-type contract. Its emitted JavaScript passed 263,304 boundary/property cases plus a source-archive filtering smoke case. Earlier property validation also passed 42,220 cases after misaligned-offset normalization was added.
+While private hosted runners remain unavailable:
 
-The current component correction was statically reviewed against the exact branch file and preserves existing API signatures and provenance rules. Canonical repository formatting/lint/Vitest/production-build validation is still required before review-ready promotion.
+- manual PR-diff review completed;
+- focused pagination tests cover first page, final partial page, oversized offset, negative offset, empty archive, and misaligned positive offsets;
+- earlier pagination property validation passed 42,220 cases after page-boundary normalization;
+- the actual `calyxSourceArchive.ts` helper compiled successfully with `tsc 5.8.3 --strict` against the imported conversation contract;
+- emitted helper JavaScript passed 263,304 boundary/property cases plus source-archive filtering smoke coverage;
+- the corrected `CalyxSourceArchive.tsx` integration surface was reconstructed against the real internal conversation, source-identity, document-scope, conversation-client, and Research Workspace link signatures;
+- the independent-error-state version passed strict TypeScript integration compilation;
+- the fail-closed plus stale-project-guard version also passed strict TypeScript integration compilation;
+- static async-flow review confirms stale project completions are checked before mutating document state, notices, errors, or save-state cleanup.
+
+The first local helper compile attempt encountered only a container fixture limitation (`@types/node` unavailable for a Node-typed harness); compiling the production helper separately succeeded. These supplemental checks do not replace canonical repository formatting, lint, Vitest, and production-build validation.
 
 ## Private Actions blocker remains active
 
-At approximately 19:28 PT, the unchanged prior RS-15 CI run was explicitly rerun. GitHub accepted the rerun, but job `93186541517` again completed before step materialization with `steps: null`.
+Private-repository Research Station CI still fails before project code is reached.
 
-The new runtime correction automatically triggered CI run `31290518440`; job `93186733706` also completed `failure` with `steps: null`. No checkout, formatting, lint, test, build, or application step executed.
+Recent exact runtime heads:
+
+- `a338aa676d879b19a83069dc36a88057cd091a8a`: independent document-error channel; run `31290518440`, job `93186733706`, failed with `steps: null`;
+- `45c7250bfc40f86b279152011ded94bdafc31902`: fail-closed project-link state and accurate partial-success reporting; run `31290965679`, job `93187920005`, failed with `steps: null`;
+- `ccd53a40af6b62d4182c3e2bedecacdbaee39e45`: stale-project async guards plus project-link retry; run `31291028502`, job `93188099034`, failed with `steps: null`.
+
+No checkout, formatting, lint, test, build, or application step executed on those runs.
 
 Controlled diagnostics remain decisive:
 
@@ -59,7 +103,7 @@ Do not:
 ## Recovery sequence
 
 1. Restore private-repository hosted Actions execution at the account/repository administrative layer.
-2. Run the unchanged current RS-15 head through the complete Research Station gate.
+2. Run the unchanged latest RS-15 head through the complete Research Station gate.
 3. Fix any real formatter/lint/Vitest/build failure before expanding scope.
 4. Promote PR #17 only after one exact head is fully green.
 5. Only then proceed to RS-16 or another source-archive capability.
