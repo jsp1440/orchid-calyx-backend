@@ -7,7 +7,27 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.calyx_orchestrator.executor import canonical_checksum
+from app.calyx_orchestrator.engineering_core import TerminalOutcome
+from app.calyx_orchestrator.execution_bridge import LeaseExecutionBridge
+from app.calyx_orchestrator.executor import (
+    ExecutionReceipt,
+    ExecutionState,
+    canonical_checksum,
+)
+from app.calyx_orchestrator.isolated_patch_executor import (
+    ISOLATED_PATCH_ROLE,
+    IsolatedWorkspacePatchExecutor,
+)
+from app.calyx_orchestrator.program_models import (
+    CalyxProgram,
+    CalyxProgramDependency,
+    CalyxProgramJob,
+)
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
+from app.calyx_orchestrator.program_worker import PersistentProgramWorker
 from app.calyx_orchestrator.proposal_authorization import ProposalDecision
 from app.calyx_orchestrator.proposal_authorization_models import (
     ProposalAuthorizationDecisionRecord,
@@ -20,6 +40,7 @@ from app.calyx_orchestrator.sandbox_supervisor_evidence import canonical_sha256
 from app.database import Base
 
 REPOSITORY = "jsp1440/orchid-calyx-backend"
+BRANCH = "autonomy/work-123"
 BASE_COMMIT = "a" * 40
 NOW = datetime(2026, 8, 8, 23, 0, tzinfo=timezone.utc)
 
@@ -28,18 +49,23 @@ def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[ProposalAuthorizationDecisionRecord.__table__],
+        tables=[
+            CalyxProgram.__table__,
+            CalyxProgramJob.__table__,
+            CalyxProgramDependency.__table__,
+            ProposalAuthorizationDecisionRecord.__table__,
+        ],
     )
     return Session(engine)
 
 
-def _patch_output() -> dict:
+def _patch_output() -> dict[str, object]:
     return {
         "status": "delivered",
         "executed": True,
         "mode": "authoritative_isolated_workspace_patch",
         "repository": REPOSITORY,
-        "branch": "autonomy/work-123",
+        "branch": BRANCH,
         "checkout_commit_sha": BASE_COMMIT,
         "workspace_isolated": True,
         "workspace_disposable": True,
@@ -60,24 +86,56 @@ def _patch_output() -> dict:
     }
 
 
-def _patch_receipt() -> dict:
+def _persist_patch(session: Session) -> CalyxProgramJob:
+    repository = PersistentProgramRepository(session)
+    program = repository.create_program(
+        owner="owner",
+        title="durable review patch",
+        objective="persist exact isolated patch execution",
+        jobs=[
+            ProgramJobSpec(
+                "patch",
+                ISOLATED_PATCH_ROLE,
+                "patch",
+                REPOSITORY,
+                BRANCH,
+                True,
+            )
+        ],
+        dependencies=[],
+    )
+    repository.start(owner="owner", program_id=program.program_id)
+    claimed = PersistentProgramWorker(session).claim(worker_id="worker")
+    assert claimed is not None and claimed.lease_token
     output = _patch_output()
-    return {
-        "executor_key": "isolated_workspace_patcher_v1",
-        "state": "delivered",
-        "outcome": "delivered",
-        "output": output,
-        "output_checksum": canonical_checksum(output),
-    }
+    receipt = ExecutionReceipt(
+        assignment_id=claimed.program_job_id,
+        program_id=program.program_id,
+        job_key=claimed.job_key,
+        executor_key=IsolatedWorkspacePatchExecutor.executor_key,
+        state=ExecutionState.DELIVERED,
+        outcome=TerminalOutcome.DELIVERED,
+        input_checksum="input",
+        output_checksum=canonical_checksum(output),
+        output=output,
+        evidence_uris=("github:issue/691",),
+    )
+    return LeaseExecutionBridge(session).complete_from_receipt(
+        program_job_id=claimed.program_job_id,
+        worker_id="worker",
+        lease_token=claimed.lease_token,
+        receipt=receipt,
+    )
 
 
-def _manifest() -> dict:
+def _manifest(patch_program_job_id: str) -> dict:
     output = _patch_output()
     payload = {
-        "schema": "calyx-git-proposal-manifest-v1",
+        "schema": "calyx-git-proposal-manifest-v2",
+        "patch_program_job_id": patch_program_job_id,
         "repository": REPOSITORY,
         "base_commit_sha": BASE_COMMIT,
-        "source_autonomy_branch": "autonomy/work-123",
+        "source_autonomy_branch": BRANCH,
         "proposed_branch": "autonomy/proposal/work-123",
         "patch_output_checksum": canonical_checksum(output),
         "changes": [
@@ -118,14 +176,14 @@ def _manifest() -> dict:
 
 def _record_review(
     store: DurableProposalAuthorizationStore,
+    patch_program_job_id: str,
     *,
     review_class: str = "security",
     reviewer_id: str = "principal:security-reviewer",
     decision: ProposalDecision = ProposalDecision.APPROVED,
 ):
     return store.record_review(
-        manifest_snapshot=_manifest(),
-        patch_receipt=_patch_receipt(),
+        manifest_snapshot=_manifest(patch_program_job_id),
         requested_by="principal:requester",
         review_class=review_class,
         reviewer_id=reviewer_id,
@@ -137,10 +195,15 @@ def _record_review(
     )
 
 
-def test_record_survives_session_restart_and_rehydrates_exactly() -> None:
+def _store_with_patch() -> tuple[Session, DurableProposalAuthorizationStore, str]:
     session = _session()
-    store = DurableProposalAuthorizationStore(session)
-    item = _record_review(store)
+    patch_job = _persist_patch(session)
+    return session, DurableProposalAuthorizationStore(session), patch_job.program_job_id
+
+
+def test_record_survives_session_restart_and_rehydrates_exactly() -> None:
+    session, store, patch_job_id = _store_with_patch()
+    item = _record_review(store, patch_job_id)
     engine = session.bind
     session.close()
 
@@ -151,25 +214,25 @@ def test_record_survives_session_restart_and_rehydrates_exactly() -> None:
         review_class=item.review_class,
     )
     assert reloaded == item
+    assert reloaded.patch_program_job_id == patch_job_id
     assert reloaded.authorization_digest == item.authorization_digest
 
 
 def test_identical_replay_is_idempotent_but_conflicting_decision_is_terminal() -> None:
-    store = DurableProposalAuthorizationStore(_session())
-    approved = _record_review(store)
-    assert _record_review(store) == approved
+    _, store, patch_job_id = _store_with_patch()
+    approved = _record_review(store, patch_job_id)
+    assert _record_review(store, patch_job_id) == approved
 
     with pytest.raises(
         ValueError,
         match="PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED",
     ):
-        _record_review(store, decision=ProposalDecision.REJECTED)
+        _record_review(store, patch_job_id, decision=ProposalDecision.REJECTED)
 
 
 def test_payload_tampering_is_detected_on_read() -> None:
-    session = _session()
-    store = DurableProposalAuthorizationStore(session)
-    item = _record_review(store)
+    session, store, patch_job_id = _store_with_patch()
+    item = _record_review(store, patch_job_id)
     row = session.scalar(select(ProposalAuthorizationDecisionRecord))
     assert row is not None
     payload = json.loads(row.payload_json)
@@ -188,9 +251,8 @@ def test_payload_tampering_is_detected_on_read() -> None:
 
 
 def test_row_identity_tampering_is_detected() -> None:
-    session = _session()
-    store = DurableProposalAuthorizationStore(session)
-    item = _record_review(store)
+    session, store, patch_job_id = _store_with_patch()
+    item = _record_review(store, patch_job_id)
     row = session.scalar(select(ProposalAuthorizationDecisionRecord))
     assert row is not None
     row.authorization_digest = "f" * 64
@@ -204,10 +266,11 @@ def test_row_identity_tampering_is_detected() -> None:
 
 
 def test_dual_review_status_survives_materialization_from_durable_store() -> None:
-    store = DurableProposalAuthorizationStore(_session())
-    security = _record_review(store)
+    _, store, patch_job_id = _store_with_patch()
+    security = _record_review(store, patch_job_id)
     _record_review(
         store,
+        patch_job_id,
         review_class="operational",
         reviewer_id="principal:ops-reviewer",
     )
@@ -220,18 +283,18 @@ def test_dual_review_status_survives_materialization_from_durable_store() -> Non
 
 
 def test_durable_write_api_requires_governed_builder_path() -> None:
-    store = DurableProposalAuthorizationStore(_session())
+    _, store, patch_job_id = _store_with_patch()
     assert not hasattr(store, "record")
-    item = _record_review(store)
+    item = _record_review(store, patch_job_id)
+    assert item.patch_program_job_id == patch_job_id
     assert item.producer_id == "executor:isolated_workspace_patcher_v1"
 
 
 def test_self_approval_cannot_be_persisted_through_governed_write_path() -> None:
-    store = DurableProposalAuthorizationStore(_session())
+    _, store, patch_job_id = _store_with_patch()
     with pytest.raises(PermissionError, match="SELF_APPROVAL_PROHIBITED"):
         store.record_review(
-            manifest_snapshot=_manifest(),
-            patch_receipt=_patch_receipt(),
+            manifest_snapshot=_manifest(patch_job_id),
             requested_by="principal:security-reviewer",
             review_class="security",
             reviewer_id="principal:security-reviewer",
@@ -243,8 +306,24 @@ def test_self_approval_cannot_be_persisted_through_governed_write_path() -> None
         )
 
 
+def test_unknown_patch_job_cannot_be_persisted_as_review_evidence() -> None:
+    _, store, _ = _store_with_patch()
+    with pytest.raises(PermissionError, match="PERSISTED_PATCH_REQUIRED"):
+        store.record_review(
+            manifest_snapshot=_manifest("22222222-2222-2222-2222-222222222222"),
+            requested_by="principal:requester",
+            review_class="security",
+            reviewer_id="principal:security-reviewer",
+            reviewer_roles=("security",),
+            decision=ProposalDecision.APPROVED,
+            rationale="invalid missing patch",
+            evidence_uris=("review:invalid",),
+            decided_at=NOW,
+        )
+
+
 def test_invalid_manifest_digest_and_review_class_fail_closed() -> None:
-    store = DurableProposalAuthorizationStore(_session())
+    _, store, _ = _store_with_patch()
     with pytest.raises(ValueError, match="MANIFEST_DIGEST_INVALID"):
         store.require(manifest_digest="not-a-digest", review_class="security")
     with pytest.raises(ValueError, match="REVIEW_CLASS_INVALID"):
