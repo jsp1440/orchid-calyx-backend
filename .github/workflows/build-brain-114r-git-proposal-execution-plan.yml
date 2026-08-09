@@ -12,6 +12,7 @@ on:
       - "tests/test_calyx_git_proposal_action_dependencies_114r.py"
       - "tests/test_calyx_owner_signature_verifier_114q.py"
       - "docs/brain/BUILD-BRAIN-114R-GIT-PROPOSAL-EXECUTION-PLAN.md"
+      - "docs/brain/BUILD-BRAIN-114M-R1-TO-114R-CURRENT-PARENT-HANDOFF.md"
       - ".github/workflows/build-brain-114r-git-proposal-execution-plan.yml"
   workflow_dispatch:
 
