@@ -10,7 +10,7 @@ Bind the exact hardened persisted-patch and durable independent-review chain int
 
 ## Current dependency chain
 
-`#772 BUILD-BRAIN-114M-R3 → #781 BUILD-BRAIN-114N-R6 → #782 BUILD-BRAIN-114P-R5 → this BUILD-BRAIN-114O-R5`.
+`#772 BUILD-BRAIN-114M-R3 → #781 BUILD-BRAIN-114N-R6 → #782 BUILD-BRAIN-114P-R5 → #783 BUILD-BRAIN-114O-R5`.
 
 Historical #775 / R4 is rooted in superseded #773 ancestry and is source material only. R5 reapplies only the four additive 114O files directly on the exact validated #782 head.
 
@@ -40,7 +40,11 @@ No Git command, subprocess, branch creation, commit, push, pull-request creation
 
 Dedicated read-only CI compiles the current persisted-patch, 114N-R6, 114P-R5 and 114O-R5 surfaces, runs focused persistence/review/patch-identity/owner-grant regressions, requires the canonical assignment-input fixture, and statically rejects signing secrets and mutation APIs.
 
-R5 must receive executable exact-head BUILD-BRAIN-114O validation plus relevant broad regressions before downstream 114Q reconstruction. Failures are corrected before expansion.
+Initial exact head `aa838874c4007b8885d3eae2ae4eafe9c73fbb56` executed normally and exposed one style-only blocker: Ruff formatter drift in the focused owner-authorization test. No Ruff rule violation or compile failure occurred. The three exact formatter changes were applied without changing behavior.
+
+Exact implementation head `6c61a4f9f5e735cf340458efc57482976e1c374c` then passed BUILD-BRAIN-114O run `31296689932` end to end: dependency installation, compile, Ruff lint/format, focused durable reviewed authorization regressions, verifier-only durable patch identity/non-mutation assertions, and diff hygiene. The same exact head passed CALYX-AGENT-003 run `31296689939` and Workflow Governance run `31296689978`.
+
+This documentation-only commit records that receipt and becomes the new R5 head. It must receive its own executable exact-head validation before serving as the authoritative parent for 114Q.
 
 ## Next dependency
 
