@@ -1,0 +1,54 @@
+name: CALYX Orchid Show 473
+
+on:
+  pull_request:
+    paths:
+      - "runtime/orchid_show_operations.py"
+      - "app/routers/orchid_show_operations.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_calyx_orchid_show_473.py"
+      - ".github/workflows/calyx-orchid-show-473.yml"
+      - "docs/brain/CALYX-ORCHID-SHOW-473.md"
+
+jobs:
+  orchid-show:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile show operations surface
+        run: python -m py_compile runtime/orchid_show_operations.py app/routers/orchid_show_operations.py app/routers/live_mission_control.py tests/test_calyx_orchid_show_473.py
+      - name: Deterministic show, judging, privacy, and volunteer workflows
+        run: python -m pytest -q tests/test_calyx_orchid_show_473.py tests/test_calyx_volunteer_service_472.py
+      - name: Permanent human-judging and privacy assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('runtime/orchid_show_operations.py').read_text()
+          required = (
+              '"human_judging_required": True',
+              '"autonomous_awards_authorized": False',
+              '"payment_processing_authorized": False',
+              '"public_personal_data_authorized": False',
+              '"autonomous_award_authorized": False',
+              '"public_contact_authorized": False',
+              'HUMAN_JUDGING_DECISION_REQUIRED',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing show governance assertion(s): {missing}')
+          forbidden = ('requests.post(', 'httpx.post(', 'autonomous_awards_authorized": True', 'payment_processing_authorized": True')
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden show authority present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check runtime/orchid_show_operations.py app/routers/orchid_show_operations.py tests/test_calyx_orchid_show_473.py
+          git diff --check
