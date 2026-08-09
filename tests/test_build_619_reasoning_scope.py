@@ -98,8 +98,7 @@ def test_scoped_reasoning_map_retains_out_of_scope_paths_transparently():
         path["applicability"]["status"] == "out_of_scope" for path in result["paths"]
     )
     assert (
-        result["governance"]["out_of_scope_paths_are_retained_for_transparency"]
-        is True
+        result["governance"]["out_of_scope_paths_are_retained_for_transparency"] is True
     )
 
 
