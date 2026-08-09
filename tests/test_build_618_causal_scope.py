@@ -131,9 +131,9 @@ def test_bounded_scope_preserves_canonical_endpoint_identity_in_plan():
     source = plan["operations"][0]["payload"]
     target = plan["operations"][1]["payload"]
     assert source["canonical_key"] == "environment:cool-nights"
-    assert source["source_pk"] == "cool-nights"
+    assert source["provenance"]["source_pk"] == "cool-nights"
     assert target["canonical_key"] == "physiology:respiration-rate"
-    assert target["source_pk"] == "respiration-rate"
+    assert target["provenance"]["source_pk"] == "respiration-rate"
     assert source["payload"]["causal_scope"]["scope_class"] == "bounded"
 
 

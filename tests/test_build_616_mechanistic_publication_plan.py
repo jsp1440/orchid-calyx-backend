@@ -48,6 +48,7 @@ def request() -> MechanisticCandidateRequest:
                     "locator": {"confidence": 0.99},
                 }
             ],
+            "causal_scope": {"scope_class": "bounded", "tissues": ["young leaf"]},
             "experimental_context": {"tissue": "young leaf"},
             "quantitative_context": {"wavelength_nm": 450},
             "provenance": {"doi": "10.0000/example"},
