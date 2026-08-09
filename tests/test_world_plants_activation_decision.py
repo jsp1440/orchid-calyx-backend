@@ -79,7 +79,9 @@ def _item(status: str) -> dict:
 
 def test_open_review_items_hold_activation_decision(monkeypatch):
     store = FakeStore(completed=True, staged=34724, rows=34724, report=REPORT)
-    monkeypatch.setattr(decision, "_review_items", lambda store, release_id: [_item("open")])
+    monkeypatch.setattr(
+        decision, "_review_items", lambda store, release_id: [_item("open")]
+    )
 
     packet = decision.build_activation_decision_packet(store, "release-1")
 
@@ -93,7 +95,9 @@ def test_open_review_items_hold_activation_decision(monkeypatch):
     assert packet["knowledge_graph_mutation_authorized"] is False
 
 
-def test_status_only_resolution_is_not_accepted_as_durable_scientific_review(monkeypatch):
+def test_status_only_resolution_is_not_accepted_as_durable_scientific_review(
+    monkeypatch,
+):
     store = FakeStore(completed=True, staged=34724, rows=34724, report=REPORT)
     monkeypatch.setattr(
         decision,
