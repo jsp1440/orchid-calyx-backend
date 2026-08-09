@@ -1,43 +1,91 @@
-# CI and authority hygiene checkpoint — 2026-08-08 20:38 PT
+# CI and authority hygiene checkpoint — 2026-08-08
 
 ## Purpose
 
 Record validation-independent repository cleanup completed while canonical private-repository GitHub Actions remains unable to start workflow steps. This checkpoint supplements `RS-15-VALIDATION-UPDATE-2026-08-08.md` and canonical infrastructure incident #481.
 
-## Natural recovery check
+## Natural recovery status
 
 No blind RS-15 retry was issued.
 
-The newest independently created private backend head inspected was BUILD-BRAIN-114Q-R3 PR #766, head `e62f6004b4abb9449f91e3fa67d3d035c1b754ec`.
+The current active BUILD-BRAIN trust root is PR #772 (`BUILD-BRAIN-114M-R3`), rebuilt directly on current backend `main` after #761 drifted behind. Its exact head advanced during this checkpoint to `06f3bc3a98d579af62906dd463609968b7bf23f2`.
 
-Its dedicated BUILD-BRAIN-114Q run `31292752980` created job `93192665401`, which completed `failure` with `steps=null`. The same head also produced pre-step failures in Python Runtime Contract, BUILD-BRAIN-114O, CALYX Workflow Governance, and CALYX-AGENT-003. Therefore private hosted-runner execution had not recovered at this checkpoint.
+The dedicated BUILD-BRAIN-114M workflow on that exact head is run `31293419153`, job `93194537448`. The job completed `failure` with `steps=null`; no checkout, compile, Ruff, pytest, or diff-hygiene step executed. The same head also had pre-step failures in BUILD-BRAIN-108-113A, BUILD-BRAIN-114I, BUILD-BRAIN-114A, BUILD-088E, CALYX Workflow Governance, and CALYX-AGENT-003.
 
-The current 114N parent PR #762 likewise has dedicated run `31292536356` / job `93192073265` with `steps=null`. These are infrastructure results only: no checkout, compile, lint, test, or diff-hygiene step executed.
+Therefore private hosted-runner execution has not recovered. These are infrastructure results only and are not code pass/fail evidence.
 
-## Current-main trust authority
+## Current BUILD-BRAIN authority
 
-A current-main trust chain now exists:
+The previously recorded #761 -> #762 -> #763 -> #765 -> #766 chain is no longer authoritative because `main` advanced and the root had to be reconstructed again.
 
-`#761 BUILD-BRAIN-114M-R2 -> #762 BUILD-BRAIN-114N-R3 -> #763 BUILD-BRAIN-114P-R3 -> #765 BUILD-BRAIN-114O-R3 -> #766 BUILD-BRAIN-114Q-R3`
+Current authority is intentionally reduced to one integration root:
 
-This chain is the active authority for these milestones while executable validation remains blocked.
+`#772 BUILD-BRAIN-114M-R3`
+
+There is **no active authoritative 114N/P/O/Q/R descendant yet**. Rebuild order must restart from the exact #772 head:
+
+1. BUILD-BRAIN-114N directly on #772;
+2. BUILD-BRAIN-114P directly on that new 114N;
+3. BUILD-BRAIN-114O directly on that new 114P;
+4. BUILD-BRAIN-114Q directly on that new 114O;
+5. BUILD-BRAIN-114R directly on that new 114Q.
+
+Do not skip levels or reuse a descendant whose parent was closed/non-mergeable.
 
 ## Supersession cleanup completed
 
-Closed unmerged:
+Earlier cleanup closed #747, #749, #750 and duplicate #764. During this checkpoint additional ancestry drift was detected and retired.
 
-- #747 BUILD-BRAIN-114N-R2, superseded by current-main #762;
-- #749 BUILD-BRAIN-114P-R2, superseded by current-main #763;
-- #750 BUILD-BRAIN-114O-R2, superseded by current-main #765;
-- #764 alternate BUILD-BRAIN-114N-R3, closed as redundant because direct diff inspection showed the same six-file runtime/test/workflow capability as #762 while the live downstream chain is already based on #762.
+Closed unmerged / confirmed closed unmerged:
 
-Historical branches remain available as provenance. Closure does not authorize merge, deployment, Git/GitHub mutation runtime, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation.
+- #761 BUILD-BRAIN-114M-R2 — superseded by current-main #772;
+- #762 BUILD-BRAIN-114N-R3 — superseded after the trust root changed;
+- #763 BUILD-BRAIN-114P-R3 — superseded after its 114N parent was retired;
+- #765 BUILD-BRAIN-114O-R3 — closed because it depended on retired #763/#762/#761 ancestry;
+- #766 BUILD-BRAIN-114Q-R3 — closed because it depended on retired O/P/N/M ancestry;
+- #767 BUILD-BRAIN-114R-R3 — closed because it depended on retired Q/O/P/N/M ancestry;
+- #771 BUILD-BRAIN-114N-R4 — closed after retargeting to #772 proved non-mergeable; the 114N capability must be rebuilt directly on exact #772;
+- #773 BUILD-BRAIN-114P-R4 — closed because its parent #771 is closed/non-mergeable;
+- #775 BUILD-BRAIN-114O-R4 — closed immediately because it was created on closed #773 and therefore propagated invalid ancestry.
+
+Historical branches remain available as provenance/source material. Closure does not authorize merge, deployment, Git/GitHub mutation runtime, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation.
+
+## #772 trust-root audit
+
+The #772 PR changes exactly nine intended files:
+
+- `.github/workflows/build-brain-114m-git-proposal-manifest.yml`;
+- `app/calyx_orchestrator/assignment_factory.py`;
+- `app/calyx_orchestrator/execution_bridge.py`;
+- `app/calyx_orchestrator/git_proposal_manifest.py`;
+- `app/calyx_orchestrator/persisted_patch_execution.py`;
+- `docs/brain/BUILD-BRAIN-114M-GIT-PROPOSAL-MANIFEST.md`;
+- `tests/test_calyx_assignment_capabilities_114m_r1.py`;
+- `tests/test_calyx_git_proposal_manifest.py`;
+- `tests/test_calyx_persisted_patch_execution.py`.
+
+Static trust-boundary review completed during this checkpoint:
+
+- `workspace_write` is granted only when role is `isolated_workspace_patcher` **and** durable `mutating` intent is true;
+- non-patch roles receive only safe assignment capabilities;
+- assignment input checksums are reconstructed from durable program/job state;
+- persisted execution receipts bind assignment ID, program ID, job key, isolated-patch executor identity, input checksum, output checksum, repository, branch, execution mode, isolation/disposable state, and exact governed patch input/output agreement;
+- proposal manifest v2 removes caller-supplied `patch_receipt` authority and resolves only a persisted patch job;
+- caller-provided supervisor validation is rechecked against persisted supervisor evidence;
+- no import cycle was introduced between `assignment_factory` and `isolated_patch_executor`;
+- the current runtime audit found no additional defect that justified a speculative code change before executable CI.
+
+The focused workflow includes compile, Ruff check/format, three focused test files, static non-mutation assertions, and diff hygiene, but none can currently run because hosted jobs stop before step 1.
 
 ## Supersession rule
 
-Close a stale draft without executable CI only when repository evidence establishes an unambiguous replacement authority or a functionally duplicate branch whose downstream dependency chain already selects one parent.
+Close a stale draft without executable CI when repository evidence establishes either:
 
-Do not close fallback/older drafts when the replacement itself explicitly conditions supersession on a future green executable validation gate.
+- an unambiguous replacement authority on a newer trust root; or
+- a descendant whose parent has been proven invalid/non-mergeable and therefore cannot remain an integration authority; or
+- a functionally duplicate branch whose downstream chain already selects one parent.
+
+Do not close unrelated fallback implementations merely because they are old when their replacement explicitly conditions supersession on a future executable green gate.
 
 ## RS-15 boundary
 
@@ -45,4 +93,9 @@ RS-15 remains frozen at runtime head `7ac7fc430ec1518b91e8c8d4eca3e43ddd597238`,
 
 ## Recovery trigger
 
-The first private-repository workflow job with a non-empty materialized step list is the recovery signal. At that point, validate unchanged RS-15 first, fix real project-stage failures before expansion, and only then consider review-ready promotion.
+The first private-repository workflow job with a non-empty materialized step list is the recovery signal. At that point:
+
+1. validate unchanged RS-15 first;
+2. validate exact #772 before rebuilding downstream BUILD-BRAIN authorization layers;
+3. fix any real project-stage failures before expansion;
+4. only then consider review-ready promotion or rebuilding the 114N -> 114R chain.
