@@ -14,7 +14,10 @@ from app.conversation_memory.service import (
 )
 from app.database import get_db
 from app.research_workspace.schemas import DocumentLinkCreate
-from app.research_workspace.service import ResearchWorkspaceError, ResearchWorkspaceService
+from app.research_workspace.service import (
+    ResearchWorkspaceError,
+    ResearchWorkspaceService,
+)
 from app.security import verify_owner_or_api_key
 
 router = APIRouter(prefix="/brain/mission-control/chat", tags=["mission-control-chat"])
