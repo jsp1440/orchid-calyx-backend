@@ -2,56 +2,61 @@
 
 ## Objective
 
-Advance Calyx from validated autonomous engineering work toward Git/PR proposal readiness without granting Git or GitHub mutation authority. BUILD-BRAIN-114M converts an authoritative isolated patch receipt plus successful, persisted external-sandbox validation evidence into a deterministic, reviewable proposal manifest.
+Advance Calyx from validated autonomous engineering work toward Git/PR proposal readiness without granting Git or GitHub mutation authority. BUILD-BRAIN-114M converts a **durably persisted authoritative isolated-patch execution** plus successful persisted external-sandbox validation evidence into a deterministic reviewable proposal manifest.
 
-## Implemented
+## R1 trust correction — persisted patch execution
 
-- deterministic `calyx-git-proposal-manifest-v1` envelope;
-- exact repository, source autonomy branch, and base checkout commit inherited from the authoritative isolated patch receipt;
-- exact isolated-patch output checksum verification before proposal creation;
-- bounded changed-file set preserving before/after SHA-256, creation state, and size without including file contents;
-- proposed branch restricted to the `autonomy/proposal/*` namespace, prohibited from being the source work branch, and validated against Git ref-name rules without invoking Git or a shell;
-- external validation request/receipt verification using BUILD-BRAIN-114K contracts;
-- **persisted supervisor-record authentication**: each serialized receipt must resolve through `SandboxSupervisorService.get_completed_by_digest()` to an already completed durable supervisor record, and persisted repository/branch/commit/preset/targets/timeout, receipt digest, policy digest, authorization ID, and evidence URI must match exactly;
-- explicit allowed sandbox-policy digest set, so a persisted receipt created under an unapproved/obsolete worker policy cannot satisfy proposal validation;
-- validation identity must match the patch repository, autonomy branch, and base checkout commit;
-- only successful `delivered` / return-code-zero supervisor evidence is accepted;
-- every changed Python postimage must be covered by successful Ruff evidence with the exact postimage hash;
-- every changed Python test must be covered by successful pytest evidence for that exact `(path, postimage SHA-256)`, not merely by an unrelated successful pytest target;
-- deterministic proposal digest binds patch output checksum, changes, validation request/receipt/policy digests, proposal branch, commit title, PR title, and summary;
-- explicit permanent false authority flags for Git mutation, commit, push, pull-request creation, automatic merge, deployment, publication, production database mutation, and production Knowledge Graph mutation;
-- focused tests and a dedicated read-only CI gate;
-- manual `workflow_dispatch` validation chooses the repository default branch when no pull-request `base_ref` exists, so diff hygiene remains executable outside PR events.
+A post-merge trust audit found that the original v1 manifest authenticated sandbox validation receipts against durable supervisor records but still accepted the isolated patch receipt as a caller-supplied mapping. Because the executor key and output checksum are caller-computable, a fabricated patch receipt could seed a formally valid v1 manifest without proving that the authoritative program worker actually completed that patch.
 
-## Post-review corrections
+R1 closes that gap using the existing Calyx program-job persistence boundary:
 
-Four review findings were accepted before merge:
+- `PersistedPatchExecutionService` resolves a concrete `CalyxProgramJob` through a SQLAlchemy session;
+- the row must be persistent, `completed`, outcome `DELIVERED`, mutating, and use the exact `isolated_workspace_patcher` role;
+- `LeaseExecutionBridge` persists immutable receipt identity (`assignment_id`, `program_id`, `job_key`) in `evidence_json` alongside executor key, state, input checksum, output checksum, output, evidence URIs, and blocker;
+- the resolver requires those persisted receipt identities to match the exact program-job row, requires executor key `isolated_workspace_patcher_v1`, delivered state, no blocker, and a recomputable output checksum;
+- persisted job repository/branch must exactly match receipt output repository/branch;
+- the persisted job input manifest is parsed and its exact patch paths, preimage hashes, UTF-8 postimage SHA-256 values, creation flags, byte sizes, file count, and total bytes must match the receipt output; a coherently rehashed but input-divergent output therefore still fails closed;
+- the output must still prove authoritative isolated-workspace patch mode, execution, disposable isolation, and no pre-existing commit;
+- the proposal builder accepts only `patch_program_job_id`; the old caller-supplied `patch_receipt=` authority path is removed;
+- the manifest schema is advanced to `calyx-git-proposal-manifest-v2` and binds `patch_program_job_id` into the manifest digest.
 
-1. **P1 — fabricated supervisor receipt.** Shape validation plus a caller-computable request digest was insufficient. 114M now requires a matching persisted completed record from the 114K supervisor service and an allowed policy digest. A serialized `delivered` receipt whose receipt digest differs from the durable record is rejected.
-2. **P2 — incomplete pytest coverage.** Changed tests now require exact pytest target coverage by path and postimage hash, mirroring Ruff coverage semantics.
-3. **P2 — invalid future branch names.** Proposal branch validation now implements Git ref-name constraints in pure Python while preserving the `autonomy/proposal/*` namespace and no-Git-execution boundary.
-4. **P2 — manual workflow diff base.** Diff hygiene now uses `github.base_ref` for PRs or the repository default branch for manual dispatch runs.
+## R1 integration correction — executable assignment path
 
-These corrections narrow trust; none grants Git, GitHub, deployment, publication, production database, taxonomy, or Knowledge Graph mutation authority.
+A later integration audit found that the trust resolver was stronger than the runtime path feeding it: `IsolatedWorkspacePatchExecutor` requires `workspace_write`, but the generic governed assignment factory granted only validate/receipt/evidence capabilities. The normal `run_deterministic_program_cycle()` could therefore claim an isolated patch job and then fail before patch execution, while persistence tests could still pass by manually constructing an execution receipt.
 
-## Why this slice matters
+R1 now closes that integration gap without broadening authority:
 
-The autonomous engineering chain can produce a bounded patch, validate it independently through the external sandbox boundary, prove that the validation receipt is the same receipt durably accepted by the authenticated supervisor service, and assemble a deterministic proposal package that a later Git-authority component could consume. The proposal package itself performs no Git or GitHub operations. This separates engineering evidence from repository mutation authority and gives reviewers a stable cryptographic object to approve or reject.
+- `assignment_factory.py` keeps the existing safe base capabilities for ordinary roles;
+- only `isolated_workspace_patcher` receives the additional `workspace_write` capability;
+- its assignment governance mode is `bounded_isolated_workspace_mutation`, while external execution, repository code execution, merge, deployment, publication, and production graph mutation remain false;
+- a shared `assignment_inputs_for_program_job()` function is the single canonical constructor for the assignment input object;
+- `PersistedPatchExecutionService` recomputes `input_checksum` from that same constructor plus the durable program/job rows and rejects a valid-shape but incorrect SHA-256;
+- focused integration coverage creates a disposable Git worktree and isolation marker, creates a real persisted patch job, runs it through `run_deterministic_program_cycle()` with `AuthoritativeExecutorRegistry`, verifies the actual file mutation, then resolves the resulting durable receipt through `PersistedPatchExecutionService`.
 
-## Evidence requirements
+This removes the prior test-only shortcut: the normal registered authoritative worker path can now produce the exact persisted patch evidence consumed by manifest v2.
 
-A proposal cannot be generated from a dry run, an unverified patch checksum, a mismatched repository/revision, a fabricated or unpersisted supervisor receipt, an unapproved sandbox policy, blocked or timed-out validation, stale validation hashes, incomplete Ruff coverage of changed Python files, incomplete exact pytest coverage of changed tests, or a Git-invalid/arbitrary branch namespace.
+The effective trust chain is therefore **persisted governed job inputs → canonical assignment input checksum → exact program-job row → exact persisted execution-receipt identity → registered isolated patch executor → input/output-consistent isolated workspace mutation → manifest v2**.
 
-The persisted supervisor record is the trust anchor for serialized external-validation evidence. 114M never accepts a caller-provided `trusted=true` flag or a receipt solely because its fields are structurally valid.
+This means pre-fix v1 manifests cannot silently satisfy the hardened downstream review/authorization path. BUILD-BRAIN-114N/114P/114O and later owner-signature/planning layers must consume v2 and re-bind the durable patch job identity before any can be merged.
+
+## Existing validation trust
+
+114M continues to require persisted supervisor-record authentication for each external validation receipt. `SandboxSupervisorService.get_completed_by_digest()` must resolve an already completed durable record whose repository, branch, commit, preset, targets, timeout, receipt digest, policy digest, authorization ID, and evidence URI match exactly. Allowed sandbox-policy digests remain explicit.
+
+Every changed Python postimage requires exact Ruff coverage. Every changed Python test requires exact pytest coverage by `(path, postimage SHA-256)`. Proposed branches remain confined to valid `autonomy/proposal/*` Git ref names without invoking Git or a shell.
+
+## Current-main R2 reconstruction
+
+The original R1 branch became stale while unrelated Calyx work advanced `main`. A file-overlap audit from its merge base to current `main` found **zero overlap across the nine R1 files**. R2 therefore rebuilds the same hardened trust root directly on current `main` rather than merging a 17-commit-behind branch. This preserves intervening Brain, conversation, and reasoning-prerequisite work while retaining the exact R1 authority boundaries.
+
+The R2 merge gate is executable exact-head validation on the current-main replacement branch: BUILD-BRAIN-114M focused tests, BUILD-088E, agent/Brain regression lanes selected by the changed surfaces, workflow governance, and an unchanged-head review audit. Downstream 114N/114P/114O branches must be rebuilt on the exact merged R2 head before they are treated as authoritative.
 
 ## Permanent non-authorities
 
-BUILD-BRAIN-114M performs no Git command, commit, branch creation, push, pull-request creation, merge, deployment, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation. It stores no credentials and performs no network calls. Its added supervisor-service operation is read-only durable-record lookup.
+BUILD-BRAIN-114M performs no Git command, commit, branch creation, push, pull-request creation, merge, deployment, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation. It stores no credentials and performs no network calls. The isolated patch capability is confined to the already-governed disposable workspace role; both durable-evidence resolvers are read-only.
 
 ## Validation contract
 
-The dedicated BUILD-BRAIN-114M workflow compiles the manifest and persisted-record lookup surfaces, runs Ruff lint and format checks, executes focused proposal regressions, statically asserts the absence of Git/network mutation mechanisms and the presence of persisted-evidence authority checks, and runs event-aware diff hygiene. CALYX Workflow Governance Audit and BUILD-088E remain required. Exact-head CI must be green against the current hardened BUILD-BRAIN-114L base before the slice is considered review-ready. Merge remains a separate governance decision.
+The dedicated BUILD-BRAIN-114M workflow compiles and lints the assignment factory, shared execution bridge, `git_proposal_manifest.py`, `persisted_patch_execution.py`, supervisor persistence, and focused tests. Coverage includes real program-job persistence through `LeaseExecutionBridge`, a full `run_deterministic_program_cycle()` isolated-patch integration using a disposable worktree, role-specific `workspace_write` assignment checks, missing/wrong-role/wrong-executor/mismatched-identity/tampered-output rejection, coherently rehashed output rejection when governed inputs differ, persisted receipt-row identity mismatch rejection, malformed input-checksum rejection, valid-shape wrong input-checksum rejection, manifest-v2 determinism, removal of the caller patch-receipt path, persisted supervisor validation, exact Ruff/pytest coverage, and Git branch rules.
 
-## Exact-head validation provenance
-
-The Ruff-only correction at `7ba47cc9f1f03aa9e5a166aa30e2ad301279142b` was authored by an automation identity, after which GitHub classified the subsequent pull-request workflows as `action_required` before creating any jobs. This Brain update intentionally creates a repository-owner-authored documentation head without changing runtime behavior so the same exact stacked validation matrix can execute normally. A passing result must still cover BUILD-BRAIN-114M, BUILD-BRAIN-114K, CALYX agent validation, and workflow governance on the new head before review-readiness is claimed.
+Static CI assertions require manifest v2, `patch_program_job_id`, absence of `patch_receipt` in the builder source, persisted patch and validation checks, the three receipt identity fields in `LeaseExecutionBridge`, exact assignment-input checksum verification, isolated-patch-only `workspace_write`, input/output matching, and permanent non-mutation flags.
