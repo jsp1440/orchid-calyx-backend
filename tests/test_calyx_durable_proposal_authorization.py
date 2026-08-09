@@ -265,6 +265,44 @@ def test_row_identity_tampering_is_detected() -> None:
         )
 
 
+def test_durable_review_fails_if_patch_evidence_changes_after_review() -> None:
+    session, store, patch_job_id = _store_with_patch()
+    item = _record_review(store, patch_job_id)
+    patch_job = session.get(CalyxProgramJob, patch_job_id)
+    assert patch_job is not None and patch_job.evidence_json
+    evidence = json.loads(patch_job.evidence_json)
+    evidence["output"]["total_written_bytes"] = 101
+    patch_job.evidence_json = json.dumps(evidence, sort_keys=True)
+    session.commit()
+
+    with pytest.raises(
+        PermissionError,
+        match="PROPOSAL_AUTH_DURABLE_PATCH_EVIDENCE_UNAVAILABLE",
+    ):
+        store.require(
+            manifest_digest=item.manifest_digest,
+            review_class=item.review_class,
+        )
+
+
+def test_durable_review_fails_if_patch_job_is_deleted_after_review() -> None:
+    session, store, patch_job_id = _store_with_patch()
+    item = _record_review(store, patch_job_id)
+    patch_job = session.get(CalyxProgramJob, patch_job_id)
+    assert patch_job is not None
+    session.delete(patch_job)
+    session.commit()
+
+    with pytest.raises(
+        PermissionError,
+        match="PROPOSAL_AUTH_DURABLE_PATCH_EVIDENCE_UNAVAILABLE",
+    ):
+        store.require(
+            manifest_digest=item.manifest_digest,
+            review_class=item.review_class,
+        )
+
+
 def test_dual_review_status_survives_materialization_from_durable_store() -> None:
     _, store, patch_job_id = _store_with_patch()
     security = _record_review(store, patch_job_id)
