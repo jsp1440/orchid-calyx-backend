@@ -1,14 +1,14 @@
 """Durable occurrence staging bound to exact reviewed taxonomy evidence.
 
-This module consolidates the PostgreSQL durability of CALYX CORE #386 with the
-reconciliation-evidence immutability from CALYX-462. It is staging-only: no
-taxonomy activation, publication, or Knowledge Graph mutation is available.
+This module consolidates PostgreSQL occurrence durability with immutable
+reconciliation evidence. It deliberately distinguishes provider taxon keys,
+Hassler/World Plants source-taxonomy identity, and canonical Orchid Continuum
+taxon identity. Staging evidence never invents the latter.
 """
 from __future__ import annotations
 
 import hashlib
 import json
-from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -19,12 +19,19 @@ from sqlalchemy.engine import Engine
 from app.database import get_engine
 from runtime.occurrence_staging import SUPPORTED_SOURCES
 
-OCCURRENCE_RECONCILIATION_SCHEMA_VERSION = "2.0.0"
+OCCURRENCE_RECONCILIATION_SCHEMA_VERSION = "2.1.0"
 MAX_BATCH_RECORDS = 5_000
+CANONICAL_PROJECTION_BLOCKER = "CANONICAL_TAXON_CROSSWALK_NOT_ACTIVATED"
 
 
 def _stable_json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+    return json.dumps(
+        value,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
 
 
 def _sha256_text(value: str) -> str:
@@ -33,6 +40,10 @@ def _sha256_text(value: str) -> str:
 
 def _canonical_name(value: Any) -> str:
     return " ".join(str(value or "").strip().casefold().split())
+
+
+def _canonical_identifier(value: Any) -> str:
+    return str(value or "").strip().casefold()
 
 
 def _raw_sha(record: Mapping[str, Any]) -> str:
@@ -47,9 +58,9 @@ class TaxonomyReconciliationContext:
     review_sha256: str
     open_review_count: int
     context_sha256: str
-    by_code: dict[str, dict[str, str]]
+    by_number: dict[str, tuple[dict[str, str], ...]]
     by_name: dict[str, tuple[dict[str, str], ...]]
-    blocked_codes: frozenset[str]
+    blocked_numbers: frozenset[str]
     blocked_names: frozenset[str]
 
 
@@ -65,6 +76,8 @@ class OccurrenceRunReceipt:
     review_count: int
     duplicate_skipped: int
     completed: bool
+    canonical_projection_ready: bool = False
+    canonical_projection_blocker: str = CANONICAL_PROJECTION_BLOCKER
     automatic_promotion: bool = False
     no_taxonomy_activation: bool = True
     no_knowledge_graph_mutation: bool = True
@@ -97,63 +110,83 @@ class PostgresOccurrencePersistence:
 
     def taxonomy_context(self, release_id: str) -> TaxonomyReconciliationContext:
         with self.engine.connect() as connection:
-            release = connection.execute(
-                text(
-                    "SELECT release_id, source_sha256, state "
-                    "FROM taxonomy_pipeline.releases WHERE release_id = :release_id"
-                ),
-                {"release_id": release_id},
-            ).mappings().first()
+            release = (
+                connection.execute(
+                    text(
+                        "SELECT release_id, source_sha256, state "
+                        "FROM taxonomy_pipeline.releases WHERE release_id = :release_id"
+                    ),
+                    {"release_id": release_id},
+                )
+                .mappings()
+                .first()
+            )
             if release is None:
                 raise LookupError("TAXONOMY_RELEASE_NOT_FOUND")
 
-            staged = connection.execute(
-                text(
-                    "SELECT source_row_number, taxon_code, scientific_name "
-                    "FROM taxonomy_pipeline.staged_taxa "
-                    "WHERE release_id = :release_id ORDER BY source_row_number"
-                ),
-                {"release_id": release_id},
-            ).mappings().all()
-            reviews = connection.execute(
-                text(
-                    "SELECT review_key, category, summary, evidence, status "
-                    "FROM taxonomy_pipeline.review_queue "
-                    "WHERE release_id = :release_id ORDER BY review_key"
-                ),
-                {"release_id": release_id},
-            ).mappings().all()
+            staged = (
+                connection.execute(
+                    text(
+                        "SELECT source_row_number, taxon_code, world_plants_number, "
+                        "scientific_name FROM taxonomy_pipeline.staged_taxa "
+                        "WHERE release_id = :release_id ORDER BY source_row_number"
+                    ),
+                    {"release_id": release_id},
+                )
+                .mappings()
+                .all()
+            )
+            reviews = (
+                connection.execute(
+                    text(
+                        "SELECT review_key, category, summary, evidence, status "
+                        "FROM taxonomy_pipeline.review_queue "
+                        "WHERE release_id = :release_id ORDER BY review_key"
+                    ),
+                    {"release_id": release_id},
+                )
+                .mappings()
+                .all()
+            )
 
         if not staged:
             raise ValueError("TAXONOMY_RELEASE_NOT_STAGED")
 
         open_reviews = [row for row in reviews if str(row["status"]) == "open"]
         review_sha = self._review_digest(reviews)
-        blocked_codes: set[str] = set()
+        blocked_numbers: set[str] = set()
         blocked_names: set[str] = set()
         for row in open_reviews:
             evidence = dict(row["evidence"] or {})
-            for key in ("taxon_code",):
-                value = str(evidence.get(key) or "").strip()
-                if value:
-                    blocked_codes.add(value)
+            number = _canonical_identifier(evidence.get("world_plants_number"))
+            if number:
+                blocked_numbers.add(number)
             for key in ("name", "before", "after", "scientific_name"):
-                value = _canonical_name(evidence.get(key))
-                if value:
-                    blocked_names.add(value)
+                name = _canonical_name(evidence.get(key))
+                if name:
+                    blocked_names.add(name)
 
-        code_counts = Counter(str(row["taxon_code"]) for row in staged)
-        name_counts = Counter(_canonical_name(row["scientific_name"]) for row in staged)
-        by_code: dict[str, dict[str, str]] = {}
+        by_number_lists: dict[str, list[dict[str, str]]] = {}
         by_name_lists: dict[str, list[dict[str, str]]] = {}
         for row in staged:
-            code = str(row["taxon_code"]).strip()
+            source_row = int(row["source_row_number"])
+            rank_code = str(row["taxon_code"] or "").strip()
+            number = str(row["world_plants_number"] or "").strip()
             name = str(row["scientific_name"]).strip()
-            item = {"canonical_taxon_id": code, "taxon_key": code, "scientific_name": name}
-            if code_counts[code] == 1:
-                by_code[code] = item
+            item = {
+                "source_taxonomy_record_id": (
+                    f"world-plants:{release_id}:row:{source_row}"
+                ),
+                "source_row_number": str(source_row),
+                "world_plants_number": number,
+                "taxon_rank_code": rank_code,
+                "scientific_name": name,
+            }
+            if number:
+                by_number_lists.setdefault(_canonical_identifier(number), []).append(item)
             by_name_lists.setdefault(_canonical_name(name), []).append(item)
 
+        by_number = {key: tuple(value) for key, value in by_number_lists.items()}
         by_name = {key: tuple(value) for key, value in by_name_lists.items()}
         context_payload = {
             "release_id": str(release["release_id"]),
@@ -170,69 +203,124 @@ class PostgresOccurrencePersistence:
             review_sha256=review_sha,
             open_review_count=len(open_reviews),
             context_sha256=_sha256_text(_stable_json(context_payload)),
-            by_code=by_code,
+            by_number=by_number,
             by_name=by_name,
-            blocked_codes=frozenset(blocked_codes),
+            blocked_numbers=frozenset(blocked_numbers),
             blocked_names=frozenset(blocked_names),
         )
 
     @staticmethod
+    def _source_match(
+        *,
+        method: str,
+        item: Mapping[str, str],
+    ) -> dict[str, Any]:
+        return {
+            "state": "source_matched_canonical_pending",
+            "method": method,
+            "source_taxonomy_record_id": item["source_taxonomy_record_id"],
+            "world_plants_number": item["world_plants_number"] or None,
+            "source_taxon_rank_code": item["taxon_rank_code"],
+            "canonical_taxon_id": None,
+            "candidate_source_taxonomy_ids": [item["source_taxonomy_record_id"]],
+            "canonical_projection_blocker": CANONICAL_PROJECTION_BLOCKER,
+        }
+
+    @staticmethod
     def _resolve_taxon(
         context: TaxonomyReconciliationContext,
+        *,
         scientific_name: str,
-        supplied_taxon_key: str,
+        accepted_name: str,
+        supplied_world_plants_number: str,
     ) -> dict[str, Any]:
-        canonical_name = _canonical_name(scientific_name)
-        if supplied_taxon_key and supplied_taxon_key in context.blocked_codes:
+        lookup_name = _canonical_name(accepted_name or scientific_name)
+        number_key = _canonical_identifier(supplied_world_plants_number)
+
+        if number_key and number_key in context.blocked_numbers:
+            matches = context.by_number.get(number_key, ())
             return {
                 "state": "taxonomy_review_required",
-                "method": "taxon_key",
+                "method": "world_plants_number",
+                "source_taxonomy_record_id": None,
+                "world_plants_number": supplied_world_plants_number or None,
+                "source_taxon_rank_code": None,
                 "canonical_taxon_id": None,
-                "candidate_taxon_ids": [supplied_taxon_key],
+                "candidate_source_taxonomy_ids": sorted(
+                    item["source_taxonomy_record_id"] for item in matches
+                ),
+                "canonical_projection_blocker": CANONICAL_PROJECTION_BLOCKER,
             }
-        if canonical_name and canonical_name in context.blocked_names:
-            candidates = sorted({item["canonical_taxon_id"] for item in context.by_name.get(canonical_name, ())})
+
+        if lookup_name and lookup_name in context.blocked_names:
+            matches = context.by_name.get(lookup_name, ())
             return {
                 "state": "taxonomy_review_required",
                 "method": "scientific_name_exact",
+                "source_taxonomy_record_id": None,
+                "world_plants_number": None,
+                "source_taxon_rank_code": None,
                 "canonical_taxon_id": None,
-                "candidate_taxon_ids": candidates,
+                "candidate_source_taxonomy_ids": sorted(
+                    item["source_taxonomy_record_id"] for item in matches
+                ),
+                "canonical_projection_blocker": CANONICAL_PROJECTION_BLOCKER,
             }
-        if supplied_taxon_key:
-            item = context.by_code.get(supplied_taxon_key)
-            if item is not None:
+
+        if number_key:
+            matches = context.by_number.get(number_key, ())
+            if len(matches) == 1:
+                return PostgresOccurrencePersistence._source_match(
+                    method="world_plants_number", item=matches[0]
+                )
+            if len(matches) > 1:
                 return {
-                    "state": "resolved",
-                    "method": "taxon_key",
-                    "canonical_taxon_id": item["canonical_taxon_id"],
-                    "candidate_taxon_ids": [item["canonical_taxon_id"]],
+                    "state": "ambiguous",
+                    "method": "world_plants_number",
+                    "source_taxonomy_record_id": None,
+                    "world_plants_number": supplied_world_plants_number,
+                    "source_taxon_rank_code": None,
+                    "canonical_taxon_id": None,
+                    "candidate_source_taxonomy_ids": sorted(
+                        item["source_taxonomy_record_id"] for item in matches
+                    ),
+                    "canonical_projection_blocker": CANONICAL_PROJECTION_BLOCKER,
                 }
-        matches = context.by_name.get(canonical_name, ()) if canonical_name else ()
-        unique = {item["canonical_taxon_id"]: item for item in matches}
-        if len(unique) == 1:
-            item = next(iter(unique.values()))
-            return {
-                "state": "resolved",
-                "method": "scientific_name_exact",
-                "canonical_taxon_id": item["canonical_taxon_id"],
-                "candidate_taxon_ids": [item["canonical_taxon_id"]],
-            }
-        if len(unique) > 1:
+
+        matches = context.by_name.get(lookup_name, ()) if lookup_name else ()
+        if len(matches) == 1:
+            return PostgresOccurrencePersistence._source_match(
+                method="scientific_name_exact", item=matches[0]
+            )
+        if len(matches) > 1:
             return {
                 "state": "ambiguous",
                 "method": "scientific_name_exact",
+                "source_taxonomy_record_id": None,
+                "world_plants_number": None,
+                "source_taxon_rank_code": None,
                 "canonical_taxon_id": None,
-                "candidate_taxon_ids": sorted(unique),
+                "candidate_source_taxonomy_ids": sorted(
+                    item["source_taxonomy_record_id"] for item in matches
+                ),
+                "canonical_projection_blocker": CANONICAL_PROJECTION_BLOCKER,
             }
         return {
             "state": "unresolved",
             "method": "none",
+            "source_taxonomy_record_id": None,
+            "world_plants_number": None,
+            "source_taxon_rank_code": None,
             "canonical_taxon_id": None,
-            "candidate_taxon_ids": [],
+            "candidate_source_taxonomy_ids": [],
+            "canonical_projection_blocker": CANONICAL_PROJECTION_BLOCKER,
         }
 
     @staticmethod
-    def _coordinate_state(latitude: Any, longitude: Any) -> tuple[float | None, float | None, str]:
+    def _coordinate_state(
+        latitude: Any,
+        longitude: Any,
+    ) -> tuple[float | None, float | None, str]:
         try:
             lat = None if latitude in (None, "") else float(latitude)
             lon = None if longitude in (None, "") else float(longitude)
@@ -285,13 +373,18 @@ class PostgresOccurrencePersistence:
         run_id = "occ-run-" + _sha256_text(_stable_json(run_material))[:24]
 
         with self.engine.begin() as connection:
-            existing = connection.execute(
-                text(
-                    "SELECT input_batch_sha256, taxonomy_context_sha256, completed "
-                    "FROM occurrence_pipeline.reconciliation_runs WHERE run_id = :run_id"
-                ),
-                {"run_id": run_id},
-            ).mappings().first()
+            existing = (
+                connection.execute(
+                    text(
+                        "SELECT input_batch_sha256, taxonomy_context_sha256, completed "
+                        "FROM occurrence_pipeline.reconciliation_runs "
+                        "WHERE run_id = :run_id"
+                    ),
+                    {"run_id": run_id},
+                )
+                .mappings()
+                .first()
+            )
             if existing is not None:
                 if (
                     str(existing["input_batch_sha256"]) != batch_sha
@@ -345,16 +438,32 @@ class PostgresOccurrencePersistence:
             )
 
             review_count = 0
+            review_states = {"taxonomy_review_required", "ambiguous", "unresolved"}
             for record in rows:
                 source_id = str(record["source_record_id"]).strip()
                 scientific_name = str(record.get("scientific_name") or "").strip()
                 if not scientific_name:
                     raise ValueError("SCIENTIFIC_NAME_REQUIRED")
-                supplied_key = str(record.get("taxon_key") or record.get("accepted_taxon_key") or "").strip()
-                resolution = self._resolve_taxon(context, scientific_name, supplied_key)
-                lat, lon, coordinate_state = self._coordinate_state(record.get("latitude"), record.get("longitude"))
+                accepted_name = str(record.get("accepted_name") or "").strip()
+                provider_taxon_key = str(
+                    record.get("taxon_key") or record.get("accepted_taxon_key") or ""
+                ).strip()
+                supplied_number = str(record.get("world_plants_number") or "").strip()
+                resolution = self._resolve_taxon(
+                    context,
+                    scientific_name=scientific_name,
+                    accepted_name=accepted_name,
+                    supplied_world_plants_number=supplied_number,
+                )
+                lat, lon, coordinate_state = self._coordinate_state(
+                    record.get("latitude"), record.get("longitude")
+                )
                 try:
-                    uncertainty = None if record.get("coordinate_uncertainty_m") in (None, "") else float(record["coordinate_uncertainty_m"])
+                    uncertainty = (
+                        None
+                        if record.get("coordinate_uncertainty_m") in (None, "")
+                        else float(record["coordinate_uncertainty_m"])
+                    )
                 except (TypeError, ValueError):
                     uncertainty = None
                 if uncertainty is not None and uncertainty < 0:
@@ -362,26 +471,38 @@ class PostgresOccurrencePersistence:
 
                 reconciliation_state = str(resolution["state"])
                 reasons: list[str] = []
-                if reconciliation_state != "resolved":
+                if reconciliation_state in review_states:
                     reasons.append(reconciliation_state)
                 if coordinate_state == "invalid":
                     reasons.append("invalid_coordinates")
+
                 normalized = {
                     "source": source_name,
                     "source_record_id": source_id,
                     "scientific_name": scientific_name,
-                    "accepted_name": record.get("accepted_name"),
-                    "supplied_taxon_key": supplied_key or None,
-                    "canonical_taxon_id": resolution["canonical_taxon_id"],
+                    "accepted_name": accepted_name or None,
+                    "provider_taxon_key": provider_taxon_key or None,
+                    "supplied_world_plants_number": supplied_number or None,
+                    "source_taxonomy_record_id": resolution[
+                        "source_taxonomy_record_id"
+                    ],
+                    "world_plants_number": resolution["world_plants_number"],
+                    "source_taxon_rank_code": resolution["source_taxon_rank_code"],
+                    "canonical_taxon_id": None,
                     "reconciliation_state": reconciliation_state,
                     "reconciliation_method": resolution["method"],
+                    "canonical_projection_blocker": CANONICAL_PROJECTION_BLOCKER,
                     "latitude": lat,
                     "longitude": lon,
                     "coordinate_state": coordinate_state,
                     "coordinate_uncertainty_m": uncertainty,
                     "country_code": record.get("country_code"),
                     "locality": record.get("locality"),
-                    "event_date": str(record.get("event_date")) if record.get("event_date") is not None else None,
+                    "event_date": (
+                        str(record.get("event_date"))
+                        if record.get("event_date") is not None
+                        else None
+                    ),
                     "recorded_by": record.get("recorded_by"),
                     "license": record.get("license"),
                     "basis_of_record": record.get("basis_of_record"),
@@ -393,15 +514,21 @@ class PostgresOccurrencePersistence:
                         """
                         INSERT INTO occurrence_pipeline.staged_occurrences (
                             run_id, source_record_id, scientific_name, accepted_name,
-                            supplied_taxon_key, canonical_taxon_id, reconciliation_state,
-                            reconciliation_method, latitude, longitude,
+                            provider_taxon_key, supplied_world_plants_number,
+                            source_taxonomy_record_id, world_plants_number,
+                            source_taxon_rank_code, canonical_taxon_id,
+                            reconciliation_state, reconciliation_method,
+                            canonical_projection_blocker, latitude, longitude,
                             coordinate_uncertainty_m, country_code, locality, event_date,
                             recorded_by, license, basis_of_record, raw_sha256,
                             raw_payload, normalized_payload
                         ) VALUES (
                             :run_id, :source_record_id, :scientific_name, :accepted_name,
-                            :supplied_taxon_key, :canonical_taxon_id, :reconciliation_state,
-                            :reconciliation_method, :latitude, :longitude,
+                            :provider_taxon_key, :supplied_world_plants_number,
+                            :source_taxonomy_record_id, :world_plants_number,
+                            :source_taxon_rank_code, :canonical_taxon_id,
+                            :reconciliation_state, :reconciliation_method,
+                            :canonical_projection_blocker, :latitude, :longitude,
                             :coordinate_uncertainty_m, :country_code, :locality, :event_date,
                             :recorded_by, :license, :basis_of_record, :raw_sha256,
                             CAST(:raw_payload AS jsonb), CAST(:normalized_payload AS jsonb)
@@ -422,10 +549,11 @@ class PostgresOccurrencePersistence:
                             """
                             INSERT INTO occurrence_pipeline.review_queue (
                                 run_id, source_record_id, scientific_name, reason,
-                                reconciliation_state, candidate_taxon_ids
+                                reconciliation_state, candidate_source_taxonomy_ids
                             ) VALUES (
                                 :run_id, :source_record_id, :scientific_name, :reason,
-                                :reconciliation_state, CAST(:candidate_taxon_ids AS jsonb)
+                                :reconciliation_state,
+                                CAST(:candidate_source_taxonomy_ids AS jsonb)
                             )
                             """
                         ),
@@ -435,7 +563,9 @@ class PostgresOccurrencePersistence:
                             "scientific_name": scientific_name,
                             "reason": reason,
                             "reconciliation_state": reconciliation_state,
-                            "candidate_taxon_ids": _stable_json(resolution["candidate_taxon_ids"]),
+                            "candidate_source_taxonomy_ids": _stable_json(
+                                resolution["candidate_source_taxonomy_ids"]
+                            ),
                         },
                     )
                     review_count += 1
@@ -477,27 +607,39 @@ class PostgresOccurrencePersistence:
     @staticmethod
     def _counts_with_connection(connection: Any, run_id: str) -> dict[str, int]:
         staged = connection.execute(
-            text("SELECT count(*) FROM occurrence_pipeline.staged_occurrences WHERE run_id = :run_id"),
+            text(
+                "SELECT count(*) FROM occurrence_pipeline.staged_occurrences "
+                "WHERE run_id = :run_id"
+            ),
             {"run_id": run_id},
         ).scalar_one()
         review = connection.execute(
-            text("SELECT count(*) FROM occurrence_pipeline.review_queue WHERE run_id = :run_id AND status = 'open'"),
+            text(
+                "SELECT count(*) FROM occurrence_pipeline.review_queue "
+                "WHERE run_id = :run_id AND status = 'open'"
+            ),
             {"run_id": run_id},
         ).scalar_one()
         return {"staged": int(staged), "review": int(review)}
 
     def run_status(self, run_id: str) -> dict[str, Any]:
         with self.engine.connect() as connection:
-            run = connection.execute(
-                text(
-                    "SELECT run_id, source, job_key, input_batch_sha256, input_record_count, "
-                    "taxonomy_release_id, taxonomy_source_sha256, taxonomy_review_sha256, "
-                    "taxonomy_open_review_count, taxonomy_context_sha256, schema_version, "
-                    "completed, automatic_promotion, created_at, updated_at "
-                    "FROM occurrence_pipeline.reconciliation_runs WHERE run_id = :run_id"
-                ),
-                {"run_id": run_id},
-            ).mappings().first()
+            run = (
+                connection.execute(
+                    text(
+                        "SELECT run_id, source, job_key, input_batch_sha256, "
+                        "input_record_count, taxonomy_release_id, taxonomy_source_sha256, "
+                        "taxonomy_review_sha256, taxonomy_open_review_count, "
+                        "taxonomy_context_sha256, schema_version, completed, "
+                        "automatic_promotion, created_at, updated_at "
+                        "FROM occurrence_pipeline.reconciliation_runs "
+                        "WHERE run_id = :run_id"
+                    ),
+                    {"run_id": run_id},
+                )
+                .mappings()
+                .first()
+            )
             if run is None:
                 raise LookupError("OCCURRENCE_RUN_NOT_FOUND")
             counts = self._counts_with_connection(connection, run_id)
@@ -507,6 +649,8 @@ class PostgresOccurrencePersistence:
             "updated_at": run["updated_at"].isoformat(),
             "staged_count": counts["staged"],
             "open_review_count": counts["review"],
+            "canonical_projection_ready": False,
+            "canonical_projection_blocker": CANONICAL_PROJECTION_BLOCKER,
             "ready_for_production_graph_mutation": False,
             "taxonomy_activation_authorized": False,
             "publication_authorized": False,
