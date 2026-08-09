@@ -23,9 +23,7 @@ def _sha(value: bytes) -> str:
 def _workspace(tmp_path: Path) -> Path:
     root = tmp_path / "worktree"
     (root / ".git" / "refs" / "heads" / "autonomy").mkdir(parents=True)
-    (root / ".git" / "HEAD").write_text(
-        f"ref: refs/heads/{BRANCH}\n", encoding="ascii"
-    )
+    (root / ".git" / "HEAD").write_text(f"ref: refs/heads/{BRANCH}\n", encoding="ascii")
     (root / ".git" / "refs" / "heads" / "autonomy" / "rollback-test").write_text(
         COMMIT + "\n", encoding="ascii"
     )
