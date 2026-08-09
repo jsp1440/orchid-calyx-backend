@@ -91,6 +91,21 @@ Dedicated workflow:
 
 It runs compile, focused tests, Ruff, and permanent non-authority assertions. It has `contents: read` permission only.
 
+### Executable validation recovery — 2026-08-08/09
+
+The private-repository hosted-runner incident in #481 was resolved, allowing this slice to receive real executable validation. The first executable attempt exposed only CI-environment defects rather than implementation defects: `pytest` and Ruff were not installed by the focused workflow, then FastAPI's `TestClient` required `httpx`, and invoking the standalone `pytest` entry point did not place the repository root on Python's module path. The workflow was corrected to install `pytest httpx ruff` and to execute focused tests through `python -m pytest`.
+
+Exact implementation/CI head `57a96747c73914e7235b218b686c1351ef192c7a` then passed all applicable PR-triggered validation:
+
+- CALYX Taxonomy Activation Decision 386 run `31298739757` — **success**. Checkout, Python setup, dependency install, compile, focused activation-decision regressions, Ruff, and permanent non-authority assertions all passed.
+- CALYX Workflow Governance Audit run `31298739760` — **success**.
+- CALYX-TAXONOMY-READINESS-API-001 run `31298739806` — **success**.
+- BUILD-088E Validation run `31298739741` — **success**.
+- WORLD-PLANTS-UPLOAD-001 run `31298739737` — **success**.
+- CALYX World Plants Durable Staging Validation run `31298739739` — **success**, including disposable PostgreSQL initialization, compile/lint, durable taxonomy intake/staging/migration-preflight tests, guarded activation rehearsal, and migration/governance smoke.
+
+This documentation update changes no runtime behavior. Because the Brain document itself is part of the dedicated workflow path filter, the documentation checkpoint must also receive applicable exact-head read-only validation before the slice is considered validation-complete.
+
 ## Current governance boundary
 
 This slice does not create the missing durable taxonomy-review disposition ledger because doing so is a separate schema/review-workflow design decision and must not be hidden inside an activation-readiness view.
