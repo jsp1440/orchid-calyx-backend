@@ -105,6 +105,17 @@ class GitProposalMutationReceipt:
         return {**self.payload(), "receipt_digest": self.receipt_digest}
 
 
+class GitProposalMutationJournal(Protocol):
+    """Persistence capability injected separately from the mutation adapter."""
+
+    def record(
+        self,
+        receipt: GitProposalMutationReceipt,
+        *,
+        event_index: int,
+    ) -> GitProposalMutationReceipt: ...
+
+
 class GitProposalMutationError(RuntimeError):
     """Failure with exact evidence for side effects verified before the failure."""
 
@@ -122,6 +133,7 @@ class GitProposalMutationExecutor:
         *,
         adapter: GitProposalMutationAdapter,
         repository_allowlist: Sequence[str],
+        journal: GitProposalMutationJournal | None = None,
     ) -> None:
         normalized = frozenset(
             item.strip() for item in repository_allowlist if item.strip()
@@ -130,6 +142,7 @@ class GitProposalMutationExecutor:
             raise ValueError("GIT_PROPOSAL_EXECUTOR_REPOSITORY_ALLOWLIST_REQUIRED")
         self._adapter = adapter
         self._repository_allowlist = normalized
+        self._journal = journal
 
     def execute(
         self,
@@ -191,24 +204,49 @@ class GitProposalMutationExecutor:
                     evidence=evidence,
                     failure_code=str(code),
                 )
+                self._record(receipt, event_index=len(completed) + 1)
                 raise GitProposalMutationError(str(code), receipt) from exc
+
             evidence.append(item)
             completed.append(operation.action)
             if operation.action == "create_commit":
                 expected_commit_sha = str(item.payload["commit_sha"]).lower()
+
+            progress = self._receipt(
+                plan=plan,
+                status="in_progress",
+                completed=completed,
+                evidence=evidence,
+                failure_code=None,
+            )
+            self._record(progress, event_index=len(completed))
 
         status = (
             "completed"
             if completed and completed[-1] == FINAL_ACTION
             else "completed_subset"
         )
-        return self._receipt(
+        receipt = self._receipt(
             plan=plan,
             status=status,
             completed=completed,
             evidence=evidence,
             failure_code=None,
         )
+        self._record(receipt, event_index=len(completed) + 1)
+        return receipt
+
+    def _record(
+        self,
+        receipt: GitProposalMutationReceipt,
+        *,
+        event_index: int,
+    ) -> None:
+        if self._journal is None:
+            return
+        persisted = self._journal.record(receipt, event_index=event_index)
+        if persisted.snapshot() != receipt.snapshot():
+            raise PermissionError("GIT_PROPOSAL_EXECUTOR_JOURNAL_MISMATCH")
 
     @staticmethod
     def _receipt(
