@@ -65,11 +65,15 @@ def test_execute_upload_verifies_readback_and_never_stages(tmp_path: Path, monke
         seen.append((request.method, request.url.path))
         if request.url.path == "/api/mission-control/owner/session-token":
             return httpx.Response(200, json={"token": "owner-token"})
-        release_path = f"/api/mission-control/taxonomy/releases/{guarded.EXPECTED_SHA256}"
+        release_path = (
+            f"/api/mission-control/taxonomy/releases/{guarded.EXPECTED_SHA256}"
+        )
         if request.url.path == release_path:
             release_gets += 1
             if release_gets == 1:
-                return httpx.Response(404, json={"detail": "taxonomy release not found"})
+                return httpx.Response(
+                    404, json={"detail": "taxonomy release not found"}
+                )
             return httpx.Response(200, json=_release_report())
         if request.url.path == "/api/mission-control/taxonomy/readiness":
             readiness_calls = sum(
