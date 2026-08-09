@@ -142,7 +142,9 @@ def test_same_reviewer_cannot_complete_both_required_classes() -> None:
     registry = ProposalAuthorizationRegistry()
     reviewer = "principal:dual-role-reviewer"
     security = _record("security", ProposalDecision.APPROVED, reviewer_id=reviewer)
-    operational = _record("operational", ProposalDecision.APPROVED, reviewer_id=reviewer)
+    operational = _record(
+        "operational", ProposalDecision.APPROVED, reviewer_id=reviewer
+    )
     registry.record(security)
     registry.record(operational)
     status = proposal_review_status(registry, manifest_digest=security.manifest_digest)
