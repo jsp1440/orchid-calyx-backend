@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from app.calyx_orchestrator.executor import canonical_checksum
 from app.calyx_orchestrator.proposal_authorization import (
@@ -13,6 +14,7 @@ from app.calyx_orchestrator.sandbox_supervisor_evidence import canonical_sha256
 
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 BASE_COMMIT = "a" * 40
+PATCH_JOB_ID = "11111111-1111-1111-1111-111111111111"
 
 
 def _patch_output() -> dict:
@@ -42,20 +44,25 @@ def _patch_output() -> dict:
     }
 
 
-def _patch_receipt() -> dict:
-    output = _patch_output()
-    return {
-        "executor_key": "isolated_workspace_patcher_v1",
-        "state": "delivered",
-        "outcome": "delivered",
-        "output": output,
-        "output_checksum": canonical_checksum(output),
-    }
+class _PersistedPatchService:
+    def get_completed(self, *, program_job_id: str):
+        if program_job_id != PATCH_JOB_ID:
+            raise LookupError("PERSISTED_PATCH_EXECUTION_NOT_FOUND")
+        output = _patch_output()
+        return SimpleNamespace(
+            program_job_id=PATCH_JOB_ID,
+            repository=REPOSITORY,
+            branch="autonomy/work-123",
+            executor_key="isolated_workspace_patcher_v1",
+            output_checksum=canonical_checksum(output),
+            output=output,
+        )
 
 
 def _manifest() -> dict:
     payload = {
-        "schema": "calyx-git-proposal-manifest-v1",
+        "schema": "calyx-git-proposal-manifest-v2",
+        "patch_program_job_id": PATCH_JOB_ID,
         "repository": REPOSITORY,
         "base_commit_sha": BASE_COMMIT,
         "source_autonomy_branch": "autonomy/work-123",
@@ -85,9 +92,8 @@ def _record(
     *,
     reviewer_id: str | None = None,
 ):
-    return ProposalAuthorizationBuilder().build(
+    return ProposalAuthorizationBuilder(_PersistedPatchService()).build(
         manifest_snapshot=_manifest(),
-        patch_receipt=_patch_receipt(),
         requested_by="principal:requester",
         review_class=review_class,
         reviewer_id=reviewer_id or f"principal:{review_class}-reviewer",
