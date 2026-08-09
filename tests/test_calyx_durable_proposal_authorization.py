@@ -246,10 +246,14 @@ def test_payload_and_patch_evidence_tampering_fail_closed() -> None:
     row.payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     session.commit()
     with pytest.raises(PermissionError, match="AUTHORIZATION_DIGEST_MISMATCH"):
-        store.require(manifest_digest=item.manifest_digest, review_class=item.review_class)
+        store.require(
+            manifest_digest=item.manifest_digest, review_class=item.review_class
+        )
 
     session.rollback()
-    row.payload_json = json.dumps(item.snapshot(), sort_keys=True, separators=(",", ":"))
+    row.payload_json = json.dumps(
+        item.snapshot(), sort_keys=True, separators=(",", ":")
+    )
     session.commit()
     patch_job = session.get(CalyxProgramJob, patch_job_id)
     assert patch_job is not None and patch_job.evidence_json
@@ -258,7 +262,9 @@ def test_payload_and_patch_evidence_tampering_fail_closed() -> None:
     patch_job.evidence_json = json.dumps(evidence, sort_keys=True)
     session.commit()
     with pytest.raises(PermissionError, match="PATCH_EVIDENCE_UNAVAILABLE"):
-        store.require(manifest_digest=item.manifest_digest, review_class=item.review_class)
+        store.require(
+            manifest_digest=item.manifest_digest, review_class=item.review_class
+        )
 
 
 def test_dual_review_materialization_requires_independent_reviewers() -> None:
