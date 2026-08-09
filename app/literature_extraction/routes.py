@@ -63,6 +63,17 @@ class CandidateHandoffIn(BaseModel):
     source_binding: SourceBindingIn | None = None
 
 
+def _raw_source_or_error(
+    repository: LiteratureResultRepository, paper_id: str
+) -> bytes:
+    raw_bytes = repository.get_raw_bytes(paper_id)
+    if raw_bytes is None:
+        raise LiteratureSourceBindingError(
+            "RAW_SOURCE_NOT_FOUND", {"paper_id": paper_id}
+        )
+    return raw_bytes
+
+
 @router.get("/papers/{paper_id}")
 def get_paper(
     paper_id: str,
@@ -99,11 +110,12 @@ def create_source_binding(
     try:
         binding = CanonicalLiteratureSourceBinding(
             paper_id=paper_id, **payload.model_dump()
+        ).with_verified_integrity(
+            paper, _raw_source_or_error(literature_repository, paper_id)
         )
-        binding.validate_against_paper(paper)
         stored, created = binding_repository.create(binding)
         response.status_code = 201 if created else 200
-        return {**stored.to_dict(), "created": created}
+        return {**stored.to_dict(), "created": created, "exact_source_integrity": True}
     except LiteratureSourceBindingError as exc:
         raise HTTPException(
             status_code=409 if exc.code == "CONFLICTING_SOURCE_REBIND" else 422,
@@ -151,6 +163,7 @@ def handoff_candidates(
             status_code=404, detail="Literature extraction result not found"
         )
     try:
+        raw_bytes = _raw_source_or_error(literature_repository, paper_id)
         persisted = binding_repository.get(paper_id)
         if payload.use_persisted_binding:
             if persisted is None:
@@ -161,10 +174,10 @@ def handoff_candidates(
                 raise LiteratureSourceBindingError("CANONICAL_SOURCE_BINDING_REQUIRED")
             canonical = CanonicalLiteratureSourceBinding(
                 paper_id=paper_id, **payload.source_binding.model_dump()
-            )
+            ).with_verified_integrity(paper, raw_bytes)
             if persisted is not None and persisted.fingerprint != canonical.fingerprint:
                 raise LiteratureSourceBindingError("PERSISTED_BINDING_IS_AUTHORITATIVE")
-        canonical.validate_against_paper(paper)
+        canonical.validate_integrity(paper, raw_bytes)
         binding = LiteratureSourceBinding(
             source_object_type=canonical.source_object_type,
             source_object_id=canonical.source_object_id,
@@ -174,6 +187,7 @@ def handoff_candidates(
             display_policy=canonical.display_policy,
             internal_use_permission=canonical.internal_use_permission,
             language=canonical.language,
+            evidence_integrity=canonical.evidence_integrity,
         )
         operation = lambda: service.handoff(paper, binding)
         candidate_repository = service.candidate_repository
