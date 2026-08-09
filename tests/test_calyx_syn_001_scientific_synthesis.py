@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from app.scientific_synthesis.models import (
     ArticleDraft,
     ArticleSentence,
@@ -110,6 +112,18 @@ def test_unverified_primary_source_blocks_publication():
     assert "ARTICLE_BIBLIOGRAPHY_SOURCE_UNVERIFIED" in codes(result)
 
 
+def test_verified_state_without_verification_provenance_is_blocked():
+    unverifiable = replace(
+        source(), verification_provider=" ", verification_identifier=None
+    )
+    result = validate(bibliography=[unverifiable])
+
+    assert result["publication_ready"] is False
+    assert "VERIFIED_SOURCE_PROVENANCE_REQUIRED" in codes(result)
+    assert "ARTICLE_BIBLIOGRAPHY_VERIFICATION_PROVENANCE_MISSING" in codes(result)
+    assert result["verified_source_count"] == 0
+
+
 def test_scientific_sentence_without_claim_link_is_blocked():
     result = validate(draft=article(grounded=False))
 
@@ -139,6 +153,25 @@ def test_inference_requires_explicit_rationale():
 
     assert result["publication_ready"] is False
     assert "INFERENCE_RATIONALE_REQUIRED" in codes(result)
+
+
+def test_blank_revision_and_empty_locator_block_evidence_anchor():
+    row = evidence()
+    bad_anchor = replace(row.anchors[0], source_revision_id="   ", locator={})
+    result = validate(evidence_rows=[replace(row, anchors=(bad_anchor,))])
+
+    assert result["publication_ready"] is False
+    assert "ANCHOR_IDENTITY_REQUIRED" in codes(result)
+    assert "ANCHOR_LOCATOR_REQUIRED" in codes(result)
+
+
+def test_locator_with_only_blank_values_is_not_usable():
+    row = evidence()
+    bad_anchor = replace(row.anchors[0], locator={"section": "   ", "page": None})
+    result = validate(evidence_rows=[replace(row, anchors=(bad_anchor,))])
+
+    assert result["publication_ready"] is False
+    assert "ANCHOR_LOCATOR_REQUIRED" in codes(result)
 
 
 def test_validation_fingerprint_is_deterministic():
