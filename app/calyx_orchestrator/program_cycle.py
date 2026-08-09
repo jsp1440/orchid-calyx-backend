@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .assignment_factory import governed_assignment_from_claimed_job
 from .execution_bridge import LeaseExecutionBridge
-from .executor_registry import AuthoritativeExecutorRegistry
+from .executor_registry import AuthoritativeExecutorRegistry, RegisteredExecutor
 from .program_worker import PersistentProgramWorker
 
 
@@ -43,7 +43,9 @@ class AutonomousCycleResult:
             "jobs": [asdict(item) for item in self.jobs],
             "error": self.error,
             "mode": "registered_authoritative_adapters_only",
-            "workspace_mutation_performed": any(item.workspace_mutation for item in self.jobs),
+            "workspace_mutation_performed": any(
+                item.workspace_mutation for item in self.jobs
+            ),
             "repository_code_execution_performed": any(
                 item.repository_code_execution for item in self.jobs
             ),
@@ -53,6 +55,34 @@ class AutonomousCycleResult:
             "automatic_publication": False,
             "production_knowledge_graph_mutation": False,
         }
+
+
+def _rollback_workspace_mutation(
+    registered: RegisteredExecutor | None,
+    assignment_id: str,
+) -> str | None:
+    if registered is None or not registered.workspace_mutation:
+        return None
+    rollback = getattr(registered.executor, "rollback", None)
+    if rollback is None:
+        return "WORKSPACE_ROLLBACK_UNAVAILABLE"
+    try:
+        rollback(assignment_id)
+    except Exception as exc:  # pragma: no cover - defensive fail-closed boundary
+        return f"WORKSPACE_ROLLBACK_FAILED:{type(exc).__name__}:{exc}"
+    return None
+
+
+def _finalize_workspace_mutation(
+    registered: RegisteredExecutor,
+    assignment_id: str,
+) -> None:
+    if not registered.workspace_mutation:
+        return
+    finalize = getattr(registered.executor, "finalize", None)
+    if finalize is None:
+        raise RuntimeError("WORKSPACE_FINALIZE_UNAVAILABLE")
+    finalize(assignment_id)
 
 
 def run_deterministic_program_cycle(
@@ -114,6 +144,7 @@ def run_deterministic_program_cycle(
                     "program_job_id": job.program_job_id,
                 },
             )
+        registered: RegisteredExecutor | None = None
         try:
             registered = executor_registry.require_authoritative(job.role_key)
             assignment = governed_assignment_from_claimed_job(
@@ -130,8 +161,16 @@ def run_deterministic_program_cycle(
                 lease_token=token,
                 receipt=receipt,
             )
+            _finalize_workspace_mutation(registered, assignment.assignment_id)
         except (LookupError, PermissionError, RuntimeError, TypeError, ValueError) as exc:
+            rollback_error = _rollback_workspace_mutation(
+                registered,
+                job.program_job_id,
+            )
             db.rollback()
+            error_code = str(exc) or type(exc).__name__
+            if rollback_error:
+                error_code = rollback_error
             return AutonomousCycleResult(
                 owner=normalized_owner,
                 worker_id=normalized_worker,
@@ -140,11 +179,14 @@ def run_deterministic_program_cycle(
                 stop_reason="error",
                 jobs=tuple(completed),
                 error={
-                    "code": str(exc) or type(exc).__name__,
+                    "code": error_code,
                     "exception_type": type(exc).__name__,
                     "program_job_id": job.program_job_id,
                     "program_id": job.program_id,
                     "job_key": job.job_key,
+                    "workspace_rollback": (
+                        "failed" if rollback_error else "completed_or_not_required"
+                    ),
                 },
             )
         completed.append(
