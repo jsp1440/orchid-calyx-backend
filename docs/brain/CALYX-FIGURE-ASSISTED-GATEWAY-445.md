@@ -10,26 +10,42 @@ Operationalize the existing FigureLabs subscription through a safe, provider-neu
 
 Lifecycle:
 
-`evidence-bound figure brief → manual provider interaction/export → bounded SVG/PPTX/PNG import → provenance + semantic-hotspot candidate → scientific/licensing review`
+`evidence-bound figure brief → manual provider interaction/export → bounded SVG/PPTX/PNG import → BUILD-BRAIN-111 artifact provenance → semantic-hotspot candidate → scientific/licensing review`
 
 ## Implemented contracts
 
 `runtime/figure_assisted_gateway.py` provides:
 
 - deterministic immutable figure briefs with SHA-256 identity;
-- project, purpose, required-label, evidence-source, citation, license, provider-hint and output-format metadata;
+- project, purpose, canonical required labels, evidence source/citation/license, provider hint and requested output formats;
 - explicit maximum estimated cost of $25 per brief;
 - allowed source/license policy;
 - bounded asset size of 25 MiB;
-- SVG, PPTX and PNG format/signature validation;
-- active-content rejection for imported SVG (`script`, JavaScript/event-handler surfaces);
+- imported format must be explicitly requested by the brief;
+- PNG signature validation;
+- PPTX ZIP structure validation requiring `[Content_Types].xml` and `ppt/presentation.xml`, with path-traversal, member-count and uncompressed-expansion limits;
+- SVG active/external-content rejection for scripts, JavaScript/event handlers, DOCTYPE/entities and external HTTP(S) hrefs;
 - creator, attribution, license, source URI, checksum and exact byte-length preservation;
 - deterministic semantic-hotspot candidates bound to evidence URIs;
 - exact import replay idempotency and immutable conflict rejection;
-- checksum duplicate tracking without overwriting prior assets;
-- deterministic readiness with mandatory scientific and licensing review blockers.
+- deterministic readiness with exact missing output formats and mandatory scientific/licensing review blockers.
 
 The default fixture is an orchid root/velamen scientific plate with required labels for root tip, velamen, exodermis, passage cells, cortex, endodermis and stele.
+
+## Authoritative artifact registry integration
+
+The initial implementation draft contained a local checksum/duplicate map. That was removed during architecture review because BUILD-BRAIN-111 is already the repository authority for artifact identity and duplicate-content evidence.
+
+Imported assets now register through `ImmutableArtifactRegistry` using `ArtifactRegistration` with:
+
+- exact asset content/checksum/media type;
+- source URI;
+- BUILD-FIG-301 producer assignment identity;
+- license;
+- source-evidence and semantic-hotspot evidence URIs;
+- brief digest, creator, attribution and review-state metadata.
+
+`require_evidence()` is applied after registration. Cross-brief duplicate-content signals come from BUILD-BRAIN-111 rather than a parallel registry.
 
 ## Assisted-provider boundary
 
@@ -52,7 +68,7 @@ No provider HTTP client, browser automation, password storage, cookie storage, C
 - `POST /briefs` — create a bounded immutable candidate brief;
 - `GET /briefs/{brief_id}` — retrieve exact brief package/digest;
 - `POST /briefs/{brief_id}/imports` — import an operator-exported SVG/PPTX/PNG candidate with provenance;
-- `GET /briefs/{brief_id}/readiness` — inspect review-only state and blockers.
+- `GET /briefs/{brief_id}/readiness` — inspect review-only state, missing formats and blockers.
 
 The router is mounted through the existing live Mission Control router.
 
@@ -60,11 +76,10 @@ The router is mounted through the existing live Mission Control router.
 
 Every imported figure remains a candidate. Readiness always preserves:
 
+- required review classes `scientific` and `licensing`;
 - `ready_for_publication=false`;
 - `publication_authorized=false`;
-- `production_graph_mutation_authorized=false`;
-- scientific review required;
-- licensing review required.
+- `production_graph_mutation_authorized=false`.
 
 This implementation does not approve scientific claims or licensing decisions. It does not write to the production Knowledge Graph.
 
@@ -77,20 +92,28 @@ Dedicated workflow:
 Tests cover:
 
 - deterministic velamen brief identity;
-- cost/license guards;
+- cost/license and canonical-format guards;
 - evidence/provenance/hotspot preservation;
+- BUILD-BRAIN-111 artifact-registry integration;
+- duplicate-content signal across different briefs;
 - exact replay idempotency;
 - immutable conflicting replay rejection;
-- SVG active-content rejection;
-- PNG/PPTX signature validation;
+- SVG active/external-content rejection;
+- PNG/PPTX signature and PPTX structure/traversal validation;
+- requested-format enforcement and missing-format readiness;
 - protected Mission Control access;
-- Base64 import rejection;
+- invalid Base64 rejection;
 - permanent non-authority and credential-free assertions;
+- BUILD-BRAIN-111 regression tests;
 - Ruff and diff hygiene.
 
 ## Validation blocker
 
-Canonical repository incident #481 currently causes GitHub-hosted jobs to fail before step 1 with `steps=null`, including zero-dependency smoke workflows on both standard Ubuntu and `ubuntu-slim`. Therefore no no-step run may be represented as a compile/test failure or as a pass.
+The first exact-head PR #715 workflow cycle on head `b09b54f72d6251cd86e2593cd423009ce5bd306e` reproduced canonical incident #481. `CALYX Figure Assisted Gateway 445` run `31288922550`, job `93182662893`, failed before step 1 with `steps=null`. BUILD-088E, Workflow Governance, Supervised Pilot and Autonomy Deployment on the same head also terminated as infrastructure failures.
+
+Subsequent implementation heads intentionally add ingestion and BUILD-BRAIN-111 integration hardening, so the older no-step run is not represented as validation evidence for the current code.
+
+Canonical repository incident #481 also includes zero-dependency standard Ubuntu and `ubuntu-slim` smoke failures before step 1. Therefore no no-step run may be represented as a compile/test failure or as a pass.
 
 This branch must remain draft/unmerged until the exact unchanged head receives executable CI and the dedicated Figure Assisted Gateway workflow passes.
 
