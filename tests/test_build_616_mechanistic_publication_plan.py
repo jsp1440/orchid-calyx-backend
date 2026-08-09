@@ -83,7 +83,7 @@ def test_unreviewed_candidate_is_blocked_and_never_authorized():
     assert any(item.startswith("open_review:") for item in plan["blockers"])
 
 
-def test_approved_candidate_produces_deterministic_three_operation_plan():
+def test_approved_candidate_produces_deterministic_gate_compatible_plan():
     repository, service = components()
     candidate_id = create_candidate(repository, service)
     approve_all_candidate_reviews(repository, candidate_id)
@@ -93,11 +93,14 @@ def test_approved_candidate_produces_deterministic_three_operation_plan():
     assert first["blockers"] == []
     assert first["validation"]["healthy"] is True
     assert first["plan_id"] == second["plan_id"]
-    assert [item["operation"] for item in first["operations"]] == [
-        "UPSERT_NODE",
-        "UPSERT_NODE",
-        "UPSERT_EDGE",
+    assert [item["operation_type"] for item in first["operations"]] == [
+        "CREATE_NODE",
+        "CREATE_NODE",
+        "CREATE_EDGE",
     ]
+    assert [item["order"] for item in first["operations"]] == [0, 1, 2]
+    assert first["evidence_link_ids"]
+    assert first["evidence_count"] == len(first["evidence_link_ids"])
     assert first["authorized"] is False
     assert first["canonical_graph_mutated"] is False
 
@@ -123,7 +126,19 @@ def test_missing_evidence_blocks_publication_plan():
     repository.evidence_links = []
     plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
     assert plan["ready_for_controlled_publication_gate"] is False
+    assert plan["evidence_link_ids"] == []
     assert "exact_evidence_required" in plan["blockers"]
+
+
+def test_inactive_superseded_candidate_is_not_ready():
+    repository, service = components()
+    candidate_id = create_candidate(repository, service)
+    approve_all_candidate_reviews(repository, candidate_id)
+    repository.candidates[0]["active"] = False
+    repository.candidates[0]["superseded_by_candidate_id"] = 999
+    plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
+    assert plan["ready_for_controlled_publication_gate"] is False
+    assert "candidate_inactive_or_superseded" in plan["blockers"]
 
 
 def test_plan_preserves_context_and_uses_truthful_preview_provenance():
