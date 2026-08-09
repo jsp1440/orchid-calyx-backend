@@ -94,7 +94,7 @@ def test_approved_candidate_produces_deterministic_three_operation_plan():
     first = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
     second = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
 
-    assert first["ready_for_controlled_publication_gate"] is True
+    assert first["ready_for_controlled_publication_gate"] is True, first["blockers"]
     assert first["blockers"] == []
     assert first["validation"]["healthy"] is True
     assert first["plan_id"] == second["plan_id"]
