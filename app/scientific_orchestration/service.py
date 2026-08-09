@@ -85,6 +85,9 @@ class GovernedScientificOrchestrationService:
         "CONSERVATION_ACTION",
         "TAXON_NAME_USAGE",
     }
+    SCIENTIFIC_INFERENCE_KINDS = {
+        "MECHANISTIC_RELATIONSHIP",
+    }
 
     def __init__(
         self,
@@ -184,6 +187,11 @@ class GovernedScientificOrchestrationService:
             for aggregate in aggregates
         ):
             return RiskClass.LEVEL_3_CONFLICTING_OR_AMBIGUOUS
+        if any(
+            candidate.get("kind") in self.SCIENTIFIC_INFERENCE_KINDS
+            for candidate in candidates
+        ):
+            return RiskClass.LEVEL_2_SCIENTIFIC_INFERENCE
         minimum_confidence = min(float(item.get("confidence", 0.5)) for item in candidates)
         if minimum_confidence < 0.6:
             return RiskClass.LEVEL_2_SCIENTIFIC_INFERENCE
