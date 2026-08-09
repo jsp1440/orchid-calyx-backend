@@ -20,6 +20,10 @@ PRIMARY_EXPERIMENTAL_CLASSES = {
     EvidenceClass.DIRECT_TRACER,
     EvidenceClass.CONTROLLED_EXPERIMENT,
 }
+VERIFIED_STATES = {
+    VerificationState.VERIFIED_AUTHORITY,
+    VerificationState.VERIFIED_PUBLISHER,
+}
 
 
 def canonical_json(value: Any) -> str:
@@ -52,6 +56,21 @@ class ScientificSynthesisService:
         evidence = self._unique_index(evidence_rows, "evidence_id", errors, "DUPLICATE_EVIDENCE_ID")
         claim_index = self._unique_index(claims, "claim_id", errors, "DUPLICATE_CLAIM_ID")
 
+        for source in bibliography:
+            if not source.source_id.strip() or not source.title.strip():
+                errors.append(self._error("BIBLIOGRAPHIC_IDENTITY_REQUIRED", source_id=source.source_id))
+            if source.verification_state in VERIFIED_STATES:
+                if not (source.verification_provider or "").strip() or not (
+                    source.verification_identifier or ""
+                ).strip():
+                    errors.append(
+                        self._error(
+                            "VERIFIED_SOURCE_PROVENANCE_REQUIRED",
+                            source_id=source.source_id,
+                            verification_state=source.verification_state.value,
+                        )
+                    )
+
         for row in evidence_rows:
             source = sources.get(row.source_id)
             if source is None:
@@ -62,6 +81,25 @@ class ScientificSynthesisService:
             for anchor in row.anchors:
                 if anchor.source_id != row.source_id:
                     errors.append(self._error("ANCHOR_SOURCE_MISMATCH", evidence_id=row.evidence_id, anchor_id=anchor.anchor_id))
+                if not anchor.anchor_id.strip() or not anchor.source_revision_id.strip():
+                    errors.append(
+                        self._error(
+                            "ANCHOR_IDENTITY_REQUIRED",
+                            evidence_id=row.evidence_id,
+                            anchor_id=anchor.anchor_id,
+                        )
+                    )
+                if not anchor.locator or not any(
+                    value is not None and (not isinstance(value, str) or value.strip())
+                    for value in anchor.locator.values()
+                ):
+                    errors.append(
+                        self._error(
+                            "ANCHOR_LOCATOR_REQUIRED",
+                            evidence_id=row.evidence_id,
+                            anchor_id=anchor.anchor_id,
+                        )
+                    )
                 if not anchor.content_hash.strip() or not anchor.excerpt_hash.strip():
                     errors.append(self._error("ANCHOR_HASH_REQUIRED", evidence_id=row.evidence_id, anchor_id=anchor.anchor_id))
             if row.evidence_class in PRIMARY_EXPERIMENTAL_CLASSES and source.verification_state is VerificationState.UNVERIFIED:
@@ -95,6 +133,10 @@ class ScientificSynthesisService:
                 errors.append(self._error("ARTICLE_BIBLIOGRAPHY_SOURCE_NOT_FOUND", source_id=source_id))
             elif source.verification_state is VerificationState.UNVERIFIED:
                 errors.append(self._error("ARTICLE_BIBLIOGRAPHY_SOURCE_UNVERIFIED", source_id=source_id))
+            elif not (source.verification_provider or "").strip() or not (
+                source.verification_identifier or ""
+            ).strip():
+                errors.append(self._error("ARTICLE_BIBLIOGRAPHY_VERIFICATION_PROVENANCE_MISSING", source_id=source_id))
 
         referenced_claim_ids: set[str] = set()
         for sentence in article.sentences:
@@ -127,7 +169,10 @@ class ScientificSynthesisService:
             warnings.append(self._error("UNUSED_SYNTHESIS_CLAIMS", claim_ids=unused_claims))
 
         verified_source_count = sum(
-            source.verification_state is not VerificationState.UNVERIFIED for source in bibliography
+            source.verification_state in VERIFIED_STATES
+            and bool((source.verification_provider or "").strip())
+            and bool((source.verification_identifier or "").strip())
+            for source in bibliography
         )
         primary_evidence_count = sum(row.evidence_class in PRIMARY_EXPERIMENTAL_CLASSES for row in evidence_rows)
         manifest = {
@@ -150,7 +195,7 @@ class ScientificSynthesisService:
                 "evidence_rows": [asdict(value) for value in evidence_rows],
                 "claims": [asdict(value) for value in claims],
                 "article": asdict(article),
-                "validator_version": "CALYX-SYN-001",
+                "validator_version": "CALYX-SYN-001.1",
             }
         )
         manifest["publication_ready"] = not errors
