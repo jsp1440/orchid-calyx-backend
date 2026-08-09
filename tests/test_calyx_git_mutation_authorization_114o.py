@@ -58,6 +58,8 @@ OWNER = "principal:owner"
 
 
 class TestHmacVerifier:
+    """Test-only verifier; the production 114O runtime never receives SECRET."""
+
     __test__ = False
 
     def verify(self, *, payload: Mapping[str, Any], signature: str) -> bool:
@@ -91,7 +93,15 @@ def _session() -> Session:
 
 
 def _patch_inputs() -> dict[str, object]:
-    return {"patches": [{"path": "app/example.py", "before_sha256": PATCH_BEFORE, "content_utf8": PATCH_CONTENT}]}
+    return {
+        "patches": [
+            {
+                "path": "app/example.py",
+                "before_sha256": PATCH_BEFORE,
+                "content_utf8": PATCH_CONTENT,
+            }
+        ]
+    }
 
 
 def _patch_output() -> dict[str, object]:
@@ -104,7 +114,15 @@ def _patch_output() -> dict[str, object]:
         "checkout_commit_sha": BASE_COMMIT,
         "workspace_isolated": True,
         "workspace_disposable": True,
-        "changes": [{"path": "app/example.py", "before_sha256": PATCH_BEFORE, "after_sha256": PATCH_AFTER, "created": False, "size_bytes": len(PATCH_BYTES)}],
+        "changes": [
+            {
+                "path": "app/example.py",
+                "before_sha256": PATCH_BEFORE,
+                "after_sha256": PATCH_AFTER,
+                "created": False,
+                "size_bytes": len(PATCH_BYTES),
+            }
+        ],
         "file_count": 1,
         "total_written_bytes": len(PATCH_BYTES),
         "commit_created": False,
@@ -119,7 +137,17 @@ def _persist_patch(session: Session) -> CalyxProgramJob:
         owner="owner",
         title="durable owner authorization patch",
         objective="persist exact isolated patch execution",
-        jobs=[ProgramJobSpec("patch", ISOLATED_PATCH_ROLE, "patch", REPOSITORY, BRANCH, True, inputs=_patch_inputs())],
+        jobs=[
+            ProgramJobSpec(
+                "patch",
+                ISOLATED_PATCH_ROLE,
+                "patch",
+                REPOSITORY,
+                BRANCH,
+                True,
+                inputs=_patch_inputs(),
+            )
+        ],
         dependencies=[],
     )
     repository.start(owner="owner", program_id=program.program_id)
@@ -156,8 +184,26 @@ def _manifest(patch_program_job_id: str) -> dict:
         "source_autonomy_branch": BRANCH,
         "proposed_branch": "autonomy/proposal/work-123",
         "patch_output_checksum": canonical_checksum(output),
-        "changes": [{"path": "app/example.py", "before_sha256": PATCH_BEFORE, "after_sha256": PATCH_AFTER, "created": False, "size_bytes": len(PATCH_BYTES)}],
-        "validations": [{"preset": "ruff", "request_digest": "d" * 64, "receipt_digest": "e" * 64, "policy_digest": "f" * 64, "target_hashes": [{"path": "app/example.py", "sha256": PATCH_AFTER}]}],
+        "changes": [
+            {
+                "path": "app/example.py",
+                "before_sha256": PATCH_BEFORE,
+                "after_sha256": PATCH_AFTER,
+                "created": False,
+                "size_bytes": len(PATCH_BYTES),
+            }
+        ],
+        "validations": [
+            {
+                "preset": "ruff",
+                "request_digest": "d" * 64,
+                "receipt_digest": "e" * 64,
+                "policy_digest": "f" * 64,
+                "target_hashes": [
+                    {"path": "app/example.py", "sha256": PATCH_AFTER}
+                ],
+            }
+        ],
         "commit_title": "Bounded change",
         "pr_title": "Bounded change",
         "summary": "Proposal evidence.",
@@ -174,7 +220,14 @@ def _manifest(patch_program_job_id: str) -> dict:
     return {**payload, "manifest_digest": canonical_sha256(payload)}
 
 
-def _record_review(store: DurableProposalAuthorizationStore, patch_program_job_id: str, *, review_class: str, reviewer: str, decision: ProposalDecision = ProposalDecision.APPROVED):
+def _record_review(
+    store: DurableProposalAuthorizationStore,
+    patch_program_job_id: str,
+    *,
+    review_class: str,
+    reviewer: str,
+    decision: ProposalDecision = ProposalDecision.APPROVED,
+):
     return store.record_review(
         manifest_snapshot=_manifest(patch_program_job_id),
         requested_by="principal:requester",
@@ -188,14 +241,35 @@ def _record_review(store: DurableProposalAuthorizationStore, patch_program_job_i
     )
 
 
-def _store(*, security_decision: ProposalDecision = ProposalDecision.APPROVED, same_reviewer: bool = False) -> tuple[DurableProposalAuthorizationStore, str]:
+def _store(
+    *,
+    security_decision: ProposalDecision = ProposalDecision.APPROVED,
+    same_reviewer: bool = False,
+) -> tuple[DurableProposalAuthorizationStore, str]:
     session = _session()
     patch_job = _persist_patch(session)
     store = DurableProposalAuthorizationStore(session)
-    operational_reviewer = "principal:shared-reviewer" if same_reviewer else "principal:ops-reviewer"
-    security_reviewer = "principal:shared-reviewer" if same_reviewer else "principal:security-reviewer"
-    _record_review(store, patch_job.program_job_id, review_class="operational", reviewer=operational_reviewer)
-    _record_review(store, patch_job.program_job_id, review_class="security", reviewer=security_reviewer, decision=security_decision)
+    operational_reviewer = (
+        "principal:shared-reviewer" if same_reviewer else "principal:ops-reviewer"
+    )
+    security_reviewer = (
+        "principal:shared-reviewer"
+        if same_reviewer
+        else "principal:security-reviewer"
+    )
+    _record_review(
+        store,
+        patch_job.program_job_id,
+        review_class="operational",
+        reviewer=operational_reviewer,
+    )
+    _record_review(
+        store,
+        patch_job.program_job_id,
+        review_class="security",
+        reviewer=security_reviewer,
+        decision=security_decision,
+    )
     return store, patch_job.program_job_id
 
 
@@ -203,15 +277,33 @@ def _request(store: DurableProposalAuthorizationStore, patch_program_job_id: str
     return GitMutationAuthorizationGate.build_request(
         _manifest(patch_program_job_id),
         review_store=store,
-        actions=("create_branch", "create_commit", "push_branch", "open_pull_request"),
+        actions=(
+            "create_branch",
+            "create_commit",
+            "push_branch",
+            "open_pull_request",
+        ),
         expires_at=(NOW + timedelta(minutes=15)).isoformat(),
         now=NOW,
     )
 
 
-def _owner_grant(*, request_digest: str, decision: str, issued_at: str, expires_at: str) -> dict[str, str]:
-    unsigned = {"schema": GRANT_SCHEMA, "request_digest": request_digest, "decision": decision, "approved_by": OWNER, "issued_at": issued_at, "expires_at": expires_at}
-    signature = hmac.new(SECRET, canonical_sha256(unsigned).encode("ascii"), hashlib.sha256).hexdigest()
+def _owner_grant(
+    *, request_digest: str, decision: str, issued_at: str, expires_at: str
+) -> dict[str, str]:
+    unsigned = {
+        "schema": GRANT_SCHEMA,
+        "request_digest": request_digest,
+        "decision": decision,
+        "approved_by": OWNER,
+        "issued_at": issued_at,
+        "expires_at": expires_at,
+    }
+    signature = hmac.new(
+        SECRET,
+        canonical_sha256(unsigned).encode("ascii"),
+        hashlib.sha256,
+    ).hexdigest()
     return {**unsigned, "signature": signature}
 
 
@@ -219,7 +311,12 @@ def test_request_requires_both_persisted_reviews() -> None:
     session = _session()
     patch_job = _persist_patch(session)
     store = DurableProposalAuthorizationStore(session)
-    _record_review(store, patch_job.program_job_id, review_class="security", reviewer="principal:security-reviewer")
+    _record_review(
+        store,
+        patch_job.program_job_id,
+        review_class="security",
+        reviewer="principal:security-reviewer",
+    )
     with pytest.raises(PermissionError, match="PROPOSAL_REVIEWS_PENDING"):
         _request(store, patch_job.program_job_id)
 
@@ -238,7 +335,11 @@ def test_distinct_persisted_reviewers_are_required() -> None:
 
 def test_tampered_persisted_review_cannot_satisfy_gate() -> None:
     store, patch_job_id = _store()
-    row = store.db.scalar(select(ProposalAuthorizationDecisionRecord).where(ProposalAuthorizationDecisionRecord.review_class == "security"))
+    row = store.db.scalar(
+        select(ProposalAuthorizationDecisionRecord).where(
+            ProposalAuthorizationDecisionRecord.review_class == "security"
+        )
+    )
     assert row is not None
     row.payload_json = row.payload_json.replace("security review complete.", "tampered")
     store.db.commit()
@@ -248,7 +349,8 @@ def test_tampered_persisted_review_cannot_satisfy_gate() -> None:
 
 def test_request_binds_patch_job_and_durable_reviews_without_merge_authority() -> None:
     store, patch_job_id = _store()
-    snapshot = _request(store, patch_job_id).snapshot()
+    request = _request(store, patch_job_id)
+    snapshot = request.snapshot()
     assert snapshot["patch_program_job_id"] == patch_job_id
     assert len(snapshot["review_authorization_digests"]) == 2
     assert snapshot["merge_authorized"] is False
@@ -263,15 +365,27 @@ def test_request_binds_patch_job_and_durable_reviews_without_merge_authority() -
 def test_merge_action_is_not_allowlisted() -> None:
     store, patch_job_id = _store()
     with pytest.raises(PermissionError, match="ACTION_NOT_ALLOWED"):
-        GitMutationAuthorizationGate.build_request(_manifest(patch_job_id), review_store=store, actions=("merge_pull_request",), expires_at=(NOW + timedelta(minutes=15)).isoformat(), now=NOW)
+        GitMutationAuthorizationGate.build_request(
+            _manifest(patch_job_id),
+            review_store=store,
+            actions=("merge_pull_request",),
+            expires_at=(NOW + timedelta(minutes=15)).isoformat(),
+            now=NOW,
+        )
 
 
 def test_exact_external_owner_grant_verifies_and_expired_grant_fails() -> None:
     gate = _gate()
     store, patch_job_id = _store()
     request = _request(store, patch_job_id)
-    grant = _owner_grant(request_digest=request.request_digest, decision="approved", issued_at=NOW.isoformat(), expires_at=request.expires_at)
-    assert gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1)).approved_by == OWNER
+    grant = _owner_grant(
+        request_digest=request.request_digest,
+        decision="approved",
+        issued_at=NOW.isoformat(),
+        expires_at=request.expires_at,
+    )
+    verified = gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
+    assert verified.approved_by == OWNER
     with pytest.raises(PermissionError, match="EXPIRED_OR_INVALID"):
         gate.verify_grant(request, grant, now=NOW + timedelta(minutes=16))
 
@@ -280,7 +394,12 @@ def test_stale_owner_grant_issue_time_is_rejected() -> None:
     gate = _gate()
     store, patch_job_id = _store()
     request = _request(store, patch_job_id)
-    grant = _owner_grant(request_digest=request.request_digest, decision="approved", issued_at=(NOW - timedelta(hours=2)).isoformat(), expires_at=request.expires_at)
+    grant = _owner_grant(
+        request_digest=request.request_digest,
+        decision="approved",
+        issued_at=(NOW - timedelta(hours=2)).isoformat(),
+        expires_at=request.expires_at,
+    )
     with pytest.raises(PermissionError, match="EXPIRED_OR_INVALID"):
         gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
 
@@ -297,7 +416,12 @@ def test_invalid_external_signature_is_rejected() -> None:
     gate = _gate()
     store, patch_job_id = _store()
     request = _request(store, patch_job_id)
-    grant = _owner_grant(request_digest=request.request_digest, decision="approved", issued_at=NOW.isoformat(), expires_at=request.expires_at)
+    grant = _owner_grant(
+        request_digest=request.request_digest,
+        decision="approved",
+        issued_at=NOW.isoformat(),
+        expires_at=request.expires_at,
+    )
     grant["signature"] = "0" * 64
     with pytest.raises(PermissionError, match="SIGNATURE_INVALID"):
         gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
@@ -308,4 +432,10 @@ def test_manifest_tampering_invalidates_request() -> None:
     manifest = _manifest(patch_job_id)
     manifest["summary"] = "tampered"
     with pytest.raises(PermissionError, match="MANIFEST_DIGEST_MISMATCH"):
-        GitMutationAuthorizationGate.build_request(manifest, review_store=store, actions=("open_pull_request",), expires_at=(NOW + timedelta(minutes=15)).isoformat(), now=NOW)
+        GitMutationAuthorizationGate.build_request(
+            manifest,
+            review_store=store,
+            actions=("open_pull_request",),
+            expires_at=(NOW + timedelta(minutes=15)).isoformat(),
+            now=NOW,
+        )
