@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -13,6 +13,14 @@ class LiteratureSourceBindingError(ValueError):
         self.code = code
         self.details = details or {}
         super().__init__(code)
+
+
+def _sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _sha256_text(value: str) -> str:
+    return _sha256_bytes(value.encode("utf-8"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +34,7 @@ class CanonicalLiteratureSourceBinding:
     display_policy: str = "UNKNOWN_REQUIRES_REVIEW"
     internal_use_permission: bool = False
     language: str = "en"
+    evidence_integrity: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.paper_id.strip():
@@ -49,6 +58,10 @@ class CanonicalLiteratureSourceBinding:
             "display_policy": self.display_policy,
             "internal_use_permission": self.internal_use_permission,
             "language": self.language,
+            "evidence_integrity": {
+                key: self.evidence_integrity[key]
+                for key in sorted(self.evidence_integrity)
+            },
         }
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -73,6 +86,82 @@ class CanonicalLiteratureSourceBinding:
                 "CANONICAL_EVIDENCE_BINDING_MISSING",
                 {"evidence_ids": missing},
             )
+
+    def with_verified_integrity(
+        self, paper: Any, raw_bytes: bytes
+    ) -> CanonicalLiteratureSourceBinding:
+        self.validate_against_paper(paper)
+        source_hash = _sha256_bytes(raw_bytes)
+        if source_hash != paper.source.content_hash:
+            raise LiteratureSourceBindingError(
+                "RAW_SOURCE_HASH_MISMATCH",
+                {
+                    "paper_id": paper.paper_id,
+                    "expected_source_hash": paper.source.content_hash,
+                    "actual_source_hash": source_hash,
+                },
+            )
+        try:
+            raw_text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise LiteratureSourceBindingError("RAW_SOURCE_NOT_UTF8") from exc
+
+        proofs: dict[str, dict[str, Any]] = {}
+        for evidence in paper.evidence:
+            start = evidence.span.char_start
+            end = evidence.span.char_end
+            if (
+                start is None
+                or end is None
+                or end < start
+                or end > len(raw_text)
+                or raw_text[start:end] != evidence.excerpt
+            ):
+                raise LiteratureSourceBindingError(
+                    "EVIDENCE_SOURCE_SPAN_INVALID",
+                    {
+                        "evidence_id": evidence.evidence_id,
+                        "char_start": start,
+                        "char_end": end,
+                    },
+                )
+            proofs[evidence.evidence_id] = {
+                "anchor_id": self.anchor_ids[evidence.evidence_id],
+                "source_hash": source_hash,
+                "excerpt_hash": _sha256_text(evidence.excerpt),
+                "char_start": start,
+                "char_end": end,
+                "section_id": evidence.span.section_id,
+                "evidence_type": evidence.evidence_type,
+            }
+        return replace(self, evidence_integrity=proofs)
+
+    def validate_integrity(self, paper: Any, raw_bytes: bytes) -> None:
+        self.validate_against_paper(paper)
+        known = {item.evidence_id for item in paper.evidence}
+        proof_ids = set(self.evidence_integrity)
+        if proof_ids != known:
+            raise LiteratureSourceBindingError(
+                "SOURCE_INTEGRITY_PROOF_INCOMPLETE",
+                {
+                    "missing_evidence_ids": sorted(known - proof_ids),
+                    "foreign_evidence_ids": sorted(proof_ids - known),
+                },
+            )
+
+        expected = self.with_verified_integrity(paper, raw_bytes)
+        for evidence_id in sorted(known):
+            actual_proof = self.evidence_integrity[evidence_id]
+            expected_proof = expected.evidence_integrity[evidence_id]
+            if actual_proof != expected_proof:
+                raise LiteratureSourceBindingError(
+                    "SOURCE_INTEGRITY_PROOF_MISMATCH",
+                    {
+                        "evidence_id": evidence_id,
+                        "expected": expected_proof,
+                        "actual": actual_proof,
+                    },
+                )
 
     def to_dict(self) -> dict[str, Any]:
         return {**asdict(self), "binding_fingerprint": self.fingerprint}
@@ -101,6 +190,8 @@ class FileLiteratureSourceBindingRepository:
     def create(
         self, binding: CanonicalLiteratureSourceBinding
     ) -> tuple[CanonicalLiteratureSourceBinding, bool]:
+        if not binding.evidence_integrity:
+            raise LiteratureSourceBindingError("SOURCE_INTEGRITY_PROOF_REQUIRED")
         path = self._path(binding.paper_id)
         with self._lock:
             existing = self.get(binding.paper_id)

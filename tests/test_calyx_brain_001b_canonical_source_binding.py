@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -50,13 +51,18 @@ def _binding(paper) -> CanonicalLiteratureSourceBinding:
     )
 
 
+def _verified_binding(paper, literature: LiteratureResultRepository):
+    raw_bytes = literature.get_raw_bytes(paper.paper_id)
+    assert raw_bytes is not None
+    return _binding(paper).with_verified_integrity(paper, raw_bytes)
+
+
 @pytest.mark.asyncio
 async def test_create_get_and_idempotent_replay(tmp_path: Path) -> None:
     literature = LiteratureResultRepository(tmp_path / "literature")
     paper = await extract_and_persist(_source(tmp_path / "paper.txt"), literature)
     repository = FileLiteratureSourceBindingRepository(tmp_path / "literature")
-    binding = _binding(paper)
-    binding.validate_against_paper(paper)
+    binding = _verified_binding(paper, literature)
 
     first, first_created = repository.create(binding)
     second, second_created = repository.create(binding)
@@ -65,6 +71,7 @@ async def test_create_get_and_idempotent_replay(tmp_path: Path) -> None:
     assert second_created is False
     assert first.fingerprint == second.fingerprint
     assert repository.get(paper.paper_id) == binding
+    assert all(item["excerpt_hash"] for item in binding.evidence_integrity.values())
 
 
 @pytest.mark.asyncio
@@ -72,16 +79,9 @@ async def test_conflicting_rebind_preserves_existing_binding(tmp_path: Path) -> 
     literature = LiteratureResultRepository(tmp_path / "literature")
     paper = await extract_and_persist(_source(tmp_path / "paper.txt"), literature)
     repository = FileLiteratureSourceBindingRepository(tmp_path / "literature")
-    original = _binding(paper)
+    original = _verified_binding(paper, literature)
     repository.create(original)
-    conflict = CanonicalLiteratureSourceBinding(
-        paper_id=paper.paper_id,
-        source_object_type=original.source_object_type,
-        source_object_id=999,
-        revision_id=original.revision_id,
-        extraction_run_id=original.extraction_run_id,
-        anchor_ids=original.anchor_ids,
-    )
+    conflict = replace(original, source_object_id=999)
 
     with pytest.raises(LiteratureSourceBindingError) as caught:
         repository.create(conflict)
@@ -97,22 +97,8 @@ async def test_missing_and_foreign_anchor_bindings_are_rejected(tmp_path: Path) 
     valid = _binding(paper)
     missing = dict(valid.anchor_ids)
     missing.pop(next(iter(missing)))
-    incomplete = CanonicalLiteratureSourceBinding(
-        paper_id=paper.paper_id,
-        source_object_type=valid.source_object_type,
-        source_object_id=valid.source_object_id,
-        revision_id=valid.revision_id,
-        extraction_run_id=valid.extraction_run_id,
-        anchor_ids=missing,
-    )
-    foreign = CanonicalLiteratureSourceBinding(
-        paper_id=paper.paper_id,
-        source_object_type=valid.source_object_type,
-        source_object_id=valid.source_object_id,
-        revision_id=valid.revision_id,
-        extraction_run_id=valid.extraction_run_id,
-        anchor_ids={**valid.anchor_ids, "foreign-evidence": 999},
-    )
+    incomplete = replace(valid, anchor_ids=missing)
+    foreign = replace(valid, anchor_ids={**valid.anchor_ids, "foreign-evidence": 999})
 
     with pytest.raises(LiteratureSourceBindingError) as missing_error:
         incomplete.validate_against_paper(paper)
@@ -121,6 +107,38 @@ async def test_missing_and_foreign_anchor_bindings_are_rejected(tmp_path: Path) 
 
     assert missing_error.value.code == "CANONICAL_EVIDENCE_BINDING_MISSING"
     assert foreign_error.value.code == "ANCHOR_EVIDENCE_IDS_NOT_IN_PAPER"
+
+
+@pytest.mark.asyncio
+async def test_tampered_raw_source_is_rejected_after_binding(tmp_path: Path) -> None:
+    literature = LiteratureResultRepository(tmp_path / "literature")
+    paper = await extract_and_persist(_source(tmp_path / "paper.txt"), literature)
+    binding = _verified_binding(paper, literature)
+    raw_path = literature.root / paper.paper_id / "raw.txt"
+    raw_path.write_bytes(raw_path.read_bytes() + b"tampered")
+
+    with pytest.raises(LiteratureSourceBindingError) as caught:
+        binding.validate_integrity(paper, raw_path.read_bytes())
+
+    assert caught.value.code == "RAW_SOURCE_HASH_MISMATCH"
+
+
+@pytest.mark.asyncio
+async def test_tampered_excerpt_proof_is_rejected(tmp_path: Path) -> None:
+    literature = LiteratureResultRepository(tmp_path / "literature")
+    paper = await extract_and_persist(_source(tmp_path / "paper.txt"), literature)
+    binding = _verified_binding(paper, literature)
+    evidence_id = next(iter(binding.evidence_integrity))
+    integrity = {key: dict(value) for key, value in binding.evidence_integrity.items()}
+    integrity[evidence_id]["excerpt_hash"] = "0" * 64
+    corrupted = replace(binding, evidence_integrity=integrity)
+    raw_bytes = literature.get_raw_bytes(paper.paper_id)
+    assert raw_bytes is not None
+
+    with pytest.raises(LiteratureSourceBindingError) as caught:
+        corrupted.validate_integrity(paper, raw_bytes)
+
+    assert caught.value.code == "SOURCE_INTEGRITY_PROOF_MISMATCH"
 
 
 @pytest.mark.asyncio
@@ -165,9 +183,14 @@ async def test_authenticated_api_persists_binding_and_handoff_uses_it(
     assert created.status_code == 201
     assert replay.status_code == 200
     assert created.json()["binding_fingerprint"] == replay.json()["binding_fingerprint"]
+    assert created.json()["exact_source_integrity"] is True
     assert result.status_code == 201
     assert result.json()["published"] is False
     assert result.json()["review_required"] is True
+    assert result.json()["exact_source_integrity"] is True
     assert candidates.candidates[0]["review_state"] == "REQUIRED"
     assert candidates.evidence_links[0]["revision_id"] == 201
+    locator = candidates.evidence_links[0]["anchor"]["locator"]
+    assert locator["source_hash"] == paper.source.content_hash
+    assert locator["excerpt_hash"]
     assert candidates.evidence_links[0]["anchor"]["char_start"] is not None

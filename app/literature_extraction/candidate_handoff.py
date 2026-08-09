@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from hashlib import sha256
 from typing import Any
 
 from app.candidate_knowledge.models import (
@@ -25,14 +26,12 @@ DOMAIN_KINDS: dict[str, CandidateKind] = {
 
 @dataclass(frozen=True, slots=True)
 class LiteratureSourceBinding:
-    """Canonical source identities owned by intake/document intelligence.
+    """Canonical source identities and verified literature evidence integrity.
 
-    TRUST BOUNDARY: anchor_ids are caller-supplied and not independently
-    verified by this service.  The caller (document intelligence) is
-    responsible for ensuring that every anchor_id value belongs to the
-    specified revision_id and extraction_run_id.  This service validates
-    only that (a) every anchor key corresponds to a known evidence_id in
-    the paper, and (b) no supplied anchor_id value is ≤ 0.
+    Canonical anchor IDs remain owned by intake/document intelligence.  Exact
+    source and excerpt hashes are derived from the immutable literature ingest
+    and are carried alongside those IDs so normalized text can never replace
+    the original evidence locator.
     """
 
     source_object_type: str
@@ -43,6 +42,7 @@ class LiteratureSourceBinding:
     display_policy: str = "UNKNOWN_REQUIRES_REVIEW"
     internal_use_permission: bool = False
     language: str = "en"
+    evidence_integrity: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.source_object_type.strip():
@@ -51,13 +51,10 @@ class LiteratureSourceBinding:
             raise ValueError("CANONICAL_SOURCE_BINDING_REQUIRED")
         if not self.anchor_ids or any(value <= 0 for value in self.anchor_ids.values()):
             raise ValueError("CANONICAL_ANCHOR_BINDINGS_REQUIRED")
+        if not self.evidence_integrity:
+            raise ValueError("SOURCE_INTEGRITY_PROOF_REQUIRED")
 
     def validate_against_paper(self, paper: Any) -> list[str]:
-        """Return unknown anchor keys (evidence IDs not in this paper).
-
-        Returns an empty list if all keys are valid.  Does not raise; callers
-        decide whether unknown anchors are a hard error or a warning.
-        """
         known_evidence_ids = {ev.evidence_id for ev in paper.evidence}
         return [k for k in self.anchor_ids if k not in known_evidence_ids]
 
@@ -89,23 +86,34 @@ def _subject(record: NormalizedEvidenceRecord) -> tuple[str | None, list[str]]:
     return (candidates[0] if len(candidates) == 1 else None), candidates
 
 
+def _proof_matches_evidence(
+    *, evidence: Any, anchor_id: int, proof: dict[str, Any], source_hash: str
+) -> bool:
+    return proof == {
+        "anchor_id": anchor_id,
+        "source_hash": source_hash,
+        "excerpt_hash": sha256(evidence.excerpt.encode("utf-8")).hexdigest(),
+        "char_start": evidence.span.char_start,
+        "char_end": evidence.span.char_end,
+        "section_id": evidence.span.section_id,
+        "evidence_type": evidence.evidence_type,
+    }
+
+
 def build_candidate_plan(
     paper: PaperKnowledge, binding: LiteratureSourceBinding
 ) -> LiteratureCandidatePlan:
-    """Adapt reviewed-boundary literature records without resolving ambiguity.
+    """Adapt reviewed-boundary literature records without resolving ambiguity."""
 
-    Unknown anchor keys (evidence IDs not in this paper) in the binding are
-    treated as a caller error; the affected records are blocked rather than
-    silently dropped or guessed.
-    """
-
-    unknown_anchors = binding.validate_against_paper(paper)
-    unknown_anchor_set = set(unknown_anchors)
-
+    unknown_anchor_set = set(binding.validate_against_paper(paper))
     if unknown_anchor_set:
         raise ValueError(
             f"ANCHOR_EVIDENCE_IDS_NOT_IN_PAPER: {sorted(unknown_anchor_set)}"
         )
+
+    known_evidence_ids = {item.evidence_id for item in paper.evidence}
+    if set(binding.evidence_integrity) != known_evidence_ids:
+        raise ValueError("SOURCE_INTEGRITY_PROOF_INCOMPLETE")
 
     evidence_by_id = {item.evidence_id: item for item in paper.evidence}
     claims_by_id = {item.claim_id: item for item in paper.claims}
@@ -150,11 +158,21 @@ def build_candidate_plan(
 
         source_anchors: list[SourceAnchor] = []
         missing_bindings: list[str] = []
+        integrity_failures: list[str] = []
         for evidence_id in sorted(record.evidence_ids):
             source_evidence = evidence_by_id.get(evidence_id)
             anchor_id = binding.anchor_ids.get(evidence_id)
-            if source_evidence is None or anchor_id is None:
+            proof = binding.evidence_integrity.get(evidence_id)
+            if source_evidence is None or anchor_id is None or proof is None:
                 missing_bindings.append(evidence_id)
+                continue
+            if not _proof_matches_evidence(
+                evidence=source_evidence,
+                anchor_id=anchor_id,
+                proof=proof,
+                source_hash=paper.source.content_hash,
+            ):
+                integrity_failures.append(evidence_id)
                 continue
             source_anchors.append(
                 SourceAnchor(
@@ -168,11 +186,23 @@ def build_candidate_plan(
                         "paper_id": paper.paper_id,
                         "analysis_id": paper.analysis_manifest.analysis_id,
                         "evidence_id": evidence_id,
-                        "source_hash": paper.source.content_hash,
+                        "source_hash": proof["source_hash"],
+                        "excerpt_hash": proof["excerpt_hash"],
+                        "char_start": proof["char_start"],
+                        "char_end": proof["char_end"],
                         "confidence": claim.provenance.confidence,
                     },
                 )
             )
+        if integrity_failures:
+            blocked.append(
+                BlockedHandoffRecord(
+                    record.record_id,
+                    "CANONICAL_EVIDENCE_INTEGRITY_MISMATCH",
+                    {"evidence_ids": integrity_failures},
+                )
+            )
+            continue
         if missing_bindings or not source_anchors:
             blocked.append(
                 BlockedHandoffRecord(
@@ -202,6 +232,11 @@ def build_candidate_plan(
                     "source_record_id": record.record_id,
                     "source_confidence": record.extraction_confidence,
                     "normalization_confidence": record.normalization_confidence,
+                    "source_evidence_integrity": {
+                        evidence_id: binding.evidence_integrity[evidence_id]
+                        for evidence_id in sorted(record.evidence_ids)
+                        if evidence_id in binding.evidence_integrity
+                    },
                     "candidate_facts": [
                         {
                             "kind": kind.value,
@@ -247,7 +282,7 @@ class LiteratureCandidateHandoffService:
         preview = self.candidate_service.preview(
             list(plan.evidence),
             {
-                "adapter": "calyx-brain-001a",
+                "adapter": "calyx-syn-002",
                 "paper_id": paper.paper_id,
                 "analysis_id": paper.analysis_manifest.analysis_id,
                 "configuration_fingerprint": paper.analysis_manifest.configuration_fingerprint,
@@ -270,4 +305,5 @@ class LiteratureCandidateHandoffService:
             "blocked_records": [asdict(item) for item in plan.blocked],
             "published": False,
             "review_required": True,
+            "exact_source_integrity": True,
         }

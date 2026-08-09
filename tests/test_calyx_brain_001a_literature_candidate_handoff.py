@@ -1,3 +1,4 @@
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -33,18 +34,39 @@ def _source(path: Path, statement: str) -> Path:
     return path
 
 
+def _anchor_ids(paper) -> dict[str, int]:
+    return {
+        evidence.evidence_id: 400 + index
+        for index, evidence in enumerate(paper.evidence, start=1)
+    }
+
+
+def _integrity(paper, anchor_ids: dict[str, int]) -> dict[str, dict]:
+    return {
+        evidence.evidence_id: {
+            "anchor_id": anchor_ids[evidence.evidence_id],
+            "source_hash": paper.source.content_hash,
+            "excerpt_hash": sha256(evidence.excerpt.encode("utf-8")).hexdigest(),
+            "char_start": evidence.span.char_start,
+            "char_end": evidence.span.char_end,
+            "section_id": evidence.span.section_id,
+            "evidence_type": evidence.evidence_type,
+        }
+        for evidence in paper.evidence
+    }
+
+
 def _binding(paper) -> LiteratureSourceBinding:
+    anchor_ids = _anchor_ids(paper)
     return LiteratureSourceBinding(
         source_object_type="LITERATURE_DOCUMENT",
         source_object_id=101,
         revision_id=201,
         extraction_run_id=301,
-        anchor_ids={
-            evidence.evidence_id: 400 + index
-            for index, evidence in enumerate(paper.evidence, start=1)
-        },
+        anchor_ids=anchor_ids,
         display_policy="INTERNAL_RESEARCH_ONLY",
         internal_use_permission=True,
+        evidence_integrity=_integrity(paper, anchor_ids),
     )
 
 
@@ -70,6 +92,7 @@ async def test_verified_literature_to_review_only_candidate_handoff(
     assert first["plan_counts"] == {"EXTRACT": 1}
     assert second["plan_counts"] == {"REUSE": 1}
     assert first["candidate_ids"] == second["candidate_ids"]
+    assert first["exact_source_integrity"] is True
     assert len(candidate_repository.candidates) == 1
     candidate = candidate_repository.candidates[0]
     assert candidate["kind"] == "TRAIT"
@@ -81,6 +104,7 @@ async def test_verified_literature_to_review_only_candidate_handoff(
     assert link["revision_id"] == 201
     assert link["extraction_run_id"] == 301
     assert link["anchor"]["locator"]["source_hash"] == paper.source.content_hash
+    assert link["anchor"]["locator"]["excerpt_hash"]
     assert link["anchor"]["char_start"] is not None
     assert candidate_repository.reviews
 
@@ -138,7 +162,7 @@ async def test_authenticated_handoff_api_is_queryable_and_idempotent(
             "source_object_id": 101,
             "revision_id": 201,
             "extraction_run_id": 301,
-            "anchor_ids": _binding(paper).anchor_ids,
+            "anchor_ids": _anchor_ids(paper),
             "display_policy": "METADATA_ONLY",
         },
     }
@@ -154,12 +178,12 @@ async def test_authenticated_handoff_api_is_queryable_and_idempotent(
     assert second.json()["plan_counts"] == {"REUSE": 1}
     assert first.json()["candidate_ids"] == second.json()["candidate_ids"]
     assert first.json()["published"] is False
+    assert first.json()["exact_source_integrity"] is True
     assert candidate_repository.evidence_links[0]["authorized_quote"] is None
 
 
 @pytest.mark.asyncio
 async def test_unknown_anchor_keys_are_rejected(tmp_path: Path) -> None:
-    """Anchor keys not present in the paper are a caller error and must be rejected."""
     source = _source(
         tmp_path / "trait.txt",
         "Escherichia coli was characterized by a red flower trait.",
@@ -167,10 +191,7 @@ async def test_unknown_anchor_keys_are_rejected(tmp_path: Path) -> None:
     paper = await extract_and_persist(
         source, LiteratureResultRepository(tmp_path / "literature")
     )
-    # Inject a spurious anchor key that does not exist in this paper.
-    valid_anchors = {
-        ev.evidence_id: 400 + i for i, ev in enumerate(paper.evidence, start=1)
-    }
+    valid_anchors = _anchor_ids(paper)
     spurious_anchors = {**valid_anchors, "unknown-evidence-xyz": 999}
     binding = LiteratureSourceBinding(
         source_object_type="LITERATURE_DOCUMENT",
@@ -178,6 +199,7 @@ async def test_unknown_anchor_keys_are_rejected(tmp_path: Path) -> None:
         revision_id=201,
         extraction_run_id=301,
         anchor_ids=spurious_anchors,
+        evidence_integrity=_integrity(paper, valid_anchors),
     )
     candidate_repository = MemoryCandidateRepository()
     service = LiteratureCandidateHandoffService(
