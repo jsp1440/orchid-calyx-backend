@@ -41,7 +41,7 @@ The plan directly binds and exposes:
 
 The `create_commit` operation also carries `patch_program_job_id`, so an eventual separately governed executor would not have to infer which durable patch execution supplies the authorized postimages.
 
-Operations are emitted in canonical dependency order regardless of authorization-request action ordering: `create_branch`, `create_commit`, `push_branch`, `open_pull_request`. Only authorized actions appear; planning never broadens authority.
+Operations are emitted in canonical dependency order: `create_branch`, `create_commit`, `push_branch`, `open_pull_request`. Planning never broadens authority, but it now also fails closed on a sparse authorization that skips a prerequisite operation. Valid subsets are dependency-closed prefixes only: branch; branch+commit; branch+commit+push; or the full branch+commit+push+open-PR chain. This prevents a future executor from receiving an apparently authorized `push_branch` or `open_pull_request` operation without evidence that the prerequisite proposal state is part of the same owner-bound plan.
 
 ## Non-authority assertions
 
@@ -51,9 +51,9 @@ The planner contains no subprocess, Git command, HTTP mutation client, GitHub AP
 
 ## Validation contract
 
-Focused tests use the real SQLite Calyx program-job tables and `LeaseExecutionBridge` to persist an authoritative isolated-patch execution, record both durable 114P reviews through governed builders, produce a v2 owner request, verify an external Ed25519 owner signature, and compile the plan. Regressions cover deterministic planning, direct `patch_program_job_id` binding, request/patch-job mismatch, canonical action subsets/order, manifest tampering, invalid signature, expiry, and non-mutation assertions.
+Focused tests use the real SQLite Calyx program-job tables and `LeaseExecutionBridge` to persist an authoritative isolated-patch execution, record both durable 114P reviews through governed builders, produce a v2 owner request, verify an external Ed25519 owner signature, and compile the plan. Regressions cover deterministic planning, direct `patch_program_job_id` binding, request/patch-job mismatch, dependency-closed action prefixes, rejection of sparse/out-of-order prerequisite sets, manifest tampering, invalid signature, expiry, and non-mutation assertions.
 
-Dedicated CI statically requires plan schema v2 and `patch_program_job_id`, and forbids repository/network mutation implementation markers.
+Dedicated CI statically requires plan schema v2, `patch_program_job_id`, and the dependency-prerequisite fail-closed marker, and forbids repository/network mutation implementation markers.
 
 Canonical CI incident #481 remains active: a hosted run that terminates with `steps=null` before step 1 is infrastructure evidence, not an executable code verdict.
 
