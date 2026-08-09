@@ -5,6 +5,7 @@ import json
 from copy import deepcopy
 from typing import Any
 
+from app.brain.causal_scope import normalize_causal_scope, publication_scope_blockers
 from app.candidate_knowledge.dependencies import get_candidate_components
 from app.candidate_knowledge.models import CandidateKind
 from runtime.knowledge_graph.causal_vocabulary import (
@@ -153,11 +154,19 @@ def _graph_from_candidate(
     semantics = causal_relation_semantics(relationship)
     if semantics is None or not semantics["causal"]:
         blockers.append(f"invalid_causal_relationship:{relationship or 'missing'}")
+
+    try:
+        causal_scope = normalize_causal_scope(qualifiers.get("causal_scope"))
+    except ValueError as exc:
+        blockers.append(f"invalid_causal_scope:{exc}")
+        causal_scope = None
+
     if blockers:
         return [], [], blockers
 
     assert source_pk is not None
     assert target_pk is not None
+    assert causal_scope is not None
     confidence = float(candidate.get("confidence", 0.0))
     candidate_id = int(candidate["candidate_id"])
     reviewed = candidate.get("review_state") == "APPROVED"
@@ -172,6 +181,7 @@ def _graph_from_candidate(
     common_payload = {
         "candidate_id": candidate_id,
         "candidate_provenance": candidate_provenance,
+        "causal_scope": causal_scope,
         "experimental_context": qualifiers.get("experimental_context", {}),
         "quantitative_context": qualifiers.get("quantitative_context", {}),
         "provenance": qualifiers.get("provenance", {}),
@@ -303,6 +313,12 @@ def plan_mechanistic_candidate_publication(
         if link.get("evidence_link_id")
     )
     approval = _approval_snapshot(candidate, reviews, evidence_link_ids)
+    qualifiers = dict(candidate.get("qualifiers") or {})
+    declared_scope = qualifiers.get("causal_scope")
+    try:
+        causal_scope = normalize_causal_scope(declared_scope)
+    except ValueError:
+        causal_scope = None
     blockers: list[str] = []
 
     if candidate.get("kind") != CandidateKind.MECHANISTIC_RELATIONSHIP.value:
@@ -318,6 +334,7 @@ def plan_mechanistic_candidate_publication(
     if not evidence_link_ids:
         blockers.append("exact_evidence_required")
 
+    blockers.extend(publication_scope_blockers(declared_scope))
     blockers.extend(_open_review_blockers(reviews))
     blockers.extend(_open_conflict_blockers(repository, candidate_id))
     blockers.extend(
@@ -343,6 +360,7 @@ def plan_mechanistic_candidate_publication(
     plan_core = {
         "candidate_id": candidate_id,
         "candidate_hash": candidate.get("candidate_hash"),
+        "causal_scope": causal_scope,
         "evidence_link_ids": evidence_link_ids,
         "approval": approval,
         "operations": operations,
@@ -351,8 +369,10 @@ def plan_mechanistic_candidate_publication(
     }
     return {
         "contract": "calyx-mechanistic-publication-plan-v2",
+        "scope_contract": "calyx-causal-scope-v1",
         "candidate_id": candidate_id,
         "candidate_hash": candidate.get("candidate_hash"),
+        "causal_scope": causal_scope,
         "approval": approval,
         "plan_id": _digest(plan_core),
         "ready_for_controlled_publication_gate": ready,
@@ -371,6 +391,6 @@ def plan_mechanistic_candidate_publication(
             "Retain this immutable plan as reviewed publication-readiness evidence. "
             "No canonical adapter currently accepts this plan for execution."
             if ready
-            else "Resolve all blockers, preserve evidence, and regenerate the plan."
+            else "Resolve all blockers, preserve evidence and applicability scope, then regenerate the plan."
         ),
     }
