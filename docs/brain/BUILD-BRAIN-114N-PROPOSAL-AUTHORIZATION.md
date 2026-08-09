@@ -1,43 +1,37 @@
 # BUILD-BRAIN-114N — Governed proposal authorization record
 
+## Status
+
+R3 reconstruction directly on current-main BUILD-BRAIN-114M-R2 PR #761. Draft and unmerged pending executable CI.
+
 ## Objective
 
 Add immutable repository-proposal review evidence after BUILD-BRAIN-114M without granting Calyx Git or GitHub mutation authority.
 
 ## Current lineage
 
-This rebuild is based directly on strengthened BUILD-BRAIN-114M-R1 head `0571ceb6de79faf569f6acc0b0e05383547b5cd5`, after the parent added runtime role-scoping and end-to-end persisted isolated-patch verification. Historical 114N PR #719 is no longer authoritative because it was built on an earlier 114M-R1 head and became non-mergeable. This branch carries only the 114N review-evidence layer on top of the exact strengthened parent.
+This branch starts from exact #761 head `55bced0b862fa088a61db67580d95496f5eb3a2d`, the current-main reconstruction of the hardened 114M trust root. #761 preserves intervening main work while carrying canonical assignment-input construction, role-scoped `workspace_write`, durable receipt identity, canonical input-checksum recomputation, exact governed patch input/output agreement, and manifest v2 bound to `patch_program_job_id`.
+
+Historical #696 and downstream review stacks rooted in it are no longer authoritative.
 
 ## Hardened trust chain
 
-114N accepts only `calyx-git-proposal-manifest-v2`. The manifest binds an exact durable `patch_program_job_id` plus repository, source autonomy branch, base commit, patch output checksum, proposed branch, change hashes, validation evidence, and manifest digest.
+114N accepts only `calyx-git-proposal-manifest-v2`. `ProposalAuthorizationBuilder` does not accept caller-supplied patch receipts. Before creating review evidence it resolves the exact durable patch job through `PersistedPatchExecutionService`; the #761 parent verifies assignment/program/job identity, canonical assignment inputs, persisted execution checksum, and exact requested-patch/output agreement.
 
-`ProposalAuthorizationBuilder` does not accept a caller-supplied patch receipt. Before creating review evidence it resolves the exact patch job through `PersistedPatchExecutionService`, backed by durable `CalyxProgramJob.evidence_json`. The strengthened parent additionally verifies durable assignment/program/job identity, canonical assignment input checksum, and exact governed patch inputs against persisted output changes. 114N therefore inherits those checks before any review evidence can be produced.
-
-Each authorization record binds `patch_program_job_id` into its immutable payload and digest. Manifest v1 is rejected rather than silently grandfathered.
+Each authorization record binds `patch_program_job_id`, repository, base commit, source/proposed branches, patch output checksum, reviewer identity/class/roles, decision, rationale and evidence into an immutable digest.
 
 ## Review governance
 
-Reviewers must be distinct from requester and persisted patch producer, role-qualified for `security` or `operational`, and provide rationale, evidence URIs, and timezone-aware decision time.
+Reviewers must be distinct from requester and persisted patch producer and role-qualified for `security` or `operational`. The registry is immutable by `(manifest_digest, review_class)`: exact replay is idempotent and conflicting replacement fails closed. Completion requires approved operational and security records from two distinct reviewers.
 
-`ProposalAuthorizationRegistry` keys decisions by `(manifest_digest, review_class)`. Identical replay is idempotent; conflicting replacement is rejected.
+Even complete review evidence grants no Git mutation, commit, push, PR creation, merge, deployment, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation authority.
 
-`proposal_review_status()` requires both review classes and two distinct reviewer identities. Rejection blocks completion; missing classes remain pending; same-reviewer dual approval is explicitly rejected as a reviewer conflict.
+## Validation
 
-Even complete review evidence grants no Git mutation, commit, push, pull-request creation, automatic merge, deployment, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation authority.
+Dedicated CI compiles/lints the persisted-patch resolver and 114N surfaces and exercises manifest tampering, persisted patch checksum/identity mismatch, missing durable job identity, self-approval, role enforcement, stale manifests, immutable decisions, dual-review completion, reviewer conflict and rejection behavior.
 
-## Validation contract
-
-Dedicated CI compiles and lints the strengthened persisted-patch resolver together with both review surfaces and both focused test files. Focused regressions cover deterministic non-authority records, manifest tampering, persisted patch checksum/identity mismatch, missing durable patch-job identity, requester/producer self-approval, reviewer-role enforcement, stale manifests, immutable rejection, independent dual-review completion, reviewer conflict, and rejection behavior.
-
-Static assertions require manifest v2, `PersistedPatchExecutionService`, bound `patch_program_job_id`, absence of a `patch_receipt` runtime path, and permanent non-authority flags.
-
-## Current CI incident
-
-Canonical issue #481 tracks GitHub-hosted jobs terminating before workflow step 1 with `steps=null`. Such runs do not provide compile, lint, pytest, or diff-hygiene evidence and must not be interpreted as code failures or passes.
-
-This branch must remain draft/unmerged until BUILD-BRAIN-114M-R1 is executable-green and this exact unchanged 114N current-parent head executes and passes real workflow steps.
+Canonical issue #481 currently causes hosted jobs to terminate before step 1 with `steps=null`; this is infrastructure evidence only and does not satisfy the merge gate.
 
 ## Next dependency
 
-BUILD-BRAIN-114P must be rebuilt or rebased only after this exact 114N layer is established, so durable review persistence inherits the strengthened 114M-R1 trust chain. Downstream 114O/114Q/114R must then follow in order. Actual Git/GitHub mutation remains a separate owner-governance boundary.
+BUILD-BRAIN-114P must be rebuilt directly on this exact R3 head before 114O/114Q/114R can again be considered authoritative. Actual Git/GitHub side effects remain a separate owner-governance boundary.
