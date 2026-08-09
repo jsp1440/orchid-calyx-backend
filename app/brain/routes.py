@@ -22,6 +22,10 @@ from runtime.knowledge_graph import PostgresGraphRepository
 
 from .education_design_routes import router as education_design_router
 from .ledger_bridge import InferenceLedgerBridge
+from .plant_diagnostic_context import (
+    PlantDiagnosticContextRequest,
+    compose_plant_diagnostic_context,
+)
 from .reasoning import InferenceEngine, InferenceType
 from .reasoning_map import ReasoningMapEngine
 from .schemas import (
@@ -154,6 +158,19 @@ def scoped_reasoning_map(
     """Evaluate causal pathways against an explicit taxon/tissue/environment scope."""
     try:
         return build_scoped_reasoning_map(repository, request)
+    except Exception as exc:
+        _translate(exc)
+        raise
+
+
+@router.post("/diagnostic-context")
+def plant_diagnostic_context(
+    request: PlantDiagnosticContextRequest,
+    repository: GraphRepositoryDependency,
+) -> dict[str, Any]:
+    """Compose scoped canonical reasoning with bounded local plant observations."""
+    try:
+        return compose_plant_diagnostic_context(repository, request)
     except Exception as exc:
         _translate(exc)
         raise
