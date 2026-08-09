@@ -1,8 +1,8 @@
-# RS-15 Validation Update — 2026-08-08 19:55 PT
+# RS-15 Validation Update — 2026-08-08 20:11 PT
 
 ## Scope
 
-This record supplements `RS-12-15-CALYX-SOURCE-WORKFLOW-HANDOFF.md` and captures the latest exact RS-15 runtime hardening, supplemental validation, and private-repository CI state.
+This record supplements `RS-12-15-CALYX-SOURCE-WORKFLOW-HANDOFF.md` and captures the exact RS-15 runtime hardening, supplemental validation, and private-repository CI boundary.
 
 ## Current Research Station state
 
@@ -35,7 +35,7 @@ Async save/refresh completions are guarded by the originating project ID. A stal
 
 ### 5. Newest-request-wins document-link sequencing
 
-Runtime head `95ce5ba76d8ebd09decb1430760197824e4ac1d9` adds a monotonic document-request sequence. Only the newest project-link request for the active project may update authoritative document state. If two retries overlap, an older success or failure is ignored after a newer request has begun. This closes the race where an older failed retry could overwrite a newer successful retry.
+Runtime head `95ce5ba76d8ebd09decb1430760197824e4ac1d9` adds a monotonic document-request sequence. Only the newest project-link request for the active project may update authoritative document state. If two retries overlap, an older success or failure is ignored after a newer request has begun.
 
 The same head adds a synchronous `savingKeyRef` guard so rapid repeated clicks cannot start duplicate source-link requests during the interval before React state rerenders. The backend remains idempotent, but the frontend no longer relies on backend idempotence to compensate for the pre-render duplicate-submit window.
 
@@ -56,7 +56,8 @@ While private hosted runners remain unavailable:
 - emitted helper JavaScript passed 263,304 boundary/property cases plus source-archive filtering smoke coverage;
 - the corrected `CalyxSourceArchive.tsx` integration surface was reconstructed against the real internal conversation, source-identity, document-scope, conversation-client, and Research Workspace link signatures;
 - the independent-error-state and fail-closed/stale-project-guard revisions passed strict TypeScript integration compilation;
-- subsequent static state-machine review identified and closed the overlapping-retry race, pre-rerender duplicate-save window, and inherited cross-project conversation offset.
+- subsequent static state-machine review identified and closed the overlapping-retry race, pre-rerender duplicate-save window, and inherited cross-project conversation offset;
+- a final 20:11 PT state-machine audit of the current runtime file found no additional defect that justified another application-code change within RS-15 scope.
 
 These supplemental checks do not replace canonical repository formatting, lint, Vitest, and production-build validation.
 
@@ -70,9 +71,12 @@ Recent exact runtime heads:
 - `45c7250bfc40f86b279152011ded94bdafc31902`: fail-closed project-link state and accurate partial-success reporting; run `31290965679`, job `93187920005`, `steps: null`;
 - `ccd53a40af6b62d4182c3e2bedecacdbaee39e45`: stale-project async guards plus retry; run `31291028502`, job `93188099034`, `steps: null`;
 - `95ce5ba76d8ebd09decb1430760197824e4ac1d9`: newest-request-wins sequencing and synchronous save serialization; run `31291445521`, job `93189218483`, `steps: null`;
-- `7ac7fc430ec1518b91e8c8d4eca3e43ddd597238`: project-boundary pagination reset; run `31291482856`, job `93189329579`, `steps: null`.
+- `7ac7fc430ec1518b91e8c8d4eca3e43ddd597238`: project-boundary pagination reset; run `31291482856`, job `93189329579`, `steps: null`;
+- frontend documentation head `e4a6513556653d60dae957db286751e5fc816bf2`: run `31291506072`, job `93189396932`, also failed before step 1 with `steps: null`.
 
-No checkout, formatting, lint, test, build, or application step has executed on the failed runs above.
+No checkout, formatting, lint, test, build, or application step executed on those failed runs.
+
+Canonical incident #481 now also records a fresh-`main` private backend successor whose dedicated migration-runner and governance workflows fail before checkout. That independent reproduction rules out stale branch history and explicitly concludes that further application commits or blind CI retries are not productive until a private-repository workflow obtains real steps or the personal-account Actions administrative state is inspected.
 
 Controlled diagnostics remain decisive:
 
@@ -90,12 +94,14 @@ Do not:
 - merge or deploy RS-15;
 - make a private repository public as a CI workaround;
 - enable paid Actions overage, change a payment method, or increase a hard-stop Actions budget without owner decision;
-- interpret conversation text as evidence or authorize scientific publication / Knowledge Graph mutation through this work.
+- interpret conversation text as evidence or authorize scientific publication / Knowledge Graph mutation through this work;
+- add further RS-15 application commits solely to probe a pre-step runner-allocation failure.
 
 ## Recovery sequence
 
 1. Restore private-repository hosted Actions execution at the account/repository administrative layer.
-2. Run the unchanged latest RS-15 runtime head through the complete Research Station gate.
-3. Fix any real formatter/lint/Vitest/build failure before expanding scope.
-4. Promote PR #17 only after one exact head is fully green.
-5. Only then proceed to RS-16 or another source-archive capability.
+2. Treat any private-repository job with materialized workflow steps as the recovery signal.
+3. Run unchanged runtime head `7ac7fc430ec1518b91e8c8d4eca3e43ddd597238` through the complete Research Station formatting/lint/Vitest/production-build gate.
+4. Fix any real project-stage failure before expanding scope.
+5. Promote PR #17 only after one exact runtime head is fully green.
+6. Only then proceed to RS-16 or another source-archive capability.
