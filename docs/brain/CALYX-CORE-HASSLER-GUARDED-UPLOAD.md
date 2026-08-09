@@ -77,6 +77,14 @@ The client does not call the staging endpoint and records:
 
 The stale #661 exact head previously passed its focused workflow, workflow-governance audit, BUILD-088E, and an actual source dry-run identity check. This current-main replacement must independently pass its own exact-head validation before it can be considered ready.
 
+## Current validation state
+
+PR #734 was opened from current `main` at base `7f5bec2fb8092739a8e5fc5ce55ebc9008a9171e` with initial head `5793a42acfb0a37a7f6c45a5eee5c160d67bec90`.
+
+Its first hosted validation attempts were created but failed before runner checkout. The dedicated `CALYX Hassler Guarded Upload Client Validation` run `31290720716` produced job `93187237107` with `steps=null`; BUILD-088E and Workflow Governance on the same head showed the same infrastructure pattern. This is tracked as the repository hosted-runner incident and is not counted as compile/lint/test evidence.
+
+The implementation remains draft and unmerged until an exact unchanged head obtains executable CI and passes the focused validation plus BUILD-088E. No production upload or staging action was attempted.
+
 ## Governance boundary
 
 This implementation does **not** authorize or perform the production upload. The upload stores immutable release bytes and metadata in the production `taxonomy_pipeline` schema, so it is a production database mutation requiring explicit owner approval separate from generic autonomous implementation instructions.
