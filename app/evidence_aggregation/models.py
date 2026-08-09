@@ -96,7 +96,11 @@ class CandidateInput:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.candidate_id <= 0 or self.candidate_version <= 0 or self.source_revision_id <= 0:
+        if (
+            self.candidate_id <= 0
+            or self.candidate_version <= 0
+            or self.source_revision_id <= 0
+        ):
             raise ValueError("INVALID_CANDIDATE_IDENTITY")
         if not self.normalized_subject.strip() or not self.predicate.strip():
             raise ValueError("INVALID_ASSERTION_IDENTITY")
