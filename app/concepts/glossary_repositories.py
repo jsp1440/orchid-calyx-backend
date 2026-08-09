@@ -12,8 +12,6 @@ from psycopg.types.json import Jsonb
 
 from .repositories import concept_database_url
 
-_FINAL_STATES = ("REVIEWED_MATCH", "NEW_CONCEPT_CANDIDATE", "REJECTED")
-
 
 def _decision_digest(candidate_id: str, updates: Mapping[str, Any]) -> str:
     payload = {
