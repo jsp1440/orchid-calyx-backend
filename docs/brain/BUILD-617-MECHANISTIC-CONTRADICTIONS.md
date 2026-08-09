@@ -2,7 +2,11 @@
 
 ## Status
 
-Reconstructed as R2 on `feature/build-617-mechanistic-contradictions-r2`, directly from the exact executable-green BUILD-616 head. This avoids carrying the stale/non-mergeable stack state from the original BUILD-617 branch.
+R2 is implemented and executable-green on `feature/build-617-mechanistic-contradictions-r2`, rebuilt directly from the corrected BUILD-616 head. Replacement PR #786 supersedes the stale/non-mergeable original BUILD-617 stack.
+
+The validated code head is `ea88483d92cfac2827014e43020a41ffa4dd9e93`. Dedicated BUILD-617 run `31301238604` passed compile, Ruff lint and formatting, BUILD-617 behavioral regressions, BUILD-616 and BUILD-615 prerequisite regressions, authenticated route verification, and repository hygiene. Applicable broad checks also passed: Candidate Handoff, BUILD-616, BUILD-615, Workflow Governance, Brain E2E, Calyx Brain Integration, OC Platform Routes, and OC Parallel Platform.
+
+Executable CI first exposed only mechanical lint/format findings in the reconstructed slice. Those were corrected before behavioral validation was accepted. No failing behavioral or governance assertion remains on the validated code head.
 
 ## Purpose
 
@@ -46,7 +50,7 @@ BUILD-616 publication planning now queries the contradiction analyzer. A partici
 
 Therefore even independently approved candidates cannot become ready for the controlled publication gate while opposite-polarity evidence exists in the same exact scientific scope.
 
-This layer does not decide which scientific claim is correct. Resolution remains a separate scientific review/governance action and must preserve both evidence chains and the reviewer rationale.
+This layer does not decide which scientific claim is correct. Resolution remains a separate scientific review/governance action and must preserve both evidence chains and reviewer rationale.
 
 ## API
 
@@ -82,7 +86,7 @@ The original BUILD-617 PR was based on a pre-correction BUILD-616 head and becam
 
 ## Next work
 
-1. Validate R2 in executable CI and correct any findings before review readiness.
+1. Merge only after BUILD-616 / PR #740 lands and the stack is retargeted/revalidated as needed.
 2. Add explicit structured scope fields for taxon, tissue, developmental stage, treatment, dose/range, and environment rather than relying only on context dictionaries.
 3. Design governed contradiction-resolution records that preserve both sides and reviewer rationale without deleting evidence.
 4. Expose contradiction state to Calyx reasoning responses so contested mechanisms are surfaced rather than silently flattened.
