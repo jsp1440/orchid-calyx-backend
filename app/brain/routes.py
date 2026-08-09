@@ -20,6 +20,7 @@ from app.security import verify_owner_or_api_key
 from runtime.connector_registry import ConnectorRegistry, default_brain_registry
 from runtime.knowledge_graph import PostgresGraphRepository
 
+from .diagnostic_hypotheses import DiagnosticHypothesisRequest, rank_diagnostic_hypotheses
 from .education_design_routes import router as education_design_router
 from .ledger_bridge import InferenceLedgerBridge
 from .plant_diagnostic_context import (
@@ -171,6 +172,19 @@ def plant_diagnostic_context(
     """Compose scoped canonical reasoning with bounded local plant observations."""
     try:
         return compose_plant_diagnostic_context(repository, request)
+    except Exception as exc:
+        _translate(exc)
+        raise
+
+
+@router.post("/diagnostic-hypotheses")
+def diagnostic_hypotheses(
+    request: DiagnosticHypothesisRequest,
+    repository: GraphRepositoryDependency,
+) -> dict[str, Any]:
+    """Rank possible explanations without creating or publishing scientific claims."""
+    try:
+        return rank_diagnostic_hypotheses(repository, request)
     except Exception as exc:
         _translate(exc)
         raise
