@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -86,6 +88,8 @@ class PersistedPatchExecutionService:
         if bool(output_dict.get("commit_created")):
             raise PermissionError("PATCH_PROGRAM_JOB_PREEXISTING_COMMIT_PROHIBITED")
 
+        self._verify_governed_job_inputs(job=job, output=output_dict)
+
         raw_uris = evidence.get("evidence_uris")
         if not isinstance(raw_uris, list):
             raise TypeError("PATCH_PROGRAM_JOB_EVIDENCE_URIS_INVALID")
@@ -102,3 +106,74 @@ class PersistedPatchExecutionService:
             output=output_dict,
             evidence_uris=evidence_uris,
         )
+
+    @staticmethod
+    def _verify_governed_job_inputs(
+        *, job: CalyxProgramJob, output: Mapping[str, object]
+    ) -> None:
+        if not job.input_json:
+            raise PermissionError("PATCH_PROGRAM_JOB_INPUTS_REQUIRED")
+        try:
+            persisted_inputs = json.loads(job.input_json)
+        except json.JSONDecodeError as exc:
+            raise PermissionError("PATCH_PROGRAM_JOB_INPUTS_INVALID") from exc
+        if not isinstance(persisted_inputs, dict):
+            raise PermissionError("PATCH_PROGRAM_JOB_INPUTS_INVALID")
+        raw_patches = persisted_inputs.get("patches")
+        if not isinstance(raw_patches, list) or not raw_patches:
+            raise PermissionError("PATCH_PROGRAM_JOB_PATCH_INPUTS_REQUIRED")
+
+        expected: list[dict[str, object]] = []
+        seen_paths: set[str] = set()
+        for raw_patch in raw_patches:
+            if not isinstance(raw_patch, dict):
+                raise PermissionError("PATCH_PROGRAM_JOB_PATCH_INPUT_INVALID")
+            path = str(raw_patch.get("path") or "").strip()
+            before = str(raw_patch.get("before_sha256") or "").strip().lower()
+            content = raw_patch.get("content_utf8")
+            if not path or not before or not isinstance(content, str):
+                raise PermissionError("PATCH_PROGRAM_JOB_PATCH_INPUT_INVALID")
+            if path in seen_paths:
+                raise PermissionError("PATCH_PROGRAM_JOB_PATCH_INPUT_DUPLICATE")
+            seen_paths.add(path)
+            after_bytes = content.encode("utf-8")
+            expected.append(
+                {
+                    "path": path,
+                    "before_sha256": before,
+                    "after_sha256": hashlib.sha256(after_bytes).hexdigest(),
+                    "created": before == "absent",
+                    "size_bytes": len(after_bytes),
+                }
+            )
+
+        raw_changes = output.get("changes")
+        if not isinstance(raw_changes, list):
+            raise PermissionError("PATCH_PROGRAM_JOB_OUTPUT_CHANGES_INVALID")
+        normalized_changes: list[dict[str, object]] = []
+        for item in raw_changes:
+            if not isinstance(item, Mapping):
+                raise PermissionError("PATCH_PROGRAM_JOB_OUTPUT_CHANGES_INVALID")
+            normalized_changes.append(
+                {
+                    "path": str(item.get("path") or "").strip(),
+                    "before_sha256": str(
+                        item.get("before_sha256") or ""
+                    ).strip().lower(),
+                    "after_sha256": str(
+                        item.get("after_sha256") or ""
+                    ).strip().lower(),
+                    "created": bool(item.get("created")),
+                    "size_bytes": item.get("size_bytes"),
+                }
+            )
+
+        expected_sorted = sorted(expected, key=lambda item: str(item["path"]))
+        actual_sorted = sorted(normalized_changes, key=lambda item: str(item["path"]))
+        if actual_sorted != expected_sorted:
+            raise PermissionError("PATCH_PROGRAM_JOB_INPUT_OUTPUT_MISMATCH")
+        if output.get("file_count") != len(expected):
+            raise PermissionError("PATCH_PROGRAM_JOB_INPUT_OUTPUT_MISMATCH")
+        expected_total = sum(int(item["size_bytes"]) for item in expected)
+        if output.get("total_written_bytes") != expected_total:
+            raise PermissionError("PATCH_PROGRAM_JOB_INPUT_OUTPUT_MISMATCH")
