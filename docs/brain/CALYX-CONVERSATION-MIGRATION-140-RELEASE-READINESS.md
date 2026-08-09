@@ -1,207 +1,277 @@
-# CALYX Conversation Migration 140 — Release Readiness
+# CALYX Conversation Migration 140 — Release Gate
 
-Status: PREPARED / NOT AUTHORIZED FOR PRODUCTION APPLY OR DEPLOYMENT
+Status: **NOT READY FOR PRODUCTION AUTHORIZATION / NON-MUTATING VALIDATION COMPLETE**
 
-Canonical code merge: PR #798, squash SHA `3c93b4a9f296762bb93582968bab1e7b9618f664`.
-Brain merged-state checkpoint commit: `673b8ea88c91f837e43dd2d1ecc129540911a207`.
+Canonical CALYX-CONV code merge: PR #798, squash SHA `3c93b4a9f296762bb93582968bab1e7b9618f664`.
+Canonical main used as the clean validation base: `6daef86a171f962604cc84f72ec26c19169bbf57`.
+Validation-only PR: #804, exact validation head `5f40aca2f7de0599c6c8c5786ac9a44605134aa3`.
+Superseded validation PR #801 was closed unmerged after workflow-provenance `action_required` produced zero jobs; no production action occurred.
 
-This document is release-readiness preparation only. It does not authorize or execute migration 140, production deployment, production database mutation, Candidate Knowledge promotion, scientific publication, taxonomy activation, or Knowledge Graph mutation.
+This record distinguishes disposable validation from production observation. It does **not** authorize migration 101, migration 140, production deployment, production database mutation, Candidate Knowledge promotion, scientific publication, taxonomy activation, or Knowledge Graph mutation.
 
-## Exact schema effects
+## Evidence-state vocabulary
 
-Migration `migrations/140_calyx_conversation_sessions.sql`:
+- **VALIDATED** — deterministic code/file identity or static contract checked.
+- **VERIFIED IN DISPOSABLE POSTGRESQL** — behavior observed in disposable PostgreSQL.
+- **VERIFIED READ-ONLY IN PRODUCTION** — fact observed from production through a server-enforced read-only session.
+- **PROPOSED** — future release mechanism/sequence not yet exercised in production.
+- **UNVERIFIED** — required fact has not been empirically established.
+- **BLOCKED** — a release prerequisite is currently unsatisfied.
+- **AUTHORIZED** — explicitly approved governance action.
+- **NOT AUTHORIZED** — action remains outside current authority.
 
-1. Ensures extension `pgcrypto` exists.
-2. Ensures schema `research_station` exists.
-3. Creates `research_station.conversation_sessions` when absent:
-   - UUID primary key `conversation_id` using `gen_random_uuid()`;
-   - required owner subject;
-   - optional `project_id` foreign key to `research_station.projects(project_id)`;
-   - title with 1..160 character check;
-   - active taxon/document context fields;
-   - created/updated/archive timestamps;
-   - positive integer version;
-   - owner/project/updated index.
-4. Creates `research_station.conversation_messages` when absent:
-   - UUID primary key `message_id`;
-   - required foreign key to conversation session;
-   - owner, role, content, epistemic status;
-   - JSONB context/source/tool trace;
-   - permanent `CONVERSATION_CONTEXT` status;
-   - permanent false checks for evidence authority, scientific-publication authorization, and Knowledge Graph mutation authorization;
-   - created timestamp;
-   - session/time/message index.
-5. Creates/replaces `research_station.reject_conversation_message_mutation()`.
-6. Creates the `rs_conversation_messages_immutable` UPDATE/DELETE trigger when absent.
-7. Revokes PUBLIC privileges from both conversation tables.
+## Migration identity — VALIDATED
 
-The SQLAlchemy canonical models in `app/conversation_memory/models.py` correspond to the two tables and their foreign-key/index structure. Database SQL adds stronger content/authority checks and the append-only trigger.
+File: `migrations/140_calyx_conversation_sessions.sql`.
 
-## Prerequisites
+- Git blob SHA: `f572ba9aa1a3bade4dfe9d1e1faf0dbfb8a57baf`.
+- SHA-256: `38f2f6cc2cb2690f727329076d205bc5e0d79e98dcabc76a676f4b2908fde2f3`.
+- The validation workflow rejects any migration-140 blob that differs from this exact identity.
+- Migration bytes were not modified during this validation cycle.
 
-Mandatory before apply:
+## Disposable PostgreSQL lifecycle — VERIFIED IN DISPOSABLE POSTGRESQL
 
-- Canonical application code must be the reviewed CALYX-CONV version or later compatible code.
-- `research_station.projects` from migration 101 must exist and contain at least `project_id UUID` as the referenced primary/unique key. Migration 140 cannot create `conversation_sessions` successfully without this prerequisite.
-- The executing database principal must be permitted to create the required tables/index/function/trigger and, if needed, `pgcrypto`.
-- Migration-file identity must be pinned to the canonical repository blob before execution.
-- Production schema must be inspected read-only for partial/conflicting objects before any mutation.
+Clean validation workflow run: `31332084693`.
 
-Required preflight object checks:
+Matrix results:
 
-- `to_regclass('research_station.projects')` exists;
-- `to_regclass('research_station.conversation_sessions')` and `conversation_messages` are either both absent or structurally complete;
-- if either target table already exists, compare required columns, types, nullability, checks, foreign keys, indexes, and trigger state rather than relying on `IF NOT EXISTS`;
-- verify no trigger-name collision can cause `rs_conversation_messages_immutable` to be skipped on the intended table;
-- verify `research_station.reject_conversation_message_mutation` resolves in the intended schema;
-- verify expected privileges/ownership before and after apply.
+- PostgreSQL 15 — complete disposable lifecycle **PASS**.
+- PostgreSQL 16 — complete disposable lifecycle **PASS**.
+- PostgreSQL 17 — complete disposable lifecycle **PASS**.
+- PostgreSQL 17 container version observed: `17.10 (Debian 17.10-1.pgdg13+1)`, matching the production major/minor version family currently observed.
 
-A malformed/partial target schema is an ABORT condition. Do not attempt to repair it implicitly with the migration file.
+Exact PostgreSQL-17 receipt status: `VERIFIED_IN_DISPOSABLE_POSTGRESQL`.
 
-## Transaction behavior
+All lifecycle stages passed:
 
-The SQL file itself contains no explicit `BEGIN`/`COMMIT`. Release execution must therefore supply the transaction boundary.
+1. `prerequisite_101` — PASS.
+2. `apply_transactional` — PASS.
+3. `valid_insert` — PASS.
+4. `governance_and_append_only` — PASS.
+5. `explicit_application_role_simulation` — PASS.
+6. `reapply_idempotency` — PASS.
+7. `malformed_existing_state_detection` — PASS.
+8. `transaction_rollback` — PASS.
+9. `final_canonical_state` — PASS.
 
-Required production strategy:
+### Schema postconditions — VERIFIED IN DISPOSABLE POSTGRESQL
 
-1. Acquire the repository-approved migration serialization/advisory lock if the release mechanism provides one.
-2. Start a single explicit database transaction.
-3. Repeat the target-schema preflight inside the lock/transaction immediately before executing SQL.
-4. Execute the exact pinned migration bytes.
-5. Run structural and behavioral postconditions before commit.
-6. Commit only if every postcondition passes.
+After migration 140:
 
-Do not use a per-statement autocommit path for migration 140. Transaction-scoped DDL permits a failure before commit to roll back newly created tables, indexes, function, trigger, and privilege changes together.
+- `research_station.conversation_sessions` exists with the canonical columns/types.
+- `research_station.conversation_messages` exists with the canonical columns/types.
+- `conversation_sessions.conversation_id` is the primary key.
+- `conversation_messages.message_id` is the primary key.
+- `conversation_sessions.project_id` references `research_station.projects(project_id)`.
+- `conversation_messages.conversation_id` references `research_station.conversation_sessions(conversation_id)`.
+- `idx_rs_conversation_owner_project_updated` exists.
+- `idx_rs_conversation_messages_session_time` exists.
+- `research_station.reject_conversation_message_mutation()` exists.
+- `rs_conversation_messages_immutable` is bound to `research_station.conversation_messages` for UPDATE/DELETE rejection.
+- PUBLIC table privileges on the two migration-140 tables are absent.
 
-## Idempotency and re-run safety
+### Governance constraints — VERIFIED IN DISPOSABLE POSTGRESQL
 
-The migration is designed to be additive/re-runnable for a correctly absent-or-complete schema:
+Observed fail-closed behavior:
 
-- extension/schema/table/index creation uses `IF NOT EXISTS`;
-- the trigger function uses `CREATE OR REPLACE FUNCTION`;
-- trigger creation checks for an existing trigger name;
-- repeated REVOKE is safe.
+- invalid `data_status` rejected with SQLSTATE `23514`;
+- `evidence_authority=true` rejected with SQLSTATE `23514`;
+- `scientific_publication_authorized=true` rejected with SQLSTATE `23514`;
+- `knowledge_graph_mutation_authorized=true` rejected with SQLSTATE `23514`.
 
-However, `IF NOT EXISTS` does not validate an already-existing object's shape. Therefore idempotency is conditional: a second run is acceptable only after structural preflight proves existing objects match the canonical contract.
+The canonical final constraints include:
 
-Release validation must include a disposable PostgreSQL apply + postcondition + second-apply + postcondition cycle before production authorization.
+- `data_status = 'CONVERSATION_CONTEXT'`;
+- `evidence_authority = false`;
+- `scientific_publication_authorized = false`;
+- `knowledge_graph_mutation_authorized = false`.
 
-## Rollback / recovery strategy
+### Append-only behavior — VERIFIED IN DISPOSABLE POSTGRESQL
 
-### Before commit
+- valid message INSERT succeeds;
+- message UPDATE rejected by trigger, SQLSTATE `P0001`;
+- message DELETE rejected by trigger, SQLSTATE `P0001`;
+- failed UPDATE/DELETE do not alter the persisted message.
 
-Any SQL or postcondition failure inside the explicit transaction requires immediate transaction rollback. No application deployment should proceed.
+### Foreign-key behavior — VERIFIED IN DISPOSABLE POSTGRESQL
 
-### After commit
+- valid Research Workspace project reference succeeds;
+- nonexistent project reference rejected with SQLSTATE `23503`;
+- valid session/message relationship succeeds.
 
-Preferred recovery is forward repair, not destructive automatic rollback, because persisted conversation records may exist after activation.
+### Application-role simulation — VERIFIED IN DISPOSABLE POSTGRESQL
 
-A destructive rollback (dropping the trigger/function/tables) is NOT pre-authorized and must never be automated once production writes may have occurred. If a post-commit defect is discovered:
+A disposable non-login `calyx_app_validation` role was granted explicit schema/table permissions, switched into with `SET LOCAL ROLE`, and successfully performed intended read/insert behavior. Grants were then revoked and the disposable role removed. This validates PostgreSQL permission mechanics only; it does **not** establish the actual production application role or authorize privilege changes.
 
-1. disable/withhold the persistent-conversation application release path;
-2. preserve database state and collect schema/data diagnostics;
-3. determine whether any conversation rows were written;
-4. prepare a separately reviewed corrective migration;
-5. require explicit governance authorization before any destructive data/schema reversal.
+### Reapply/idempotency — VERIFIED IN DISPOSABLE POSTGRESQL
 
-## Expected production impact
+A second execution of the exact migration against the already canonical schema completed successfully and the complete structural/governance contract remained intact.
 
-Migration 140 is additive and does not rewrite existing Research Workspace, Candidate Knowledge, publication, taxonomy, or Knowledge Graph tables. Normal expected lock duration is limited to creation of two new tables, two indexes, one trigger function, one trigger, and privilege changes.
+Idempotency is therefore verified only for an absent-or-canonical schema. `IF NOT EXISTS` is not treated as proof that a pre-existing object is correct.
 
-The foreign key to `research_station.projects` creates a dependency on that table and may take the catalog locks required to establish the constraint. No existing project rows are rewritten.
+### Malformed-existing-state detection — VERIFIED IN DISPOSABLE POSTGRESQL
 
-The app should not receive persistent-conversation traffic until migration postconditions pass, because conversation create/list/get/ask endpoints depend on these tables.
+The validator deliberately created incomplete migration-140 target tables and classified that state as `MALFORMED_PARTIAL` before migration execution. Release preflight additionally checks required columns/types and, when both target tables exist, required PK/FK/check constraints, indexes, append-only function/trigger, PUBLIC privilege state, and database-wide collision of the trigger name `rs_conversation_messages_immutable`.
 
-## Application / migration ordering
+A malformed, partial, or conflicting pre-existing target is an ABORT condition; the release process must not rely on `IF NOT EXISTS` to conceal it.
 
-Recommended governed release order:
+### Transaction rollback — VERIFIED IN DISPOSABLE POSTGRESQL
 
-1. Confirm the production application revision that will be deployed includes canonical CALYX-CONV code.
-2. Read-only production preflight for migration 101 prerequisite and absence/completeness of migration-140 objects.
-3. Maintenance/release gate: prevent persistent-conversation traffic from reaching code that expects migration 140.
-4. Apply migration 140 transactionally under the approved production migration mechanism.
-5. Verify structural and append-only postconditions before commit.
-6. Commit migration.
-7. Run database-level smoke tests using rollbackable/test records or a release-specific safe fixture strategy.
-8. Deploy/enable the CALYX-CONV application revision only under separate deployment authorization.
-9. Run authenticated API smoke tests.
-10. Observe metrics/logs before declaring persistent conversations operational.
+Migration 140 was executed inside an explicit PostgreSQL transaction, structural postconditions were checked, then an intentional safe failure was raised before commit. The transaction rolled back and both migration-140 target tables were confirmed absent afterward. A fresh subsequent transactional apply restored the canonical state.
 
-Code merge alone is not production activation.
+## Production read-only preflight — VERIFIED READ-ONLY IN PRODUCTION
 
-## Mandatory postconditions
+Production preflight used the repository `DATABASE_URL` secret and a connection forced with `default_transaction_read_only=on`. The script verified `SHOW transaction_read_only = on` before catalog inspection and performed no production mutation.
 
-Immediately after migration SQL and before/at release commit, verify:
+Observed production state on 2026-08-09:
 
-- both tables exist in `research_station`;
-- required columns/types/nullability/defaults are present;
-- `conversation_sessions.project_id` references `research_station.projects(project_id)`;
-- required indexes exist;
-- authority CHECK constraints reject `TRUE` for evidence/publication/KG mutation fields;
-- `data_status` rejects anything except `CONVERSATION_CONTEXT`;
-- role constraint rejects values outside `OPERATOR`/`CALYX`;
-- append-only trigger exists specifically on `research_station.conversation_messages`;
-- a controlled UPDATE and DELETE attempt against a disposable conversation message are rejected by the trigger;
-- table PUBLIC privileges are absent;
-- a valid session/message insert succeeds under the intended application role;
-- deleting/updating existing Research Workspace objects is not part of this migration.
+- PostgreSQL: `17.10 (29ad1b7)` / `server_version_num=170010`.
+- current/session database role: `neondb_owner`.
+- `pgcrypto`: installed, version `1.3`.
+- `research_station` schema: **ABSENT**.
+- `research_station.projects`: **ABSENT**.
+- migration-101 prerequisite compatibility: **FALSE**.
+- `research_station.conversation_sessions`: **ABSENT**.
+- `research_station.conversation_messages`: **ABSENT**.
+- migration-140 target state: `ABSENT` (not partial).
+- `research_station.reject_conversation_message_mutation()`: absent, as expected before migration 140.
+- database-wide `rs_conversation_messages_immutable` trigger collision: none observed.
+- production mutation attempted: **FALSE**.
+- production mutation authorized: **FALSE**.
 
-## API smoke-test plan after separately authorized deployment
+Fail-closed production-preflight status: `FAILED_INCOMPATIBLE_PRODUCTION_STATE` with blocker `MIGRATION_101_PREREQUISITE_INCOMPATIBLE`.
 
-Authenticated owner-scoped tests:
+This is a release blocker, not a migration-140 implementation defect. Migration 140 contains a foreign key to `research_station.projects`; therefore it cannot be applied successfully as a standalone production migration while migration 101 is absent.
 
-1. create a conversation without a project;
-2. create a conversation with an owned Research Workspace project;
-3. list/get conversations and confirm cross-owner access is denied;
-4. ask a persistent conversation and verify exactly two append-only context messages are persisted;
-5. confirm `evidence_authority=false`, `scientific_publication_authorized=false`, and `knowledge_graph_mutation_authorized=false`;
-6. export Markdown and verify it is rendered from persisted transcript/context without rerunning retrieval;
-7. exercise exact active-document scope and verify revision/parent identifiers cannot satisfy document scope;
-8. link a persisted source to the conversation project and verify exact document/revision identity;
-9. verify an existing different revision fails closed with `CONVERSATION_SOURCE_PROJECT_LINK_IDENTITY_CONFLICT`;
-10. verify authenticated Ask traffic does not appear in the unauthenticated legacy transcript;
-11. verify the deployed Mission Control router exposes the source-link endpoint;
-12. verify no publication or Knowledge Graph mutation operation is emitted.
+### Production drift findings
 
-## Observability / verification plan
+The important drift relative to the planned migration-140 prerequisite state is that the entire `research_station` foundation is absent in production. No conflicting migration-140 target tables, indexes, constraints, target function, or immutable-trigger-name collision were observed.
 
-Capture for the governed release record:
+The actual production application role required for normal CALYX-CONV traffic is **UNVERIFIED**. The read-only preflight established the connected release/catalog role (`neondb_owner`) but did not discover a Research Station table-grantee role because the schema does not yet exist.
 
-- migration file blob/SHA-256 identity;
-- target environment/database identifier without leaking credentials;
-- preflight schema contract report;
-- transaction start/commit outcome;
-- postcondition report;
-- row counts for the two new tables immediately after migration and after smoke tests;
-- trigger/function/index presence;
-- application revision/SHA;
-- authenticated smoke-test results and correlation IDs;
-- error counts for conversation endpoints during the observation window;
-- explicit confirmation that publication and Knowledge Graph mutation counters/actions remain unchanged.
+## Canonical serialization / activation infrastructure
 
-## Abort / rollback conditions
+### Existing serialization mechanism — VALIDATED
 
-Abort before commit/deployment on any of the following:
+`scripts/run_with_postgres_validation_lock.py` serializes approved shared-database validation scripts using PostgreSQL session advisory lock `82078079` (`pg_advisory_lock` / `pg_advisory_unlock`). This is an existing canonical lock pattern, but its current allow-list is explicitly validation-only.
 
-- migration 101 prerequisite absent or malformed;
-- migration-140 target object partially exists or differs from canonical shape;
-- migration file identity differs from reviewed canonical bytes;
-- inability to create/verify the append-only trigger;
-- authority checks missing or permissive;
-- PUBLIC privileges remain broader than intended;
-- SQL error or postcondition failure;
-- concurrent migration/schema activity cannot be safely serialized;
-- application revision is incompatible with the schema contract;
-- required owner-authentication or Mission Control routes fail smoke tests;
-- any evidence/publication/KG authority regression appears.
+### Existing guarded activation mechanism — VALIDATED
 
-## Current release-readiness conclusion
+`scripts/activate_reasoning_prerequisite_schemas.py` already provides important canonical release controls:
 
-Code-level schema and ORM compatibility is established. Migration 101 is the explicit schema prerequisite. Migration 140 remains **UNAPPLIED** and production deployment remains **NOT PERFORMED**.
+- default read-only preflight;
+- explicit `--apply` requirement;
+- exact confirmation environment value;
+- pinned Git blob identities;
+- preflight classification;
+- migration-order recording;
+- before/after contract inspection;
+- mutation/partial-application evidence flags;
+- hashed JSON evidence receipt.
 
-Production compatibility is not yet empirically established because this cycle has not inspected or mutated the production database. Before a future production-apply authorization, the remaining mandatory evidence is:
+It includes migration 101 in a larger prerequisite chain.
 
-- read-only production schema preflight;
-- disposable PostgreSQL apply/re-apply validation of migration 140 with structural and trigger behavior postconditions;
-- confirmation of the approved transaction/serialization mechanism for the production migration runner;
-- separate deployment authorization after successful migration validation.
+### Transaction deficiency — BLOCKED / PROPOSED CORRECTION
+
+The current guarded activation script connects with `autocommit=True` and executes its migrations one-by-one. Earlier migrations can therefore remain committed if a later migration fails. It also does not include migration 140 or run migration-140 structural/behavioral postconditions inside the same transaction before commit.
+
+Therefore the existing production activation path does **not yet satisfy** the CALYX-CONV release requirement for atomic prerequisite/schema activation.
+
+Minimal future change — **PROPOSED, NOT AUTHORIZED**:
+
+- extend the existing guarded activation infrastructure rather than create a second migration framework;
+- add a target-scoped Research Station activation path for exact migration 101 + exact migration 140;
+- use an approved production migration advisory/deployment lock (do not silently repurpose the validation-only allow-list without review);
+- open one explicit database transaction;
+- repeat prerequisite/target preflight inside the lock/transaction;
+- execute pinned migration 101 if and only if its governed activation is authorized and required;
+- execute pinned migration 140;
+- run the complete migration-140 structural/governance/privilege/trigger postconditions before commit;
+- COMMIT only if all postconditions pass;
+- otherwise ROLLBACK the complete 101→140 transaction;
+- emit the established receipt/evidence format.
+
+This production-capable extension has not been authorized, merged, or executed against production in this cycle.
+
+## Deployment ordering — PROPOSED
+
+After a future schema-activation authorization and only if its postconditions pass:
+
+1. final read-only preflight;
+2. acquire canonical production migration serialization mechanism;
+3. `BEGIN`;
+4. recheck migration-101 and migration-140 contracts;
+5. execute exact authorized prerequisite migration(s) and exact pinned migration 140 in governed order;
+6. run structural, authority, privilege, FK, trigger, and append-only postconditions before commit;
+7. `COMMIT` only on complete success;
+8. verify committed schema read-only;
+9. under separate deployment authorization, deploy/enable the CALYX-CONV application revision;
+10. run authenticated controlled smoke tests;
+11. observe logs/errors/authority invariants;
+12. fail closed and withhold/disable capability if any postcondition or smoke test fails.
+
+Code merge, schema activation, and application deployment remain separate governance actions.
+
+## Post-deployment smoke-test plan — PROPOSED / NOT AUTHORIZED
+
+Authenticated owner-scoped checks after a separately authorized deployment:
+
+1. create projectless and project-scoped conversations;
+2. list/get and verify cross-owner isolation;
+3. persist an exchange and verify exactly two append-only context messages;
+4. verify evidence/publication/KG authority flags remain false;
+5. export Markdown from persisted transcript without retrieval rerun;
+6. verify exact active-document scope and negative revision/parent namespace collisions;
+7. save an exact persisted source to a project;
+8. verify different-revision conflict fails closed;
+9. verify authenticated Ask traffic remains absent from the unauthenticated legacy transcript;
+10. verify deployed Mission Control exposes source linking;
+11. verify no publication or Knowledge Graph mutation action is emitted.
+
+## Abort conditions
+
+Abort schema activation before commit on any of the following:
+
+- migration 101 is absent without explicit authorization to activate it;
+- migration-101 objects are malformed or conflict with the canonical contract;
+- migration-140 target tables are partial, malformed, or unexpectedly populated/configured;
+- migration 140 bytes differ from Git blob `f572ba9aa1a3bade4dfe9d1e1faf0dbfb8a57baf` or SHA-256 `38f2f6cc2cb2690f727329076d205bc5e0d79e98dcabc76a676f4b2908fde2f3`;
+- approved serialization lock cannot be acquired or concurrent schema work cannot be excluded;
+- transaction boundary cannot encompass the complete authorized prerequisite→140 sequence and postconditions;
+- required PK/FK/check constraints or indexes are missing;
+- evidence/publication/KG authority constraints are absent or permissive;
+- append-only function/trigger is absent, misbound, ineffective, or its trigger name collides elsewhere;
+- PUBLIC privileges are broader than intended;
+- intended production application role/privileges are unknown or incompatible;
+- any SQL error or postcondition failure occurs;
+- application revision is incompatible with the committed schema;
+- owner-authentication/Mission Control smoke tests fail;
+- any publication or Knowledge Graph authority regression appears.
+
+Before commit, any failure must roll back the entire active schema transaction. After commit and before production traffic, withhold application enablement if verification fails. Once production writes can exist, destructive table rollback is not automatic or pre-authorized; preserve data and use a separately reviewed corrective migration.
+
+## Release decision
+
+**NOT READY FOR PRODUCTION AUTHORIZATION.**
+
+Reasoning:
+
+- migration 140 itself is VERIFIED IN DISPOSABLE POSTGRESQL on PG15/16/17, including PG17.10;
+- production was VERIFIED READ-ONLY on PG17.10;
+- production migration-140 targets are cleanly absent, with no trigger-name collision;
+- however the mandatory migration-101 Research Station foundation is absent in production;
+- the current canonical guarded activation script uses per-migration autocommit and cannot yet provide the required atomic 101→140 + postconditions-before-commit guarantee;
+- the actual production application role/privilege contract remains unverified because the Research Station schema is absent.
+
+Accordingly, authorizing migration 140 alone would be invalid. A future governance package must first present a reviewed, validated, atomic extension of the existing activation infrastructure and explicitly request authorization for the required Research Station prerequisite activation plus migration 140. Production deployment must remain a separate authorization.
+
+## Current governance state
+
+- Migration 101 production activation: **NOT AUTHORIZED**.
+- Migration 140 production activation: **NOT AUTHORIZED**.
+- CALYX-CONV production deployment/enablement: **NOT AUTHORIZED**.
+- Production database mutation performed by this validation cycle: **NONE**.
+- Candidate Knowledge promotion: **NOT AUTHORIZED / NONE**.
+- Scientific publication: **NOT AUTHORIZED / NONE**.
+- Taxonomy activation: **NOT AUTHORIZED / NONE**.
+- Production Knowledge Graph mutation: **NOT AUTHORIZED / NONE**.
