@@ -13,6 +13,38 @@ ROOT = Path(__file__).resolve().parents[1]
 M140 = ROOT / "migrations/140_calyx_conversation_sessions.sql"
 EXPECTED_M140_BLOB = "f572ba9aa1a3bade4dfe9d1e1faf0dbfb8a57baf"
 REPORT = Path(os.environ.get("M140_PRODUCTION_PREFLIGHT_REPORT", "migration-140-production-readonly-preflight.json"))
+EXPECTED_TARGET_COLUMNS = {
+    "conversation_sessions": {
+        "conversation_id": "uuid",
+        "owner_subject": "text",
+        "project_id": "uuid",
+        "title": "text",
+        "active_taxon_id": "text",
+        "active_document_id": "text",
+        "created_at": "timestamp with time zone",
+        "updated_at": "timestamp with time zone",
+        "archived_at": "timestamp with time zone",
+        "version": "integer",
+    },
+    "conversation_messages": {
+        "message_id": "uuid",
+        "conversation_id": "uuid",
+        "owner_subject": "text",
+        "role": "text",
+        "content": "text",
+        "epistemic_status": "text",
+        "context_json": "jsonb",
+        "source_refs_json": "jsonb",
+        "tool_trace_json": "jsonb",
+        "data_status": "text",
+        "evidence_authority": "boolean",
+        "scientific_publication_authorized": "boolean",
+        "knowledge_graph_mutation_authorized": "boolean",
+        "created_at": "timestamp with time zone",
+    },
+}
+IMMUTABLE_TRIGGER_NAME = "rs_conversation_messages_immutable"
+IMMUTABLE_TRIGGER_RELATION = ("research_station", "conversation_messages")
 
 
 def blob_sha(path: Path) -> str:
@@ -67,6 +99,33 @@ def privileges(conn, table: str) -> list[dict[str, str]]:
     return [{"grantee": r[0], "privilege": r[1]} for r in rows]
 
 
+def classify_columns(actual_columns: list[dict[str, Any]], expected_columns: dict[str, str]) -> dict[str, Any]:
+    actual = {column["column_name"]: column["data_type"] for column in actual_columns}
+    return {
+        "missing_columns": sorted(set(expected_columns) - set(actual)),
+        "wrong_types": sorted(name for name, data_type in expected_columns.items() if actual.get(name) not in (None, data_type)),
+        "extra_columns": sorted(set(actual) - set(expected_columns)),
+    }
+
+
+def immutable_trigger_locations(conn) -> list[dict[str, str]]:
+    rows = conn.execute(
+        """SELECT n.nspname, c.relname, pg_get_triggerdef(t.oid)
+           FROM pg_trigger t
+           JOIN pg_class c ON c.oid=t.tgrelid
+           JOIN pg_namespace n ON n.oid=c.relnamespace
+           WHERE NOT t.tgisinternal AND t.tgname=%s
+           ORDER BY n.nspname, c.relname""",
+        (IMMUTABLE_TRIGGER_NAME,),
+    ).fetchall()
+    return [{"schema": row[0], "table": row[1], "definition": row[2]} for row in rows]
+
+
+def write_receipt(receipt: dict[str, Any]) -> None:
+    REPORT.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+    print(json.dumps(receipt, indent=2, sort_keys=True))
+
+
 def main() -> None:
     identity = {
         "git_blob_sha": blob_sha(M140),
@@ -84,8 +143,7 @@ def main() -> None:
     }
     if not url:
         receipt.update({"status": "BLOCKED", "blocker": "DATABASE_URL_SECRET_UNAVAILABLE"})
-        REPORT.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
-        print(json.dumps(receipt, indent=2, sort_keys=True))
+        write_receipt(receipt)
         return
 
     with psycopg.connect(url, options="-c default_transaction_read_only=on") as conn:
@@ -112,6 +170,7 @@ def main() -> None:
                     "privileges": privileges(conn, table) if exists else [],
                 }
             receipt["objects"] = objects
+            receipt["immutable_trigger_locations"] = immutable_trigger_locations(conn)
             receipt["reject_function"] = conn.execute(
                 "SELECT to_regprocedure('research_station.reject_conversation_message_mutation()')::text"
             ).fetchone()[0]
@@ -129,11 +188,52 @@ def main() -> None:
             receipt["target_state"] = "ABSENT" if target_exists == [False, False] else (
                 "BOTH_PRESENT" if target_exists == [True, True] else "PARTIAL"
             )
+            receipt["target_contract"] = {
+                table: classify_columns(objects[table]["columns"], expected_columns) if objects[table]["exists"] else {
+                    "missing_columns": sorted(expected_columns),
+                    "wrong_types": [],
+                    "extra_columns": [],
+                }
+                for table, expected_columns in EXPECTED_TARGET_COLUMNS.items()
+            }
+            unexpected_trigger_locations = [
+                trigger
+                for trigger in receipt["immutable_trigger_locations"]
+                if (trigger["schema"], trigger["table"]) != IMMUTABLE_TRIGGER_RELATION
+            ]
+            expected_trigger_present = any(
+                (trigger["schema"], trigger["table"]) == IMMUTABLE_TRIGGER_RELATION
+                for trigger in receipt["immutable_trigger_locations"]
+            )
+            incompatibilities: list[str] = []
+            if not receipt["migration_101_prerequisite_compatible"]:
+                incompatibilities.append("MIGRATION_101_PREREQUISITE_INCOMPATIBLE")
+            if receipt["target_state"] == "PARTIAL":
+                incompatibilities.append("TARGET_TABLES_PARTIAL")
+            if receipt["target_state"] == "BOTH_PRESENT":
+                malformed_targets = any(
+                    details["missing_columns"] or details["wrong_types"] or details["extra_columns"]
+                    for details in receipt["target_contract"].values()
+                )
+                if malformed_targets:
+                    incompatibilities.append("TARGET_TABLES_MALFORMED")
+                if receipt["reject_function"] is None:
+                    incompatibilities.append("IMMUTABLE_REJECT_FUNCTION_MISSING")
+                if not expected_trigger_present:
+                    incompatibilities.append("IMMUTABLE_TRIGGER_MISSING_ON_TARGET")
+            if unexpected_trigger_locations:
+                incompatibilities.append("IMMUTABLE_TRIGGER_NAME_COLLISION")
             receipt["production_mutation_attempted"] = False
-            receipt["status"] = "VERIFIED_READ_ONLY_IN_PRODUCTION"
+            if incompatibilities:
+                receipt["status"] = "FAILED_INCOMPATIBLE_PRODUCTION_STATE"
+                receipt["incompatibilities"] = incompatibilities
+                receipt["unexpected_trigger_locations"] = unexpected_trigger_locations
+            else:
+                receipt["status"] = "VERIFIED_READ_ONLY_IN_PRODUCTION"
 
-    REPORT.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
-    print(json.dumps(receipt, indent=2, sort_keys=True))
+    write_receipt(receipt)
+    if receipt["status"] == "FAILED_INCOMPATIBLE_PRODUCTION_STATE":
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

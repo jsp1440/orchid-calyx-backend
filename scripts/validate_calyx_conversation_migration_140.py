@@ -14,6 +14,7 @@ M101 = ROOT / "migrations/101_research_workspace_foundation.sql"
 M140 = ROOT / "migrations/140_calyx_conversation_sessions.sql"
 EXPECTED_M140_BLOB = "f572ba9aa1a3bade4dfe9d1e1faf0dbfb8a57baf"
 REPORT = Path(os.environ.get("M140_REPORT", "migration-140-disposable-report.json"))
+VALIDATION_ROLE = "calyx_app_validation"
 
 EXPECTED_COLUMNS = {
     "conversation_sessions": {
@@ -144,6 +145,19 @@ def cleanup_targets(conn) -> None:
         conn.execute("DROP FUNCTION IF EXISTS research_station.reject_conversation_message_mutation() CASCADE")
 
 
+def role_exists(conn, role_name: str) -> bool:
+    return bool(conn.execute("SELECT 1 FROM pg_roles WHERE rolname=%s", (role_name,)).fetchone())
+
+
+def cleanup_validation_role(conn) -> None:
+    if not role_exists(conn, VALIDATION_ROLE):
+        return
+    with conn.transaction():
+        conn.execute("RESET ROLE")
+        conn.execute(f"DROP OWNED BY {VALIDATION_ROLE}")
+        conn.execute(f"DROP ROLE {VALIDATION_ROLE}")
+
+
 def main() -> None:
     url = os.environ["DATABASE_URL"]
     identity = {
@@ -185,16 +199,21 @@ def main() -> None:
         assert conn.execute("SELECT content FROM research_station.conversation_messages WHERE message_id=%s", (message_id,)).fetchone()[0] == "fixture"
         receipt["stages"]["governance_and_append_only"] = "PASS"
 
+        cleanup_validation_role(conn)
         with conn.transaction():
-            conn.execute("CREATE ROLE calyx_app_validation NOLOGIN")
-            conn.execute("GRANT USAGE ON SCHEMA research_station TO calyx_app_validation")
-            conn.execute("GRANT SELECT,INSERT,UPDATE ON research_station.conversation_sessions TO calyx_app_validation")
-            conn.execute("GRANT SELECT,INSERT,UPDATE,DELETE ON research_station.conversation_messages TO calyx_app_validation")
-            conn.execute("SET LOCAL ROLE calyx_app_validation")
+            conn.execute(f"CREATE ROLE {VALIDATION_ROLE} NOLOGIN")
+            conn.execute(f"GRANT USAGE ON SCHEMA research_station TO {VALIDATION_ROLE}")
+            conn.execute(f"GRANT SELECT,INSERT,UPDATE ON research_station.conversation_sessions TO {VALIDATION_ROLE}")
+            conn.execute(f"GRANT SELECT,INSERT,UPDATE,DELETE ON research_station.conversation_messages TO {VALIDATION_ROLE}")
+            conn.execute(f"SET LOCAL ROLE {VALIDATION_ROLE}")
             conn.execute("SELECT count(*) FROM research_station.conversation_sessions")
             conn.execute("INSERT INTO research_station.conversation_sessions(owner_subject) VALUES ('role-test')")
+            conn.execute("RESET ROLE")
         with conn.transaction():
-            conn.execute("DROP ROLE calyx_app_validation")
+            conn.execute(f"REVOKE ALL PRIVILEGES ON research_station.conversation_messages FROM {VALIDATION_ROLE}")
+            conn.execute(f"REVOKE ALL PRIVILEGES ON research_station.conversation_sessions FROM {VALIDATION_ROLE}")
+            conn.execute(f"REVOKE USAGE ON SCHEMA research_station FROM {VALIDATION_ROLE}")
+        cleanup_validation_role(conn)
         receipt["stages"]["explicit_application_role_simulation"] = "PASS"
 
         with conn.transaction():
