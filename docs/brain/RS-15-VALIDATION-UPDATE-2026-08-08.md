@@ -70,7 +70,7 @@ Recent exact runtime heads:
 - `45c7250bfc40f86b279152011ded94bdafc31902`: fail-closed project-link state and accurate partial-success reporting; run `31290965679`, job `93187920005`, `steps: null`;
 - `ccd53a40af6b62d4182c3e2bedecacdbaee39e45`: stale-project async guards plus retry; run `31291028502`, job `93188099034`, `steps: null`;
 - `95ce5ba76d8ebd09decb1430760197824e4ac1d9`: newest-request-wins sequencing and synchronous save serialization; run `31291445521`, job `93189218483`, `steps: null`;
-- `7ac7fc430ec1518b91e8c8d4eca3e43ddd597238`: project-boundary pagination reset; no workflow run had appeared at the first post-commit check, so no conclusion is recorded until a run exists.
+- `7ac7fc430ec1518b91e8c8d4eca3e43ddd597238`: project-boundary pagination reset; run `31291482856`, job `93189329579`, `steps: null`.
 
 No checkout, formatting, lint, test, build, or application step has executed on the failed runs above.
 
