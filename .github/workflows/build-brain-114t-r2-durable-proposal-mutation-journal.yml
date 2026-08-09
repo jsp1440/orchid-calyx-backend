@@ -1,0 +1,81 @@
+name: BUILD-BRAIN-114T-R2 Durable Proposal Mutation Journal Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/calyx_orchestrator/git_proposal_mutation_executor.py"
+      - "app/calyx_orchestrator/git_proposal_mutation_journal.py"
+      - "tests/test_calyx_git_proposal_mutation_journal_114t.py"
+      - "tests/test_calyx_git_proposal_mutation_executor_114s.py"
+      - "docs/brain/BUILD-BRAIN-114T-R2-DURABLE-PROPOSAL-MUTATION-JOURNAL.md"
+      - ".github/workflows/build-brain-114t-r2-durable-proposal-mutation-journal.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile journal surfaces
+        run: |
+          python -m compileall -q app/calyx_orchestrator/git_proposal_mutation_executor.py app/calyx_orchestrator/git_proposal_mutation_journal.py tests/test_calyx_git_proposal_mutation_journal_114t.py
+      - name: Ruff journal surfaces
+        run: |
+          ruff check app/calyx_orchestrator/git_proposal_mutation_executor.py app/calyx_orchestrator/git_proposal_mutation_journal.py tests/test_calyx_git_proposal_mutation_journal_114t.py
+          ruff format --check app/calyx_orchestrator/git_proposal_mutation_executor.py app/calyx_orchestrator/git_proposal_mutation_journal.py tests/test_calyx_git_proposal_mutation_journal_114t.py
+      - name: Focused journal regressions
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q tests/test_calyx_git_proposal_mutation_journal_114t.py tests/test_calyx_git_proposal_mutation_executor_114s.py tests/test_calyx_git_proposal_execution_plan_114r.py
+      - name: Static authority boundary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("app/calyx_orchestrator/git_proposal_mutation_journal.py").read_text(encoding="utf-8")
+          for forbidden in (
+              "merge_pull_request(",
+              "enable_auto_merge(",
+              "GITHUB_TOKEN",
+              "subprocess.",
+              "requests.",
+              "publish_scientific(",
+          ):
+              assert forbidden not in source, forbidden
+          for required in (
+              "patch_program_job_id",
+              "receipt_digest",
+              "recovery_state",
+              "EVIDENCE_HISTORY_CHANGED",
+          ):
+              assert required in source, required
+          PY
+      - name: No production migration in slice
+        env:
+          BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
+        run: |
+          test -n "$BASE_REF"
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -E '^alembic/|^migrations/'; then
+            echo "Production migration files are outside BUILD-BRAIN-114T-R2 scope."
+            exit 1
+          fi
+      - name: Diff hygiene
+        env:
+          BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
+        run: |
+          test -n "$BASE_REF"
+          git diff --check "origin/${BASE_REF}...HEAD"
