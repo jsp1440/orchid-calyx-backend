@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS research_station.conversation_messages (
 CREATE INDEX IF NOT EXISTS idx_rs_conversation_messages_session_time
     ON research_station.conversation_messages(conversation_id, created_at, message_id);
 
+-- Governance invariant: conversation_messages are append-only.
 CREATE OR REPLACE FUNCTION research_station.reject_conversation_message_mutation()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
