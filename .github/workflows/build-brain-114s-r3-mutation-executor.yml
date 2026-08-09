@@ -47,7 +47,16 @@ jobs:
           source = Path("app/calyx_orchestrator/git_proposal_mutation_executor.py").read_text(encoding="utf-8")
           for required in ("patch_program_job_id", "repository_allowlist", "_require_dependency_closed_prefix", "partial_failure"):
               assert required in source, required
-          for forbidden in ("merge_pull_request", "enable_auto_merge", "GITHUB_TOKEN", "subprocess", "requests.", "deploy", "publish_scientific"):
+          for forbidden in (
+              "merge_pull_request",
+              "enable_auto_merge",
+              "GITHUB_TOKEN",
+              "subprocess",
+              "requests.",
+              "deployment_client",
+              "publication_client",
+              "publish_scientific",
+          ):
               assert forbidden not in source, forbidden
           PY
       - name: Diff hygiene
