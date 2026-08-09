@@ -38,9 +38,21 @@ No layer in #761→#767 performs or authorizes merge/auto-merge, deployment, sci
 
 Every current-main PR contains focused tests, compile/lint contracts, static authority-boundary checks, diff hygiene, and dedicated read-only GitHub Actions validation.
 
-Canonical incident #481 remains the external validation blocker. Recent exact-head workflows on #761, #762, and #763 were created but their jobs returned `steps=null` before checkout, so they provide no compile, Ruff, pytest, migration, or diff-hygiene verdict. The same infrastructure condition is expected to be checked on #767.
+Canonical incident #481 remains the external validation blocker. Current R3 evidence includes:
+
+- #765 BUILD-BRAIN-114O run `31292694580`, job `93192504948` — `steps=null` before checkout;
+- #766 BUILD-BRAIN-114Q run `31292752980`, job `93192665401` — `steps=null` before checkout;
+- #767 BUILD-BRAIN-114R run `31292890637`, job `93193044603` — `steps=null` before checkout.
+
+Earlier exact-head #761/#762/#763 workflows showed the same pre-step allocation failure. These are infrastructure observations only and provide no compile, Ruff, pytest, migration, or diff-hygiene verdict. Issue #481 contains the fresh #767 evidence.
 
 No current-main autonomy PR should be marked ready or merged until its exact unchanged head receives executable CI and passes.
+
+## Integration state
+
+A current-main drift audit after merge commit `6dc9466442e7d5172269a451691b3e9bf5e0b5c7` found the intervening main delta changed only CALYX-455 harvester-command files, with no overlap against the nine BUILD-BRAIN-114M-R2 files. GitHub subsequently reports #761 mergeable. The stacked #762/#763/#765/#766/#767 PRs are likewise mergeable at this checkpoint.
+
+The obsolete R2 chain #747/#749/#753/#756/#760 has been closed unmerged so there is one active autonomy integration path.
 
 ## Recovery sequence
 
