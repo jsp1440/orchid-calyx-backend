@@ -50,11 +50,8 @@ def test_unresolved_taxon_enters_ambiguity_queue_and_cannot_be_accepted(tmp_path
     assert [item["evidence_id"] for item in queue["items"]] == ["ev-ambiguous"]
     with pytest.raises(ValueError, match="MOLECULAR_TAXON_RESOLUTION_REQUIRED"):
         service.review_evidence(
-            "owner-a",
-            "ev-ambiguous",
-            state="accepted_as_evidence",
-            reviewer="human-reviewer",
-            rationale="cannot accept until identity is resolved",
+            "owner-a", "ev-ambiguous", state="accepted_as_evidence",
+            reviewer="human-reviewer", rationale="cannot accept until identity is resolved",
         )
 
 
@@ -62,13 +59,10 @@ def test_analysis_artifact_is_evidence_bound_and_nonpublishing(tmp_path: Path):
     service = MolecularEvidenceService(tmp_path)
     service.register_sequence_evidence("owner-a", resolved_payload(), actor="owner-a")
     artifact = service.register_analysis_artifact(
-        "owner-a",
-        "ev-1",
+        "owner-a", "ev-1",
         {
-            "artifact_id": "alignment-1",
-            "analysis_type": "alignment",
-            "content": '{"fixture":"alignment"}',
-            "media_type": "application/json",
+            "artifact_id": "alignment-1", "analysis_type": "alignment",
+            "content": '{"fixture":"alignment"}', "media_type": "application/json",
         },
     )
     assert artifact["artifact_id"] == "molecular-analysis:alignment-1"
@@ -77,29 +71,46 @@ def test_analysis_artifact_is_evidence_bound_and_nonpublishing(tmp_path: Path):
     assert artifact["artifact_id"] in evidence["alignment_or_analysis_artifact_ids"]
 
 
-def test_phylogenetic_claim_is_candidate_evidence_not_truth(tmp_path: Path):
+def test_claim_rejects_analysis_artifact_not_bound_to_source_evidence(tmp_path: Path):
+    service = MolecularEvidenceService(tmp_path)
+    service.register_sequence_evidence("owner-a", resolved_payload(), actor="owner-a")
+    with pytest.raises(ValueError, match="PHYLOGENETIC_ANALYSIS_ARTIFACT_NOT_BOUND"):
+        service.record_phylogenetic_claim(
+            "owner-a", "ev-1",
+            {
+                "claim_id": "claim-unbound", "claim_type": "sister_relationship",
+                "statement": "Fixture claim.", "analysis_artifact_ids": ["molecular-analysis:other"],
+            },
+            actor="owner-a",
+        )
+
+
+def test_phylogenetic_claim_requires_reviewed_source_evidence_and_never_becomes_truth(tmp_path: Path):
     service = MolecularEvidenceService(tmp_path)
     service.register_sequence_evidence("owner-a", resolved_payload(), actor="owner-a")
     claim = service.record_phylogenetic_claim(
-        "owner-a",
-        "ev-1",
+        "owner-a", "ev-1",
         {
-            "claim_id": "claim-1",
-            "claim_type": "sister_relationship",
+            "claim_id": "claim-1", "claim_type": "sister_relationship",
             "statement": "Fixture analysis places taxon A near taxon B.",
-            "confidence": 0.7,
-            "analysis_artifact_ids": [],
+            "confidence": 0.7, "analysis_artifact_ids": [],
         },
         actor="owner-a",
     )
     assert claim["review_state"] == "needs_review"
     assert claim["truth_status"] == "not_asserted"
+    with pytest.raises(ValueError, match="PHYLOGENETIC_SOURCE_EVIDENCE_NOT_ACCEPTED"):
+        service.review_claim(
+            "owner-a", "claim-1", state="accepted_as_evidence",
+            reviewer="human-reviewer", rationale="must first review source evidence",
+        )
+    service.review_evidence(
+        "owner-a", "ev-1", state="accepted_as_evidence",
+        reviewer="human-reviewer", rationale="voucher, identity, and evidence span reviewed",
+    )
     reviewed = service.review_claim(
-        "owner-a",
-        "claim-1",
-        state="accepted_as_evidence",
-        reviewer="human-reviewer",
-        rationale="Evidence may be used as reviewed support, not as canonical truth.",
+        "owner-a", "claim-1", state="accepted_as_evidence",
+        reviewer="human-reviewer", rationale="usable reviewed evidence, not canonical phylogenetic truth",
     )
     assert reviewed["truth_status"] == "reviewed_evidence_only"
     assert reviewed["scientific_publication_authorized"] is False
