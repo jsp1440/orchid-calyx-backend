@@ -58,9 +58,29 @@ Additional hardening and supplemental validation:
 
 Beginning with RS-15, GitHub-hosted Research Station jobs repeatedly fail before workflow step 1. The observed job objects contain `steps: null`; there are no formatter, lint, test, build, or application-step failures and no retrievable project log. Fresh heads and explicit reruns reproduce the same pre-step termination.
 
-The failure is now confirmed cross-repository. At approximately 2026-08-08 15:30–16:13 PT, documentation-only heads and reruns in `orchid-calyx-backend` also caused CALYX-640, Mission Control live-registration, and governance jobs to terminate before workflow step 1 with `steps: null`. This rules out an RS-15-specific workflow or application defect as the observed hosted-runner failure mode. The exact account/platform cause remains unavailable through the connected repository APIs.
+The failure is confirmed cross-repository and outside the RS-15 changed surface:
+- RS-15 changes exactly four files: its Brain/doc record, the source archive component, the pagination helper, and focused pagination tests; no `.github/workflows/*` file changed relative to last-green RS-14;
+- `orchid-calyx-backend` independent CALYX-640, Mission Control registration, governance, Brain autonomy, University migration, and agent workflows reproduce `steps: null` before checkout/setup;
+- an isolated diagnostic workflow on explicit `ubuntu-22.04` failed before step 1;
+- a diagnostic `ubuntu-latest` workflow containing exactly one shell `echo` step and no checkout, language setup, dependencies, services, secrets, or application code failed before step materialization;
+- a separate `ubuntu-slim` one-step smoke workflow failed the same way;
+- the latest Research Station retry at approximately 2026-08-08 17:31 PT and a newer backend BUILD-BRAIN-114N head created afterward both still returned `steps: null`.
 
-Do not label this as an application-code failure, but do not promote RS-15 to review-ready until an executable full Research Station gate succeeds.
+This evidence rules out RS-15 application code, the Research Station workflow diff, checkout/setup actions, Python/PostgreSQL startup, `ubuntu-latest` aliasing, and a full-VM-only runner image as the immediate failure source. The remaining boundary is hosted-runner/job allocation or repository/account/organization administrative policy before workflow steps are materialized.
+
+Canonical infrastructure incident: `orchid-calyx-backend` issue #481.
+
+Do not label this as an application-code failure, and do not promote RS-15 to review-ready until an executable full Research Station gate succeeds.
+
+## Administrative recovery criteria
+
+The engineering side cannot inspect the remaining account-level controls through the connected repository API. Recovery requires confirming, in GitHub administrative UI, that:
+1. Actions remain enabled for the repositories/account;
+2. hosted-runner usage, billing, plan allowance, spending limit, or payment state is not preventing allocation;
+3. repository/account/organization Actions policy or runner-group policy is not denying GitHub-hosted jobs;
+4. the failed-run UI does not contain a platform annotation that is omitted from the Jobs API.
+
+A single job obtaining a runner and exposing real workflow steps is the recovery signal. Once that happens, RS-15 must be re-run unchanged before any further source-archive feature is stacked.
 
 ## Governance boundary
 
@@ -74,7 +94,8 @@ Across RS-12 through RS-15:
 ## Next action
 
 1. Keep RS-15 PR #17 draft while hosted CI cannot execute.
-2. When an executable runner becomes available, run the unchanged full Research Station gate first.
-3. Fix any real project-stage failure before expansion.
-4. Promote RS-15 only after an exact-head green gate.
-5. Only then consider deterministic archive filtering or a separately governed canonical document-read surface.
+2. Inspect the administrative recovery criteria above; this is now outside autonomous application-code authority.
+3. When an executable runner becomes available, run the unchanged full Research Station gate first.
+4. Fix any real project-stage failure before expansion.
+5. Promote RS-15 only after an exact-head green gate.
+6. Only then consider deterministic archive filtering or a separately governed canonical document-read surface.
