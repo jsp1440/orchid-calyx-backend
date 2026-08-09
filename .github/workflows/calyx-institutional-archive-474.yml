@@ -1,0 +1,65 @@
+name: CALYX Institutional Archive 474
+
+on:
+  pull_request:
+    paths:
+      - "app/archive/**"
+      - "tests/test_calyx_institutional_archive_474.py"
+      - "tests/test_build_080_archive_migration.py"
+      - "tests/test_build_080c_archive_hardening.py"
+      - "migrations/106_institutional_archive_manager.sql"
+      - "migrations/107_archive_production_hardening.sql"
+      - ".github/workflows/calyx-institutional-archive-474.yml"
+      - "docs/brain/CALYX-INSTITUTIONAL-ARCHIVE-474.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  archive-activation:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile governed archive activation surface
+        run: python -m py_compile app/archive/activation.py app/archive/routes.py tests/test_calyx_institutional_archive_474.py
+      - name: Activation and archive regression tests
+        run: python -m pytest -q tests/test_calyx_institutional_archive_474.py tests/test_build_080_archive_migration.py tests/test_build_080c_archive_hardening.py
+      - name: Permanent archive governance assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('app/archive/activation.py').read_text()
+          required = (
+              '"unrestricted_filesystem_scanning_authorized": False',
+              '"production_import_authorized": False',
+              '"graph_publication_authorized": False',
+              '"deployment_authorized": False',
+              '"contains_secrets": False',
+              '"contains_source_paths": False',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing archive governance assertion(s): {missing}')
+          combined = '\n'.join(
+              Path(path).read_text().lower()
+              for path in (
+                  'app/archive/activation.py',
+                  'migrations/106_institutional_archive_manager.sql',
+                  'migrations/107_archive_production_hardening.sql',
+              )
+          )
+          if 'oc_graph' in combined:
+              raise SystemExit('archive activation must not target oc_graph')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check app/archive/activation.py app/archive/routes.py tests/test_calyx_institutional_archive_474.py
+          git diff --check
