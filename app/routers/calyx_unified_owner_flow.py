@@ -143,7 +143,7 @@ def _ledger_id(mission: dict[str, Any]) -> str:
 
 
 def _safe_mission_view(mission: dict[str, Any]) -> dict[str, Any]:
-    """Expose the operator-facing scientific state without private reasoning."""
+    """Expose the mission scientific state without private reasoning."""
     ledger = mission.get("reasoning_ledger") or {}
     return {
         "mission_id": mission.get("mission_id"),
@@ -168,6 +168,33 @@ def _safe_mission_view(mission: dict[str, Any]) -> dict[str, Any]:
         "updated_at": mission.get("updated_at"),
         "private_reasoning_exposed": False,
     }
+
+
+def _durable_mission_view(
+    mission: dict[str, Any],
+    ledger_payload: dict[str, Any],
+    publication_candidate: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Overlay mutable review/publication state from the durable ledger authority."""
+    view = _safe_mission_view(mission)
+    decisions = list(ledger_payload.get("review_decisions") or [])
+    latest = decisions[-1] if decisions else None
+    review_status = (
+        str(latest.get("outcome") or "").upper()
+        if latest
+        else "HUMAN_REVIEW_REQUIRED"
+    )
+    view["review_status"] = review_status
+    view["ledger_id"] = ledger_payload.get("ledger_id") or view.get("ledger_id")
+    view["ledger_version"] = ledger_payload.get("version")
+    view["publication_eligibility"] = {
+        "eligible": publication_candidate is not None,
+        "automatic_publication": False,
+        "source": "durable_reasoning_ledger",
+        "review_content_hash_current": publication_candidate is not None,
+    }
+    view["review_state_source"] = "durable_reasoning_ledger"
+    return view
 
 
 def _eligible_for_mission(db: Session, owner: str, mission: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
@@ -252,12 +279,13 @@ def owner_flow_status(mission_id: str, request: Request, auth: Auth, db: Db) -> 
     mission = _mission_for_owner(mission_id, owner)
     ledger_id = _ledger_id(mission)
     ledger = _invoke(db, request, lambda: OperationalReasoningLedgerService(db).current(ledger_id, owner))
+    ledger_payload = ledger_to_dict(ledger)
     discovery, candidate = _eligible_for_mission(db, owner, mission)
     certification = build_calyx_core_certification()
     return {
         "flow_contract": "calyx-unified-owner-flow/v1",
-        "mission": _safe_mission_view(mission),
-        "reasoning_ledger": ledger_to_dict(ledger),
+        "mission": _durable_mission_view(mission, ledger_payload, candidate),
+        "reasoning_ledger": ledger_payload,
         "publication_candidate": candidate,
         "eligible_discovery_result": discovery.get("result"),
         "deployment_certification": {
@@ -288,9 +316,11 @@ def review_owner_flow(mission_id: str, payload: OwnerFlowReviewRequest, request:
         ),
     )
     discovery, candidate = _eligible_for_mission(db, owner, mission)
+    reviewed_payload = ledger_to_dict(reviewed)
     return {
         "mission_id": mission_id,
-        "reasoning_ledger": ledger_to_dict(reviewed),
+        "mission": _durable_mission_view(mission, reviewed_payload, candidate),
+        "reasoning_ledger": reviewed_payload,
         "review_outcome": payload.outcome.value,
         "publication_candidate": candidate,
         "eligible_discovery_result": discovery.get("result"),
