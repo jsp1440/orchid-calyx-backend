@@ -1,6 +1,8 @@
 # CALYX-470A/470B — Unified owner flow on current main
 
-Status: IMPLEMENTED / EXECUTABLE VALIDATION PENDING
+Status: IMPLEMENTED / EXECUTABLE-GREEN / READY FOR OWNER REVIEW
+
+Executable-green code head: `75471fa9aff746b42e871511e2236adf3f7e0bb2`.
 
 ## Purpose
 
@@ -13,31 +15,20 @@ Rebuild the useful owner-experience facade from stale history directly on curren
 - Project resolution happens before mission execution, preventing a mission from completing in memory and then failing only at durable Reasoning Ledger handoff because of an invalid/nonexistent project.
 - Operator status exposes mission plan, evidence, contradictions, gaps, confidence, blockers, validation state, durable ledger state, eligible-publication state, and Calyx Core certification summary without private chain-of-thought.
 - Mutable review-facing mission fields are reconciled from the durable Reasoning Ledger and current eligibility discovery. A stale in-memory mission snapshot cannot continue to report `HUMAN_REVIEW_REQUIRED`, an old ledger version, or `eligible=false` after the durable ledger has been reviewed and become eligible.
-- Displayed review state is now also bound to the **current durable ledger version and `review_content_hash`**. Historical approvals from an older ledger version/hash are ignored for the current status view and the mission returns to `HUMAN_REVIEW_REQUIRED` until the current content is reviewed.
+- Displayed review state is bound to the **current durable ledger version and `review_content_hash`**. Historical approvals from an older ledger version/hash are ignored for current status and the mission returns to `HUMAN_REVIEW_REQUIRED` until the current content is reviewed.
 - Review derives authenticated reviewer identity and the current durable ledger version on the server.
 - Publication-candidate discovery derives the exact current ledger ID, version, and review-content hash through the owner-scoped eligibility service; the owner does not copy hashes, IDs, workflow names, or server paths.
 - Supervised publication checks `explicit_owner_confirmation=true` before discovery or publication-service invocation.
 - Duplicate replay is surfaced explicitly as `NO_OP_DUPLICATE_REPLAY`.
-- Publication result semantics are derived from the authoritative publication artifact, not merely the service's `created` flag. A governed Knowledge Graph gate rejection is reported as `PUBLICATION_REJECTED`; it is never mislabeled `PUBLISHED`.
+- Publication result semantics derive from the authoritative publication artifact. A governed Knowledge Graph gate rejection is reported as `PUBLICATION_REJECTED`; it is never mislabeled `PUBLISHED`.
 - Graph version and audit outcome are shown only when returned by the governed publication gate; the facade never invents them.
 - Focused browser/API regressions cover start, canonical workspace reuse/create/validation, status, durable review-state reconciliation, stale-approval invalidation, review, candidate discovery, confirmation gating, successful publication projection, governed publication rejection, and duplicate replay.
 
 ## CALYX-470B current-main reconstruction
 
-On 2026-08-08 the reviewed additive files from CALYX-470A were reconstructed onto exact current `main` parent `7f5bec2fb8092739a8e5fc5ce55ebc9008a9171e` instead of rebasing the 17-commit historical branch.
+The reviewed additive CALYX-470A files were reconstructed onto current `main` rather than rebasing the historical branch. Shared `app/routers/calyx_core.py` was edited against current main instead of copied wholesale, preserving unrelated current-main routes.
 
-The initial reviewed blobs were:
-
-- `app/routers/calyx_unified_owner_flow.py` — `e2a4d57ea3e3de42999cc0cbb9a2f4e40f92c7f4`
-- `tests/test_calyx_unified_owner_flow_470.py` — `301544e23688b5cbbcf9faf0a63bc28e8b23c9e7`
-- `tests/test_calyx_unified_owner_flow_470_reconciliation.py` — `78893af495d49cc2986ef90a619a86184ffc7c26`
-- `tests/test_calyx_unified_owner_flow_470_rejection.py` — `6a8c9a5e6c2e495140dbecbca456e61248b53641`
-- `tests/test_calyx_unified_owner_flow_470_workspace.py` — `05f056ba34534f9f2830e607b7dfb1a2b459b0a3`
-- `.github/workflows/calyx-unified-owner-flow-470a.yml` — `915dd7540dc13c289dfe2da53641ed763732d9b6`
-
-The shared `app/routers/calyx_core.py` was **not** copied from the old branch. It was edited against current `main`, and the final compare shows exactly two added lines: the unified-owner-flow router import and include. An intermediate accidental `ShowCreate` request-type regression was detected before PR creation, repaired, and the subsequent `main` comparison confirmed zero unrelated router deletions or modifications.
-
-Subsequent static governance review on 2026-08-08 found and corrected a stale-approval projection defect. The current implementation filters durable review decisions to the exact current ledger `version` plus `review_content_hash` before displaying a review outcome. A regression now proves an approval for version N/hash A is not displayed as current after the ledger becomes version N+1/hash B.
+Static governance review found and corrected a stale-approval projection defect: durable review decisions are filtered to the exact current ledger `version` plus `review_content_hash` before displaying a review outcome. An approval for version N/hash A is not displayed as current after the ledger becomes version N+1/hash B.
 
 ## Governance
 
@@ -45,36 +36,45 @@ Automatic scientific approval and automatic publication remain disabled. A real 
 
 The publication endpoint may call the existing governed publication service only after explicit owner confirmation and fresh owner-scoped eligibility discovery. Tests replace the production gate/service and do not perform a real graph publication.
 
-Parent epic #384 additionally states that agents open PRs and stop before merge. Therefore this reconstruction remains draft/unmerged unless the owner explicitly authorizes its merge after exact-head executable validation.
+Parent epic #384 states that agents open PRs and stop before merge. Therefore executable validation permits review readiness, not merge or production publication.
 
 ## Integration
 
-This is a thin facade over authoritative services already on `main`: Research Workspace, Brain mission execution, durable Reasoning Ledger, owner-scoped eligibility discovery, supervised publication, and Calyx Core certification. It does not introduce parallel project, mission, review, publication, or graph-version stores.
+This is a thin facade over authoritative services already in Calyx Core: Research Workspace, Brain mission execution, durable Reasoning Ledger, owner-scoped eligibility discovery, supervised publication, and Calyx Core certification. It introduces no parallel project, mission, review, publication, or graph-version store.
 
 The Brain mission remains authoritative for bounded scientific evidence and interpretation output. The durable SQL Reasoning Ledger is authoritative for mutable human review state and ledger version. Eligibility discovery is authoritative for whether the current reviewed ledger may proceed to the explicit-confirmation publication gate.
 
-## Static compatibility findings resolved
+## Compatibility findings resolved
 
-During current-main reconciliation and subsequent static governance review, four defects were found and corrected before release:
+1. The historical default project identifier was not a valid Research Workspace UUID; canonical project resolution now occurs before mission execution.
+2. Governed graph-gate rejection is distinguished from successful publication and incomplete publication.
+3. Operator status overlays mutable review/eligibility state from durable authority rather than stale in-memory mission fields.
+4. Displayed approval is accepted only when bound to the current durable ledger version and content hash.
+5. Recovered executable CI found one final Ruff import-organization issue in `app/routers/calyx_unified_owner_flow.py`; the service import was wrapped according to Ruff without behavioral or governance changes.
 
-1. The old default project identifier `laelia-anceps-demonstration` was not a valid Research Workspace UUID and could allow Brain execution to run before durable ledger handoff failed. CALYX-470A resolves or creates the canonical project first.
-2. `ReasoningLedgerPublicationService.publish()` can return a newly recorded `rejected` artifact when the governed graph gate rejects publication. CALYX-470A distinguishes `PUBLISHED`, `PUBLICATION_REJECTED`, `PUBLICATION_NOT_COMPLETED`, and `NO_OP_DUPLICATE_REPLAY` rather than treating every newly created artifact as a successful publication.
-3. The in-memory Brain mission snapshot is intentionally not mutated by durable ledger review. CALYX-470A therefore overlays review status, durable ledger version, and publication eligibility from the durable ledger/current eligibility when producing the operator view, preventing contradictory post-review instructions.
-4. The first CALYX-470B durable-view implementation selected the last historical review decision without checking whether its `ledger_version` and `reviewed_content_hash` still matched the current ledger. That could display a stale `APPROVED` state after evidence/content changed. The corrected view accepts only decisions bound to the current version/hash and otherwise reports `HUMAN_REVIEW_REQUIRED`.
+Duplicate replay was re-audited against `ReasoningLedgerPublicationService`: `created=False` is limited to an already-published persisted artifact, so `NO_OP_DUPLICATE_REPLAY` remains correctly limited to a previously published exact artifact.
 
-The duplicate-replay path was also re-audited against the authoritative publication service. `ReasoningLedgerPublicationService.publish()` returns `created=False` only when the persisted artifact status is already `PUBLISHED`; rejected artifacts are sent through the governed gate again. Therefore `NO_OP_DUPLICATE_REPLAY` remains correctly limited to a previously published exact artifact.
+## Executable validation
 
-The in-memory and operational Reasoning Ledger services both derive ledger identity through the same deterministic `(tenant, project, title)` identity function, so the current-main durable handoff preserves ledger identity after canonical project resolution.
+Exact code head `75471fa9aff746b42e871511e2236adf3f7e0bb2` is green across all six applicable workflows:
 
-## Validation gate
+- CALYX Unified Owner Flow 470A run `31323832649` — success;
+- CALYX Workflow Governance Audit `31323832655` — success;
+- CALYX-CORE-REBASE-002A `31323832648` — success;
+- CALYX-CORE-REBASE-004 `31323832633` — success;
+- BUILD-088E Validation `31323832631` — success;
+- Calyx Conversation Validation `31323832646` — success.
 
-Merge only after the exact unchanged CALYX-470B head passes real executable jobs for:
+The dedicated owner-flow gate passed:
 
-- CALYX Unified Owner Flow 470A;
-- CALYX-CORE-REBASE-004 Validation;
-- BUILD-088E Validation;
-- every additional workflow triggered by the shared Calyx Core router.
+- compile;
+- 23 unified-owner-flow and existing operator regressions;
+- permanent supervised-publication governance assertions;
+- changed-surface Ruff;
+- diff hygiene.
 
-A GitHub Actions job with no executed steps is infrastructure evidence only and does not satisfy this gate. Issue #481 remains the canonical hosted-runner blocker if jobs return `steps=null`.
+No unresolved review threads exist on PR #737.
 
-Update this record with the exact validated head and merge commit after completion.
+## Remaining boundary
+
+The implementation is ready for review, but merge and any real publication remain owner-governed. No production publication, canonical Knowledge Graph mutation, taxonomy activation, deployment, credential change, or schema mutation was performed during validation.
