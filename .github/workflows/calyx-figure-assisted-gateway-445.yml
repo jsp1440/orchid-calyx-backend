@@ -7,6 +7,7 @@ on:
       - "app/routers/figure_assisted_gateway.py"
       - "app/routers/live_mission_control.py"
       - "tests/test_calyx_figure_assisted_gateway_445.py"
+      - "tests/test_calyx_figure_artifact_registry_445.py"
       - "docs/brain/CALYX-FIGURE-ASSISTED-GATEWAY-445.md"
       - ".github/workflows/calyx-figure-assisted-gateway-445.yml"
   workflow_dispatch:
@@ -29,14 +30,20 @@ jobs:
           app/routers/figure_assisted_gateway.py
           app/routers/live_mission_control.py
           tests/test_calyx_figure_assisted_gateway_445.py
+          tests/test_calyx_figure_artifact_registry_445.py
       - name: Deterministic assisted gateway tests
-        run: python -m pytest -q tests/test_calyx_figure_assisted_gateway_445.py
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_figure_assisted_gateway_445.py
+          tests/test_calyx_figure_artifact_registry_445.py
+          tests/test_calyx_artifact_registry.py
       - name: Permanent non-authority and credential assertions
         run: |
           python - <<'PY'
           from pathlib import Path
           text = Path('runtime/figure_assisted_gateway.py').read_text()
           required = (
+              'ImmutableArtifactRegistry',
               '"provider_network_call_authorized": False',
               '"credential_storage_authorized": False',
               '"publication_authorized": False',
@@ -44,7 +51,7 @@ jobs:
           )
           missing = [item for item in required if item not in text]
           if missing:
-              raise SystemExit(f'missing permanent non-authority assertion(s): {missing}')
+              raise SystemExit(f'missing permanent non-authority/integration assertion(s): {missing}')
           forbidden = (
               'requests.post(', 'httpx.post(', 'selenium', 'playwright',
               'password=', 'cookie=', 'captcha', 'INSERT INTO oc_graph',
@@ -56,5 +63,5 @@ jobs:
           PY
       - name: Changed-surface Ruff and diff hygiene
         run: |
-          python -m ruff check runtime/figure_assisted_gateway.py app/routers/figure_assisted_gateway.py tests/test_calyx_figure_assisted_gateway_445.py
+          python -m ruff check runtime/figure_assisted_gateway.py app/routers/figure_assisted_gateway.py tests/test_calyx_figure_assisted_gateway_445.py tests/test_calyx_figure_artifact_registry_445.py
           git diff --check
