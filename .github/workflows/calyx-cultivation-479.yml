@@ -1,0 +1,36 @@
+name: CALYX Cultivation 479
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/cultivation_guidance.py'
+      - 'app/routers/cultivation_guidance.py'
+      - 'app/routers/live_mission_control.py'
+      - 'tests/test_calyx_cultivation_479.py'
+      - 'docs/brain/CALYX-CULTIVATION-GUIDANCE-479.md'
+      - '.github/workflows/calyx-cultivation-479.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cultivation-guidance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install focused dependencies
+        run: pip install pytest fastapi
+      - name: Compile cultivation surface
+        run: python -m py_compile runtime/cultivation_guidance.py app/routers/cultivation_guidance.py app/routers/live_mission_control.py tests/test_calyx_cultivation_479.py
+      - name: Deterministic cultivation guidance tests
+        run: pytest -q tests/test_calyx_cultivation_479.py
+      - name: Permanent safety assertions
+        run: |
+          grep -q 'pesticide_advice_authorized.*False' runtime/cultivation_guidance.py
+          grep -q 'medical_advice_authorized.*False' runtime/cultivation_guidance.py
+          grep -q 'autonomous_greenhouse_control_authorized.*False' runtime/cultivation_guidance.py
+          grep -q 'production_graph_mutation_authorized.*False' runtime/cultivation_guidance.py
