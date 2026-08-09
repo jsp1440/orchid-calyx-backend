@@ -64,9 +64,13 @@ The failure is confirmed cross-repository and outside the RS-15 changed surface:
 - an isolated diagnostic workflow on explicit `ubuntu-22.04` failed before step 1;
 - a diagnostic `ubuntu-latest` workflow containing exactly one shell `echo` step and no checkout, language setup, dependencies, services, secrets, or application code failed before step materialization;
 - a separate `ubuntu-slim` one-step smoke workflow failed the same way;
-- the latest Research Station retry at approximately 2026-08-08 17:31 PT and a newer backend BUILD-BRAIN-114N head created afterward both still returned `steps: null`.
+- the latest Research Station retries and newer backend heads continue to return `steps: null`.
 
-This evidence rules out RS-15 application code, the Research Station workflow diff, checkout/setup actions, Python/PostgreSQL startup, `ubuntu-latest` aliasing, and a full-VM-only runner image as the immediate failure source. The remaining boundary is hosted-runner/job allocation or repository/account/organization administrative policy before workflow steps are materialized.
+This evidence rules out RS-15 application code, the Research Station workflow diff, checkout/setup actions, Python/PostgreSQL startup, `ubuntu-latest` aliasing, and a full-VM-only runner image as the immediate failure source.
+
+Repository metadata further narrows the administrative boundary: both repositories are owned by the personal GitHub user account `jsp1440`, not an organization. Organization-level runner groups or organization-hosted-runner disablement therefore do not apply to these repositories as the immediate cause.
+
+GitHub's current Actions billing documentation states that private-repository GitHub-hosted jobs consume the repository owner's account allowance. If the included Actions quota is exhausted and the account has no valid payment method, hosted usage is blocked. GitHub also documents that an exhausted Actions budget configured to stop usage blocks further hosted-runner use. Included-usage alert emails are configurable, so the absence of a 90%/100% warning in the connected mailbox does not exclude quota or budget exhaustion.
 
 Canonical infrastructure incident: `orchid-calyx-backend` issue #481.
 
@@ -74,11 +78,12 @@ Do not label this as an application-code failure, and do not promote RS-15 to re
 
 ## Administrative recovery criteria
 
-The engineering side cannot inspect the remaining account-level controls through the connected repository API. Recovery requires confirming, in GitHub administrative UI, that:
-1. Actions remain enabled for the repositories/account;
-2. hosted-runner usage, billing, plan allowance, spending limit, or payment state is not preventing allocation;
-3. repository/account/organization Actions policy or runner-group policy is not denying GitHub-hosted jobs;
-4. the failed-run UI does not contain a platform annotation that is omitted from the Jobs API.
+The engineering side cannot inspect personal-account billing controls through the connected repository API. Recovery now requires checking the personal GitHub account and repository UI for:
+1. current GitHub Actions included usage for this billing cycle;
+2. whether a valid payment method is present if included minutes are exhausted;
+3. Actions budgets/spending controls, especially any exhausted budget with `Stop usage when budget limit is reached` enabled;
+4. repository Settings → Actions → General to confirm Actions remain enabled;
+5. the failed workflow-run summary for a billing, spending, or allocation annotation omitted from the Jobs API.
 
 A single job obtaining a runner and exposing real workflow steps is the recovery signal. Once that happens, RS-15 must be re-run unchanged before any further source-archive feature is stacked.
 
@@ -89,13 +94,15 @@ Across RS-12 through RS-15:
 - source refs remain provenance pointers to governed Continuum material;
 - no scientific publication is authorized;
 - no Knowledge Graph mutation is authorized;
-- no production deployment or merge is authorized by this record.
+- no production deployment or merge is authorized by this record;
+- enabling paid GitHub Actions overage, adding/changing a payment method, or increasing a hard-stop Actions budget is an owner financial/administrative decision and is outside autonomous application-code authority.
 
 ## Next action
 
 1. Keep RS-15 PR #17 draft while hosted CI cannot execute.
-2. Inspect the administrative recovery criteria above; this is now outside autonomous application-code authority.
-3. When an executable runner becomes available, run the unchanged full Research Station gate first.
-4. Fix any real project-stage failure before expansion.
-5. Promote RS-15 only after an exact-head green gate.
-6. Only then consider deterministic archive filtering or a separately governed canonical document-read surface.
+2. Inspect the personal-account Actions usage/payment/budget controls above.
+3. If usage is blocked by quota/budget, owner decides whether to wait for the billing-cycle reset or explicitly enable paid overage/increase the Actions budget.
+4. When an executable runner becomes available, run the unchanged full Research Station gate first.
+5. Fix any real project-stage failure before expansion.
+6. Promote RS-15 only after an exact-head green gate.
+7. Only then consider deterministic archive filtering or a separately governed canonical document-read surface.
