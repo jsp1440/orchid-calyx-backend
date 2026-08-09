@@ -66,6 +66,7 @@ class IsolatedWorkspacePatchExecutor:
         self.workspace_root = reader.workspace_root
         self.repository_name = reader.repository_name
         self._reader = reader
+        self._rollback_journal: dict[str, tuple[PreparedPatch, ...]] = {}
 
     def execute(self, assignment: GovernedAssignment) -> ExecutionReceipt:
         if assignment.role_key != ISOLATED_PATCH_ROLE:
@@ -120,57 +121,76 @@ class IsolatedWorkspacePatchExecutor:
             raise ValueError("ISOLATED_PATCH_TOTAL_BYTES_EXCEEDED")
 
         self._apply_prepared(prepared)
+        self._rollback_journal[assignment.assignment_id] = prepared
+        try:
+            checkout_after = self._reader._checkout_identity()
+            if checkout_after != checkout:
+                raise RuntimeError("ISOLATED_PATCH_CHECKOUT_CHANGED_DURING_WRITE")
 
-        checkout_after = self._reader._checkout_identity()
-        if checkout_after != checkout:
-            raise RuntimeError("ISOLATED_PATCH_CHECKOUT_CHANGED_DURING_WRITE")
-
-        input_checksum = assignment.verified_input_checksum()
-        changes = [
-            {
-                "path": item.spec.path,
-                "before_sha256": item.before_sha256,
-                "after_sha256": item.after_sha256,
-                "created": item.before_bytes is None,
-                "size_bytes": len(item.after_bytes),
+            input_checksum = assignment.verified_input_checksum()
+            changes = [
+                {
+                    "path": item.spec.path,
+                    "before_sha256": item.before_sha256,
+                    "after_sha256": item.after_sha256,
+                    "created": item.before_bytes is None,
+                    "size_bytes": len(item.after_bytes),
+                }
+                for item in prepared
+            ]
+            output: dict[str, object] = {
+                "status": "delivered",
+                "executed": True,
+                "mode": "authoritative_isolated_workspace_patch",
+                "repository": repository,
+                "branch": branch,
+                "checkout_commit_sha": checkout.commit_sha,
+                "workspace_isolated": True,
+                "workspace_disposable": True,
+                "changes": changes,
+                "file_count": len(changes),
+                "total_written_bytes": total_bytes,
+                "commit_created": False,
+                "validation_commands_run": False,
+                "side_effects": ["isolated_workspace_files_modified"],
             }
-            for item in prepared
-        ]
-        output: dict[str, object] = {
-            "status": "delivered",
-            "executed": True,
-            "mode": "authoritative_isolated_workspace_patch",
-            "repository": repository,
-            "branch": branch,
-            "checkout_commit_sha": checkout.commit_sha,
-            "workspace_isolated": True,
-            "workspace_disposable": True,
-            "changes": changes,
-            "file_count": len(changes),
-            "total_written_bytes": total_bytes,
-            "commit_created": False,
-            "validation_commands_run": False,
-            "side_effects": ["isolated_workspace_files_modified"],
-        }
-        evidence_uris = (
-            *assignment.evidence_uris,
-            f"repo-commit:{repository}@{checkout.commit_sha}",
-            *(f"workspace-file:{change['path']}#{change['after_sha256']}" for change in changes),
-        )
-        receipt = ExecutionReceipt(
-            assignment_id=assignment.assignment_id,
-            program_id=assignment.program_id,
-            job_key=assignment.job_key,
-            executor_key=self.executor_key,
-            state=ExecutionState.DELIVERED,
-            outcome=TerminalOutcome.DELIVERED,
-            input_checksum=input_checksum,
-            output_checksum=canonical_checksum(output),
-            output=output,
-            evidence_uris=evidence_uris,
-        )
-        receipt.verify()
-        return receipt
+            evidence_uris = (
+                *assignment.evidence_uris,
+                f"repo-commit:{repository}@{checkout.commit_sha}",
+                *(
+                    f"workspace-file:{change['path']}#{change['after_sha256']}"
+                    for change in changes
+                ),
+            )
+            receipt = ExecutionReceipt(
+                assignment_id=assignment.assignment_id,
+                program_id=assignment.program_id,
+                job_key=assignment.job_key,
+                executor_key=self.executor_key,
+                state=ExecutionState.DELIVERED,
+                outcome=TerminalOutcome.DELIVERED,
+                input_checksum=input_checksum,
+                output_checksum=canonical_checksum(output),
+                output=output,
+                evidence_uris=evidence_uris,
+            )
+            receipt.verify()
+            return receipt
+        except Exception:
+            self.rollback(assignment.assignment_id)
+            raise
+
+    def finalize(self, assignment_id: str) -> None:
+        """Forget rollback material only after durable lease completion succeeds."""
+        self._rollback_journal.pop(assignment_id, None)
+
+    def rollback(self, assignment_id: str) -> bool:
+        """Restore the exact preimage for a delivered but not durably completed patch."""
+        prepared = self._rollback_journal.pop(assignment_id, None)
+        if prepared is None:
+            return False
+        self._rollback(list(prepared))
+        return True
 
     def _verify_isolation_marker(self, *, repository: str, branch: str) -> None:
         try:
@@ -190,7 +210,9 @@ class IsolatedWorkspacePatchExecutor:
             "disposable": True,
             "workspace_write_authorized": True,
         }
-        if not isinstance(marker, dict) or any(marker.get(key) != value for key, value in expected.items()):
+        if not isinstance(marker, dict) or any(
+            marker.get(key) != value for key, value in expected.items()
+        ):
             raise PermissionError("ISOLATED_PATCH_MARKER_MISMATCH")
 
     @staticmethod
@@ -204,7 +226,11 @@ class IsolatedWorkspacePatchExecutor:
             raise TypeError("ISOLATED_PATCH_SPEC_INVALID")
         if before_sha256 != ABSENT_PREIMAGE and not _is_sha256(before_sha256):
             raise ValueError("ISOLATED_PATCH_PREIMAGE_HASH_INVALID")
-        return PatchSpec(path=path, before_sha256=before_sha256, content_utf8=content)
+        return PatchSpec(
+            path=path,
+            before_sha256=before_sha256,
+            content_utf8=content,
+        )
 
     def _prepare_patch(self, spec: PatchSpec) -> PreparedPatch:
         target = self._validated_target(spec.path)
@@ -213,7 +239,9 @@ class IsolatedWorkspacePatchExecutor:
             raise ValueError(f"ISOLATED_PATCH_FILE_TOO_LARGE:{spec.path}")
 
         try:
-            before_bytes, _ = self._reader._read_workspace_file(spec.path, MAX_FILE_BYTES)
+            before_bytes, _ = self._reader._read_workspace_file(
+                spec.path, MAX_FILE_BYTES
+            )
         except FileNotFoundError:
             before_bytes = None
 
@@ -225,7 +253,9 @@ class IsolatedWorkspacePatchExecutor:
             try:
                 before_bytes.decode("utf-8")
             except UnicodeDecodeError as exc:
-                raise ValueError(f"ISOLATED_PATCH_EXISTING_FILE_NOT_UTF8:{spec.path}") from exc
+                raise ValueError(
+                    f"ISOLATED_PATCH_EXISTING_FILE_NOT_UTF8:{spec.path}"
+                ) from exc
             before_digest = hashlib.sha256(before_bytes).hexdigest()
             if before_digest != spec.before_sha256:
                 raise ValueError(f"ISOLATED_PATCH_PREIMAGE_MISMATCH:{spec.path}")
@@ -241,7 +271,11 @@ class IsolatedWorkspacePatchExecutor:
 
     def _validated_target(self, relative_path: str) -> Path:
         path = PurePosixPath(relative_path)
-        if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+        if (
+            path.is_absolute()
+            or not path.parts
+            or any(part in {"", ".", ".."} for part in path.parts)
+        ):
             raise PermissionError("ISOLATED_PATCH_PATH_ESCAPE")
         normalized = path.as_posix()
         if not normalized.startswith(ALLOWED_PATH_PREFIXES):
@@ -264,7 +298,9 @@ class IsolatedWorkspacePatchExecutor:
         staged: list[tuple[PreparedPatch, str]] = []
         try:
             for item in prepared:
-                descriptor, temporary = tempfile.mkstemp(prefix=".calyx-patch-", dir=item.target.parent)
+                descriptor, temporary = tempfile.mkstemp(
+                    prefix=".calyx-patch-", dir=item.target.parent
+                )
                 try:
                     with os.fdopen(descriptor, "wb") as handle:
                         handle.write(item.after_bytes)
@@ -306,4 +342,6 @@ class IsolatedWorkspacePatchExecutor:
 
 
 def _is_sha256(value: str) -> bool:
-    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+    return len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
