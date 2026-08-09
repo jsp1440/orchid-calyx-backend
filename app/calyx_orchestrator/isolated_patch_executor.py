@@ -78,11 +78,17 @@ class IsolatedWorkspacePatchExecutor:
 
         requested = set(assignment.requested_capabilities)
         prohibited = sorted(requested & PROHIBITED_CAPABILITIES)
-        unsupported = sorted(requested - SUPPORTED_CAPABILITIES - PROHIBITED_CAPABILITIES)
+        unsupported = sorted(
+            requested - SUPPORTED_CAPABILITIES - PROHIBITED_CAPABILITIES
+        )
         if prohibited:
-            raise PermissionError(f"ISOLATED_PATCH_PROHIBITED_CAPABILITY:{','.join(prohibited)}")
+            raise PermissionError(
+                f"ISOLATED_PATCH_PROHIBITED_CAPABILITY:{','.join(prohibited)}"
+            )
         if unsupported:
-            raise PermissionError(f"ISOLATED_PATCH_UNSUPPORTED_CAPABILITY:{','.join(unsupported)}")
+            raise PermissionError(
+                f"ISOLATED_PATCH_UNSUPPORTED_CAPABILITY:{','.join(unsupported)}"
+            )
         if "workspace_write" not in requested:
             raise PermissionError("ISOLATED_PATCH_WORKSPACE_WRITE_CAPABILITY_REQUIRED")
 
