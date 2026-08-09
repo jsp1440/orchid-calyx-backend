@@ -170,6 +170,51 @@ def test_exact_replay_preserves_source_taxonomy_without_inventing_canonical_id(
     )
 
 
+def test_authored_occurrence_name_uses_build_065_canonical_name_without_minting_id(
+    engine,
+) -> None:
+    release_id = _seed_taxonomy(engine)
+    store = PostgresOccurrencePersistence(engine)
+    record = {
+        "source_record_id": "inat-authored-1",
+        "scientific_name": "Laelia anceps Lindl.",
+        "taxon_key": "INAT-123",
+        "latitude": 19.4,
+        "longitude": -99.1,
+        "license": "CC_BY",
+    }
+
+    receipt = store.reconcile_batch(
+        [record],
+        source="inaturalist",
+        job_key="authored-name",
+        taxonomy_release_id=release_id,
+    )
+
+    assert receipt.review_count == 0
+    with engine.connect() as connection:
+        row = (
+            connection.execute(
+                text(
+                    "SELECT provider_taxon_key, source_taxonomy_record_id, "
+                    "world_plants_number, source_taxon_rank_code, canonical_taxon_id, "
+                    "reconciliation_state, reconciliation_method "
+                    "FROM occurrence_pipeline.staged_occurrences WHERE run_id = :run_id"
+                ),
+                {"run_id": receipt.run_id},
+            )
+            .mappings()
+            .one()
+        )
+    assert row["provider_taxon_key"] == "INAT-123"
+    assert row["source_taxonomy_record_id"].endswith(":row:1")
+    assert row["world_plants_number"] == "WP-1"
+    assert row["source_taxon_rank_code"] == "S"
+    assert row["canonical_taxon_id"] is None
+    assert row["reconciliation_state"] == "source_matched_canonical_pending"
+    assert row["reconciliation_method"] == "scientific_name_exact"
+
+
 def test_taxonomy_review_change_creates_new_run_and_preserves_old_evidence(engine) -> None:
     release_id = _seed_taxonomy(engine)
     store = PostgresOccurrencePersistence(engine)
