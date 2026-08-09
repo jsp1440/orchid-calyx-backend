@@ -80,9 +80,7 @@ def test_nested_partial_mapping_query_is_indeterminate_not_applicable():
     result = evaluate_scope(
         {
             "scope_class": "bounded",
-            "cultivation_context": {
-                "greenhouse": {"bench": "north", "light": "shade"}
-            },
+            "cultivation_context": {"greenhouse": {"bench": "north", "light": "shade"}},
         },
         {
             "scope_class": "bounded",
