@@ -71,6 +71,18 @@ class _PersistedPatchService:
         return self.record
 
 
+def _validations() -> list[dict]:
+    return [
+        {
+            "preset": "ruff",
+            "request_digest": "d" * 64,
+            "receipt_digest": "e" * 64,
+            "policy_digest": "f" * 64,
+            "targets": [{"path": "app/example.py", "sha256": "c" * 64}],
+        }
+    ]
+
+
 def _manifest(*, proposed_branch: str = "autonomy/proposal/work-123") -> dict:
     output = _patch_output()
     payload = {
@@ -90,7 +102,7 @@ def _manifest(*, proposed_branch: str = "autonomy/proposal/work-123") -> dict:
                 "size_bytes": 100,
             }
         ],
-        "validations": [],
+        "validations": _validations(),
         "commit_title": "Bounded change",
         "pr_title": "Bounded change",
         "summary": "Proposal evidence.",
@@ -155,6 +167,38 @@ def test_manifest_digest_tampering_is_rejected() -> None:
     manifest = _manifest()
     manifest["summary"] = "tampered"
     with pytest.raises(PermissionError, match="MANIFEST_DIGEST_MISMATCH"):
+        _build(manifest=manifest)
+
+
+def test_hand_built_manifest_without_validation_evidence_is_rejected() -> None:
+    manifest = _manifest()
+    manifest["validations"] = []
+    payload = dict(manifest)
+    payload.pop("manifest_digest")
+    manifest["manifest_digest"] = canonical_sha256(payload)
+    with pytest.raises(PermissionError, match="VALIDATION_REQUIRED"):
+        _build(manifest=manifest)
+
+
+def test_manifest_with_uncovered_python_change_is_rejected() -> None:
+    manifest = _manifest()
+    manifest["validations"][0]["targets"] = [
+        {"path": "app/other.py", "sha256": "c" * 64}
+    ]
+    payload = dict(manifest)
+    payload.pop("manifest_digest")
+    manifest["manifest_digest"] = canonical_sha256(payload)
+    with pytest.raises(PermissionError, match="RUFF_COVERAGE_INCOMPLETE"):
+        _build(manifest=manifest)
+
+
+def test_noncanonical_manifest_authority_flag_is_rejected() -> None:
+    manifest = _manifest()
+    manifest["git_mutation_performed"] = True
+    payload = dict(manifest)
+    payload.pop("manifest_digest")
+    manifest["manifest_digest"] = canonical_sha256(payload)
+    with pytest.raises(PermissionError, match="NONCANONICAL_MANIFEST"):
         _build(manifest=manifest)
 
 
