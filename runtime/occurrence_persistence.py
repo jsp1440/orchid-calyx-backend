@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app.database import get_engine
+from runtime.knowledge_graph.canonical_taxonomy import canonical_name_of
 from runtime.occurrence_staging import SUPPORTED_SOURCES
 
 OCCURRENCE_RECONCILIATION_SCHEMA_VERSION = "2.1.0"
@@ -39,7 +40,8 @@ def _sha256_text(value: str) -> str:
 
 
 def _canonical_name(value: Any) -> str:
-    return " ".join(str(value or "").strip().casefold().split())
+    """Use the BUILD-065 canonical-name contract for source matching."""
+    return " ".join(canonical_name_of(str(value or "")).casefold().split())
 
 
 def _canonical_identifier(value: Any) -> str:
