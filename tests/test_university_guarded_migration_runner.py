@@ -61,6 +61,33 @@ class GuardedMigrationRunnerContractTests(unittest.TestCase):
                 )
         connect.assert_not_called()
 
+    def test_apply_rejects_file_change_between_snapshot_and_plan(self) -> None:
+        database_url = "postgresql://db.example.org/orchid"
+        actual_digest = runner.migration_digest()
+        different_digest = "sha256:" + ("0" * 64 if actual_digest != "sha256:" + "0" * 64 else "1" * 64)
+        forged_plan = {
+            "contract": "OCU-SCI-009N-MIGRATION-RUNNER-001",
+            "mode": "dry_run",
+            "migration": {"path": "migrations/ocu_sci_008_durable_sessions.sql", "sha256": different_digest},
+            "database": {"hostname": "db.example.org", "port": None, "database": "orchid"},
+            "database_confirmation_target": "db.example.org/orchid",
+            "migration_stage_preflight": {"ready": True, "blockers": []},
+            "schema_already_valid": False,
+            "would_apply": True,
+            "requires_exact_migration_confirmation": different_digest,
+            "requires_exact_database_confirmation": "db.example.org/orchid",
+            "mutations_performed": False,
+        }
+        with patch.object(runner, "plan", return_value=forged_plan), patch.object(runner.psycopg, "connect") as connect:
+            with self.assertRaisesRegex(runner.MigrationGuardError, "migration file changed during guarded apply"):
+                runner.apply_migration(
+                    release_evidence=Path("evidence.json"),
+                    database_url=database_url,
+                    confirm_migration_sha256=different_digest,
+                    confirm_database_target="db.example.org/orchid",
+                )
+        connect.assert_not_called()
+
     def test_apply_requires_exact_database_target_before_connecting(self) -> None:
         database_url = "postgresql://db.example.org/orchid"
         with patch.object(runner, "preflight", return_value=READY_PREFLIGHT), patch.object(
