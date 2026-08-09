@@ -79,14 +79,14 @@ def test_bounded_scope_requires_real_bounds():
 
 
 def test_global_scope_requires_explicit_justification():
-    with pytest.raises(
-        ValueError, match="GLOBAL_CAUSAL_SCOPE_REQUIRES_JUSTIFICATION"
-    ):
+    with pytest.raises(ValueError, match="GLOBAL_CAUSAL_SCOPE_REQUIRES_JUSTIFICATION"):
         CausalScope.model_validate({"scope_class": "global"})
 
 
 def test_global_scope_rejects_local_bounds():
-    with pytest.raises(ValueError, match="GLOBAL_CAUSAL_SCOPE_CANNOT_DECLARE_LOCAL_BOUNDS"):
+    with pytest.raises(
+        ValueError, match="GLOBAL_CAUSAL_SCOPE_CANNOT_DECLARE_LOCAL_BOUNDS"
+    ):
         CausalScope.model_validate(
             {
                 "scope_class": "global",
@@ -118,7 +118,9 @@ def test_scope_normalization_is_order_independent():
 def test_bounded_scope_preserves_canonical_endpoint_identity_in_plan():
     repository, service = components()
     scoped = {"scope_class": "bounded", "tissues": ["leaf"]}
-    result = handoff_mechanistic_candidate(request(causal_scope=scoped), (repository, service))
+    result = handoff_mechanistic_candidate(
+        request(causal_scope=scoped), (repository, service)
+    )
     candidate_id = result["candidate_ids"][0]
     approve(repository, candidate_id)
 
@@ -170,6 +172,5 @@ def test_opposite_polarity_in_same_normalized_scope_is_a_contradiction():
     report = analyze_mechanistic_contradictions((repository, service))
     assert report["contradiction_count"] == 1
     assert (
-        report["contradictions"][0]["scope"]["causal_scope"]["scope_class"]
-        == "bounded"
+        report["contradictions"][0]["scope"]["causal_scope"]["scope_class"] == "bounded"
     )
