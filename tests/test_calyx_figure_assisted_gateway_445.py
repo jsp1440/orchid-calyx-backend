@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import io
+import zipfile
 
 import pytest
 from fastapi import FastAPI
@@ -24,6 +26,16 @@ def _gateway() -> AssistedFigureGateway:
 
 def _svg() -> bytes:
     return b'<svg xmlns="http://www.w3.org/2000/svg"><text>velamen</text></svg>'
+
+
+def _pptx(*, traversal: bool = False) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("ppt/presentation.xml", "<p:presentation/>")
+        if traversal:
+            archive.writestr("../escape.txt", "blocked")
+    return buffer.getvalue()
 
 
 def test_velamen_brief_is_deterministic_and_candidate_only() -> None:
@@ -108,25 +120,32 @@ def test_svg_import_preserves_provenance_hotspots_and_replay() -> None:
     assert readiness["decision"] == "REVIEW_ONLY"
     assert readiness["ready_for_scientific_review"] is True
     assert readiness["ready_for_publication"] is False
+    assert readiness["missing_formats"] == ["png", "pptx"]
+    assert "REQUIRED_OUTPUT_FORMATS_MISSING" in readiness["blockers"]
     assert "SCIENTIFIC_REVIEW_REQUIRED" in readiness["blockers"]
     assert "LICENSING_REVIEW_REQUIRED" in readiness["blockers"]
 
 
-def test_active_svg_content_is_rejected() -> None:
+def test_active_or_external_svg_content_is_rejected() -> None:
     gateway = _gateway()
-    with pytest.raises(ValueError, match="SVG_ACTIVE_CONTENT_FORBIDDEN"):
-        gateway.import_asset(
-            brief_id="figure-brief:orchid-root-velamen-v1",
-            format="svg",
-            content=b"<svg><script>alert(1)</script></svg>",
-            source_uri="file://operator-export/bad.svg",
-            creator="operator",
-            attribution="candidate",
-            license="internal-reviewed",
-        )
+    for content in (
+        b"<svg><script>alert(1)</script></svg>",
+        b'<svg><image href="https://example.test/a.png"/></svg>',
+        b"<!DOCTYPE svg><svg></svg>",
+    ):
+        with pytest.raises(ValueError, match="SVG_ACTIVE_CONTENT_FORBIDDEN"):
+            gateway.import_asset(
+                brief_id="figure-brief:orchid-root-velamen-v1",
+                format="svg",
+                content=content,
+                source_uri="file://operator-export/bad.svg",
+                creator="operator",
+                attribution="candidate",
+                license="internal-reviewed",
+            )
 
 
-def test_output_signatures_are_checked() -> None:
+def test_output_signatures_and_pptx_structure_are_checked() -> None:
     gateway = _gateway()
     common = {
         "brief_id": "figure-brief:orchid-root-velamen-v1",
@@ -139,6 +158,43 @@ def test_output_signatures_are_checked() -> None:
         gateway.import_asset(format="png", content=b"not-png", **common)
     with pytest.raises(ValueError, match="PPTX_SIGNATURE_INVALID"):
         gateway.import_asset(format="pptx", content=b"not-zip", **common)
+
+    imported = gateway.import_asset(format="pptx", content=_pptx(), **common)
+    assert imported.media_type.endswith("presentationml.presentation")
+    with pytest.raises(ValueError, match="PPTX_PATH_INVALID"):
+        gateway.import_asset(format="pptx", content=_pptx(traversal=True), **common)
+
+
+def test_brief_rejects_unrequested_import_format() -> None:
+    source = FigureSource(
+        source_uri="evidence://figure/1",
+        citation="Evidence",
+        license="cc-by-4.0",
+        evidence_sha256="b" * 64,
+    )
+    brief = FigureBrief(
+        brief_id="brief:svg-only",
+        project_id="project:test",
+        title="SVG only",
+        purpose="Bounded format test",
+        required_labels=("velamen",),
+        source_records=(source,),
+        output_formats=("svg",),
+        provider_hint=None,
+        estimated_cost_usd=0,
+    )
+    gateway = AssistedFigureGateway()
+    gateway.register_brief(brief)
+    with pytest.raises(ValueError, match="OUTPUT_FORMAT_NOT_REQUESTED"):
+        gateway.import_asset(
+            brief_id=brief.brief_id,
+            format="png",
+            content=b"\x89PNG\r\n\x1a\nminimal",
+            source_uri="file://operator-export/a.png",
+            creator="operator",
+            attribution="candidate",
+            license="internal-reviewed",
+        )
 
 
 def test_conflicting_same_asset_identity_is_rejected() -> None:
@@ -169,12 +225,16 @@ def test_protected_routes_require_authentication_and_accept_assisted_import() ->
     app = FastAPI()
     app.include_router(router)
     client = TestClient(app)
-    unauthenticated = client.get("/brain/mission-control/figures/fixtures/orchid-root-velamen")
+    unauthenticated = client.get(
+        "/brain/mission-control/figures/fixtures/orchid-root-velamen"
+    )
     assert unauthenticated.status_code in {401, 403}
 
     app.dependency_overrides[verify_owner_or_api_key] = lambda: {"actor": "owner"}
     authenticated = TestClient(app)
-    fixture = authenticated.get("/brain/mission-control/figures/fixtures/orchid-root-velamen")
+    fixture = authenticated.get(
+        "/brain/mission-control/figures/fixtures/orchid-root-velamen"
+    )
     assert fixture.status_code == 200
     payload = {
         "format": "svg",
