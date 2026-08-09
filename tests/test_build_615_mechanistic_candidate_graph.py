@@ -8,7 +8,7 @@ from app.brain.mechanistic_candidates import (
 )
 from app.candidate_knowledge.repository import MemoryCandidateRepository
 from app.candidate_knowledge.service import CandidateExtractionService
-from app.evidence_aggregation.models import AggregateType, CANDIDATE_TYPE_MAP
+from app.evidence_aggregation.models import CANDIDATE_TYPE_MAP, AggregateType
 from app.scientific_orchestration.service import (
     GovernedScientificOrchestrationService,
     RiskClass,
@@ -213,6 +213,6 @@ def test_high_confidence_mechanistic_claim_still_requires_inference_review():
         GovernedScientificOrchestrationService
     )
     risk = service._risk_class(
-        [{"kind": "MECHANISTIC_RELATIONSHIP", "confidence": 0.99}], []
+        [{"kind": "MECHANISTIC_RELATIONSHIP", "confidence": 0.99}]
     )
     assert risk is RiskClass.LEVEL_2_SCIENTIFIC_INFERENCE
