@@ -46,9 +46,7 @@ def _norm_value(value: Any) -> Any:
         normalized_items = [
             item
             for raw_item in value
-            if (item := _norm_value(raw_item)) is not None
-            and item != {}
-            and item != []
+            if (item := _norm_value(raw_item)) is not None and item != {} and item != []
         ]
         unique = {
             json.dumps(item, sort_keys=True, separators=(",", ":"), default=str): item
