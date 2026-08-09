@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from app.brain.local_observation_context import local_observation_history
-from app.brain.local_observations import LocalObservationRequest, handoff_local_observation
-from app.brain.mechanistic_publication_plan import plan_mechanistic_candidate_publication
+from app.brain.local_observations import (
+    LocalObservationRequest,
+    handoff_local_observation,
+)
+from app.brain.mechanistic_publication_plan import (
+    plan_mechanistic_candidate_publication,
+)
 from app.candidate_knowledge.repository import MemoryCandidateRepository
 from app.candidate_knowledge.service import CandidateExtractionService
 
