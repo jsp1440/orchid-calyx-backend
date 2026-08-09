@@ -27,15 +27,16 @@ A later integration audit found that the trust resolver was stronger than the ru
 R1 now closes that integration gap without broadening authority:
 
 - `assignment_factory.py` keeps the existing safe base capabilities for ordinary roles;
-- only `isolated_workspace_patcher` receives the additional `workspace_write` capability;
-- its assignment governance mode is `bounded_isolated_workspace_mutation`, while external execution, repository code execution, merge, deployment, publication, and production graph mutation remain false;
+- `workspace_write` is issued only when **both** the durable role is `isolated_workspace_patcher` **and** the durable job has explicit `mutating=True`; a patch-role/non-mutating mismatch fails closed with `ISOLATED_PATCH_MUTATING_JOB_REQUIRED`;
+- assignment governance mode becomes `bounded_isolated_workspace_mutation` only for that same role-plus-mutating-intent combination; otherwise it remains `bounded_dry_run`;
+- external execution, repository code execution, merge, deployment, publication, and production graph mutation remain false;
 - a shared `assignment_inputs_for_program_job()` function is the single canonical constructor for the assignment input object;
 - `PersistedPatchExecutionService` recomputes `input_checksum` from that same constructor plus the durable program/job rows and rejects a valid-shape but incorrect SHA-256;
 - focused integration coverage creates a disposable Git worktree and isolation marker, creates a real persisted patch job, runs it through `run_deterministic_program_cycle()` with `AuthoritativeExecutorRegistry`, verifies the actual file mutation, then resolves the resulting durable receipt through `PersistedPatchExecutionService`.
 
-This removes the prior test-only shortcut: the normal registered authoritative worker path can now produce the exact persisted patch evidence consumed by manifest v2.
+This removes the prior test-only shortcut: the normal registered authoritative worker path can now produce the exact persisted patch evidence consumed by manifest v2, and assignment capability issuance is aligned with durable mutation intent before the executor is invoked.
 
-The effective trust chain is therefore **persisted governed job inputs → canonical assignment input checksum → exact program-job row → exact persisted execution-receipt identity → registered isolated patch executor → input/output-consistent isolated workspace mutation → manifest v2**.
+The effective trust chain is therefore **persisted governed job inputs → explicit durable mutation intent → role-scoped workspace capability → canonical assignment input checksum → exact program-job row → exact persisted execution-receipt identity → registered isolated patch executor → input/output-consistent isolated workspace mutation → manifest v2**.
 
 This means pre-fix v1 manifests cannot silently satisfy the hardened downstream review/authorization path. BUILD-BRAIN-114N/114P/114O and later owner-signature/planning layers must consume v2 and re-bind the durable patch job identity before any can be merged.
 
@@ -53,10 +54,10 @@ The R2 merge gate is executable exact-head validation on the current-main replac
 
 ## Permanent non-authorities
 
-BUILD-BRAIN-114M performs no Git command, commit, branch creation, push, pull-request creation, merge, deployment, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation. It stores no credentials and performs no network calls. The isolated patch capability is confined to the already-governed disposable workspace role; both durable-evidence resolvers are read-only.
+BUILD-BRAIN-114M performs no Git command, commit, branch creation, push, pull-request creation, merge, deployment, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation. It stores no credentials and performs no network calls. The isolated patch capability is confined to the already-governed disposable workspace role and requires explicit durable mutation intent; both durable-evidence resolvers are read-only.
 
 ## Validation contract
 
-The dedicated BUILD-BRAIN-114M workflow compiles and lints the assignment factory, shared execution bridge, `git_proposal_manifest.py`, `persisted_patch_execution.py`, supervisor persistence, and focused tests. Coverage includes real program-job persistence through `LeaseExecutionBridge`, a full `run_deterministic_program_cycle()` isolated-patch integration using a disposable worktree, role-specific `workspace_write` assignment checks, missing/wrong-role/wrong-executor/mismatched-identity/tampered-output rejection, coherently rehashed output rejection when governed inputs differ, persisted receipt-row identity mismatch rejection, malformed input-checksum rejection, valid-shape wrong input-checksum rejection, manifest-v2 determinism, removal of the caller patch-receipt path, persisted supervisor validation, exact Ruff/pytest coverage, and Git branch rules.
+The dedicated BUILD-BRAIN-114M workflow compiles and lints the assignment factory, shared execution bridge, `git_proposal_manifest.py`, `persisted_patch_execution.py`, supervisor persistence, and focused tests. Coverage includes real program-job persistence through `LeaseExecutionBridge`, a full `run_deterministic_program_cycle()` isolated-patch integration using a disposable worktree, role-and-intent-specific `workspace_write` assignment checks, missing/wrong-role/wrong-executor/mismatched-identity/tampered-output rejection, coherently rehashed output rejection when governed inputs differ, persisted receipt-row identity mismatch rejection, malformed input-checksum rejection, valid-shape wrong input-checksum rejection, manifest-v2 determinism, removal of the caller patch-receipt path, persisted supervisor validation, exact Ruff/pytest coverage, and Git branch rules.
 
-Static CI assertions require manifest v2, `patch_program_job_id`, absence of `patch_receipt` in the builder source, persisted patch and validation checks, the three receipt identity fields in `LeaseExecutionBridge`, exact assignment-input checksum verification, isolated-patch-only `workspace_write`, input/output matching, and permanent non-mutation flags.
+Static CI assertions require manifest v2, `patch_program_job_id`, absence of `patch_receipt` in the builder source, persisted patch and validation checks, the three receipt identity fields in `LeaseExecutionBridge`, exact assignment-input checksum verification, isolated-patch-and-mutating-intent-only `workspace_write`, input/output matching, and permanent non-mutation flags.
