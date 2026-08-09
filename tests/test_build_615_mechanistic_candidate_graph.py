@@ -120,3 +120,19 @@ def test_exact_evidence_anchor_and_experimental_context_survive_handoff():
     assert candidate["qualifiers"]["provenance"]["doi"] == "10.0000/example"
     assert repository.evidence_links[0]["revision_id"] == 12
     assert repository.evidence_links[0]["extraction_run_id"] == 13
+
+
+def test_endpoint_attributes_cannot_override_candidate_only_governance_marker():
+    repository, service = components()
+    request = payload(
+        source={
+            "node_type": "environment",
+            "label": "Directional blue light",
+            "stable_key": "blue-light",
+            "attributes": {"candidate_only": False, "wavelength_nm": 450},
+        }
+    )
+    result = handoff_mechanistic_candidate(request, (repository, service))
+    source_node = result["graph_preview"]["nodes"][0]
+    assert source_node["payload"]["candidate_only"] is True
+    assert source_node["payload"]["wavelength_nm"] == 450
