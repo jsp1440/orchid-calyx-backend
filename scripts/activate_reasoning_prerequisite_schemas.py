@@ -322,7 +322,10 @@ def main() -> int:
         raise SystemExit("DATABASE_URL is required")
 
     if args.profile == "research-station-conversations":
-        from scripts.research_station_conversation_activation import run_profile
+        try:
+            from scripts.research_station_conversation_activation import run_profile
+        except ModuleNotFoundError:
+            from research_station_conversation_activation import run_profile
 
         return run_profile(database_url, args.apply, EVIDENCE_PATH)
 

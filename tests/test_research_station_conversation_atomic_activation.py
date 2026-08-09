@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import importlib.util
 import os
+from pathlib import Path
 
 import psycopg
 import pytest
 
-from scripts import research_station_conversation_activation as activation
+ROOT = Path(__file__).parents[1]
+SCRIPT_PATH = ROOT / "scripts/research_station_conversation_activation.py"
+SPEC = importlib.util.spec_from_file_location(
+    "research_station_conversation_activation", SCRIPT_PATH
+)
+assert SPEC and SPEC.loader
+activation = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(activation)
 
 
 def _dsn() -> str:
