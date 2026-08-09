@@ -1,0 +1,32 @@
+name: CALYX Security 475
+
+on:
+  pull_request:
+    paths:
+      - 'app/security.py'
+      - 'app/security_governance.py'
+      - 'tests/test_calyx_security_475.py'
+      - 'docs/brain/CALYX-SECURITY-HARDENING-475.md'
+      - '.github/workflows/calyx-security-475.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  security-governance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install focused dependencies
+        run: pip install pytest fastapi
+      - name: Compile
+        run: python -m py_compile app/security.py app/security_governance.py tests/test_calyx_security_475.py
+      - name: Deterministic security tests
+        run: pytest -q tests/test_calyx_security_475.py
+      - name: Guard against committed secret values
+        run: |
+          ! grep -R -E '(CALYX_API_KEY|CALYX_OWNER_SESSION_SECRET|CALYX_OWNER_ACCESS_CODE|ORCHID_JUDGE_ADMIN_KEY)=[^"'"'[:space:]]+' app tests docs/brain/CALYX-SECURITY-HARDENING-475.md
