@@ -2,46 +2,43 @@
 
 ## Status
 
-R5 reconstruction directly on BUILD-BRAIN-114O-R5 PR #783 exact validated head `7a17565bc92f94537cfd461967c87e9fdd8cba8d`. Draft and unmerged. Implementation head `8a61384a2218dee17e6fe204c6df78dad7e9dd92` received executable exact-head focused and broad validation after correcting import-order and Ruff-format findings.
+IMPLEMENTED and VALIDATED on the merged BUILD-BRAIN-114M → 114N → 114P → 114O trust chain. PR #784 was reconstructed directly on canonical `main` after its historical R5 branch was found to be 87 commits behind and rooted on a pre-repair 114O head. The reconstruction preserves merged 114O's trusted-clock and opaque-signature contract and adds only the five intended 114Q files.
 
 ## Objective
 
-Replace the test-only owner grant verification capability with a concrete public-key-only Ed25519 verifier while preserving the hardened manifest-v2/request-v2/durable-review/patch-job provenance chain and granting no Git/GitHub mutation authority.
+Provide concrete public-key-only Ed25519 owner-grant verification while preserving the hardened manifest-v2/request-v2/durable-review/patch-job provenance chain and granting no Git/GitHub mutation authority.
 
-## Current dependency chain
+## Failure-first findings
 
-`#772 BUILD-BRAIN-114M-R3 → #781 BUILD-BRAIN-114N-R6 → #782 BUILD-BRAIN-114P-R5 → #783 BUILD-BRAIN-114O-R5 → #784 BUILD-BRAIN-114Q-R5`.
-
-Historical #779 / R4 is source material only because it is rooted in superseded #775 ancestry. R5 reapplies only the six intended public-key verification files directly on the exact validated #783 head.
+- INTEGRATION/ANCESTRY — the original #784 base referenced a pre-repair 114O feature head. Resolved by rebuilding on merged canonical `main`; the shared `git_mutation_authorization.py` is no longer copied from stale ancestry.
+- CRYPTO/REVOCATION P1 — owner-grant signing bytes did not bind the key ID. If identical public-key bytes were configured under a revoked ID and an active alias, a signature envelope could be relabeled to the active alias. Resolved without changing signing bytes by rejecting duplicate Ed25519 public-key material across different key IDs at keyring construction with `OWNER_SIGNATURE_DUPLICATE_KEY_MATERIAL`.
+- DEPENDENCY CONTRACT — focused tests previously used the removed per-call `verify_grant(..., now=...)` API. Tests now use the merged 114O constructor-injected trusted clock and call `verify_grant()` without a caller-controlled timestamp.
+- CI CONTRACT — the old workflow asserted a specific obsolete signature-parser implementation. It now asserts the merged 114O `_bounded_signature` and trusted-clock contract plus the 114Q duplicate-key-material defense.
 
 ## Verification contract
 
-`Ed25519OwnerGrantSignatureVerifier` accepts only configured Ed25519 public keys. Keys are identified by bounded explicit key IDs. Multiple active public keys permit controlled rotation overlap; configured revocation fails closed. Empty, malformed, unknown, revoked, or invalid signatures fail closed.
+`Ed25519OwnerGrantSignatureVerifier` accepts only configured Ed25519 public keys. Keys use bounded explicit key IDs. Public-key bytes must be unique across the keyring, preventing revoked-key relabeling through aliases. Multiple distinct active public keys still permit controlled rotation overlap. Configured revocation fails closed.
 
-Owner-grant signing bytes are domain-separated and canonical. The signature envelope is `ed25519:<key_id>:<base64url-signature>` and remains case-sensitive. `GitMutationAuthorizationGrant.from_mapping()` therefore preserves the signature envelope exactly rather than lowercasing it or constraining it to SHA-256-shaped hex.
+Owner-grant signing bytes remain domain-separated and canonical. The signature envelope is `ed25519:<key_id>:<base64url-signature>` and remains case-sensitive. The merged 114O authorization parser treats signature text as an opaque bounded value and the concrete 114Q verifier owns algorithm-specific parsing.
 
-Runtime configuration exposes only `CALYX_OWNER_VERIFY_KEYS_JSON` and `CALYX_OWNER_REVOKED_KEY_IDS`. No private-key loader, secret, signer, grant minting method, or approval API exists in the production verifier surface. Private-key use appears only in focused tests to generate signatures that exercise verification.
-
-## Permanent boundaries
-
-This build verifies owner grants only. It performs and grants no Git command, branch creation, commit, push, pull-request creation, merge/auto-merge, deployment, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation.
+Runtime configuration exposes only `CALYX_OWNER_VERIFY_KEYS_JSON` and `CALYX_OWNER_REVOKED_KEY_IDS`. No private-key loader, signing secret, signer, grant-minting method, or approval API exists in the production verifier surface. Private-key use appears only in focused tests.
 
 ## Validation
 
-Dedicated read-only CI compiles and lints the verifier and current owner-authorization gate, runs focused Ed25519 and 114O regressions, verifies public-key-only configuration and v2 provenance, and checks diff hygiene. `cryptography>=44,<46` is added as the bounded dependency required for Ed25519 verification.
+Exact implementation head `cded28613bdba293ba2a6b1315efac6e55df389b` passed all applicable workflows:
 
-Exact implementation head `8a61384a2218dee17e6fe204c6df78dad7e9dd92` completed all five PR-triggered validation workflows successfully:
+- BUILD-BRAIN-114Q Owner Signature Verifier Validation `31328400631` — success; compile, Ruff lint/format, Ed25519 + 114O regressions, duplicate-key alias rejection, public-key-only/v2 provenance assertions, and diff hygiene.
+- Python Runtime Contract `31328400630` — success.
+- CALYX Workflow Governance Audit `31328400638` — success.
+- CALYX-AGENT-003 Validation `31328400641` — success.
+- BUILD-088E Validation `31328400620` — success.
 
-- BUILD-BRAIN-114Q Owner Signature Verifier Validation run `31297371497` — success; compile, Ruff lint/format, focused Ed25519 + 114O regressions, public-key-only/v2 provenance assertions, and diff hygiene all passed.
-- BUILD-BRAIN-114O Durable Reviewed Owner Authorization Validation run `31297371492` — success.
-- CALYX-AGENT-003 Validation run `31297371499` — success.
-- Python Runtime Contract run `31297371519` — success.
-- CALYX Workflow Governance Audit run `31297371485` — success.
+This Brain-only commit must receive its own exact-head validation before merge.
 
-Earlier executable failures were real code-quality findings rather than infrastructure failures: run 10 exposed import ordering; run 11 exposed Ruff formatting drift. Both were corrected before the successful exact-head implementation run.
+## Permanent boundaries
 
-This documentation commit changes no runtime behavior and must itself receive the same applicable read-only validation before BUILD-BRAIN-114R is reconstructed.
+This build verifies owner grants only. It performs and grants no Git command, branch creation, commit, push, pull-request creation, merge/auto-merge, deployment, scientific publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation. Private-key custody and any live transport activation remain separate governance decisions.
 
 ## Next dependency
 
-After this documentation head validates, BUILD-BRAIN-114R may be rebuilt directly on the exact validated #784 head as a deterministic plan-only execution layer. Actual Git/GitHub side-effect execution remains outside this chain and requires an explicit owner governance decision.
+After this documentation head validates and PR #784 merges, BUILD-BRAIN-114R may be rebuilt directly on merged 114Q as a deterministic plan-only layer. 114R already has two known review blockers that must be fixed before any downstream 114S consideration: the owner-authorized base branch/ref is absent from the PR-open evidence chain, and nested operation parameters are only shallow-copied rather than recursively immutable/deep-copied.
