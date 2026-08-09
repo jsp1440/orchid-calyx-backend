@@ -1,0 +1,99 @@
+name: CALYX Glossary 710 Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/concepts/glossary.py"
+      - "app/concepts/glossary_repositories.py"
+      - "app/concepts/glossary_dependencies.py"
+      - "app/concepts/routers.py"
+      - "tests/test_calyx_glossary_710.py"
+      - "migrations/20260808_calyx_glossary_candidate_queue.sql"
+      - "docs/brain/CALYX-GLOSSARY-710.md"
+      - ".github/workflows/calyx-glossary-710.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile glossary surfaces
+        run: |
+          python -m compileall -q app/concepts/glossary.py app/concepts/glossary_repositories.py app/concepts/glossary_dependencies.py app/concepts/routers.py tests/test_calyx_glossary_710.py
+      - name: Ruff glossary surfaces
+        run: |
+          ruff check app/concepts/glossary.py app/concepts/glossary_repositories.py app/concepts/glossary_dependencies.py app/concepts/routers.py tests/test_calyx_glossary_710.py
+          ruff format --check app/concepts/glossary.py app/concepts/glossary_repositories.py app/concepts/glossary_dependencies.py app/concepts/routers.py tests/test_calyx_glossary_710.py
+      - name: Focused glossary regressions
+        env:
+          PYTHONPATH: .
+        run: pytest -q tests/test_calyx_glossary_710.py tests/test_build_sem_002b_lexical_services.py
+      - name: Governance assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("app/concepts/glossary.py").read_text(encoding="utf-8")
+          repository = Path("app/concepts/glossary_repositories.py").read_text(encoding="utf-8")
+          router = Path("app/concepts/routers.py").read_text(encoding="utf-8")
+          sql = Path("migrations/20260808_calyx_glossary_candidate_queue.sql").read_text(encoding="utf-8")
+
+          for marker in (
+              '"automatic_concept_promotion": False',
+              '"knowledge_graph_publication_authorized": False',
+              '"generated_definition": False',
+              '"figure_is_scientific_evidence": False',
+              '"automatic_generation_authorized": False',
+              '"automatic_publication_authorized": False',
+              "GLOSSARY_REVIEW_DECISION_IMMUTABLE",
+          ):
+              assert marker in source, marker
+
+          for marker in (
+              "glossary_candidate_review_events",
+              "decision_digest",
+              "resolution_state NOT IN",
+              "GLOSSARY_REVIEW_DECISION_IMMUTABLE",
+          ):
+              assert marker in repository, marker
+
+          for marker in (
+              "verify_owner_or_api_key",
+              'auth.get("actor")',
+              "GLOSSARY_AUTHENTICATED_REVIEWER_REQUIRED",
+          ):
+              assert marker in router, marker
+          review_body = router.split("class GlossaryReviewRequest", 1)[1].split(
+              "class FigureRequestBody", 1
+          )[0]
+          assert "actor:" not in review_body
+
+          for marker in (
+              "REVIEWED_MATCH",
+              "NEW_CONCEPT_CANDIDATE",
+              "AMBIGUOUS",
+              "glossary_candidate_review_events",
+              "decision_digest VARCHAR(64) PRIMARY KEY",
+              "automatic_concept_promotion BOOLEAN NOT NULL DEFAULT FALSE",
+              "knowledge_graph_publication_authorized BOOLEAN NOT NULL DEFAULT FALSE",
+              "figure_is_scientific_evidence BOOLEAN NOT NULL DEFAULT FALSE",
+              "automatic_generation_authorized BOOLEAN NOT NULL DEFAULT FALSE",
+              "automatic_publication_authorized BOOLEAN NOT NULL DEFAULT FALSE",
+          ):
+              assert marker in sql, marker
+          PY
+      - name: Diff hygiene
+        run: git diff --check origin/${{ github.base_ref }}...HEAD
