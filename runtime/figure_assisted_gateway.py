@@ -191,7 +191,8 @@ class AssistedFigureGateway:
         hotspots = tuple(self._validate_hotspots(semantic_hotspots or []))
         checksum = _sha256_bytes(content)
         asset_id = f"figure:{package['brief_digest'][:16]}:{checksum[:20]}"
-        duplicate_of = self._checksum_owner.get(checksum)
+        duplicate_owner = self._checksum_owner.get(checksum)
+        duplicate_of = duplicate_owner if duplicate_owner and duplicate_owner != asset_id else None
         candidate = ImportedFigureAsset(
             asset_id=asset_id,
             brief_digest=str(package["brief_digest"]),
@@ -207,8 +208,10 @@ class AssistedFigureGateway:
             duplicate_of=duplicate_of,
         )
         existing = self._assets.get(asset_id)
-        if existing is not None and existing != candidate:
-            raise ValueError("IMMUTABLE_FIGURE_ASSET_CONFLICT")
+        if existing is not None:
+            if existing != candidate:
+                raise ValueError("IMMUTABLE_FIGURE_ASSET_CONFLICT")
+            return existing
         self._assets[asset_id] = candidate
         self._checksum_owner.setdefault(checksum, asset_id)
         return candidate
