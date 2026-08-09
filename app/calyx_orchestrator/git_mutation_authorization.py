@@ -21,6 +21,7 @@ ALLOWED_ACTIONS = (
     "open_pull_request",
 )
 MAX_TTL_SECONDS = 1800
+MAX_SIGNATURE_LENGTH = 512
 
 
 class OwnerGrantSignatureVerifier(Protocol):
@@ -38,6 +39,14 @@ def _is_sha256(value: str) -> bool:
 def _is_git_sha(value: str) -> bool:
     return len(value) == 40 and all(
         character in "0123456789abcdef" for character in value
+    )
+
+
+def _valid_signature_envelope(value: str) -> bool:
+    return (
+        16 <= len(value) <= MAX_SIGNATURE_LENGTH
+        and "\x00" not in value
+        and all(32 <= ord(character) < 127 for character in value)
     )
 
 
@@ -172,10 +181,12 @@ class GitMutationAuthorizationGrant:
             approved_by=str(value.get("approved_by") or "").strip(),
             issued_at=str(value.get("issued_at") or "").strip(),
             expires_at=str(value.get("expires_at") or "").strip(),
-            signature=str(value.get("signature") or "").strip().lower(),
+            signature=str(value.get("signature") or "").strip(),
         )
-        if not _is_sha256(grant.request_digest) or not _is_sha256(grant.signature):
+        if not _is_sha256(grant.request_digest):
             raise ValueError("GIT_AUTHORIZATION_GRANT_DIGEST_INVALID")
+        if not _valid_signature_envelope(grant.signature):
+            raise ValueError("GIT_AUTHORIZATION_GRANT_SIGNATURE_INVALID")
         if grant.decision not in {"approved", "denied"}:
             raise ValueError("GIT_AUTHORIZATION_GRANT_DECISION_INVALID")
         if not grant.approved_by:
