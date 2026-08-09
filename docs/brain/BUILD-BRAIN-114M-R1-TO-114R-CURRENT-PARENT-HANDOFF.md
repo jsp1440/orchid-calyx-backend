@@ -1,50 +1,41 @@
-# BUILD-BRAIN-114M-R1 → 114R current-parent handoff
+# BUILD-BRAIN-114M-R1 → 114R strengthened handoff
 
 ## Authoritative chain
 
-The autonomy proposal trust chain has been reconstructed from exact current parents after 114M-R1 advanced its persisted-patch provenance contract.
+The autonomy proposal trust chain has been reconstructed again after BUILD-BRAIN-114M-R1 strengthened persisted-patch evidence with canonical assignment-input checksums, exact requested-patch/output agreement, and role-scoped mutation capability.
 
-Current authoritative sequence:
+Current sequence:
 
-1. **#696 — BUILD-BRAIN-114M-R1**: durable persisted patch provenance and manifest v2 foundation.
-2. **#719 — BUILD-BRAIN-114N**: governed operational/security review evidence, rebuilt directly on the exact current #696 head.
-3. **#721 — BUILD-BRAIN-114P**: durable tamper-evident review registry, rebuilt directly on #719.
-4. **#724 — BUILD-BRAIN-114O**: durable-reviewed owner authorization request v2, rebuilt directly on #721.
-5. **#726 — BUILD-BRAIN-114Q**: public-key-only Ed25519 owner-grant verification, rebuilt directly on #724.
-6. **#728 — BUILD-BRAIN-114R**: deterministic authorization-bound execution plan v2, rebuilt directly on #726.
+1. **#696 — BUILD-BRAIN-114M-R1** — strengthened durable persisted-patch provenance and manifest v2 root.
+2. **#747 — BUILD-BRAIN-114N-R2** — governed operational/security review evidence directly on the exact strengthened #696 head.
+3. **#749 — BUILD-BRAIN-114P-R2** — durable tamper-evident review registry directly on #747; historical placeholder receipt checksum corrected.
+4. **#753 — BUILD-BRAIN-114O-R2** — durable-reviewed owner authorization request v2 directly on #749; fuller regression surface and canonical assignment-input fixture.
+5. **BUILD-BRAIN-114Q-R2** — public-key-only Ed25519 owner-grant verification directly on #753.
+6. **BUILD-BRAIN-114R-R2** — deterministic authorization-bound execution plan v2 directly on the authoritative 114Q-R2 head.
 
-Historical/stale branches #687, #694, #697, #700, #702, #708, #717, and #718 are closed unmerged and are no longer integration paths.
+Historical #719, #721, #724 and duplicate reconstruction paths are closed or superseded. Historical #726/#728 are no longer authoritative and should remain unmerged once their R2 replacements exist.
 
-## Trust invariants preserved end to end
+## Trust invariants
 
-- exact durable `patch_program_job_id` is preserved from persisted execution through manifest, review records, owner request, and execution plan;
+- canonical assignment inputs are cryptographically bound to persisted execution evidence;
+- exact governed patch inputs must agree with persisted output paths/preimages/postimages/sizes;
+- exact durable `patch_program_job_id` survives manifest, review records, owner request, and plan;
 - caller-supplied patch receipts cannot establish proposal provenance;
-- operational and security reviews must be durable, approved, exact-manifest-bound, and from distinct reviewers;
-- owner authorization is short-lived and bound to the exact request digest;
-- owner signature verification uses public Ed25519 material only and preserves case-sensitive signature envelopes;
-- the plan re-derives the request from current durable evidence and re-verifies the owner grant at plan time;
-- planned operations must be dependency-closed and canonical;
+- operational and security reviews are durable, exact-manifest-bound, approved, and from distinct reviewers;
+- owner authorization is short-lived and exact-request-bound;
+- Ed25519 verification uses public material only and preserves case-sensitive signature envelopes;
+- 114R re-derives the request from current durable evidence and re-verifies the grant at plan time;
+- operations are dependency-closed and canonical;
 - no layer silently broadens authority.
 
 ## Permanent non-authorities through 114R
 
-No current layer performs or authorizes merge/auto-merge, deployment, scientific publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation.
+114R is **plan-only**. The chain does not execute branch creation, commit creation, push, pull-request creation, merge/auto-merge, deployment, scientific publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation.
 
-114R is **plan-only**. It does not execute branch creation, commit creation, push, or pull-request creation. Implementing those external side effects is the next governance boundary and requires a separate owner decision.
+Actual Git/GitHub proposal execution is the next governance boundary and requires an explicit owner decision. BUILD-BRAIN-114S/114T mutation-executor implementations are not an authorized integration lane.
 
 ## Validation state
 
-Each current-parent PR includes focused tests, compilation/lint contracts, static authority-boundary checks, diff hygiene, and dedicated read-only GitHub Actions validation.
+Each R2 layer has focused tests and read-only CI. Canonical incident #481 remains the executable-validation blocker: private-repository hosted jobs terminate before workflow step 1 with `steps=null`, providing no compile, Ruff, pytest, or diff-hygiene verdict.
 
-Canonical incident #481 remains the blocking validation dependency: GitHub-hosted jobs are allocated as runs but terminate before workflow step 1 with `steps=null`. Such runs provide no compile, Ruff, pytest, or diff-hygiene verdict. No current-parent PR should merge until the exact unchanged heads obtain executable CI and pass.
-
-## Next executable engineering action
-
-When hosted runner allocation resumes:
-
-1. validate #696 exact head;
-2. validate #719, #721, #724, #726, and #728 in dependency order without changing already-valid heads;
-3. fix any actual executable failures before advancing;
-4. only after the entire chain is green consider normal merge review in dependency order.
-
-The separate proposal-executor milestone remains blocked on an explicit governance decision even after CI becomes green.
+When runners resume, validate the unchanged chain in order beginning with #696, fix actual executable failures before advancing, and only then consider normal merge review. No production or merge authority is implied by a green test result.
