@@ -1,0 +1,34 @@
+name: CALYX-SYN-004 Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/scientific_synthesis/matrix.py"
+      - "tests/test_calyx_syn_004_evidence_matrix.py"
+      - ".github/workflows/calyx-syn-004-validation.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+      - name: Lint evidence matrix implementation
+        run: |
+          ruff check \
+            app/scientific_synthesis/matrix.py \
+            tests/test_calyx_syn_004_evidence_matrix.py
+      - name: Run evidence matrix and provenance regressions
+        run: |
+          pytest -q \
+            tests/test_calyx_syn_004_evidence_matrix.py \
+            tests/test_calyx_brain_001b_canonical_source_binding.py \
+            tests/test_calyx_syn_001_scientific_synthesis.py
+      - name: Import application
+        run: python -c "import app.main"
