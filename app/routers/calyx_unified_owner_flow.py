@@ -178,7 +178,15 @@ def _durable_mission_view(
     """Overlay mutable review/publication state from the durable ledger authority."""
     view = _safe_mission_view(mission)
     decisions = list(ledger_payload.get("review_decisions") or [])
-    latest = decisions[-1] if decisions else None
+    current_version = ledger_payload.get("version")
+    current_hash = str(ledger_payload.get("review_content_hash") or "")
+    current_decisions = [
+        decision
+        for decision in decisions
+        if decision.get("ledger_version") == current_version
+        and str(decision.get("reviewed_content_hash") or "") == current_hash
+    ]
+    latest = current_decisions[-1] if current_decisions else None
     review_status = (
         str(latest.get("outcome") or "").upper()
         if latest
@@ -186,7 +194,7 @@ def _durable_mission_view(
     )
     view["review_status"] = review_status
     view["ledger_id"] = ledger_payload.get("ledger_id") or view.get("ledger_id")
-    view["ledger_version"] = ledger_payload.get("version")
+    view["ledger_version"] = current_version
     view["publication_eligibility"] = {
         "eligible": publication_candidate is not None,
         "automatic_publication": False,
@@ -194,6 +202,7 @@ def _durable_mission_view(
         "review_content_hash_current": publication_candidate is not None,
     }
     view["review_state_source"] = "durable_reasoning_ledger"
+    view["review_decision_current"] = latest is not None
     return view
 
 
