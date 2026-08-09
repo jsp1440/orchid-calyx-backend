@@ -70,12 +70,18 @@ def _scope(payload: LocalObservationRequest) -> dict[str, Any]:
         treatments=payload.treatment_context,
         cultivation_context=cultivation,
         population_context={"plant_record_key": payload.plant_record_key, "n": 1},
-        applicability_notes="Single-plant cultivation observation; not generalizable without independent evidence.",
+        applicability_notes=(
+            "Single-plant cultivation observation; not generalizable without "
+            "independent evidence."
+        ),
     )
     return normalize_causal_scope(scope)
 
 
-def _graph_preview(payload: LocalObservationRequest, scope: dict[str, Any]) -> dict[str, Any]:
+def _graph_preview(
+    payload: LocalObservationRequest,
+    scope: dict[str, Any],
+) -> dict[str, Any]:
     relationship = "observed_as"
     semantics = causal_relation_semantics(relationship)
     if semantics is None or semantics["causal"]:
@@ -87,7 +93,7 @@ def _graph_preview(payload: LocalObservationRequest, scope: dict[str, Any]) -> d
         canonical_key=f"plant:{payload.plant_record_key}",
         display_label=payload.plant_record_key,
         source_table="oc_candidate_knowledge.candidates",
-        source_pk=payload.observation_id,
+        source_pk=payload.plant_record_key,
         evidence_class="local_cultivation_observation",
         confidence_score=payload.confidence,
         confidence_label="local_observation",
@@ -98,13 +104,14 @@ def _graph_preview(payload: LocalObservationRequest, scope: dict[str, Any]) -> d
             "taxon": payload.taxon,
         },
     )
+    response_pk = f"local:{payload.observation_id}"
     response = Node(
         kg_node_id=2,
         node_type=payload.response_type,
-        canonical_key=f"{payload.response_type}:local:{payload.observation_id}",
+        canonical_key=f"{payload.response_type}:{response_pk}",
         display_label=payload.response_label,
         source_table="oc_candidate_knowledge.candidates",
-        source_pk=payload.observation_id,
+        source_pk=response_pk,
         evidence_class="local_cultivation_observation",
         confidence_score=payload.confidence,
         confidence_label="local_observation",
@@ -124,6 +131,7 @@ def _graph_preview(payload: LocalObservationRequest, scope: dict[str, Any]) -> d
         payload={
             "candidate_only": True,
             "local_only": True,
+            "observation_id": payload.observation_id,
             "causal_scope": scope,
             "matrix_context": payload.matrix_context,
             "environmental_context": payload.environmental_context,
