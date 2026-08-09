@@ -153,7 +153,7 @@ def main() -> None:
     }
     assert identity["git_blob_sha"] == EXPECTED_M140_BLOB, identity
     receipt: dict[str, Any] = {"migration_identity": identity, "stages": {}}
-    with psycopg.connect(url) as conn:
+    with psycopg.connect(url, autocommit=True) as conn:
         receipt["postgresql_version"] = conn.execute("SHOW server_version").fetchone()[0]
         with conn.transaction():
             conn.execute(M101.read_text())
