@@ -70,10 +70,22 @@ class TestHmacVerifier:
         return hmac.compare_digest(expected, signature)
 
 
-def _gate() -> GitMutationAuthorizationGate:
+class ExactOpaqueSignatureVerifier:
+    def __init__(self, expected: str) -> None:
+        self.expected = expected
+        self.seen: str | None = None
+
+    def verify(self, *, payload: Mapping[str, Any], signature: str) -> bool:
+        del payload
+        self.seen = signature
+        return signature == self.expected
+
+
+def _gate(current: datetime = NOW) -> GitMutationAuthorizationGate:
     return GitMutationAuthorizationGate(
         owner_principal=OWNER,
         signature_verifier=TestHmacVerifier(),
+        clock=lambda: current,
     )
 
 
@@ -200,7 +212,7 @@ def _manifest(patch_program_job_id: str) -> dict:
                 "request_digest": "d" * 64,
                 "receipt_digest": "e" * 64,
                 "policy_digest": "f" * 64,
-                "target_hashes": [{"path": "app/example.py", "sha256": PATCH_AFTER}],
+                "targets": [{"path": "app/example.py", "sha256": PATCH_AFTER}],
             }
         ],
         "commit_title": "Bounded change",
@@ -371,8 +383,7 @@ def test_merge_action_is_not_allowlisted() -> None:
         )
 
 
-def test_exact_external_owner_grant_verifies_and_expired_grant_fails() -> None:
-    gate = _gate()
+def test_exact_external_owner_grant_uses_trusted_clock_and_expires() -> None:
     store, patch_job_id = _store()
     request = _request(store, patch_job_id)
     grant = _owner_grant(
@@ -381,14 +392,27 @@ def test_exact_external_owner_grant_verifies_and_expired_grant_fails() -> None:
         issued_at=NOW.isoformat(),
         expires_at=request.expires_at,
     )
-    verified = gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
+    verified = _gate(NOW + timedelta(minutes=1)).verify_grant(request, grant)
     assert verified.approved_by == OWNER
     with pytest.raises(PermissionError, match="EXPIRED_OR_INVALID"):
-        gate.verify_grant(request, grant, now=NOW + timedelta(minutes=16))
+        _gate(NOW + timedelta(minutes=16)).verify_grant(request, grant)
+
+
+def test_verify_grant_has_no_caller_controlled_now_override() -> None:
+    gate = _gate(NOW + timedelta(minutes=16))
+    store, patch_job_id = _store()
+    request = _request(store, patch_job_id)
+    grant = _owner_grant(
+        request_digest=request.request_digest,
+        decision="approved",
+        issued_at=NOW.isoformat(),
+        expires_at=request.expires_at,
+    )
+    with pytest.raises(TypeError):
+        gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))  # type: ignore[call-arg]
 
 
 def test_stale_owner_grant_issue_time_is_rejected() -> None:
-    gate = _gate()
     store, patch_job_id = _store()
     request = _request(store, patch_job_id)
     grant = _owner_grant(
@@ -398,7 +422,30 @@ def test_stale_owner_grant_issue_time_is_rejected() -> None:
         expires_at=request.expires_at,
     )
     with pytest.raises(PermissionError, match="EXPIRED_OR_INVALID"):
-        gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
+        _gate(NOW + timedelta(minutes=1)).verify_grant(request, grant)
+
+
+def test_signature_encoding_is_preserved_for_external_verifier() -> None:
+    signature = "ed25519:OwnerKey:AbCdEf_-0123"
+    verifier = ExactOpaqueSignatureVerifier(signature)
+    gate = GitMutationAuthorizationGate(
+        owner_principal=OWNER,
+        signature_verifier=verifier,
+        clock=lambda: NOW + timedelta(minutes=1),
+    )
+    store, patch_job_id = _store()
+    request = _request(store, patch_job_id)
+    grant = {
+        "request_digest": request.request_digest,
+        "decision": "approved",
+        "approved_by": OWNER,
+        "issued_at": NOW.isoformat(),
+        "expires_at": request.expires_at,
+        "signature": signature,
+    }
+    verified = gate.verify_grant(request, grant)
+    assert verified.signature == signature
+    assert verifier.seen == signature
 
 
 def test_runtime_gate_has_no_owner_signing_secret_or_minting_api() -> None:
@@ -410,7 +457,6 @@ def test_runtime_gate_has_no_owner_signing_secret_or_minting_api() -> None:
 
 
 def test_invalid_external_signature_is_rejected() -> None:
-    gate = _gate()
     store, patch_job_id = _store()
     request = _request(store, patch_job_id)
     grant = _owner_grant(
@@ -421,7 +467,7 @@ def test_invalid_external_signature_is_rejected() -> None:
     )
     grant["signature"] = "0" * 64
     with pytest.raises(PermissionError, match="SIGNATURE_INVALID"):
-        gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
+        _gate(NOW + timedelta(minutes=1)).verify_grant(request, grant)
 
 
 def test_manifest_tampering_invalidates_request() -> None:

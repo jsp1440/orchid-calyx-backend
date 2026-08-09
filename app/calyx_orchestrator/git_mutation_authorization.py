@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
@@ -21,7 +21,7 @@ ALLOWED_ACTIONS = (
     "open_pull_request",
 )
 MAX_TTL_SECONDS = 1800
-MAX_SIGNATURE_LENGTH = 512
+MAX_SIGNATURE_CHARS = 8192
 
 
 class OwnerGrantSignatureVerifier(Protocol):
@@ -49,12 +49,11 @@ def _nonempty(value: object, *, code: str) -> str:
     return normalized
 
 
-def _valid_signature_envelope(value: str) -> bool:
-    return (
-        16 <= len(value) <= MAX_SIGNATURE_LENGTH
-        and "\x00" not in value
-        and all(32 <= ord(character) < 127 for character in value)
-    )
+def _bounded_signature(value: object) -> str:
+    signature = str(value or "").strip()
+    if not signature or "\x00" in signature or len(signature) > MAX_SIGNATURE_CHARS:
+        raise ValueError("GIT_AUTHORIZATION_GRANT_SIGNATURE_INVALID")
+    return signature
 
 
 def _parse_utc(value: str) -> datetime:
@@ -65,6 +64,13 @@ def _parse_utc(value: str) -> datetime:
     if parsed.tzinfo is None:
         raise ValueError("GIT_AUTHORIZATION_TIMEZONE_REQUIRED")
     return parsed.astimezone(timezone.utc)
+
+
+def _trusted_now(clock: Callable[[], datetime]) -> datetime:
+    current = clock()
+    if current.tzinfo is None:
+        raise ValueError("GIT_AUTHORIZATION_CLOCK_TIMEZONE_REQUIRED")
+    return current.astimezone(timezone.utc)
 
 
 def _manifest_digest(snapshot: Mapping[str, Any]) -> str:
@@ -104,13 +110,11 @@ def _require_authoritative_reviews(
     status = proposal_review_status(registry, manifest_digest=manifest_digest)
     if not status.review_evidence_complete:
         raise PermissionError(status.code)
-
     records: list[ProposalAuthorizationRecord] = []
     for review_class in REQUIRED_REVIEW_CLASSES:
         try:
             record = store.require(
-                manifest_digest=manifest_digest,
-                review_class=review_class,
+                manifest_digest=manifest_digest, review_class=review_class
             )
         except LookupError as exc:
             raise PermissionError("GIT_AUTHORIZATION_REQUIRED_REVIEWS_MISSING") from exc
@@ -120,7 +124,6 @@ def _require_authoritative_reviews(
         if review_class not in record.reviewer_roles:
             raise PermissionError("GIT_AUTHORIZATION_REVIEWER_ROLE_REQUIRED")
         records.append(record)
-
     reviewer_ids = {record.reviewer_id for record in records}
     if len(reviewer_ids) != len(REQUIRED_REVIEW_CLASSES):
         raise PermissionError("GIT_AUTHORIZATION_REVIEWER_SEPARATION_REQUIRED")
@@ -193,12 +196,10 @@ class GitMutationAuthorizationGrant:
             approved_by=str(value.get("approved_by") or "").strip(),
             issued_at=str(value.get("issued_at") or "").strip(),
             expires_at=str(value.get("expires_at") or "").strip(),
-            signature=str(value.get("signature") or "").strip(),
+            signature=_bounded_signature(value.get("signature")),
         )
         if not _is_sha256(grant.request_digest):
             raise ValueError("GIT_AUTHORIZATION_GRANT_DIGEST_INVALID")
-        if not _valid_signature_envelope(grant.signature):
-            raise ValueError("GIT_AUTHORIZATION_GRANT_SIGNATURE_INVALID")
         if grant.decision not in {"approved", "denied"}:
             raise ValueError("GIT_AUTHORIZATION_GRANT_DECISION_INVALID")
         if not grant.approved_by:
@@ -224,6 +225,7 @@ class GitMutationAuthorizationGate:
         *,
         owner_principal: str,
         signature_verifier: OwnerGrantSignatureVerifier,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         principal = owner_principal.strip()
         if not principal:
@@ -232,6 +234,7 @@ class GitMutationAuthorizationGate:
             raise ValueError("GIT_AUTHORIZATION_SIGNATURE_VERIFIER_REQUIRED")
         self._owner_principal = principal
         self._signature_verifier = signature_verifier
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     @staticmethod
     def build_request(
@@ -245,7 +248,6 @@ class GitMutationAuthorizationGate:
         _verify_manifest_non_authority(manifest_snapshot)
         digest = _manifest_digest(manifest_snapshot)
         reviews = _require_authoritative_reviews(manifest_snapshot, review_store)
-
         normalized_actions = tuple(
             dict.fromkeys(str(action).strip() for action in actions)
         )
@@ -253,7 +255,6 @@ class GitMutationAuthorizationGate:
             action not in ALLOWED_ACTIONS for action in normalized_actions
         ):
             raise PermissionError("GIT_AUTHORIZATION_ACTION_NOT_ALLOWED")
-
         patch_program_job_id = _nonempty(
             manifest_snapshot.get("patch_program_job_id"),
             code="GIT_AUTHORIZATION_PATCH_PROGRAM_JOB_ID_REQUIRED",
@@ -273,14 +274,12 @@ class GitMutationAuthorizationGate:
             raise ValueError("GIT_AUTHORIZATION_BASE_COMMIT_INVALID")
         if not proposed_branch.startswith("autonomy/proposal/"):
             raise PermissionError("GIT_AUTHORIZATION_PROPOSAL_BRANCH_INVALID")
-
         raw_changes = manifest_snapshot.get("changes")
         raw_validations = manifest_snapshot.get("validations")
         if not isinstance(raw_changes, list) or not raw_changes:
             raise ValueError("GIT_AUTHORIZATION_CHANGES_REQUIRED")
         if not isinstance(raw_validations, list) or not raw_validations:
             raise ValueError("GIT_AUTHORIZATION_VALIDATIONS_REQUIRED")
-
         changes: list[tuple[str, str]] = []
         for item in raw_changes:
             if not isinstance(item, Mapping):
@@ -290,7 +289,6 @@ class GitMutationAuthorizationGate:
             if not path or not _is_sha256(after):
                 raise ValueError("GIT_AUTHORIZATION_CHANGE_INVALID")
             changes.append((path, after))
-
         receipts: list[str] = []
         for item in raw_validations:
             if not isinstance(item, Mapping):
@@ -299,13 +297,11 @@ class GitMutationAuthorizationGate:
             if not _is_sha256(receipt):
                 raise ValueError("GIT_AUTHORIZATION_VALIDATION_RECEIPT_INVALID")
             receipts.append(receipt)
-
         current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         expiry = _parse_utc(expires_at)
         ttl = (expiry - current).total_seconds()
         if ttl <= 0 or ttl > MAX_TTL_SECONDS:
             raise PermissionError("GIT_AUTHORIZATION_EXPIRY_INVALID")
-
         return GitMutationAuthorizationRequest(
             manifest_digest=digest,
             patch_program_job_id=patch_program_job_id,
@@ -325,8 +321,6 @@ class GitMutationAuthorizationGate:
         self,
         request: GitMutationAuthorizationRequest,
         grant_mapping: Mapping[str, Any],
-        *,
-        now: datetime | None = None,
     ) -> GitMutationAuthorizationGrant:
         grant = GitMutationAuthorizationGrant.from_mapping(grant_mapping)
         if grant.request_digest != request.request_digest:
@@ -336,7 +330,7 @@ class GitMutationAuthorizationGate:
         issued = _parse_utc(grant.issued_at)
         expiry = _parse_utc(grant.expires_at)
         request_expiry = _parse_utc(request.expires_at)
-        current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        current = _trusted_now(self._clock)
         grant_ttl = (expiry - issued).total_seconds()
         if (
             expiry != request_expiry
@@ -347,8 +341,7 @@ class GitMutationAuthorizationGate:
         ):
             raise PermissionError("GIT_AUTHORIZATION_GRANT_EXPIRED_OR_INVALID")
         if not self._signature_verifier.verify(
-            payload=grant.signing_payload(),
-            signature=grant.signature,
+            payload=grant.signing_payload(), signature=grant.signature
         ):
             raise PermissionError("GIT_AUTHORIZATION_SIGNATURE_INVALID")
         if grant.decision != "approved":

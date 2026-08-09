@@ -68,8 +68,24 @@ def _manifest() -> dict:
         "source_autonomy_branch": "autonomy/work-123",
         "proposed_branch": "autonomy/proposal/work-123",
         "patch_output_checksum": canonical_checksum(_patch_output()),
-        "changes": [],
-        "validations": [],
+        "changes": [
+            {
+                "path": "app/example.py",
+                "before_sha256": "b" * 64,
+                "after_sha256": "c" * 64,
+                "created": False,
+                "size_bytes": 100,
+            }
+        ],
+        "validations": [
+            {
+                "preset": "ruff",
+                "request_digest": "d" * 64,
+                "receipt_digest": "e" * 64,
+                "policy_digest": "f" * 64,
+                "targets": [{"path": "app/example.py", "sha256": "c" * 64}],
+            }
+        ],
         "commit_title": "Bounded change",
         "pr_title": "Bounded change",
         "summary": "Proposal evidence.",

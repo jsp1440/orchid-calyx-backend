@@ -169,7 +169,15 @@ def _manifest(patch_program_job_id: str) -> dict:
                 "size_bytes": len(PATCH_BYTES),
             }
         ],
-        "validations": [],
+        "validations": [
+            {
+                "preset": "ruff",
+                "request_digest": "d" * 64,
+                "receipt_digest": "e" * 64,
+                "policy_digest": "f" * 64,
+                "targets": [{"path": "app/example.py", "sha256": PATCH_AFTER}],
+            }
+        ],
         "commit_title": "Bounded change",
         "pr_title": "Bounded change",
         "summary": "Proposal evidence.",
@@ -213,6 +221,18 @@ def _store_with_patch() -> tuple[Session, DurableProposalAuthorizationStore, str
     return session, DurableProposalAuthorizationStore(session), patch_job.program_job_id
 
 
+def _rewrite_row_with_valid_digest(
+    row: ProposalAuthorizationDecisionRecord, **updates: object
+) -> None:
+    payload = json.loads(row.payload_json)
+    payload.update(updates)
+    payload.pop("authorization_digest", None)
+    digest = canonical_sha256(payload)
+    payload["authorization_digest"] = digest
+    row.authorization_digest = digest
+    row.payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
 def test_strengthened_parent_input_checksum_allows_durable_review_reload() -> None:
     session, store, patch_job_id = _store_with_patch()
     item = _record_review(store, patch_job_id)
@@ -254,6 +274,7 @@ def test_payload_and_patch_evidence_tampering_fail_closed() -> None:
     row.payload_json = json.dumps(
         item.snapshot(), sort_keys=True, separators=(",", ":")
     )
+    row.authorization_digest = item.authorization_digest
     session.commit()
     patch_job = session.get(CalyxProgramJob, patch_job_id)
     assert patch_job is not None and patch_job.evidence_json
@@ -262,6 +283,55 @@ def test_payload_and_patch_evidence_tampering_fail_closed() -> None:
     patch_job.evidence_json = json.dumps(evidence, sort_keys=True)
     session.commit()
     with pytest.raises(PermissionError, match="PATCH_EVIDENCE_UNAVAILABLE"):
+        store.require(
+            manifest_digest=item.manifest_digest, review_class=item.review_class
+        )
+
+
+def test_external_patch_evidence_change_is_refreshed_on_every_read() -> None:
+    session, store, patch_job_id = _store_with_patch()
+    item = _record_review(store, patch_job_id)
+    engine = session.bind
+    assert engine is not None
+
+    external = Session(engine)
+    patch_job = external.get(CalyxProgramJob, patch_job_id)
+    assert patch_job is not None and patch_job.evidence_json
+    evidence = json.loads(patch_job.evidence_json)
+    evidence["output"]["total_written_bytes"] = len(PATCH_BYTES) + 7
+    patch_job.evidence_json = json.dumps(evidence, sort_keys=True)
+    external.commit()
+    external.close()
+
+    with pytest.raises(PermissionError, match="PATCH_EVIDENCE_UNAVAILABLE"):
+        store.require(
+            manifest_digest=item.manifest_digest, review_class=item.review_class
+        )
+
+
+def test_digest_consistent_row_cannot_bypass_reviewer_separation() -> None:
+    session, store, patch_job_id = _store_with_patch()
+    item = _record_review(store, patch_job_id)
+    row = session.scalar(select(ProposalAuthorizationDecisionRecord))
+    assert row is not None
+    _rewrite_row_with_valid_digest(row, reviewer_id="principal:requester")
+    session.commit()
+
+    with pytest.raises(PermissionError, match="REVIEWER_SEPARATION_REQUIRED"):
+        store.require(
+            manifest_digest=item.manifest_digest, review_class=item.review_class
+        )
+
+
+def test_digest_consistent_row_requires_matching_canonical_reviewer_roles() -> None:
+    session, store, patch_job_id = _store_with_patch()
+    item = _record_review(store, patch_job_id)
+    row = session.scalar(select(ProposalAuthorizationDecisionRecord))
+    assert row is not None
+    _rewrite_row_with_valid_digest(row, reviewer_roles=["operational"])
+    session.commit()
+
+    with pytest.raises(PermissionError, match="REVIEWER_ROLE_REQUIRED"):
         store.require(
             manifest_digest=item.manifest_digest, review_class=item.review_class
         )
