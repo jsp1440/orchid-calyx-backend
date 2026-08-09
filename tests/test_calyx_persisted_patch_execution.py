@@ -8,7 +8,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.calyx_orchestrator.assignment_factory import governed_assignment_from_claimed_job
+from app.calyx_orchestrator.assignment_factory import (
+    governed_assignment_from_claimed_job,
+)
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
 from app.calyx_orchestrator.execution_bridge import LeaseExecutionBridge
 from app.calyx_orchestrator.executor import (
