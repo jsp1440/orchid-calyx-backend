@@ -1,0 +1,61 @@
+name: CALYX Reasoning Prerequisite Production Activation
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_prerequisites:
+        description: 'Apply additive prerequisite migrations 087b, 088b, 088c, 088d, and 101'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  preflight-or-activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact current main checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+      - name: Install activation dependencies
+        run: python -m pip install 'psycopg[binary]'
+      - name: Read-only prerequisite preflight
+        if: ${{ !inputs.apply_prerequisites }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/activate_reasoning_prerequisite_schemas.py
+      - name: Explicitly activate prerequisite migrations
+        if: ${{ inputs.apply_prerequisites }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CALYX_REASONING_PREREQ_CONFIRM: APPLY_087B_088B_088C_088D_101
+        run: python scripts/activate_reasoning_prerequisite_schemas.py --apply
+      - name: Read-only 103/105 readiness after prerequisite activation
+        if: ${{ inputs.apply_prerequisites && success() }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/activate_reasoning_publication_schemas.py
+      - name: Upload activation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-reasoning-prerequisite-activation-${{ github.sha }}
+          path: |
+            calyx-reasoning-prerequisite-schema-activation.json
+            calyx-reasoning-publication-schema-activation.json
+          if-no-files-found: warn
+          retention-days: 30
