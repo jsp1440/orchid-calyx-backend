@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from app.security_audit import (
+    OWNER_READINESS_POLICY,
+    SecurityEventLedger,
+    audit_router_sources,
+    audit_workflow_permissions,
+)
 from app.security_governance import REDACTED, SECRET_REFERENCES, SecurityGovernanceInspector, redact_sensitive
 
 
@@ -67,3 +75,53 @@ def test_sensitive_header_redaction_consumes_full_header_value():
     assert "private-cookie" not in redacted
     assert "Bearer" not in redacted
     assert "harmless=visible" in redacted
+
+
+def test_least_privilege_policy_denies_governed_actions():
+    assert OWNER_READINESS_POLICY.permits("read_security_readiness") is True
+    assert OWNER_READINESS_POLICY.permits("read_security_events") is True
+    assert OWNER_READINESS_POLICY.permits("rotate_credentials") is False
+    assert OWNER_READINESS_POLICY.permits("deploy") is False
+    assert OWNER_READINESS_POLICY.permits("merge") is False
+
+
+def test_route_audit_flags_mutating_route_without_auth_marker(tmp_path: Path):
+    routers = tmp_path / "routers"
+    routers.mkdir()
+    (routers / "unsafe.py").write_text(
+        "from fastapi import APIRouter\nrouter=APIRouter()\n@router.post('/unsafe')\ndef unsafe(): return {}\n",
+        encoding="utf-8",
+    )
+    (routers / "safe.py").write_text(
+        "from app.security import verify_owner_or_api_key\n@router.post('/safe')\ndef safe(): return {}\n",
+        encoding="utf-8",
+    )
+    audit = audit_router_sources(routers)
+    assert audit["audited_routes"] == 2
+    assert [item["route"] for item in audit["findings"]] == ["/unsafe"]
+
+
+def test_workflow_permissions_audit_flags_implicit_and_write_all(tmp_path: Path):
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    (workflows / "implicit.yml").write_text("name: implicit\njobs: {}\n", encoding="utf-8")
+    (workflows / "broad.yml").write_text("name: broad\npermissions: write-all\njobs: {}\n", encoding="utf-8")
+    audit = audit_workflow_permissions(workflows)
+    codes = {item["code"] for item in audit["findings"]}
+    assert "WORKFLOW_PERMISSIONS_IMPLICIT" in codes
+    assert "WORKFLOW_WRITE_ALL" in codes
+
+
+def test_security_event_ledger_redacts_and_is_immutable(tmp_path: Path):
+    ledger = SecurityEventLedger(tmp_path / "events")
+    event = ledger.append(
+        actor="owner-a",
+        event_type="security_fixture",
+        detail="Authorization: Bearer do-not-store-this",
+        severity="high",
+    )
+    assert event["immutable"] is True
+    assert "do-not-store-this" not in repr(event)
+    assert REDACTED in event["detail"]
+    listed = ledger.list_events()
+    assert listed == [event]
