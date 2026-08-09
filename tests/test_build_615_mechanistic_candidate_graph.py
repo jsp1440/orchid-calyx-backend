@@ -167,7 +167,6 @@ def test_duplicate_evidence_returns_existing_candidate_id():
     repository, service = components()
     first = handoff_mechanistic_candidate(payload(), (repository, service))
     duplicate = payload(
-        reasoning_id="mechanism:light-auxin-002",
         evidence_text="A second source reported the same directional blue light mechanism.",
         source_object_id=21,
         revision_id=22,
@@ -194,11 +193,17 @@ def test_graph_preview_uses_synthetic_provenance_not_candidate_table_identity():
     repository, service = components()
     result = handoff_mechanistic_candidate(payload(), (repository, service))
     for node in result["graph_preview"]["nodes"]:
-        assert node["source_table"] == "synthetic.mechanistic_candidate_preview"
+        assert (
+            node["provenance"]["source_table"]
+            == "synthetic.mechanistic_candidate_preview"
+        )
         assert node["payload"]["preview_provenance"]["source_object_id"] == 11
         assert node["payload"]["preview_provenance"]["revision_id"] == 12
     edge = result["graph_preview"]["edges"][0]
-    assert edge["source_table"] == "synthetic.mechanistic_candidate_preview"
+    assert (
+        edge["provenance"]["source_table"]
+        == "synthetic.mechanistic_candidate_preview"
+    )
 
 
 def test_mechanistic_candidates_have_dedicated_aggregate_type():
