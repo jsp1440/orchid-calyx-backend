@@ -1,0 +1,71 @@
+name: BUILD-620 Local Observation Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/brain/local_observations.py'
+      - 'app/brain/local_observation_context.py'
+      - 'app/parallel_platform/routes.py'
+      - 'app/brain/causal_scope.py'
+      - 'app/brain/reasoning_scope.py'
+      - 'app/brain/scoped_reasoning_map.py'
+      - 'tests/test_build_620_local_observation_bridge.py'
+      - 'tests/test_build_619_reasoning_scope.py'
+      - 'tests/test_build_618_causal_scope.py'
+      - '.github/workflows/build-620-local-observation-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-local-observation-bridge:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest ruff httpx
+      - name: Compile
+        run: >-
+          python -m py_compile
+          app/brain/local_observations.py
+          app/brain/local_observation_context.py
+          app/parallel_platform/routes.py
+          tests/test_build_620_local_observation_bridge.py
+      - name: Ruff
+        run: >-
+          ruff check
+          app/brain/local_observations.py
+          app/brain/local_observation_context.py
+          app/parallel_platform/routes.py
+          tests/test_build_620_local_observation_bridge.py
+      - name: Formatting
+        run: >-
+          ruff format --check
+          app/brain/local_observations.py
+          app/brain/local_observation_context.py
+          app/parallel_platform/routes.py
+          tests/test_build_620_local_observation_bridge.py
+      - name: Local observation and scope regressions
+        run: >-
+          python -m pytest -q
+          tests/test_build_620_local_observation_bridge.py
+          tests/test_build_619_reasoning_scope.py
+          tests/test_build_618_causal_scope.py
+      - name: Verify protected Matrix routes
+        run: |
+          python - <<'PY'
+          from app.parallel_platform.routes import router
+          paths = {route.path for route in router.routes}
+          assert '/api/platform/matrix/local-observation' in paths
+          assert '/api/platform/matrix/plants/{plant_record_key}/observations' in paths
+          PY
+      - name: Hygiene
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
