@@ -22,7 +22,11 @@ def _digest(value: Any) -> str:
 
 def _candidate(repository: Any, candidate_id: int) -> dict[str, Any]:
     candidate = next(
-        (item for item in repository.candidates if item["candidate_id"] == candidate_id),
+        (
+            item
+            for item in repository.candidates
+            if item["candidate_id"] == candidate_id
+        ),
         None,
     )
     if candidate is None:
@@ -73,9 +77,11 @@ def _graph_from_candidate(
     target_type = str(contract.get("target_node_type") or "").strip().lower()
     source_key = str(contract.get("source_key") or "").strip()
     target_key = str(contract.get("target_key") or "").strip()
-    relationship = str(
-        contract.get("relationship") or candidate.get("predicate") or ""
-    ).strip().lower()
+    relationship = (
+        str(contract.get("relationship") or candidate.get("predicate") or "")
+        .strip()
+        .lower()
+    )
 
     if source_type not in CAUSAL_REASONING_NODE_TYPES:
         blockers.append(f"invalid_source_type:{source_type or 'missing'}")
