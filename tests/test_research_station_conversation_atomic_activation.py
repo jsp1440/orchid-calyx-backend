@@ -1,18 +1,11 @@
 from __future__ import annotations
 
-import importlib.util
 import os
-from pathlib import Path
 
 import psycopg
 import pytest
 
-ROOT = Path(__file__).parents[1]
-SCRIPT_PATH = ROOT / "scripts/activate_reasoning_prerequisite_schemas.py"
-SPEC = importlib.util.spec_from_file_location("guarded_schema_activation", SCRIPT_PATH)
-assert SPEC and SPEC.loader
-activation = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(activation)
+from scripts import research_station_conversation_activation as activation
 
 
 def _dsn() -> str:
@@ -32,7 +25,7 @@ def clean_research_station():
 
 
 def test_research_station_migration_identities_are_pinned():
-    report = activation.research_station_migration_identity_report()
+    report = activation.migration_identity_report()
     assert report["101_research_workspace_foundation.sql"]["actual_git_blob_sha"] == (
         "3333853c97832154cb0f61bace0c2184396da160"
     )
@@ -45,9 +38,9 @@ def test_research_station_migration_identities_are_pinned():
 
 def test_clean_database_is_ready_for_atomic_activation():
     with psycopg.connect(_dsn(), autocommit=True) as connection:
-        contract = activation.inspect_research_station_conversation_contract(connection)
+        contract = activation.inspect_contract(connection)
         assert contract["state"] == "ABSENT"
-        result = activation.classify_research_station_preflight(contract, True)
+        result = activation.classify_preflight(contract, True)
         assert result == {
             "status": "ready",
             "activation_required": True,
@@ -58,7 +51,7 @@ def test_clean_database_is_ready_for_atomic_activation():
 
 def test_atomic_apply_and_canonical_rerun():
     with psycopg.connect(_dsn(), autocommit=True) as connection:
-        result = activation.apply_research_station_conversation_chain(connection)
+        result = activation.apply_chain(connection)
         assert result["applied_migrations"] == [
             "101_research_workspace_foundation.sql",
             "140_calyx_conversation_sessions.sql",
@@ -66,7 +59,7 @@ def test_atomic_apply_and_canonical_rerun():
         assert result["contract_after"]["complete"] is True
         assert result["contract_after"]["blockers"] == []
 
-        rerun = activation.apply_research_station_conversation_chain(connection)
+        rerun = activation.apply_chain(connection)
         assert rerun["applied_migrations"] == []
         assert rerun["already_complete"] is True
         assert rerun["contract_after"]["complete"] is True
@@ -75,10 +68,8 @@ def test_atomic_apply_and_canonical_rerun():
 def test_failure_after_101_rolls_back_entire_chain():
     with psycopg.connect(_dsn(), autocommit=True) as connection:
         with pytest.raises(RuntimeError, match="INTENTIONAL_FAILURE_AFTER_101"):
-            activation.apply_research_station_conversation_chain(
-                connection, inject_failure_after="101"
-            )
-        contract = activation.inspect_research_station_conversation_contract(connection)
+            activation.apply_chain(connection, inject_failure_after="101")
+        contract = activation.inspect_contract(connection)
         assert contract["state"] == "ABSENT"
         assert connection.execute(
             "SELECT to_regclass('research_station.projects'), "
@@ -89,10 +80,8 @@ def test_failure_after_101_rolls_back_entire_chain():
 def test_failure_after_140_rolls_back_101_and_140():
     with psycopg.connect(_dsn(), autocommit=True) as connection:
         with pytest.raises(RuntimeError, match="INTENTIONAL_FAILURE_AFTER_140"):
-            activation.apply_research_station_conversation_chain(
-                connection, inject_failure_after="140"
-            )
-        contract = activation.inspect_research_station_conversation_contract(connection)
+            activation.apply_chain(connection, inject_failure_after="140")
+        contract = activation.inspect_contract(connection)
         assert contract["state"] == "ABSENT"
         assert connection.execute(
             "SELECT to_regclass('research_station.projects'), "
@@ -107,13 +96,13 @@ def test_malformed_existing_101_fails_closed_without_repair():
         connection.execute(
             "CREATE TABLE research_station.projects (project_id uuid PRIMARY KEY)"
         )
-        contract = activation.inspect_research_station_conversation_contract(connection)
+        contract = activation.inspect_contract(connection)
         assert contract["safe_resume"] is False
         assert "MALFORMED_OR_PARTIAL_MIGRATION_101_STATE" in contract["blockers"]
-        result = activation.classify_research_station_preflight(contract, True)
+        result = activation.classify_preflight(contract, True)
         assert result["status"] == "blocked"
         with pytest.raises(RuntimeError, match="RESEARCH_STATION_PREFLIGHT_BLOCKED"):
-            activation.apply_research_station_conversation_chain(connection)
+            activation.apply_chain(connection)
         assert connection.execute(
             "SELECT to_regclass('research_station.conversation_sessions')"
         ).fetchone()[0] is None
@@ -121,15 +110,16 @@ def test_malformed_existing_101_fails_closed_without_repair():
 
 def test_governance_foreign_key_and_append_only_behavior():
     with psycopg.connect(_dsn(), autocommit=True) as connection:
-        activation.apply_research_station_conversation_chain(connection)
+        activation.apply_chain(connection)
         with connection.transaction():
             project_id = connection.execute(
                 "INSERT INTO research_station.projects(owner_subject,title) "
                 "VALUES ('owner-a','fixture') RETURNING project_id"
             ).fetchone()[0]
             conversation_id = connection.execute(
-                "INSERT INTO research_station.conversation_sessions(owner_subject,project_id) "
-                "VALUES ('owner-a',%s) RETURNING conversation_id",
+                "INSERT INTO research_station.conversation_sessions"
+                "(owner_subject,project_id) VALUES ('owner-a',%s) "
+                "RETURNING conversation_id",
                 (project_id,),
             ).fetchone()[0]
             message_id = connection.execute(
@@ -139,59 +129,77 @@ def test_governance_foreign_key_and_append_only_behavior():
                 (conversation_id,),
             ).fetchone()[0]
 
-        for statement, params, expected_state in (
+        failure_cases = (
             (
-                "INSERT INTO research_station.conversation_sessions(owner_subject,project_id) "
-                "VALUES ('owner-a','00000000-0000-0000-0000-000000000001')",
+                (
+                    "INSERT INTO research_station.conversation_sessions"
+                    "(owner_subject,project_id) VALUES "
+                    "('owner-a','00000000-0000-0000-0000-000000000001')"
+                ),
                 (),
                 "23503",
             ),
             (
-                "INSERT INTO research_station.conversation_messages"
-                "(conversation_id,owner_subject,role,content,data_status) "
-                "VALUES (%s,'owner-a','OPERATOR','x','EVIDENCE')",
+                (
+                    "INSERT INTO research_station.conversation_messages"
+                    "(conversation_id,owner_subject,role,content,data_status) "
+                    "VALUES (%s,'owner-a','OPERATOR','x','EVIDENCE')"
+                ),
                 (conversation_id,),
                 "23514",
             ),
             (
-                "INSERT INTO research_station.conversation_messages"
-                "(conversation_id,owner_subject,role,content,evidence_authority) "
-                "VALUES (%s,'owner-a','OPERATOR','x',true)",
+                (
+                    "INSERT INTO research_station.conversation_messages"
+                    "(conversation_id,owner_subject,role,content,evidence_authority) "
+                    "VALUES (%s,'owner-a','OPERATOR','x',true)"
+                ),
                 (conversation_id,),
                 "23514",
             ),
             (
-                "INSERT INTO research_station.conversation_messages"
-                "(conversation_id,owner_subject,role,content,scientific_publication_authorized) "
-                "VALUES (%s,'owner-a','OPERATOR','x',true)",
+                (
+                    "INSERT INTO research_station.conversation_messages"
+                    "(conversation_id,owner_subject,role,content,"
+                    "scientific_publication_authorized) "
+                    "VALUES (%s,'owner-a','OPERATOR','x',true)"
+                ),
                 (conversation_id,),
                 "23514",
             ),
             (
-                "INSERT INTO research_station.conversation_messages"
-                "(conversation_id,owner_subject,role,content,knowledge_graph_mutation_authorized) "
-                "VALUES (%s,'owner-a','OPERATOR','x',true)",
+                (
+                    "INSERT INTO research_station.conversation_messages"
+                    "(conversation_id,owner_subject,role,content,"
+                    "knowledge_graph_mutation_authorized) "
+                    "VALUES (%s,'owner-a','OPERATOR','x',true)"
+                ),
                 (conversation_id,),
                 "23514",
             ),
             (
-                "UPDATE research_station.conversation_messages SET content='changed' "
+                (
+                    "UPDATE research_station.conversation_messages "
+                    "SET content='changed' WHERE message_id=%s"
+                ),
+                (message_id,),
+                "P0001",
+            ),
+            (
+                "DELETE FROM research_station.conversation_messages "
                 "WHERE message_id=%s",
                 (message_id,),
                 "P0001",
             ),
-            (
-                "DELETE FROM research_station.conversation_messages WHERE message_id=%s",
-                (message_id,),
-                "P0001",
-            ),
-        ):
+        )
+        for statement, params, expected_state in failure_cases:
             with pytest.raises(psycopg.Error) as exc_info, connection.transaction():
                 connection.execute(statement, params)
             assert exc_info.value.sqlstate == expected_state
 
         assert connection.execute(
-            "SELECT content FROM research_station.conversation_messages WHERE message_id=%s",
+            "SELECT content FROM research_station.conversation_messages "
+            "WHERE message_id=%s",
             (message_id,),
         ).fetchone()[0] == "fixture"
 
