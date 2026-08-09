@@ -1,9 +1,9 @@
 """Unified owner-guided Calyx mission-to-supervised-publication flow.
 
-CALYX-470 removes ledger/version/hash copying from the owner experience while keeping
-human review and explicit publication confirmation as hard governance gates. The flow
-is a thin facade over the existing Brain mission, durable Reasoning Ledger,
-eligibility-discovery, publication, and certification services.
+CALYX-470 removes project/ledger/version/hash copying from the owner experience while
+keeping human review and explicit publication confirmation as hard governance gates.
+The flow is a thin facade over the existing Research Workspace, Brain mission, durable
+Reasoning Ledger, eligibility-discovery, publication, and certification services.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -21,6 +22,9 @@ from app.reasoning_ledger.serialization import ledger_to_dict
 from app.reasoning_publication.eligibility import discover_eligible_ledgers
 from app.reasoning_publication.gateway import ExistingKnowledgeGraphPublicationGate
 from app.reasoning_publication.service import ReasoningLedgerPublicationService
+from app.research_workspace.models import Project
+from app.research_workspace.schemas import ProjectCreate
+from app.research_workspace.service import ResearchWorkspaceError, ResearchWorkspaceService
 from app.routers.calyx_operator_workflow import (
     BRAIN_MISSION_SERVICE,
     _mission_for_owner,
@@ -40,6 +44,7 @@ LAELIA_ANCEPS_QUESTION = (
     "What does the available evidence show about Laelia anceps taxonomy, "
     "distribution, pollination, conservation, and mycorrhizal relationships?"
 )
+DEMO_PROJECT_TITLE = "Calyx Laelia anceps evidence demonstration"
 
 
 class StrictModel(BaseModel):
@@ -47,7 +52,7 @@ class StrictModel(BaseModel):
 
 
 class StartOwnerFlowRequest(StrictModel):
-    project_id: str = Field(default="laelia-anceps-demonstration", min_length=1, max_length=200)
+    project_id: str | None = Field(default=None, min_length=1, max_length=64)
     max_sources: int = Field(default=20, ge=1, le=100)
     max_execution_steps: int = Field(default=10, ge=1, le=10)
     timeout_seconds: float = Field(default=30, ge=0.1, le=300)
@@ -67,6 +72,7 @@ def _plain_error(code: str) -> str:
     return {
         "MISSION_NOT_FOUND": "That mission is not available in your workspace.",
         "MISSION_LEDGER_UNAVAILABLE": "The mission does not yet have a reviewable Reasoning Ledger.",
+        "PROJECT_NOT_FOUND": "The selected research project is not available in your workspace.",
         "LEDGER_NOT_ELIGIBLE": "This mission does not currently have an approved ledger eligible for publication.",
         "MULTIPLE_ELIGIBLE_MATCHES": "More than one eligible version was found for this mission. Review is required before publishing.",
         "EXPLICIT_OWNER_CONFIRMATION_REQUIRED": "Publication requires your explicit confirmation. Nothing was published.",
@@ -82,6 +88,51 @@ def _raise(status_code: int, code: str, *, detail: str | None = None) -> None:
             "automatic_publication": False,
         },
     )
+
+
+def _resolve_project_id(
+    db: Session,
+    owner: str,
+    requested_project_id: str | None,
+) -> tuple[str, bool]:
+    """Resolve a canonical owner project before any Brain mission executes."""
+    workspace = ResearchWorkspaceService(db)
+    if requested_project_id:
+        try:
+            project = workspace.get_project(requested_project_id, owner)
+        except ResearchWorkspaceError as exc:
+            _raise(exc.status, exc.code)
+        return str(project["project_id"]), False
+
+    existing = db.scalar(
+        select(Project)
+        .where(
+            Project.owner_subject == owner,
+            Project.title == DEMO_PROJECT_TITLE,
+            Project.status == "ACTIVE",
+            Project.archived_at.is_(None),
+        )
+        .order_by(Project.created_at.asc())
+        .limit(1)
+    )
+    if existing is not None:
+        return str(existing.project_id), False
+
+    try:
+        created = workspace.create_project(
+            owner,
+            ProjectCreate(
+                title=DEMO_PROJECT_TITLE,
+                description=(
+                    "Bounded owner-guided demonstration workspace for the Calyx "
+                    "evidence-to-supervised-publication flow."
+                ),
+                research_question=LAELIA_ANCEPS_QUESTION,
+            ),
+        )
+    except ResearchWorkspaceError as exc:
+        _raise(exc.status, exc.code)
+    return str(created["project_id"]), True
 
 
 def _ledger_id(mission: dict[str, Any]) -> str:
@@ -160,11 +211,16 @@ def _publication_outcome(artifact: dict[str, Any], created: bool) -> dict[str, A
 @router.post("/start", status_code=201)
 def start_owner_flow(payload: StartOwnerFlowRequest, request: Request, auth: Auth, db: Db) -> dict[str, Any]:
     owner = _subject(auth)
+    project_id, project_created = _invoke(
+        db,
+        request,
+        lambda: _resolve_project_id(db, owner, payload.project_id),
+    )
     try:
         mission = BRAIN_MISSION_SERVICE.start(
             question=LAELIA_ANCEPS_QUESTION,
             tenant_id=owner,
-            project_id=payload.project_id,
+            project_id=project_id,
             actor=owner,
             max_sources=payload.max_sources,
             max_steps=payload.max_execution_steps,
@@ -178,6 +234,11 @@ def start_owner_flow(payload: StartOwnerFlowRequest, request: Request, auth: Aut
     return {
         "flow_contract": "calyx-unified-owner-flow/v1",
         "mission": _safe_mission_view(mission),
+        "workspace_project": {
+            "project_id": project_id,
+            "created_for_flow": project_created,
+            "owner_copied_project_id": False,
+        },
         "next_action": "REVIEW_MISSION",
         "plain_language_status": "The bounded Laelia anceps mission has run to its current governed stopping point. Review its evidence and Reasoning Ledger before making a decision.",
         "automatic_scientific_approval": False,
