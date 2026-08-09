@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - "migrations/108_occurrence_reconciliation_runs.sql"
+      - "migrations/109_occurrence_taxonomy_context_guard.sql"
       - "runtime/occurrence_persistence.py"
       - "tests/test_occurrence_reconciliation_runs.py"
+      - "tests/test_occurrence_taxonomy_guard.py"
       - "docs/brain/CALYX-CORE-OCCURRENCE-CONSOLIDATION.md"
       - ".github/workflows/calyx-occurrence-consolidated-validation.yml"
   workflow_dispatch:
@@ -40,19 +42,36 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt pytest ruff
       - name: Compile consolidated occurrence surface
-        run: python -m py_compile runtime/occurrence_persistence.py tests/test_occurrence_reconciliation_runs.py
+        run: >-
+          python -m py_compile
+          runtime/occurrence_persistence.py
+          tests/test_occurrence_reconciliation_runs.py
+          tests/test_occurrence_taxonomy_guard.py
       - name: Ruff consolidated occurrence surface
-        run: python -m ruff check runtime/occurrence_persistence.py tests/test_occurrence_reconciliation_runs.py
+        run: >-
+          python -m ruff check
+          runtime/occurrence_persistence.py
+          tests/test_occurrence_reconciliation_runs.py
+          tests/test_occurrence_taxonomy_guard.py
       - name: PostgreSQL taxonomy-bound occurrence integration
-        run: python -m pytest -q tests/test_occurrence_reconciliation_runs.py
+        run: python -m pytest -q tests/test_occurrence_reconciliation_runs.py tests/test_occurrence_taxonomy_guard.py
       - name: Existing bounded occurrence staging regression
         run: python -m pytest -q tests/test_occurrence_staging.py
       - name: Migration non-authority assertions
         run: |
           python - <<'PY'
           from pathlib import Path
-          text = Path('migrations/108_occurrence_reconciliation_runs.sql').read_text().lower()
-          forbidden = ('insert into oc_graph', 'update oc_graph', 'delete from oc_graph', 'drop schema taxonomy_pipeline')
+          text = "\n".join(
+              Path(path).read_text().lower()
+              for path in (
+                  'migrations/108_occurrence_reconciliation_runs.sql',
+                  'migrations/109_occurrence_taxonomy_context_guard.sql',
+              )
+          )
+          forbidden = (
+              'insert into oc_graph', 'update oc_graph', 'delete from oc_graph',
+              'drop schema taxonomy_pipeline', 'automatic_promotion = true',
+          )
           present = [item for item in forbidden if item in text]
           if present:
               raise SystemExit(f'forbidden production mutation surface: {present}')
