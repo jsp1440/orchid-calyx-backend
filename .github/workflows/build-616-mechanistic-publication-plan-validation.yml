@@ -13,6 +13,8 @@ on:
       - 'tests/test_build_615_mechanistic_candidate_graph.py'
       - 'tests/test_build_086a_candidate_knowledge.py'
       - 'docs/brain/BUILD-616-MECHANISTIC-PUBLICATION-PLAN.md'
+      - 'docs/brain/BUILD-616-MECHANISTIC-PUBLICATION-PLAN-R2.md'
+      - 'docs/brain/BUILD-616R-CORRECTIVE-REVIEW-SNAPSHOT.md'
       - '.github/workflows/build-616-mechanistic-publication-plan-validation.yml'
   workflow_dispatch:
 
