@@ -110,10 +110,13 @@ def test_tampered_payload_wrong_key_and_malformed_signature_fail_closed() -> Non
     tampered = dict(payload)
     tampered["decision"] = "denied"
     assert verifier.verify(payload=tampered, signature=signature) is False
-    assert verifier.verify(
-        payload=payload,
-        signature=signature.replace("owner-a", "owner-b", 1),
-    ) is False
+    assert (
+        verifier.verify(
+            payload=payload,
+            signature=signature.replace("owner-a", "owner-b", 1),
+        )
+        is False
+    )
     assert verifier.verify(payload=payload, signature="garbage") is False
     assert verifier.verify(payload=payload, signature="rsa:owner-a:abc") is False
 
@@ -126,14 +129,20 @@ def test_revocation_and_rotation_are_explicit_and_fail_closed() -> None:
         revoked_key_ids=frozenset({"owner-old"}),
     )
     payload = _unsigned_grant(_request())
-    assert verifier.verify(
-        payload=payload,
-        signature=_sign(old_private, old_key.key_id, payload),
-    ) is False
-    assert verifier.verify(
-        payload=payload,
-        signature=_sign(new_private, new_key.key_id, payload),
-    ) is True
+    assert (
+        verifier.verify(
+            payload=payload,
+            signature=_sign(old_private, old_key.key_id, payload),
+        )
+        is False
+    )
+    assert (
+        verifier.verify(
+            payload=payload,
+            signature=_sign(new_private, new_key.key_id, payload),
+        )
+        is True
+    )
     assert verifier.active_key_ids == ("owner-new",)
     assert verifier.revoked_key_ids == ("owner-old",)
 
