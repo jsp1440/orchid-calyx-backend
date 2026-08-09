@@ -22,7 +22,11 @@ def _digest(value: Any) -> str:
 
 def _candidate(repository: Any, candidate_id: int) -> dict[str, Any]:
     candidate = next(
-        (item for item in repository.candidates if item["candidate_id"] == candidate_id),
+        (
+            item
+            for item in repository.candidates
+            if item["candidate_id"] == candidate_id
+        ),
         None,
     )
     if candidate is None:
@@ -49,7 +53,11 @@ def _open_conflict_blockers(repository: Any, candidate_id: int) -> list[str]:
 
 
 def _evidence_for_candidate(repository: Any, candidate_id: int) -> list[dict[str, Any]]:
-    return [link for link in repository.evidence_links if link.get("candidate_id") == candidate_id]
+    return [
+        link
+        for link in repository.evidence_links
+        if link.get("candidate_id") == candidate_id
+    ]
 
 
 def _canonical_source_pk(node_type: str, canonical_key: str) -> str | None:
