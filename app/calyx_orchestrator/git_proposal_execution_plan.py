@@ -21,6 +21,14 @@ ACTION_ORDER = (
 )
 
 
+def _actions_form_dependency_prefix(actions: tuple[str, ...]) -> bool:
+    authorized = frozenset(actions)
+    if not authorized or len(authorized) != len(actions):
+        return False
+    required = frozenset(ACTION_ORDER[: len(authorized)])
+    return authorized == required
+
+
 @dataclass(frozen=True, slots=True)
 class GitProposalPlanOperation:
     action: str
@@ -118,6 +126,8 @@ class GitProposalExecutionPlanner:
         )
         if expected_request.snapshot() != request.snapshot():
             raise PermissionError("GIT_PROPOSAL_PLAN_AUTHORIZATION_REQUEST_MISMATCH")
+        if not _actions_form_dependency_prefix(request.actions):
+            raise PermissionError("GIT_PROPOSAL_PLAN_ACTION_DEPENDENCY_INVALID")
 
         verified_grant = authorization_gate.verify_grant(
             request,
