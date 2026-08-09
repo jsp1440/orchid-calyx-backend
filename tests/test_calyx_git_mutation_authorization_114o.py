@@ -48,6 +48,10 @@ from app.database import Base
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 BRANCH = "autonomy/work-123"
 BASE_COMMIT = "a" * 40
+PATCH_CONTENT = "print('bounded owner change')\n"
+PATCH_BYTES = PATCH_CONTENT.encode("utf-8")
+PATCH_BEFORE = "b" * 64
+PATCH_AFTER = hashlib.sha256(PATCH_BYTES).hexdigest()
 NOW = datetime(2026, 8, 8, 23, 0, tzinfo=timezone.utc)
 SECRET = b"s" * 32
 OWNER = "principal:owner"
@@ -88,6 +92,18 @@ def _session() -> Session:
     return Session(engine)
 
 
+def _patch_inputs() -> dict[str, object]:
+    return {
+        "patches": [
+            {
+                "path": "app/example.py",
+                "before_sha256": PATCH_BEFORE,
+                "content_utf8": PATCH_CONTENT,
+            }
+        ]
+    }
+
+
 def _patch_output() -> dict[str, object]:
     return {
         "status": "delivered",
@@ -101,14 +117,14 @@ def _patch_output() -> dict[str, object]:
         "changes": [
             {
                 "path": "app/example.py",
-                "before_sha256": "b" * 64,
-                "after_sha256": "c" * 64,
+                "before_sha256": PATCH_BEFORE,
+                "after_sha256": PATCH_AFTER,
                 "created": False,
-                "size_bytes": 100,
+                "size_bytes": len(PATCH_BYTES),
             }
         ],
         "file_count": 1,
-        "total_written_bytes": 100,
+        "total_written_bytes": len(PATCH_BYTES),
         "commit_created": False,
         "validation_commands_run": False,
         "side_effects": ["isolated_workspace_files_modified"],
@@ -129,6 +145,7 @@ def _persist_patch(session: Session) -> CalyxProgramJob:
                 REPOSITORY,
                 BRANCH,
                 True,
+                inputs=_patch_inputs(),
             )
         ],
         dependencies=[],
@@ -170,10 +187,10 @@ def _manifest(patch_program_job_id: str) -> dict:
         "changes": [
             {
                 "path": "app/example.py",
-                "before_sha256": "b" * 64,
-                "after_sha256": "c" * 64,
+                "before_sha256": PATCH_BEFORE,
+                "after_sha256": PATCH_AFTER,
                 "created": False,
-                "size_bytes": 100,
+                "size_bytes": len(PATCH_BYTES),
             }
         ],
         "validations": [
@@ -183,7 +200,7 @@ def _manifest(patch_program_job_id: str) -> dict:
                 "receipt_digest": "e" * 64,
                 "policy_digest": "f" * 64,
                 "target_hashes": [
-                    {"path": "app/example.py", "sha256": "c" * 64}
+                    {"path": "app/example.py", "sha256": PATCH_AFTER}
                 ],
             }
         ],
