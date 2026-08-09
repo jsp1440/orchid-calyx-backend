@@ -79,6 +79,8 @@ jobs:
           assert "PATCH_PROGRAM_JOB_INPUT_CHECKSUM_MISMATCH" in persisted
           assert "PATCH_PROGRAM_JOB_INPUT_OUTPUT_MISMATCH" in persisted
           assert 'ISOLATED_PATCH_CAPABILITIES = (*SAFE_ASSIGNMENT_CAPABILITIES, "workspace_write")' in assignment
+          assert "ISOLATED_PATCH_MUTATING_JOB_REQUIRED" in assignment
+          assert "mutating_intent=bool(job.mutating)" in assignment
           assert '"bounded_isolated_workspace_mutation"' in assignment
           assert '"assignment_id": receipt.assignment_id' in bridge
           assert '"program_id": receipt.program_id' in bridge
