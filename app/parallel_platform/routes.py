@@ -7,7 +7,9 @@ from app.brain.mechanistic_candidates import (
     handoff_mechanistic_candidate,
 )
 from app.brain.mechanistic_contradictions import analyze_mechanistic_contradictions
-from app.brain.mechanistic_publication_plan import plan_mechanistic_candidate_publication
+from app.brain.mechanistic_publication_plan import (
+    plan_mechanistic_candidate_publication,
+)
 from app.parallel_platform.brain_candidate_handoff import (
     BrainCandidateHandoffRequest,
     handoff_brain_candidate,

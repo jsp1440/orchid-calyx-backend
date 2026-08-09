@@ -101,9 +101,7 @@ def analyze_mechanistic_contradictions(
 
         candidate_ids = sorted(int(item["candidate"]["candidate_id"]) for item in members)
         contradiction_id = hashlib.sha256(
-            f"mechanistic-contradiction:{scope_hash}:{','.join(map(str, candidate_ids))}".encode(
-                "utf-8"
-            )
+            f"mechanistic-contradiction:{scope_hash}:{','.join(map(str, candidate_ids))}".encode()
         ).hexdigest()
         contradictions.append(
             {
