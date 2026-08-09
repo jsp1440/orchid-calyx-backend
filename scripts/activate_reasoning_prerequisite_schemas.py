@@ -1,10 +1,12 @@
-"""Preflight or explicitly activate Reasoning Ledger prerequisite schemas.
+"""Preflight or explicitly activate guarded prerequisite schema profiles.
 
-Default behavior is read-only. Production mutation requires BOTH ``--apply`` and
+Default behavior remains the historical Reasoning Ledger prerequisite profile.
+Production mutation for that profile requires BOTH ``--apply`` and
 ``CALYX_REASONING_PREREQ_CONFIRM=APPLY_087B_088B_088C_088D_101``.
 
-This script installs only prerequisite schema foundations. It never applies
-migrations 103/105, publishes a Reasoning Ledger, or mutates the Knowledge Graph.
+The optional ``research-station-conversations`` profile is implemented by the
+same guarded CLI and uses a separate explicit confirmation token. Neither
+profile publishes scientific knowledge or mutates the Knowledge Graph.
 """
 
 from __future__ import annotations
@@ -308,11 +310,21 @@ def _write_receipt(receipt: dict[str, Any]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--profile",
+        choices=("reasoning-prerequisites", "research-station-conversations"),
+        default="reasoning-prerequisites",
+    )
     args = parser.parse_args()
 
     database_url = os.environ.get("DATABASE_URL", "").strip()
     if not database_url:
         raise SystemExit("DATABASE_URL is required")
+
+    if args.profile == "research-station-conversations":
+        from scripts.research_station_conversation_activation import run_profile
+
+        return run_profile(database_url, args.apply, EVIDENCE_PATH)
 
     import psycopg
 
@@ -325,6 +337,7 @@ def main() -> int:
     receipt: dict[str, Any] = {
         "schema_version": "1.0",
         "captured_at": datetime.now(timezone.utc).isoformat(),
+        "profile": "reasoning-prerequisites",
         "mode": "apply" if args.apply else "preflight",
         "apply_requested": args.apply,
         "explicit_confirmation_present": confirmation_present,

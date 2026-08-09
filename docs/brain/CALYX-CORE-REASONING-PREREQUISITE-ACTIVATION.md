@@ -84,6 +84,18 @@ Passing evidence:
 - CALYX Workflow Governance Audit run #489 — success
 - BUILD-088E Validation run #1238 — success
 
+## Research Station 101→140 atomic validation extension
+
+PR #816 adds a separate `research-station-conversations` validation profile without changing the default reasoning-prerequisite profile. The profile pins migrations 101 and 140, serializes on advisory-lock key `82078079`, and is designed to apply 101→140 inside one PostgreSQL transaction with structural and governance postconditions before commit. Production application remains unauthorized.
+
+Failure-first validation on 2026-08-09 exposed only pre-behavior code-quality defects so far; PostgreSQL transaction semantics have not yet been accepted on the release path:
+
+1. Initial head `810773dec556245b5b5469f03b6569a5347706e5` stopped at Ruff before behavioral tests. Findings were two tuple-`startswith` simplifications, an overbroad exception catch in the receipt path, and SQL fixture string-format findings.
+2. The 101→140 implementation was then isolated into `scripts/research_station_conversation_activation.py`, leaving `scripts/activate_reasoning_prerequisite_schemas.py` as the guarded CLI/profile dispatcher. This preserves one dedicated Research Station activation authority instead of growing a second large implementation inside the shared prerequisite script.
+3. Subsequent runs reduced the style failures to the final SQL fixture formatting issue. Copilot-authored formatter head `52f9f22367dfe9019333dff35b793ad8cb5fd12d` was policy-gated by GitHub Actions (`action_required`, no jobs), so it is not validation evidence.
+
+This documentation commit is owner-authored specifically to trigger executable exact-head validation of the repaired code tree. Acceptance still requires compile/lint/format plus the disposable PostgreSQL 15/16/17 atomic apply, rollback, safe-resume, advisory-lock, foreign-key, append-only, and governance matrix. Even if that matrix passes, stale ancestry must be refreshed onto then-current `main` and revalidated before merge consideration.
+
 ## Governance separation
 
 There are three independent production decisions:
@@ -95,3 +107,5 @@ There are three independent production decisions:
 Authorization for one does not imply authorization for either later step.
 
 Opening or merging the #665 implementation PR does not authorize production database mutation. The agent must stop before merge and before production application unless the owner explicitly authorizes those actions.
+
+The Research Station 101→140 validation profile does not change these boundaries and does not authorize production migration 101 or 140.

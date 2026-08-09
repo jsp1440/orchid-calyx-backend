@@ -3,8 +3,12 @@ name: CALYX Reasoning Prerequisite Activation Validation
 on:
   pull_request:
     paths:
+      - 'migrations/101_research_workspace_foundation.sql'
+      - 'migrations/140_calyx_conversation_sessions.sql'
       - 'scripts/activate_reasoning_prerequisite_schemas.py'
+      - 'scripts/research_station_conversation_activation.py'
       - 'tests/test_reasoning_prerequisite_schema_activation.py'
+      - 'tests/test_research_station_conversation_atomic_activation.py'
       - '.github/workflows/calyx-reasoning-prerequisite-activation-validation.yml'
       - '.github/workflows/calyx-reasoning-prerequisite-production-activation.yml'
       - 'docs/brain/CALYX-CORE-REASONING-PREREQUISITE-ACTIVATION.md'
@@ -42,9 +46,9 @@ jobs:
         run: python -m pip install 'psycopg[binary]' pytest ruff
       - name: Compile, lint, and format
         run: |
-          python -m py_compile scripts/activate_reasoning_prerequisite_schemas.py tests/test_reasoning_prerequisite_schema_activation.py
-          python -m ruff check scripts/activate_reasoning_prerequisite_schemas.py tests/test_reasoning_prerequisite_schema_activation.py
-          python -m ruff format --check scripts/activate_reasoning_prerequisite_schemas.py tests/test_reasoning_prerequisite_schema_activation.py
+          python -m py_compile scripts/activate_reasoning_prerequisite_schemas.py scripts/research_station_conversation_activation.py tests/test_reasoning_prerequisite_schema_activation.py tests/test_research_station_conversation_atomic_activation.py
+          python -m ruff check scripts/activate_reasoning_prerequisite_schemas.py scripts/research_station_conversation_activation.py tests/test_reasoning_prerequisite_schema_activation.py tests/test_research_station_conversation_atomic_activation.py
+          python -m ruff format --check scripts/activate_reasoning_prerequisite_schemas.py scripts/research_station_conversation_activation.py tests/test_reasoning_prerequisite_schema_activation.py tests/test_research_station_conversation_atomic_activation.py
       - name: Unit and disposable PostgreSQL tests
         run: pytest -q tests/test_reasoning_prerequisite_schema_activation.py
       - name: Reset disposable database for independent CLI rehearsal
@@ -76,5 +80,63 @@ jobs:
           path: |
             prereq-preflight.json
             prereq-apply.json
+          if-no-files-found: error
+          retention-days: 30
+
+  validate-research-station-conversations:
+    name: research-station-101-140-pg${{ matrix.postgres }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ['15', '16', '17']
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_USER: calyx
+          POSTGRES_PASSWORD: calyx
+          POSTGRES_DB: calyx_rs_atomic_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U calyx -d calyx_rs_atomic_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://calyx:calyx@localhost:5432/calyx_rs_atomic_test
+      DATABASE_URL: postgresql://calyx:calyx@localhost:5432/calyx_rs_atomic_test
+      CALYX_REASONING_PREREQ_EVIDENCE_PATH: research-station-101-140-pg${{ matrix.postgres }}.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install validation dependencies
+        run: python -m pip install 'psycopg[binary]' pytest ruff
+      - name: Verify pinned migration bytes
+        run: |
+          test "$(git hash-object migrations/101_research_workspace_foundation.sql)" = "3333853c97832154cb0f61bace0c2184396da160"
+          test "$(git hash-object migrations/140_calyx_conversation_sessions.sql)" = "f572ba9aa1a3bade4dfe9d1e1faf0dbfb8a57baf"
+      - name: Compile lint and format atomic profile
+        run: |
+          python -m py_compile scripts/activate_reasoning_prerequisite_schemas.py scripts/research_station_conversation_activation.py tests/test_research_station_conversation_atomic_activation.py
+          python -m ruff check scripts/activate_reasoning_prerequisite_schemas.py scripts/research_station_conversation_activation.py tests/test_research_station_conversation_atomic_activation.py
+          python -m ruff format --check scripts/activate_reasoning_prerequisite_schemas.py scripts/research_station_conversation_activation.py tests/test_research_station_conversation_atomic_activation.py
+      - name: Run atomic transaction rollback serialization and governance tests
+        run: pytest -q tests/test_research_station_conversation_atomic_activation.py
+      - name: Disposable profile preflight
+        run: python scripts/activate_reasoning_prerequisite_schemas.py --profile research-station-conversations
+      - name: Disposable profile atomic apply
+        env:
+          CALYX_RESEARCH_STATION_CONFIRM: APPLY_RESEARCH_STATION_101_140
+        run: python scripts/activate_reasoning_prerequisite_schemas.py --profile research-station-conversations --apply
+      - name: Upload atomic activation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-station-101-140-pg${{ matrix.postgres }}-${{ github.sha }}
+          path: research-station-101-140-pg${{ matrix.postgres }}.json
           if-no-files-found: error
           retention-days: 30
