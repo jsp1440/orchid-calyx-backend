@@ -61,6 +61,18 @@ def _document_identity(source: dict[str, Any]) -> tuple[str, str | None]:
     return document_id, revision_id
 
 
+def _assert_exact_project_link(
+    link: dict[str, Any], document_id: str, revision_id: str | None
+) -> None:
+    linked_document = str(link.get("document_id") or "").strip()
+    linked_revision = str(link.get("revision_id") or "").strip() or None
+    if linked_document != document_id or linked_revision != revision_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "CONVERSATION_SOURCE_PROJECT_LINK_IDENTITY_CONFLICT"},
+        )
+
+
 @router.post(
     "/conversations/{conversation_id}/sources/{result_id}/project-link",
     status_code=201,
@@ -107,6 +119,7 @@ def link_conversation_source_to_project(
             detail={"code": exc.code, **(exc.extra or {})},
         ) from exc
 
+    _assert_exact_project_link(link, document_id, revision_id)
     return {
         "conversation_id": conversation_id,
         "project_id": project_id,
