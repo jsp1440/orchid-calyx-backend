@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .persisted_patch_execution import PersistedPatchExecutionService
 from .proposal_authorization import (
     ALLOWED_REVIEW_CLASSES,
     SCHEMA,
@@ -31,12 +32,12 @@ class DurableProposalAuthorizationStore:
 
     def __init__(self, db: Session) -> None:
         self.db = db
+        self._builder = ProposalAuthorizationBuilder(PersistedPatchExecutionService(db))
 
     def record_review(
         self,
         *,
         manifest_snapshot: Mapping[str, object],
-        patch_receipt: Mapping[str, object],
         requested_by: str,
         review_class: str,
         reviewer_id: str,
@@ -46,10 +47,9 @@ class DurableProposalAuthorizationStore:
         evidence_uris: Sequence[str],
         decided_at: datetime,
     ) -> ProposalAuthorizationRecord:
-        """Build through 114N governance, then persist the resulting exact decision."""
-        item = ProposalAuthorizationBuilder().build(
+        """Build through 114N persisted-patch governance, then persist the exact decision."""
+        item = self._builder.build(
             manifest_snapshot=manifest_snapshot,
-            patch_receipt=patch_receipt,
             requested_by=requested_by,
             review_class=review_class,
             reviewer_id=reviewer_id,
@@ -186,6 +186,7 @@ class DurableProposalAuthorizationStore:
         try:
             record = ProposalAuthorizationRecord(
                 manifest_digest=str(raw["manifest_digest"]),
+                patch_program_job_id=str(raw["patch_program_job_id"]),
                 repository=str(raw["repository"]),
                 base_commit_sha=str(raw["base_commit_sha"]),
                 source_autonomy_branch=str(raw["source_autonomy_branch"]),
