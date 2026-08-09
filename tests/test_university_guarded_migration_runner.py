@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import psycopg
 
@@ -47,6 +47,20 @@ class GuardedMigrationRunnerContractTests(unittest.TestCase):
         self.assertNotIn("secret-pass", str(result))
         self.assertRegex(result["migration"]["sha256"], r"^sha256:[0-9a-f]{64}$")
 
+    def test_keyword_conninfo_is_redacted_and_normalized(self) -> None:
+        database_url = (
+            "host=db.example.org port=5432 dbname=orchid "
+            "user=secret-user password=secret-pass sslmode=require"
+        )
+        with patch.object(runner, "preflight", return_value=READY_PREFLIGHT):
+            result = runner.plan(release_evidence=Path("evidence.json"), database_url=database_url)
+        self.assertEqual(result["database"]["hostname"], "db.example.org")
+        self.assertEqual(result["database"]["port"], "5432")
+        self.assertEqual(result["database"]["database"], "orchid")
+        self.assertEqual(result["database_confirmation_target"], "db.example.org:5432/orchid")
+        self.assertNotIn("secret-user", str(result))
+        self.assertNotIn("secret-pass", str(result))
+
     def test_apply_requires_exact_digest_confirmation_before_connecting(self) -> None:
         database_url = "postgresql://db.example.org/orchid"
         with patch.object(runner, "preflight", return_value=READY_PREFLIGHT), patch.object(
@@ -64,11 +78,15 @@ class GuardedMigrationRunnerContractTests(unittest.TestCase):
     def test_apply_rejects_file_change_between_snapshot_and_plan(self) -> None:
         database_url = "postgresql://db.example.org/orchid"
         actual_digest = runner.migration_digest()
-        different_digest = "sha256:" + ("0" * 64 if actual_digest != "sha256:" + "0" * 64 else "1" * 64)
+        zero_digest = "sha256:" + "0" * 64
+        different_digest = zero_digest if actual_digest != zero_digest else "sha256:" + "1" * 64
         forged_plan = {
             "contract": "OCU-SCI-009N-MIGRATION-RUNNER-001",
             "mode": "dry_run",
-            "migration": {"path": "migrations/ocu_sci_008_durable_sessions.sql", "sha256": different_digest},
+            "migration": {
+                "path": "migrations/ocu_sci_008_durable_sessions.sql",
+                "sha256": different_digest,
+            },
             "database": {"hostname": "db.example.org", "port": None, "database": "orchid"},
             "database_confirmation_target": "db.example.org/orchid",
             "migration_stage_preflight": {"ready": True, "blockers": []},
@@ -78,8 +96,13 @@ class GuardedMigrationRunnerContractTests(unittest.TestCase):
             "requires_exact_database_confirmation": "db.example.org/orchid",
             "mutations_performed": False,
         }
-        with patch.object(runner, "plan", return_value=forged_plan), patch.object(runner.psycopg, "connect") as connect:
-            with self.assertRaisesRegex(runner.MigrationGuardError, "migration file changed during guarded apply"):
+        with patch.object(runner, "plan", return_value=forged_plan), patch.object(
+            runner.psycopg, "connect"
+        ) as connect:
+            with self.assertRaisesRegex(
+                runner.MigrationGuardError,
+                "migration file changed during guarded apply",
+            ):
                 runner.apply_migration(
                     release_evidence=Path("evidence.json"),
                     database_url=database_url,
@@ -135,6 +158,46 @@ class GuardedMigrationRunnerContractTests(unittest.TestCase):
         connect.assert_not_called()
         self.assertEqual(result["result"], "already_valid_noop")
         self.assertFalse(result["mutations_performed"])
+
+    def test_apply_uses_bounded_connect_and_transaction_timeouts(self) -> None:
+        database_url = "postgresql://db.example.org/orchid"
+        connect = MagicMock()
+        conn = connect.return_value.__enter__.return_value
+        cursor = conn.cursor.return_value.__enter__.return_value
+        conn.transaction.return_value.__enter__.return_value = MagicMock()
+
+        with patch.object(runner, "preflight", return_value=READY_PREFLIGHT), patch.object(
+            runner.psycopg, "connect", connect
+        ), patch.object(
+            runner,
+            "_schema_state_on_connection",
+            return_value={
+                "schema_valid": True,
+                "missing_columns": {},
+                "missing_constraint_fragments": [],
+            },
+        ):
+            result = runner.apply_migration(
+                release_evidence=Path("evidence.json"),
+                database_url=database_url,
+                confirm_migration_sha256=runner.migration_digest(),
+                confirm_database_target=runner.database_confirmation_target(database_url),
+            )
+
+        self.assertEqual(result["result"], "applied_and_verified")
+        connect.assert_called_once_with(
+            database_url,
+            autocommit=True,
+            connect_timeout=runner.CONNECT_TIMEOUT_SECONDS,
+        )
+        cursor.execute.assert_any_call(
+            "SELECT set_config('lock_timeout', %s, true)",
+            (f"{runner.LOCK_TIMEOUT_MS}ms",),
+        )
+        cursor.execute.assert_any_call(
+            "SELECT set_config('statement_timeout', %s, true)",
+            (f"{runner.STATEMENT_TIMEOUT_MS}ms",),
+        )
 
 
 @unittest.skipUnless(os.getenv("OCU_TEST_DATABASE_URL"), "OCU_TEST_DATABASE_URL is not configured")
