@@ -8,6 +8,7 @@ on:
       - "app/brain/mechanistic_contradictions.py"
       - "app/brain/mechanistic_publication_plan.py"
       - "tests/test_build_618_causal_scope.py"
+      - "tests/test_build_618_causal_scope_p1_regressions.py"
       - "tests/test_build_617_mechanistic_contradictions.py"
       - "tests/test_build_616_mechanistic_publication_plan.py"
       - "tests/test_build_615_mechanistic_candidate_graph.py"
@@ -41,6 +42,7 @@ jobs:
           app/brain/mechanistic_contradictions.py
           app/brain/mechanistic_publication_plan.py
           tests/test_build_618_causal_scope.py
+          tests/test_build_618_causal_scope_p1_regressions.py
           tests/test_build_617_mechanistic_contradictions.py
           tests/test_build_616_mechanistic_publication_plan.py
       - name: Ruff
@@ -51,6 +53,7 @@ jobs:
           app/brain/mechanistic_contradictions.py
           app/brain/mechanistic_publication_plan.py
           tests/test_build_618_causal_scope.py
+          tests/test_build_618_causal_scope_p1_regressions.py
           tests/test_build_617_mechanistic_contradictions.py
           tests/test_build_616_mechanistic_publication_plan.py
       - name: Formatting
@@ -61,12 +64,14 @@ jobs:
           app/brain/mechanistic_contradictions.py
           app/brain/mechanistic_publication_plan.py
           tests/test_build_618_causal_scope.py
+          tests/test_build_618_causal_scope_p1_regressions.py
           tests/test_build_617_mechanistic_contradictions.py
           tests/test_build_616_mechanistic_publication_plan.py
       - name: Causal scope regressions
         run: >-
           python -m pytest -q
           tests/test_build_618_causal_scope.py
+          tests/test_build_618_causal_scope_p1_regressions.py
           tests/test_build_617_mechanistic_contradictions.py
           tests/test_build_616_mechanistic_publication_plan.py
           tests/test_build_615_mechanistic_candidate_graph.py
@@ -78,6 +83,7 @@ jobs:
           contradictions = Path("app/brain/mechanistic_contradictions.py").read_text(encoding="utf-8")
           publication = Path("app/brain/mechanistic_publication_plan.py").read_text(encoding="utf-8")
           tests = Path("tests/test_build_618_causal_scope.py").read_text(encoding="utf-8")
+          p1_tests = Path("tests/test_build_618_causal_scope_p1_regressions.py").read_text(encoding="utf-8")
           for marker in (
               "BOUNDED_CAUSAL_SCOPE_REQUIRES_APPLICABILITY_BOUNDS",
               "GLOBAL_CAUSAL_SCOPE_REQUIRES_JUSTIFICATION",
@@ -92,6 +98,8 @@ jobs:
           assert '"operations": operations' in publication
           assert "test_narrative_scope_metadata_cannot_split_a_real_contradiction" in tests
           assert "test_bounded_scope_requires_real_bounds_after_whitespace_normalization" in tests
+          assert "test_bounded_scope_rejects_semantically_empty_mapping_bounds" in p1_tests
+          assert "test_equivalent_categorical_mapping_scope_forms_real_contradiction" in p1_tests
           PY
       - name: Hygiene
         env:
