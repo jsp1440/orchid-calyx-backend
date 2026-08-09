@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented on `feature/build-615-mechanistic-candidate-graph`, pending validation and merge.
+Implemented on `feature/build-615-mechanistic-candidate-graph` and opened as PR #733. Supplemental local semantic validation passes. Repository CI is blocked by GitHub hosted-runner allocation issue #481 and has not executed step 1, so the PR remains unmerged.
 
 ## Purpose
 
@@ -97,6 +97,8 @@ It cannot:
 
 Promotion from reviewed mechanistic candidate to canonical graph knowledge remains a separate governed build.
 
+Endpoint attributes are treated as untrusted metadata. Internal governance markers are applied after caller attributes, so a caller cannot override `candidate_only=true` inside the graph preview.
+
 ## Validation
 
 `tests/test_build_615_mechanistic_candidate_graph.py` verifies:
@@ -107,9 +109,29 @@ Promotion from reviewed mechanistic candidate to canonical graph knowledge remai
 - uncontrolled relationships fail before candidate creation;
 - unapproved endpoint types fail before candidate creation;
 - exact evidence anchors, experimental context, quantitative context, and provenance survive handoff;
+- caller attributes cannot override the candidate-only governance marker;
 - canonical graph mutation and automatic publication remain false.
 
 The dedicated BUILD-615 workflow also runs BUILD-614/612 reasoning regressions, Candidate Knowledge regression tests, route import checks, lint, formatting, compile, and hygiene.
+
+### Supplemental local semantic validation
+
+Because GitHub Actions currently fails before runner allocation, a local semantic harness was executed against the BUILD-615 control flow using the same request, candidate, graph, and validation contracts. It passed:
+
+- valid mechanistic candidate creation;
+- positive and inhibitory polarity behavior;
+- exact source-anchor retention;
+- rejection of uncontrolled relationships before any candidate run is created;
+- rejection of unapproved endpoint types before any candidate run is created;
+- candidate-only metadata tamper resistance.
+
+This supplemental result is useful implementation evidence but is **not** a substitute for repository CI.
+
+### Repository CI blocker
+
+PR #733 head `d5e94eb005cfdce8fe3eacaa01fcae7cc4bb0318` triggered eleven workflows. The dedicated BUILD-615 job failed with `steps=null`, produced no workflow-step log, and a targeted rerun failed identically before checkout. An unrelated Governance Audit job failed in the same way. Evidence was added to issue #481.
+
+Therefore the red PR state is currently classified as infrastructure-blocked, not as a demonstrated BUILD-615 assertion failure. Merge remains prohibited until executable validation is restored.
 
 ## Next highest-value work after validation
 
