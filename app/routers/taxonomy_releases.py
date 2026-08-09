@@ -306,7 +306,9 @@ def create_taxonomy_release_router(
 
             return build_activation_decision_packet(durable, release_id)
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="taxonomy release not found") from exc
+            raise HTTPException(
+                status_code=404, detail="taxonomy release not found"
+            ) from exc
         except Exception as exc:
             if not _is_sqlalchemy_error(exc):
                 raise
