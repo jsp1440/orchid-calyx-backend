@@ -10,7 +10,8 @@ def execute(items):r,s=setup();p=s.preview(items);s.execute(p["aggregate_run_id"
 
 def test_migration_models_types_and_protected_schema_safety():
  sql=Path("migrations/086b_evidence_aggregation.sql").read_text().upper(); assert "OC_CANDIDATE_KNOWLEDGE.CANDIDATES" in sql and "OC_DOCUMENT_INTELLIGENCE.SOURCE_ANCHORS" in sql and "AGGREGATE_VERSIONS" in sql and "AGGREGATE_TOMBSTONES" in sql
- assert "PUBLISHED BOOLEAN NOT NULL DEFAULT FALSE CHECK(PUBLISHED=FALSE)" in sql and len(AggregateType)==20
+ assert "PUBLISHED BOOLEAN NOT NULL DEFAULT FALSE CHECK(PUBLISHED=FALSE)" in sql and len(AggregateType)==21
+ assert AggregateType.MECHANISTIC_RELATIONSHIP_AGGREGATE.value == "MECHANISTIC_RELATIONSHIP_AGGREGATE"
  assert all(x not in sql for x in ("DROP ","TRUNCATE ","OC_GRAPH.","OC_TAXONOMY."))
 
 def test_preview_persists_plan_without_aggregate_mutation():
