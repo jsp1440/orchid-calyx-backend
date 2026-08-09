@@ -232,7 +232,9 @@ def test_unknown_scope_narrative_context_cannot_split_a_real_contradiction():
             "source_object_id": 11,
             "revision_id": 12,
             "extraction_run_id": 13,
-            "source_anchors": [{"anchor_id": 14}],
+            "source_anchors": [
+                request().source_anchors[0].model_copy(update={"anchor_id": 14})
+            ],
             "experimental_context": {"tissue": "leaf"},
             "quantitative_context": {"wavelength_nm": 450},
         }
@@ -242,7 +244,9 @@ def test_unknown_scope_narrative_context_cannot_split_a_real_contradiction():
             "source_object_id": 21,
             "revision_id": 22,
             "extraction_run_id": 23,
-            "source_anchors": [{"anchor_id": 24}],
+            "source_anchors": [
+                request().source_anchors[0].model_copy(update={"anchor_id": 24})
+            ],
             "experimental_context": {"tissue": "root"},
             "quantitative_context": {"wavelength_nm": 660},
         }
