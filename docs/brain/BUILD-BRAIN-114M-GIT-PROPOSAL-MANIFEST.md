@@ -32,9 +32,11 @@ No downstream review, authorization, signature or execution-plan branch is autho
 
 ## Validation state
 
-Exact-head BUILD-BRAIN-114M run `31293261883`, job `93194059066`, terminated before step 1 with `steps=null` and no logs URL. Checkout, dependency installation, compilation, Ruff, pytest, static authority checks and diff hygiene did not execute. BUILD-088E, Workflow Governance and the other triggered validation lanes failed in the same hosted-runner allocation window.
+The pre-step hosted-runner incident was traced to the account-level GitHub Actions budget hard stop: the $25 monthly Actions budget had reached 100%, so private-repository jobs were terminated before step 1. The Actions budget was raised to $50, restoring private hosted-runner allocation.
 
-This is another reproduction of canonical incident #481 and is infrastructure evidence only. The R3 branch remains draft/unmerged until an executable exact-head run passes its focused and broad gates.
+Executable validation on head `23d03cb2a006a910127cabf0d41ed8e32f31a4e8` then proved the runner path healthy: checkout, Python 3.12 setup, dependency installation and compilation all executed. BUILD-BRAIN-114I, BUILD-BRAIN-114A, BUILD-BRAIN-108-113A, BUILD-088E, CALYX Workflow Governance Audit and CALYX-AGENT-003 all passed. The dedicated BUILD-BRAIN-114M lane reached Ruff and failed only because `ruff format --check` identified four formatting-only postimages; `ruff check` itself passed. Commit `cc3da7b5dd145041019ce732c3a766db7a14276f` applied those formatter-prescribed changes without changing the trust model or authority boundary.
+
+Because the formatter commit was authored through Copilot, its automatic workflow runs entered GitHub's `action_required` state without jobs. This documentation checkpoint records that transition and provides a user-authored follow-up head so the exact-head validation suite can execute normally. PR #772 remains draft/unmerged until the new exact-head focused and broad gates complete successfully.
 
 ## Permanent non-authorities
 
