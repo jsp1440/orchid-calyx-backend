@@ -39,7 +39,6 @@ class GlossaryCandidateRequest(BaseModel):
 
 class GlossaryReviewRequest(BaseModel):
     state: CandidateState
-    actor: str = Field(min_length=1, max_length=300)
     rationale: str = Field(min_length=1, max_length=4000)
     concept_id: UUID | None = None
 
@@ -121,16 +120,20 @@ def list_glossary_candidates(
 def review_glossary_candidate(
     candidate_id: str,
     body: GlossaryReviewRequest,
+    auth: Annotated[dict[str, object], Depends(verify_owner_or_api_key)],
     service: Annotated[
         GlossaryService,
         Depends(get_glossary_service),
     ] = None,
 ) -> dict[str, Any]:
     try:
+        actor = str(auth.get("actor") or "").strip()
+        if not actor:
+            raise ValueError("GLOSSARY_AUTHENTICATED_REVIEWER_REQUIRED")
         return service.review_candidate(
             candidate_id,
             state=body.state,
-            actor=body.actor,
+            actor=actor,
             rationale=body.rationale,
             concept_id=body.concept_id,
         )
