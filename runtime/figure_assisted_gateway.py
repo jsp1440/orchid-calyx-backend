@@ -14,6 +14,11 @@ import zipfile
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from app.calyx_orchestrator.artifact_registry import (
+    ArtifactRegistration,
+    ImmutableArtifactRegistry,
+)
+
 SUPPORTED_FORMATS = {"svg", "pptx", "png"}
 SUPPORTED_MEDIA_TYPES = {
     "svg": "image/svg+xml",
@@ -25,6 +30,7 @@ MAX_PPTX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 MAX_PPTX_MEMBERS = 5000
 MAX_ESTIMATED_COST_USD = 25.0
 SAFE_LICENSES = {"cc0", "cc-by-4.0", "cc-by-sa-4.0", "public-domain", "internal-reviewed"}
+PRODUCER_ASSIGNMENT_ID = "build-fig-301-assisted-gateway"
 
 
 def _stable_json(value: Any) -> str:
@@ -97,7 +103,10 @@ class FigureBrief:
         _clean_text(self.purpose, field="purpose", maximum=4000)
         if not self.required_labels:
             raise ValueError("REQUIRED_LABELS_REQUIRED")
-        cleaned_labels = tuple(_clean_text(label, field="required_label", maximum=300) for label in self.required_labels)
+        cleaned_labels = tuple(
+            _clean_text(label, field="required_label", maximum=300)
+            for label in self.required_labels
+        )
         if cleaned_labels != self.required_labels:
             raise ValueError("REQUIRED_LABELS_MUST_BE_CANONICAL")
         if len(set(label.casefold() for label in cleaned_labels)) != len(cleaned_labels):
@@ -144,10 +153,10 @@ class ImportedFigureAsset:
 class AssistedFigureGateway:
     """Deterministic local gateway for assisted export/import workflows."""
 
-    def __init__(self) -> None:
+    def __init__(self, artifact_registry: ImmutableArtifactRegistry | None = None) -> None:
         self._briefs: dict[str, FigureBrief] = {}
         self._assets: dict[str, ImportedFigureAsset] = {}
-        self._checksum_owner: dict[str, str] = {}
+        self._artifact_registry = artifact_registry or ImmutableArtifactRegistry()
 
     def register_brief(self, brief: FigureBrief) -> dict[str, Any]:
         brief.validate()
@@ -201,35 +210,77 @@ class AssistedFigureGateway:
         normalized_license = license.casefold().strip()
         if normalized_license not in SAFE_LICENSES:
             raise ValueError("ASSET_LICENSE_NOT_ALLOWED")
-        _clean_uri(source_uri)
+        normalized_source_uri = _clean_uri(source_uri)
         normalized_creator = _clean_text(creator, field="creator", maximum=500)
         normalized_attribution = _clean_text(attribution, field="attribution", maximum=2000)
         hotspots = tuple(self._validate_hotspots(semantic_hotspots or []))
         checksum = _sha256_bytes(content)
         asset_id = f"figure:{package['brief_digest'][:16]}:{checksum[:20]}"
-        duplicate_owner = self._checksum_owner.get(checksum)
-        duplicate_of = duplicate_owner if duplicate_owner and duplicate_owner != asset_id else None
+
+        existing = self._assets.get(asset_id)
+        if existing is not None:
+            replay = ImportedFigureAsset(
+                asset_id=asset_id,
+                brief_digest=str(package["brief_digest"]),
+                media_type=SUPPORTED_MEDIA_TYPES[normalized_format],
+                format=normalized_format,
+                checksum=checksum,
+                byte_length=len(content),
+                source_uri=normalized_source_uri,
+                creator=normalized_creator,
+                attribution=normalized_attribution,
+                license=normalized_license,
+                semantic_hotspots=hotspots,
+                duplicate_of=existing.duplicate_of,
+            )
+            if existing != replay:
+                raise ValueError("IMMUTABLE_FIGURE_ASSET_CONFLICT")
+            return existing
+
+        evidence_uris = tuple(
+            dict.fromkeys(
+                [source.source_uri for source in brief.source_records]
+                + [item["evidence_uri"] for item in hotspots]
+            )
+        )
+        registration = self._artifact_registry.register(
+            ArtifactRegistration(
+                artifact_id=asset_id,
+                content=content,
+                media_type=SUPPORTED_MEDIA_TYPES[normalized_format],
+                source_uri=normalized_source_uri,
+                producer_assignment_id=PRODUCER_ASSIGNMENT_ID,
+                license=normalized_license,
+                evidence_uris=evidence_uris,
+                metadata={
+                    "brief_id": brief_id,
+                    "brief_digest": package["brief_digest"],
+                    "format": normalized_format,
+                    "creator": normalized_creator,
+                    "attribution": normalized_attribution,
+                    "semantic_hotspots": list(hotspots),
+                    "scientific_review_required": True,
+                    "licensing_review_required": True,
+                    "publication_authorized": False,
+                },
+            )
+        )
+        self._artifact_registry.require_evidence(asset_id)
         candidate = ImportedFigureAsset(
             asset_id=asset_id,
             brief_digest=str(package["brief_digest"]),
-            media_type=SUPPORTED_MEDIA_TYPES[normalized_format],
+            media_type=registration.record.media_type,
             format=normalized_format,
-            checksum=checksum,
-            byte_length=len(content),
-            source_uri=source_uri.strip(),
+            checksum=registration.record.checksum,
+            byte_length=registration.record.byte_length,
+            source_uri=registration.record.source_uri,
             creator=normalized_creator,
             attribution=normalized_attribution,
             license=normalized_license,
             semantic_hotspots=hotspots,
-            duplicate_of=duplicate_of,
+            duplicate_of=registration.duplicate_content_of,
         )
-        existing = self._assets.get(asset_id)
-        if existing is not None:
-            if existing != candidate:
-                raise ValueError("IMMUTABLE_FIGURE_ASSET_CONFLICT")
-            return existing
         self._assets[asset_id] = candidate
-        self._checksum_owner.setdefault(checksum, asset_id)
         return candidate
 
     def readiness(self, brief_id: str) -> dict[str, Any]:
@@ -256,6 +307,7 @@ class AssistedFigureGateway:
             "asset_ids": [item.asset_id for item in assets],
             "imported_formats": sorted(imported_formats),
             "missing_formats": missing_formats,
+            "required_review_classes": ["scientific", "licensing"],
             "blockers": blockers,
             "decision": "REVIEW_ONLY" if assets else "HOLD",
             "ready_for_scientific_review": bool(assets),
@@ -311,7 +363,10 @@ class AssistedFigureGateway:
                 required = {"[Content_Types].xml", "ppt/presentation.xml"}
                 if not required.issubset(names):
                     raise ValueError("PPTX_STRUCTURE_INVALID")
-                if any(name.startswith("/") or ".." in name.split("/") for name in names):
+                if any(
+                    name.startswith("/") or ".." in name.split("/")
+                    for name in names
+                ):
                     raise ValueError("PPTX_PATH_INVALID")
         except zipfile.BadZipFile as exc:
             raise ValueError("PPTX_SIGNATURE_INVALID") from exc
@@ -321,15 +376,36 @@ class AssistedFigureGateway:
         output: list[dict[str, Any]] = []
         seen: set[str] = set()
         for item in items:
-            concept_id = _clean_text(str(item.get("concept_id") or ""), field="concept_id", maximum=200)
-            label = _clean_text(str(item.get("label") or ""), field="hotspot_label", maximum=300)
+            concept_id = _clean_text(
+                str(item.get("concept_id") or ""),
+                field="concept_id",
+                maximum=200,
+            )
+            label = _clean_text(
+                str(item.get("label") or ""),
+                field="hotspot_label",
+                maximum=300,
+            )
             evidence_uri = _clean_uri(str(item.get("evidence_uri") or ""))
             key = f"{concept_id}\0{label}\0{evidence_uri}"
             if key in seen:
                 continue
             seen.add(key)
-            output.append({"concept_id": concept_id, "label": label, "evidence_uri": evidence_uri})
-        return sorted(output, key=lambda item: (item["concept_id"], item["label"], item["evidence_uri"]))
+            output.append(
+                {
+                    "concept_id": concept_id,
+                    "label": label,
+                    "evidence_uri": evidence_uri,
+                }
+            )
+        return sorted(
+            output,
+            key=lambda item: (
+                item["concept_id"],
+                item["label"],
+                item["evidence_uri"],
+            ),
+        )
 
 
 def orchid_root_velamen_brief() -> FigureBrief:
@@ -343,8 +419,19 @@ def orchid_root_velamen_brief() -> FigureBrief:
         brief_id="figure-brief:orchid-root-velamen-v1",
         project_id="knowledge-explorer:velamen",
         title="Orchid Root and Velamen Scientific Plate",
-        purpose="Create an evidence-bound candidate plate illustrating major orchid root tissues without asserting unreviewed scientific claims.",
-        required_labels=("root tip", "velamen", "exodermis", "passage cells", "cortex", "endodermis", "stele"),
+        purpose=(
+            "Create an evidence-bound candidate plate illustrating major orchid root "
+            "tissues without asserting unreviewed scientific claims."
+        ),
+        required_labels=(
+            "root tip",
+            "velamen",
+            "exodermis",
+            "passage cells",
+            "cortex",
+            "endodermis",
+            "stele",
+        ),
         source_records=(source,),
         output_formats=("svg", "pptx", "png"),
         provider_hint="FigureLabs-assisted",
