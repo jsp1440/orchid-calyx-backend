@@ -20,6 +20,19 @@ CALYX-474 activates and certifies the archive system already delivered by BUILD-
 
 Activation certification is deliberately read-only. It inspects PostgreSQL metadata to determine whether migration 106 and hardening migration 107 are present, but it does not run migrations, scan arbitrary filesystems, start imports, deploy code, or publish archive-local relationships to the canonical Knowledge Graph.
 
+## Review hardening
+
+Static review found that the original evidence digest included `generated_at`. Identical readiness state therefore produced a new digest and artifact ID on every request, contradicting the documented deterministic/content-addressed contract. Removing the timestamp from only the digest would also have caused an immutable-artifact conflict because the same artifact ID would still receive timestamp-varying bytes.
+
+The repaired contract separates observation metadata from evidence identity:
+
+- `generated_at` remains in the API observation;
+- `evidence_digest` is computed only from stable readiness/governance state;
+- immutable artifact content excludes `generated_at` and includes the stable evidence digest;
+- repeated unchanged readiness registration returns the same artifact ID/checksum and an idempotent `created=false` replay.
+
+A focused regression now performs two registrations against the same immutable registry and proves stable digest, artifact identity, checksum, and duplicate replay behavior while retaining path/credential sanitization.
+
 ## Readiness blockers
 
 The activation surface reports exact blockers rather than guessing readiness:
@@ -39,4 +52,4 @@ An empty blocker list means the backend is structurally ready for a bounded, aut
 
 Dedicated CI compiles the activation/routes surface, runs CALYX-474 tests together with BUILD-080 migration and BUILD-080C archive-hardening regressions, asserts secret/path sanitization and permanent no-production-import/no-graph-publication boundaries, runs Ruff, and checks diff hygiene.
 
-Two consecutive CALYX-474 workflow attempts on exact implementation heads failed before any job step executed (`steps=null`), matching the contemporaneous pre-step failures affecting BUILD-080, BUILD-088E, CALYX Workflow Governance Audit, CALYX-473, CALYX-472, supervised-pilot, and autonomy workflows. This is a GitHub-hosted runner provisioning blocker rather than executed test evidence. No workflow assertion was weakened or bypassed. Expansion beyond #474 is paused until executable validation is available.
+GitHub-hosted runner attempts on exact implementation heads have failed before any job step executed (`steps=null`), matching the contemporaneous repository-wide runner allocation incident tracked in #481. This is infrastructure failure rather than executed test evidence. No workflow assertion is weakened or bypassed; the repaired head remains draft until real executable validation succeeds.
