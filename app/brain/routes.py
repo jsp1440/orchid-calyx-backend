@@ -20,7 +20,10 @@ from app.security import verify_owner_or_api_key
 from runtime.connector_registry import ConnectorRegistry, default_brain_registry
 from runtime.knowledge_graph import PostgresGraphRepository
 
-from .diagnostic_hypotheses import DiagnosticHypothesisRequest, rank_diagnostic_hypotheses
+from .diagnostic_hypotheses import (
+    DiagnosticHypothesisRequest,
+    rank_diagnostic_hypotheses,
+)
 from .education_design_routes import router as education_design_router
 from .ledger_bridge import InferenceLedgerBridge
 from .plant_diagnostic_context import (
