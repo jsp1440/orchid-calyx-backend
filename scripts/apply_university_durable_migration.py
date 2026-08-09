@@ -178,6 +178,7 @@ def apply_migration(
     except UnicodeDecodeError as exc:
         raise MigrationGuardError("confirmed migration payload is not valid UTF-8") from exc
     post_state: dict[str, Any]
+    mutations_performed = False
     try:
         with psycopg.connect(
             database_url,
@@ -188,9 +189,19 @@ def apply_migration(
                 with conn.cursor() as cur:
                     _set_transaction_timeouts(cur)
                     cur.execute("SELECT pg_advisory_xact_lock(%s)", (ADVISORY_LOCK_KEY,))
-                    cur.execute(sql)
-                post_state = _schema_state_on_connection(conn)
-                _require(bool(post_state.get("schema_valid")), "post-apply durable schema verification failed")
+
+                locked_state = _schema_state_on_connection(conn)
+                if bool(locked_state.get("schema_valid")):
+                    post_state = locked_state
+                else:
+                    with conn.cursor() as cur:
+                        cur.execute(sql)
+                    post_state = _schema_state_on_connection(conn)
+                    _require(
+                        bool(post_state.get("schema_valid")),
+                        "post-apply durable schema verification failed",
+                    )
+                    mutations_performed = True
     except MigrationGuardError:
         raise
     except Exception as exc:
@@ -199,10 +210,14 @@ def apply_migration(
         **migration_plan,
         "mode": "apply",
         "would_apply": False,
-        "result": "applied_and_verified",
+        "result": (
+            "applied_and_verified"
+            if mutations_performed
+            else "already_valid_noop_after_lock"
+        ),
         "post_apply_schema_valid": True,
         "post_apply_verification": post_state,
-        "mutations_performed": True,
+        "mutations_performed": mutations_performed,
     }
 
 
