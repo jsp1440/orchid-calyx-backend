@@ -1,120 +1,102 @@
 # CALYX CORE — Guarded Hassler production upload boundary
 
-Date: 2026-08-08
+Date: 2026-08-09
 Issue: #386
 Parent: #384
-Current-main replacement for stale PR #661
+PR: #734
+
+## Status
+
+IMPLEMENTED / EXECUTABLE-GREEN / READY FOR OWNER REVIEW OF THE TOOLING.
+
+Executable-green code/workflow head: `34cb93bb5ab6a0b3010ee390f4bb504041666f59`.
+
+This status does **not** authorize merge or a production upload.
 
 ## Purpose
 
-Prepare the exact production upload/readback operation for the real Hassler release without executing it. This closes the remaining engineering gap before the production intake write while preserving the explicit owner governance boundary.
+Prepare the exact production upload/readback operation for the real Hassler release without executing it. This closes the engineering gap before the production intake write while preserving the explicit owner governance boundary.
 
 ## Canonical source identity
 
-The canonical source is:
-
 `WorldOrchids 26-08 (Aug 2 2026).csv`
-
-Verified source identity:
 
 - size: `11,529,836` bytes
 - SHA-256: `e5be9268e1a48cb0e1777137ac386a9a870f3581c35f10678c9b810c59688c6f`
 - version label: `26-08`
 - acquisition date: `2026-08-02`
 
-The previous #661 implementation validated this exact source identity and the guarded upload/readback behavior, but its branch later became non-mergeable as `main` advanced. This slice rebuilds the same bounded operator client directly on current `main` rather than forcing stale history.
-
 ## Guarded operator client
 
-`scripts/upload_hassler_release_guarded.py` implements a fail-closed upload/readback client.
+`scripts/upload_hassler_release_guarded.py` is fail closed.
 
-Dry-run is the default. A production upload requires all of:
+Dry-run is the default. A live upload requires `--execute`, the exact source identity, owner-session credentials, backend URL, and exact confirmation token `UPLOAD_WORLD_ORCHIDS_26_08`.
 
-1. `--execute`;
-2. exact source filename;
-3. exact source byte size;
-4. exact source SHA-256;
-5. `CALYX_BACKEND_URL`;
-6. `CALYX_OWNER_ACCESS_CODE`;
-7. exact confirmation token `CALYX_HASSLER_UPLOAD_CONFIRMATION=UPLOAD_WORLD_ORCHIDS_26_08`.
+The client performs immutable readback **before mutation**:
 
-### Idempotent replay hardening
+1. authenticate through the owner-session endpoint;
+2. read `GET /api/mission-control/taxonomy/releases/{EXPECTED_SHA256}`;
+3. exact existing durable identity returns `NO_OP_ALREADY_PRESENT`, `upload_invoked=false`, `production_mutation=false`;
+4. only a genuine 404 may proceed to live upload-readiness checks;
+5. mismatched existing identity or any other response fails closed;
+6. only after readiness confirms `upload_world_orchids_release` may the client issue `POST /api/mission-control/taxonomy/releases/inspect`;
+7. a successful first upload must round-trip immutable identity and stop at staging-smoke readiness.
 
-Static review of the initial current-main rebuild found a production-operator defect: the client checked the generic readiness next-job before checking whether the exact immutable release already existed. If the release had already been uploaded, Mission Control would correctly advance beyond `upload_world_orchids_release`, but the client would treat that healthy state as an error and could not prove a safe replay.
+The client never calls staging or activation and always reports those authorities as false.
 
-The corrected flow is now:
+## Mutation-truth receipts
 
-1. authenticate with the existing owner-session endpoint;
-2. `GET /api/mission-control/taxonomy/releases/{EXPECTED_SHA256}` **before any mutating request**;
-3. if the response is 200, require the exact durable PostgreSQL identity and return `NO_OP_ALREADY_PRESENT` with `upload_invoked=false` and `production_mutation=false`;
-4. if the response is 404, and only 404, continue to the live upload-readiness gate;
-5. any other response fails closed;
-6. after a first upload, read back the exact release again and verify post-intake readiness.
+Receipt schema `1.2` prevents a post-mutation verification failure from disappearing as a generic exception.
 
-An existing report with mismatched SHA/name/version/acquisition date, automatic promotion, or non-PostgreSQL durability is rejected before any POST.
+- `NONE`: no upload request was issued.
+- `CONFIRMED`: the upload response confirmed durable mutation.
+- `UNKNOWN`: an upload request was issued but the HTTP/transport result could not establish whether production mutation occurred.
 
-Before a first upload the client requires live Mission Control to report `ready_for_upload=true` with next job `upload_world_orchids_release`.
+A confirmed upload followed by failed readback/readiness returns `MUTATED_VERIFICATION_FAILED` with `production_mutation=true`.
 
-The only production write it can invoke is:
+An indeterminate upload result returns `UPLOAD_RESULT_UNKNOWN` with `production_mutation=null` rather than falsely claiming no mutation.
 
-`POST /api/mission-control/taxonomy/releases/inspect`
+Both failure receipts are hash-bound and cause non-zero CLI exit.
 
-After a first upload it verifies:
+## Validation correction and coverage hardening
 
-- release ID equals the exact SHA-256;
-- snapshot SHA-256 matches;
-- filename/version/acquisition date match;
-- durable storage is PostgreSQL;
-- automatic promotion remains false;
-- direct release readback returns the same identity;
-- Mission Control advances only to `release_inspected_staging_smoke_required`;
-- next job is `verify_taxonomy_staging_smoke`.
+Recovered CI first exposed formatter drift only. Ruff-required wrapping was applied to the guarded client and its normal behavior tests without changing semantics.
 
-For an already-present exact release, the client does not force the pipeline backward to the upload state. It preserves and reports the server-current next job, which may legitimately be staging smoke, bounded staging, review, or a later governed state.
+A subsequent validation audit found a coverage gap: the dedicated workflow did not execute `tests/test_upload_hassler_release_guarded_failure_receipts.py` even though those receipt semantics are part of this branch. The existing workflow was therefore extended—not redesigned—to include the failure-receipt file in its path trigger, compile, Ruff lint/format, pytest execution, and governance smoke.
 
-The client never calls the staging endpoint and records:
+Exact head `34cb93bb5ab6a0b3010ee390f4bb504041666f59` passed all applicable workflows:
 
-- `staging_invoked=false`;
-- `taxonomy_activation_authorized=false`;
-- `knowledge_graph_mutation_authorized=false`;
-- `automatic_promotion=false`.
+- CALYX Hassler Guarded Upload Client Validation run `31324140209` — success;
+- CALYX Workflow Governance Audit `31324140289` — success;
+- BUILD-088E Validation `31324140229` — success.
 
-## Validation contract
+The dedicated gate passed:
 
-`tests/test_upload_hassler_release_guarded.py` verifies:
+- Python compile;
+- Ruff lint and format;
+- normal upload/readback/replay/readiness behavior tests;
+- confirmed-mutation/readback-failure receipt regression;
+- unknown-upload-result receipt regression;
+- governance smoke proving no staging/activation/KG authority and presence of both failure states.
 
-- checksum drift fails closed;
-- an automatic-promotion response is rejected;
-- a first upload requires an initial 404 readback and live upload readiness;
-- successful first upload must round-trip immutable release identity;
-- successful first upload stops at staging-smoke readiness;
-- exact already-present durable release returns deterministic no-op without POST;
-- mismatched already-present release fails before POST;
-- blocked readiness prevents upload entirely;
-- no `/stage` request is issued.
+No unresolved review threads exist on PR #734.
 
-`.github/workflows/calyx-hassler-guarded-upload-client-validation.yml` runs compile, Ruff, focused tests, and a governance smoke. It has no production credentials and cannot execute a real upload.
+CI contains no production credentials and uses mocked HTTP transport for upload behavior; validation performed no production POST.
 
-The stale #661 exact head previously passed its focused workflow, workflow-governance audit, BUILD-088E, and an actual source dry-run identity check. This current-main replacement must independently pass its own exact-head validation before it can be considered ready.
+## API/schema impact
 
-## Current validation state
+No server API or database schema is added by this client. It consumes existing Mission Control owner-session, taxonomy release readback, taxonomy readiness, and release-inspect APIs.
 
-PR #734 was opened from current `main` at base `7f5bec2fb8092739a8e5fc5ce55ebc9008a9171e`.
-
-Its first hosted validation attempts were created but failed before runner checkout. The dedicated `CALYX Hassler Guarded Upload Client Validation` run `31290720716` produced job `93187237107` with `steps=null`; BUILD-088E and Workflow Governance on the same head showed the same infrastructure pattern. This is tracked as the repository hosted-runner incident and is not counted as compile/lint/test evidence.
-
-The idempotent replay correction was implemented after that initial infrastructure-only run. The current branch must therefore receive fresh executable exact-head CI after the correction before it can be considered validated.
-
-The implementation remains draft and unmerged. No production upload or staging action was attempted.
+The local receipt contract remains schema version `1.2` and adds truthful three-state production-mutation reporting around an already-defined guarded upload operation.
 
 ## Governance boundary
 
-This implementation does **not** authorize or perform the production upload. The first upload stores immutable release bytes and metadata in the production `taxonomy_pipeline` schema, so it is a production database mutation requiring explicit owner approval separate from generic autonomous implementation instructions.
+The first real upload is a production database mutation. Issue #386 explicitly requires agents to stop before merge and before production upload.
 
-An exact already-present readback is read-only and results in `NO_OP_ALREADY_PRESENT`; it does not itself require a new mutation.
+Therefore:
 
-After an authorized first upload/readback succeeds, bounded staging smoke remains a separate state-changing step. Taxonomy activation, canonical species mutation, Knowledge Graph mutation, and scientific publication remain independently blocked.
-
-## Required disposition
-
-Issue #386 explicitly requires agents to stop before merge and before production upload. Therefore this current-main replacement may be implemented and validated autonomously, but merge and production execution remain governance boundaries requiring an explicit owner decision.
+- the client may be reviewed as executable-green tooling;
+- merge requires the owner-governed disposition required by #386;
+- `--execute` against production is **not authorized** by this validation;
+- bounded staging is a separate state-changing step;
+- taxonomy activation, canonical species mutation, Knowledge Graph mutation, publication, deployment, and Azure actions remain separately blocked.
