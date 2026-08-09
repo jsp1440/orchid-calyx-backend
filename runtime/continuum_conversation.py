@@ -32,7 +32,7 @@ class ConversationContext:
     active_document_id: str | None = None
 
     @classmethod
-    def from_payload(cls, payload: dict[str, Any] | None) -> "ConversationContext":
+    def from_payload(cls, payload: dict[str, Any] | None) -> ConversationContext:
         values = payload or {}
         return cls(
             active_project_id=_optional_text(values.get("active_project_id")),
