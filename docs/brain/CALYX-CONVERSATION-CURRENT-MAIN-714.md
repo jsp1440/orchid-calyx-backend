@@ -1,6 +1,6 @@
 # CALYX Conversation Current-Main Reconstruction 714 v3
 
-Status: VALIDATED ON PR #798 / READY FOR REVIEW SUBJECT TO EXACT-HEAD DOC CHECK
+Status: VALIDATED ON PR #798 / READY FOR REVIEW
 
 ## Purpose
 
@@ -24,7 +24,7 @@ Validation on that exact implementation head:
 
 Earlier exact-head failures were resolved failure-first: Ruff formatting drift across the conversation surface, then reduced Mission Control workflow dependency gaps. No application behavior or authority boundary was weakened to obtain green CI.
 
-This Brain documentation commit is documentation-only beyond the validated implementation head and requires its own exact-head workflow confirmation before PR state promotion.
+The first Brain documentation head `d4e9d0dc48bfe46f381478fe3057df2c6118c9ff` also passed the same five exact-head workflows before PR #798 was promoted to ready-for-review and PR #743 was closed as superseded. This final checkpoint update only reconciles that now-completed state in the Brain; it introduces no runtime/API/schema behavior.
 
 ## Delivered
 
@@ -81,4 +81,4 @@ No production database mutation, production Knowledge Graph mutation, scientific
 
 ## Supersession
 
-After the documentation-only exact-head validation succeeds and PR #798 is promoted to ready-for-review, #798 is the authoritative continuation path for this conversation capability. PR #743 may then be closed as superseded stale ancestry; it must not be merged.
+PR #798 is the authoritative continuation path for this conversation capability and is ready for governed review. PR #743 is closed unmerged as superseded stale ancestry and must not be revived as a competing integration path.
