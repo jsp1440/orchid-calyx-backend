@@ -139,6 +139,12 @@ Corrective validation history:
 
 A fresh exact-head CI cycle is required after this Brain update before the implementation is reported as final DELIVERED evidence on issue #448.
 
+## 2026-08-08 current-main reconstruction
+
+After SCICOMP-001N merged to `main`, canonical PR #601 became non-mergeable from base drift. A replacement validation branch was rebuilt directly from current main commit `6fe2cac688a905a9643a2b58da9a15b86fd95b48` with the five CALYX-448 additive blobs preserved byte-for-byte and only the Literature router import/include integrated into the current `app/routers/live_mission_control.py`.
+
+Temporary validation PR #745 therefore contains exactly the six CALYX-448 files and no unrelated application changes. The first exact-head workflow cycle reproduced canonical CI incident #481: the dedicated Literature Acquisition job was created but failed before step 1 with `steps=null`. This is not code/test evidence. The reconstruction remains mergeable and must not replace canonical PR #601 until executable exact-head CI actually runs and passes.
+
 ## Explicit non-actions
 
 No live DOI/URL fetching, OCR service invocation, production literature crawl, scientific publication, production Knowledge Graph mutation, deployment, merge, credential storage, or fabricated production counts are performed.
