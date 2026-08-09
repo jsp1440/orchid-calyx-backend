@@ -3,12 +3,24 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
+from fastapi import HTTPException
+
 from app.conversation_memory.report import build_conversation_markdown
 from app.conversation_memory.service import ConversationMemoryService
 from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
-from app.routers.calyx_conversation_sources import router as source_router
-from app.routers.calyx_operator_chat import router as chat_router
+from app.routers.calyx_conversation_sources import (
+    _assert_exact_project_link,
+    router as source_router,
+)
+from app.routers.calyx_operator_chat import (
+    _private_exchange,
+    chat_transcript,
+    reset_chat_for_tests,
+    router as chat_router,
+)
+from app.routers.live_mission_control import router as deployed_mission_control_router
 from runtime.continuum_conversation import ContinuumConversationService
 
 
@@ -218,6 +230,37 @@ def test_report_deduplicates_source_ledger_without_evidence_upgrade():
     assert report.count("- Sources: [Source 1](#source-1)") == 2
     assert "Evidence authority: `false`" in report
     assert "Document ID: `doc-target`" in report
+
+
+def test_authenticated_exchange_does_not_enter_legacy_public_transcript():
+    reset_chat_for_tests()
+    operator_message, calyx_message = _private_exchange(
+        "private research question", "private grounded answer"
+    )
+    assert operator_message["message_id"]
+    assert calyx_message["message_id"]
+    assert chat_transcript()["messages"] == []
+
+
+def test_deployed_mission_control_mounts_source_link_router():
+    deployed_paths = {route.path for route in deployed_mission_control_router.routes}
+    assert (
+        "/brain/mission-control/chat/conversations/{conversation_id}/sources/{result_id}/project-link"
+        in deployed_paths
+    )
+
+
+def test_project_link_identity_conflict_fails_closed():
+    with pytest.raises(HTTPException) as exc_info:
+        _assert_exact_project_link(
+            {"document_id": "doc-target", "revision_id": "rev-old"},
+            "doc-target",
+            "rev-target",
+        )
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == {
+        "code": "CONVERSATION_SOURCE_PROJECT_LINK_IDENTITY_CONFLICT"
+    }
 
 
 def test_current_main_routes_and_migration_governance_are_present():
