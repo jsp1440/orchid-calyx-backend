@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.scientific_inference import InferenceDomain, InferenceState, ScientificInferenceService
+from app.scientific_inference import (
+    InferenceDomain,
+    InferenceState,
+    ScientificInferenceService,
+)
 
 
 def aggregate(
