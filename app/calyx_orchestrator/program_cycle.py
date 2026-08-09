@@ -162,7 +162,13 @@ def run_deterministic_program_cycle(
                 receipt=receipt,
             )
             _finalize_workspace_mutation(registered, assignment.assignment_id)
-        except (LookupError, PermissionError, RuntimeError, TypeError, ValueError) as exc:
+        except (
+            LookupError,
+            PermissionError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
             rollback_error = _rollback_workspace_mutation(
                 registered,
                 job.program_job_id,
