@@ -24,6 +24,7 @@ EVENT_TYPES = {
     "care_alert",
 }
 SEVERITIES = {"info", "low", "medium", "high", "critical"}
+SEVERITY_RANK = {name: index for index, name in enumerate(("info", "low", "medium", "high", "critical"))}
 
 
 def notification_root() -> Path:
@@ -63,9 +64,41 @@ def _digest(value: Any) -> str:
 def _parse_hhmm(value: str) -> time:
     try:
         hour, minute = value.split(":", 1)
-        return time(int(hour), int(minute))
+        parsed = time(int(hour), int(minute))
     except Exception as exc:
         raise ValueError("NOTIFICATION_QUIET_HOURS_INVALID") from exc
+    return parsed
+
+
+def _event_content(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: record[key]
+        for key in (
+            "schema_version",
+            "event_id",
+            "event_type",
+            "severity",
+            "recipient_id",
+            "title",
+            "message",
+            "source_ref",
+            "dedupe_key",
+            "digest_group",
+        )
+    }
+
+
+def _refresh_state_digest(event: dict[str, Any]) -> None:
+    event["state_digest"] = _digest({
+        "event_digest": event["event_digest"],
+        "state": event["state"],
+        "duplicate_count": event.get("duplicate_count", 0),
+        "last_seen_at": event.get("last_seen_at"),
+        "escalation_level": event.get("escalation_level", 0),
+        "acknowledgement": event.get("acknowledgement"),
+        "delivery_receipts": event.get("delivery_receipts", []),
+        "escalation_history": event.get("escalation_history", []),
+    })
 
 
 class NotificationService:
@@ -145,15 +178,6 @@ class NotificationService:
             "source_ref": source_ref,
             "title": title,
         })
-        events_dir = self._root(owner_id) / "events"
-        if events_dir.exists():
-            for path in sorted(events_dir.glob("*.json")):
-                existing = self._read(path)
-                if existing["dedupe_key"] == dedupe_key and existing["state"] not in {"acknowledged", "closed"}:
-                    existing["duplicate_count"] = int(existing.get("duplicate_count", 0)) + 1
-                    existing["last_seen_at"] = _now()
-                    self._write(path, existing)
-                    return existing
         preference = self._preference(owner_id, recipient_id)
         record = {
             "schema_version": SCHEMA_VERSION,
@@ -177,8 +201,25 @@ class NotificationService:
             "created_at": _now(),
             "last_seen_at": _now(),
         }
-        record["event_digest"] = _digest(record)
-        return self._write(events_dir / f"{event_id}.json", record)
+        record["event_digest"] = _digest(_event_content(record))
+        _refresh_state_digest(record)
+        events_dir = self._root(owner_id) / "events"
+        event_path = events_dir / f"{event_id}.json"
+        if event_path.exists():
+            existing = self._read(event_path)
+            if existing.get("event_digest") != record["event_digest"]:
+                raise ValueError("NOTIFICATION_IMMUTABLE_EVENT_CONFLICT")
+            return existing
+        if events_dir.exists():
+            for path in sorted(events_dir.glob("*.json")):
+                existing = self._read(path)
+                if existing["dedupe_key"] == dedupe_key and existing["state"] not in {"acknowledged", "closed"}:
+                    existing["duplicate_count"] = int(existing.get("duplicate_count", 0)) + 1
+                    existing["last_seen_at"] = _now()
+                    _refresh_state_digest(existing)
+                    self._write(path, existing)
+                    return existing
+        return self._write(event_path, record)
 
     def is_quiet_hours(self, preference: dict[str, Any], at: datetime | None = None) -> bool:
         quiet = dict(preference.get("quiet_hours") or {})
@@ -194,14 +235,13 @@ class NotificationService:
 
     def pending_for_recipient(self, owner_id: str, recipient_id: str, *, at: datetime | None = None) -> dict[str, Any]:
         preference = self._preference(owner_id, recipient_id)
-        rank = {name: index for index, name in enumerate(("info", "low", "medium", "high", "critical"))}
-        threshold = rank[preference["minimum_severity"]]
+        threshold = SEVERITY_RANK[preference["minimum_severity"]]
         events_dir = self._root(owner_id) / "events"
         items = []
         if events_dir.exists():
             for path in sorted(events_dir.glob("*.json")):
                 event = self._read(path)
-                if event["recipient_id"] == recipient_id and event["state"] == "pending" and rank[event["severity"]] >= threshold:
+                if event["recipient_id"] == recipient_id and event["state"] == "pending" and SEVERITY_RANK[event["severity"]] >= threshold:
                     items.append(event)
         quiet = self.is_quiet_hours(preference, at=at)
         immediate = [item for item in items if item["severity"] == "critical" or not quiet]
@@ -216,15 +256,30 @@ class NotificationService:
         }
 
     def digest(self, owner_id: str, recipient_id: str) -> dict[str, Any]:
+        preference = self._preference(owner_id, recipient_id)
+        if not preference["digest_enabled"]:
+            return {
+                "schema_version": SCHEMA_VERSION,
+                "recipient_id": recipient_id,
+                "groups": {},
+                "event_count": 0,
+                "digest_enabled": False,
+                "provider_send_authorized": False,
+            }
         pending = self.pending_for_recipient(owner_id, recipient_id)
         groups: dict[str, list[dict[str, Any]]] = {}
         for event in pending["immediate"] + pending["deferred"]:
             groups.setdefault(event["digest_group"], []).append(event)
+        ordered_groups = {
+            key: sorted(value, key=lambda item: (-SEVERITY_RANK[item["severity"]], item["event_id"]))
+            for key, value in sorted(groups.items())
+        }
         return {
             "schema_version": SCHEMA_VERSION,
             "recipient_id": recipient_id,
-            "groups": {key: sorted(value, key=lambda item: (item["severity"], item["event_id"])) for key, value in sorted(groups.items())},
-            "event_count": sum(len(value) for value in groups.values()),
+            "groups": ordered_groups,
+            "event_count": sum(len(value) for value in ordered_groups.values()),
+            "digest_enabled": True,
             "provider_send_authorized": False,
         }
 
@@ -234,6 +289,7 @@ class NotificationService:
         event = self._read(path)
         event["state"] = "acknowledged"
         event["acknowledgement"] = {"actor": _text(actor), "note": _text(note) or None, "at": _now()}
+        _refresh_state_digest(event)
         return self._write(path, event)
 
     def escalate(self, owner_id: str, event_id: str, *, actor: str, rationale: str) -> dict[str, Any]:
@@ -246,8 +302,9 @@ class NotificationService:
             raise ValueError("NOTIFICATION_ACKNOWLEDGED_EVENT_CANNOT_ESCALATE")
         event["escalation_level"] = int(event.get("escalation_level", 0)) + 1
         history = list(event.get("escalation_history") or [])
-        history.append({"level": event["escalation_level"], "actor": actor, "rationale": rationale, "at": _now()})
+        history.append({"level": event["escalation_level"], "actor": _text(actor), "rationale": _text(rationale), "at": _now()})
         event["escalation_history"] = history
+        _refresh_state_digest(event)
         return self._write(path, event)
 
     def record_delivery_receipt(self, owner_id: str, event_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -265,6 +322,7 @@ class NotificationService:
             "live_provider_send": False,
         }
         event["delivery_receipts"] = list(event.get("delivery_receipts") or []) + [receipt]
+        _refresh_state_digest(event)
         return self._write(path, event)
 
     def readiness(self, owner_id: str) -> dict[str, Any]:
