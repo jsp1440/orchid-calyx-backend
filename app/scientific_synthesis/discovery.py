@@ -39,7 +39,8 @@ def _authors(item: dict[str, Any]) -> tuple[str, ...]:
             continue
         given = _clean(author.get("given"))
         family = _clean(author.get("family"))
-        name = " ".join(value for value in (given, family) if value)
+        personal_name = " ".join(value for value in (given, family) if value)
+        name = personal_name or _clean(author.get("name"))
         if name:
             result.append(name)
     return tuple(result)
@@ -113,7 +114,7 @@ class CrossrefProvider:
                 {
                     "query.bibliographic": query,
                     "rows": max(1, min(rows, 100)),
-                    "select": "DOI,title,author,published-print,published-online,published,issued,created,container-title,type",
+                    "select": "DOI,title,author,published-print,published-online,issued,created,container-title,type",
                 }
             ),
             timeout=self.timeout_seconds,
