@@ -3,6 +3,7 @@ name: BUILD-BRAIN-114M Git Proposal Manifest Validation
 on:
   pull_request:
     paths:
+      - "app/calyx_orchestrator/assignment_factory.py"
       - "app/calyx_orchestrator/execution_bridge.py"
       - "app/calyx_orchestrator/git_proposal_manifest.py"
       - "app/calyx_orchestrator/persisted_patch_execution.py"
@@ -34,11 +35,11 @@ jobs:
           pip install pytest ruff
       - name: Compile proposal manifest surface
         run: |
-          python -m compileall -q app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
+          python -m compileall -q app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
       - name: Ruff proposal manifest surface
         run: |
-          ruff check app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
-          ruff format --check app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
+          ruff check app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
+          ruff format --check app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
       - name: Focused proposal manifest regressions
         env:
           PYTHONPATH: .
@@ -51,8 +52,9 @@ jobs:
 
           source = Path("app/calyx_orchestrator/git_proposal_manifest.py").read_text(encoding="utf-8")
           persisted = Path("app/calyx_orchestrator/persisted_patch_execution.py").read_text(encoding="utf-8")
+          assignment = Path("app/calyx_orchestrator/assignment_factory.py").read_text(encoding="utf-8")
           bridge = Path("app/calyx_orchestrator/execution_bridge.py").read_text(encoding="utf-8")
-          combined = source + "\n" + persisted + "\n" + bridge
+          combined = source + "\n" + persisted + "\n" + assignment + "\n" + bridge
           forbidden = (
               "subprocess",
               "git push",
@@ -73,7 +75,10 @@ jobs:
           assert "PATCH_PROGRAM_JOB_EXECUTOR_INVALID" in persisted
           assert "PATCH_PROGRAM_JOB_OUTPUT_CHECKSUM_MISMATCH" in persisted
           assert "PATCH_PROGRAM_JOB_RECEIPT_IDENTITY_MISMATCH" in persisted
+          assert "PATCH_PROGRAM_JOB_INPUT_CHECKSUM_MISMATCH" in persisted
           assert "PATCH_PROGRAM_JOB_INPUT_OUTPUT_MISMATCH" in persisted
+          assert 'ISOLATED_PATCH_CAPABILITIES = (*SAFE_ASSIGNMENT_CAPABILITIES, "workspace_write")' in assignment
+          assert '"bounded_isolated_workspace_mutation"' in assignment
           assert '"assignment_id": receipt.assignment_id' in bridge
           assert '"program_id": receipt.program_id' in bridge
           assert '"job_key": receipt.job_key' in bridge
