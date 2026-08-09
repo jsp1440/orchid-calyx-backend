@@ -4,6 +4,7 @@ import hashlib
 import json
 from typing import Any
 
+from app.brain.causal_scope import normalize_causal_scope, publication_scope_blockers
 from app.candidate_knowledge.dependencies import get_candidate_components
 from app.candidate_knowledge.models import CandidateKind
 from runtime.knowledge_graph.causal_vocabulary import (
@@ -78,6 +79,12 @@ def _graph_from_candidate(candidate: dict[str, Any]) -> tuple[list[Node], list[E
     if semantics is None or not semantics["causal"]:
         blockers.append(f"invalid_causal_relationship:{relationship or 'missing'}")
 
+    try:
+        causal_scope = normalize_causal_scope(qualifiers.get("causal_scope"))
+    except ValueError as exc:
+        blockers.append(f"invalid_causal_scope:{exc}")
+        causal_scope = None
+
     if blockers:
         return [], [], blockers
 
@@ -86,6 +93,7 @@ def _graph_from_candidate(candidate: dict[str, Any]) -> tuple[list[Node], list[E
     common_payload = {
         "candidate_id": candidate_id,
         "reasoning_id": qualifiers.get("reasoning_id"),
+        "causal_scope": causal_scope,
         "experimental_context": qualifiers.get("experimental_context", {}),
         "quantitative_context": qualifiers.get("quantitative_context", {}),
         "provenance": qualifiers.get("provenance", {}),
@@ -158,6 +166,8 @@ def plan_mechanistic_candidate_publication(
     if not evidence:
         blockers.append("exact_evidence_required")
 
+    qualifiers = dict(candidate.get("qualifiers") or {})
+    blockers.extend(publication_scope_blockers(qualifiers.get("causal_scope")))
     blockers.extend(_open_review_blockers(repository, candidate_id))
     blockers.extend(_open_conflict_blockers(repository, candidate_id))
     blockers.extend(
@@ -190,6 +200,7 @@ def plan_mechanistic_candidate_publication(
     plan_core = {
         "candidate_id": candidate_id,
         "candidate_hash": candidate.get("candidate_hash"),
+        "causal_scope": qualifiers.get("causal_scope"),
         "evidence_link_ids": sorted(
             int(link["evidence_link_id"]) for link in evidence if link.get("evidence_link_id")
         ),
@@ -200,9 +211,10 @@ def plan_mechanistic_candidate_publication(
     ready = not blockers and bool(validation.get("healthy"))
 
     return {
-        "contract": "calyx-mechanistic-publication-plan-v1",
+        "contract": "calyx-mechanistic-publication-plan-v2",
         "candidate_id": candidate_id,
         "plan_id": _digest(plan_core),
+        "causal_scope": qualifiers.get("causal_scope"),
         "ready_for_controlled_publication_gate": ready,
         "authorized": False,
         "commit_capability": False,
@@ -216,6 +228,6 @@ def plan_mechanistic_candidate_publication(
         "operator_action": (
             "Submit this immutable plan to the existing controlled publication gate for explicit authorization."
             if ready
-            else "Resolve all blockers, preserve evidence, and regenerate the plan."
+            else "Resolve all blockers, preserve evidence and applicability scope, then regenerate the plan."
         ),
     }
