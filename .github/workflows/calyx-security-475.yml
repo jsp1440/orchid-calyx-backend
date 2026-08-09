@@ -5,6 +5,9 @@ on:
     paths:
       - 'app/security.py'
       - 'app/security_governance.py'
+      - 'app/security_audit.py'
+      - 'app/routers/security_readiness.py'
+      - 'app/routers/live_mission_control.py'
       - 'tests/test_calyx_security_475.py'
       - 'docs/brain/CALYX-SECURITY-HARDENING-475.md'
       - '.github/workflows/calyx-security-475.yml'
@@ -24,9 +27,15 @@ jobs:
       - name: Install focused dependencies
         run: pip install pytest fastapi
       - name: Compile
-        run: python -m py_compile app/security.py app/security_governance.py tests/test_calyx_security_475.py
+        run: python -m py_compile app/security.py app/security_governance.py app/security_audit.py app/routers/security_readiness.py app/routers/live_mission_control.py tests/test_calyx_security_475.py
       - name: Deterministic security tests
         run: pytest -q tests/test_calyx_security_475.py
       - name: Guard against committed secret values
         run: |
-          ! grep -R -E '(CALYX_API_KEY|CALYX_OWNER_SESSION_SECRET|CALYX_OWNER_ACCESS_CODE|ORCHID_JUDGE_ADMIN_KEY)=[^"'"'[:space:]]+' app tests docs/brain/CALYX-SECURITY-HARDENING-475.md
+          ! grep -R -E '(CALYX_API_KEY|CALYX_OWNER_SESSION_SECRET|CALYX_OWNER_ACCESS_CODE|ORCHID_JUDGE_ADMIN_KEY)=.+' app tests docs/brain/CALYX-SECURITY-HARDENING-475.md
+      - name: Permanent no-rotation/no-attack/no-deploy assertions
+        run: |
+          grep -q 'credential_rotation_authorized.*False' app/security_governance.py
+          grep -q 'penetration_attack_authorized.*False' app/security_governance.py
+          grep -q 'deployment_authorized.*False' app/security_audit.py
+          grep -q 'merge_authorized.*False' app/security_audit.py
