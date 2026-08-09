@@ -4,6 +4,7 @@ This current-main reconstruction preserves CALYX-634 through CALYX-639 behavior 
 carrying the stale scientific/research-stack ancestry. Conversation answers are built
 only from governed Evidence Retrieval records plus read-only Knowledge Graph context.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -78,7 +79,9 @@ class ContinuumConversationService:
         retrieval: RetrievalEngineProtocol | None = None,
         graph_tool: KnowledgeGraphReadProtocol | None = None,
     ) -> None:
-        self.retrieval = retrieval or RetrievalEngine(REPO, DeterministicLocalProvider())
+        self.retrieval = retrieval or RetrievalEngine(
+            REPO, DeterministicLocalProvider()
+        )
         self.graph_tool = graph_tool or ReadOnlyKnowledgeGraphTool()
 
     def ask(
@@ -147,8 +150,12 @@ class ContinuumConversationService:
                     "status": graph_context.get("status"),
                     "taxon_id": graph_context.get("taxon_id"),
                     "canonical_key": graph_context.get("canonical_key"),
-                    "node_count": (graph_context.get("graph") or {}).get("node_count", 0),
-                    "edge_count": (graph_context.get("graph") or {}).get("edge_count", 0),
+                    "node_count": (graph_context.get("graph") or {}).get(
+                        "node_count", 0
+                    ),
+                    "edge_count": (graph_context.get("graph") or {}).get(
+                        "edge_count", 0
+                    ),
                     "read_only": True,
                     "knowledge_graph_mutation_authorized": False,
                 }
@@ -211,7 +218,9 @@ class ContinuumConversationService:
         focal = dict(graph_context.get("focal_node") or {})
         label = _optional_text(focal.get("label")) or str(graph_context.get("taxon_id"))
         edge_types = [str(value) for value in graph_context.get("edge_types") or []]
-        domains = sorted(str(value) for value in (graph_context.get("domain_coverage") or {}))
+        domains = sorted(
+            str(value) for value in (graph_context.get("domain_coverage") or {})
+        )
         gaps = [str(value) for value in graph_context.get("data_gaps") or []]
         graph_text = (
             f" Read-only Knowledge Graph context for {label} contains "
