@@ -2,8 +2,9 @@
 
 Dry-run is the default. Production upload requires both ``--execute`` and the
 exact confirmation token in ``CALYX_HASSLER_UPLOAD_CONFIRMATION``. The client
-uploads/inspects the immutable release and verifies readback only. It never
-invokes staging, taxonomy activation, publication, or Knowledge Graph writes.
+first checks immutable durable readback: an already-present exact release is a
+no-op. Only an absent release may proceed to upload/inspect. It never invokes
+staging, taxonomy activation, publication, or Knowledge Graph writes.
 """
 
 from __future__ import annotations
@@ -87,6 +88,41 @@ def _owner_token(client: httpx.Client, access_code: str) -> str:
     return token
 
 
+def _post_intake_state(client: httpx.Client, headers: dict[str, str]) -> dict[str, Any]:
+    response = client.get("/api/mission-control/taxonomy/readiness", headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+
+def _receipt(
+    *,
+    source: dict[str, Any],
+    status: str,
+    upload_invoked: bool,
+    production_mutation: bool,
+    readback_verified: bool,
+    post: dict[str, Any],
+) -> dict[str, Any]:
+    receipt = {
+        "schema_version": "1.1",
+        "status": status,
+        "source": source,
+        "release_id": EXPECTED_SHA256,
+        "upload_invoked": upload_invoked,
+        "production_mutation": production_mutation,
+        "readback_verified": readback_verified,
+        "post_upload_pipeline_state": post.get("pipeline_state"),
+        "next_job": post.get("next_job"),
+        "staging_invoked": False,
+        "taxonomy_activation_authorized": False,
+        "knowledge_graph_mutation_authorized": False,
+        "automatic_promotion": False,
+    }
+    canonical = json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()
+    receipt["artifact_hash"] = hashlib.sha256(canonical).hexdigest()
+    return receipt
+
+
 def execute_upload(
     *,
     source_path: Path,
@@ -101,6 +137,26 @@ def execute_upload(
     try:
         token = _owner_token(client, access_code)
         headers = {"Authorization": f"Bearer {token}"}
+        release_path = f"/api/mission-control/taxonomy/releases/{EXPECTED_SHA256}"
+
+        # Idempotency is checked before any mutating request. A 200 must be the
+        # exact immutable durable release; a 404 is the only state that permits
+        # the upload path. Other statuses fail closed.
+        existing = client.get(release_path, headers=headers)
+        if existing.status_code == 200:
+            _assert_release_report(existing.json())
+            post = _post_intake_state(client, headers)
+            return _receipt(
+                source=source,
+                status="NO_OP_ALREADY_PRESENT",
+                upload_invoked=False,
+                production_mutation=False,
+                readback_verified=True,
+                post=post,
+            )
+        if existing.status_code != 404:
+            existing.raise_for_status()
+            raise RuntimeError("unexpected release-readback response")
 
         readiness = client.get(
             "/api/mission-control/taxonomy/readiness", headers=headers
@@ -129,42 +185,24 @@ def execute_upload(
         upload_report = uploaded.json()
         _assert_release_report(upload_report)
 
-        readback = client.get(
-            f"/api/mission-control/taxonomy/releases/{EXPECTED_SHA256}",
-            headers=headers,
-        )
+        readback = client.get(release_path, headers=headers)
         readback.raise_for_status()
-        readback_report = readback.json()
-        _assert_release_report(readback_report)
+        _assert_release_report(readback.json())
 
-        post_readiness = client.get(
-            "/api/mission-control/taxonomy/readiness", headers=headers
-        )
-        post_readiness.raise_for_status()
-        post = post_readiness.json()
+        post = _post_intake_state(client, headers)
         if post.get("pipeline_state") != "release_inspected_staging_smoke_required":
             raise RuntimeError("post-upload readiness did not stop at staging smoke")
         if post.get("next_job", {}).get("job") != "verify_taxonomy_staging_smoke":
             raise RuntimeError("post-upload next job is not staging smoke verification")
 
-        receipt = {
-            "schema_version": "1.0",
-            "status": "passed",
-            "source": source,
-            "release_id": EXPECTED_SHA256,
-            "upload_invoked": True,
-            "production_mutation": True,
-            "readback_verified": True,
-            "post_upload_pipeline_state": post.get("pipeline_state"),
-            "next_job": post.get("next_job"),
-            "staging_invoked": False,
-            "taxonomy_activation_authorized": False,
-            "knowledge_graph_mutation_authorized": False,
-            "automatic_promotion": False,
-        }
-        canonical = json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()
-        receipt["artifact_hash"] = hashlib.sha256(canonical).hexdigest()
-        return receipt
+        return _receipt(
+            source=source,
+            status="passed",
+            upload_invoked=True,
+            production_mutation=True,
+            readback_verified=True,
+            post=post,
+        )
     finally:
         if owns_client:
             client.close()
@@ -184,7 +222,7 @@ def main() -> int:
     source = validate_source(args.source)
     if not args.execute:
         report = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "status": "dry_run_passed",
             "source": source,
             "upload_invoked": False,
