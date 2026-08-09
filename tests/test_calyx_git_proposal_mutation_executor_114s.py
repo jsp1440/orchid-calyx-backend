@@ -24,9 +24,16 @@ COMMIT_SHA = "9" * 40
 
 
 class FakeMutationAdapter:
-    def __init__(self, *, fail_action: str | None = None, wrong_push: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_action: str | None = None,
+        wrong_push: bool = False,
+        pull_request_number: int | bool = 1234,
+    ) -> None:
         self.fail_action = fail_action
         self.wrong_push = wrong_push
+        self.pull_request_number = pull_request_number
         self.calls: list[str] = []
 
     def apply_proposal_operation(self, *, plan_digest: str, operation):
@@ -63,7 +70,7 @@ class FakeMutationAdapter:
                 "head_branch": "autonomy/proposal/work-123",
                 "base_commit_sha": BASE_COMMIT,
                 "head_commit_sha": COMMIT_SHA,
-                "pull_request_number": 1234,
+                "pull_request_number": self.pull_request_number,
             }
         raise AssertionError(operation.action)
 
@@ -166,4 +173,29 @@ def test_remote_failure_preserves_only_verified_completed_actions() -> None:
     assert raised.value.receipt.completed_actions == (
         "create_branch",
         "create_commit",
+    )
+
+
+def test_boolean_pull_request_number_is_rejected() -> None:
+    store, gate, request, grant, manifest, plan, _ = _execution_inputs()
+    adapter = FakeMutationAdapter(pull_request_number=True)
+    executor = GitProposalMutationExecutor(
+        adapter=adapter,
+        repository_allowlist=(REPOSITORY,),
+    )
+    with pytest.raises(GitProposalMutationError) as raised:
+        executor.execute(
+            plan=plan,
+            manifest_snapshot=manifest,
+            review_store=store,
+            authorization_gate=gate,
+            request=request,
+            grant_mapping=grant,
+            now=NOW + timedelta(minutes=1),
+        )
+    assert raised.value.code == "PermissionError"
+    assert raised.value.receipt.completed_actions == (
+        "create_branch",
+        "create_commit",
+        "push_branch",
     )
