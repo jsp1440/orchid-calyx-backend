@@ -1,0 +1,69 @@
+name: BUILD-615 Mechanistic Candidate Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/brain/mechanistic_candidates.py'
+      - 'app/candidate_knowledge/models.py'
+      - 'app/parallel_platform/routes.py'
+      - 'runtime/knowledge_graph/causal_vocabulary.py'
+      - 'runtime/knowledge_graph/validation.py'
+      - 'tests/test_build_615_mechanistic_candidate_graph.py'
+      - 'tests/test_build_614_scientific_causal_vocabulary.py'
+      - 'tests/test_candidate_knowledge.py'
+      - '.github/workflows/build-615-mechanistic-candidate-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-mechanistic-candidates:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile BUILD-615 slice
+        run: >-
+          python -m py_compile
+          app/brain/mechanistic_candidates.py
+          app/candidate_knowledge/models.py
+          app/parallel_platform/routes.py
+          tests/test_build_615_mechanistic_candidate_graph.py
+      - name: Ruff
+        run: >-
+          ruff check
+          app/brain/mechanistic_candidates.py
+          app/candidate_knowledge/models.py
+          app/parallel_platform/routes.py
+          tests/test_build_615_mechanistic_candidate_graph.py
+      - name: Formatting
+        run: >-
+          ruff format --check
+          app/brain/mechanistic_candidates.py
+          app/candidate_knowledge/models.py
+          app/parallel_platform/routes.py
+          tests/test_build_615_mechanistic_candidate_graph.py
+      - name: BUILD-615 behavioral regressions
+        run: python -m pytest -q tests/test_build_615_mechanistic_candidate_graph.py
+      - name: Causal vocabulary regression
+        run: python -m pytest -q tests/test_build_614_scientific_causal_vocabulary.py tests/test_build_612_reasoning_map.py
+      - name: Candidate Knowledge regression
+        run: |
+          if test -f tests/test_candidate_knowledge.py; then
+            python -m pytest -q tests/test_candidate_knowledge.py
+          else
+            python -m pytest -q tests/test_build_086a_candidate_knowledge.py
+          fi
+      - name: Verify platform router import
+        run: python -c "from app.parallel_platform.routes import router; assert any(r.path == '/api/platform/brain/mechanistic-candidate' for r in router.routes)"
+      - name: Hygiene
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
