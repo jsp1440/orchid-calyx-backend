@@ -60,6 +60,39 @@ def test_missing_requested_dimension_is_indeterminate_not_match():
     assert result["unresolved_dimensions"] == ["environments"]
 
 
+def test_partial_mapping_query_is_indeterminate_not_applicable():
+    result = evaluate_scope(
+        {
+            "scope_class": "bounded",
+            "environments": {"temperature": "cool", "humidity_percent": 80},
+        },
+        {
+            "scope_class": "bounded",
+            "environments": {"temperature": "cool"},
+        },
+    )
+    assert result["status"] == "indeterminate"
+    assert result["applicable"] is None
+    assert result["unresolved_dimensions"] == ["environments"]
+
+
+def test_nested_partial_mapping_query_is_indeterminate_not_applicable():
+    result = evaluate_scope(
+        {
+            "scope_class": "bounded",
+            "cultivation_context": {
+                "greenhouse": {"bench": "north", "light": "shade"}
+            },
+        },
+        {
+            "scope_class": "bounded",
+            "cultivation_context": {"greenhouse": {"bench": "north"}},
+        },
+    )
+    assert result["status"] == "indeterminate"
+    assert result["unresolved_dimensions"] == ["cultivation_context"]
+
+
 def test_unknown_claim_scope_is_indeterminate():
     result = evaluate_scope(
         {"scope_class": "unknown"},
