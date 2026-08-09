@@ -79,6 +79,12 @@ def _candidate_graph(
 
     source_type = payload.source.node_type.strip().lower()
     target_type = payload.target.node_type.strip().lower()
+    source_label = payload.source.label.strip()
+    target_label = payload.target.label.strip()
+    if not source_label:
+        raise ValueError("MECHANISTIC_SOURCE_LABEL_REQUIRED")
+    if not target_label:
+        raise ValueError("MECHANISTIC_TARGET_LABEL_REQUIRED")
     if source_type not in CAUSAL_REASONING_NODE_TYPES:
         raise ValueError(f"UNAPPROVED_CAUSAL_SOURCE_TYPE:{source_type}")
     if target_type not in CAUSAL_REASONING_NODE_TYPES:
@@ -86,37 +92,53 @@ def _candidate_graph(
 
     source_pk = _stable_source_pk(payload.source)
     target_pk = _stable_source_pk(payload.target)
+    preview_source = "synthetic.mechanistic_candidate_preview"
+    evidence_identity = {
+        "source_object_type": payload.source_object_type,
+        "source_object_id": payload.source_object_id,
+        "revision_id": payload.revision_id,
+        "extraction_run_id": payload.extraction_run_id,
+        "anchor_ids": [anchor.anchor_id for anchor in payload.source_anchors],
+    }
     source = Node(
         kg_node_id=1,
         node_type=source_type,
         canonical_key=f"{source_type}:{source_pk}",
-        display_label=payload.source.label.strip(),
-        source_table="oc_candidate_knowledge.candidates",
+        display_label=source_label,
+        source_table=preview_source,
         source_pk=source_pk,
         evidence_class="candidate_mechanistic_claim",
         confidence_score=payload.confidence,
         confidence_label="candidate",
-        payload={**payload.source.attributes, "candidate_only": True},
+        payload={
+            **payload.source.attributes,
+            "candidate_only": True,
+            "preview_provenance": evidence_identity,
+        },
     )
     target = Node(
         kg_node_id=2,
         node_type=target_type,
         canonical_key=f"{target_type}:{target_pk}",
-        display_label=payload.target.label.strip(),
-        source_table="oc_candidate_knowledge.candidates",
+        display_label=target_label,
+        source_table=preview_source,
         source_pk=target_pk,
         evidence_class="candidate_mechanistic_claim",
         confidence_score=payload.confidence,
         confidence_label="candidate",
-        payload={**payload.target.attributes, "candidate_only": True},
+        payload={
+            **payload.target.attributes,
+            "candidate_only": True,
+            "preview_provenance": evidence_identity,
+        },
     )
     edge = Edge(
         kg_edge_id=1,
         edge_type=relationship,
         from_node_id=1,
         to_node_id=2,
-        source_table="oc_candidate_knowledge.candidates",
-        source_pk=payload.reasoning_id,
+        source_table=preview_source,
+        source_pk=payload.reasoning_id.strip(),
         evidence_class="candidate_mechanistic_claim",
         confidence_score=payload.confidence,
         confidence_label="candidate",
@@ -124,6 +146,7 @@ def _candidate_graph(
         payload={
             "reasoning_id": payload.reasoning_id,
             "candidate_only": True,
+            "preview_provenance": evidence_identity,
             "experimental_context": payload.experimental_context,
             "quantitative_context": payload.quantitative_context,
             "provenance": payload.provenance,
@@ -170,57 +193,77 @@ def _candidate_graph(
     return preview, qualifiers
 
 
+def _candidate_ids_for_run(repository: Any, run_id: int) -> list[int]:
+    candidate_ids = {
+        item["candidate_id"] for item in repository.candidates_for_run(run_id)
+    }
+    candidate_ids.update(
+        review["candidate_id"]
+        for review in repository.reviews.values()
+        if review.get("candidate_run_id") == run_id
+        and review.get("candidate_id") is not None
+    )
+    return sorted(candidate_ids)
+
+
 def handoff_mechanistic_candidate(
     payload: MechanisticCandidateRequest,
     components: tuple[Any, Any] | None = None,
 ) -> dict[str, Any]:
-    graph_preview, qualifiers = _candidate_graph(payload)
     repository, service = components or get_candidate_components()
-    evidence = EvidenceInput(
-        source_object_type=payload.source_object_type,
-        source_object_id=payload.source_object_id,
-        revision_id=payload.revision_id,
-        extraction_run_id=payload.extraction_run_id,
-        text=payload.evidence_text,
-        source_anchors=tuple(
-            SourceAnchor(**anchor.model_dump()) for anchor in payload.source_anchors
-        ),
-        display_policy=payload.display_policy,
-        internal_use_permission=payload.internal_use_permission,
-        language=payload.language,
-        metadata={
+
+    def operation() -> dict[str, Any]:
+        graph_preview, qualifiers = _candidate_graph(payload)
+        evidence = EvidenceInput(
+            source_object_type=payload.source_object_type,
+            source_object_id=payload.source_object_id,
+            revision_id=payload.revision_id,
+            extraction_run_id=payload.extraction_run_id,
+            text=payload.evidence_text,
+            source_anchors=tuple(
+                SourceAnchor(**anchor.model_dump()) for anchor in payload.source_anchors
+            ),
+            display_policy=payload.display_policy,
+            internal_use_permission=payload.internal_use_permission,
+            language=payload.language,
+            metadata={
+                "reasoning_id": payload.reasoning_id,
+                "source_confidence": payload.confidence,
+                "candidate_facts": [
+                    {
+                        "kind": CandidateKind.MECHANISTIC_RELATIONSHIP.value,
+                        "subject": payload.source.label.strip(),
+                        "predicate": payload.relationship.strip().lower(),
+                        "object_value": payload.target.label.strip(),
+                        "qualifiers": qualifiers,
+                        "confidence": payload.confidence,
+                        "method": "BUILD_615_MECHANISTIC_CANDIDATE_V1",
+                    }
+                ],
+            },
+        )
+        run = service.preview(
+            [evidence],
+            {
+                "adapter": "build-615-mechanistic-candidate-graph",
+                "reasoning_id": payload.reasoning_id,
+            },
+        )
+        result = service.execute(run["candidate_run_id"])
+        return {
             "reasoning_id": payload.reasoning_id,
-            "source_confidence": payload.confidence,
-            "candidate_facts": [
-                {
-                    "kind": CandidateKind.MECHANISTIC_RELATIONSHIP.value,
-                    "subject": payload.source.label,
-                    "predicate": payload.relationship.strip().lower(),
-                    "object_value": payload.target.label,
-                    "qualifiers": qualifiers,
-                    "confidence": payload.confidence,
-                    "method": "BUILD_615_MECHANISTIC_CANDIDATE_V1",
-                }
-            ],
-        },
-    )
-    run = service.preview(
-        [evidence],
-        {
-            "adapter": "build-615-mechanistic-candidate-graph",
-            "reasoning_id": payload.reasoning_id,
-        },
-    )
-    result = service.execute(run["candidate_run_id"])
-    candidates = repository.candidates_for_run(run["candidate_run_id"])
-    return {
-        "reasoning_id": payload.reasoning_id,
-        "candidate_run_id": run["candidate_run_id"],
-        "state": result["state"],
-        "candidate_ids": sorted(item["candidate_id"] for item in candidates),
-        "graph_preview": graph_preview,
-        "review_required": True,
-        "published": False,
-        "canonical_graph_mutation": False,
-        "scientific_publication_authority": False,
-    }
+            "candidate_run_id": run["candidate_run_id"],
+            "state": result["state"],
+            "candidate_ids": _candidate_ids_for_run(
+                repository, run["candidate_run_id"]
+            ),
+            "graph_preview": graph_preview,
+            "review_required": True,
+            "published": False,
+            "canonical_graph_mutation": False,
+            "scientific_publication_authority": False,
+        }
+
+    if hasattr(repository, "atomic"):
+        return repository.atomic(operation)
+    return operation()
