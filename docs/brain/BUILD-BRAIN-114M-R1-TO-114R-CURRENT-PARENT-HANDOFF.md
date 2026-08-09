@@ -11,7 +11,7 @@ Current sequence:
 3. **#782 — BUILD-BRAIN-114P-R5** — durable tamper-evident review registry.
 4. **#783 — BUILD-BRAIN-114O-R5** — durable-reviewed owner authorization request v2.
 5. **#784 — BUILD-BRAIN-114Q-R5** — public-key-only Ed25519 owner-grant verification; exact validated documentation head `dd54600a48eb6f9be4e4475c41b1d31ce4dee6a6`.
-6. **BUILD-BRAIN-114R-R5** — deterministic authorization-bound execution plan v2 on #784, with no Git/GitHub side effects.
+6. **#785 — BUILD-BRAIN-114R-R5** — deterministic authorization-bound execution plan v2 on #784, with no Git/GitHub side effects; implementation head `8ec022e5aa93002f9a22a2bc5582ace6d3f25aa1` validated green before the documentation checkpoint.
 
 Historical #760, #767, #768 and earlier 114R predecessors are not integration paths.
 
@@ -35,10 +35,18 @@ No layer in the R5 chain performs or authorizes merge/auto-merge, deployment, sc
 
 ## Validation state
 
-Executable GitHub-hosted validation is currently functioning on this private repository. BUILD-BRAIN-114Q-R5 exact documentation head `dd54600a48eb6f9be4e4475c41b1d31ce4dee6a6` received successful dedicated 114Q validation, Python runtime validation, CALYX-AGENT-003 validation, Workflow Governance validation, and successful 114O focused job execution before this 114R branch was created.
+Executable GitHub-hosted validation is functioning on this private repository.
 
-114R-R5 must now receive executable exact-head compile, Ruff, focused regression, provenance/non-mutation assertions, and diff-hygiene validation before any further expansion.
+BUILD-BRAIN-114Q-R5 exact documentation head `dd54600a48eb6f9be4e4475c41b1d31ce4dee6a6` received successful dedicated 114Q validation, Python runtime validation, CALYX-AGENT-003 validation, Workflow Governance validation, and successful 114O focused execution before 114R was rooted on it.
+
+BUILD-BRAIN-114R-R5 implementation head `8ec022e5aa93002f9a22a2bc5582ace6d3f25aa1` then received:
+
+- BUILD-BRAIN-114R validation run `31297652976` — success, including compile, Ruff lint/format, focused regressions, v2 provenance/non-mutation assertions, and diff hygiene;
+- CALYX Workflow Governance Audit run `31297652972` — success;
+- CALYX-AGENT-003 Validation run `31297652970` — success.
+
+The current documentation checkpoint changes no runtime behavior and must itself receive applicable read-only validation. Once it is green, 114R is complete and autonomous expansion stops.
 
 ## Governance boundary
 
-After 114R is exact-head green, the next code-bearing step would be BUILD-BRAIN-114S: a real proposal mutation executor capable of branch/commit/push/open-PR side effects. That is not authorized by this handoff and requires an explicit owner governance decision before implementation.
+The next code-bearing step would be BUILD-BRAIN-114S: a real proposal mutation executor capable of branch/commit/push/open-PR side effects. That is not authorized by this handoff and requires an explicit owner governance decision before implementation.
