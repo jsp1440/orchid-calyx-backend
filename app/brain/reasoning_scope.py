@@ -38,11 +38,15 @@ def _mapping_compatibility(claim: dict[str, Any], query: dict[str, Any]) -> str:
     """Evaluate conjunctive mapping bounds without treating partial queries as matches."""
 
     shared = set(claim).intersection(query)
-    if any(_value_compatibility(claim[key], query[key]) == "mismatch" for key in shared):
+    if any(
+        _value_compatibility(claim[key], query[key]) == "mismatch" for key in shared
+    ):
         return "mismatch"
     if set(claim) - set(query):
         return "unresolved"
-    if any(_value_compatibility(claim[key], query[key]) == "unresolved" for key in shared):
+    if any(
+        _value_compatibility(claim[key], query[key]) == "unresolved" for key in shared
+    ):
         return "unresolved"
     return "match"
 
