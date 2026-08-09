@@ -47,10 +47,9 @@ def proposal_review_status(
         else:
             rejected.append(review_class)
 
-    reviewer_conflict = (
-        len(approved) == len(required)
-        and len(set(approved_reviewers)) != len(approved_reviewers)
-    )
+    reviewer_conflict = len(approved) == len(required) and len(
+        set(approved_reviewers)
+    ) != len(approved_reviewers)
     complete = (
         len(approved) == len(required)
         and not rejected
