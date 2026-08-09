@@ -75,7 +75,19 @@ Static trust-boundary review completed during this checkpoint:
 - no import cycle was introduced between `assignment_factory` and `isolated_patch_executor`;
 - the current runtime audit found no additional defect that justified a speculative code change before executable CI.
 
+The exact `main...head` comparison is 10 commits ahead / 0 behind and contains only the nine paths listed above.
+
 The focused workflow includes compile, Ruff check/format, three focused test files, static non-mutation assertions, and diff hygiene, but none can currently run because hosted jobs stop before step 1.
+
+## OCU-SCI-009N migration-runner authority
+
+A new current-main successor now exists:
+
+- #777 `OCU-SCI-009N v4: guarded migration refresh on latest main`, based directly on backend `main` commit `6dc9466442e7d5172269a451691b3e9bf5e0b5c7`.
+
+The prior #748 v3 draft drifted 11 commits behind and has been closed unmerged as superseded. #777 remains draft and is the sole active migration-runner authority. It must not merge or apply a production migration until the PostgreSQL apply/verification/rollback tests, migration invariants, Durable Foundation, BUILD-088E, review audit, and final current-main comparison all execute and pass.
+
+No production migration, taxonomy activation, deployment, publication, production database mutation, or production Knowledge Graph mutation was performed by this cleanup.
 
 ## Supersession rule
 
@@ -97,5 +109,6 @@ The first private-repository workflow job with a non-empty materialized step lis
 
 1. validate unchanged RS-15 first;
 2. validate exact #772 before rebuilding downstream BUILD-BRAIN authorization layers;
-3. fix any real project-stage failures before expansion;
-4. only then consider review-ready promotion or rebuilding the 114N -> 114R chain.
+3. validate exact #777 before any migration-runner promotion or production action;
+4. fix any real project-stage failures before expansion;
+5. only then consider review-ready promotion or rebuilding the 114N -> 114R chain.
