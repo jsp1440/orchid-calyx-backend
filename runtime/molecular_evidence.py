@@ -93,7 +93,7 @@ class MolecularEvidenceService:
         submitted_name = _text(payload.get("submitted_name")) or None
         resolution_state = "resolved" if canonical_taxon_id and accepted_name else "ambiguous_or_unresolved"
         confidence = float(payload.get("confidence", 0.0))
-        if confidence < 0 or confidence > 1:
+        if not 0 <= confidence <= 1:
             raise ValueError("MOLECULAR_CONFIDENCE_INVALID")
         evidence_span = dict(payload.get("evidence_span") or {})
         if not evidence_span.get("source_uri") or evidence_span.get("start") is None or evidence_span.get("end") is None:
@@ -141,9 +141,9 @@ class MolecularEvidenceService:
         if not analysis_type or not content:
             raise ValueError("MOLECULAR_ANALYSIS_ARTIFACT_REQUIRED")
         source_uri = _text(payload.get("source_uri")) or f"calyx://molecular/evidence/{evidence_id}/analysis/{artifact_id}"
-        evidence_uris = tuple(
-            _text(item) for item in payload.get("evidence_uris", []) if _text(item)
-        ) or (str(evidence["evidence_span"]["source_uri"]),)
+        evidence_uris = tuple(_text(item) for item in payload.get("evidence_uris", []) if _text(item)) or (
+            str(evidence["evidence_span"]["source_uri"]),
+        )
         result = self.artifacts.register(
             ArtifactRegistration(
                 artifact_id=f"molecular-analysis:{artifact_id}",
@@ -185,8 +185,12 @@ class MolecularEvidenceService:
         if not evidence_span.get("source_uri"):
             raise ValueError("PHYLOGENETIC_CLAIM_EVIDENCE_REQUIRED")
         confidence = float(payload.get("confidence", evidence.get("confidence", 0.0)))
-        if confidence < 0 or confidence > 1:
+        if not 0 <= confidence <= 1:
             raise ValueError("PHYLOGENETIC_CLAIM_CONFIDENCE_INVALID")
+        analysis_artifact_ids = sorted({_text(x) for x in payload.get("analysis_artifact_ids", []) if _text(x)})
+        bound_artifacts = set(evidence.get("alignment_or_analysis_artifact_ids") or [])
+        if any(artifact_id not in bound_artifacts for artifact_id in analysis_artifact_ids):
+            raise ValueError("PHYLOGENETIC_ANALYSIS_ARTIFACT_NOT_BOUND")
         claim = {
             "schema_version": SCHEMA_VERSION,
             "claim_id": claim_id,
@@ -194,7 +198,7 @@ class MolecularEvidenceService:
             "claim_type": claim_type,
             "statement": statement,
             "evidence_span": evidence_span,
-            "analysis_artifact_ids": sorted({_text(x) for x in payload.get("analysis_artifact_ids", []) if _text(x)}),
+            "analysis_artifact_ids": analysis_artifact_ids,
             "confidence": confidence,
             "conflicts": list(payload.get("conflicts") or []),
             "review_state": "needs_review",
@@ -234,6 +238,12 @@ class MolecularEvidenceService:
             raise ValueError("PHYLOGENETIC_CLAIM_REVIEW_FIELDS_REQUIRED")
         path = self._root(owner_id) / "claims" / f"{_safe_id(claim_id, 'PHYLOGENETIC_CLAIM_ID_INVALID')}.json"
         claim = self._read(path)
+        if state == "accepted_as_evidence":
+            source_evidence = self.get_evidence(owner_id, claim["evidence_id"])
+            if source_evidence["review_state"] != "accepted_as_evidence":
+                raise ValueError("PHYLOGENETIC_SOURCE_EVIDENCE_NOT_ACCEPTED")
+            if source_evidence["taxon_resolution_state"] != "resolved":
+                raise ValueError("PHYLOGENETIC_SOURCE_TAXON_UNRESOLVED")
         history = list(claim.get("review_history") or [])
         history.append({"from": claim["review_state"], "to": state, "reviewer": reviewer, "rationale": rationale, "at": _now()})
         claim["review_state"] = state
@@ -264,16 +274,13 @@ class MolecularEvidenceService:
         claim_dir = self._root(owner_id) / "claims"
         evidence = [self._read(path) for path in sorted(evidence_dir.glob("*.json"))] if evidence_dir.exists() else []
         claims = [self._read(path) for path in sorted(claim_dir.glob("*.json"))] if claim_dir.exists() else []
-        unresolved = [item["evidence_id"] for item in evidence if item["taxon_resolution_state"] != "resolved"]
-        pending = [item["evidence_id"] for item in evidence if item["review_state"] in {"candidate", "needs_review"}]
-        pending_claims = [item["claim_id"] for item in claims if item["review_state"] in {"candidate", "needs_review"}]
         return {
             "schema_version": SCHEMA_VERSION,
             "evidence_count": len(evidence),
             "phylogenetic_claim_count": len(claims),
-            "unresolved_taxon_evidence_ids": unresolved,
-            "pending_evidence_review_ids": pending,
-            "pending_claim_review_ids": pending_claims,
+            "unresolved_taxon_evidence_ids": [item["evidence_id"] for item in evidence if item["taxon_resolution_state"] != "resolved"],
+            "pending_evidence_review_ids": [item["evidence_id"] for item in evidence if item["review_state"] in {"candidate", "needs_review"}],
+            "pending_claim_review_ids": [item["claim_id"] for item in claims if item["review_state"] in {"candidate", "needs_review"}],
             "ambiguity_queue_count": len(self.ambiguity_queue(owner_id)["items"]),
             "live_sequence_harvesting_authorized": False,
             "phylogenetic_truth_claim_authorized": False,
