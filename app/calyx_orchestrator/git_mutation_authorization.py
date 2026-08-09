@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
@@ -21,6 +21,7 @@ ALLOWED_ACTIONS = (
     "open_pull_request",
 )
 MAX_TTL_SECONDS = 1800
+MAX_SIGNATURE_CHARS = 8192
 
 
 class OwnerGrantSignatureVerifier(Protocol):
@@ -48,6 +49,17 @@ def _nonempty(value: object, *, code: str) -> str:
     return normalized
 
 
+def _bounded_signature(value: object) -> str:
+    signature = str(value or "").strip()
+    if (
+        not signature
+        or "\x00" in signature
+        or len(signature) > MAX_SIGNATURE_CHARS
+    ):
+        raise ValueError("GIT_AUTHORIZATION_GRANT_SIGNATURE_INVALID")
+    return signature
+
+
 def _parse_utc(value: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -56,6 +68,13 @@ def _parse_utc(value: str) -> datetime:
     if parsed.tzinfo is None:
         raise ValueError("GIT_AUTHORIZATION_TIMEZONE_REQUIRED")
     return parsed.astimezone(timezone.utc)
+
+
+def _trusted_now(clock: Callable[[], datetime]) -> datetime:
+    current = clock()
+    if current.tzinfo is None:
+        raise ValueError("GIT_AUTHORIZATION_CLOCK_TIMEZONE_REQUIRED")
+    return current.astimezone(timezone.utc)
 
 
 def _manifest_digest(snapshot: Mapping[str, Any]) -> str:
@@ -181,9 +200,9 @@ class GitMutationAuthorizationGrant:
             approved_by=str(value.get("approved_by") or "").strip(),
             issued_at=str(value.get("issued_at") or "").strip(),
             expires_at=str(value.get("expires_at") or "").strip(),
-            signature=str(value.get("signature") or "").strip().lower(),
+            signature=_bounded_signature(value.get("signature")),
         )
-        if not _is_sha256(grant.request_digest) or not _is_sha256(grant.signature):
+        if not _is_sha256(grant.request_digest):
             raise ValueError("GIT_AUTHORIZATION_GRANT_DIGEST_INVALID")
         if grant.decision not in {"approved", "denied"}:
             raise ValueError("GIT_AUTHORIZATION_GRANT_DECISION_INVALID")
@@ -210,6 +229,7 @@ class GitMutationAuthorizationGate:
         *,
         owner_principal: str,
         signature_verifier: OwnerGrantSignatureVerifier,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         principal = owner_principal.strip()
         if not principal:
@@ -218,6 +238,7 @@ class GitMutationAuthorizationGate:
             raise ValueError("GIT_AUTHORIZATION_SIGNATURE_VERIFIER_REQUIRED")
         self._owner_principal = principal
         self._signature_verifier = signature_verifier
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     @staticmethod
     def build_request(
@@ -304,8 +325,6 @@ class GitMutationAuthorizationGate:
         self,
         request: GitMutationAuthorizationRequest,
         grant_mapping: Mapping[str, Any],
-        *,
-        now: datetime | None = None,
     ) -> GitMutationAuthorizationGrant:
         grant = GitMutationAuthorizationGrant.from_mapping(grant_mapping)
         if grant.request_digest != request.request_digest:
@@ -315,7 +334,7 @@ class GitMutationAuthorizationGate:
         issued = _parse_utc(grant.issued_at)
         expiry = _parse_utc(grant.expires_at)
         request_expiry = _parse_utc(request.expires_at)
-        current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        current = _trusted_now(self._clock)
         grant_ttl = (expiry - issued).total_seconds()
         if (
             expiry != request_expiry
