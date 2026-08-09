@@ -103,9 +103,12 @@ def test_malformed_existing_101_fails_closed_without_repair():
         assert result["status"] == "blocked"
         with pytest.raises(RuntimeError, match="RESEARCH_STATION_PREFLIGHT_BLOCKED"):
             activation.apply_chain(connection)
-        assert connection.execute(
-            "SELECT to_regclass('research_station.conversation_sessions')"
-        ).fetchone()[0] is None
+        assert (
+            connection.execute(
+                "SELECT to_regclass('research_station.conversation_sessions')"
+            ).fetchone()[0]
+            is None
+        )
 
 
 def test_governance_foreign_key_and_append_only_behavior():
@@ -186,8 +189,10 @@ def test_governance_foreign_key_and_append_only_behavior():
                 "P0001",
             ),
             (
-                "DELETE FROM research_station.conversation_messages "
-                "WHERE message_id=%s",
+                (
+                    "DELETE FROM research_station.conversation_messages "
+                    "WHERE message_id=%s"
+                ),
                 (message_id,),
                 "P0001",
             ),
@@ -197,11 +202,14 @@ def test_governance_foreign_key_and_append_only_behavior():
                 connection.execute(statement, params)
             assert exc_info.value.sqlstate == expected_state
 
-        assert connection.execute(
-            "SELECT content FROM research_station.conversation_messages "
-            "WHERE message_id=%s",
-            (message_id,),
-        ).fetchone()[0] == "fixture"
+        assert (
+            connection.execute(
+                "SELECT content FROM research_station.conversation_messages "
+                "WHERE message_id=%s",
+                (message_id,),
+            ).fetchone()[0]
+            == "fixture"
+        )
 
 
 def test_transaction_lock_contends_with_existing_session_lock_namespace():
@@ -213,7 +221,10 @@ def test_transaction_lock_contends_with_existing_session_lock_namespace():
             "SELECT pg_advisory_lock(%s)", (activation.POSTGRES_VALIDATION_LOCK_ID,)
         )
         try:
-            with pytest.raises(psycopg.errors.LockNotAvailable), contender.transaction():
+            with (
+                pytest.raises(psycopg.errors.LockNotAvailable),
+                contender.transaction(),
+            ):
                 contender.execute("SET LOCAL lock_timeout='200ms'")
                 contender.execute(
                     "SELECT pg_advisory_xact_lock(%s)",
