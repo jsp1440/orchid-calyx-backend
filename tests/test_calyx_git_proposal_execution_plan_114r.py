@@ -14,18 +14,12 @@ from sqlalchemy.orm import Session
 from app.calyx_orchestrator.assignment_factory import assignment_inputs_for_program_job
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
 from app.calyx_orchestrator.execution_bridge import LeaseExecutionBridge
-from app.calyx_orchestrator.executor import (
-    ExecutionReceipt,
-    ExecutionState,
-    canonical_checksum,
-)
+from app.calyx_orchestrator.executor import ExecutionReceipt, ExecutionState, canonical_checksum
 from app.calyx_orchestrator.git_mutation_authorization import (
     GRANT_SCHEMA,
     GitMutationAuthorizationGate,
 )
-from app.calyx_orchestrator.git_proposal_execution_plan import (
-    GitProposalExecutionPlanner,
-)
+from app.calyx_orchestrator.git_proposal_execution_plan import GitProposalExecutionPlanner
 from app.calyx_orchestrator.isolated_patch_executor import (
     ISOLATED_PATCH_ROLE,
     IsolatedWorkspacePatchExecutor,
@@ -46,18 +40,15 @@ from app.calyx_orchestrator.program_repository import (
 )
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
 from app.calyx_orchestrator.proposal_authorization import ProposalDecision
-from app.calyx_orchestrator.proposal_authorization_models import (
-    ProposalAuthorizationDecisionRecord,
-)
-from app.calyx_orchestrator.proposal_authorization_store import (
-    DurableProposalAuthorizationStore,
-)
+from app.calyx_orchestrator.proposal_authorization_models import ProposalAuthorizationDecisionRecord
+from app.calyx_orchestrator.proposal_authorization_store import DurableProposalAuthorizationStore
 from app.calyx_orchestrator.sandbox_supervisor_evidence import canonical_sha256
 from app.database import Base
 
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 BRANCH = "autonomy/work-123"
 BASE_COMMIT = "a" * 40
+BASE_REF = "main"
 PATCH_CONTENT = "print('bounded plan change')\n"
 PATCH_BYTES = PATCH_CONTENT.encode("utf-8")
 PATCH_BEFORE = "b" * 64
@@ -153,9 +144,7 @@ def _persist_patch(session: Session) -> CalyxProgramJob:
         executor_key=IsolatedWorkspacePatchExecutor.executor_key,
         state=ExecutionState.DELIVERED,
         outcome=TerminalOutcome.DELIVERED,
-        input_checksum=canonical_checksum(
-            assignment_inputs_for_program_job(program, claimed)
-        ),
+        input_checksum=canonical_checksum(assignment_inputs_for_program_job(program, claimed)),
         output_checksum=canonical_checksum(output),
         output=output,
         evidence_uris=("github:issue/692",),
@@ -192,7 +181,7 @@ def _manifest(patch_program_job_id: str) -> dict[str, object]:
                 "request_digest": "d" * 64,
                 "receipt_digest": "e" * 64,
                 "policy_digest": "f" * 64,
-                "target_hashes": [{"path": "app/example.py", "sha256": PATCH_AFTER}],
+                "targets": [{"path": "app/example.py", "sha256": PATCH_AFTER}],
             }
         ],
         "commit_title": "Bounded change",
@@ -244,6 +233,7 @@ def _authorization(
         "push_branch",
         "open_pull_request",
     ),
+    clock_at: datetime = NOW + timedelta(minutes=1),
 ):
     private = Ed25519PrivateKey.generate()
     public = private.public_key().public_bytes(
@@ -251,17 +241,18 @@ def _authorization(
         format=serialization.PublicFormat.Raw,
     )
     key = OwnerVerificationKey.from_base64url(
-        key_id="owner-test",
-        public_key=_b64url(public),
+        key_id="owner-test", public_key=_b64url(public)
     )
     gate = GitMutationAuthorizationGate(
         owner_principal=OWNER,
         signature_verifier=Ed25519OwnerGrantSignatureVerifier(keys={key.key_id: key}),
+        clock=lambda: clock_at,
     )
     request = gate.build_request(
         _manifest(patch_job_id),
         review_store=store,
         actions=actions,
+        base_ref=BASE_REF,
         expires_at=(NOW + timedelta(minutes=15)).isoformat(),
         now=NOW,
     )
@@ -278,31 +269,29 @@ def _authorization(
     return gate, request, grant
 
 
-def test_plan_is_deterministic_and_binds_durable_patch_identity() -> None:
+def _plan(store, patch_job_id, gate, request, grant):
+    return GitProposalExecutionPlanner.build(
+        manifest_snapshot=_manifest(patch_job_id),
+        review_store=store,
+        authorization_gate=gate,
+        request=request,
+        grant_mapping=grant,
+        now=NOW + timedelta(minutes=1),
+    )
+
+
+def test_plan_is_deterministic_and_binds_durable_patch_identity_and_base_ref() -> None:
     store, patch_job_id = _store()
     gate, request, grant = _authorization(store, patch_job_id)
-    first = GitProposalExecutionPlanner.build(
-        manifest_snapshot=_manifest(patch_job_id),
-        review_store=store,
-        authorization_gate=gate,
-        request=request,
-        grant_mapping=grant,
-        now=NOW + timedelta(minutes=1),
-    )
-    second = GitProposalExecutionPlanner.build(
-        manifest_snapshot=_manifest(patch_job_id),
-        review_store=store,
-        authorization_gate=gate,
-        request=request,
-        grant_mapping=grant,
-        now=NOW + timedelta(minutes=1),
-    )
+    first = _plan(store, patch_job_id, gate, request, grant)
+    second = _plan(store, patch_job_id, gate, request, grant)
     assert first.plan_digest == second.plan_digest
     snapshot = first.snapshot()
     assert snapshot["schema"] == "calyx-git-proposal-execution-plan-v2"
     assert snapshot["patch_program_job_id"] == patch_job_id
     assert snapshot["authorization_request_digest"] == request.request_digest
     assert snapshot["manifest_digest"] == request.manifest_digest
+    assert snapshot["base_ref"] == BASE_REF
     assert snapshot["owner_grant_verified"] is True
     assert snapshot["plan_only"] is True
     assert snapshot["git_mutation_performed"] is False
@@ -313,49 +302,74 @@ def test_plan_is_deterministic_and_binds_durable_patch_identity() -> None:
     assert snapshot["merge_authorized"] is False
     assert snapshot["deployment_authorized"] is False
     assert snapshot["publication_authorized"] is False
-    commit_op = next(
-        item for item in snapshot["operations"] if item["action"] == "create_commit"
-    )
+    commit_op = next(item for item in snapshot["operations"] if item["action"] == "create_commit")
     assert commit_op["parameters"]["patch_program_job_id"] == patch_job_id
+    pr_op = next(item for item in snapshot["operations"] if item["action"] == "open_pull_request")
+    assert pr_op["parameters"]["base_ref"] == BASE_REF
+
+
+def test_base_ref_is_owner_authorized_and_cannot_be_changed_after_grant() -> None:
+    store, patch_job_id = _store()
+    gate, request, grant = _authorization(store, patch_job_id)
+    changed = replace(request, base_ref="release")
+    assert changed.request_digest != request.request_digest
+    with pytest.raises(PermissionError, match="AUTHORIZATION_REQUEST_MISMATCH"):
+        _plan(store, patch_job_id, gate, changed, grant)
+
+
+def test_invalid_or_conflicting_base_ref_fails_closed() -> None:
+    store, patch_job_id = _store()
+    manifest = _manifest(patch_job_id)
+    with pytest.raises(ValueError, match="BASE_REF_INVALID"):
+        GitMutationAuthorizationGate.build_request(
+            manifest,
+            review_store=store,
+            actions=("create_branch",),
+            base_ref="refs/heads/bad branch",
+            expires_at=(NOW + timedelta(minutes=15)).isoformat(),
+            now=NOW,
+        )
+    with pytest.raises(PermissionError, match="BASE_REF_CONFLICT"):
+        GitMutationAuthorizationGate.build_request(
+            manifest,
+            review_store=store,
+            actions=("create_branch",),
+            base_ref=str(manifest["proposed_branch"]),
+            expires_at=(NOW + timedelta(minutes=15)).isoformat(),
+            now=NOW,
+        )
+
+
+def test_snapshot_mutation_cannot_change_frozen_plan_or_digest() -> None:
+    store, patch_job_id = _store()
+    gate, request, grant = _authorization(store, patch_job_id)
+    plan = _plan(store, patch_job_id, gate, request, grant)
+    original_digest = plan.plan_digest
+    snapshot = plan.snapshot()
+    commit_op = next(item for item in snapshot["operations"] if item["action"] == "create_commit")
+    commit_op["parameters"]["change_hashes"][0]["after_sha256"] = "0" * 64
+    assert plan.plan_digest == original_digest
+    fresh = plan.snapshot()
+    fresh_commit = next(item for item in fresh["operations"] if item["action"] == "create_commit")
+    assert fresh_commit["parameters"]["change_hashes"][0]["after_sha256"] == PATCH_AFTER
 
 
 def test_plan_canonicalizes_valid_dependency_closed_prefix() -> None:
     store, patch_job_id = _store()
     gate, request, grant = _authorization(
-        store,
-        patch_job_id,
-        actions=("create_commit", "create_branch"),
+        store, patch_job_id, actions=("create_commit", "create_branch")
     )
-    plan = GitProposalExecutionPlanner.build(
-        manifest_snapshot=_manifest(patch_job_id),
-        review_store=store,
-        authorization_gate=gate,
-        request=request,
-        grant_mapping=grant,
-        now=NOW + timedelta(minutes=1),
-    )
-    assert [operation.action for operation in plan.operations] == [
-        "create_branch",
-        "create_commit",
-    ]
+    plan = _plan(store, patch_job_id, gate, request, grant)
+    assert [operation.action for operation in plan.operations] == ["create_branch", "create_commit"]
 
 
 def test_plan_rejects_sparse_action_set_missing_prerequisites() -> None:
     store, patch_job_id = _store()
     gate, request, grant = _authorization(
-        store,
-        patch_job_id,
-        actions=("open_pull_request", "create_branch"),
+        store, patch_job_id, actions=("open_pull_request", "create_branch")
     )
     with pytest.raises(PermissionError, match="ACTION_PREREQUISITE_MISSING"):
-        GitProposalExecutionPlanner.build(
-            manifest_snapshot=_manifest(patch_job_id),
-            review_store=store,
-            authorization_gate=gate,
-            request=request,
-            grant_mapping=grant,
-            now=NOW + timedelta(minutes=1),
-        )
+        _plan(store, patch_job_id, gate, request, grant)
 
 
 def test_request_or_patch_job_mismatch_is_rejected_before_planning() -> None:
@@ -363,14 +377,7 @@ def test_request_or_patch_job_mismatch_is_rejected_before_planning() -> None:
     gate, request, grant = _authorization(store, patch_job_id)
     altered = replace(request, patch_program_job_id="other-patch-job")
     with pytest.raises(PermissionError, match="AUTHORIZATION_REQUEST_MISMATCH"):
-        GitProposalExecutionPlanner.build(
-            manifest_snapshot=_manifest(patch_job_id),
-            review_store=store,
-            authorization_gate=gate,
-            request=altered,
-            grant_mapping=grant,
-            now=NOW + timedelta(minutes=1),
-        )
+        _plan(store, patch_job_id, gate, altered, grant)
 
 
 def test_manifest_tampering_is_rejected() -> None:
@@ -397,20 +404,17 @@ def test_invalid_signature_and_expired_grant_block_planning() -> None:
         "A" if invalid["signature"][-1] != "A" else "B"
     )
     with pytest.raises(PermissionError, match="SIGNATURE_INVALID"):
+        _plan(store, patch_job_id, gate, request, invalid)
+
+    expired_gate, expired_request, expired_grant = _authorization(
+        store, patch_job_id, clock_at=NOW + timedelta(minutes=16)
+    )
+    with pytest.raises(PermissionError, match="EXPIRED_OR_INVALID"):
         GitProposalExecutionPlanner.build(
             manifest_snapshot=_manifest(patch_job_id),
             review_store=store,
-            authorization_gate=gate,
-            request=request,
-            grant_mapping=invalid,
+            authorization_gate=expired_gate,
+            request=expired_request,
+            grant_mapping=expired_grant,
             now=NOW + timedelta(minutes=1),
-        )
-    with pytest.raises(PermissionError, match="EXPIRED_OR_INVALID|EXPIRY_INVALID"):
-        GitProposalExecutionPlanner.build(
-            manifest_snapshot=_manifest(patch_job_id),
-            review_store=store,
-            authorization_gate=gate,
-            request=request,
-            grant_mapping=grant,
-            now=NOW + timedelta(minutes=16),
         )
