@@ -18,7 +18,6 @@ from .models import (
 )
 from .service import ScientificSynthesisService
 
-
 SERVICE = ScientificSynthesisService()
 router = APIRouter(prefix="/synthesis", tags=["scientific-synthesis"])
 

@@ -15,7 +15,6 @@ from .models import (
     VerificationState,
 )
 
-
 PRIMARY_EXPERIMENTAL_CLASSES = {
     EvidenceClass.DIRECT_TRACER,
     EvidenceClass.CONTROLLED_EXPERIMENT,
@@ -59,17 +58,17 @@ class ScientificSynthesisService:
         for source in bibliography:
             if not source.source_id.strip() or not source.title.strip():
                 errors.append(self._error("BIBLIOGRAPHIC_IDENTITY_REQUIRED", source_id=source.source_id))
-            if source.verification_state in VERIFIED_STATES:
-                if not (source.verification_provider or "").strip() or not (
-                    source.verification_identifier or ""
-                ).strip():
-                    errors.append(
-                        self._error(
-                            "VERIFIED_SOURCE_PROVENANCE_REQUIRED",
-                            source_id=source.source_id,
-                            verification_state=source.verification_state.value,
-                        )
+            if source.verification_state in VERIFIED_STATES and (
+                not (source.verification_provider or "").strip()
+                or not (source.verification_identifier or "").strip()
+            ):
+                errors.append(
+                    self._error(
+                        "VERIFIED_SOURCE_PROVENANCE_REQUIRED",
+                        source_id=source.source_id,
+                        verification_state=source.verification_state.value,
                     )
+                )
 
         for row in evidence_rows:
             source = sources.get(row.source_id)
