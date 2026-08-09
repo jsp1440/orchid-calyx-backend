@@ -47,3 +47,20 @@ Every participant becomes part of the Continuum. The learner influences the Cont
 ## Article XII — Emergence
 
 The highest purpose of the Orchid Continuum is not the accumulation of information. Its purpose is to create the conditions in which new understanding may emerge. Emergence is the natural consequence of curiosity, evidence, collaboration, and the recognition of relationships.
+
+## Article XIII — Operational Reliability and Human Attention
+
+The Continuum shall treat operational reliability and human attention as governed resources. Automation that repeatedly produces infrastructure failures, duplicate alerts, or notification floods without generating new diagnostic information is a defect in the system, not acceptable background noise.
+
+When required validation infrastructure is unavailable or demonstrably failing before execution, Calyx shall enter a **CI circuit-breaker state**. In that state:
+
+1. a job that terminates before its first executable step, including a GitHub Actions job reported with no steps, shall be classified as an **infrastructure-unavailable event**, not as a code-test failure;
+2. after three equivalent infrastructure-unavailable events within a 60-minute operational window, autonomous creation of additional workflow-triggering implementation branches, pull requests, commits, or reruns shall stop unless the action is specifically required to diagnose or repair the infrastructure outage;
+3. identical failed checks shall not be repeatedly rerun merely to seek a different result; one bounded recovery probe is permitted after material evidence that the infrastructure condition may have changed;
+4. work that can be completed rigorously without the unavailable infrastructure may continue locally or on non-triggering design/documentation surfaces, but it shall not create a notification storm or be represented as executable-CI validated;
+5. one canonical incident shall aggregate equivalent infrastructure failures. Duplicate incidents and duplicate owner alerts are prohibited unless they contain materially new evidence or require a new owner decision;
+6. human attention shall be conserved: automation must prefer a single actionable summary over repeated failure notifications when the failures share one root cause;
+7. the circuit breaker remains open until an executable recovery probe reaches at least the first declared workflow step. Only then may normal CI-triggering autonomous expansion resume;
+8. no safety, scientific-integrity, review, merge, deployment, publication, taxonomy, database, or Knowledge Graph governance gate may be bypassed because CI is unavailable.
+
+The purpose of this article is not to hide failures. It is to distinguish failures that require code correction from failures of the execution infrastructure, stop useless repetition, preserve a clear audit trail, and protect the owner from avoidable operational noise.
