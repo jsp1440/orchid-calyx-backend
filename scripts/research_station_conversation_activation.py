@@ -299,45 +299,57 @@ DEFAULT_FRAGMENTS: dict[str, dict[str, str]] = {
         "created_at": "now()",
     },
 }
-INDEXES_101 = frozenset(
-    {
-        "idx_rs_projects_owner_archive_updated",
-        "idx_rs_projects_owner_status",
-        "uq_rs_saved_search_name",
-        "idx_rs_notes_project_updated",
-        "idx_rs_project_taxa_id",
-        "idx_rs_project_documents_id",
-        "idx_rs_project_evidence_id",
-        "idx_rs_audit_project_time",
-    }
-)
-INDEXES_140 = frozenset(
-    {
-        "idx_rs_conversation_owner_project_updated",
-        "idx_rs_conversation_messages_session_time",
-    }
-)
+# Maps index name to a lowercase substring that must appear in pg_get_indexdef() output.
+# This validates both the index name and the columns/predicate it covers.
+INDEX_DEF_FRAGMENTS_101: dict[str, str] = {
+    "idx_rs_projects_owner_archive_updated": "projects(owner_subject, archived_at, updated_at desc)",
+    "idx_rs_projects_owner_status": "projects(owner_subject, status)",
+    "uq_rs_saved_search_name": "saved_searches(project_id, lower(name))",
+    "idx_rs_notes_project_updated": "notes(project_id, archived_at, updated_at desc)",
+    "idx_rs_project_taxa_id": "project_taxa(taxon_id)",
+    "idx_rs_project_documents_id": "project_documents(document_id)",
+    "idx_rs_project_evidence_id": "project_evidence(evidence_kind, evidence_id)",
+    "idx_rs_audit_project_time": "audit_events(project_id, occurred_at desc, event_id)",
+}
+INDEX_DEF_FRAGMENTS_140: dict[str, str] = {
+    "idx_rs_conversation_owner_project_updated": "conversation_sessions(owner_subject, project_id, updated_at desc)",
+    "idx_rs_conversation_messages_session_time": "conversation_messages(conversation_id, created_at, message_id)",
+}
 CONSTRAINT_FRAGMENTS: dict[str, tuple[str, ...]] = {
-    "projects": ("PRIMARY KEY (project_id)",),
+    "projects": (
+        "PRIMARY KEY (project_id)",
+        "char_length(title)",
+        "'active'",
+        "version > 0",
+    ),
     "saved_searches": (
         "PRIMARY KEY (saved_search_id)",
         "FOREIGN KEY (project_id) REFERENCES research_station.projects(project_id)",
+        "char_length(name)",
+        "version > 0",
     ),
     "notes": (
         "PRIMARY KEY (note_id)",
         "FOREIGN KEY (project_id) REFERENCES research_station.projects(project_id)",
+        "char_length(body)",
+        "'general'",
+        "version > 0",
     ),
     "project_taxa": (
         "PRIMARY KEY (project_id, taxon_id)",
         "FOREIGN KEY (project_id) REFERENCES research_station.projects(project_id)",
+        "'subject'",
     ),
     "project_documents": (
         "PRIMARY KEY (project_id, document_id)",
         "FOREIGN KEY (project_id) REFERENCES research_station.projects(project_id)",
+        "'source'",
     ),
     "project_evidence": (
         "PRIMARY KEY (project_id, evidence_kind, evidence_id)",
         "FOREIGN KEY (project_id) REFERENCES research_station.projects(project_id)",
+        "'candidate'",
+        "'supports'",
     ),
     "audit_events": (
         "PRIMARY KEY (event_id)",
@@ -346,10 +358,14 @@ CONSTRAINT_FRAGMENTS: dict[str, tuple[str, ...]] = {
     "conversation_sessions": (
         "PRIMARY KEY (conversation_id)",
         "FOREIGN KEY (project_id) REFERENCES research_station.projects(project_id)",
+        "char_length(title)",
+        "version > 0",
     ),
     "conversation_messages": (
         "PRIMARY KEY (message_id)",
         "FOREIGN KEY (conversation_id) REFERENCES research_station.conversation_sessions(conversation_id)",
+        "'operator'",
+        "char_length(content)",
         "CONVERSATION_CONTEXT",
         "evidence_authority = false",
         "scientific_publication_authorized = false",
@@ -456,13 +472,30 @@ def _constraints(connection, table: str) -> list[str]:
     return [row[0] for row in rows]
 
 
-def _index_names(connection) -> set[str]:
-    return {
-        row[0]
-        for row in connection.execute(
-            "SELECT indexname FROM pg_indexes WHERE schemaname='research_station'"
-        ).fetchall()
-    }
+def _index_defs(connection) -> dict[str, str]:
+    """Return {indexname: lowered pg_get_indexdef()} for all research_station indexes."""
+    rows = connection.execute(
+        """
+        SELECT i.relname, lower(pg_get_indexdef(ix.indexrelid))
+        FROM pg_index ix
+        JOIN pg_class i ON i.oid = ix.indexrelid
+        JOIN pg_class t ON t.oid = ix.indrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'research_station'
+        """
+    ).fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+def _function_body(connection, qualified_name: str) -> str | None:
+    """Return pg_get_functiondef() for the named function, or None if absent."""
+    row = connection.execute(
+        "SELECT pg_get_functiondef(to_regprocedure(%s))",
+        (qualified_name,),
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return row[0]
 
 
 def _trigger_locations(connection, trigger_name: str) -> list[dict[str, str]]:
@@ -512,9 +545,25 @@ def inspect_contract(connection) -> dict[str, Any]:
                 if fragment.lower() not in definitions:
                     blockers.append(f"MIGRATION_140_CONSTRAINT_MISSING:{table}")
 
-    indexes = _index_names(connection)
-    missing_101_indexes = sorted(INDEXES_101 - indexes) if columns_101 else []
-    missing_140_indexes = sorted(INDEXES_140 - indexes) if columns_140 else []
+    index_defs = _index_defs(connection)
+    missing_101_indexes = (
+        sorted(
+            name
+            for name, fragment in INDEX_DEF_FRAGMENTS_101.items()
+            if fragment not in index_defs.get(name, "")
+        )
+        if columns_101
+        else []
+    )
+    missing_140_indexes = (
+        sorted(
+            name
+            for name, fragment in INDEX_DEF_FRAGMENTS_140.items()
+            if fragment not in index_defs.get(name, "")
+        )
+        if columns_140
+        else []
+    )
     if missing_101_indexes:
         blockers.append("MIGRATION_101_REQUIRED_INDEX_MISSING")
     if missing_140_indexes:
@@ -549,6 +598,12 @@ def inspect_contract(connection) -> dict[str, Any]:
             "SELECT to_regprocedure('research_station.reject_audit_mutation()')"
         ).fetchone()[0]:
             blockers.append("AUDIT_REJECT_FUNCTION_MISSING")
+        else:
+            audit_body = _function_body(
+                connection, "research_station.reject_audit_mutation()"
+            )
+            if audit_body is None or "raise exception" not in audit_body.lower():
+                blockers.append("AUDIT_REJECT_FUNCTION_BODY_INVALID")
     if columns_140:
         valid_conversation = [
             item
@@ -565,6 +620,13 @@ def inspect_contract(connection) -> dict[str, Any]:
             "SELECT to_regprocedure('research_station.reject_conversation_message_mutation()')"
         ).fetchone()[0]:
             blockers.append("CONVERSATION_REJECT_FUNCTION_MISSING")
+        else:
+            conv_body = _function_body(
+                connection,
+                "research_station.reject_conversation_message_mutation()",
+            )
+            if conv_body is None or "raise exception" not in conv_body.lower():
+                blockers.append("CONVERSATION_REJECT_FUNCTION_BODY_INVALID")
 
     public_privileges = connection.execute(
         """
