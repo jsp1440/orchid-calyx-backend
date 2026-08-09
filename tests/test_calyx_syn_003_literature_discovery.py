@@ -67,6 +67,17 @@ def test_doi_lookup_creates_provider_attributed_verified_record():
     assert provider.lookup_calls == ["10.1000/orchid.1"]
 
 
+def test_group_author_is_preserved_during_verification():
+    item = _item()
+    item["author"] = [{"name": "International Orchid Nitrogen Consortium"}]
+    result = BibliographicVerificationService(FakeProvider(lookup=item)).verify_doi(
+        "10.1000/orchid.1"
+    )
+
+    assert result["verified"] is True
+    assert result["record"]["authors"] == ("International Orchid Nitrogen Consortium",)
+
+
 def test_doi_identity_mismatch_is_not_verified():
     provider = FakeProvider(lookup=_item(doi="10.9999/different"))
     result = BibliographicVerificationService(provider).verify_doi(
@@ -138,8 +149,14 @@ def test_verify_doi_api_returns_authoritative_record(monkeypatch):
             json={"doi": "10.1000/orchid.1"},
             headers={"X-API-Key": "test-key"},
         )
+        health = client.get(
+            "/api/scientific-interpretation/synthesis/health",
+            headers={"X-API-Key": "test-key"},
+        )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["verified"] is True
     assert payload["record"]["verification_provider"] == "crossref"
+    assert health.json()["validator_version"] == "CALYX-SYN-001"
+    assert health.json()["discovery_version"] == "CALYX-SYN-003"
