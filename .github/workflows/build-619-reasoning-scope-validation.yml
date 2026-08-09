@@ -1,0 +1,65 @@
+name: BUILD-619 Reasoning Scope Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/brain/reasoning_scope.py"
+      - "app/brain/scoped_reasoning_map.py"
+      - "app/brain/routes.py"
+      - "app/brain/causal_scope.py"
+      - "tests/test_build_619_reasoning_scope.py"
+      - "tests/test_build_618_causal_scope.py"
+      - "tests/test_build_612_reasoning_map.py"
+      - "docs/brain/BUILD-619-REASONING-SCOPE-EVALUATION-R3.md"
+      - ".github/workflows/build-619-reasoning-scope-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-reasoning-scope:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile
+        run: >-
+          python -m py_compile
+          app/brain/reasoning_scope.py
+          app/brain/scoped_reasoning_map.py
+          app/brain/routes.py
+          tests/test_build_619_reasoning_scope.py
+      - name: Ruff
+        run: >-
+          ruff check
+          app/brain/reasoning_scope.py
+          app/brain/scoped_reasoning_map.py
+          app/brain/routes.py
+          tests/test_build_619_reasoning_scope.py
+      - name: Formatting
+        run: >-
+          ruff format --check
+          app/brain/reasoning_scope.py
+          app/brain/scoped_reasoning_map.py
+          app/brain/routes.py
+          tests/test_build_619_reasoning_scope.py
+      - name: Scoped reasoning regressions
+        run: >-
+          python -m pytest -q
+          tests/test_build_619_reasoning_scope.py
+          tests/test_build_618_causal_scope.py
+          tests/test_build_612_reasoning_map.py
+      - name: Verify scoped route
+        run: >-
+          python -c "from app.brain.routes import router; assert any(r.path == '/brain/reasoning-map/scoped' for r in router.routes)"
+      - name: Hygiene
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain)"
