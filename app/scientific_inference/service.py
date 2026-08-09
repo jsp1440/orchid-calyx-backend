@@ -8,7 +8,19 @@ from typing import Any
 from .models import InferenceDomain, InferenceState, ScientificInferenceEnvelope
 
 SCHEMA = "calyx-scientific-inference/v1"
-ALGORITHM_VERSION = "scian-confidence-1"
+ALGORITHM_VERSION = "scian-confidence-2"
+HARD_STOP_STATUSES = {"WITHDRAWN", "SUPERSEDED"}
+REVIEW_STATUSES = {
+    "NEEDS_REVIEW",
+    "TAXONOMICALLY_AMBIGUOUS",
+    "METHOD_DEPENDENT",
+    "GEOGRAPHICALLY_LIMITED",
+    "TEMPORALLY_LIMITED",
+    "MIXED_EVIDENCE",
+    "CONFLICTING",
+    "LIMITED_EVIDENCE",
+    "SINGLE_SOURCE",
+}
 
 
 class ScientificInferenceService:
@@ -42,7 +54,9 @@ class ScientificInferenceService:
         score = self._weighted_confidence(components, conflicts)
         state = self._state(aggregate_list, score, conflicts, anchors)
         confidence_band = self._band(score)
-        normalized_assumptions = tuple(sorted({" ".join(x.split()) for x in assumptions if x.strip()}))
+        normalized_assumptions = tuple(
+            sorted({" ".join(x.split()) for x in assumptions if x.strip()})
+        )
         normalized_limitations = tuple(
             sorted(
                 {
@@ -60,7 +74,12 @@ class ScientificInferenceService:
             "assumptions": normalized_assumptions,
         }
         inference_id = "sciinf_" + hashlib.sha256(
-            json.dumps(identity_payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+            json.dumps(
+                identity_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode()
         ).hexdigest()
 
         return ScientificInferenceEnvelope(
@@ -80,7 +99,14 @@ class ScientificInferenceService:
             provenance={
                 "authority": "canonical_evidence_aggregates",
                 "algorithm_version": ALGORITHM_VERSION,
-                "aggregate_identity_fields": ["aggregate_id", "aggregate_version_id", "identity_hash"],
+                "confidence_interpretation": "HEURISTIC_EVIDENCE_SUPPORT_INDEX",
+                "confidence_is_probability": False,
+                "confidence_calibrated": False,
+                "aggregate_identity_fields": [
+                    "aggregate_id",
+                    "aggregate_version_id",
+                    "identity_hash",
+                ],
                 "evidence_not_rewritten": True,
                 "inference_is_not_source_evidence": True,
             },
@@ -88,7 +114,12 @@ class ScientificInferenceService:
 
     @staticmethod
     def _aggregate_ref(aggregate: dict[str, Any]) -> dict[str, Any]:
-        required = ("aggregate_id", "aggregate_version_id", "aggregate_type", "identity_hash")
+        required = (
+            "aggregate_id",
+            "aggregate_version_id",
+            "aggregate_type",
+            "identity_hash",
+        )
         missing = [key for key in required if aggregate.get(key) in (None, "")]
         if missing:
             raise ValueError(f"AGGREGATE_IDENTITY_REQUIRED:{','.join(missing)}")
@@ -104,7 +135,9 @@ class ScientificInferenceService:
         }
 
     @staticmethod
-    def _source_anchor_refs(aggregates: list[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+    def _source_anchor_refs(
+        aggregates: list[dict[str, Any]],
+    ) -> Iterable[dict[str, Any]]:
         seen: set[tuple[Any, Any, tuple[Any, ...]]] = set()
         for aggregate in aggregates:
             for link in aggregate.get("source_anchor_links", ()):
@@ -140,15 +173,23 @@ class ScientificInferenceService:
             "context_compatibility": self._mean_optional(
                 self._context_compatibility(summary) for summary in summaries
             ),
-            "independent_corroboration": self._mean(self._corroboration(summary) for summary in summaries),
+            "independent_corroboration": self._mean(
+                self._corroboration(summary) for summary in summaries
+            ),
             "review_confidence": self._mean_optional(
                 summary.get("review_completeness") for summary in summaries
             ),
         }
         conflicts = {
-            "contradicting_assertions": sum(int(x.get("contradicting_assertions", 0)) for x in summaries),
-            "unresolved_assertions": sum(int(x.get("unresolved_assertions", 0)) for x in summaries),
-            "supporting_assertions": sum(int(x.get("supporting_assertions", 0)) for x in summaries),
+            "contradicting_assertions": sum(
+                int(x.get("contradicting_assertions", 0)) for x in summaries
+            ),
+            "unresolved_assertions": sum(
+                int(x.get("unresolved_assertions", 0)) for x in summaries
+            ),
+            "supporting_assertions": sum(
+                int(x.get("supporting_assertions", 0)) for x in summaries
+            ),
         }
         limitations: set[str] = set()
         if components["identity_resolution_confidence"] is None:
@@ -161,6 +202,15 @@ class ScientificInferenceService:
             limitations.add("CONTRADICTORY_EVIDENCE_PRESENT")
         if conflicts["unresolved_assertions"]:
             limitations.add("UNRESOLVED_EVIDENCE_RELATIONSHIPS_PRESENT")
+        for status in sorted(
+            {
+                str(item.get("aggregate_status"))
+                for item in aggregates
+                if item.get("aggregate_status")
+            }
+        ):
+            if status in HARD_STOP_STATUSES or status in REVIEW_STATUSES:
+                limitations.add(f"AGGREGATE_STATUS_{status}")
         return components, conflicts, limitations
 
     @staticmethod
@@ -169,7 +219,9 @@ class ScientificInferenceService:
             summary.get("temporal_compatibility"),
             summary.get("geographic_compatibility"),
         ]
-        present = [float(value) for value in values if isinstance(value, (int, float))]
+        present = [
+            float(value) for value in values if isinstance(value, (int, float))
+        ]
         return sum(present) / len(present) if present else None
 
     @staticmethod
@@ -178,7 +230,9 @@ class ScientificInferenceService:
         contradict = int(summary.get("contradicting_assertions", 0))
         unresolved = int(summary.get("unresolved_assertions", 0))
         independent = int(summary.get("independent_sources", 0))
-        relationship_score = (support + 1.0) / (support + contradict + unresolved + 1.0)
+        relationship_score = (support + 1.0) / (
+            support + contradict + unresolved + 1.0
+        )
         independence_score = min(1.0, independent / 3.0)
         return 0.6 * relationship_score + 0.4 * independence_score
 
@@ -189,7 +243,9 @@ class ScientificInferenceService:
 
     @staticmethod
     def _mean_optional(values: Iterable[Any]) -> float | None:
-        present = [float(value) for value in values if isinstance(value, (int, float))]
+        present = [
+            float(value) for value in values if isinstance(value, (int, float))
+        ]
         if not present:
             return None
         return sum(present) / len(present)
@@ -207,14 +263,22 @@ class ScientificInferenceService:
             "independent_corroboration": 0.15,
             "review_confidence": 0.10,
         }
-        available = [(key, value) for key, value in components.items() if value is not None]
+        available = [
+            (key, value) for key, value in components.items() if value is not None
+        ]
         numerator = sum(weights[key] * float(value) for key, value in available)
         denominator = sum(weights[key] for key, _ in available)
         base = numerator / denominator if denominator else 0.0
-        adverse = 2 * conflicts["contradicting_assertions"] + conflicts["unresolved_assertions"]
+        adverse = (
+            2 * conflicts["contradicting_assertions"]
+            + conflicts["unresolved_assertions"]
+        )
         total = adverse + conflicts["supporting_assertions"]
         conflict_penalty = min(0.8, adverse / total) if total else 0.0
-        return round(max(0.0, min(1.0, base * (1.0 - 0.5 * conflict_penalty))), 4)
+        return round(
+            max(0.0, min(1.0, base * (1.0 - 0.5 * conflict_penalty))),
+            4,
+        )
 
     @staticmethod
     def _state(
@@ -223,10 +287,15 @@ class ScientificInferenceService:
         conflicts: dict[str, int],
         anchors: tuple[dict[str, Any], ...],
     ) -> InferenceState:
+        statuses = {str(item.get("aggregate_status")) for item in aggregates}
+        if statuses & HARD_STOP_STATUSES:
+            return InferenceState.INSUFFICIENT_EVIDENCE
         if not anchors or score < 0.4:
             return InferenceState.INSUFFICIENT_EVIDENCE
         if conflicts["contradicting_assertions"] or conflicts["unresolved_assertions"]:
             return InferenceState.CONFLICT_REVIEW_REQUIRED
+        if statuses & REVIEW_STATUSES:
+            return InferenceState.REVIEW_REQUIRED
         if any(
             item.get("review_state") != "APPROVED"
             or item.get("verification_state") != "VERIFIED"
