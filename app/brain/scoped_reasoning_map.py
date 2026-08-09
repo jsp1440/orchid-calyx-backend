@@ -76,6 +76,12 @@ def build_scoped_reasoning_map(
         if status in status_counts:
             status_counts[status] += 1
 
+    safe_to_generalize = (
+        bool(scoped_paths)
+        and status_counts["applicable"] == len(scoped_paths)
+        and status_counts["out_of_scope"] == 0
+        and status_counts["indeterminate"] == 0
+    )
     base["configuration"]["applicability_scope"] = query_scope
     base["configuration"]["scope_evaluation"] = True
     base["edges"] = scoped_edges
@@ -86,8 +92,7 @@ def build_scoped_reasoning_map(
         "fully_applicable_path_count": status_counts["applicable"],
         "out_of_scope_path_count": status_counts["out_of_scope"],
         "indeterminate_path_count": status_counts["indeterminate"],
-        "safe_to_generalize": status_counts["out_of_scope"] == 0
-        and status_counts["indeterminate"] == 0,
+        "safe_to_generalize": safe_to_generalize,
     }
     base["governance"].update(
         {
