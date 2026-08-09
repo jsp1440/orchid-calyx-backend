@@ -10,16 +10,14 @@ from app.conversation_memory.report import build_conversation_markdown
 from app.conversation_memory.service import ConversationMemoryService
 from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
-from app.routers.calyx_conversation_sources import (
-    _assert_exact_project_link,
-    router as source_router,
-)
+from app.routers.calyx_conversation_sources import _assert_exact_project_link
+from app.routers.calyx_conversation_sources import router as source_router
 from app.routers.calyx_operator_chat import (
     _private_exchange,
     chat_transcript,
     reset_chat_for_tests,
-    router as chat_router,
 )
+from app.routers.calyx_operator_chat import router as chat_router
 from app.routers.live_mission_control import router as deployed_mission_control_router
 from runtime.continuum_conversation import ContinuumConversationService
 
