@@ -40,7 +40,10 @@ def local_observation_history(
                 "review_state": candidate.get("review_state"),
                 "causal_scope": qualifiers.get("causal_scope"),
                 "matrix_context": qualifiers.get("matrix_context", {}),
-                "environmental_context": qualifiers.get("environmental_context", {}),
+                "environmental_context": qualifiers.get(
+                    "environmental_context",
+                    {},
+                ),
                 "cultivation_context": qualifiers.get("cultivation_context", {}),
                 "treatment_context": qualifiers.get("treatment_context", {}),
                 "published": bool(candidate.get("published")),
@@ -50,7 +53,10 @@ def local_observation_history(
         )
 
     observations.sort(
-        key=lambda item: (str(item.get("observed_at") or ""), int(item["candidate_id"]))
+        key=lambda item: (
+            str(item.get("observed_at") or ""),
+            int(item["candidate_id"]),
+        )
     )
     return {
         "contract": "calyx-local-observation-history-v1",
