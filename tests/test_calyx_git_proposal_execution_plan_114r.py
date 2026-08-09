@@ -287,16 +287,18 @@ def test_plan_is_deterministic_and_binds_durable_patch_identity() -> None:
     assert snapshot["merge_authorized"] is False
     assert snapshot["deployment_authorized"] is False
     assert snapshot["publication_authorized"] is False
-    commit_op = next(item for item in snapshot["operations"] if item["action"] == "create_commit")
+    commit_op = next(
+        item for item in snapshot["operations"] if item["action"] == "create_commit"
+    )
     assert commit_op["parameters"]["patch_program_job_id"] == patch_job_id
 
 
-def test_plan_canonicalizes_authorized_action_order_and_supports_subset() -> None:
+def test_plan_canonicalizes_valid_dependency_closed_prefix() -> None:
     store, patch_job_id = _store()
     gate, request, grant = _authorization(
         store,
         patch_job_id,
-        actions=("open_pull_request", "create_branch"),
+        actions=("create_commit", "create_branch"),
     )
     plan = GitProposalExecutionPlanner.build(
         manifest_snapshot=_manifest(patch_job_id),
@@ -306,7 +308,28 @@ def test_plan_canonicalizes_authorized_action_order_and_supports_subset() -> Non
         grant_mapping=grant,
         now=NOW + timedelta(minutes=1),
     )
-    assert [operation.action for operation in plan.operations] == ["create_branch", "open_pull_request"]
+    assert [operation.action for operation in plan.operations] == [
+        "create_branch",
+        "create_commit",
+    ]
+
+
+def test_plan_rejects_sparse_action_set_missing_prerequisites() -> None:
+    store, patch_job_id = _store()
+    gate, request, grant = _authorization(
+        store,
+        patch_job_id,
+        actions=("open_pull_request", "create_branch"),
+    )
+    with pytest.raises(PermissionError, match="ACTION_PREREQUISITE_MISSING"):
+        GitProposalExecutionPlanner.build(
+            manifest_snapshot=_manifest(patch_job_id),
+            review_store=store,
+            authorization_gate=gate,
+            request=request,
+            grant_mapping=grant,
+            now=NOW + timedelta(minutes=1),
+        )
 
 
 def test_request_or_patch_job_mismatch_is_rejected_before_planning() -> None:
@@ -344,7 +367,9 @@ def test_invalid_signature_and_expired_grant_block_planning() -> None:
     store, patch_job_id = _store()
     gate, request, grant = _authorization(store, patch_job_id)
     invalid = dict(grant)
-    invalid["signature"] = invalid["signature"][:-1] + ("A" if invalid["signature"][-1] != "A" else "B")
+    invalid["signature"] = invalid["signature"][:-1] + (
+        "A" if invalid["signature"][-1] != "A" else "B"
+    )
     with pytest.raises(PermissionError, match="SIGNATURE_INVALID"):
         GitProposalExecutionPlanner.build(
             manifest_snapshot=_manifest(patch_job_id),
