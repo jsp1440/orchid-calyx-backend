@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,6 +16,7 @@ from app.calyx_orchestrator.sandbox_supervisor_evidence import canonical_sha256
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 BASE_COMMIT = "a" * 40
 PATCH_EXECUTOR = "isolated_workspace_patcher_v1"
+PATCH_JOB_ID = "11111111-1111-1111-1111-111111111111"
 
 
 def _patch_output() -> dict:
@@ -44,21 +46,36 @@ def _patch_output() -> dict:
     }
 
 
-def _patch_receipt() -> dict:
-    output = _patch_output()
-    return {
-        "executor_key": PATCH_EXECUTOR,
-        "state": "delivered",
-        "outcome": "delivered",
-        "output": output,
-        "output_checksum": canonical_checksum(output),
-    }
+class _PersistedPatchService:
+    def __init__(
+        self,
+        *,
+        repository: str = REPOSITORY,
+        branch: str = "autonomy/work-123",
+        output: dict | None = None,
+        executor_key: str = PATCH_EXECUTOR,
+    ) -> None:
+        value = _patch_output() if output is None else output
+        self.record = SimpleNamespace(
+            program_job_id=PATCH_JOB_ID,
+            repository=repository,
+            branch=branch,
+            executor_key=executor_key,
+            output_checksum=canonical_checksum(value),
+            output=value,
+        )
+
+    def get_completed(self, *, program_job_id: str):
+        if program_job_id != PATCH_JOB_ID:
+            raise LookupError("PERSISTED_PATCH_EXECUTION_NOT_FOUND")
+        return self.record
 
 
 def _manifest(*, proposed_branch: str = "autonomy/proposal/work-123") -> dict:
     output = _patch_output()
     payload = {
-        "schema": "calyx-git-proposal-manifest-v1",
+        "schema": "calyx-git-proposal-manifest-v2",
+        "patch_program_job_id": PATCH_JOB_ID,
         "repository": REPOSITORY,
         "base_commit_sha": BASE_COMMIT,
         "source_autonomy_branch": "autonomy/work-123",
@@ -93,16 +110,16 @@ def _manifest(*, proposed_branch: str = "autonomy/proposal/work-123") -> dict:
 def _build(
     *,
     manifest: dict | None = None,
-    patch_receipt: dict | None = None,
+    patch_service: _PersistedPatchService | None = None,
     requested_by: str = "principal:requester",
     review_class: str = "security",
     reviewer_id: str = "principal:security-reviewer",
     reviewer_roles: tuple[str, ...] = ("security",),
     decision: ProposalDecision = ProposalDecision.APPROVED,
 ):
-    return ProposalAuthorizationBuilder().build(
+    builder = ProposalAuthorizationBuilder(patch_service or _PersistedPatchService())
+    return builder.build(
         manifest_snapshot=_manifest() if manifest is None else manifest,
-        patch_receipt=_patch_receipt() if patch_receipt is None else patch_receipt,
         requested_by=requested_by,
         review_class=review_class,
         reviewer_id=reviewer_id,
@@ -120,6 +137,7 @@ def test_record_is_deterministic_and_grants_no_mutation_authority() -> None:
     assert first.authorization_digest == second.authorization_digest
     snapshot = first.snapshot()
     assert snapshot["decision"] == "approved"
+    assert snapshot["patch_program_job_id"] == PATCH_JOB_ID
     assert snapshot["producer_id"] == f"executor:{PATCH_EXECUTOR}"
     assert snapshot["git_mutation_authorized"] is False
     assert snapshot["commit_authorized"] is False
@@ -140,31 +158,27 @@ def test_manifest_digest_tampering_is_rejected() -> None:
         _build(manifest=manifest)
 
 
-def test_patch_receipt_checksum_must_match_manifest() -> None:
-    receipt = _patch_receipt()
-    receipt["output"]["total_written_bytes"] = 101
-    with pytest.raises(PermissionError, match="PATCH_CHECKSUM_MISMATCH"):
-        _build(patch_receipt=receipt)
+def test_persisted_patch_checksum_must_match_manifest() -> None:
+    output = _patch_output()
+    output["total_written_bytes"] = 101
+    with pytest.raises(PermissionError, match="PERSISTED_PATCH_MISMATCH"):
+        _build(patch_service=_PersistedPatchService(output=output))
 
 
-def test_patch_receipt_identity_must_match_manifest() -> None:
-    receipt = _patch_receipt()
-    receipt["output"]["repository"] = "other/repository"
-    receipt["output_checksum"] = canonical_checksum(receipt["output"])
+def test_persisted_patch_identity_must_match_manifest() -> None:
+    service = _PersistedPatchService(repository="other/repository")
+    with pytest.raises(PermissionError, match="PERSISTED_PATCH_MISMATCH"):
+        _build(patch_service=service)
+
+
+def test_manifest_patch_job_id_must_resolve_persisted_execution() -> None:
     manifest = _manifest()
-    manifest["patch_output_checksum"] = receipt["output_checksum"]
+    manifest["patch_program_job_id"] = "22222222-2222-2222-2222-222222222222"
     payload = dict(manifest)
     payload.pop("manifest_digest")
     manifest["manifest_digest"] = canonical_sha256(payload)
-    with pytest.raises(PermissionError, match="PATCH_IDENTITY_MISMATCH"):
-        _build(manifest=manifest, patch_receipt=receipt)
-
-
-def test_only_authoritative_isolated_patch_executor_is_accepted() -> None:
-    receipt = _patch_receipt()
-    receipt["executor_key"] = "caller-supplied-executor"
-    with pytest.raises(PermissionError, match="PATCH_EXECUTOR_INVALID"):
-        _build(patch_receipt=receipt)
+    with pytest.raises(PermissionError, match="PERSISTED_PATCH_REQUIRED"):
+        _build(manifest=manifest)
 
 
 def test_reviewer_cannot_self_approve_requester() -> None:
@@ -211,11 +225,10 @@ def test_review_class_is_limited_to_governed_repository_classes() -> None:
 
 
 def test_evidence_and_timezone_are_required() -> None:
-    builder = ProposalAuthorizationBuilder()
+    builder = ProposalAuthorizationBuilder(_PersistedPatchService())
     with pytest.raises(ValueError, match="EVIDENCE_INVALID"):
         builder.build(
             manifest_snapshot=_manifest(),
-            patch_receipt=_patch_receipt(),
             requested_by="principal:requester",
             review_class="security",
             reviewer_id="principal:security-reviewer",
@@ -228,7 +241,6 @@ def test_evidence_and_timezone_are_required() -> None:
     with pytest.raises(ValueError, match="TIMEZONE_REQUIRED"):
         builder.build(
             manifest_snapshot=_manifest(),
-            patch_receipt=_patch_receipt(),
             requested_by="principal:requester",
             review_class="security",
             reviewer_id="principal:security-reviewer",
