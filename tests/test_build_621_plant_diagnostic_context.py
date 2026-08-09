@@ -173,5 +173,8 @@ def test_composer_is_read_only_and_has_no_publication_authority():
     assert result["governance"]["canonical_graph_mutated"] is False
     assert result["governance"]["candidate_knowledge_mutated"] is False
     assert result["governance"]["scientific_publication_authority"] is False
-    assert result["interpretation_policy"]["automatic_scientific_claim_generation"] is False
+    assert (
+        result["interpretation_policy"]["automatic_scientific_claim_generation"]
+        is False
+    )
     assert result["interpretation_policy"]["automatic_publication"] is False
