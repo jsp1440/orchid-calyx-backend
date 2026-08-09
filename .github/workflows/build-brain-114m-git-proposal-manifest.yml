@@ -88,7 +88,10 @@ jobs:
           assert '"assignment_id": receipt.assignment_id' in bridge
           assert '"program_id": receipt.program_id' in bridge
           assert '"job_key": receipt.job_key' in bridge
-          assert "_rollback_journal" in patcher
+          assert 'ROLLBACK_JOURNAL_SCHEMA = "calyx-isolated-rollback-v1"' in patcher
+          assert "_persist_rollback_journal" in patcher
+          assert "_recover_for_retry" in patcher
+          assert "ISOLATED_PATCH_ROLLBACK_STATE_DIVERGED" in patcher
           assert "self.rollback(assignment.assignment_id)" in patcher
           assert "_rollback_workspace_mutation" in cycle
           assert "_finalize_workspace_mutation" in cycle
