@@ -110,7 +110,9 @@ def test_contradiction_blocks_otherwise_approved_publication_plan():
     plan = plan_mechanistic_candidate_publication(positive_id, (repository, service))
 
     assert plan["ready_for_controlled_publication_gate"] is False
-    assert any(item.startswith("mechanistic_contradiction:") for item in plan["blockers"])
+    assert any(
+        item.startswith("mechanistic_contradiction:") for item in plan["blockers"]
+    )
     assert plan["authorized"] is False
     assert plan["production_write_executed"] is False
 
@@ -125,7 +127,9 @@ def test_same_polarity_replicates_are_not_classified_as_contradiction():
             "revision_id": 402,
             "extraction_run_id": 403,
             "source_anchors": [
-                payload("promotes").source_anchors[0].model_copy(update={"anchor_id": 404})
+                payload("promotes")
+                .source_anchors[0]
+                .model_copy(update={"anchor_id": 404})
             ],
         }
     )
