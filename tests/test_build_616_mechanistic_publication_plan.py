@@ -81,6 +81,7 @@ def test_unreviewed_candidate_is_blocked_and_never_authorized():
     assert plan["authorized"] is False
     assert plan["commit_capability"] is False
     assert plan["production_write_executed"] is False
+    assert plan["operations"] == []
     assert "scientific_review_not_approved" in plan["blockers"]
     assert any(item.startswith("open_review:") for item in plan["blockers"])
 
@@ -93,6 +94,7 @@ def test_approved_candidate_produces_deterministic_three_operation_plan():
     first = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
     second = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
 
+    assert first["contract"] == "calyx-mechanistic-publication-plan-v2"
     assert first["ready_for_controlled_publication_gate"] is True
     assert first["blockers"] == []
     assert first["validation"]["healthy"] is True
@@ -119,6 +121,7 @@ def test_open_conflict_blocks_plan_even_after_review_approval():
     plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
 
     assert plan["ready_for_controlled_publication_gate"] is False
+    assert plan["operations"] == []
     assert "open_conflict:900" in plan["blockers"]
 
 
@@ -131,6 +134,7 @@ def test_missing_evidence_blocks_publication_plan():
     plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
 
     assert plan["ready_for_controlled_publication_gate"] is False
+    assert plan["operations"] == []
     assert "exact_evidence_required" in plan["blockers"]
 
 
@@ -143,7 +147,33 @@ def test_plan_preserves_causal_context_without_write_authority():
     edge = plan["operations"][2]["payload"]
 
     assert edge["edge_type"] == "promotes"
+    assert edge["endpoint_resolution"] == "canonical_key"
+    assert edge["from_canonical_key"] == "environment:blue-light"
+    assert edge["to_canonical_key"] == "physiology:auxin-redistribution"
+    assert "from_node_id" not in edge
+    assert "to_node_id" not in edge
     assert edge["payload"]["polarity"] == 1
     assert edge["payload"]["experimental_context"]["tissue"] == "young leaf"
     assert edge["payload"]["quantitative_context"]["wavelength_nm"] == 450
+    assert edge["candidate_provenance"] == {
+        "source_table": "oc_candidate_knowledge.candidates",
+        "source_pk": str(candidate_id),
+    }
     assert plan["requires_explicit_publication_authorization"] is True
+
+
+def test_node_operations_separate_canonical_identity_from_candidate_provenance():
+    repository, service = components()
+    candidate_id = create_candidate(repository, service)
+    approve_all_candidate_reviews(repository, candidate_id)
+
+    plan = plan_mechanistic_candidate_publication(candidate_id, (repository, service))
+    source = plan["operations"][0]["payload"]
+    target = plan["operations"][1]["payload"]
+
+    assert source["canonical_key"] == "environment:blue-light"
+    assert target["canonical_key"] == "physiology:auxin-redistribution"
+    assert source["candidate_provenance"]["source_pk"] == str(candidate_id)
+    assert target["candidate_provenance"]["source_pk"] == str(candidate_id)
+    assert source["payload"]["reviewed_candidate"] is True
+    assert target["payload"]["reviewed_candidate"] is True
