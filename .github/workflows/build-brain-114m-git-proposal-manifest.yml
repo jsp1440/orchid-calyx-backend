@@ -6,11 +6,14 @@ on:
       - "app/calyx_orchestrator/assignment_factory.py"
       - "app/calyx_orchestrator/execution_bridge.py"
       - "app/calyx_orchestrator/git_proposal_manifest.py"
+      - "app/calyx_orchestrator/isolated_patch_executor.py"
       - "app/calyx_orchestrator/persisted_patch_execution.py"
+      - "app/calyx_orchestrator/program_cycle.py"
       - "app/calyx_orchestrator/sandbox_supervisor_service.py"
       - "tests/test_calyx_assignment_capabilities_114m_r1.py"
       - "tests/test_calyx_git_proposal_manifest.py"
       - "tests/test_calyx_persisted_patch_execution.py"
+      - "tests/test_calyx_workspace_rollback_114m.py"
       - "docs/brain/BUILD-BRAIN-114M-GIT-PROPOSAL-MANIFEST.md"
       - ".github/workflows/build-brain-114m-git-proposal-manifest.yml"
   workflow_dispatch:
@@ -36,16 +39,16 @@ jobs:
           pip install pytest ruff
       - name: Compile proposal manifest surface
         run: |
-          python -m compileall -q app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
+          python -m compileall -q app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/isolated_patch_executor.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/program_cycle.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py tests/test_calyx_workspace_rollback_114m.py
       - name: Ruff proposal manifest surface
         run: |
-          ruff check app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
-          ruff format --check app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
+          ruff check app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/isolated_patch_executor.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/program_cycle.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py tests/test_calyx_workspace_rollback_114m.py
+          ruff format --check app/calyx_orchestrator/assignment_factory.py app/calyx_orchestrator/execution_bridge.py app/calyx_orchestrator/git_proposal_manifest.py app/calyx_orchestrator/isolated_patch_executor.py app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/program_cycle.py app/calyx_orchestrator/sandbox_supervisor_service.py tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py tests/test_calyx_workspace_rollback_114m.py
       - name: Focused proposal manifest regressions
         env:
           PYTHONPATH: .
         run: |
-          pytest -q tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py
+          pytest -q tests/test_calyx_assignment_capabilities_114m_r1.py tests/test_calyx_git_proposal_manifest.py tests/test_calyx_persisted_patch_execution.py tests/test_calyx_workspace_rollback_114m.py
       - name: Non-mutation and evidence-authority assertions
         run: |
           python - <<'PY'
@@ -55,6 +58,8 @@ jobs:
           persisted = Path("app/calyx_orchestrator/persisted_patch_execution.py").read_text(encoding="utf-8")
           assignment = Path("app/calyx_orchestrator/assignment_factory.py").read_text(encoding="utf-8")
           bridge = Path("app/calyx_orchestrator/execution_bridge.py").read_text(encoding="utf-8")
+          patcher = Path("app/calyx_orchestrator/isolated_patch_executor.py").read_text(encoding="utf-8")
+          cycle = Path("app/calyx_orchestrator/program_cycle.py").read_text(encoding="utf-8")
           combined = source + "\n" + persisted + "\n" + assignment + "\n" + bridge
           forbidden = (
               "subprocess",
@@ -83,6 +88,13 @@ jobs:
           assert '"assignment_id": receipt.assignment_id' in bridge
           assert '"program_id": receipt.program_id' in bridge
           assert '"job_key": receipt.job_key' in bridge
+          assert 'ROLLBACK_JOURNAL_SCHEMA = "calyx-isolated-rollback-v1"' in patcher
+          assert "_persist_rollback_journal" in patcher
+          assert "_recover_for_retry" in patcher
+          assert "ISOLATED_PATCH_ROLLBACK_STATE_DIVERGED" in patcher
+          assert "self.rollback(assignment.assignment_id)" in patcher
+          assert "_rollback_workspace_mutation" in cycle
+          assert "_finalize_workspace_mutation" in cycle
           assert '"git_mutation_performed": False' in source
           assert '"automatic_merge_authorized": False' in source
           assert '"deployment_authorized": False' in source
