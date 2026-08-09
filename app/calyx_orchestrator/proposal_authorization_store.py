@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .persisted_patch_execution import PersistedPatchExecutionService
 from .proposal_authorization import (
     ALLOWED_REVIEW_CLASSES,
     SCHEMA,
@@ -31,12 +32,13 @@ class DurableProposalAuthorizationStore:
 
     def __init__(self, db: Session) -> None:
         self.db = db
+        self._patch_execution_service = PersistedPatchExecutionService(db)
+        self._builder = ProposalAuthorizationBuilder(self._patch_execution_service)
 
     def record_review(
         self,
         *,
         manifest_snapshot: Mapping[str, object],
-        patch_receipt: Mapping[str, object],
         requested_by: str,
         review_class: str,
         reviewer_id: str,
@@ -46,10 +48,9 @@ class DurableProposalAuthorizationStore:
         evidence_uris: Sequence[str],
         decided_at: datetime,
     ) -> ProposalAuthorizationRecord:
-        """Build through 114N governance, then persist the resulting exact decision."""
-        item = ProposalAuthorizationBuilder().build(
+        """Build through 114N persisted-patch governance, then persist the exact decision."""
+        item = self._builder.build(
             manifest_snapshot=manifest_snapshot,
-            patch_receipt=patch_receipt,
             requested_by=requested_by,
             review_class=review_class,
             reviewer_id=reviewer_id,
@@ -76,7 +77,7 @@ class DurableProposalAuthorizationStore:
         )
         if row is None:
             raise LookupError("PROPOSAL_AUTH_DURABLE_RECORD_NOT_FOUND")
-        return self._decode(row)
+        return self._verified_record(row)
 
     def materialize_registry(
         self, *, manifest_digest: str
@@ -91,7 +92,7 @@ class DurableProposalAuthorizationStore:
         ).all()
         registry = ProposalAuthorizationRegistry()
         for row in rows:
-            registry.record(self._decode(row))
+            registry.record(self._verified_record(row))
         return registry
 
     def _persist(
@@ -108,7 +109,7 @@ class DurableProposalAuthorizationStore:
             review_class=item.review_class,
         )
         if existing is not None:
-            persisted = self._decode(existing)
+            persisted = self._verified_record(existing)
             if persisted != item:
                 raise ValueError(
                     "PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED"
@@ -132,14 +133,14 @@ class DurableProposalAuthorizationStore:
             )
             if winner is None:
                 raise
-            persisted = self._decode(winner)
+            persisted = self._verified_record(winner)
             if persisted != item:
                 raise ValueError(
                     "PROPOSAL_AUTH_DURABLE_DECISION_ALREADY_RECORDED"
                 )
             return persisted
         self.db.refresh(row)
-        return self._decode(row)
+        return self._verified_record(row)
 
     def _find(
         self, *, manifest_digest: str, review_class: str
@@ -150,6 +151,40 @@ class DurableProposalAuthorizationStore:
                 ProposalAuthorizationDecisionRecord.review_class == review_class,
             )
         )
+
+    def _verified_record(
+        self, row: ProposalAuthorizationDecisionRecord
+    ) -> ProposalAuthorizationRecord:
+        record = self._decode(row)
+        try:
+            persisted = self._patch_execution_service.get_completed(
+                program_job_id=record.patch_program_job_id
+            )
+        except (LookupError, PermissionError, TypeError, ValueError) as exc:
+            raise PermissionError(
+                "PROPOSAL_AUTH_DURABLE_PATCH_EVIDENCE_UNAVAILABLE"
+            ) from exc
+
+        base_commit = str(
+            persisted.output.get("checkout_commit_sha") or ""
+        ).strip().lower()
+        identity = (
+            persisted.repository,
+            persisted.branch,
+            base_commit,
+            persisted.output_checksum,
+            f"executor:{persisted.executor_key}",
+        )
+        recorded = (
+            record.repository,
+            record.source_autonomy_branch,
+            record.base_commit_sha,
+            record.patch_output_checksum,
+            record.producer_id,
+        )
+        if identity != recorded:
+            raise PermissionError("PROPOSAL_AUTH_DURABLE_PATCH_EVIDENCE_MISMATCH")
+        return record
 
     @staticmethod
     def _validate_snapshot(snapshot: Mapping[str, object]) -> None:
@@ -186,6 +221,7 @@ class DurableProposalAuthorizationStore:
         try:
             record = ProposalAuthorizationRecord(
                 manifest_digest=str(raw["manifest_digest"]),
+                patch_program_job_id=str(raw["patch_program_job_id"]),
                 repository=str(raw["repository"]),
                 base_commit_sha=str(raw["base_commit_sha"]),
                 source_autonomy_branch=str(raw["source_autonomy_branch"]),

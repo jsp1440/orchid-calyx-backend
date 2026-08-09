@@ -3,11 +3,14 @@ name: BUILD-BRAIN-114P Durable Proposal Authorization Validation
 on:
   pull_request:
     paths:
+      - "app/calyx_orchestrator/persisted_patch_execution.py"
       - "app/calyx_orchestrator/proposal_authorization.py"
       - "app/calyx_orchestrator/proposal_authorization_status.py"
       - "app/calyx_orchestrator/proposal_authorization_models.py"
       - "app/calyx_orchestrator/proposal_authorization_store.py"
       - "tests/test_calyx_durable_proposal_authorization.py"
+      - "tests/test_calyx_proposal_authorization.py"
+      - "tests/test_calyx_proposal_authorization_status.py"
       - "migrations/20260808_calyx_proposal_authorization_decisions.sql"
       - "docs/brain/BUILD-BRAIN-114P-DURABLE-PROPOSAL-AUTHORIZATION.md"
       - ".github/workflows/build-brain-114p-durable-proposal-authorization.yml"
@@ -34,11 +37,11 @@ jobs:
           pip install pytest ruff
       - name: Compile durable authorization surface
         run: |
-          python -m compileall -q app/calyx_orchestrator/proposal_authorization_models.py app/calyx_orchestrator/proposal_authorization_store.py tests/test_calyx_durable_proposal_authorization.py
+          python -m compileall -q app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/proposal_authorization.py app/calyx_orchestrator/proposal_authorization_status.py app/calyx_orchestrator/proposal_authorization_models.py app/calyx_orchestrator/proposal_authorization_store.py tests/test_calyx_durable_proposal_authorization.py tests/test_calyx_proposal_authorization.py tests/test_calyx_proposal_authorization_status.py
       - name: Ruff durable authorization surface
         run: |
-          ruff check app/calyx_orchestrator/proposal_authorization_models.py app/calyx_orchestrator/proposal_authorization_store.py tests/test_calyx_durable_proposal_authorization.py
-          ruff format --check app/calyx_orchestrator/proposal_authorization_models.py app/calyx_orchestrator/proposal_authorization_store.py tests/test_calyx_durable_proposal_authorization.py
+          ruff check app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/proposal_authorization.py app/calyx_orchestrator/proposal_authorization_status.py app/calyx_orchestrator/proposal_authorization_models.py app/calyx_orchestrator/proposal_authorization_store.py tests/test_calyx_durable_proposal_authorization.py tests/test_calyx_proposal_authorization.py tests/test_calyx_proposal_authorization_status.py
+          ruff format --check app/calyx_orchestrator/persisted_patch_execution.py app/calyx_orchestrator/proposal_authorization.py app/calyx_orchestrator/proposal_authorization_status.py app/calyx_orchestrator/proposal_authorization_models.py app/calyx_orchestrator/proposal_authorization_store.py tests/test_calyx_durable_proposal_authorization.py tests/test_calyx_proposal_authorization.py tests/test_calyx_proposal_authorization_status.py
       - name: Focused durable authorization regressions
         env:
           PYTHONPATH: .
@@ -59,12 +62,14 @@ jobs:
           for marker in required:
               assert marker in sql, marker
           PY
-      - name: Static authority boundary
+      - name: Static durable trust and authority boundary
         run: |
           python - <<'PY'
           from pathlib import Path
 
           source = Path("app/calyx_orchestrator/proposal_authorization_store.py").read_text(encoding="utf-8")
+          auth = Path("app/calyx_orchestrator/proposal_authorization.py").read_text(encoding="utf-8")
+          combined = source + "\n" + auth
           forbidden = (
               "subprocess",
               "git push",
@@ -75,7 +80,11 @@ jobs:
               "urllib.request",
           )
           for marker in forbidden:
-              assert marker not in source, marker
+              assert marker not in combined, marker
+          assert "PersistedPatchExecutionService" in source
+          assert "patch_receipt" not in source
+          assert "patch_program_job_id" in source
+          assert 'MANIFEST_SCHEMA = "calyx-git-proposal-manifest-v2"' in auth
           PY
       - name: Diff hygiene
         env:

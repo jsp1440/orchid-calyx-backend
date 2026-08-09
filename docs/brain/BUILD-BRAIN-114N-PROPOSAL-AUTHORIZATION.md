@@ -2,34 +2,44 @@
 
 ## Objective
 
-Add immutable repository-proposal review evidence after merged BUILD-BRAIN-114M without granting Calyx Git or GitHub mutation authority.
+Add immutable repository-proposal review evidence after BUILD-BRAIN-114M without granting Calyx Git or GitHub mutation authority.
 
-## Current-main lineage
+## Current lineage
 
-This slice is rebuilt directly from current `main` on `feature/brain-114n-current-main`; only 114N files and CI-incident documentation belong in its delta. Superseded divergent PR #684 was closed unmerged; PR #687 is the single authoritative implementation for issue #683.
+PR #687 is the authoritative BUILD-BRAIN-114N implementation for issue #683. After trust audit issue #692 identified that merged 114M v1 accepted caller-supplied patch receipts, #687 was retargeted onto corrective BUILD-BRAIN-114M-R1 PR #696. It must not merge before #696.
 
-## Trust chain
+## Hardened trust chain
 
-Before creating a decision record, 114N verifies the exact `calyx-git-proposal-manifest-v1` digest and proposal identity, the delivered `isolated_workspace_patcher_v1` receipt and checksum, and derives producer identity from that authoritative executor. Reviewers must be distinct from requester and producer, role-qualified for `security` or `operational`, and provide rationale, evidence URIs, and a timezone-aware decision time.
+114N accepts only `calyx-git-proposal-manifest-v2`. The manifest must bind an exact durable `patch_program_job_id` plus repository, source autonomy branch, base commit, patch output checksum, proposed branch, change hashes, validation evidence, and its manifest digest.
+
+`ProposalAuthorizationBuilder` no longer accepts a caller-supplied patch receipt. Before creating any review record it resolves the exact patch job through `PersistedPatchExecutionService`, which is backed by durable `CalyxProgramJob.evidence_json`. The persisted execution must match the manifest repository, source branch, base commit, output checksum, and authoritative isolated-patcher executor identity. Producer identity is derived from that persisted executor.
+
+This closes the downstream version of the 114M-R1 trust defect: a syntactically valid manifest plus fabricated in-memory patch receipt cannot create review evidence.
+
+Each authorization record binds `patch_program_job_id` into its immutable payload and authorization digest. A pre-fix v1 manifest is rejected rather than silently grandfathered.
+
+## Review governance
+
+Reviewers must be distinct from requester and persisted patch producer, role-qualified for `security` or `operational`, and provide rationale, evidence URIs, and a timezone-aware decision time.
 
 `ProposalAuthorizationRegistry` keys records by `(manifest_digest, review_class)`. Identical re-recording is idempotent; conflicting later decisions are rejected. Changed proposals require new review.
 
-## Dual-review completion
-
 `proposal_review_status()` requires both required review classes **and two distinct reviewer identities**. Missing evidence produces `PROPOSAL_REVIEWS_PENDING`; any rejection produces `PROPOSAL_REVIEW_REJECTED`; two approved classes recorded by the same reviewer produce `PROPOSAL_REVIEW_REVIEWER_CONFLICT`; only security plus operational approval from distinct reviewers produces `PROPOSAL_REVIEW_EVIDENCE_COMPLETE`.
-
-This independent-review hardening closes a governance gap found during structural audit: a principal holding both reviewer roles can no longer single-handedly complete the repository proposal review-evidence gate.
 
 Even complete review evidence grants no Git mutation, commit, push, pull-request creation, automatic merge, deployment, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation authority.
 
-## Validation and CI provenance
+## Validation contract
 
-The dedicated 114N workflow compiles both runtime surfaces and both focused test files, runs Ruff lint and format verification, executes focused pytest regressions, asserts non-mutation boundaries plus the independent-review conflict path, and runs diff hygiene.
+The dedicated 114N workflow now compiles and lints the persisted-patch resolver together with both runtime review surfaces and both focused test files. Focused regressions cover deterministic non-authority records, manifest tampering, persisted patch checksum/identity mismatch, missing durable patch-job identity, requester/producer self-approval, reviewer-role enforcement, stale manifests, immutable rejection, independent dual-review completion, and rejection behavior.
 
-GitHub-hosted Actions is currently terminating selected repository jobs before checkout with `steps=null`. A controlled rerun of the focused 114N gate reproduced the same pre-step failure. Such runs provide no compile, lint, pytest, or diff-hygiene verdict and are not application failures. The exact-head 114N implementation remains draft until a runner executes real workflow steps and passes.
+Static assertions require manifest v2, `PersistedPatchExecutionService`, bound `patch_program_job_id`, absence of a `patch_receipt` runtime path, and permanent non-authority flags.
 
-The local environment available to the coordinator does not provide `gh` and has no outbound repository network access, so it cannot substitute an authenticated checkout for hosted CI. Structural source review remains useful for governance defects but is not represented as executable validation.
+## Current CI incident
+
+Canonical issue #481 records a repository-wide GitHub-hosted runner allocation failure. A zero-dependency diagnostic workflow containing only one shell `echo` step failed before step 1 with `steps=null`, ruling out repository code, Python/PostgreSQL setup, checkout/setup actions, and third-party actions as the immediate cause. Such runs provide no compile, lint, pytest, or diff-hygiene verdict and are not application failures.
+
+Keep #687 draft until #696 is executable-green and #687's exact stacked head receives real workflow steps and passes.
 
 ## Next dependency
 
-BUILD-BRAIN-114O may consume only authoritative 114N records retrieved from the registry for the exact manifest. It must require both approved classes from distinct reviewers before any owner-bound Git-proposal authorization request can exist. Actual Git/GitHub mutation remains a separate governance boundary, and 114O must not be treated as review-ready until 114N receives executable exact-head validation.
+BUILD-BRAIN-114O may consume only authoritative 114N registry records for the exact v2 manifest, including the bound durable patch-job identity. It must require both approved classes from distinct reviewers before an owner-bound Git-proposal authorization request can exist. Actual Git/GitHub mutation remains a separate governance boundary.
