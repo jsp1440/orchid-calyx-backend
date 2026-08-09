@@ -22,7 +22,11 @@ def _digest(value: Any) -> str:
 
 def _candidate(repository: Any, candidate_id: int) -> dict[str, Any]:
     candidate = next(
-        (item for item in repository.candidates if item["candidate_id"] == candidate_id),
+        (
+            item
+            for item in repository.candidates
+            if item["candidate_id"] == candidate_id
+        ),
         None,
     )
     if candidate is None:
@@ -41,18 +45,24 @@ def _open_review_blockers(repository: Any, candidate_id: int) -> list[str]:
 def _open_conflict_blockers(repository: Any, candidate_id: int) -> list[str]:
     blockers: list[str] = []
     for conflict_id, conflict in repository.conflicts.items():
-        if conflict.get("state") == "OPEN" and candidate_id in conflict.get("candidate_ids", []):
+        if conflict.get("state") == "OPEN" and candidate_id in conflict.get(
+            "candidate_ids", []
+        ):
             blockers.append(f"open_conflict:{conflict_id}")
     return sorted(blockers)
 
 
 def _evidence_for_candidate(repository: Any, candidate_id: int) -> list[dict[str, Any]]:
     return [
-        link for link in repository.evidence_links if link.get("candidate_id") == candidate_id
+        link
+        for link in repository.evidence_links
+        if link.get("candidate_id") == candidate_id
     ]
 
 
-def _graph_from_candidate(candidate: dict[str, Any]) -> tuple[list[Node], list[Edge], list[str]]:
+def _graph_from_candidate(
+    candidate: dict[str, Any],
+) -> tuple[list[Node], list[Edge], list[str]]:
     blockers: list[str] = []
     qualifiers = dict(candidate.get("qualifiers") or {})
     contract = dict(qualifiers.get("graph_contract") or {})
@@ -61,7 +71,11 @@ def _graph_from_candidate(candidate: dict[str, Any]) -> tuple[list[Node], list[E
     target_type = str(contract.get("target_node_type") or "").strip().lower()
     source_key = str(contract.get("source_key") or "").strip()
     target_key = str(contract.get("target_key") or "").strip()
-    relationship = str(contract.get("relationship") or candidate.get("predicate") or "").strip().lower()
+    relationship = (
+        str(contract.get("relationship") or candidate.get("predicate") or "")
+        .strip()
+        .lower()
+    )
 
     if source_type not in CAUSAL_REASONING_NODE_TYPES:
         blockers.append(f"invalid_source_type:{source_type or 'missing'}")
@@ -190,7 +204,9 @@ def plan_mechanistic_candidate_publication(
         "candidate_id": candidate_id,
         "candidate_hash": candidate.get("candidate_hash"),
         "evidence_link_ids": sorted(
-            int(link["evidence_link_id"]) for link in evidence if link.get("evidence_link_id")
+            int(link["evidence_link_id"])
+            for link in evidence
+            if link.get("evidence_link_id")
         ),
         "operations": operations,
         "blockers": blockers,
