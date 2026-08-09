@@ -112,25 +112,36 @@ def _graph_from_candidate(
     assert target_pk is not None
     confidence = float(candidate.get("confidence", 0.0))
     candidate_id = int(candidate["candidate_id"])
+    reviewed = candidate.get("review_state") == "APPROVED"
+    evidence_class = (
+        "reviewed_mechanistic_candidate" if reviewed else "candidate_mechanistic_claim"
+    )
+    confidence_label = "reviewed_candidate" if reviewed else "candidate"
+    candidate_provenance = {
+        "source_table": "oc_candidate_knowledge.candidates",
+        "source_pk": str(candidate_id),
+    }
     common_payload = {
         "candidate_id": candidate_id,
+        "candidate_provenance": candidate_provenance,
         "reasoning_id": qualifiers.get("reasoning_id"),
         "experimental_context": qualifiers.get("experimental_context", {}),
         "quantitative_context": qualifiers.get("quantitative_context", {}),
         "provenance": qualifiers.get("provenance", {}),
-        "reviewed_candidate": True,
+        "reviewed_candidate": reviewed,
         "publication_plan_only": True,
     }
+    preview_source = "synthetic.mechanistic_publication_plan"
     source = Node(
         kg_node_id=1,
         node_type=source_type,
         canonical_key=source_key,
         display_label=str(candidate.get("normalized_subject") or source_key),
-        source_table="oc_candidate_knowledge.candidates",
+        source_table=preview_source,
         source_pk=source_pk,
-        evidence_class="reviewed_mechanistic_candidate",
+        evidence_class=evidence_class,
         confidence_score=confidence,
-        confidence_label="reviewed_candidate",
+        confidence_label=confidence_label,
         payload=common_payload,
     )
     target = Node(
@@ -138,11 +149,11 @@ def _graph_from_candidate(
         node_type=target_type,
         canonical_key=target_key,
         display_label=str(candidate.get("object_value") or target_key),
-        source_table="oc_candidate_knowledge.candidates",
+        source_table=preview_source,
         source_pk=target_pk,
-        evidence_class="reviewed_mechanistic_candidate",
+        evidence_class=evidence_class,
         confidence_score=confidence,
-        confidence_label="reviewed_candidate",
+        confidence_label=confidence_label,
         payload=common_payload,
     )
     edge = Edge(
@@ -150,20 +161,77 @@ def _graph_from_candidate(
         edge_type=relationship,
         from_node_id=1,
         to_node_id=2,
-        source_table="oc_candidate_knowledge.candidates",
+        source_table=preview_source,
         source_pk=str(candidate_id),
-        evidence_class="reviewed_mechanistic_candidate",
+        evidence_class=evidence_class,
         confidence_score=confidence,
-        confidence_label="reviewed_candidate",
-        rule_name="BUILD_616_MECHANISTIC_PUBLICATION_PLAN_V1",
+        confidence_label=confidence_label,
+        rule_name="BUILD_616_MECHANISTIC_PUBLICATION_PLAN_V2",
         payload={
             **common_payload,
+            "source_canonical_key": source_key,
+            "target_canonical_key": target_key,
             "role": semantics["role"],
             "polarity": semantics["polarity"],
             "causal": semantics["causal"],
         },
     )
     return [source, target], [edge], []
+
+
+def _publication_operations(
+    candidate: dict[str, Any], nodes: list[Node], edges: list[Edge]
+) -> list[dict[str, Any]]:
+    candidate_id = int(candidate["candidate_id"])
+    candidate_provenance = {
+        "source_table": "oc_candidate_knowledge.candidates",
+        "source_pk": str(candidate_id),
+    }
+    source, target = nodes
+    edge = edges[0]
+    return [
+        {
+            "operation": "UPSERT_NODE",
+            "payload": {
+                "node_type": source.node_type,
+                "canonical_key": source.canonical_key,
+                "display_label": source.display_label,
+                "confidence_score": source.confidence_score,
+                "confidence_label": source.confidence_label,
+                "evidence_class": source.evidence_class,
+                "candidate_provenance": candidate_provenance,
+                "payload": dict(source.payload),
+            },
+        },
+        {
+            "operation": "UPSERT_NODE",
+            "payload": {
+                "node_type": target.node_type,
+                "canonical_key": target.canonical_key,
+                "display_label": target.display_label,
+                "confidence_score": target.confidence_score,
+                "confidence_label": target.confidence_label,
+                "evidence_class": target.evidence_class,
+                "candidate_provenance": candidate_provenance,
+                "payload": dict(target.payload),
+            },
+        },
+        {
+            "operation": "UPSERT_EDGE",
+            "payload": {
+                "edge_type": edge.edge_type,
+                "endpoint_resolution": "canonical_key",
+                "from_canonical_key": source.canonical_key,
+                "to_canonical_key": target.canonical_key,
+                "confidence_score": edge.confidence_score,
+                "confidence_label": edge.confidence_label,
+                "evidence_class": edge.evidence_class,
+                "candidate_provenance": candidate_provenance,
+                "rule_name": edge.rule_name,
+                "payload": dict(edge.payload),
+            },
+        },
+    ]
 
 
 def plan_mechanistic_candidate_publication(
@@ -209,13 +277,8 @@ def plan_mechanistic_candidate_publication(
             blockers.append("projected_graph_validation_failed")
 
     blockers = sorted(set(blockers))
-    operations = []
-    if not graph_blockers:
-        operations = [
-            {"operation": "UPSERT_NODE", "payload": nodes[0].to_dict()},
-            {"operation": "UPSERT_NODE", "payload": nodes[1].to_dict()},
-            {"operation": "UPSERT_EDGE", "payload": edges[0].to_dict()},
-        ]
+    ready = not blockers and bool(validation.get("healthy"))
+    operations = _publication_operations(candidate, nodes, edges) if ready else []
 
     plan_core = {
         "candidate_id": candidate_id,
@@ -229,10 +292,9 @@ def plan_mechanistic_candidate_publication(
         "blockers": blockers,
         "validation_healthy": bool(validation.get("healthy")),
     }
-    ready = not blockers and bool(validation.get("healthy"))
 
     return {
-        "contract": "calyx-mechanistic-publication-plan-v1",
+        "contract": "calyx-mechanistic-publication-plan-v2",
         "candidate_id": candidate_id,
         "plan_id": _digest(plan_core),
         "ready_for_controlled_publication_gate": ready,
