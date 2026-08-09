@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -35,6 +36,10 @@ from app.database import Base
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 BRANCH = "autonomy/work-123"
 COMMIT = "a" * 40
+PATCH_CONTENT = "print('bounded change')\n"
+PATCH_BYTES = PATCH_CONTENT.encode("utf-8")
+PATCH_AFTER = hashlib.sha256(PATCH_BYTES).hexdigest()
+PATCH_BEFORE = "b" * 64
 
 
 def _db() -> Session:
@@ -50,6 +55,18 @@ def _db() -> Session:
     return Session(engine)
 
 
+def _patch_inputs() -> dict[str, object]:
+    return {
+        "patches": [
+            {
+                "path": "app/example.py",
+                "before_sha256": PATCH_BEFORE,
+                "content_utf8": PATCH_CONTENT,
+            }
+        ]
+    }
+
+
 def _output(*, repository: str = REPOSITORY, branch: str = BRANCH) -> dict[str, object]:
     return {
         "status": "delivered",
@@ -63,14 +80,14 @@ def _output(*, repository: str = REPOSITORY, branch: str = BRANCH) -> dict[str, 
         "changes": [
             {
                 "path": "app/example.py",
-                "before_sha256": "b" * 64,
-                "after_sha256": "c" * 64,
+                "before_sha256": PATCH_BEFORE,
+                "after_sha256": PATCH_AFTER,
                 "created": False,
-                "size_bytes": 100,
+                "size_bytes": len(PATCH_BYTES),
             }
         ],
         "file_count": 1,
-        "total_written_bytes": 100,
+        "total_written_bytes": len(PATCH_BYTES),
         "commit_created": False,
         "validation_commands_run": False,
         "side_effects": ["isolated_workspace_files_modified"],
@@ -100,6 +117,7 @@ def _completed_job(
                 job_repository,
                 job_branch,
                 True,
+                inputs=_patch_inputs(),
             )
         ],
         dependencies=[],
@@ -174,11 +192,27 @@ def test_tampered_persisted_output_is_rejected() -> None:
     with _db() as db:
         completed = _completed_job(db)
         evidence = json.loads(completed.evidence_json or "{}")
-        evidence["output"]["total_written_bytes"] = 101
+        evidence["output"]["total_written_bytes"] = len(PATCH_BYTES) + 1
         completed.evidence_json = json.dumps(evidence, sort_keys=True)
         db.commit()
         with pytest.raises(
             PermissionError, match="PATCH_PROGRAM_JOB_OUTPUT_CHECKSUM_MISMATCH"
+        ):
+            PersistedPatchExecutionService(db).get_completed(
+                program_job_id=completed.program_job_id
+            )
+
+
+def test_coherently_rehashed_output_still_must_match_governed_patch_inputs() -> None:
+    with _db() as db:
+        completed = _completed_job(db)
+        evidence = json.loads(completed.evidence_json or "{}")
+        evidence["output"]["changes"][0]["after_sha256"] = "d" * 64
+        evidence["output_checksum"] = canonical_checksum(evidence["output"])
+        completed.evidence_json = json.dumps(evidence, sort_keys=True)
+        db.commit()
+        with pytest.raises(
+            PermissionError, match="PATCH_PROGRAM_JOB_INPUT_OUTPUT_MISMATCH"
         ):
             PersistedPatchExecutionService(db).get_completed(
                 program_job_id=completed.program_job_id
