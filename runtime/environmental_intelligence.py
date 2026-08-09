@@ -51,6 +51,30 @@ def _digest(payload: Any) -> str:
     return hashlib.sha256(_stable(payload).encode("utf-8")).hexdigest()
 
 
+def _scientific_content(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: record[key]
+        for key in (
+            "schema_version",
+            "record_id",
+            "canonical_taxon_id",
+            "accepted_name",
+            "occurrence_id",
+            "climate_variables",
+            "elevation",
+            "substrate",
+            "habitat",
+            "temporal_coverage",
+            "spatial_resolution",
+            "source",
+            "observation_state",
+            "uncertainty",
+            "provenance",
+            "created_by",
+        )
+    }
+
+
 class EnvironmentalIntelligenceService:
     def __init__(self, workspace: Path | None = None, *, artifacts: ImmutableArtifactRegistry | None = None) -> None:
         self.workspace = workspace or environmental_root()
@@ -124,8 +148,15 @@ class EnvironmentalIntelligenceService:
         }
         if record["review_state"] not in REVIEW_STATES:
             raise ValueError("ENV_REVIEW_STATE_INVALID")
-        record["record_digest"] = _digest(record)
-        return self._write(self._root(owner_id) / "records" / f"{record_id}.json", record)
+        record["record_digest"] = _digest(_scientific_content(record))
+        record["state_digest"] = _digest({"record_digest": record["record_digest"], "review_state": record["review_state"]})
+        path = self._root(owner_id) / "records" / f"{record_id}.json"
+        if path.exists():
+            existing = self._read(path)
+            if existing.get("record_digest") != record["record_digest"]:
+                raise ValueError("ENV_IMMUTABLE_RECORD_CONFLICT")
+            return existing
+        return self._write(path, record)
 
     def review_record(self, owner_id: str, record_id: str, *, state: str, reviewer: str, rationale: str) -> dict[str, Any]:
         if state not in REVIEW_STATES:
@@ -140,6 +171,11 @@ class EnvironmentalIntelligenceService:
         record["review_state"] = state
         record["review_history"] = history
         record["updated_at"] = _now()
+        record["state_digest"] = _digest({
+            "record_digest": record["record_digest"],
+            "review_state": state,
+            "review_history": history,
+        })
         return self._write(path, record)
 
     def _taxon_records(self, owner_id: str, canonical_taxon_id: str) -> list[dict[str, Any]]:
@@ -160,7 +196,10 @@ class EnvironmentalIntelligenceService:
         if not records:
             raise LookupError("ENV_TAXON_RECORDS_NOT_FOUND")
         accepted = [item for item in records if item["review_state"] == "accepted_as_evidence"]
-        working = accepted or records
+        candidates = [item for item in records if item["review_state"] in {"candidate", "needs_review"}]
+        working = accepted or candidates
+        if not working:
+            raise LookupError("ENV_NO_USABLE_RECORDS")
         variables: dict[str, list[float]] = defaultdict(list)
         observed_count = 0
         modeled_count = 0
@@ -203,13 +242,18 @@ class EnvironmentalIntelligenceService:
             warnings.append("SPATIAL_CLUSTERING_RISK")
         if modeled_count and observed_count == 0:
             warnings.append("MODELED_ONLY_ENVELOPE")
-        if accepted == []:
+        if not accepted:
             warnings.append("UNREVIEWED_RECORDS_USED")
+        accepted_names = sorted({_text(item["accepted_name"]) for item in working if _text(item["accepted_name"])})
+        if len(accepted_names) > 1:
+            warnings.append("ACCEPTED_NAME_CONFLICT")
         envelope = {
             "schema_version": SCHEMA_VERSION,
             "canonical_taxon_id": taxon_id,
-            "accepted_name": working[0]["accepted_name"],
+            "accepted_name": accepted_names[0] if len(accepted_names) == 1 else None,
+            "accepted_names": accepted_names,
             "record_count": len(working),
+            "rejected_record_count": sum(1 for item in records if item["review_state"] == "rejected"),
             "observed_record_count": observed_count,
             "modeled_record_count": modeled_count,
             "climate_envelope": variable_envelopes,
@@ -269,7 +313,7 @@ class EnvironmentalIntelligenceService:
             "record_count": len(records),
             "pending_review_ids": pending,
             "modeled_record_ids": modeled,
-            "atlas_handoff_available": bool(records),
+            "atlas_handoff_available": any(item["review_state"] != "rejected" for item in records),
             "unsupported_causal_claims_authorized": False,
             "live_production_import_authorized": False,
             "scientific_publication_authorized": False,
