@@ -61,12 +61,16 @@ def _norm_list(values: list[str]) -> list[str]:
 
 
 def _norm_mapping(value: dict[str, Any]) -> dict[str, Any]:
-    # JSON roundtrip gives deterministic primitive structure while retaining numbers.
     return json.loads(json.dumps(value, sort_keys=True, default=str))
 
 
 def normalize_causal_scope(scope: CausalScope | dict[str, Any] | None) -> dict[str, Any]:
-    model = scope if isinstance(scope, CausalScope) else CausalScope.model_validate(scope or {})
+    if isinstance(scope, CausalScope):
+        model = scope
+    else:
+        raw = dict(scope or {})
+        raw.pop("scope_id", None)
+        model = CausalScope.model_validate(raw)
     normalized = {
         "scope_class": model.scope_class,
         "taxa": _norm_list(model.taxa),
