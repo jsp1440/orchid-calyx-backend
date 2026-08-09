@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -182,30 +184,9 @@ def test_research_article_api_is_authenticated(monkeypatch):
         "title": "Can Orchids Really Foliar Feed?",
         "audience": "orchid society newsletter",
         "format": "newsletter_article",
-        "bibliography": [
-            {
-                **record.__dict__,
-                "authors": list(record.authors),
-                "verification_state": record.verification_state.value,
-            }
-            for record in bibliography
-        ],
-        "evidence_rows": [
-            {
-                **row.__dict__,
-                "evidence_class": row.evidence_class.value,
-                "anchors": [anchor.__dict__ for anchor in row.anchors],
-                "limitations": list(row.limitations),
-            }
-            for row in rows
-        ],
-        "classification_decisions": [
-            {
-                **decision.__dict__,
-                "evidence_class": decision.evidence_class.value,
-            }
-            for decision in decisions
-        ],
+        "bibliography": [asdict(record) for record in bibliography],
+        "evidence_rows": [asdict(row) for row in rows],
+        "classification_decisions": [asdict(decision) for decision in decisions],
     }
 
     with TestClient(app) as client:
