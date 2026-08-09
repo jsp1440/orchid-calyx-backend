@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 from dataclasses import asdict
 from typing import Annotated, Any
 
@@ -70,7 +71,9 @@ def create_figure_brief(
             title=request.title,
             purpose=request.purpose,
             required_labels=tuple(request.required_labels),
-            source_records=tuple(FigureSource(**item.model_dump()) for item in request.source_records),
+            source_records=tuple(
+                FigureSource(**item.model_dump()) for item in request.source_records
+            ),
             output_formats=tuple(request.output_formats),
             provider_hint=request.provider_hint,
             estimated_cost_usd=request.estimated_cost_usd,
@@ -96,7 +99,7 @@ def import_figure_asset(
     try:
         try:
             content = base64.b64decode(request.content_base64, validate=True)
-        except ValueError as exc:
+        except (ValueError, binascii.Error) as exc:
             raise ValueError("ASSET_BASE64_INVALID") from exc
         asset = _service.import_asset(
             brief_id=brief_id,
