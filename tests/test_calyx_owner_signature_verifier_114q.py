@@ -147,6 +147,29 @@ def test_revocation_and_rotation_are_explicit_and_fail_closed() -> None:
     assert verifier.revoked_key_ids == ("owner-old",)
 
 
+def test_duplicate_public_key_material_cannot_bypass_revocation_by_alias() -> None:
+    private, revoked_key = _keypair("owner-revoked")
+    raw_public = revoked_key.public_key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    active_alias = OwnerVerificationKey.from_base64url(
+        key_id="owner-active-alias",
+        public_key=_b64url(raw_public),
+    )
+    with pytest.raises(ValueError, match="DUPLICATE_KEY_MATERIAL"):
+        Ed25519OwnerGrantSignatureVerifier(
+            keys={
+                revoked_key.key_id: revoked_key,
+                active_alias.key_id: active_alias,
+            },
+            revoked_key_ids=frozenset({revoked_key.key_id}),
+        )
+    payload = _unsigned_grant(_request())
+    relabeled = _sign(private, "owner-active-alias", payload)
+    assert relabeled.startswith("ed25519:owner-active-alias:")
+
+
 def test_environment_loader_contains_only_public_material_and_requires_config() -> None:
     private, key = _keypair("owner-live")
     del private
@@ -179,8 +202,9 @@ def test_gate_accepts_valid_external_signature_and_rejects_revoked_signer() -> N
     gate = GitMutationAuthorizationGate(
         owner_principal=OWNER,
         signature_verifier=Ed25519OwnerGrantSignatureVerifier(keys={key.key_id: key}),
+        clock=lambda: NOW + timedelta(minutes=1),
     )
-    verified = gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
+    verified = gate.verify_grant(request, grant)
     assert isinstance(verified, GitMutationAuthorizationGrant)
 
     _, replacement = _keypair("owner-replacement")
@@ -190,9 +214,10 @@ def test_gate_accepts_valid_external_signature_and_rejects_revoked_signer() -> N
             keys={key.key_id: key, replacement.key_id: replacement},
             revoked_key_ids=frozenset({key.key_id}),
         ),
+        clock=lambda: NOW + timedelta(minutes=1),
     )
     with pytest.raises(PermissionError, match="SIGNATURE_INVALID"):
-        revoked_gate.verify_grant(request, grant, now=NOW + timedelta(minutes=1))
+        revoked_gate.verify_grant(request, grant)
 
 
 def test_signature_parser_preserves_case_sensitive_envelope() -> None:
