@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from typing import Annotated
 
+import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
@@ -19,6 +20,7 @@ from .source_binding import (
     FileLiteratureSourceBindingRepository,
     LiteratureSourceBindingError,
 )
+from .source_binding_postgres import PostgresLiteratureSourceBindingResolver
 
 
 def get_literature_repository() -> LiteratureResultRepository:
@@ -30,6 +32,15 @@ def get_literature_repository() -> LiteratureResultRepository:
 def get_source_binding_repository() -> FileLiteratureSourceBindingRepository:
     return FileLiteratureSourceBindingRepository(
         os.getenv("LITERATURE_EXTRACTION_ROOT", "runtime/literature_extraction")
+    )
+
+
+def _transactional_source_binding_resolver() -> PostgresLiteratureSourceBindingResolver:
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise LiteratureSourceBindingError("SOURCE_BINDING_DATABASE_UNAVAILABLE")
+    return PostgresLiteratureSourceBindingResolver(
+        lambda: psycopg.connect(database_url)
     )
 
 
@@ -58,8 +69,15 @@ class SourceBindingIn(BaseModel):
     language: str = "en"
 
 
+class TransactionalSourceBindingResolveIn(BaseModel):
+    actor: str = Field(min_length=1)
+    tenant_id: str | None = None
+    project_id: str | None = None
+
+
 class CandidateHandoffIn(BaseModel):
     use_persisted_binding: bool = True
+    use_transactional_binding: bool = False
     source_binding: SourceBindingIn | None = None
 
 
@@ -76,6 +94,46 @@ def get_paper(
             status_code=404, detail="Literature extraction result not found"
         )
     return paper
+
+
+@router.post("/papers/{paper_id}/source-binding/resolve")
+def resolve_source_binding(
+    paper_id: str,
+    payload: TransactionalSourceBindingResolveIn,
+    literature_repository: Annotated[
+        LiteratureResultRepository, Depends(get_literature_repository)
+    ],
+):
+    paper = literature_repository.get(paper_id)
+    if paper is None:
+        raise HTTPException(
+            status_code=404, detail="Literature extraction result not found"
+        )
+    try:
+        result = _transactional_source_binding_resolver().resolve(
+            paper,
+            actor=payload.actor,
+            tenant_id=payload.tenant_id,
+            project_id=payload.project_id,
+        )
+        return {
+            **result.binding.to_dict(),
+            "binding_id": result.binding_id,
+            "created": result.created,
+            "persistence": "postgresql",
+        }
+    except LiteratureSourceBindingError as exc:
+        status_code = 503 if exc.code == "SOURCE_BINDING_DATABASE_UNAVAILABLE" else 409
+        if exc.code in {
+            "SOURCE_BINDING_NOT_FOUND",
+            "EXTRACTION_RUN_MISMATCH",
+            "ANCHOR_BINDING_NOT_FOUND",
+        }:
+            status_code = 422
+        raise HTTPException(
+            status_code=status_code,
+            detail={"code": exc.code, "details": exc.details},
+        ) from exc
 
 
 @router.put("/papers/{paper_id}/source-binding")
@@ -152,7 +210,13 @@ def handoff_candidates(
         )
     try:
         persisted = binding_repository.get(paper_id)
-        if payload.use_persisted_binding:
+        if payload.use_transactional_binding:
+            canonical = _transactional_source_binding_resolver().get(
+                paper_id, paper.analysis_manifest.analysis_id
+            )
+            if canonical is None:
+                raise LiteratureSourceBindingError("SOURCE_BINDING_NOT_FOUND")
+        elif payload.use_persisted_binding:
             if persisted is None:
                 raise LiteratureSourceBindingError("CANONICAL_SOURCE_BINDING_NOT_FOUND")
             canonical = persisted
@@ -198,10 +262,19 @@ def handoff_candidates(
             },
         ) from exc
     except LiteratureSourceBindingError as exc:
+        if exc.code == "SOURCE_BINDING_DATABASE_UNAVAILABLE":
+            status_code = 503
+        elif exc.code in {
+            "CONFLICTING_SOURCE_REBIND",
+            "PERSISTED_BINDING_IS_AUTHORITATIVE",
+            "BINDING_CONFLICT_REQUIRES_REVIEW",
+            "CROSS_TENANT_BINDING_FORBIDDEN",
+        }:
+            status_code = 409
+        else:
+            status_code = 422
         raise HTTPException(
-            status_code=409
-            if exc.code in {"CONFLICTING_SOURCE_REBIND", "PERSISTED_BINDING_IS_AUTHORITATIVE"}
-            else 422,
+            status_code=status_code,
             detail={"code": exc.code, "details": exc.details},
         ) from exc
     except ValueError as exc:
