@@ -14,12 +14,18 @@ from sqlalchemy.orm import Session
 from app.calyx_orchestrator.assignment_factory import assignment_inputs_for_program_job
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
 from app.calyx_orchestrator.execution_bridge import LeaseExecutionBridge
-from app.calyx_orchestrator.executor import ExecutionReceipt, ExecutionState, canonical_checksum
+from app.calyx_orchestrator.executor import (
+    ExecutionReceipt,
+    ExecutionState,
+    canonical_checksum,
+)
 from app.calyx_orchestrator.git_mutation_authorization import (
     GRANT_SCHEMA,
     GitMutationAuthorizationGate,
 )
-from app.calyx_orchestrator.git_proposal_execution_plan import GitProposalExecutionPlanner
+from app.calyx_orchestrator.git_proposal_execution_plan import (
+    GitProposalExecutionPlanner,
+)
 from app.calyx_orchestrator.isolated_patch_executor import (
     ISOLATED_PATCH_ROLE,
     IsolatedWorkspacePatchExecutor,
@@ -40,8 +46,12 @@ from app.calyx_orchestrator.program_repository import (
 )
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
 from app.calyx_orchestrator.proposal_authorization import ProposalDecision
-from app.calyx_orchestrator.proposal_authorization_models import ProposalAuthorizationDecisionRecord
-from app.calyx_orchestrator.proposal_authorization_store import DurableProposalAuthorizationStore
+from app.calyx_orchestrator.proposal_authorization_models import (
+    ProposalAuthorizationDecisionRecord,
+)
+from app.calyx_orchestrator.proposal_authorization_store import (
+    DurableProposalAuthorizationStore,
+)
 from app.calyx_orchestrator.sandbox_supervisor_evidence import canonical_sha256
 from app.database import Base
 
@@ -144,7 +154,9 @@ def _persist_patch(session: Session) -> CalyxProgramJob:
         executor_key=IsolatedWorkspacePatchExecutor.executor_key,
         state=ExecutionState.DELIVERED,
         outcome=TerminalOutcome.DELIVERED,
-        input_checksum=canonical_checksum(assignment_inputs_for_program_job(program, claimed)),
+        input_checksum=canonical_checksum(
+            assignment_inputs_for_program_job(program, claimed)
+        ),
         output_checksum=canonical_checksum(output),
         output=output,
         evidence_uris=("github:issue/692",),
@@ -302,9 +314,13 @@ def test_plan_is_deterministic_and_binds_durable_patch_identity_and_base_ref() -
     assert snapshot["merge_authorized"] is False
     assert snapshot["deployment_authorized"] is False
     assert snapshot["publication_authorized"] is False
-    commit_op = next(item for item in snapshot["operations"] if item["action"] == "create_commit")
+    commit_op = next(
+        item for item in snapshot["operations"] if item["action"] == "create_commit"
+    )
     assert commit_op["parameters"]["patch_program_job_id"] == patch_job_id
-    pr_op = next(item for item in snapshot["operations"] if item["action"] == "open_pull_request")
+    pr_op = next(
+        item for item in snapshot["operations"] if item["action"] == "open_pull_request"
+    )
     assert pr_op["parameters"]["base_ref"] == BASE_REF
 
 
@@ -346,11 +362,15 @@ def test_snapshot_mutation_cannot_change_frozen_plan_or_digest() -> None:
     plan = _plan(store, patch_job_id, gate, request, grant)
     original_digest = plan.plan_digest
     snapshot = plan.snapshot()
-    commit_op = next(item for item in snapshot["operations"] if item["action"] == "create_commit")
+    commit_op = next(
+        item for item in snapshot["operations"] if item["action"] == "create_commit"
+    )
     commit_op["parameters"]["change_hashes"][0]["after_sha256"] = "0" * 64
     assert plan.plan_digest == original_digest
     fresh = plan.snapshot()
-    fresh_commit = next(item for item in fresh["operations"] if item["action"] == "create_commit")
+    fresh_commit = next(
+        item for item in fresh["operations"] if item["action"] == "create_commit"
+    )
     assert fresh_commit["parameters"]["change_hashes"][0]["after_sha256"] == PATCH_AFTER
 
 
@@ -360,7 +380,10 @@ def test_plan_canonicalizes_valid_dependency_closed_prefix() -> None:
         store, patch_job_id, actions=("create_commit", "create_branch")
     )
     plan = _plan(store, patch_job_id, gate, request, grant)
-    assert [operation.action for operation in plan.operations] == ["create_branch", "create_commit"]
+    assert [operation.action for operation in plan.operations] == [
+        "create_branch",
+        "create_commit",
+    ]
 
 
 def test_plan_rejects_sparse_action_set_missing_prerequisites() -> None:
