@@ -7,7 +7,7 @@ import time
 from collections import OrderedDict
 from dataclasses import asdict, dataclass
 from threading import RLock
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,9 +56,10 @@ class TimingRecorder:
             return fn()
         finally:
             elapsed_ms = max(0.0, (self.clock() - started) * 1000.0)
-            record = TimingRecord(name, round(elapsed_ms, 3), elapsed_ms >= self.slow_ms, dict(metadata or {}))
             with self._lock:
-                self._records.append(record)
+                self._records.append(
+                    TimingRecord(name, round(elapsed_ms, 3), elapsed_ms >= self.slow_ms, dict(metadata or {}))
+                )
 
     def records(self) -> tuple[TimingRecord, ...]:
         with self._lock:
@@ -131,7 +132,7 @@ def mission_index_recommendations() -> tuple[IndexRecommendation, ...]:
                 "WHERE state IN ('available','retry_wait') AND available_at <= NOW() "
                 "ORDER BY priority DESC, available_at ASC, job_id ASC LIMIT 1 FOR UPDATE SKIP LOCKED"
             ),
-            rationale="Supports deterministic queue claiming without proposing or applying an index migration.",
+            rationale="Supports deterministic queue claiming without applying an index migration.",
         ),
         IndexRecommendation(
             code="MISSION_DUE_INDEX",
@@ -151,14 +152,59 @@ def deterministic_load_fixture(*, operations: int = 100, payload_bytes: int = 25
     """Synthetic capacity fixture only; this is not a production benchmark."""
     if operations < 1 or operations > 100_000 or payload_bytes < 0 or payload_bytes > 1_000_000:
         raise ValueError("LOAD_FIXTURE_BOUNDS_INVALID")
-    total_bytes = operations * payload_bytes
     return {
         "operations": operations,
         "payload_bytes": payload_bytes,
-        "total_payload_bytes": total_bytes,
+        "total_payload_bytes": operations * payload_bytes,
         "production_benchmark": False,
         "production_load_test_authorized": False,
     }
+
+
+def _env_int(name: str, default: int, findings: list[dict[str, str]]) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        findings.append({
+            "code": f"{name}_INVALID",
+            "severity": "high",
+            "remediation": f"Set {name} to a valid integer before relying on performance readiness.",
+        })
+        return default
+    if value < 1:
+        findings.append({
+            "code": f"{name}_INVALID",
+            "severity": "high",
+            "remediation": f"Set {name} to a positive integer.",
+        })
+        return default
+    return value
+
+
+def _env_float(name: str, default: float, findings: list[dict[str, str]]) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        findings.append({
+            "code": f"{name}_INVALID",
+            "severity": "high",
+            "remediation": f"Set {name} to a valid positive number.",
+        })
+        return default
+    if value <= 0:
+        findings.append({
+            "code": f"{name}_INVALID",
+            "severity": "high",
+            "remediation": f"Set {name} to a positive number.",
+        })
+        return default
+    return value
 
 
 class PerformanceReadiness:
@@ -189,27 +235,21 @@ class PerformanceReadiness:
                     "severity": "high",
                     "remediation": "Restore an authorized worker before queue depth grows; do not increase concurrency blindly.",
                 })
-            if capacity["retry_wait_jobs"] > capacity["queue_depth"]:
+            if capacity["retry_wait_jobs"] > 0 and capacity["retry_wait_jobs"] >= max(1, capacity["claimed_or_running_jobs"]):
                 findings.append({
                     "code": "RETRY_PRESSURE_ELEVATED",
                     "severity": "medium",
                     "remediation": "Inspect repeated job errors and retry policy before increasing worker capacity.",
                 })
 
-        cache_max_entries = int(os.getenv("CALYX_CACHE_MAX_ENTRIES", "256"))
-        cache_ttl_seconds = int(os.getenv("CALYX_CACHE_TTL_SECONDS", "60"))
-        slow_ms = float(os.getenv("CALYX_SLOW_PATH_MS", "250"))
+        cache_max_entries = _env_int("CALYX_CACHE_MAX_ENTRIES", 256, findings)
+        cache_ttl_seconds = _env_int("CALYX_CACHE_TTL_SECONDS", 60, findings)
+        slow_ms = _env_float("CALYX_SLOW_PATH_MS", 250.0, findings)
         if cache_max_entries > 10_000:
             findings.append({
                 "code": "CACHE_MEMORY_RISK",
                 "severity": "medium",
-                "remediation": "Reduce CALYX_CACHE_MAX_ENTRIES or validate memory use in a staging environment.",
-            })
-        if slow_ms < 1:
-            findings.append({
-                "code": "SLOW_PATH_THRESHOLD_INVALID",
-                "severity": "high",
-                "remediation": "Set CALYX_SLOW_PATH_MS to a positive operational threshold.",
+                "remediation": "Reduce CALYX_CACHE_MAX_ENTRIES or validate memory use in staging.",
             })
 
         base = {
