@@ -31,7 +31,7 @@ class CausalScope(BaseModel):
     global_justification: str | None = Field(default=None, max_length=4000)
 
     @model_validator(mode="after")
-    def validate_scope(self) -> "CausalScope":
+    def validate_scope(self) -> CausalScope:
         bounded_fields = (
             self.taxa,
             self.organs,
