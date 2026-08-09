@@ -44,10 +44,34 @@ class CausalScope(BaseModel):
 
     @model_validator(mode="after")
     def validate_scope(self) -> CausalScope:
+        material_lists = (
+            self.taxa,
+            self.organs,
+            self.tissues,
+            self.cell_types,
+            self.developmental_stages,
+        )
+        has_list_bounds = any(
+            any(item.strip() for item in values) for values in material_lists
+        )
+        has_mapping_bounds = any(
+            bool(value)
+            for value in (
+                self.environments,
+                self.treatments,
+                self.cultivation_context,
+                self.population_context,
+            )
+        )
+        has_bounds = has_list_bounds or has_mapping_bounds
+        if self.scope_class == "bounded" and not has_bounds:
+            raise ValueError("BOUNDED_CAUSAL_SCOPE_REQUIRES_APPLICABILITY_BOUNDS")
         if self.scope_class == "global" and not (
             self.global_justification or ""
         ).strip():
             raise ValueError("GLOBAL_CAUSAL_SCOPE_REQUIRES_JUSTIFICATION")
+        if self.scope_class == "global" and has_bounds:
+            raise ValueError("GLOBAL_CAUSAL_SCOPE_CANNOT_DECLARE_LOCAL_BOUNDS")
         return self
 
 
