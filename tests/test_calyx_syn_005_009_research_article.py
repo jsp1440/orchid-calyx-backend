@@ -1,0 +1,217 @@
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.scientific_synthesis.models import (
+    BibliographicRecord,
+    EvidenceAnchor,
+    EvidenceClass,
+    EvidenceMatrixRow,
+    VerificationState,
+)
+from app.scientific_synthesis.pipeline import (
+    EvidenceClassificationDecision,
+    ResearchToArticleMissionService,
+)
+
+
+def _source(source_id: str, doi: str):
+    return BibliographicRecord(
+        source_id=source_id,
+        title=f"Verified orchid study {doi}",
+        authors=("Ada Researcher",),
+        year=2026,
+        journal="Journal of Orchid Science",
+        doi=doi,
+        verification_state=VerificationState.VERIFIED_AUTHORITY,
+        verification_provider="crossref",
+        verification_identifier=doi,
+    )
+
+
+def _row(
+    evidence_id: str,
+    source_id: str,
+    *,
+    outcome: str,
+    result: str,
+    polarity: str = "positive",
+):
+    return EvidenceMatrixRow(
+        evidence_id=evidence_id,
+        source_id=source_id,
+        evidence_class=EvidenceClass.OBSERVATIONAL,
+        anchors=(
+            EvidenceAnchor(
+                anchor_id=f"anchor:{evidence_id}",
+                source_id=source_id,
+                source_revision_id="revision-1",
+                locator={"page": 4, "start": 10, "end": 80},
+                content_hash=f"source-hash:{source_id}",
+                excerpt_hash=f"excerpt-hash:{evidence_id}",
+            ),
+        ),
+        taxon="Phalaenopsis",
+        outcome=outcome,
+        method="source-bound extracted result",
+        result=result,
+        metadata={"polarity": polarity},
+    )
+
+
+def _benchmark():
+    bibliography = (
+        _source("doi:10.1000/foliar.1", "10.1000/foliar.1"),
+        _source("doi:10.1000/foliar.2", "10.1000/foliar.2"),
+    )
+    rows = (
+        _row(
+            "ev-foliar",
+            "doi:10.1000/foliar.1",
+            outcome="foliar nitrogen uptake",
+            result="Applied nitrogen was detected after leaf treatment.",
+        ),
+        _row(
+            "ev-root",
+            "doi:10.1000/foliar.2",
+            outcome="root versus leaf uptake",
+            result="Root treatment produced greater uptake than leaf treatment.",
+        ),
+    )
+    decisions = (
+        EvidenceClassificationDecision(
+            evidence_id="ev-foliar",
+            evidence_class=EvidenceClass.DIRECT_TRACER,
+            reviewer_id="reviewer-botany-1",
+            rationale="Methods and results explicitly use a labeled tracer applied to the leaf.",
+        ),
+        EvidenceClassificationDecision(
+            evidence_id="ev-root",
+            evidence_class=EvidenceClass.CONTROLLED_EXPERIMENT,
+            reviewer_id="reviewer-botany-1",
+            rationale="Methods explicitly compare root and leaf application under controlled conditions.",
+        ),
+    )
+    return bibliography, rows, decisions
+
+
+def test_foliar_feeding_benchmark_runs_to_grounded_article():
+    bibliography, rows, decisions = _benchmark()
+    result = ResearchToArticleMissionService().run(
+        question="Do orchids respond to foliar feeding?",
+        title="Can Orchids Really Foliar Feed?",
+        audience="orchid society newsletter",
+        format="newsletter_article",
+        bibliography=bibliography,
+        evidence_rows=rows,
+        classification_decisions=decisions,
+    )
+
+    assert result["state"] == "RESEARCH_TO_ARTICLE_COMPLETE"
+    assert result["audit"]["publication_ready"] is True
+    assert result["human_review_required"] is True
+    assert result["published"] is False
+    assert "# Can Orchids Really Foliar Feed?" in result["article_markdown"]
+    scientific_sentences = [
+        value for value in result["article"]["sentences"] if value["scientific"]
+    ]
+    assert len(scientific_sentences) == 2
+    assert all(value["claim_ids"] for value in scientific_sentences)
+    assert {value["kind"].value for value in result["claims"]} == {"DIRECT"}
+    assert len(result["figure_briefs"]) == len(result["claims"])
+    assert all(value["supporting_claim_ids"] for value in result["figure_briefs"])
+
+
+def test_evidence_class_upgrade_requires_review_provenance():
+    bibliography, rows, _ = _benchmark()
+    bad = EvidenceClassificationDecision(
+        evidence_id="ev-foliar",
+        evidence_class=EvidenceClass.DIRECT_TRACER,
+        reviewer_id=" ",
+        rationale=" ",
+    )
+
+    try:
+        ResearchToArticleMissionService().run(
+            question="Do orchids respond to foliar feeding?",
+            title="Foliar Feeding",
+            audience="newsletter",
+            format="newsletter_article",
+            bibliography=bibliography,
+            evidence_rows=rows,
+            classification_decisions=(bad,),
+        )
+    except ValueError as exc:
+        assert str(exc) == "CLASSIFICATION_REVIEW_PROVENANCE_REQUIRED"
+    else:
+        raise AssertionError("unreviewed evidence-class upgrade was accepted")
+
+
+def test_unverified_bibliography_blocks_generated_article():
+    bibliography, rows, decisions = _benchmark()
+    unsafe = (
+        BibliographicRecord(
+            source_id=bibliography[0].source_id,
+            title=bibliography[0].title,
+            authors=bibliography[0].authors,
+            year=bibliography[0].year,
+            journal=bibliography[0].journal,
+            doi=bibliography[0].doi,
+            verification_state=VerificationState.UNVERIFIED,
+        ),
+        bibliography[1],
+    )
+    result = ResearchToArticleMissionService().run(
+        question="Do orchids respond to foliar feeding?",
+        title="Foliar Feeding",
+        audience="newsletter",
+        format="newsletter_article",
+        bibliography=unsafe,
+        evidence_rows=rows,
+        classification_decisions=decisions,
+    )
+
+    assert result["state"] == "RESEARCH_TO_ARTICLE_BLOCKED"
+    assert result["audit"]["publication_ready"] is False
+
+
+def test_research_article_api_is_authenticated(monkeypatch):
+    bibliography, rows, decisions = _benchmark()
+    monkeypatch.setenv("CALYX_API_KEY", "test-key")
+    payload = {
+        "question": "Do orchids respond to foliar feeding?",
+        "title": "Can Orchids Really Foliar Feed?",
+        "audience": "orchid society newsletter",
+        "format": "newsletter_article",
+        "bibliography": [
+            {
+                **record.__dict__,
+                "authors": list(record.authors),
+                "verification_state": record.verification_state.value,
+            }
+            for record in bibliography
+        ],
+        "evidence_rows": [
+            {
+                **row.__dict__,
+                "evidence_class": row.evidence_class.value,
+                "anchors": [anchor.__dict__ for anchor in row.anchors],
+                "limitations": list(row.limitations),
+            }
+            for row in rows
+        ],
+        "classification_decisions": [
+            {
+                **decision.__dict__,
+                "evidence_class": decision.evidence_class.value,
+            }
+            for decision in decisions
+        ],
+    }
+
+    with TestClient(app) as client:
+        path = "/api/scientific-interpretation/research-article/run"
+        assert client.post(path, json=payload).status_code == 401
+        response = client.post(path, json=payload, headers={"X-API-Key": "test-key"})
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "RESEARCH_TO_ARTICLE_COMPLETE"
