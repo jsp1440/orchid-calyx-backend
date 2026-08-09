@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import io
-import json
 
 import pytest
 from openpyxl import Workbook
 from pydantic import ValidationError
 
-from app.data_intelligence.models import AnalysisOperation, AnalysisPlan, DataIntelligenceError
+from app.data_intelligence.models import (
+    AnalysisOperation,
+    AnalysisPlan,
+    DataIntelligenceError,
+)
 from app.data_intelligence.repository import FileDatasetRepository
 from app.data_intelligence.service import DataIntelligenceService
 
@@ -43,7 +46,7 @@ def _xlsx_bytes() -> bytes:
 
 def test_csv_ingest_profile_execute_and_rerun_are_deterministic(service):
     ingested = service.ingest(
-        owner="owner",
+        owner="owner@example.org",
         project_id="project-1",
         logical_name="orchid-growth",
         filename="orchids.csv",
@@ -55,7 +58,7 @@ def test_csv_ingest_profile_execute_and_rerun_are_deterministic(service):
     assert ingested["profile"]["column_count"] == 3
 
     duplicate = service.ingest(
-        owner="owner",
+        owner="owner@example.org",
         project_id="project-1",
         logical_name="orchid-growth",
         filename="orchids.csv",
@@ -69,14 +72,16 @@ def test_csv_ingest_profile_execute_and_rerun_are_deterministic(service):
         version_id=dataset["version_id"],
         intent="mean height by genus chart",
     )
-    result = service.execute(owner="owner", project_id="project-1", plan=plan)
+    result = service.execute(
+        owner="owner@example.org", project_id="project-1", plan=plan
+    )
     assert result["sandbox"]["network_access"] is False
     assert result["sandbox"]["arbitrary_code_execution"] is False
     assert result["reasoning_reference"]["source_kind"] == "dataset"
     assert set(result["artifact_hashes"]) == {"table.json", "chart.svg"}
 
     rerun = service.rerun(
-        owner="owner",
+        owner="owner@example.org",
         project_id="project-1",
         dataset_id=dataset["dataset_id"],
         version_id=dataset["version_id"],
@@ -96,7 +101,9 @@ def test_xlsx_ingest_and_profile(service):
     )
     assert result["dataset"]["format"] == "xlsx"
     assert result["profile"]["row_count"] == 4
-    height = next(item for item in result["profile"]["columns"] if item["name"] == "height")
+    height = next(
+        item for item in result["profile"]["columns"] if item["name"] == "height"
+    )
     assert height["type"] == "integer"
     assert height["mean"] == 11.0
 
@@ -125,6 +132,15 @@ def test_unsafe_or_untyped_execution_is_rejected():
         AnalysisOperation(kind="python")
 
 
+def test_unsupported_intent_is_explicit(service):
+    with pytest.raises(DataIntelligenceError, match="INTENT_NOT_SUPPORTED"):
+        service.compile_intent(
+            dataset_id="d" * 32,
+            version_id="0" * 64,
+            intent="run arbitrary python from the internet",
+        )
+
+
 def test_wrong_version_and_resource_limits_are_structured(service):
     result = service.ingest(
         owner="owner",
@@ -144,7 +160,10 @@ def test_wrong_version_and_resource_limits_are_structured(service):
 
     service.limits.max_rows = 2
     valid = AnalysisPlan(
-        dataset={"dataset_id": dataset["dataset_id"], "version_id": dataset["version_id"]},
+        dataset={
+            "dataset_id": dataset["dataset_id"],
+            "version_id": dataset["version_id"],
+        },
         intent="sort by height",
         operations=[AnalysisOperation(kind="sort", column="height")],
     )
@@ -152,7 +171,34 @@ def test_wrong_version_and_resource_limits_are_structured(service):
         service.execute(owner="owner", project_id="project-1", plan=valid)
 
 
-def test_join_and_pivot_are_deterministic(service):
+def test_numeric_sort_join_and_pivot_are_deterministic(service):
+    sort_source = service.ingest(
+        owner="owner",
+        project_id="project-1",
+        logical_name="sort-source",
+        filename="sort.csv",
+        data=b"height\n10\n8\n12\n",
+    )["dataset"]
+    sort_plan = AnalysisPlan(
+        dataset={
+            "dataset_id": sort_source["dataset_id"],
+            "version_id": sort_source["version_id"],
+        },
+        intent="sort by height",
+        operations=[AnalysisOperation(kind="sort", column="height")],
+    )
+    sorted_result = service.execute(
+        owner="owner", project_id="project-1", plan=sort_plan
+    )
+    table = service.repository.analysis_dir(
+        "owner",
+        "project-1",
+        sort_source["dataset_id"],
+        sort_source["version_id"],
+        sorted_result["analysis_id"],
+    ) / "table.json"
+    assert table.read_text(encoding="utf-8") == '[{"height":"8"},{"height":"10"},{"height":"12"}]'
+
     left = service.ingest(
         owner="owner",
         project_id="project-1",
@@ -173,7 +219,10 @@ def test_join_and_pivot_are_deterministic(service):
         operations=[
             AnalysisOperation(
                 kind="join",
-                other_dataset={"dataset_id": right["dataset_id"], "version_id": right["version_id"]},
+                other_dataset={
+                    "dataset_id": right["dataset_id"],
+                    "version_id": right["version_id"],
+                },
                 left_on="genus",
                 right_on="genus",
                 join_how="inner",
@@ -188,10 +237,18 @@ def test_join_and_pivot_are_deterministic(service):
         project_id="project-1",
         logical_name="pivot",
         filename="pivot.csv",
-        data=b"genus,season,flowers\nCattleya,spring,3\nCattleya,summer,5\nDendrobium,spring,7\n",
+        data=(
+            b"genus,season,flowers\n"
+            b"Cattleya,spring,3\n"
+            b"Cattleya,summer,5\n"
+            b"Dendrobium,spring,7\n"
+        ),
     )["dataset"]
     pivot_plan = AnalysisPlan(
-        dataset={"dataset_id": source["dataset_id"], "version_id": source["version_id"]},
+        dataset={
+            "dataset_id": source["dataset_id"],
+            "version_id": source["version_id"],
+        },
         intent="pivot flower counts",
         operations=[
             AnalysisOperation(
