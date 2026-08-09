@@ -4,7 +4,10 @@ from app.brain.diagnostic_hypotheses import (
     DiagnosticHypothesisRequest,
     rank_diagnostic_hypotheses,
 )
-from app.brain.local_observations import LocalObservationRequest, handoff_local_observation
+from app.brain.local_observations import (
+    LocalObservationRequest,
+    handoff_local_observation,
+)
 from app.candidate_knowledge.repository import MemoryCandidateRepository
 from app.candidate_knowledge.service import CandidateExtractionService
 from runtime.knowledge_graph.models import Edge, Node
