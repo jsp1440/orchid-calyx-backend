@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.brain.local_observations import LocalObservationRequest, handoff_local_observation
 from app.brain.mechanistic_candidates import (
     MechanisticCandidateRequest,
     handoff_mechanistic_candidate,
@@ -63,6 +64,18 @@ def post_matrix_neighborhood(request: MatrixNeighborhoodRequest):
         return matrix_neighborhood(request)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/matrix/local-observation",
+    status_code=201,
+    dependencies=[Depends(verify_owner_or_api_key)],
+)
+def post_matrix_local_observation(request: LocalObservationRequest):
+    try:
+        return handoff_local_observation(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
 
 
 @router.post("/identification/rank")
