@@ -15,6 +15,8 @@ from runtime.knowledge_graph.models import Edge, Node
 from runtime.knowledge_graph.repository import InMemoryGraphRepository
 from runtime.knowledge_graph.validation import validate_graph
 
+from .mechanistic_contradictions import candidate_contradiction_ids
+
 
 def _digest(value: Any) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
@@ -92,13 +94,12 @@ def _approval_snapshot(
 
 
 def _open_conflict_blockers(repository: Any, candidate_id: int) -> list[str]:
-    blockers: list[str] = []
-    for conflict_id, conflict in repository.conflicts.items():
-        if conflict.get("state") == "OPEN" and candidate_id in conflict.get(
-            "candidate_ids", []
-        ):
-            blockers.append(f"open_conflict:{conflict_id}")
-    return sorted(blockers)
+    return sorted(
+        f"open_conflict:{conflict_id}"
+        for conflict_id, conflict in repository.conflicts.items()
+        if conflict.get("state") == "OPEN"
+        and candidate_id in conflict.get("candidate_ids", [])
+    )
 
 
 def _evidence_for_candidate(repository: Any, candidate_id: int) -> list[dict[str, Any]]:
@@ -123,7 +124,6 @@ def _graph_from_candidate(
     blockers: list[str] = []
     qualifiers = dict(candidate.get("qualifiers") or {})
     contract = dict(qualifiers.get("graph_contract") or {})
-
     source_type = str(contract.get("source_node_type") or "").strip().lower()
     target_type = str(contract.get("target_node_type") or "").strip().lower()
     source_key = str(contract.get("source_key") or "").strip()
@@ -153,7 +153,6 @@ def _graph_from_candidate(
     semantics = causal_relation_semantics(relationship)
     if semantics is None or not semantics["causal"]:
         blockers.append(f"invalid_causal_relationship:{relationship or 'missing'}")
-
     if blockers:
         return [], [], blockers
 
@@ -173,7 +172,6 @@ def _graph_from_candidate(
     common_payload = {
         "candidate_id": candidate_id,
         "candidate_provenance": candidate_provenance,
-        "reasoning_id": qualifiers.get("reasoning_id"),
         "experimental_context": qualifiers.get("experimental_context", {}),
         "quantitative_context": qualifiers.get("quantitative_context", {}),
         "provenance": qualifiers.get("provenance", {}),
@@ -240,7 +238,9 @@ def _publication_operations(
     edge = edges[0]
     return [
         {
-            "operation": "UPSERT_NODE",
+            "order": 0,
+            "operation_type": "UPSERT_NODE",
+            "object_key": source.canonical_key,
             "payload": {
                 "node_type": source.node_type,
                 "canonical_key": source.canonical_key,
@@ -253,7 +253,9 @@ def _publication_operations(
             },
         },
         {
-            "operation": "UPSERT_NODE",
+            "order": 1,
+            "operation_type": "UPSERT_NODE",
+            "object_key": target.canonical_key,
             "payload": {
                 "node_type": target.node_type,
                 "canonical_key": target.canonical_key,
@@ -266,7 +268,9 @@ def _publication_operations(
             },
         },
         {
-            "operation": "UPSERT_EDGE",
+            "order": 2,
+            "operation_type": "UPSERT_EDGE",
+            "object_key": f"mechanistic-candidate:{candidate_id}:{edge.edge_type}",
             "payload": {
                 "edge_type": edge.edge_type,
                 "endpoint_resolution": "canonical_key",
@@ -287,7 +291,7 @@ def plan_mechanistic_candidate_publication(
     candidate_id: int,
     components: tuple[Any, Any] | None = None,
 ) -> dict[str, Any]:
-    """Produce a deterministic, non-executing publication plan from one fresh snapshot."""
+    """Return a deterministic, fresh, review-bound plan; never execute publication."""
     repository, _service = components or get_candidate_components()
     _refresh(repository)
     candidate = _candidate(repository, candidate_id)
@@ -303,21 +307,26 @@ def plan_mechanistic_candidate_publication(
 
     if candidate.get("kind") != CandidateKind.MECHANISTIC_RELATIONSHIP.value:
         blockers.append("candidate_kind_not_mechanistic")
+    if not candidate.get("active", True):
+        blockers.append("candidate_inactive_or_superseded")
     if candidate.get("review_state") != "APPROVED":
         blockers.append("scientific_review_not_approved")
     if approval is None:
         blockers.append("scientific_approval_record_required")
     if bool(candidate.get("published")):
         blockers.append("candidate_already_published")
-    if not evidence:
+    if not evidence_link_ids:
         blockers.append("exact_evidence_required")
 
     blockers.extend(_open_review_blockers(reviews))
     blockers.extend(_open_conflict_blockers(repository, candidate_id))
+    blockers.extend(
+        f"mechanistic_contradiction:{contradiction_id}"
+        for contradiction_id in candidate_contradiction_ids(repository, candidate_id)
+    )
 
     nodes, edges, graph_blockers = _graph_from_candidate(candidate)
     blockers.extend(graph_blockers)
-
     validation: dict[str, Any] = {
         "healthy": False,
         "total_problems": 1,
@@ -331,7 +340,6 @@ def plan_mechanistic_candidate_publication(
     blockers = sorted(set(blockers))
     ready = not blockers and bool(validation.get("healthy"))
     operations = _publication_operations(candidate, nodes, edges) if ready else []
-
     plan_core = {
         "candidate_id": candidate_id,
         "candidate_hash": candidate.get("candidate_hash"),
@@ -341,7 +349,6 @@ def plan_mechanistic_candidate_publication(
         "blockers": blockers,
         "validation_healthy": bool(validation.get("healthy")),
     }
-
     return {
         "contract": "calyx-mechanistic-publication-plan-v2",
         "candidate_id": candidate_id,
@@ -355,7 +362,7 @@ def plan_mechanistic_candidate_publication(
         "production_write_executed": False,
         "canonical_graph_mutated": False,
         "requires_explicit_publication_authorization": True,
-        "evidence_count": len(evidence),
+        "evidence_count": len(evidence_link_ids),
         "evidence_link_ids": evidence_link_ids,
         "operations": operations,
         "validation": validation,
