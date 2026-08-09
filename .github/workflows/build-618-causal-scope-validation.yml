@@ -94,13 +94,13 @@ jobs:
           assert "applicability_identity" in contradictions
           identity_block = contradictions.split("def _scope_identity", 1)[1].split("def _scope_id", 1)[0]
           assert '"causal_scope": scope.get("applicability_identity")' in identity_block
-          assert '== "unknown"' in identity_block
-          assert 'identity["experimental_context"]' in identity_block
-          assert 'identity["quantitative_context"]' in identity_block
+          assert "experimental_context" not in identity_block
+          assert "quantitative_context" not in identity_block
           assert "publication_scope_blockers" in publication
           assert '"publication_adapter_available": False' in publication
           assert '"operations": operations' in publication
           assert "test_narrative_scope_metadata_cannot_split_a_real_contradiction" in tests
+          assert "test_unknown_scope_narrative_context_cannot_split_a_real_contradiction" in tests
           assert "test_bounded_scope_requires_real_bounds_after_whitespace_normalization" in tests
           assert "test_bounded_scope_rejects_semantically_empty_mapping_bounds" in p1_tests
           assert "test_equivalent_categorical_mapping_scope_forms_real_contradiction" in p1_tests
