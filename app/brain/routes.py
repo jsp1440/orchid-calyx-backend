@@ -31,6 +31,7 @@ from .schemas import (
     InferRequest,
     ReasoningMapRequest,
 )
+from .scoped_reasoning_map import ScopedReasoningMapRequest, build_scoped_reasoning_map
 
 router = APIRouter(
     prefix="/brain",
@@ -140,6 +141,19 @@ def reasoning_map(
             edge_types=request.edge_types,
             causal_only=request.causal_only,
         )
+    except Exception as exc:
+        _translate(exc)
+        raise
+
+
+@router.post("/reasoning-map/scoped")
+def scoped_reasoning_map(
+    request: ScopedReasoningMapRequest,
+    repository: GraphRepositoryDependency,
+) -> dict[str, Any]:
+    """Evaluate causal pathways against an explicit taxon/tissue/environment scope."""
+    try:
+        return build_scoped_reasoning_map(repository, request)
     except Exception as exc:
         _translate(exc)
         raise
