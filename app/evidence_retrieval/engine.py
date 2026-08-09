@@ -1,8 +1,14 @@
 from __future__ import annotations
-import math,time,uuid
+
+import math
+import time
+import uuid
 from collections import defaultdict
 from dataclasses import asdict
+
 from .models import RetrievalQuery
+
+
 def cosine(a,b):
  if len(a)!=len(b): raise ValueError("QUERY_VECTOR_DIMENSION_MISMATCH")
  na=math.sqrt(sum(x*x for x in a)); nb=math.sqrt(sum(x*x for x in b)); return sum(x*y for x,y in zip(a,b))/(na*nb) if na and nb else 0
