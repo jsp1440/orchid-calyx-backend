@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -20,11 +21,12 @@ COMMIT = "a" * 40
 APP_HASH = "b" * 64
 TEST_HASH = "c" * 64
 POLICY_HASH = "d" * 64
+PATCH_JOB_ID = "patch-job-123"
 EMPTY_HASH = hashlib.sha256(b"").hexdigest()
 
 
-def _patch_receipt() -> dict:
-    output = {
+def _patch_output() -> dict:
+    return {
         "status": "delivered",
         "executed": True,
         "mode": "authoritative_isolated_workspace_patch",
@@ -55,7 +57,27 @@ def _patch_receipt() -> dict:
         "validation_commands_run": False,
         "side_effects": ["isolated_workspace_files_modified"],
     }
-    return {"output": output, "output_checksum": canonical_checksum(output)}
+
+
+class _PersistedPatchService:
+    def __init__(self, *, present: bool = True) -> None:
+        self.present = present
+
+    def get_completed(self, *, program_job_id: str):
+        if not self.present or program_job_id != PATCH_JOB_ID:
+            raise LookupError("PATCH_PROGRAM_JOB_NOT_FOUND")
+        output = _patch_output()
+        return SimpleNamespace(
+            program_job_id=PATCH_JOB_ID,
+            program_id="program-123",
+            job_key="patch",
+            repository=REPOSITORY,
+            branch=BRANCH,
+            executor_key="isolated_workspace_patcher_v1",
+            output_checksum=canonical_checksum(output),
+            output=output,
+            evidence_uris=("github:issue/692",),
+        )
 
 
 def _validation(
@@ -135,17 +157,22 @@ class _PersistedSupervisorService:
         return record
 
 
-def _builder(evidence: list[dict] | None = None) -> GitProposalManifestBuilder:
+def _builder(
+    evidence: list[dict] | None = None,
+    *,
+    patch_present: bool = True,
+) -> GitProposalManifestBuilder:
     values = _validations() if evidence is None else evidence
     return GitProposalManifestBuilder(
         _PersistedSupervisorService(values),
+        _PersistedPatchService(present=patch_present),
         allowed_policy_digests=[POLICY_HASH],
     )
 
 
 def _build(builder: GitProposalManifestBuilder, validations: list[dict]):
     return builder.build(
-        patch_receipt=_patch_receipt(),
+        patch_program_job_id=PATCH_JOB_ID,
         validations=validations,
         proposed_branch="autonomy/proposal/work-123",
         commit_title="Improve bounded validation",
@@ -154,7 +181,7 @@ def _build(builder: GitProposalManifestBuilder, validations: list[dict]):
     )
 
 
-def test_manifest_is_deterministic_and_performs_no_git_mutation() -> None:
+def test_manifest_v2_is_deterministic_and_binds_persisted_patch_job() -> None:
     evidence = _validations()
     builder = _builder(evidence)
     manifest = _build(builder, evidence)
@@ -162,6 +189,8 @@ def test_manifest_is_deterministic_and_performs_no_git_mutation() -> None:
 
     assert manifest.manifest_digest == repeat.manifest_digest
     snapshot = manifest.snapshot()
+    assert snapshot["schema"] == "calyx-git-proposal-manifest-v2"
+    assert snapshot["patch_program_job_id"] == PATCH_JOB_ID
     assert snapshot["git_mutation_performed"] is False
     assert snapshot["commit_created"] is False
     assert snapshot["push_performed"] is False
@@ -172,19 +201,16 @@ def test_manifest_is_deterministic_and_performs_no_git_mutation() -> None:
     assert len(snapshot["manifest_digest"]) == 64
 
 
-def test_patch_output_checksum_must_match_exact_output() -> None:
-    receipt = _patch_receipt()
-    receipt["output"]["changes"][0]["size_bytes"] = 101
+def test_builder_has_no_caller_supplied_patch_receipt_authority_path() -> None:
+    parameters = inspect.signature(GitProposalManifestBuilder.build).parameters
+    assert "patch_receipt" not in parameters
+    assert "patch_program_job_id" in parameters
+
+
+def test_missing_persisted_patch_execution_is_rejected() -> None:
     evidence = _validations()
-    with pytest.raises(PermissionError, match="PATCH_OUTPUT_CHECKSUM_MISMATCH"):
-        _builder(evidence).build(
-            patch_receipt=receipt,
-            validations=evidence,
-            proposed_branch="autonomy/proposal/work-123",
-            commit_title="Improve bounded validation",
-            pr_title="Improve bounded validation",
-            summary="Evidence-bound proposal only.",
-        )
+    with pytest.raises(PermissionError, match="PERSISTED_PATCH_REQUIRED"):
+        _build(_builder(evidence, patch_present=False), evidence)
 
 
 def test_ruff_must_cover_every_python_postimage_hash() -> None:
@@ -234,9 +260,7 @@ def test_validation_identity_and_success_are_required() -> None:
         _build(_builder([failed]), [failed])
 
 
-def test_forged_serialized_receipt_is_rejected_without_matching_persisted_record() -> (
-    None
-):
+def test_forged_serialized_validation_receipt_is_rejected() -> None:
     persisted = _validations()
     supplied = _validations()
     supplied[0]["receipt"]["authorization_id"] = "sandbox-auth-forged"
@@ -246,9 +270,9 @@ def test_forged_serialized_receipt_is_rejected_without_matching_persisted_record
 
 def test_missing_persisted_supervisor_record_is_rejected() -> None:
     supplied = _validations()
-    service = _PersistedSupervisorService([])
     builder = GitProposalManifestBuilder(
-        service,
+        _PersistedSupervisorService([]),
+        _PersistedPatchService(),
         allowed_policy_digests=[POLICY_HASH],
     )
     with pytest.raises(PermissionError, match="PERSISTED_VALIDATION_REQUIRED"):
@@ -259,6 +283,7 @@ def test_unapproved_sandbox_policy_digest_is_rejected() -> None:
     supplied = _validations()
     builder = GitProposalManifestBuilder(
         _PersistedSupervisorService(supplied),
+        _PersistedPatchService(),
         allowed_policy_digests=["9" * 64],
     )
     with pytest.raises(PermissionError, match="VALIDATION_POLICY_NOT_ALLOWED"):
@@ -283,7 +308,7 @@ def test_proposed_branch_must_be_git_valid_proposal_namespace(branch: str) -> No
     evidence = _validations()
     with pytest.raises(PermissionError, match="BRANCH_INVALID"):
         _builder(evidence).build(
-            patch_receipt=_patch_receipt(),
+            patch_program_job_id=PATCH_JOB_ID,
             validations=evidence,
             proposed_branch=branch,
             commit_title="Improve bounded validation",

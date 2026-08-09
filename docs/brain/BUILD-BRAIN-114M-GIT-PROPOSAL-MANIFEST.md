@@ -2,56 +2,73 @@
 
 ## Objective
 
-Advance Calyx from validated autonomous engineering work toward Git/PR proposal readiness without granting Git or GitHub mutation authority. BUILD-BRAIN-114M converts an authoritative isolated patch receipt plus successful, persisted external-sandbox validation evidence into a deterministic, reviewable proposal manifest.
+Advance Calyx from validated autonomous engineering work toward Git/PR proposal readiness without granting Git or GitHub mutation authority. BUILD-BRAIN-114M converts a durably persisted authoritative isolated-patch execution plus successful persisted external-sandbox validation evidence into a deterministic reviewable proposal manifest.
 
-## Implemented
+## Hardened trust root
 
-- deterministic `calyx-git-proposal-manifest-v1` envelope;
-- exact repository, source autonomy branch, and base checkout commit inherited from the authoritative isolated patch receipt;
-- exact isolated-patch output checksum verification before proposal creation;
-- bounded changed-file set preserving before/after SHA-256, creation state, and size without including file contents;
-- proposed branch restricted to the `autonomy/proposal/*` namespace, prohibited from being the source work branch, and validated against Git ref-name rules without invoking Git or a shell;
-- external validation request/receipt verification using BUILD-BRAIN-114K contracts;
-- **persisted supervisor-record authentication**: each serialized receipt must resolve through `SandboxSupervisorService.get_completed_by_digest()` to an already completed durable supervisor record, and persisted repository/branch/commit/preset/targets/timeout, receipt digest, policy digest, authorization ID, and evidence URI must match exactly;
-- explicit allowed sandbox-policy digest set, so a persisted receipt created under an unapproved/obsolete worker policy cannot satisfy proposal validation;
-- validation identity must match the patch repository, autonomy branch, and base checkout commit;
-- only successful `delivered` / return-code-zero supervisor evidence is accepted;
-- every changed Python postimage must be covered by successful Ruff evidence with the exact postimage hash;
-- every changed Python test must be covered by successful pytest evidence for that exact `(path, postimage SHA-256)`, not merely by an unrelated successful pytest target;
-- deterministic proposal digest binds patch output checksum, changes, validation request/receipt/policy digests, proposal branch, commit title, PR title, and summary;
-- explicit permanent false authority flags for Git mutation, commit, push, pull-request creation, automatic merge, deployment, publication, production database mutation, and production Knowledge Graph mutation;
-- focused tests and a dedicated read-only CI gate;
-- manual `workflow_dispatch` validation chooses the repository default branch when no pull-request `base_ref` exists, so diff hygiene remains executable outside PR events.
+The current implementation closes the caller-supplied patch-receipt gap, assignment-capability integration gap, lease-completion recovery gap, and the hard-process-crash rollback gap:
 
-## Post-review corrections
+- `PersistedPatchExecutionService` resolves an exact persistent `CalyxProgramJob` row and requires delivered status, the `isolated_workspace_patcher` role, mutating intent, exact receipt identity, the registered isolated patch executor, canonical assignment input checksum, canonical output checksum, and exact governed input/output agreement;
+- `LeaseExecutionBridge` persists `assignment_id`, `program_id`, and `job_key` with execution receipt evidence;
+- `assignment_inputs_for_program_job()` is the single canonical durable input constructor;
+- `workspace_write` is issued only for the isolated patch role with explicit durable `mutating=True`; ordinary roles retain the safe validation/receipt/evidence capabilities only;
+- before any target-file replacement, `IsolatedWorkspacePatchExecutor` writes a checksummed rollback journal into the explicitly disposable isolated worktree, containing exact preimages, before/after hashes, assignment identity, repository, branch, and checkout commit;
+- the rollback journal is written atomically, fsynced, retained until durable lease completion, and deleted only after success;
+- a new executor process detects an interrupted journal on retry, verifies exact identity and journal checksum, and restores only files still matching the expected before/postimage states;
+- unexpected third-party workspace divergence fails closed instead of overwriting unknown changes;
+- `run_deterministic_program_cycle()` rolls back before returning an error when lease/database/runtime completion fails;
+- `GitProposalManifestBuilder` accepts only `patch_program_job_id`, removing caller-supplied `patch_receipt` authority;
+- manifest schema v2 binds the durable patch job identity, patch output checksum, exact proposed changes, persisted supervisor validation evidence, and proposal metadata;
+- every changed Python postimage requires exact Ruff evidence and every changed Python test requires exact pytest evidence;
+- proposal branches are restricted to valid `autonomy/proposal/*` refs without invoking Git or a shell.
 
-Four review findings were accepted before merge:
+The effective trust chain is:
 
-1. **P1 — fabricated supervisor receipt.** Shape validation plus a caller-computable request digest was insufficient. 114M now requires a matching persisted completed record from the 114K supervisor service and an allowed policy digest. A serialized `delivered` receipt whose receipt digest differs from the durable record is rejected.
-2. **P2 — incomplete pytest coverage.** Changed tests now require exact pytest target coverage by path and postimage hash, mirroring Ruff coverage semantics.
-3. **P2 — invalid future branch names.** Proposal branch validation now implements Git ref-name constraints in pure Python while preserving the `autonomy/proposal/*` namespace and no-Git-execution boundary.
-4. **P2 — manual workflow diff base.** Diff hygiene now uses `github.base_ref` for PRs or the repository default branch for manual dispatch runs.
+`persisted governed job inputs → explicit durable mutation intent → role-scoped workspace capability → durable checksummed preimage journal → canonical assignment input checksum → exact program-job row → exact persisted execution-receipt identity → registered isolated patch executor → input/output-consistent isolated workspace mutation → durable lease completion or cross-process preimage recovery → manifest v2`.
 
-These corrections narrow trust; none grants Git, GitHub, deployment, publication, production database, taxonomy, or Knowledge Graph mutation authority.
+## Current-main R3 reconstruction
 
-## Why this slice matters
+PR #772 / branch `fix/brain-114m-r3-current-main` is the authoritative current-main trust root. It was reconciled onto canonical main `677a506ab61338e9d9a13ece67d972c2c22a044c` without overwriting the scientific BUILD-616R/617R3 surface. The branch is behind 0 and differs from main only in the intended 12 autonomy trust-root files.
 
-The autonomous engineering chain can produce a bounded patch, validate it independently through the external sandbox boundary, prove that the validation receipt is the same receipt durably accepted by the authenticated supervisor service, and assemble a deterministic proposal package that a later Git-authority component could consume. The proposal package itself performs no Git or GitHub operations. This separates engineering evidence from repository mutation authority and gives reviewers a stable cryptographic object to approve or reject.
+Historical/current-parent branches #761, #762, #763, #765, #766, #767 and attempted #771 are not integration authorities. Downstream review, authorization, signature, plan, and mutation-execution branches must be reconstructed on the accepted #772 trust root after it merges.
 
-## Evidence requirements
+## Failure-first classification
 
-A proposal cannot be generated from a dry run, an unverified patch checksum, a mismatched repository/revision, a fabricated or unpersisted supervisor receipt, an unapproved sandbox policy, blocked or timed-out validation, stale validation hashes, incomplete Ruff coverage of changed Python files, incomplete exact pytest coverage of changed tests, or a Git-invalid/arbitrary branch namespace.
+- Historical `steps=null`/pre-step GitHub-hosted-runner failures: **RUNNER/INFRASTRUCTURE**, not application-code evidence.
+- First crash-recovery exact-head attempt: **CODE/STYLE** (`TRY004`), fixed without behavior change.
+- Second exact-head attempt: **CODE/STYLE** (Ruff formatting drift), fixed without behavior change.
+- No dependency, secret/credential, database, migration, deployment, or external-service failure was observed in the final #772 validation cycle.
 
-The persisted supervisor record is the trust anchor for serialized external-validation evidence. 114M never accepts a caller-provided `trusted=true` flag or a receipt solely because its fields are structurally valid.
+## Validated state
+
+**VALIDATED** — exact implementation head `54fa0d873b433e4a5749858809eecd7d8d691a80` passed all eight applicable workflows on 2026-08-09:
+
+- BUILD-BRAIN-114M Git Proposal Manifest Validation — run `31326264882` — success;
+- BUILD-BRAIN-108-113A Validation — run `31326264843` — success;
+- BUILD-BRAIN-114A Validation — run `31326264853` — success;
+- BUILD-BRAIN-114C Validation — run `31326264868` — success;
+- BUILD-BRAIN-114I Safe Subset — run `31326264865` — success;
+- CALYX-AGENT-003 Validation — run `31326264857` — success;
+- BUILD-088E Validation — run `31326264860` — success, including PostgreSQL publication pipeline/readiness and BUILD-088B through BUILD-088D regressions;
+- CALYX Workflow Governance Audit — run `31326264847` — success.
+
+The dedicated BUILD-BRAIN-114M gate passed compilation, Ruff lint, Ruff formatting, focused proposal/rollback regressions, cross-process restart recovery, tampered-journal rejection, workspace-divergence fail-closed behavior, non-mutation/evidence-authority assertions, and diff hygiene.
+
+## Review finding resolution
+
+The P1 finding requiring recoverability before granting `workspace_write` is now addressed at both levels:
+
+1. same-process lease/database completion failures restore exact preimages;
+2. hard process/container loss between filesystem mutation and durable completion is recoverable by a new executor process from the durable isolated-workspace journal.
+
+Reviewer-thread closure should cite the exact-head validation above. No merge should occur if a new unresolved material finding appears.
 
 ## Permanent non-authorities
 
-BUILD-BRAIN-114M performs no Git command, commit, branch creation, push, pull-request creation, merge, deployment, publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation. It stores no credentials and performs no network calls. Its added supervisor-service operation is read-only durable-record lookup.
+BUILD-BRAIN-114M performs no Git command, branch creation, commit, push, pull-request creation, merge, deployment, scientific publication, taxonomy activation, production database mutation, or production Knowledge Graph mutation. It stores no credentials and performs no network calls. Isolated workspace mutation is confined to the governed disposable workspace role and requires explicit durable mutation intent.
 
-## Validation contract
+BUILD-BRAIN-114S—the first real branch/commit/push/open-PR executor—remains outside this implementation boundary and requires separate governance/transport activation. Merging #772 does not activate live Git/GitHub mutation.
 
-The dedicated BUILD-BRAIN-114M workflow compiles the manifest and persisted-record lookup surfaces, runs Ruff lint and format checks, executes focused proposal regressions, statically asserts the absence of Git/network mutation mechanisms and the presence of persisted-evidence authority checks, and runs event-aware diff hygiene. CALYX Workflow Governance Audit and BUILD-088E remain required. Exact-head CI must be green against the current hardened BUILD-BRAIN-114L base before the slice is considered review-ready. Merge remains a separate governance decision.
+## Remaining limitations
 
-## Exact-head validation provenance
-
-The Ruff-only correction at `7ba47cc9f1f03aa9e5a166aa30e2ad301279142b` was authored by an automation identity, after which GitHub classified the subsequent pull-request workflows as `action_required` before creating any jobs. This Brain update intentionally creates a repository-owner-authored documentation head without changing runtime behavior so the same exact stacked validation matrix can execute normally. A passing result must still cover BUILD-BRAIN-114M, BUILD-BRAIN-114K, CALYX agent validation, and workflow governance on the new head before review-readiness is claimed.
+The journal is durable only to the isolated workspace filesystem. Loss of the entire disposable workspace/container volume requires deterministic workspace reconstruction rather than rollback from that lost journal. This is acceptable for the stated disposable-workspace boundary but is not equivalent to cross-host persistent storage. No claim of production Git mutation crash-atomicity is made.
