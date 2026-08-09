@@ -1,0 +1,36 @@
+name: CALYX Environment 478
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/environmental_intelligence.py'
+      - 'app/routers/environmental_intelligence.py'
+      - 'app/routers/live_mission_control.py'
+      - 'tests/test_calyx_environment_478.py'
+      - 'docs/brain/CALYX-ENVIRONMENTAL-INTELLIGENCE-478.md'
+      - '.github/workflows/calyx-environment-478.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  environmental-intelligence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install focused dependencies
+        run: pip install pytest fastapi
+      - name: Compile environmental surface
+        run: python -m py_compile runtime/environmental_intelligence.py app/routers/environmental_intelligence.py app/routers/live_mission_control.py tests/test_calyx_environment_478.py
+      - name: Deterministic environmental tests
+        run: pytest -q tests/test_calyx_environment_478.py
+      - name: Permanent non-causal and no-publication assertions
+        run: |
+          grep -q 'unsupported_causal_claims_authorized.*False' runtime/environmental_intelligence.py
+          grep -q 'live_production_import_authorized.*False' runtime/environmental_intelligence.py
+          grep -q 'scientific_publication_authorized.*False' runtime/environmental_intelligence.py
+          grep -q 'production_graph_mutation_authorized.*False' runtime/environmental_intelligence.py
