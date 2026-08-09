@@ -1,0 +1,43 @@
+name: BUILD-617R3 Mechanistic Contradiction Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/brain/mechanistic_contradictions.py"
+      - "app/brain/mechanistic_publication_plan.py"
+      - "app/parallel_platform/routes.py"
+      - "tests/test_build_617_mechanistic_contradictions.py"
+      - "docs/brain/BUILD-617R3-MECHANISTIC-CONTRADICTIONS.md"
+      - ".github/workflows/build-617r3-mechanistic-contradiction-validation.yml"
+  push:
+    branches: [feature/build-617-current-main-r2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx ruff
+      - name: Compile
+        run: python -m py_compile app/brain/mechanistic_contradictions.py app/brain/mechanistic_publication_plan.py app/parallel_platform/routes.py tests/test_build_617_mechanistic_contradictions.py
+      - name: Ruff
+        run: ruff check app/brain/mechanistic_contradictions.py app/brain/mechanistic_publication_plan.py app/parallel_platform/routes.py tests/test_build_617_mechanistic_contradictions.py
+      - name: Formatting
+        run: ruff format --check app/brain/mechanistic_contradictions.py app/brain/mechanistic_publication_plan.py app/parallel_platform/routes.py tests/test_build_617_mechanistic_contradictions.py
+      - name: Behavioral regressions
+        run: python -m pytest -q tests/test_build_617_mechanistic_contradictions.py tests/test_build_616_mechanistic_publication_plan.py tests/test_build_615_mechanistic_candidate_graph.py
+      - name: Route import
+        run: python -c "from app.parallel_platform.routes import router; assert any(r.path.endswith('/mechanistic-contradictions') for r in router.routes)"
+      - name: Hygiene
+        run: git diff --check
