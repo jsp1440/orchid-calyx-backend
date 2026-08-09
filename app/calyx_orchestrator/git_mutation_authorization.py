@@ -15,9 +15,9 @@ from .proposal_authorization import (
 from .proposal_authorization_status import proposal_review_status
 from .sandbox_supervisor_evidence import canonical_sha256
 
-REQUEST_SCHEMA = "calyx-git-mutation-authorization-request-v1"
+REQUEST_SCHEMA = "calyx-git-mutation-authorization-request-v2"
 GRANT_SCHEMA = "calyx-git-mutation-authorization-grant-v1"
-MANIFEST_SCHEMA = "calyx-git-proposal-manifest-v1"
+MANIFEST_SCHEMA = "calyx-git-proposal-manifest-v2"
 REQUIRED_REVIEW_CLASSES = ("operational", "security")
 ALLOWED_ACTIONS = (
     "create_branch",
@@ -38,6 +38,13 @@ def _is_git_sha(value: str) -> bool:
     return len(value) == 40 and all(
         character in "0123456789abcdef" for character in value
     )
+
+
+def _nonempty(value: object, *, code: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized or "\x00" in normalized or len(normalized) > 256:
+        raise ValueError(code)
+    return normalized
 
 
 def _parse_utc(value: str) -> datetime:
@@ -106,12 +113,16 @@ def _require_authoritative_reviews(
     reviewer_ids = {record.reviewer_id for record in records}
     if len(reviewer_ids) != len(REQUIRED_REVIEW_CLASSES):
         raise PermissionError("GIT_AUTHORIZATION_REVIEWER_SEPARATION_REQUIRED")
+    patch_job_ids = {record.patch_program_job_id for record in records}
+    if len(patch_job_ids) != 1:
+        raise PermissionError("GIT_AUTHORIZATION_PATCH_JOB_REVIEW_MISMATCH")
     return tuple(records)
 
 
 @dataclass(frozen=True, slots=True)
 class GitMutationAuthorizationRequest:
     manifest_digest: str
+    patch_program_job_id: str
     repository: str
     base_commit_sha: str
     proposed_branch: str
@@ -125,6 +136,7 @@ class GitMutationAuthorizationRequest:
         return {
             "schema": REQUEST_SCHEMA,
             "manifest_digest": self.manifest_digest,
+            "patch_program_job_id": self.patch_program_job_id,
             "repository": self.repository,
             "base_commit_sha": self.base_commit_sha,
             "proposed_branch": self.proposed_branch,
@@ -224,6 +236,12 @@ class GitMutationAuthorizationGate:
         ):
             raise PermissionError("GIT_AUTHORIZATION_ACTION_NOT_ALLOWED")
 
+        patch_program_job_id = _nonempty(
+            manifest_snapshot.get("patch_program_job_id"),
+            code="GIT_AUTHORIZATION_PATCH_PROGRAM_JOB_ID_REQUIRED",
+        )
+        if any(record.patch_program_job_id != patch_program_job_id for record in reviews):
+            raise PermissionError("GIT_AUTHORIZATION_PATCH_JOB_REVIEW_MISMATCH")
         repository = str(manifest_snapshot.get("repository") or "").strip()
         base_commit = (
             str(manifest_snapshot.get("base_commit_sha") or "").strip().lower()
@@ -270,6 +288,7 @@ class GitMutationAuthorizationGate:
 
         return GitMutationAuthorizationRequest(
             manifest_digest=digest,
+            patch_program_job_id=patch_program_job_id,
             repository=repository,
             base_commit_sha=base_commit,
             proposed_branch=proposed_branch,
