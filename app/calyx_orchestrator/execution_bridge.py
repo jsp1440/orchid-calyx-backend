@@ -58,6 +58,9 @@ class LeaseExecutionBridge:
 
         evidence = {
             "receipt_type": "execution",
+            "assignment_id": receipt.assignment_id,
+            "program_id": receipt.program_id,
+            "job_key": receipt.job_key,
             "executor_key": receipt.executor_key,
             "state": receipt.state.value,
             "input_checksum": receipt.input_checksum,
