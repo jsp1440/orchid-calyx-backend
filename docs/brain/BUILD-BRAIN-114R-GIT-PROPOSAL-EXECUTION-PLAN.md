@@ -6,9 +6,13 @@ Compile the exact persisted, independently reviewed, externally owner-approved p
 
 114R is the final evidence/planning layer before any future branch/commit/push/pull-request executor and intentionally stops at that governance boundary.
 
-## Current-parent reconstruction
+## Current-main R3 reconstruction
 
-This R2 rebuild is stacked directly on BUILD-BRAIN-114Q-R2 PR #756, preserving the exact strengthened sequence #696 → #747 → #749 → #753 → #756.
+This R3 rebuild is stacked directly on BUILD-BRAIN-114Q-R3 PR #766 and therefore inherits the current-main trust sequence:
+
+`#761 BUILD-BRAIN-114M-R2 → #762 BUILD-BRAIN-114N-R3 → #763 BUILD-BRAIN-114P-R3 → #765 BUILD-BRAIN-114O-R3 → #766 BUILD-BRAIN-114Q-R3 → 114R-R3`.
+
+The chain is rooted in current `main`, not the closed stale #696 ancestry.
 
 ## Input trust chain
 
@@ -20,13 +24,13 @@ At plan time `GitProposalExecutionPlanner.build()`:
 4. verifies the owner grant again through the 114Q Ed25519 public-key verifier; and
 5. only then emits a deterministic plan.
 
-The underlying persisted patch receipt is rooted in the canonical assignment input object from BUILD-BRAIN-114M-R1. R2 tests compute `input_checksum=canonical_checksum(assignment_inputs_for_program_job(program, claimed))`; placeholder receipt hashes are not accepted.
+The persisted patch receipt is rooted in the canonical assignment input object from BUILD-BRAIN-114M-R2. R3 regressions compute `input_checksum=canonical_checksum(assignment_inputs_for_program_job(program, claimed))`; synthetic placeholder receipt hashes are not accepted.
 
-Missing, rejected, conflicted, tampered, or changed durable evidence fails closed. Invalid/revoked/expired owner authorization produces no plan.
+Missing, rejected, conflicted, tampered, or changed durable evidence fails closed. Invalid, revoked, or expired owner authorization produces no plan.
 
 ## Deterministic plan v2
 
-`calyx-git-proposal-execution-plan-v2` binds the exact manifest and authorization request digests, durable patch job ID, repository/base commit, proposal branch, postimage hashes, validation and review digests, owner principal, expiry, exact verified signature-envelope digest, commit/PR metadata, and planned operations.
+`calyx-git-proposal-execution-plan-v2` binds the exact manifest and authorization request digests, durable patch job ID, repository/base commit, proposal branch, postimage hashes, validation and review digests, owner principal, expiry, verified signature-envelope digest, commit/PR metadata, and planned operations.
 
 The `create_commit` operation carries `patch_program_job_id`, eliminating inference about which persisted patch execution supplies authorized postimages.
 
@@ -34,16 +38,16 @@ Operations use canonical dependency order: `create_branch`, `create_commit`, `pu
 
 ## Non-authority assertions
 
-Every snapshot records `plan_only=true`. No branch, commit, push, or PR is created. Merge/auto-merge, deployment, publication, taxonomy activation, production database mutation, and production Knowledge Graph mutation remain unauthorized.
+Every snapshot records `plan_only=true`. No branch, commit, push, or PR side effect is executed by this layer. Merge/auto-merge, deployment, publication, taxonomy activation, production database mutation, and production Knowledge Graph mutation remain unauthorized.
 
 The planner contains no subprocess, Git command, HTTP/GitHub mutation client, token, merge mechanism, deployment client, or publication client.
 
 ## Validation
 
-Focused tests use real in-memory SQLite Calyx program-job persistence and `LeaseExecutionBridge`, canonical assignment-input checksum construction, governed durable reviews, request-v2 generation, external Ed25519 owner verification, and deterministic plan compilation. Regressions cover patch-job binding, request mismatch, action prerequisites, manifest tampering, invalid signatures, expiry, and non-mutation state.
+Focused tests use in-memory SQLite Calyx program-job persistence and `LeaseExecutionBridge`, canonical assignment-input checksum construction, governed durable reviews, request-v2 generation, external Ed25519 owner verification, and deterministic plan compilation. Regressions cover patch-job binding, request mismatch, action prerequisites, manifest tampering, invalid signatures, expiry, and non-mutation state.
 
 Dedicated read-only CI requires plan schema v2, durable patch identity, prerequisite checks, canonical input fixtures, and absence of mutation implementation markers. Canonical CI incident #481 remains active; `steps=null` before step 1 is infrastructure evidence rather than an executable code verdict.
 
 ## Governance boundary
 
-The next step would execute real branch/commit/push/open-PR side effects. That is deliberately outside 114R and requires a separate governance decision. Merge/auto-merge, deployment, publication, taxonomy activation, and production scientific-data mutation remain separate authorities even if proposal execution is later enabled.
+The next step would execute real branch/commit/push/open-PR side effects. That is deliberately outside 114R and requires a separate owner governance decision. Merge/auto-merge, deployment, publication, taxonomy activation, and production scientific-data mutation remain separate authorities even if proposal execution is later enabled.
