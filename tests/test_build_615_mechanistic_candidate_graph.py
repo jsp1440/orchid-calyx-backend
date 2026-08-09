@@ -195,8 +195,7 @@ def test_graph_preview_uses_synthetic_provenance_not_candidate_table_identity():
         assert node["payload"]["preview_provenance"]["revision_id"] == 12
     edge = result["graph_preview"]["edges"][0]
     assert (
-        edge["provenance"]["source_table"]
-        == "synthetic.mechanistic_candidate_preview"
+        edge["provenance"]["source_table"] == "synthetic.mechanistic_candidate_preview"
     )
 
 
