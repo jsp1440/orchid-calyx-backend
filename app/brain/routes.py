@@ -12,6 +12,7 @@ from app.calyx_engineering.routes import router as calyx_engineering_router
 from app.calyx_journalism.routes import router as calyx_journalism_router
 from app.calyx_orchestrator.routes import router as calyx_orchestrator_router
 from app.canonical_brain.api import create_brain_router
+from app.data_intelligence.routes import router as data_intelligence_router
 from app.database import get_db
 from app.reasoning_ledger.routes import _invoke
 from app.reasoning_ledger.serialization import ledger_to_dict
@@ -227,3 +228,4 @@ router.include_router(calyx_journalism_router)
 router.include_router(calyx_orchestrator_router)
 router.include_router(calyx_engineering_router)
 router.include_router(education_design_router)
+router.include_router(data_intelligence_router)
