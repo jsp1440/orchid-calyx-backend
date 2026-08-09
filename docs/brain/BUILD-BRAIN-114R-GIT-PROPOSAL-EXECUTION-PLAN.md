@@ -4,6 +4,8 @@
 
 R5 reconstruction directly on exact validated BUILD-BRAIN-114Q-R5 PR #784 head `dd54600a48eb6f9be4e4475c41b1d31ce4dee6a6`. Draft integration only. Historical #767 is source material, not an integration path.
 
+Implementation head `8ec022e5aa93002f9a22a2bc5582ace6d3f25aa1` received executable exact-head focused and broad validation after correcting Ruff-only formatting findings. This documentation checkpoint changes no runtime behavior and must itself receive applicable read-only validation before 114R is considered complete.
+
 ## Objective
 
 Compile the exact persisted, independently reviewed, externally owner-approved proposal evidence chain into a deterministic Git/GitHub plan while performing no repository mutation.
@@ -12,7 +14,7 @@ Compile the exact persisted, independently reviewed, externally owner-approved p
 
 ## Authoritative R5 chain
 
-`#772 BUILD-BRAIN-114M-R3 → #781 BUILD-BRAIN-114N-R6 → #782 BUILD-BRAIN-114P-R5 → #783 BUILD-BRAIN-114O-R5 → #784 BUILD-BRAIN-114Q-R5 → BUILD-BRAIN-114R-R5`.
+`#772 BUILD-BRAIN-114M-R3 → #781 BUILD-BRAIN-114N-R6 → #782 BUILD-BRAIN-114P-R5 → #783 BUILD-BRAIN-114O-R5 → #784 BUILD-BRAIN-114Q-R5 → #785 BUILD-BRAIN-114R-R5`.
 
 ## Input trust chain
 
@@ -44,7 +46,15 @@ Every plan snapshot records `plan_only=true` and `git_mutation_performed=false`.
 
 Dedicated read-only CI compiles and Ruff-checks the 114R planning surface, runs focused 114R + 114Q + 114O regressions, verifies canonical persisted-input provenance, asserts the absence of mutation implementation markers, and checks diff hygiene.
 
-No expansion into BUILD-BRAIN-114S is permitted until this exact R5 head and its documentation checkpoint receive executable green validation.
+Exact implementation head `8ec022e5aa93002f9a22a2bc5582ace6d3f25aa1` completed all applicable PR-triggered validation successfully:
+
+- BUILD-BRAIN-114R Git Proposal Execution Plan Validation run `31297652976` — success. Checkout, Python setup, dependency install, compile, Ruff lint/format, focused planning regressions, v2 provenance/non-mutation assertions, and diff hygiene all passed.
+- CALYX Workflow Governance Audit run `31297652972` — success.
+- CALYX-AGENT-003 Validation run `31297652970` — success.
+
+Earlier executable 114R runs exposed only code-quality formatting findings. The initial run identified import formatting; the next identified two remaining Ruff-format transforms. Those findings were corrected before the successful exact implementation-head run.
+
+No expansion into BUILD-BRAIN-114S is permitted by this build. After this documentation checkpoint is green, further implementation stops at the explicit owner-governance boundary.
 
 ## Governance boundary
 
