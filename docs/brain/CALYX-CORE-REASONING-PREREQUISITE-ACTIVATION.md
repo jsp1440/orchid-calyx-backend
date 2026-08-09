@@ -86,26 +86,67 @@ Passing evidence:
 
 ## Research Station 101→140 atomic validation extension
 
-PR #816 adds a separate `research-station-conversations` validation profile without changing the default reasoning-prerequisite profile. The profile pins migrations 101 and 140, serializes on advisory-lock key `82078079`, and is designed to apply 101→140 inside one PostgreSQL transaction with structural and governance postconditions before commit. Production application remains unauthorized.
+PR #819 is the clean current-main integration/validation authority for the `research-station-conversations` profile. Superseded PRs #816 and #818 are retained only as failure-first history.
 
-Failure-first validation on 2026-08-09 exposed only pre-behavior code-quality defects so far; PostgreSQL transaction semantics have not yet been accepted on the release path:
+The profile:
 
-1. Initial head `810773dec556245b5b5469f03b6569a5347706e5` stopped at Ruff before behavioral tests. Findings were two tuple-`startswith` simplifications, an overbroad exception catch in the receipt path, and SQL fixture string-format findings.
-2. The 101→140 implementation was then isolated into `scripts/research_station_conversation_activation.py`, leaving `scripts/activate_reasoning_prerequisite_schemas.py` as the guarded CLI/profile dispatcher. This preserves one dedicated Research Station activation authority instead of growing a second large implementation inside the shared prerequisite script.
-3. Subsequent runs reduced the style failures to the final SQL fixture formatting issue. Copilot-authored formatter head `52f9f22367dfe9019333dff35b793ad8cb5fd12d` was policy-gated by GitHub Actions (`action_required`, no jobs), so it is not validation evidence.
+- pins migration 101 Git blob `3333853c97832154cb0f61bace0c2184396da160`;
+- pins migration 140 Git blob `f572ba9aa1a3bade4dfe9d1e1faf0dbfb8a57baf`;
+- serializes on PostgreSQL advisory-lock key `82078079`;
+- applies 101→140 inside one transaction;
+- verifies structural and governance postconditions before commit;
+- safe-resumes from canonical 101-only state;
+- no-ops on canonical 101+140 state;
+- fails closed on malformed, partial, or out-of-order state;
+- validates required types, nullability/defaults, PK/FK constraints, indexes, append-only triggers/functions, PUBLIC privilege state, and trigger-name collisions;
+- injects failures after migration 101 and after migration 140 to prove complete rollback;
+- uses only disposable PostgreSQL 15/16/17 validation databases.
 
-This documentation commit is owner-authored specifically to trigger executable exact-head validation of the repaired code tree. Acceptance still requires compile/lint/format plus the disposable PostgreSQL 15/16/17 atomic apply, rollback, safe-resume, advisory-lock, foreign-key, append-only, and governance matrix. Even if that matrix passes, stale ancestry must be refreshed onto then-current `main` and revalidated before merge consideration.
+### Failure-first corrections
+
+The validation path surfaced and corrected the following defects before acceptance:
+
+1. Ruff/style findings in the initial activation/test implementation.
+2. Extraction of the Research Station implementation into `scripts/research_station_conversation_activation.py`, keeping `scripts/activate_reasoning_prerequisite_schemas.py` as the canonical guarded CLI/profile dispatcher.
+3. SQL fixture formatting defects that prevented behavioral execution.
+4. A test-harness import defect that prevented the standalone activation module from loading under pytest.
+5. A migration-140 schema expectation mismatch: canonical `conversation_sessions.title` defaults to `'Calyx conversation'::text`.
+6. A direct-script dispatcher import defect: `python scripts/activate_reasoning_prerequisite_schemas.py --profile research-station-conversations` could not resolve a package-style `scripts.*` helper import. The clean #819 lineage uses the repository's direct-script execution model and independently validates package-style test discovery.
+
+### VALIDATED
+
+Exact #819 code head `009dc4ceaad354797a8b699bc9e06bc8cd70fde8` passed every triggered release gate on 2026-08-09:
+
+- CALYX Reasoning Prerequisite Activation Validation run `31333839697` — SUCCESS.
+  - legacy prerequisite validation job — success;
+  - PostgreSQL 15 Research Station 101→140 job — success;
+  - PostgreSQL 16 Research Station 101→140 job — success;
+  - PostgreSQL 17 Research Station 101→140 job — success.
+- BUILD-088E Validation run `31333839704` — SUCCESS.
+- CALYX Workflow Governance Audit run `31333839706` — SUCCESS.
+
+The PG15/16/17 jobs each passed:
+
+- pinned migration-byte verification;
+- compile, Ruff lint, and format checks;
+- atomic transaction / rollback / serialization / governance tests;
+- disposable profile preflight through the real guarded CLI;
+- disposable atomic apply through the real guarded CLI;
+- evidence upload and clean container shutdown.
+
+The legacy validation job independently passed its existing prerequisite tests, database reset, CLI preflight, CLI apply, and explicit proof that Reasoning Ledger migration 103 and publication migration 105 remain absent.
+
+This validates the migration tooling and disposable transaction semantics only. It is not production migration evidence and does not authorize a production apply.
 
 ## Governance separation
 
-There are three independent production decisions:
+There are independent production decisions:
 
 1. apply prerequisite migrations 087b→088d plus 101;
-2. later apply Reasoning Ledger/publication migrations 103→105;
-3. later publish one reviewed ledger into the versioned Knowledge Graph.
+2. apply Research Station conversation migration 140 where appropriate;
+3. later apply Reasoning Ledger/publication migrations 103→105;
+4. later publish one reviewed ledger into the versioned Knowledge Graph.
 
-Authorization for one does not imply authorization for either later step.
+Authorization for one does not imply authorization for any later step.
 
-Opening or merging the #665 implementation PR does not authorize production database mutation. The agent must stop before merge and before production application unless the owner explicitly authorizes those actions.
-
-The Research Station 101→140 validation profile does not change these boundaries and does not authorize production migration 101 or 140.
+Opening or merging validation/tooling code does not authorize production database mutation. Production Research Station migration 101/140 remains a separate governance decision. No scientific publication, taxonomy activation, Candidate Knowledge promotion, production Knowledge Graph mutation, deployment, or production write authority is granted by this validation.
