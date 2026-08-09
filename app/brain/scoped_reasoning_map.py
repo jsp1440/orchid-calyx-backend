@@ -5,7 +5,11 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.brain.causal_scope import CausalScope, normalize_causal_scope
-from app.brain.reasoning_map import ReasoningDirection, ReasoningMapEngine, ReasoningProfile
+from app.brain.reasoning_map import (
+    ReasoningDirection,
+    ReasoningMapEngine,
+    ReasoningProfile,
+)
 from app.brain.reasoning_scope import evaluate_edge_scope, evaluate_path_scope
 from runtime.knowledge_graph import GraphRepository
 
