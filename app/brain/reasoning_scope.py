@@ -26,12 +26,24 @@ def _edge_scope(edge: Edge) -> dict[str, Any]:
     return normalize_causal_scope(payload.get("causal_scope"))
 
 
+def _value_compatibility(claim: Any, query: Any) -> str:
+    if isinstance(claim, dict):
+        if not isinstance(query, dict):
+            return "mismatch"
+        return _mapping_compatibility(claim, query)
+    return "match" if claim == query else "mismatch"
+
+
 def _mapping_compatibility(claim: dict[str, Any], query: dict[str, Any]) -> str:
+    """Evaluate conjunctive mapping bounds without treating partial queries as matches."""
+
     shared = set(claim).intersection(query)
-    if not shared:
-        return "unresolved"
-    if any(claim[key] != query[key] for key in shared):
+    if any(_value_compatibility(claim[key], query[key]) == "mismatch" for key in shared):
         return "mismatch"
+    if set(claim) - set(query):
+        return "unresolved"
+    if any(_value_compatibility(claim[key], query[key]) == "unresolved" for key in shared):
+        return "unresolved"
     return "match"
 
 
