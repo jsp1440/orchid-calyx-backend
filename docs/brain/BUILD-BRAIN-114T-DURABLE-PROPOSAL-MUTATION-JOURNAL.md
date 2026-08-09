@@ -20,6 +20,19 @@ Journal persistence is deliberately separate from the mutation adapter. A live G
 
 If journal persistence fails after a remote side effect, execution stops rather than advancing to another side effect. The raised state cannot truthfully claim rollback; operator/recovery logic must reconcile the remote state against the last durable event.
 
+## Dependency-closed mutation and recovery
+
+A safety review found that merely sorting authorized actions into canonical order was not sufficient. Sparse action sets could otherwise omit a required predecessor, for example attempting to open a pull request without a verified create-commit step in the same authorization chain.
+
+BUILD-BRAIN-114R and BUILD-BRAIN-114S now require every executable action set to be a non-empty dependency-closed prefix of:
+
+1. `create_branch`
+2. `create_commit`
+3. `push_branch`
+4. `open_pull_request`
+
+114S also requires push and PR evidence to reference the exact commit SHA obtained from the verified create-commit operation; the continuity check can no longer be skipped because a commit SHA was absent. 114T recovery therefore reconstructs only prefixes that the mutation executor itself can safely prove.
+
 ## Recovery classification
 
 `recovery_state()` reconstructs only evidence state:
@@ -30,7 +43,7 @@ If journal persistence fails after a remote side effect, execution stops rather 
 - `completed`
 - `failed_before_side_effect`
 
-It identifies the next action from the exact 114R plan prefix but does not execute it. Resume execution remains subject to fresh 114O/114Q authorization verification and 114S evidence checks.
+It identifies the next action from the exact 114R plan prefix but does not execute it. Resume execution remains subject to fresh 114O/114Q authorization verification, dependency closure, remote-state reconciliation, and 114S evidence checks.
 
 ## Exactly-once limitation
 
@@ -46,4 +59,4 @@ The SQLAlchemy model defines `calyx_git_proposal_mutation_journal`, but this sli
 
 114T does not add merge/auto-merge, deployment, publication, taxonomy activation, production scientific-data mutation, or production Knowledge Graph mutation authority. It also does not wire a production GitHub token or private owner key.
 
-Canonical hosted-runner incident #481 remains the executable-validation blocker. No merge or production activation is appropriate while exact-head workflow jobs terminate before step 1 with `steps=null`.
+Canonical hosted-runner incident #481 remains the executable-validation blocker. The dedicated 114T workflow now includes the dependency-closure regression, but no merge or production activation is appropriate while exact-head workflow jobs terminate before step 1 with `steps=null`.
