@@ -18,9 +18,11 @@ on:
       - "runtime/scientific_comparison.py"
       - "runtime/scientific_result_artifacts.py"
       - "runtime/research_station.py"
+      - "app/scientific_inference/**"
       - "app/routers/scientific_analysis.py"
       - "app/routers/research_station.py"
       - "app/routers/live_mission_control.py"
+      - "tests/test_scientific_inference.py"
       - "tests/test_calyx_scientific_analysis_617.py"
       - "tests/test_calyx_scientific_analysis_history_617.py"
       - "tests/test_calyx_scientific_export_bundle_617.py"
@@ -62,7 +64,7 @@ jobs:
           assert 'scipy==1.18.0' in scientific
           assert version('scipy') == '1.18.0'
           PY
-      - name: Compile analysis and Research Station surfaces
+      - name: Compile analysis, inference, and Research Station surfaces
         run: >-
           python -m py_compile
           runtime/scientific_analysis.py
@@ -80,9 +82,13 @@ jobs:
           runtime/scientific_comparison.py
           runtime/scientific_result_artifacts.py
           runtime/research_station.py
+          app/scientific_inference/__init__.py
+          app/scientific_inference/models.py
+          app/scientific_inference/service.py
           app/routers/scientific_analysis.py
           app/routers/research_station.py
           app/routers/live_mission_control.py
+          tests/test_scientific_inference.py
           tests/test_calyx_scientific_analysis_617.py
           tests/test_calyx_scientific_analysis_history_617.py
           tests/test_calyx_scientific_export_bundle_617.py
@@ -96,9 +102,10 @@ jobs:
           tests/test_calyx_scientific_diagnostics_617.py
           tests/test_calyx_scientific_comparison_617.py
           tests/test_calyx_scientific_result_artifacts_617.py
-      - name: Deterministic analysis and Research Station regressions
+      - name: Deterministic analysis, inference, and Research Station regressions
         run: >-
           python -m pytest -q
+          tests/test_scientific_inference.py
           tests/test_calyx_scientific_analysis_617.py
           tests/test_calyx_scientific_analysis_history_617.py
           tests/test_calyx_scientific_export_bundle_617.py
@@ -131,7 +138,9 @@ jobs:
           diagnostics = Path('runtime/scientific_diagnostics.py').read_text()
           comparison = Path('runtime/scientific_comparison.py').read_text()
           result_artifacts = Path('runtime/scientific_result_artifacts.py').read_text()
-          text = '\n'.join((analysis, history, exports, export_history, uncertainty, uncertainty_artifacts, runtime_readiness, workflow, transforms, filters, snapshots, diagnostics, comparison, result_artifacts))
+          inference_models = Path('app/scientific_inference/models.py').read_text()
+          inference_service = Path('app/scientific_inference/service.py').read_text()
+          text = '\n'.join((analysis, history, exports, export_history, uncertainty, uncertainty_artifacts, runtime_readiness, workflow, transforms, filters, snapshots, diagnostics, comparison, result_artifacts, inference_models, inference_service))
           required = (
               '"arbitrary_code_execution": False',
               '"autonomous_scientific_publication": False',
@@ -174,6 +183,11 @@ jobs:
               '"bundle_payloads_included": False',
               '"public_sharing_authorized": False',
               '"integrity_verified": True',
+              'reviewed_conclusion: bool = False',
+              'published: bool = False',
+              'scientific_publication_authorized: bool = False',
+              'knowledge_graph_mutation_authorized: bool = False',
+              '"inference_is_not_source_evidence": True',
           )
           missing = [item for item in required if item not in text]
           if missing:
@@ -188,5 +202,5 @@ jobs:
           PY
       - name: Changed-surface Ruff and diff hygiene
         run: |
-          python -m ruff check --ignore UP037 runtime/scientific_analysis.py runtime/scientific_analysis_history.py runtime/scientific_export_bundle.py runtime/scientific_export_history.py runtime/scientific_uncertainty.py runtime/scientific_uncertainty_artifacts.py runtime/scientific_runtime_readiness.py runtime/research_analysis_workflow.py runtime/scientific_transforms.py runtime/scientific_filters.py runtime/scientific_dataset_snapshots.py runtime/scientific_diagnostics.py runtime/scientific_comparison.py runtime/scientific_result_artifacts.py app/routers/scientific_analysis.py tests/test_calyx_scientific_analysis_617.py tests/test_calyx_scientific_analysis_history_617.py tests/test_calyx_scientific_export_bundle_617.py tests/test_calyx_scientific_export_history_617.py tests/test_calyx_scientific_export_routes_617.py tests/test_calyx_scientific_uncertainty_617.py tests/test_calyx_scientific_uncertainty_artifacts_617.py tests/test_calyx_scientific_runtime_readiness_617.py tests/test_calyx_analysis_plan_workflow_617.py tests/test_calyx_scientific_dataset_snapshots_617.py tests/test_calyx_scientific_diagnostics_617.py tests/test_calyx_scientific_comparison_617.py tests/test_calyx_scientific_result_artifacts_617.py
+          python -m ruff check --ignore UP037 runtime/scientific_analysis.py runtime/scientific_analysis_history.py runtime/scientific_export_bundle.py runtime/scientific_export_history.py runtime/scientific_uncertainty.py runtime/scientific_uncertainty_artifacts.py runtime/scientific_runtime_readiness.py runtime/research_analysis_workflow.py runtime/scientific_transforms.py runtime/scientific_filters.py runtime/scientific_dataset_snapshots.py runtime/scientific_diagnostics.py runtime/scientific_comparison.py runtime/scientific_result_artifacts.py app/scientific_inference/__init__.py app/scientific_inference/models.py app/scientific_inference/service.py app/routers/scientific_analysis.py tests/test_scientific_inference.py tests/test_calyx_scientific_analysis_617.py tests/test_calyx_scientific_analysis_history_617.py tests/test_calyx_scientific_export_bundle_617.py tests/test_calyx_scientific_export_history_617.py tests/test_calyx_scientific_export_routes_617.py tests/test_calyx_scientific_uncertainty_617.py tests/test_calyx_scientific_uncertainty_artifacts_617.py tests/test_calyx_scientific_runtime_readiness_617.py tests/test_calyx_analysis_plan_workflow_617.py tests/test_calyx_scientific_dataset_snapshots_617.py tests/test_calyx_scientific_diagnostics_617.py tests/test_calyx_scientific_comparison_617.py tests/test_calyx_scientific_result_artifacts_617.py
           git diff --check
