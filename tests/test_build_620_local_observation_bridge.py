@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.brain.local_observation_context import local_observation_history
 from app.brain.local_observations import LocalObservationRequest, handoff_local_observation
 from app.brain.mechanistic_publication_plan import plan_mechanistic_candidate_publication
 from app.candidate_knowledge.repository import MemoryCandidateRepository
@@ -22,9 +23,14 @@ def request(observation_id: str, response_label: str = "New root growth"):
             "location_key": "greenhouse-east-bench",
             "response_type": "phenotype",
             "response_label": response_label,
-            "observation_text": "New root growth was visible after the latest greenhouse observation interval.",
+            "observation_text": (
+                "New root growth was visible after the latest greenhouse observation interval."
+            ),
             "confidence": 0.9,
-            "environmental_context": {"temperature_c": 24.0, "relative_humidity_percent": 72},
+            "environmental_context": {
+                "temperature_c": 24.0,
+                "relative_humidity_percent": 72,
+            },
             "cultivation_context": {"media": "bark", "watered_days_ago": 2},
             "matrix_context": {"cultivation_score": 0.84},
             "source_object_id": 501,
@@ -100,7 +106,10 @@ def test_scope_binds_observation_to_plant_time_and_location():
     assert scope["cultivation_context"]["plant_record_key"] == "conservatory-plant-42"
     assert scope["cultivation_context"]["location_key"] == "greenhouse-east-bench"
     assert scope["cultivation_context"]["observed_at"].startswith("2026-08-08T18:30:00")
-    assert scope["population_context"] == {"n": 1, "plant_record_key": "conservatory-plant-42"}
+    assert scope["population_context"] == {
+        "n": 1,
+        "plant_record_key": "conservatory-plant-42",
+    }
 
 
 def test_graph_preview_is_local_evidence_not_canonical_mechanism():
@@ -113,3 +122,23 @@ def test_graph_preview_is_local_evidence_not_canonical_mechanism():
     assert edge["payload"]["candidate_only"] is True
     assert result["graph_preview"]["validation"]["healthy"] is True
     assert result["scientific_publication_authority"] is False
+
+
+def test_local_history_returns_only_same_plant_local_observations():
+    repository, service = components()
+    handoff_local_observation(request("obs-006"), (repository, service))
+    handoff_local_observation(
+        request("obs-007", response_label="Leaf expanded"),
+        (repository, service),
+    )
+
+    history = local_observation_history(
+        "conservatory-plant-42",
+        (repository, service),
+    )
+
+    assert history["observation_count"] == 2
+    assert history["reasoning_use"] == "local_context_only"
+    assert history["species_level_generalization"] is False
+    assert all(item["generalizable"] is False for item in history["observations"])
+    assert all(item["causal_claim"] is False for item in history["observations"])
