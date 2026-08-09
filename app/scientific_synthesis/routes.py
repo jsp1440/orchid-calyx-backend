@@ -211,7 +211,8 @@ def validate_synthesis(payload: SynthesisValidationIn):
 def health():
     return {
         "status": "ok",
-        "validator_version": "CALYX-SYN-003",
+        "validator_version": "CALYX-SYN-001",
+        "discovery_version": "CALYX-SYN-003",
         "generates_prose": False,
         "requires_claim_grounding": True,
         "requires_verified_article_sources": True,
