@@ -84,7 +84,9 @@ def build_conversation_markdown(conversation: dict[str, Any]) -> str:
                 ]
             )
             if message.get("epistemic_status"):
-                lines.append(f"- Epistemic status: `{_text(message.get('epistemic_status'))}`")
+                lines.append(
+                    f"- Epistemic status: `{_text(message.get('epistemic_status'))}`"
+                )
             context = dict(message.get("context") or {})
             if context:
                 lines.extend(
@@ -100,16 +102,20 @@ def build_conversation_markdown(conversation: dict[str, Any]) -> str:
                 if idx is not None:
                     msg_source_indices.append(idx)
             if msg_source_indices:
-                refs_str = ", ".join(f"[Source {i}](#source-{i})" for i in msg_source_indices)
+                refs_str = ", ".join(
+                    f"[Source {i}](#source-{i})" for i in msg_source_indices
+                )
                 lines.append(f"- Sources: {refs_str}")
             lines.extend(["", str(message.get("content") or ""), ""])
 
     lines.extend(["## Source reference ledger", ""])
     if not source_refs:
-        lines.extend([
-            "_No persisted source references are attached to this conversation. This does not convert conversation text into evidence._",
-            "",
-        ])
+        lines.extend(
+            [
+                "_No persisted source references are attached to this conversation. This does not convert conversation text into evidence._",
+                "",
+            ]
+        )
     else:
         for index, source in enumerate(source_refs, start=1):
             citation = dict(source.get("citation") or {})
@@ -128,10 +134,12 @@ def build_conversation_markdown(conversation: dict[str, Any]) -> str:
                 ]
             )
 
-    lines.extend([
-        "## Interpretation boundary",
-        "",
-        "This report is a research artifact, not a peer-reviewed scientific conclusion. Exporting it does not publish claims, alter evidence review state, or mutate the Knowledge Graph.",
-        "",
-    ])
+    lines.extend(
+        [
+            "## Interpretation boundary",
+            "",
+            "This report is a research artifact, not a peer-reviewed scientific conclusion. Exporting it does not publish claims, alter evidence review state, or mutate the Knowledge Graph.",
+            "",
+        ]
+    )
     return "\n".join(lines)
