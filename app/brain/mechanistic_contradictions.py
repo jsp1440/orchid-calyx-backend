@@ -37,7 +37,9 @@ def _scope_identity(scope: dict[str, Any]) -> dict[str, Any]:
 
 
 def _scope_id(scope: dict[str, Any]) -> str:
-    return hashlib.sha256(_stable_json(_scope_identity(scope)).encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        _stable_json(_scope_identity(scope)).encode("utf-8")
+    ).hexdigest()
 
 
 def _evidence_count(repository: Any, candidate_id: int) -> int:
