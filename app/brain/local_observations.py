@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.brain.causal_scope import CausalScope, normalize_causal_scope
+from app.brain.causal_scope import CausalScope, causal_scope_id, normalize_causal_scope
 from app.candidate_knowledge.dependencies import get_candidate_components
 from app.candidate_knowledge.models import CandidateKind, EvidenceInput, SourceAnchor
 from runtime.knowledge_graph.causal_vocabulary import causal_relation_semantics
@@ -83,7 +83,12 @@ def _scope(payload: LocalObservationRequest) -> dict[str, Any]:
             "independent evidence."
         ),
     )
-    return normalize_causal_scope(scope)
+    normalized_scope = normalize_causal_scope(scope)
+    normalized_scope["cultivation_context"]["observed_at"] = (
+        payload.observed_at.isoformat()
+    )
+    normalized_scope["scope_id"] = causal_scope_id(normalized_scope)
+    return normalized_scope
 
 
 def _graph_preview(
