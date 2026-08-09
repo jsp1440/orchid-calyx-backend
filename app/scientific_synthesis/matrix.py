@@ -15,7 +15,6 @@ from .models import (
     VerificationState,
 )
 
-
 VERIFIED = {
     VerificationState.VERIFIED_AUTHORITY,
     VerificationState.VERIFIED_PUBLISHER,
@@ -103,6 +102,8 @@ class EvidenceMatrixBuilder:
         for record in sorted(
             paper.normalized_evidence_records, key=lambda value: value.record_id
         ):
+            if not record.evidence_ids:
+                continue
             claim = claims.get(record.source_claim_id)
             if claim is None:
                 raise ValueError("SOURCE_CLAIM_NOT_FOUND")

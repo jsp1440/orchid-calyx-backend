@@ -13,9 +13,9 @@ from app.scientific_synthesis.models import BibliographicRecord, VerificationSta
 def _source(path: Path) -> Path:
     path.write_text(
         "Orchid Foliar Study\n\n"
-        "Abstract\nPhalaenopsis leaves were studied.\n\n"
-        "Methods\nNitrogen uptake was measured.\n\n"
-        "Results\nPhalaenopsis was characterized by a red flower trait.\n\n"
+        "Abstract\nOrchid roots were studied.\n\n"
+        "Methods\nPCR was used.\n\n"
+        "Results\nEscherichia coli was characterized by a red flower trait.\n\n"
         "Discussion\nIndependent review is required.\n",
         encoding="utf-8",
     )
