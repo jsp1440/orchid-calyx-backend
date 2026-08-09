@@ -393,9 +393,10 @@ def test_invalid_signature_and_expired_grant_block_planning() -> None:
     store, patch_job_id = _store()
     gate, request, grant = _authorization(store, patch_job_id)
     invalid = dict(grant)
-    invalid["signature"] = invalid["signature"][:-1] + (
-        "A" if invalid["signature"][-1] != "A" else "B"
-    )
+    algorithm, key_id, encoded_signature = invalid["signature"].split(":", 2)
+    tampered_signature = bytearray(base64.urlsafe_b64decode(encoded_signature + "=="))
+    tampered_signature[0] ^= 0x01
+    invalid["signature"] = f"{algorithm}:{key_id}:{_b64url(bytes(tampered_signature))}"
     with pytest.raises(PermissionError, match="SIGNATURE_INVALID"):
         GitProposalExecutionPlanner.build(
             manifest_snapshot=_manifest(patch_job_id),
