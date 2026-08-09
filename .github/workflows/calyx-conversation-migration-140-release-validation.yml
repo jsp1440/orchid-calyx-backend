@@ -1,0 +1,83 @@
+name: CALYX Conversation Migration 140 Release Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "migrations/101_research_workspace_foundation.sql"
+      - "migrations/140_calyx_conversation_sessions.sql"
+      - "scripts/validate_calyx_conversation_migration_140.py"
+      - "scripts/preflight_calyx_conversation_migration_140_readonly.py"
+      - ".github/workflows/calyx-conversation-migration-140-release-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+
+jobs:
+  disposable-postgresql:
+    name: disposable-postgresql-${{ matrix.postgres }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ["15", "16", "17"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: calyx_m140
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d calyx_m140"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/calyx_m140
+      M140_REPORT: migration-140-disposable-pg${{ matrix.postgres }}.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]>=3.2,<4"
+      - name: Verify canonical migration identity
+        run: |
+          test "$(git hash-object migrations/140_calyx_conversation_sessions.sql)" = "f572ba9aa1a3bade4dfe9d1e1faf0dbfb8a57baf"
+          sha256sum migrations/140_calyx_conversation_sessions.sql
+      - name: Run transactional apply/reapply/rollback/behavior lifecycle
+        run: python scripts/validate_calyx_conversation_migration_140.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: migration-140-disposable-pg${{ matrix.postgres }}
+          path: migration-140-disposable-pg${{ matrix.postgres }}.json
+
+  production-read-only-preflight:
+    name: production-read-only-preflight
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      M140_PRODUCTION_PREFLIGHT_REPORT: migration-140-production-readonly-preflight.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]>=3.2,<4"
+      - name: Run server-enforced read-only production preflight
+        run: python scripts/preflight_calyx_conversation_migration_140_readonly.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: migration-140-production-readonly-preflight
+          path: migration-140-production-readonly-preflight.json
