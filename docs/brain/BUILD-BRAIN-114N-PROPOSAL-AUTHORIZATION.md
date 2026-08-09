@@ -30,7 +30,9 @@ Even complete review evidence grants no Git mutation, commit, push, PR creation,
 
 The dedicated workflow compiles and lints the persisted-patch resolver plus both 114N surfaces, runs focused authorization/status regressions, asserts manifest-v2 and durable-patch identity binding, rejects caller patch-receipt authority, and statically confirms all repository mutation authorities remain false.
 
-GitHub-hosted Actions have resumed executable operation. Parent #772 exact head `933d116513f1d439dce4004b079752fc4879a8cd` passed all seven triggered validation lanes. R6 requires its own executable exact-head BUILD-BRAIN-114N validation and relevant parent/broad regression coverage before it can become a merge candidate.
+GitHub-hosted Actions have resumed executable operation. Parent #772 exact head `933d116513f1d439dce4004b079752fc4879a8cd` passed all seven triggered validation lanes.
+
+R6 validation exposed two real style-only blockers and both were corrected before any downstream expansion: the timezone-negative regression originally constructed a naive `datetime` in a form rejected by Ruff DTZ001, and four files were not in Ruff formatter canonical form. The timezone regression now preserves the intended naive timestamp through `datetime.fromisoformat`, and the exact formatter changes have been applied. A Copilot-authored final formatting commit caused the immediately triggered workflows to return `action_required` without executable jobs, so this Brain update intentionally provides a user-authored exact-head validation trigger. R6 remains unvalidated until that exact new head executes and passes BUILD-BRAIN-114N plus the relevant broad lanes.
 
 ## Next dependency
 
