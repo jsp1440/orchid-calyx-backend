@@ -34,6 +34,16 @@ def test_governance_boundaries_are_permanently_false(monkeypatch):
     assert readiness.merge_authorized is False
 
 
+def test_readiness_digest_is_stable_for_same_configuration(monkeypatch):
+    for name in SECRET_REFERENCES:
+        monkeypatch.setenv(name, "configured")
+    inspector = SecurityGovernanceInspector()
+    first = inspector.inspect()
+    second = inspector.inspect()
+    assert first.digest == second.digest
+    assert first.generated_at <= second.generated_at
+
+
 def test_sensitive_log_redaction():
     text = "api_key=abc token:xyz password=hunter2 database_url=postgres://private harmless=visible"
     redacted = redact_sensitive(text)
@@ -42,4 +52,18 @@ def test_sensitive_log_redaction():
     assert "xyz" not in redacted
     assert "hunter2" not in redacted
     assert "postgres://private" not in redacted
+    assert "harmless=visible" in redacted
+
+
+def test_sensitive_header_redaction_consumes_full_header_value():
+    text = (
+        "Authorization: Bearer super-secret-token\n"
+        "Cookie: session=private-cookie; Path=/\n"
+        "harmless=visible"
+    )
+    redacted = redact_sensitive(text)
+    assert redacted.count(REDACTED) == 2
+    assert "super-secret-token" not in redacted
+    assert "private-cookie" not in redacted
+    assert "Bearer" not in redacted
     assert "harmless=visible" in redacted
