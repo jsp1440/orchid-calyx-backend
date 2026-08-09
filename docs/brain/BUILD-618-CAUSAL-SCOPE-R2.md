@@ -2,7 +2,11 @@
 
 ## Status
 
-Reconstructed on `feature/build-618-causal-scope-r2` from the validated BUILD-617-R2 head. The stale original BUILD-618 stack is not used as an integration path.
+Reconstructed on `feature/build-618-causal-scope-r2` from the validated BUILD-617-R2 head. Replacement PR #787 supersedes the stale original BUILD-618 stack.
+
+The exact validated code head is `152abdda0fce0188a1b40b30380cd23f018d1456`. Dedicated BUILD-618 run `31301659016` passed compile, Ruff lint/format, causal-scope regressions, BUILD-617/616/615 prerequisite regressions, and hygiene. Applicable broad checks also passed on the same head: BUILD-617, BUILD-616, BUILD-615, Workflow Governance, CALYX Brain E2E, and Calyx Brain Integration.
+
+Executable CI exposed three correctable findings before readiness: one Ruff annotation rule, deterministic formatting drift, and two regression assertions. The first regression assertion was a test-shape error (`source_pk` is serialized under node provenance); the second confirmed that legacy publication-readiness fixtures must now declare bounded scope because BUILD-618 intentionally makes unknown scope publication-blocking. Both were corrected without weakening the new scope gate or the BUILD-616 canonical identity invariant.
 
 ## Purpose
 
