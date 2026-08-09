@@ -47,7 +47,11 @@ class FakeRepository:
     def list_figure_requests(self, *, concept_id, limit):
         rows = list(self.figures.values())
         if concept_id is not None:
-            rows = [row for row in rows if str(row["concept_id"]) == str(concept_id)]
+            rows = [
+                row
+                for row in rows
+                if str(row["concept_id"]) == str(concept_id)
+            ]
         return rows[:limit]
 
 
@@ -55,28 +59,65 @@ class FakeConcepts:
     def __init__(self, resolution="UNRESOLVED") -> None:
         self.resolution = resolution
         self.concept_id = uuid4()
+        self.other_concept_id = uuid4()
 
     def search_concepts(self, query, *, language=None, limit=25):
-        exact = [str(self.concept_id)] if self.resolution == "RESOLVED" else []
-        return {"resolution": self.resolution, "exact_concept_ids": exact, "matches": []}
+        if self.resolution == "RESOLVED":
+            exact = [str(self.concept_id)]
+            matches = [{"concept_id": self.concept_id}]
+        elif self.resolution == "AMBIGUOUS":
+            exact = [str(self.concept_id), str(self.other_concept_id)]
+            matches = [
+                {"concept_id": self.concept_id},
+                {"concept_id": self.other_concept_id},
+            ]
+        elif self.resolution == "CANDIDATES":
+            exact = []
+            matches = [
+                {"concept_id": self.concept_id},
+                {"concept_id": self.other_concept_id},
+            ]
+        else:
+            exact = []
+            matches = []
+        return {
+            "resolution": self.resolution,
+            "exact_concept_ids": exact,
+            "matches": matches,
+        }
 
     def get_concept(self, concept_id):
         if concept_id != self.concept_id:
             raise LookupError("CONCEPT_NOT_FOUND")
         return {
             "concept_id": concept_id,
-            "concept_uri": f"https://id.orchidcontinuum.org/concept/{concept_id}",
+            "concept_uri": (
+                "https://id.orchidcontinuum.org/concept/"
+                f"{concept_id}"
+            ),
             "status": "ACTIVE",
             "review_state": "APPROVED",
         }
 
     def list_labels(self, concept_id):
         self.get_concept(concept_id)
-        return [{"label": "Velamen", "label_type": "PREFERRED", "language": "en"}]
+        return [
+            {
+                "label": "Velamen",
+                "label_type": "PREFERRED",
+                "language": "en",
+            }
+        ]
 
     def list_definitions(self, concept_id):
         self.get_concept(concept_id)
-        return [{"text": "A multilayered root epidermis.", "definition_type": "SCIENTIFIC", "language": "en"}]
+        return [
+            {
+                "text": "A multilayered root epidermis.",
+                "definition_type": "SCIENTIFIC",
+                "language": "en",
+            }
+        ]
 
 
 def _input(term="velamen"):
@@ -105,6 +146,23 @@ def test_candidate_identity_is_deterministic_and_replay_idempotent():
     assert first["knowledge_graph_publication_authorized"] is False
 
 
+def test_candidate_identity_normalizes_bounded_provenance_whitespace():
+    repo = FakeRepository()
+    service = GlossaryService(repo, FakeConcepts())
+    first = service.intake(_input())
+    padded = GlossaryCandidateInput(
+        term=" velamen ",
+        source_uri=" doi:10.1000/example ",
+        source_revision_id=" revision-7 ",
+        source_checksum=f" {'a' * 64} ",
+        evidence_span_id=" span-42 ",
+        language="en",
+    )
+    second = service.intake(padded)
+    assert first["candidate_id"] == second["candidate_id"]
+    assert len(repo.candidates) == 1
+
+
 @pytest.mark.parametrize(
     ("resolution", "expected"),
     [
@@ -119,6 +177,22 @@ def test_resolution_never_auto_approves(resolution, expected):
     candidate = service.intake(_input())
     assert candidate["resolution_state"] == expected
     assert candidate["resolution_state"] != CandidateState.REVIEWED_MATCH.value
+
+
+def test_candidate_and_ambiguous_matches_are_preserved_without_guessing():
+    concepts = FakeConcepts("CANDIDATES")
+    candidate = GlossaryService(FakeRepository(), concepts).intake(_input())
+    assert candidate["resolution_state"] == "CANDIDATES"
+    assert set(candidate["matched_concept_ids"]) == {
+        str(concepts.concept_id),
+        str(concepts.other_concept_id),
+    }
+
+    concepts = FakeConcepts("AMBIGUOUS")
+    candidate = GlossaryService(FakeRepository(), concepts).intake(_input())
+    assert candidate["resolution_state"] == "AMBIGUOUS"
+    assert len(candidate["matched_concept_ids"]) == 2
+    assert candidate["reviewed_concept_id"] is None
 
 
 def test_human_review_required_for_reviewed_match():
@@ -142,6 +216,35 @@ def test_human_review_required_for_reviewed_match():
     )
     assert reviewed["resolution_state"] == "REVIEWED_MATCH"
     assert reviewed["reviewed_concept_id"] == concepts.concept_id
+
+
+def test_final_review_is_idempotent_but_conflicting_replacement_fails():
+    repo = FakeRepository()
+    concepts = FakeConcepts("RESOLVED")
+    service = GlossaryService(repo, concepts)
+    candidate = service.intake(_input())
+    reviewed = service.review_candidate(
+        candidate["candidate_id"],
+        state=CandidateState.REVIEWED_MATCH,
+        actor="reviewer",
+        rationale="exact reviewed match",
+        concept_id=concepts.concept_id,
+    )
+    replay = service.review_candidate(
+        candidate["candidate_id"],
+        state=CandidateState.REVIEWED_MATCH,
+        actor="reviewer",
+        rationale="exact reviewed match",
+        concept_id=concepts.concept_id,
+    )
+    assert replay == reviewed
+    with pytest.raises(ValueError, match="DECISION_IMMUTABLE"):
+        service.review_candidate(
+            candidate["candidate_id"],
+            state=CandidateState.REJECTED,
+            actor="other-reviewer",
+            rationale="conflicting replacement",
+        )
 
 
 def test_canonical_projection_reuses_concept_registry_content():
