@@ -70,7 +70,17 @@ jobs:
           ):
               assert marker in repository, marker
 
-          assert "verify_owner_or_api_key" in router
+          for marker in (
+              "verify_owner_or_api_key",
+              'auth.get("actor")',
+              "GLOSSARY_AUTHENTICATED_REVIEWER_REQUIRED",
+          ):
+              assert marker in router, marker
+          review_body = router.split("class GlossaryReviewRequest", 1)[1].split(
+              "class FigureRequestBody", 1
+          )[0]
+          assert "actor:" not in review_body
+
           for marker in (
               "REVIEWED_MATCH",
               "NEW_CONCEPT_CANDIDATE",
