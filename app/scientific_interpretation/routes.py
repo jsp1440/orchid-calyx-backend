@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.scientific_synthesis.routes import router as scientific_synthesis_router
 from app.security import verify_owner_or_api_key
 
 from .models import (
@@ -208,3 +209,6 @@ def audit_history(artifact_type: str, artifact_id: int):
 @router.get("/health")
 def health():
     return {"status": "ok", "three_layers_separate": True, "publishes_graph": False, "immutable_evidence": True}
+
+
+router.include_router(scientific_synthesis_router)
