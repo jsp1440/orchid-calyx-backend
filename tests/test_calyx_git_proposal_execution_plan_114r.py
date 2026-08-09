@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from app.calyx_orchestrator.assignment_factory import assignment_inputs_for_program_job
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
 from app.calyx_orchestrator.execution_bridge import LeaseExecutionBridge
 from app.calyx_orchestrator.executor import ExecutionReceipt, ExecutionState, canonical_checksum
@@ -129,7 +130,9 @@ def _persist_patch(session: Session) -> CalyxProgramJob:
         executor_key=IsolatedWorkspacePatchExecutor.executor_key,
         state=ExecutionState.DELIVERED,
         outcome=TerminalOutcome.DELIVERED,
-        input_checksum="1" * 64,
+        input_checksum=canonical_checksum(
+            assignment_inputs_for_program_job(program, claimed)
+        ),
         output_checksum=canonical_checksum(output),
         output=output,
         evidence_uris=("github:issue/701",),
