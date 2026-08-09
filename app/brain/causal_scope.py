@@ -19,6 +19,54 @@ APPLICABILITY_DIMENSIONS = (
 )
 
 
+def _norm_string(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def _norm_value(value: Any) -> Any:
+    """Canonicalize nested applicability values and discard semantic emptiness."""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = _norm_string(value)
+        return normalized or None
+    if isinstance(value, dict):
+        normalized: dict[str, Any] = {}
+        for raw_key, raw_value in value.items():
+            key = _norm_string(str(raw_key))
+            item = _norm_value(raw_value)
+            if not key or item is None or item == {} or item == []:
+                continue
+            if key in normalized and normalized[key] != item:
+                raise ValueError(f"AMBIGUOUS_CAUSAL_SCOPE_MAPPING_KEY:{key}")
+            normalized[key] = item
+        return {key: normalized[key] for key in sorted(normalized)}
+    if isinstance(value, (list, tuple, set)):
+        normalized_items = [
+            item
+            for raw_item in value
+            if (item := _norm_value(raw_item)) is not None
+            and item != {}
+            and item != []
+        ]
+        unique = {
+            json.dumps(item, sort_keys=True, separators=(",", ":"), default=str): item
+            for item in normalized_items
+        }
+        return [unique[key] for key in sorted(unique)]
+    return value
+
+
+def _norm_list(values: list[str]) -> list[str]:
+    return sorted({_norm_string(value) for value in values if value.strip()})
+
+
+def _norm_mapping(value: dict[str, Any]) -> dict[str, Any]:
+    normalized = _norm_value(value)
+    return normalized if isinstance(normalized, dict) else {}
+
+
 class CausalScope(BaseModel):
     """Applicability bounds for a mechanistic claim.
 
@@ -54,7 +102,7 @@ class CausalScope(BaseModel):
             any(item.strip() for item in values) for values in material_lists
         )
         has_mapping_bounds = any(
-            bool(value)
+            bool(_norm_mapping(value))
             for value in (
                 self.environments,
                 self.treatments,
@@ -73,18 +121,6 @@ class CausalScope(BaseModel):
         if self.scope_class == "global" and has_bounds:
             raise ValueError("GLOBAL_CAUSAL_SCOPE_CANNOT_DECLARE_LOCAL_BOUNDS")
         return self
-
-
-def _norm_string(value: str) -> str:
-    return " ".join(value.casefold().split())
-
-
-def _norm_list(values: list[str]) -> list[str]:
-    return sorted({_norm_string(value) for value in values if value.strip()})
-
-
-def _norm_mapping(value: dict[str, Any]) -> dict[str, Any]:
-    return json.loads(json.dumps(value, sort_keys=True, default=str))
 
 
 def _normalized_dimensions(model: CausalScope) -> dict[str, Any]:
