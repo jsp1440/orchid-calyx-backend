@@ -130,6 +130,7 @@ class GitProposalExecutionPlanner:
         if not commit_title or not pr_title or not summary:
             raise ValueError("GIT_PROPOSAL_PLAN_MANIFEST_TEXT_REQUIRED")
 
+        GitProposalExecutionPlanner._require_dependency_closed_actions(request.actions)
         operations = tuple(
             GitProposalExecutionPlanner._operation(
                 action,
@@ -164,6 +165,18 @@ class GitProposalExecutionPlanner:
             summary=summary,
             operations=operations,
         )
+
+    @staticmethod
+    def _require_dependency_closed_actions(actions: tuple[str, ...]) -> None:
+        requested = set(actions)
+        for action in actions:
+            try:
+                position = ACTION_ORDER.index(action)
+            except ValueError as exc:
+                raise PermissionError("GIT_PROPOSAL_PLAN_ACTION_SET_INVALID") from exc
+            prerequisites = set(ACTION_ORDER[: position + 1])
+            if not prerequisites.issubset(requested):
+                raise PermissionError("GIT_PROPOSAL_PLAN_ACTION_PREREQUISITE_MISSING")
 
     @staticmethod
     def _operation(
