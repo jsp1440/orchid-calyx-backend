@@ -11,6 +11,7 @@ on:
       - 'runtime/knowledge_graph/validation.py'
       - 'tests/test_build_616_mechanistic_publication_plan.py'
       - 'tests/test_build_615_mechanistic_candidate_graph.py'
+      - 'docs/brain/BUILD-616-MECHANISTIC-PUBLICATION-PLAN.md'
       - '.github/workflows/build-616-mechanistic-publication-plan-validation.yml'
   workflow_dispatch:
 
