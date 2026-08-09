@@ -6,6 +6,7 @@ from app.brain.mechanistic_candidates import (
     MechanisticCandidateRequest,
     handoff_mechanistic_candidate,
 )
+from app.brain.mechanistic_contradictions import analyze_mechanistic_contradictions
 from app.brain.mechanistic_publication_plan import (
     plan_mechanistic_candidate_publication,
 )
@@ -114,3 +115,11 @@ def get_brain_mechanistic_publication_plan(candidate_id: int):
         raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+
+@router.get(
+    "/brain/mechanistic-contradictions",
+    dependencies=[Depends(verify_owner_or_api_key)],
+)
+def get_brain_mechanistic_contradictions():
+    return analyze_mechanistic_contradictions()
