@@ -44,6 +44,135 @@ class DeterministicGovernedReplyProvider:
     provider_name = "deterministic-governed"
     model_name = "calyx-governed-summary-v1"
 
+    @staticmethod
+    def _format_mission_answer(mission: dict[str, Any]) -> list[str]:
+        lines: list[str] = []
+        conclusions = mission.get("conclusions") or []
+        supporting = mission.get("supporting_evidence") or []
+        contradicting = mission.get("contradicting_evidence") or []
+        missing = mission.get("missing_evidence") or []
+        artifacts = mission.get("artifacts") or {}
+
+        conclusion_texts = [
+            str(item.get("text") or "").strip()
+            for item in conclusions
+            if isinstance(item, dict) and str(item.get("text") or "").strip()
+        ]
+        if conclusion_texts:
+            lines.append("Scientific conclusion: " + " ".join(conclusion_texts))
+        else:
+            lines.append(
+                "Scientific conclusion: no evidence-grounded conclusion could be justified from the governed mission output."
+            )
+
+        if supporting:
+            lines.append(
+                "Evidence summary: "
+                + "; ".join(
+                    DeterministicGovernedReplyProvider._supporting_evidence_summary(item)
+                    for item in supporting[:5]
+                )
+            )
+            lines.append(
+                f"Supporting evidence count: {len(supporting)}."
+            )
+        else:
+            lines.append(
+                "Evidence summary: the mission did not surface any supporting evidence records that could justify a conclusion."
+            )
+
+        if contradicting:
+            lines.append(
+                "Disagreements or conflicting evidence: "
+                + "; ".join(
+                    DeterministicGovernedReplyProvider._contradicting_evidence_summary(item)
+                    for item in contradicting[:5]
+                )
+            )
+
+        if missing:
+            lines.append(
+                "Limitations and uncertainty: missing or incomplete evidence for "
+                + "; ".join(str(item) for item in missing[:8])
+                + "."
+            )
+
+        confidence = mission.get("confidence")
+        if confidence is not None:
+            lines.append(
+                f"Strength of evidence: provisional backend confidence {float(confidence):.2f}; this remains an inference pending human scientific review."
+            )
+
+        citations = DeterministicGovernedReplyProvider._collect_citations(mission)
+        if citations:
+            lines.append("Supporting sources/citations: " + "; ".join(citations[:5]))
+
+        evidence_packet_id = artifacts.get("evidence_packet_id")
+        interpretation_id = artifacts.get("interpretation_id")
+        if evidence_packet_id or interpretation_id:
+            identifiers: list[str] = []
+            if evidence_packet_id:
+                identifiers.append(f"evidence packet {evidence_packet_id}")
+            if interpretation_id:
+                identifiers.append(f"interpretation {interpretation_id}")
+            lines.append("Governed provenance: " + ", ".join(identifiers) + ".")
+
+        lines.append(
+            "Evidence vs inference: source evidence and extracted evidence remain distinct from this provisional synthesis, which is not reviewed or published knowledge."
+        )
+        lines.append(
+            "Relevant terminology: supporting evidence, contradicting evidence, missing evidence, provisional synthesis, human review required."
+        )
+        return lines
+
+    @staticmethod
+    def _supporting_evidence_summary(item: Any) -> str:
+        if not isinstance(item, dict):
+            return str(item)
+        subject = item.get("subject")
+        predicate = item.get("predicate")
+        value = item.get("value")
+        parts = [str(value) for value in (subject, predicate, value) if value not in (None, "")]
+        if parts:
+            return " ".join(parts)
+        return str(item.get("candidate_id") or "unlabeled supporting evidence")
+
+    @staticmethod
+    def _contradicting_evidence_summary(item: Any) -> str:
+        if not isinstance(item, dict):
+            return str(item)
+        candidate_id = item.get("candidate_id")
+        subject = item.get("subject")
+        predicate = item.get("predicate")
+        value = item.get("value")
+        parts = [str(value) for value in (subject, predicate, value) if value not in (None, "")]
+        label = " ".join(parts) if parts else "conflicting evidence"
+        if candidate_id is not None:
+            return f"{label} (candidate {candidate_id})"
+        return label
+
+    @staticmethod
+    def _collect_citations(mission: dict[str, Any]) -> list[str]:
+        citations: list[str] = []
+        seen: set[str] = set()
+        for result in mission.get("sources") or []:
+            if not isinstance(result, dict):
+                continue
+            citation = result.get("citation") or {}
+            title = citation.get("document_title") or result.get("title") or result.get("object_type")
+            locator = citation.get("locator")
+            revision = citation.get("revision_id")
+            parts = [str(title).strip()] if title else []
+            if locator:
+                parts.append(f"locator={locator}")
+            if revision:
+                parts.append(f"revision={revision}")
+            summary = "; ".join(parts).strip()
+            if summary and summary not in seen:
+                seen.add(summary)
+                citations.append(summary)
+        return citations
+
     def generate(
         self,
         *,
@@ -64,17 +193,7 @@ class DeterministicGovernedReplyProvider:
                 "I can discuss a question conversationally, retrieve Continuum evidence, run a governed Brain mission when a scientific question needs it, and keep the evidence and publication boundaries visible."
             )
         elif mission:
-            conclusions = mission.get("conclusions") or []
-            if conclusions:
-                lines.extend(str(item.get("text") or "").strip() for item in conclusions if item.get("text"))
-            else:
-                lines.append("I completed a governed Brain mission, but it did not produce a scientific conclusion.")
-            gaps = mission.get("missing_evidence") or []
-            if gaps:
-                lines.append("Evidence gaps: " + "; ".join(str(item) for item in gaps[:8]))
-            confidence = mission.get("confidence")
-            if confidence is not None:
-                lines.append(f"Backend confidence: {float(confidence):.2f}.")
+            lines.extend(self._format_mission_answer(mission))
             lines.append("This answer remains review-bound and is not automatically published knowledge.")
         elif governed_context.get("mission_error"):
             lines.append(
