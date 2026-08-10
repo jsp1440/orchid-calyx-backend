@@ -1,3 +1,5 @@
+"""Regression coverage for durable, owner-scoped Brain mission persistence."""
+
 from pathlib import Path
 
 import pytest
