@@ -1,7 +1,11 @@
 import pytest
 
 from app.brain_mission.dependencies import build_brain_mission_persistence
-from app.brain_mission.persistence import MemoryBrainMissionPersistence, MissionEnvelope
+from app.brain_mission.persistence import (
+    DurableMissionRepository,
+    MemoryBrainMissionPersistence,
+    MissionEnvelope,
+)
 from app.missions.registry import MISSION_TYPES
 
 
@@ -63,3 +67,17 @@ def test_dependency_fails_closed_without_database(monkeypatch):
     monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
     with pytest.raises(RuntimeError, match="DATABASE_URL is required"):
         build_brain_mission_persistence()
+
+
+def test_durable_service_repository_round_trips_and_scopes_tenant():
+    repository = DurableMissionRepository(MemoryBrainMissionPersistence())
+    mission = {
+        "mission_id": "mission-key", "tenant_id": "owner-a",
+        "project_id": "project-1", "question": "What evidence supports this claim?",
+        "limits": {"max_sources": 20, "timeout_seconds": 30},
+        "state": "AWAITING_HUMAN_REVIEW", "current_stage": "human_review_state",
+    }
+    repository.save(mission)
+    assert repository.get("mission-key", "owner-a") == mission
+    assert repository.get("mission-key", "owner-b") is None
+    assert repository.get("mission-key") is None

@@ -197,3 +197,47 @@ class PostgresBrainMissionPersistence:
             if existing is None:
                 raise LookupError("MISSION_NOT_FOUND")
             raise RuntimeError("MISSION_VERSION_CONFLICT")
+
+
+class DurableMissionRepository:
+    """BrainMissionService repository backed by the governed mission envelope."""
+
+    def __init__(self, persistence: BrainMissionPersistence) -> None:
+        self.persistence = persistence
+
+    def save(self, mission: dict[str, Any]) -> None:
+        owner = str(mission["tenant_id"])
+        envelope = MissionEnvelope(
+            mission_key=str(mission["mission_id"]), owner=owner,
+            project_id=str(mission["project_id"]), question=str(mission["question"]),
+            limits=dict(mission["limits"]),
+        )
+        row = self.persistence.create_or_get(envelope)
+        current = row.get("output_manifest") or {}
+        if current == mission:
+            return
+        self.persistence.checkpoint(
+            envelope.mission_key, owner, expected_version=int(row["version"]),
+            state=self._state(mission), output=mission,
+            stage=str(mission["current_stage"]),
+        )
+
+    def get(self, mission_id: str, tenant_id: str | None = None) -> dict[str, Any] | None:
+        if tenant_id is None:
+            return None
+        row = self.persistence.get(mission_id, tenant_id)
+        if row is None:
+            return None
+        output = row.get("output_manifest") or {}
+        if not output or output.get("mission_id") != mission_id:
+            return None
+        result = deepcopy(output)
+        result.pop("checkpoint_stage", None)
+        return result
+
+    @staticmethod
+    def _state(mission: dict[str, Any]) -> str:
+        return {
+            "RUNNING": "running", "AWAITING_HUMAN_REVIEW": "awaiting_approval",
+            "COMPLETE": "completed", "BLOCKED": "blocked",
+        }.get(str(mission.get("state") or "RUNNING"), "failed")

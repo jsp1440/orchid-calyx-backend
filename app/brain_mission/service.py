@@ -7,7 +7,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Protocol
 
 MissionStep = Callable[[dict[str, Any]], Any]
 
@@ -36,6 +36,12 @@ class MissionComponents:
     publication_eligibility: MissionStep | None = None
 
 
+class MissionRepository(Protocol):
+    def save(self, mission: dict[str, Any]) -> None: ...
+
+    def get(self, mission_id: str, tenant_id: str | None = None) -> dict[str, Any] | None: ...
+
+
 class MemoryMissionRepository:
     def __init__(self) -> None:
         self._missions: dict[str, dict[str, Any]] = {}
@@ -43,8 +49,10 @@ class MemoryMissionRepository:
     def save(self, mission: dict[str, Any]) -> None:
         self._missions[mission["mission_id"]] = deepcopy(mission)
 
-    def get(self, mission_id: str) -> dict[str, Any] | None:
+    def get(self, mission_id: str, tenant_id: str | None = None) -> dict[str, Any] | None:
         value = self._missions.get(mission_id)
+        if value is not None and tenant_id is not None and value["tenant_id"] != tenant_id:
+            return None
         return deepcopy(value) if value else None
 
 
@@ -65,7 +73,7 @@ class BrainMissionService:
     def __init__(
         self,
         components: MissionComponents,
-        repository: MemoryMissionRepository | None = None,
+        repository: MissionRepository | None = None,
         *,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -107,11 +115,15 @@ class BrainMissionService:
             },
         }
         mission_id = _identifier(signature)
+        existing = self.repository.get(mission_id, tenant_id)
+        if existing is not None:
+            return existing
         mission = {
             "mission_id": mission_id,
             "question": question,
             "tenant_id": tenant_id,
             "project_id": project_id,
+            "actor": actor,
             "state": "RUNNING",
             "current_stage": "question",
             "limits": signature["limits"],
@@ -189,8 +201,8 @@ class BrainMissionService:
         self.repository.save(mission)
         return mission
 
-    def status(self, mission_id: str) -> dict[str, Any]:
-        mission = self.repository.get(mission_id)
+    def status(self, mission_id: str, tenant_id: str | None = None) -> dict[str, Any]:
+        mission = self.repository.get(mission_id, tenant_id)
         if mission is None:
             raise LookupError("MISSION_NOT_FOUND")
         return mission

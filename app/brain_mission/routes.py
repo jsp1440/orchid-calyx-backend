@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
@@ -37,6 +38,7 @@ from app.scientific_interpretation.models import (
 from app.scientific_interpretation.repository import MemoryInterpretationRepository
 from app.scientific_interpretation.service import ScientificInterpretationService
 
+from .dependencies import build_durable_mission_repository
 from .service import BrainMissionService, MemoryMissionRepository, MissionComponents
 
 
@@ -565,7 +567,11 @@ class ExistingBrainMissionAdapter:
         }
 
 
-REPOSITORY = MemoryMissionRepository()
+REPOSITORY = (
+    build_durable_mission_repository()
+    if os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
+    else MemoryMissionRepository()
+)
 ADAPTER = ExistingBrainMissionAdapter()
 SERVICE = BrainMissionService(
     MissionComponents(
@@ -600,8 +606,8 @@ def start_mission(payload: MissionStartIn) -> dict[str, Any]:
 
 
 @router.get("/{mission_id}")
-def get_mission(mission_id: str) -> dict[str, Any]:
+def get_mission(mission_id: str, tenant_id: str = "brain") -> dict[str, Any]:
     try:
-        return SERVICE.status(mission_id)
+        return SERVICE.status(mission_id, tenant_id)
     except LookupError as exc:
         raise HTTPException(404, detail={"code": "MISSION_NOT_FOUND"}) from exc

@@ -53,9 +53,7 @@ def start_mission(
 def get_mission(mission_id: str, auth: AuthDependency) -> dict[str, Any]:
     subject = _subject(auth)
     try:
-        mission = SERVICE.status(mission_id)
+        mission = SERVICE.status(mission_id, subject)
     except LookupError as exc:
         raise HTTPException(404, detail={"code": "MISSION_NOT_FOUND"}) from exc
-    if mission.get("tenant_id") != subject:
-        raise HTTPException(404, detail={"code": "MISSION_NOT_FOUND"})
     return mission

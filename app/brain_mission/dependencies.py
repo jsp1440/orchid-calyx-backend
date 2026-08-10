@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from .persistence import PostgresBrainMissionPersistence
+from .persistence import DurableMissionRepository, PostgresBrainMissionPersistence
 
 
 def build_brain_mission_persistence() -> PostgresBrainMissionPersistence:
@@ -10,3 +10,7 @@ def build_brain_mission_persistence() -> PostgresBrainMissionPersistence:
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for durable Brain missions")
     return PostgresBrainMissionPersistence(database_url)
+
+
+def build_durable_mission_repository() -> DurableMissionRepository:
+    return DurableMissionRepository(build_brain_mission_persistence())
