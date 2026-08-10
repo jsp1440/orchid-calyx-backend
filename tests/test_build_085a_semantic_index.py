@@ -1,8 +1,10 @@
 from pathlib import Path
+
 from app.semantic_index.memory_repository import MemoryIndexRepository
 from app.semantic_index.models import IndexDocument
-from app.semantic_index.provider import DeterministicLocalProvider,ProviderError
-from app.semantic_index.service import SemanticIndexService,eligibility
+from app.semantic_index.provider import DeterministicLocalProvider, ProviderError
+from app.semantic_index.service import SemanticIndexService, eligibility
+
 
 def doc(i=1,**kw):
  values={"source_object_type":"PROTOCOL","source_object_id":i,"revision_id":1,"extraction_run_id":1,"text":"complete protocol evidence","parent_type":"PROTOCOL","parent_id":i,"source_anchor_ids":(11,12),"internal_indexing_permission":True,"display_policy":"INTERNAL_RESEARCH_ONLY","metadata":{"document_class":"PRIMARY_RESEARCH"}}; values.update(kw); return IndexDocument(**values)
@@ -34,5 +36,5 @@ def test_cancel_preserves_progress_and_tombstone_preserves_canonical_identity():
  r,s=setup(); p=s.preview([doc()]); s.cancel(p["index_run_id"]); assert s.execute(p["index_run_id"])["state"]=="CANCELLED"
  s.resume(p["index_run_id"]); excluded=doc(1,internal_indexing_permission=False); q=s.preview([excluded]); assert q["counts"]=={"TOMBSTONE_REQUIRED":1}; s.execute(q["index_run_id"]); assert r.tombstones[0]["prior_index_document_id"] and r.documents[0]["revision_id"]==1
 def test_lexical_record_and_safety_contract():
- r,s=setup(); p=s.preview([doc()]); s.execute(p["index_run_id"]); assert r.lexical[0]["normalized_text"]=="complete protocol evidence"
+ r,s=setup(); p=s.preview([doc(text="Complete Protocol Evidence")]); s.execute(p["index_run_id"]); assert r.lexical[0]["normalized_text"]=="complete protocol evidence" and r.lexical[0]["verbatim_text"]=="Complete Protocol Evidence"
  code="\n".join(x.read_text() for x in Path("app/semantic_index").glob("*.py")); assert all(x not in code for x in ("drive.files.update","production_publish","question_answer","knowledge_extract"))

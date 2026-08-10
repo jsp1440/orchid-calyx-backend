@@ -93,12 +93,18 @@ class ExistingBrainMissionAdapter:
         citation = result.get("citation") or {}
         revision_id = citation.get("revision_id")
         anchor_ids = tuple(citation.get("source_anchor_ids") or ())
-        locator = citation.get("locator")
+        anchors = citation.get("source_anchors") or ()
         if not isinstance(revision_id, int) or revision_id <= 0:
             raise ValueError("CANONICAL_REVISION_ID_REQUIRED")
         if not anchor_ids or any(not isinstance(value, int) or value <= 0 for value in anchor_ids):
             raise ValueError("EXACT_SOURCE_ANCHORS_REQUIRED")
-        if not isinstance(locator, dict) or not locator:
+        if len(anchors) != len(anchor_ids) or any(
+            not isinstance(item, dict)
+            or item.get("anchor_id") != anchor_id
+            or not isinstance(item.get("locator"), dict)
+            or not item["locator"]
+            for item, anchor_id in zip(anchors, anchor_ids, strict=True)
+        ):
             raise ValueError("EXACT_SOURCE_LOCATOR_REQUIRED")
         object_type = str(result.get("object_type") or "").strip()
         matches = [
@@ -117,6 +123,26 @@ class ExistingBrainMissionAdapter:
         for field in ("source_object_id", "revision_id", "extraction_run_id"):
             if not isinstance(document.get(field), int) or document[field] <= 0:
                 raise ValueError("INVALID_CANONICAL_SOURCE_IDENTITY")
+        lexical = next(
+            (
+                item
+                for item in ENGINE.repo.lexical
+                if item.get("index_document_id") == document["index_document_id"]
+            ),
+            {},
+        )
+        verbatim = lexical.get("verbatim_text")
+        exact_hash = (
+            hashlib.sha256(verbatim.encode()).hexdigest()
+            if isinstance(verbatim, str)
+            else None
+        )
+        if (
+            exact_hash is None
+            or result.get("source_content_hash") != exact_hash
+            or document.get("content_hash") != exact_hash
+        ):
+            raise ValueError("SOURCE_CONTENT_HASH_MISMATCH")
         return document
 
     @classmethod
@@ -126,11 +152,15 @@ class ExistingBrainMissionAdapter:
         text = result.get("authorized_excerpt")
         if not isinstance(text, str) or not text.strip():
             raise ValueError("AUTHORIZED_EVIDENCE_SPAN_REQUIRED")
-        locator = dict(citation["locator"])
+        excerpt_hash = hashlib.sha256(text.encode()).hexdigest()
+        if result.get("excerpt_content_hash") != excerpt_hash:
+            raise ValueError("EXCERPT_CONTENT_HASH_MISMATCH")
+        anchors = citation["source_anchors"]
         metadata = dict(document.get("metadata") or {})
         metadata.update(
             source_confidence=float(result.get("fused_score", 0.5)),
-            content_hash=document.get("content_hash"),
+            source_content_hash=document.get("content_hash"),
+            excerpt_content_hash=excerpt_hash,
         )
         return EvidenceInput(
             source_object_type=str(document["source_object_type"]),
@@ -142,7 +172,7 @@ class ExistingBrainMissionAdapter:
                 SourceAnchor(
                     anchor_id=value,
                     ordered_span=index,
-                    locator=locator,
+                    locator=dict(anchors[index]["locator"]),
                 )
                 for index, value in enumerate(document.get("anchors") or ())
             ),
@@ -237,7 +267,7 @@ class ExistingBrainMissionAdapter:
                     directness=str(
                         evidence.metadata.get("directness") or "INDIRECT"
                     ),
-                    document_hash=evidence.metadata.get("content_hash"),
+                    document_hash=evidence.metadata.get("source_content_hash"),
                     taxon_links=taxon_links,
                     confidence=float(candidate["confidence"]),
                     review_state=str(candidate["review_state"]),
@@ -347,7 +377,7 @@ class ExistingBrainMissionAdapter:
                     anchor_type="TEXT_SPAN",
                     locator=item["locator"],
                     content_hash=(
-                        value["metadata"].get("content_hash")
+                        value["metadata"].get("excerpt_content_hash")
                         or hashlib.sha256(value["text"].encode()).hexdigest()
                     ),
                     relationship="EVIDENCE",
