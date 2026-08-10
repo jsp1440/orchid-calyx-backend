@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 import psycopg
 from psycopg.types.json import Jsonb
+from starlette.responses import Response as StarletteResponse
 
 from app.routers import (
     awards,
@@ -66,13 +67,23 @@ app = FastAPI()
 
 @app.middleware("http")
 async def mission_control_cors_on_all_responses(request, call_next):
-    response = await call_next(request)
     origin = request.headers.get("origin")
-    if (
-        origin
-        and origin.rstrip("/") in allowed_mission_control_origins()
-        and "access-control-allow-origin" not in response.headers
-    ):
+    allowed = bool(origin and origin.rstrip("/") in allowed_mission_control_origins())
+
+    # Short-circuit OPTIONS preflight for allowed origins so the browser
+    # receives a 200 even when no explicit OPTIONS route is registered.
+    if request.method == "OPTIONS" and allowed:
+        preflight = StarletteResponse(status_code=200)
+        preflight.headers["Access-Control-Allow-Origin"] = origin
+        preflight.headers["Vary"] = "Origin"
+        preflight.headers["Access-Control-Allow-Credentials"] = "true"
+        preflight.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        preflight.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key, X-Orchid-Actor"
+        preflight.headers["Access-Control-Max-Age"] = "86400"
+        return preflight
+
+    response = await call_next(request)
+    if allowed and "access-control-allow-origin" not in response.headers:
         response.headers["Access-Control-Allow-Origin"] = origin
         existing_vary = response.headers.get("Vary")
         if existing_vary:
@@ -81,8 +92,8 @@ async def mission_control_cors_on_all_responses(request, call_next):
         else:
             response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key, X-Orchid-Actor"
         response.headers["Access-Control-Max-Age"] = "86400"
     return response
 
