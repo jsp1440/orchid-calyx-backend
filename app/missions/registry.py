@@ -11,7 +11,7 @@ MISSION_TRANSITIONS = {
     "awaiting_approval": {"approved", "blocked", "cancelled"},
     "approved": {"queued", "paused", "cancelled", "expired", "superseded"},
     "queued": {"running", "paused", "completed", "failed", "cancelled", "blocked", "expired"},
-    "running": {"queued", "completed", "failed", "paused", "cancelled", "blocked"},
+    "running": {"queued", "awaiting_approval", "completed", "failed", "paused", "cancelled", "blocked"},
     "paused": {"approved", "queued", "cancelled", "expired"},
     "failed": {"queued", "cancelled", "superseded"},
     "completed": {"superseded"},
