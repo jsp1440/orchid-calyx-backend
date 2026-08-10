@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -128,7 +129,7 @@ class PostgresBrainMissionPersistence:
                     f"Brain mission {envelope.mission_key}",
                     envelope.question,
                     envelope.owner,
-                    int(envelope.limits.get("timeout_seconds", 30)),
+                    max(1, math.ceil(float(envelope.limits.get("timeout_seconds", 30)))),
                     Jsonb(input_manifest),
                     Jsonb({"handler": "brain_scientific_mission", "checkpointed": True}),
                     envelope.mission_key,
@@ -232,7 +233,9 @@ class DurableMissionRepository:
         if not output or output.get("mission_id") != mission_id:
             return None
         result = deepcopy(output)
-        result.pop("checkpoint_stage", None)
+        checkpoint_stage = result.pop("checkpoint_stage", None)
+        if result.get("state") == "RUNNING":
+            result["_checkpoint_stage"] = checkpoint_stage
         return result
 
     @staticmethod

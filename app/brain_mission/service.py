@@ -117,8 +117,13 @@ class BrainMissionService:
         mission_id = _identifier(signature)
         existing = self.repository.get(mission_id, tenant_id)
         if existing is not None:
-            return existing
-        mission = {
+            if existing.get("state") != "RUNNING":
+                existing.pop("_checkpoint_stage", None)
+                return existing
+            mission = existing
+            mission["actor"] = actor
+        else:
+            mission = {
             "mission_id": mission_id,
             "question": question,
             "tenant_id": tenant_id,
@@ -148,8 +153,9 @@ class BrainMissionService:
             "partial": False,
             "created_at": _now(),
             "updated_at": _now(),
-        }
-        self.repository.save(mission)
+            }
+            self.repository.save(mission)
+        checkpoint_stage = mission.pop("_checkpoint_stage", None)
         started = self.clock()
         context = {**mission, "actor": actor}
         stages = (
@@ -162,7 +168,13 @@ class BrainMissionService:
             ("human_review_state", "review_state"),
             ("eligible_for_publication_state", "publication_eligibility"),
         )
-        for stage, component_name in stages:
+        completed_stage_index = next(
+            (index for index, (stage, _) in enumerate(stages) if stage == checkpoint_stage),
+            -1,
+        )
+        for stage_index, (stage, component_name) in enumerate(stages):
+            if stage_index <= completed_stage_index:
+                continue
             if mission["steps_executed"] >= max_steps:
                 self._block(mission, "MAX_EXECUTION_STEPS_REACHED", stage)
                 break
