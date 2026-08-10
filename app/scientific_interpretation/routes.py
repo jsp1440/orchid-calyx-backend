@@ -225,8 +225,6 @@ def health():
         "three_layers_separate": True,
         "publishes_graph": False,
         "immutable_evidence": True,
-        "research_to_article": True,
-        "scientific_language": True,
     }
 
 
