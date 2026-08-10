@@ -53,15 +53,4 @@ jobs:
           assert note['distribution'] == 'normal'
           PY
       - name: Verify router import
-        run: |
-          python - <<'PY'
-          from app.routers.calyx_core import router
-          paths={getattr(r, 'path', '') for r in router.routes}
-          assert '/api/calyx/query' in paths
-          assert '/api/calyx/reasoning-map' in paths
-          assert '/api/calyx/reasoning-query' in paths
-          assert '/api/calyx/dataset/upload-analyze' in paths
-          assert '/api/calyx/dataset/upload-report' in paths
-          assert '/api/calyx/speak/conversations' in paths
-          assert '/api/calyx/speak/conversations/{conversation_id}/turns' in paths
-          PY
+        run: python -c "from app.routers.calyx_core import router; paths={getattr(r,'path','') for r in router.routes}; required={'/api/calyx/query','/api/calyx/reasoning-map','/api/calyx/reasoning-query','/api/calyx/dataset/upload-analyze','/api/calyx/dataset/upload-report','/api/calyx/speak/conversations','/api/calyx/speak/conversations/{conversation_id}/turns'}; missing=required-paths; assert not missing, f'missing routes: {sorted(missing)}'"
