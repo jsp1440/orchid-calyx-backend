@@ -37,6 +37,8 @@ class DeterministicGovernedReplyProvider:
 
     This provider also makes server-side conversation usable when no external model
     provider has been configured, while keeping the limitation explicit in metadata.
+    Its identity is persisted on each reply so a fallback can never masquerade as a
+    configured generative model.
     """
 
     provider_name = "deterministic-governed"
