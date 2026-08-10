@@ -6,7 +6,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.scientific_synthesis.language_routes import router as scientific_language_router
+from app.scientific_synthesis.language_routes import (
+    router as scientific_language_router,
+)
 from app.scientific_synthesis.pipeline_routes import router as research_article_router
 from app.scientific_synthesis.routes import router as scientific_synthesis_router
 from app.security import verify_owner_or_api_key
