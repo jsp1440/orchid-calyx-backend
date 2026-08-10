@@ -137,7 +137,8 @@ def test_canonical_source_reconstruction_requires_exact_active_index_identity():
         assert evidence.revision_id == 202
         assert evidence.extraction_run_id == 303
         assert evidence.source_anchors[0].anchor_id == 404
-        assert evidence.metadata["content_hash"] == "abc123"
+        assert evidence.metadata["source_content_hash"] == content_hash
+        assert evidence.metadata["excerpt_content_hash"] == content_hash
 
         ENGINE.repo.documents.append({**ENGINE.repo.documents[0], "index_document_id": 12})
         with pytest.raises(ValueError, match="AMBIGUOUS_CANONICAL_SOURCE_IDENTITY"):
