@@ -154,3 +154,110 @@ def test_followup_mission_receives_prior_thread_context(monkeypatch):
     assert roles.count("operator") == 2
     assert roles.count("calyx") == 2
     assert roles.count("tool") == 2
+
+
+def test_mission_answer_surfaces_evidence_status_citations_and_governed_provenance(monkeypatch):
+    conversation_id = create_for("owner-a", "calyx-science")
+
+    def start(**kwargs):
+        return {
+            "mission_id": "mission-science-1",
+            "state": "AWAITING_HUMAN_REVIEW",
+            "sources": [
+                {
+                    "result_id": "src-1",
+                    "object_type": "LITERATURE",
+                    "title": "Foliar Uptake in Orchids",
+                    "citation": {
+                        "document_title": "Journal of Orchid Physiology",
+                        "locator": {"page": 12, "figure": 1},
+                        "revision_id": 44,
+                    },
+                }
+            ],
+            "supporting_evidence": [
+                {
+                    "candidate_id": "cand-1",
+                    "subject": "orchid leaves",
+                    "predicate": "show foliar nutrient uptake",
+                    "value": "under some experimental conditions",
+                }
+            ],
+            "contradicting_evidence": [
+                {
+                    "candidate_id": "cand-2",
+                    "subject": "orchid leaves",
+                    "predicate": "show limited sustained uptake",
+                    "value": "outside controlled conditions",
+                }
+            ],
+            "conclusions": [
+                {
+                    "type": "inference",
+                    "text": "Available governed evidence suggests foliar nutrient uptake can occur in orchids, but meaningful sustained absorption remains condition-dependent and uncertain."
+                }
+            ],
+            "missing_evidence": ["orchid-specific replicated field studies"],
+            "confidence": 0.68,
+            "review_status": "HUMAN_REVIEW_REQUIRED",
+            "publication_eligibility": {
+                "eligible": False,
+                "automatic_publication": False,
+                "blockers": ["HUMAN_REVIEW_REQUIRED"],
+            },
+            "artifacts": {
+                "evidence_packet_id": "packet-123",
+                "interpretation_id": 987,
+            },
+        }
+
+    monkeypatch.setattr(speak_routes, "BRAIN_MISSION_SERVICE", SimpleNamespace(start=start))
+    result = speak_routes.append_turn(
+        conversation_id,
+        speak_routes.ConversationTurnRequest(
+            message="What does the scientific literature say about foliar nutrient uptake in orchids?",
+            research_mode="always",
+        ),
+        auth("owner-a"),
+    )
+
+    answer = result["answer"]
+    assert "Scientific conclusion:" in answer
+    assert "Evidence summary:" in answer
+    assert "Supporting sources/citations:" in answer
+    assert "Strength of evidence:" in answer
+    assert "Limitations and uncertainty:" in answer
+    assert "Disagreements or conflicting evidence:" in answer
+    assert "Evidence vs inference:" in answer
+    assert "Governed provenance: evidence packet packet-123, interpretation 987." in answer
+    assert "Journal of Orchid Physiology" in answer
+
+
+def test_mission_without_conclusion_returns_explicit_evidence_status_explanation():
+    provider = DeterministicGovernedReplyProvider()
+    reply = provider.generate(
+        messages=[
+            {
+                "role": "user",
+                "content": "What does the literature say about foliar nutrient uptake in orchids?",
+            }
+        ],
+        governed_context={
+            "casual": False,
+            "retrieval": {"results": [], "total_eligible_results": 0},
+            "mission": {
+                "mission_id": "mission-empty-1",
+                "sources": [],
+                "supporting_evidence": [],
+                "contradicting_evidence": [],
+                "conclusions": [],
+                "missing_evidence": ["orchid-specific tracer experiments"],
+                "confidence": 0.0,
+                "artifacts": {},
+            },
+        },
+    )
+
+    assert "Scientific conclusion: no evidence-grounded conclusion could be justified" in reply.text
+    assert "Evidence summary: the mission did not surface any supporting evidence records" in reply.text
+    assert "Limitations and uncertainty: missing or incomplete evidence for orchid-specific tracer experiments." in reply.text
