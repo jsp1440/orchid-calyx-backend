@@ -11,7 +11,6 @@ from app.security import verify_owner_or_api_key
 from .provider import DeterministicGovernedReplyProvider, configured_reply_provider
 from .routes import STORE, _retrieval
 
-
 AuthDependency = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
 router = APIRouter(prefix="/calyx/speak", tags=["calyx-speak"])
 
@@ -248,7 +247,7 @@ def append_turn(
             messages=messages,
             governed_context=governed_context,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         provider_error = str(exc)
         fallback = DeterministicGovernedReplyProvider()
         reply = fallback.generate(
