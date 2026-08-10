@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from app.concepts.dependencies import get_concept_service
 from app.literature_extraction.models import GlossaryTerm, Provenance
 from app.literature_extraction.routes import get_literature_repository
 from app.main import app
+from app.scientific_synthesis import language_routes
 from app.scientific_synthesis.language import BotanicalLanguageService
 
 
@@ -63,15 +63,23 @@ def test_botanical_latin_background_distinguishes_name_from_identification():
     assert "gender" in principles
 
 
-def test_paper_language_endpoint_connects_extracted_glossary_to_concept_registry(monkeypatch):
+def test_paper_language_endpoint_connects_extracted_glossary_to_concept_registry(
+    monkeypatch,
+):
     monkeypatch.setenv("CALYX_API_KEY", "test-key")
+    monkeypatch.setattr(
+        language_routes,
+        "get_concept_service",
+        lambda: FakeConceptService(),
+    )
     paper = SimpleNamespace(
         paper_id="paper-1",
         source=SimpleNamespace(content_hash="source-hash-1234567890"),
         glossary_terms=[_term("labellum"), _term("pseudobulb")],
     )
-    app.dependency_overrides[get_literature_repository] = lambda: FakeLiteratureRepository(paper)
-    app.dependency_overrides[get_concept_service] = lambda: FakeConceptService()
+    app.dependency_overrides[get_literature_repository] = lambda: FakeLiteratureRepository(
+        paper
+    )
 
     try:
         with TestClient(app) as client:
@@ -80,7 +88,6 @@ def test_paper_language_endpoint_connects_extracted_glossary_to_concept_registry
             response = client.get(path, headers={"X-API-Key": "test-key"})
     finally:
         app.dependency_overrides.pop(get_literature_repository, None)
-        app.dependency_overrides.pop(get_concept_service, None)
 
     assert response.status_code == 200
     payload = response.json()
@@ -92,21 +99,37 @@ def test_paper_language_endpoint_connects_extracted_glossary_to_concept_registry
     assert payload["canonical_concept_promotion"] is False
 
 
+def test_analysis_without_concepts_never_initializes_concept_repository(monkeypatch):
+    monkeypatch.setenv("CALYX_API_KEY", "test-key")
+
+    def fail_if_called():
+        raise AssertionError("concept registry should not be initialized")
+
+    monkeypatch.setattr(language_routes, "get_concept_service", fail_if_called)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/scientific-interpretation/language/analyze",
+            json={"term": "pseudobulb", "include_concepts": False},
+            headers={"X-API-Key": "test-key"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["concept_registry"] is None
+    assert payload["word_elements"]
+
+
 def test_word_element_dictionary_and_background_apis_are_authenticated(monkeypatch):
     monkeypatch.setenv("CALYX_API_KEY", "test-key")
-    app.dependency_overrides[get_concept_service] = lambda: FakeConceptService()
-    try:
-        with TestClient(app) as client:
-            root = "/api/scientific-interpretation/language"
-            assert client.get(f"{root}/word-elements").status_code == 401
-            words = client.get(
-                f"{root}/word-elements?q=leaf", headers={"X-API-Key": "test-key"}
-            )
-            latin = client.get(
-                f"{root}/botanical-latin", headers={"X-API-Key": "test-key"}
-            )
-    finally:
-        app.dependency_overrides.pop(get_concept_service, None)
+    with TestClient(app) as client:
+        root = "/api/scientific-interpretation/language"
+        assert client.get(f"{root}/word-elements").status_code == 401
+        words = client.get(
+            f"{root}/word-elements?q=leaf", headers={"X-API-Key": "test-key"}
+        )
+        latin = client.get(
+            f"{root}/botanical-latin", headers={"X-API-Key": "test-key"}
+        )
 
     assert words.status_code == 200
     assert words.json()["count"] >= 1
