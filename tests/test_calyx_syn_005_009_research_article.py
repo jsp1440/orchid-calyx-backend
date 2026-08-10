@@ -30,7 +30,14 @@ def _source(source_id: str, doi: str):
     )
 
 
-def _row(evidence_id: str, source_id: str, *, outcome: str, result: str):
+def _row(
+    evidence_id: str,
+    source_id: str,
+    *,
+    outcome: str,
+    result: str,
+    polarity: str | None = "positive",
+):
     return EvidenceMatrixRow(
         evidence_id=evidence_id,
         source_id=source_id,
@@ -49,7 +56,7 @@ def _row(evidence_id: str, source_id: str, *, outcome: str, result: str):
         outcome=outcome,
         method="source-bound extracted result",
         result=result,
-        metadata={"polarity": "positive"},
+        metadata={"polarity": polarity} if polarity is not None else {},
     )
 
 
@@ -113,6 +120,70 @@ def test_foliar_feeding_benchmark_runs_to_grounded_article():
     assert all(value["claim_ids"] for value in scientific_sentences)
     assert {value["kind"].value for value in result["claims"]} == {"DIRECT"}
     assert len(result["figure_briefs"]) == len(result["claims"])
+
+
+def test_structural_record_count_is_grounded_by_claim_support_set():
+    bibliography, _, _ = _benchmark()
+    rows = (
+        _row(
+            "ev-a",
+            bibliography[0].source_id,
+            outcome="foliar uptake",
+            result="Leaf-applied nitrogen was detected.",
+        ),
+        _row(
+            "ev-b",
+            bibliography[1].source_id,
+            outcome="foliar uptake",
+            result="Leaf uptake was observed under the study conditions.",
+        ),
+    )
+
+    result = ResearchToArticleMissionService().run(
+        question="Can orchids absorb nutrients through leaves?",
+        title="Foliar Uptake",
+        audience="researcher",
+        format="evidence_brief",
+        bibliography=bibliography,
+        evidence_rows=rows,
+    )
+
+    assert "Across 2 source-bound evidence records" in result["claims"][0]["text"]
+    assert result["audit"]["quantitative_errors"] == []
+    assert result["audit"]["publication_ready"] is True
+
+
+def test_missing_polarity_never_becomes_directional_consistency():
+    bibliography, _, _ = _benchmark()
+    rows = (
+        _row(
+            "ev-known",
+            bibliography[0].source_id,
+            outcome="foliar uptake",
+            result="Leaf uptake was observed.",
+        ),
+        _row(
+            "ev-unknown",
+            bibliography[1].source_id,
+            outcome="foliar uptake",
+            result="A second study reported a context-dependent response.",
+            polarity=None,
+        ),
+    )
+
+    result = ResearchToArticleMissionService().run(
+        question="Can orchids absorb nutrients through leaves?",
+        title="Foliar Uptake",
+        audience="researcher",
+        format="evidence_brief",
+        bibliography=bibliography,
+        evidence_rows=rows,
+    )
+
+    claim = result["claims"][0]
+    assert "mixed or uncertain" in claim["text"]
+    assert "directionally consistent" not in claim["text"]
+    assert "ev-unknown" in claim["conflicting_evidence_ids"]
 
 
 def test_evidence_class_upgrade_requires_review_provenance():
