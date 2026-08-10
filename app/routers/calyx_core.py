@@ -22,6 +22,7 @@ from app.university.routes import router as university_router
 from app.calyx_conversation.routes import router as calyx_conversation_router
 from app.calyx_conversation.file_routes import router as calyx_file_analysis_router
 from app.calyx_conversation.reasoning_routes import router as calyx_reasoning_router
+from app.calyx_conversation.speak_routes import router as calyx_speak_router
 from runtime.calyx_core_certification import create_certification_router
 
 router = APIRouter(prefix="/api", tags=["calyx-core"])
@@ -211,3 +212,4 @@ router.include_router(calyx_operator_router)
 router.include_router(calyx_conversation_router)
 router.include_router(calyx_file_analysis_router)
 router.include_router(calyx_reasoning_router)
+router.include_router(calyx_speak_router)
