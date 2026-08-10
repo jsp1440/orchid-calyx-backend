@@ -40,7 +40,7 @@ jobs:
             tests/test_calyx_syn_004_evidence_matrix.py \
             tests/test_calyx_syn_001_scientific_synthesis.py \
             tests/test_calyx_syn_001_routes.py \
-            tests/test_calyx_glossary_001.py \
+            tests/test_calyx_glossary_001_vocabulary_intake.py \
             tests/test_build_sem_002b_lexical_services.py
       - name: Import application
         run: python -c "import app.main"
