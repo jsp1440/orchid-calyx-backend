@@ -49,20 +49,21 @@ class RetrievalEngine:
  def _temporal(self,m): return .05 if m.get("temporal_status")=="TIME_SENSITIVE" and m.get("current",False) else 0
  def _assemble(self,q,d,l,matches,scores,fused,rank):
   meta=d.get("metadata",{}); policy=meta.get("display_policy","UNKNOWN_REQUIRES_REVIEW"); text=l.get("verbatim_text"); excerpt=None
-  if not isinstance(text,str): raise TypeError("VERBATIM_SOURCE_TEXT_REQUIRED")
-  if policy=="FULL_TEXT_ALLOWED" or (policy=="INTERNAL_RESEARCH_ONLY" and q.internal_access and meta.get("internal_access_allowed",False)): excerpt=text
-  elif policy=="LIMITED_PREVIEW_ONLY": excerpt=text[:int(meta.get("excerpt_limit",160))]
+  if isinstance(text,str):
+   if policy=="FULL_TEXT_ALLOWED" or (policy=="INTERNAL_RESEARCH_ONLY" and q.internal_access and meta.get("internal_access_allowed",False)): excerpt=text
+   elif policy=="LIMITED_PREVIEW_ONLY": excerpt=text[:int(meta.get("excerpt_limit",160))]
   parent=self.parents.get((d.get("parent_type"),d.get("parent_id"))) or self.parents.get((d["source_object_type"],d.get("parent_id")))
   expansion=self._expand(q,policy,parent,d)
   locator=meta.get("locator")
   configured=meta.get("anchor_locators") or {}
   source_anchors=[]
-  for index,anchor_id in enumerate(d.get("anchors",())):
-   anchor_locator=(configured.get(anchor_id) or configured.get(str(anchor_id))) if isinstance(configured,dict) else (configured[index] if isinstance(configured,list) and index<len(configured) else None)
-   source_anchors.append({"anchor_id":anchor_id,"locator":anchor_locator or locator or "EXACT_LOCATOR_UNAVAILABLE"})
+  if isinstance(text,str):
+   for index,anchor_id in enumerate(d.get("anchors",())):
+    anchor_locator=(configured.get(anchor_id) or configured.get(str(anchor_id))) if isinstance(configured,dict) else (configured[index] if isinstance(configured,list) and index<len(configured) else None)
+    source_anchors.append({"anchor_id":anchor_id,"locator":anchor_locator or locator or "EXACT_LOCATOR_UNAVAILABLE"})
   excerpt_hash=sha256(excerpt.encode()).hexdigest() if excerpt is not None else None
-  source_hash=sha256(text.encode()).hexdigest()
-  if source_hash!=d.get("content_hash"): raise ValueError("SOURCE_CONTENT_HASH_MISMATCH")
+  source_hash=sha256(text.encode()).hexdigest() if isinstance(text,str) else None
+  if source_hash is not None and source_hash!=d.get("content_hash"): raise ValueError("SOURCE_CONTENT_HASH_MISMATCH")
   return {"result_id":str(uuid.uuid5(uuid.NAMESPACE_URL,f"{d['index_document_id']}:{self.ranking_version}")),"rank":rank,"fused_score":round(fused,6),"score_breakdown":scores,"ranking_explanation":[f"lexical={scores['lexical']:.4f}",f"semantic={scores['semantic']:.4f}",f"reliability_adjustment={scores['reliability']:.4f}",f"temporal_adjustment={scores['temporal']:.4f}"],"object_type":d["source_object_type"],"title":l.get("title") or meta.get("title"),"authorized_excerpt":excerpt,"source_content_hash":source_hash,"excerpt_content_hash":excerpt_hash,"matched_terms":matches if excerpt is not None else [],"canonical_parent":{"type":d.get("parent_type") or d["source_object_type"],"id":d.get("parent_id"),"available":parent is not None},"parent_expansion":expansion,"complete_object":bool(expansion and expansion.get("complete_object")),"citation":{"document_id":meta.get("source_document_id") or meta.get("document_id"),"document_title":meta.get("document_title"),"authors":meta.get("authors",[]),"publication_date":meta.get("publication_date"),"source_type":meta.get("source_type"),"document_class":meta.get("document_class"),"revision_id":d["revision_id"],"canonical_object_type":d.get("parent_type") or d["source_object_type"],"canonical_object_id":d.get("parent_id"),"source_anchor_ids":list(d.get("anchors",())),"source_anchors":source_anchors,"locator":locator if locator is not None else "EXACT_LOCATOR_UNAVAILABLE","identifier":meta.get("identifier"),"model_id":d.get("model_id"),"ranking_version":self.ranking_version},"reliability_signals":{k:meta.get(k) for k in ("peer_reviewed","ai_generated","citations_verified","evidence_type")},"review_state":meta.get("review_state"),"verification_state":meta.get("verification_state"),"temporal_status":meta.get("temporal_status"),"display_policy":policy,"collections":meta.get("collections",[]),"active":d.get("active",False),"index_version":d.get("version")}
  def _expand(self,q,policy,parent,d):
   if q.parent_expansion=="NONE" or not parent: return None

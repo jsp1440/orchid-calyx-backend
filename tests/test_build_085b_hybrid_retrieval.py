@@ -48,6 +48,15 @@ def test_exact_verbatim_excerpt_hashes_anchor_locator_and_document_scope():
  preview=RetrievalEngine(r,p,parents).search(RetrievalQuery("teaching",mode="LEXICAL"))["results"][0]
  assert preview["authorized_excerpt"]=="educational "
  assert preview["excerpt_content_hash"]==sha256(b"educational ").hexdigest()
+def test_legacy_lexical_row_remains_metadata_retrievable_but_evidence_fails_closed():
+ r,p,parents=corpus(); r.lexical[0].pop("verbatim_text")
+ result=RetrievalEngine(r,p,parents).search(RetrievalQuery("asymbiotic",mode="LEXICAL",filters={"document_id":"document-1"}))["results"][0]
+ assert result["citation"]["document_id"]=="document-1"
+ assert result["citation"]["source_anchor_ids"]==[10]
+ assert result["authorized_excerpt"] is None
+ assert result["source_content_hash"] is None
+ assert result["excerpt_content_hash"] is None
+ assert result["citation"]["source_anchors"]==[]
 def test_evaluation_metrics_and_required_behavior_cases():
  r,p,parents=corpus(); e=RetrievalEngine(r,p,parents); cases=[{"name":"protocol","query":RetrievalQuery("asymbiotic germination",object_types=("PROTOCOL",)),"expected_ids":[1]},{"name":"key","query":RetrievalQuery("identification keys Phragmipedium"),"expected_ids":[3]},{"name":"education","query":RetrievalQuery("teaching modalities"),"expected_ids":[4]},{"name":"build","query":RetrievalQuery("BUILD decisions semantic indexing",internal_access=True),"expected_ids":[7]}]; report=evaluate(cases,e.search); assert report["mean_mrr"]>.5 and all(x["citation_completeness"]>0 for x in report["cases"])
 def test_api_is_read_only_and_safety_contract():

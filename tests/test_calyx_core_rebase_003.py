@@ -75,8 +75,8 @@ def test_canonical_source_reconstruction_requires_exact_active_index_identity():
     original_documents = deepcopy(ENGINE.repo.documents)
     original_lexical = deepcopy(ENGINE.repo.lexical)
     try:
-        text = "Laelia anceps is pollinated by Bombus sp."
-        content_hash = sha256(text.encode()).hexdigest()
+        exact_text = "Laelia anceps is pollinated by Bombus sp."
+        exact_hash = sha256(exact_text.encode()).hexdigest()
         ENGINE.repo.documents[:] = [
             {
                 "index_document_id": 11,
@@ -85,7 +85,7 @@ def test_canonical_source_reconstruction_requires_exact_active_index_identity():
                 "revision_id": 202,
                 "extraction_run_id": 303,
                 "anchors": (404,),
-                "content_hash": content_hash,
+                "content_hash": exact_hash,
                 "active": True,
                 "metadata": {
                     "candidate_facts": [
@@ -105,18 +105,18 @@ def test_canonical_source_reconstruction_requires_exact_active_index_identity():
         ENGINE.repo.lexical[:] = [
             {
                 "index_document_id": 11,
-                "normalized_text": text.casefold(),
-                "verbatim_text": text,
+                "normalized_text": exact_text.casefold(),
+                "verbatim_text": exact_text,
                 "language": "en",
-                "title": "Laelia anceps pollination",
+                "title": "Laelia pollination claim",
             }
         ]
         result = {
             "result_id": "result-1",
             "object_type": "CLAIM",
-            "authorized_excerpt": text,
-            "source_content_hash": content_hash,
-            "excerpt_content_hash": content_hash,
+            "authorized_excerpt": exact_text,
+            "source_content_hash": exact_hash,
+            "excerpt_content_hash": exact_hash,
             "fused_score": 0.82,
             "display_policy": "FULL_TEXT_ALLOWED",
             "citation": {
@@ -125,7 +125,11 @@ def test_canonical_source_reconstruction_requires_exact_active_index_identity():
                 "source_anchors": [
                     {
                         "anchor_id": 404,
-                        "locator": {"page": 7, "char_start": 12, "char_end": 54},
+                        "locator": {
+                            "page": 7,
+                            "char_start": 12,
+                            "char_end": 54,
+                        },
                     }
                 ],
                 "locator": {"page": 7, "char_start": 12, "char_end": 54},
@@ -137,8 +141,13 @@ def test_canonical_source_reconstruction_requires_exact_active_index_identity():
         assert evidence.revision_id == 202
         assert evidence.extraction_run_id == 303
         assert evidence.source_anchors[0].anchor_id == 404
-        assert evidence.metadata["source_content_hash"] == content_hash
-        assert evidence.metadata["excerpt_content_hash"] == content_hash
+        assert evidence.metadata["source_content_hash"] == exact_hash
+        assert evidence.metadata["excerpt_content_hash"] == exact_hash
+        assert evidence.source_anchors[0].locator == {
+            "page": 7,
+            "char_start": 12,
+            "char_end": 54,
+        }
 
         ENGINE.repo.documents.append({**ENGINE.repo.documents[0], "index_document_id": 12})
         with pytest.raises(ValueError, match="AMBIGUOUS_CANONICAL_SOURCE_IDENTITY"):
