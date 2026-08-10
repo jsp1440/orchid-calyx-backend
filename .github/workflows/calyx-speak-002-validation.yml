@@ -32,4 +32,5 @@ jobs:
       - name: Lint Speak layer
         run: ruff check app/calyx_conversation/store.py app/calyx_conversation/provider.py app/calyx_conversation/speak_routes.py tests/test_calyx_speak_002.py
       - name: Verify mounted routes
-        run: python -c "from app.routers.calyx_core import router; paths={getattr(r,'path','') for r in router.routes}; required={'/api/calyx/speak/conversations','/api/calyx/speak/conversations/{conversation_id}','/api/calyx/speak/conversations/{conversation_id}/turns'}; missing=required-paths; assert not missing, f'missing routes: {sorted(missing)}'"
+        run: >-
+          python -c "from app.routers.calyx_core import router; paths={getattr(r,'path','') for r in router.routes}; required={'/api/calyx/speak/conversations','/api/calyx/speak/conversations/{conversation_id}','/api/calyx/speak/conversations/{conversation_id}/turns'}; missing=required-paths; assert not missing, 'missing routes: ' + repr(sorted(missing))"
