@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "runtime/graph_pipeline_readiness.py"
+      - "runtime/knowledge_graph/**"
+      - "runtime/world_plants_*.py"
+      - "runtime/taxonomy_image_population.py"
       - "app/routers/graph_pipeline_readiness.py"
       - "app/routers/health.py"
       - "scripts/report_graph_pipeline_readiness.py"
@@ -21,6 +24,8 @@ jobs:
       PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -36,4 +41,4 @@ jobs:
           app/routers/graph_pipeline_readiness.py
           scripts/report_graph_pipeline_readiness.py
       - name: Check repository whitespace
-        run: git diff --check
+        run: git diff --check "origin/${GITHUB_BASE_REF}...HEAD"
