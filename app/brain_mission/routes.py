@@ -37,6 +37,7 @@ from app.scientific_interpretation.models import (
 )
 from app.scientific_interpretation.repository import MemoryInterpretationRepository
 from app.scientific_interpretation.service import ScientificInterpretationService
+from app.semantic_index import routes as semantic_index_routes
 
 from .dependencies import build_durable_mission_repository
 from .service import BrainMissionService, MemoryMissionRepository, MissionComponents
@@ -56,6 +57,7 @@ def _retrieve(context: dict[str, Any]) -> dict[str, Any]:
     results_by_id: dict[str, dict[str, Any]] = {}
     source_budget = int(context["limits"]["max_sources"])
     per_query = max(1, int(context["plan"]["per_domain_source_budget"]))
+    ENGINE.repo = semantic_index_routes.get_repository_for_read()
     for query in context["plan"]["retrieval_queries"]:
         if len(results_by_id) >= source_budget:
             break
@@ -92,13 +94,16 @@ class ExistingBrainMissionAdapter:
 
     @staticmethod
     def _canonical_document(result: dict[str, Any]) -> dict[str, Any]:
+        ENGINE.repo = semantic_index_routes.get_repository_for_read()
         citation = result.get("citation") or {}
         revision_id = citation.get("revision_id")
         anchor_ids = tuple(citation.get("source_anchor_ids") or ())
         locator = citation.get("locator")
         if not isinstance(revision_id, int) or revision_id <= 0:
             raise ValueError("CANONICAL_REVISION_ID_REQUIRED")
-        if not anchor_ids or any(not isinstance(value, int) or value <= 0 for value in anchor_ids):
+        if not anchor_ids or any(
+            not isinstance(value, int) or value <= 0 for value in anchor_ids
+        ):
             raise ValueError("EXACT_SOURCE_ANCHORS_REQUIRED")
         if not isinstance(locator, dict) or not locator:
             raise ValueError("EXACT_SOURCE_LOCATOR_REQUIRED")
@@ -162,9 +167,7 @@ class ExistingBrainMissionAdapter:
             try:
                 translated.append(self._canonical_source(result))
             except ValueError as exc:
-                gaps.append(
-                    {"source_id": result.get("result_id"), "reason": str(exc)}
-                )
+                gaps.append({"source_id": result.get("result_id"), "reason": str(exc)})
         if not translated:
             raise ValueError("NO_CANONICAL_RETRIEVAL_EVIDENCE")
 
@@ -230,15 +233,11 @@ class ExistingBrainMissionAdapter:
                     source_anchor_ids=tuple(
                         item["anchor"]["anchor_id"] for item in links
                     ),
-                    evidence_type=str(
-                        evidence.metadata.get("claim_role") or "CLAIM"
-                    ),
+                    evidence_type=str(evidence.metadata.get("claim_role") or "CLAIM"),
                     source_class=str(
                         evidence.metadata.get("source_class") or "UNKNOWN"
                     ),
-                    directness=str(
-                        evidence.metadata.get("directness") or "INDIRECT"
-                    ),
+                    directness=str(evidence.metadata.get("directness") or "INDIRECT"),
                     document_hash=evidence.metadata.get("content_hash"),
                     taxon_links=taxon_links,
                     confidence=float(candidate["confidence"]),
@@ -314,17 +313,27 @@ class ExistingBrainMissionAdapter:
     def analyze(context: dict[str, Any]) -> dict[str, Any]:
         records = context["artifacts"].get("aggregate_records", [])
         covered = {
-            "taxonomy"
-            if item["candidate_type"] == "TAXON"
-            else "geographic_distribution"
-            if item["candidate_type"] == "GEOGRAPHIC_OCCURRENCE"
-            else "conservation"
-            if item["candidate_type"] == "CONSERVATION_ASSERTION"
-            else "pollination_biology"
-            if "pollinat" in item["normalized_predicate"]
-            else "mycorrhiza"
-            if "mycorrh" in item["normalized_predicate"]
-            else "other"
+            (
+                "taxonomy"
+                if item["candidate_type"] == "TAXON"
+                else (
+                    "geographic_distribution"
+                    if item["candidate_type"] == "GEOGRAPHIC_OCCURRENCE"
+                    else (
+                        "conservation"
+                        if item["candidate_type"] == "CONSERVATION_ASSERTION"
+                        else (
+                            "pollination_biology"
+                            if "pollinat" in item["normalized_predicate"]
+                            else (
+                                "mycorrhiza"
+                                if "mycorrh" in item["normalized_predicate"]
+                                else "other"
+                            )
+                        )
+                    )
+                )
+            )
             for item in records
         }
         missing = [
@@ -406,9 +415,7 @@ class ExistingBrainMissionAdapter:
         interpreted = self.interpretation.interpret(
             InterpretationRequest(
                 packet_ids=(packet["packet_id"],),
-                interpretation_key=(
-                    f"brain-mission:{context['mission_id']}:synthesis"
-                ),
+                interpretation_key=(f"brain-mission:{context['mission_id']}:synthesis"),
                 statement={
                     "question": context["question"],
                     "conclusion": conclusion,
