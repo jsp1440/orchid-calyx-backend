@@ -14,14 +14,19 @@ H. Empty corpus produces a truthful evidence-status result rather than fabricate
 from __future__ import annotations
 
 from copy import deepcopy
+import importlib
 from pathlib import Path
+import sys
+from types import ModuleType
 
 import pytest
 
+from app.persistence import state_repository
 from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
 from app.semantic_index.memory_repository import MemoryIndexRepository
 from app.semantic_index.models import IndexDocument
+from app.semantic_index.postgres_repository import PostgresIndexRepository
 from app.semantic_index.provider import DeterministicLocalProvider
 from app.semantic_index.service import SemanticIndexService
 
@@ -75,6 +80,84 @@ def _seed(repo: MemoryIndexRepository, provider: DeterministicLocalProvider, doc
     service = SemanticIndexService(repo, provider)
     plan = service.preview(docs)
     service.execute(plan["index_run_id"])
+
+
+class _FakeSnapshotStore:
+    def __init__(self) -> None:
+        self.state: dict | None = None
+        self.revision = 0
+        self.available = True
+
+    def connect(self):
+        if not self.available:
+            raise RuntimeError("DB_UNAVAILABLE")
+        return _FakeConnection(self)
+
+
+class _FakeConnection:
+    def __init__(self, store: _FakeSnapshotStore) -> None:
+        self.store = store
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def cursor(self):
+        return _FakeCursor(self.store)
+
+    def rollback(self):
+        return None
+
+
+class _FakeCursor:
+    def __init__(self, store: _FakeSnapshotStore) -> None:
+        self.store = store
+        self._row = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, query: str, params=None):
+        normalized = " ".join(query.split())
+        if "SELECT pg_advisory_xact_lock" in normalized:
+            self._row = {"acquired": True}
+            return
+        if "SELECT pg_try_advisory_lock" in normalized:
+            self._row = {"acquired": True}
+            return
+        if "SELECT pg_advisory_unlock" in normalized:
+            self._row = {"ok": True}
+            return
+        if normalized.startswith("SELECT revision FROM oc_candidate_knowledge.runtime_repository_snapshots"):
+            self._row = {"revision": self.store.revision} if self.store.revision else None
+            return
+        if normalized.startswith("SELECT state FROM oc_candidate_knowledge.runtime_repository_snapshots"):
+            self._row = {"state": deepcopy(self.store.state)} if self.store.state is not None else None
+            return
+        if normalized.startswith("INSERT INTO oc_candidate_knowledge.runtime_repository_snapshots"):
+            payload = params[1]
+            state_value = getattr(payload, "obj", payload)
+            self.store.state = deepcopy(state_value)
+            self.store.revision = 1 if self.store.revision == 0 else self.store.revision + 1
+            self._row = None
+            return
+        raise AssertionError(f"Unexpected query: {query}")
+
+    def fetchone(self):
+        return deepcopy(self._row)
+
+
+def _durable_seed(repo: PostgresIndexRepository, provider: DeterministicLocalProvider, docs: list[IndexDocument]) -> int:
+    service = SemanticIndexService(repo, provider)
+    preview = repo.atomic(lambda: service.preview(docs))
+    run_id = preview["index_run_id"]
+    repo.atomic(lambda: service.execute(run_id))
+    return run_id
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +231,55 @@ def test_indexed_evidence_survives_repository_reconstruction():
     result = engine_b.search(RetrievalQuery("orchid foliar nutrient uptake leaf"))
     assert result["total_eligible_results"] >= 1
     assert result["results"][0]["citation"]["canonical_object_id"] == 1
+
+
+def test_postgres_mutations_persist_across_reconstruction(monkeypatch):
+    store = _FakeSnapshotStore()
+    monkeypatch.setattr(state_repository.PostgresStateMixin, "_connect", lambda self: store.connect())
+    provider = DeterministicLocalProvider()
+    repo_a = PostgresIndexRepository(database_url="postgres://durable-test")
+    _durable_seed(repo_a, provider, [_canonical_doc(11)])
+
+    repo_b = PostgresIndexRepository(database_url="postgres://durable-test")
+    engine = RetrievalEngine(repo_b, provider)
+    result = engine.search(RetrievalQuery("orchid foliar nutrient uptake leaf"))
+    assert result["total_eligible_results"] >= 1
+    hit = next(item for item in result["results"] if item["citation"]["canonical_object_id"] == 11)
+    assert hit["citation"]["revision_id"] == 11
+    assert hit["citation"]["source_anchor_ids"] == [110]
+    assert hit["citation"]["locator"] == {"page": 11}
+
+
+def test_two_postgres_instances_observe_committed_changes(monkeypatch):
+    store = _FakeSnapshotStore()
+    monkeypatch.setattr(state_repository.PostgresStateMixin, "_connect", lambda self: store.connect())
+    provider = DeterministicLocalProvider()
+    repo_a = PostgresIndexRepository(database_url="postgres://durable-test")
+    repo_b = PostgresIndexRepository(database_url="postgres://durable-test")
+    _durable_seed(repo_a, provider, [_canonical_doc(12)])
+
+    engine_b = RetrievalEngine(repo_b, provider)
+    response = engine_b.search(RetrievalQuery("orchid foliar nutrient uptake"))
+    ids = [row["citation"]["canonical_object_id"] for row in response["results"]]
+    assert 12 in ids
+
+
+def test_cancel_resume_and_reviews_persist_in_snapshot(monkeypatch):
+    store = _FakeSnapshotStore()
+    monkeypatch.setattr(state_repository.PostgresStateMixin, "_connect", lambda self: store.connect())
+    provider = DeterministicLocalProvider()
+    repo = PostgresIndexRepository(database_url="postgres://durable-test")
+    service = SemanticIndexService(repo, provider)
+
+    preview = repo.atomic(lambda: service.preview([_canonical_doc(13), _canonical_doc(14, internal_indexing_permission=False)]))
+    run_id = preview["index_run_id"]
+    repo.atomic(lambda: service.cancel(run_id))
+    repo.atomic(lambda: service.resume(run_id))
+
+    reconstructed = PostgresIndexRepository(database_url="postgres://durable-test")
+    status = reconstructed.status(run_id)
+    assert status["state"] in {"PARTIAL", "COMPLETED"}
+    assert any(review["reason"] == "EXCLUDED_BY_POLICY" for review in reconstructed.reviews)
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +427,76 @@ def test_status_endpoint_source_in_evidence_retrieval_routes():
     assert "/status" in code
     assert "durable" in code
     assert "indexed_document_count" in code
+
+
+def test_durable_startup_failure_recovers_without_memory_fallback(monkeypatch):
+    class RecoveringPostgresRepo:
+        attempts = 0
+
+        def __init__(self, database_url=None):
+            type(self).attempts += 1
+            if type(self).attempts == 1:
+                raise RuntimeError("DB_DOWN")
+            self.models = {}
+            self.runs = {}
+            self.items = {}
+            self.documents = []
+            self.vectors = []
+            self.lexical = []
+            self.tombstones = []
+            self.warnings = []
+            self.reviews = []
+            self.cancelled = set()
+            self._id = 1
+
+        def atomic(self, operation):
+            return operation()
+
+        def refresh_for_read(self):
+            return self
+
+    module_name = "app.semantic_index.postgres_repository"
+    module = ModuleType(module_name)
+    module.PostgresIndexRepository = RecoveringPostgresRepo
+    monkeypatch.setitem(sys.modules, module_name, module)
+    monkeypatch.setenv("DATABASE_URL", "postgres://durable-test")
+    sys.modules.pop("app.semantic_index.routes", None)
+    routes = importlib.import_module("app.semantic_index.routes")
+
+    status_before = routes.retrieval_backend_status()
+    assert status_before["durable"] is False
+    assert status_before["degraded"] is True
+    assert status_before["retrieval_backend"] == "UNAVAILABLE"
+
+    repo, _ = routes._ensure_repository()
+    assert isinstance(repo, RecoveringPostgresRepo)
+    status_after = routes.retrieval_backend_status()
+    assert status_after["durable"] is True
+    assert status_after["degraded"] is False
+    assert status_after["retrieval_backend"] == "RecoveringPostgresRepo"
+
+
+def test_status_reports_unavailable_when_durable_backend_fails(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgres://durable-test")
+
+    class FailingRepository:
+        def __init__(self, database_url=None):
+            raise RuntimeError("DB_DOWN")
+
+    module_name = "app.semantic_index.postgres_repository"
+    module = ModuleType(module_name)
+    module.PostgresIndexRepository = FailingRepository
+    monkeypatch.setitem(sys.modules, module_name, module)
+    sys.modules.pop("app.semantic_index.routes", None)
+    routes = importlib.import_module("app.semantic_index.routes")
+    sys.modules.pop("app.evidence_retrieval.routes", None)
+    retrieval_routes = importlib.import_module("app.evidence_retrieval.routes")
+
+    status = retrieval_routes.status()
+    assert status["durable"] is False
+    assert status["degraded"] is True
+    assert status["retrieval_backend"] == "UNAVAILABLE"
+    assert status["index_error"] == "SEMANTIC_INDEX_DATABASE_UNAVAILABLE"
 
 
 def test_safety_contract_postgres_repository_module():

@@ -19,6 +19,7 @@ from app.evidence_aggregation.repository import MemoryAggregateRepository
 from app.evidence_aggregation.service import EvidenceAggregationService
 from app.evidence_retrieval.models import RetrievalQuery
 from app.evidence_retrieval.routes import ENGINE
+from app.semantic_index import routes as semantic_index_routes
 from app.reasoning_ledger import gate as publication_gate
 from app.reasoning_ledger.models import (
     LedgerEntry,
@@ -56,6 +57,7 @@ def _retrieve(context: dict[str, Any]) -> dict[str, Any]:
     results_by_id: dict[str, dict[str, Any]] = {}
     source_budget = int(context["limits"]["max_sources"])
     per_query = max(1, int(context["plan"]["per_domain_source_budget"]))
+    ENGINE.repo = semantic_index_routes.get_repository_for_read()
     for query in context["plan"]["retrieval_queries"]:
         if len(results_by_id) >= source_budget:
             break
@@ -92,6 +94,7 @@ class ExistingBrainMissionAdapter:
 
     @staticmethod
     def _canonical_document(result: dict[str, Any]) -> dict[str, Any]:
+        ENGINE.repo = semantic_index_routes.get_repository_for_read()
         citation = result.get("citation") or {}
         revision_id = citation.get("revision_id")
         anchor_ids = tuple(citation.get("source_anchor_ids") or ())

@@ -15,6 +15,9 @@ def cosine(a,b):
 class RetrievalEngine:
  def __init__(self,repository,provider,parents=None,ranking_version="085b-rank-1"): self.repo=repository; self.provider=provider; self.parents=parents or {}; self.ranking_version=ranking_version
  def search(self,q:RetrievalQuery):
+  if self.repo is None: raise RuntimeError("SEMANTIC_INDEX_UNAVAILABLE")
+  if hasattr(self.repo,"refresh_for_read"): self.repo.refresh_for_read()
+  elif hasattr(self.repo,"refresh"): self.repo.refresh()
   started=time.perf_counter(); terms=q.text.casefold().split(); query_vector=self.provider.embed_batch([q.text])[0] if q.mode in {"SEMANTIC","HYBRID"} else None; candidates=[]; excluded=defaultdict(int); document_scope=str(q.filters.get("document_id") or "").strip()
   for d in self.repo.documents:
    if q.active_only and not d.get("active",False): continue
