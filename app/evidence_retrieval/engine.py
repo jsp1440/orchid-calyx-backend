@@ -58,9 +58,11 @@ class RetrievalEngine:
   configured=meta.get("anchor_locators") or {}
   source_anchors=[]
   if isinstance(text,str):
-   for index,anchor_id in enumerate(d.get("anchors",())):
+   anchor_ids=tuple(d.get("anchors",()))
+   for index,anchor_id in enumerate(anchor_ids):
     anchor_locator=(configured.get(anchor_id) or configured.get(str(anchor_id))) if isinstance(configured,dict) else (configured[index] if isinstance(configured,list) and index<len(configured) else None)
-    source_anchors.append({"anchor_id":anchor_id,"locator":anchor_locator or locator or "EXACT_LOCATOR_UNAVAILABLE"})
+    if anchor_locator is None and len(anchor_ids)==1: anchor_locator=locator
+    source_anchors.append({"anchor_id":anchor_id,"locator":anchor_locator or "EXACT_LOCATOR_UNAVAILABLE"})
   excerpt_hash=sha256(excerpt.encode()).hexdigest() if excerpt is not None else None
   source_hash=sha256(text.encode()).hexdigest() if isinstance(text,str) else None
   if source_hash is not None and source_hash!=d.get("content_hash"): raise ValueError("SOURCE_CONTENT_HASH_MISMATCH")
