@@ -219,6 +219,7 @@ def test_089b_migration_is_additive_indexed_append_only_and_provenance_preservin
 )
 def test_postgresql_authoritative_units_relationships_and_append_only_guards():
     import psycopg
+
     from app.design_intelligence.postgres_knowledge_repository import (
         PostgresDesignKnowledgeRepository,
     )
