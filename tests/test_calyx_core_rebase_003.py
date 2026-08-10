@@ -15,6 +15,7 @@ from app.brain_mission.service import (
 )
 from app.evidence_retrieval.routes import ENGINE
 from app.security import verify_owner_or_api_key
+from app.semantic_index.memory_repository import MemoryIndexRepository
 
 
 def _complete_components() -> MissionComponents:
@@ -71,9 +72,12 @@ def test_mission_fails_closed_when_adapter_is_unavailable():
 
 
 def test_canonical_source_reconstruction_requires_exact_active_index_identity():
-    original_documents = deepcopy(ENGINE.repo.documents)
+    original_repo = ENGINE.repo
+    test_repo = MemoryIndexRepository()
+    ENGINE.repo = test_repo
+    original_documents = deepcopy(test_repo.documents)
     try:
-        ENGINE.repo.documents[:] = [
+        test_repo.documents[:] = [
             {
                 "index_document_id": 11,
                 "source_object_type": "CLAIM",
@@ -118,11 +122,12 @@ def test_canonical_source_reconstruction_requires_exact_active_index_identity():
         assert evidence.source_anchors[0].anchor_id == 404
         assert evidence.metadata["content_hash"] == "abc123"
 
-        ENGINE.repo.documents.append({**ENGINE.repo.documents[0], "index_document_id": 12})
+        test_repo.documents.append({**test_repo.documents[0], "index_document_id": 12})
         with pytest.raises(ValueError, match="AMBIGUOUS_CANONICAL_SOURCE_IDENTITY"):
             ExistingBrainMissionAdapter._canonical_source(result)
     finally:
-        ENGINE.repo.documents[:] = original_documents
+        test_repo.documents[:] = original_documents
+        ENGINE.repo = original_repo
 
 
 def test_mission_api_derives_tenant_from_auth_and_hides_cross_tenant_status(monkeypatch):
