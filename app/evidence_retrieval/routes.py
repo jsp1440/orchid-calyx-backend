@@ -41,3 +41,7 @@ def one(index_document_id:int): return next((x for x in REPO.documents if x["ind
 def configuration(): return {"ranking_version":ENGINE.ranking_version,"modes":["LEXICAL","SEMANTIC","HYBRID"],"expansions":sorted(__import__('app.evidence_retrieval.models',fromlist=['EXPANSIONS']).EXPANSIONS),"max_query_length":500,"max_results":100}
 @router.get("/health")
 def health(): return {"status":"ok","read_only":True,"active_models":len(REPO.models),"ranking_version":ENGINE.ranking_version}
+@router.get("/status")
+def status():
+ durable=hasattr(REPO,"atomic"); total=len(REPO.documents); authorized=sum(1 for d in REPO.documents if d.get("metadata",{}).get("display_policy") not in (None,"UNKNOWN_REQUIRES_REVIEW") and d.get("active",False))
+ return {"retrieval_backend":"PostgresIndexRepository" if durable else "MemoryIndexRepository","durable":durable,"indexed_document_count":total,"display_authorized_count":authorized,"active_model_count":len(REPO.models),"ranking_version":ENGINE.ranking_version,"index_error":getattr(__import__("app.semantic_index.routes",fromlist=["REPO_ERROR"]),"REPO_ERROR",None)}
