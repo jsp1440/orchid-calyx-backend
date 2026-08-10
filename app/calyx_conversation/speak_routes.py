@@ -89,7 +89,12 @@ def _run_governed_turn(
         research_mode == "auto" and len(message.split()) >= 5
     )
     if should_run_mission:
-        history = STORE.history_text(conversation_id, owner, turns=6, max_chars=1800)
+        history = STORE.history_text(
+            conversation_id,
+            owner=owner,
+            turns=6,
+            max_chars=1800,
+        )
         try:
             mission = BRAIN_MISSION_SERVICE.start(
                 question=_mission_question(history, message),
@@ -106,7 +111,10 @@ def _run_governed_turn(
 
 
 @router.post("/conversations", status_code=201)
-def create_conversation(payload: ConversationCreateRequest, auth: AuthDependency) -> dict[str, Any]:
+def create_conversation(
+    payload: ConversationCreateRequest,
+    auth: AuthDependency,
+) -> dict[str, Any]:
     owner = _subject(auth)
     conversation_id = STORE.create_or_touch(
         None,
@@ -115,7 +123,7 @@ def create_conversation(payload: ConversationCreateRequest, auth: AuthDependency
         title=payload.title,
         context=payload.context,
     )
-    conversation = STORE.get(conversation_id, owner)
+    conversation = STORE.get(conversation_id, owner=owner)
     if conversation is None:
         raise HTTPException(500, detail={"code": "CONVERSATION_CREATE_FAILED"})
     conversation["persistence_mode"] = STORE.persistence_mode
@@ -128,8 +136,9 @@ def list_conversations(
     limit: int = Query(20, ge=1, le=100),
 ) -> dict[str, Any]:
     owner = _subject(auth)
+    resolved_limit = limit if isinstance(limit, int) else 20
     return {
-        "conversations": STORE.recent(owner, limit=limit),
+        "conversations": STORE.recent(owner=owner, limit=resolved_limit),
         "persistence_mode": STORE.persistence_mode,
     }
 
@@ -141,10 +150,18 @@ def get_conversation(
     message_limit: int = Query(100, ge=1, le=500),
 ) -> dict[str, Any]:
     owner = _subject(auth)
+    resolved_limit = message_limit if isinstance(message_limit, int) else 100
     try:
-        conversation = STORE.get(conversation_id, owner, message_limit=message_limit)
+        conversation = STORE.get(
+            conversation_id,
+            owner=owner,
+            message_limit=resolved_limit,
+        )
     except Exception as exc:
-        raise HTTPException(422, detail={"code": "INVALID_CONVERSATION_IDENTIFIER"}) from exc
+        raise HTTPException(
+            422,
+            detail={"code": "INVALID_CONVERSATION_IDENTIFIER"},
+        ) from exc
     if conversation is None:
         raise HTTPException(404, detail={"code": "CONVERSATION_NOT_FOUND"})
     conversation["persistence_mode"] = STORE.persistence_mode
@@ -158,7 +175,7 @@ def append_turn(
     auth: AuthDependency,
 ) -> dict[str, Any]:
     owner = _subject(auth)
-    existing = STORE.get(conversation_id, owner)
+    existing = STORE.get(conversation_id, owner=owner)
     if existing is None:
         raise HTTPException(404, detail={"code": "CONVERSATION_NOT_FOUND"})
     project_id = (
@@ -175,10 +192,10 @@ def append_turn(
     )
     operator_message = STORE.append(
         conversation_id,
-        owner,
         "operator",
         payload.message,
         {"context": payload.context, "research_mode": payload.research_mode},
+        owner=owner,
     )
 
     try:
@@ -196,7 +213,6 @@ def append_turn(
     if mission is not None:
         STORE.append(
             conversation_id,
-            owner,
             "tool",
             f"Governed Brain mission {mission.get('mission_id', 'unknown')} completed for this turn.",
             {
@@ -206,6 +222,7 @@ def append_turn(
                 "review_status": mission.get("review_status"),
                 "publication_eligibility": mission.get("publication_eligibility"),
             },
+            owner=owner,
         )
 
     governed_context = {
@@ -223,19 +240,24 @@ def append_turn(
             "knowledge_graph_mutation": False,
         },
     }
-    messages = STORE.provider_messages(conversation_id, owner, turns=8)
+    messages = STORE.provider_messages(conversation_id, owner=owner, turns=8)
     provider = configured_reply_provider()
     provider_error: str | None = None
     try:
-        reply = provider.generate(messages=messages, governed_context=governed_context)
+        reply = provider.generate(
+            messages=messages,
+            governed_context=governed_context,
+        )
     except Exception as exc:
         provider_error = str(exc)
         fallback = DeterministicGovernedReplyProvider()
-        reply = fallback.generate(messages=messages, governed_context=governed_context)
+        reply = fallback.generate(
+            messages=messages,
+            governed_context=governed_context,
+        )
 
     calyx_message = STORE.append(
         conversation_id,
-        owner,
         "calyx",
         reply.text,
         {
@@ -249,8 +271,11 @@ def append_turn(
             "review_status": mission.get("review_status") if mission else None,
             "retrieval_eligible_results": retrieval.get("total_eligible_results"),
             "research_mode": payload.research_mode,
-            "publication_boundary": "human-review-governed; no automatic publication or graph mutation",
+            "publication_boundary": (
+                "human-review-governed; no automatic publication or graph mutation"
+            ),
         },
+        owner=owner,
     )
     return {
         "conversation_id": conversation_id,
