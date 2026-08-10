@@ -52,7 +52,12 @@ class DeterministicGovernedReplyProvider:
             "",
         )
         lines: list[str] = []
-        if mission:
+        if governed_context.get("casual"):
+            lines.append(
+                "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. "
+                "I can discuss a question conversationally, retrieve Continuum evidence, run a governed Brain mission when a scientific question needs it, and keep the evidence and publication boundaries visible."
+            )
+        elif mission:
             conclusions = mission.get("conclusions") or []
             if conclusions:
                 lines.extend(str(item.get("text") or "").strip() for item in conclusions if item.get("text"))
@@ -65,6 +70,15 @@ class DeterministicGovernedReplyProvider:
             if confidence is not None:
                 lines.append(f"Backend confidence: {float(confidence):.2f}.")
             lines.append("This answer remains review-bound and is not automatically published knowledge.")
+        elif governed_context.get("mission_error"):
+            lines.append(
+                "I could not complete a governed Brain mission for this turn, so I will not present a scientific conclusion as established."
+            )
+            lines.append("Mission status: " + str(governed_context["mission_error"]))
+            if retrieval.get("results"):
+                lines.append(
+                    f"I did retrieve {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible evidence objects that can be inspected while the mission gap is repaired."
+                )
         elif retrieval.get("results"):
             lines.append(
                 f"I found {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible Orchid Continuum evidence objects relevant to your question."
@@ -78,7 +92,7 @@ class DeterministicGovernedReplyProvider:
             lines.append(
                 "I do not yet have enough governed Orchid Continuum evidence to answer that substantively without guessing."
             )
-        if question:
+        if question and not governed_context.get("casual"):
             lines.append(f"Question retained in this thread: {question}")
         text = "\n\n".join(item for item in lines if item)
         return GeneratedReply(
@@ -112,6 +126,7 @@ class OpenAICompatibleReplyProvider:
             "Use only the supplied conversation and governed context for factual scientific claims. "
             "Explicitly distinguish direct evidence, inference, missing evidence, and proposed design ideas. "
             "Never claim an Orchid Continuum capability is implemented unless the governed context says it is. "
+            "For casual conversation, be natural and concise. For scientific questions, explain what is supported and what remains uncertain. "
             "Do not publish, promote Candidate Knowledge, or mutate the Knowledge Graph."
         )
         context_text = json.dumps(governed_context, sort_keys=True, default=str)
