@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
-from typing import Any, Callable, Iterable
+from typing import Any
 
 from app.literature_extraction.models import GlossaryTerm
 
@@ -105,14 +106,28 @@ class BotanicalLanguageService:
                         break
         seen: set[str] = set()
         result: list[dict[str, Any]] = []
-        for position, element, matched in sorted(matches, key=lambda item: (item[0], -len(item[2]), item[1].element_id)):
+        for position, element, matched in sorted(
+            matches,
+            key=lambda item: (item[0], -len(item[2]), item[1].element_id),
+        ):
             if element.element_id in seen:
                 continue
             seen.add(element.element_id)
-            result.append({**asdict(element), "matched_form": matched, "analysis_state": "MORPHOLOGICAL_HINT"})
+            result.append(
+                {
+                    **asdict(element),
+                    "matched_form": matched,
+                    "analysis_state": "MORPHOLOGICAL_HINT",
+                }
+            )
         return result
 
-    def analyze_term(self, term: str, *, glossary_term: GlossaryTerm | None = None) -> dict[str, Any]:
+    def analyze_term(
+        self,
+        term: str,
+        *,
+        glossary_term: GlossaryTerm | None = None,
+    ) -> dict[str, Any]:
         normalized = _normalize(term)
         concept_matches: dict[str, Any] | None = None
         if self.concept_search is not None:
