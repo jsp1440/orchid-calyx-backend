@@ -6,6 +6,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.scientific_synthesis.language_routes import router as scientific_language_router
+from app.scientific_synthesis.pipeline_routes import router as research_article_router
 from app.scientific_synthesis.routes import router as scientific_synthesis_router
 from app.security import verify_owner_or_api_key
 
@@ -129,7 +131,9 @@ def _domain_error(operation):
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(503, detail={"code": "SCIENTIFIC_INTERPRETATION_UNAVAILABLE"}) from exc
+        raise HTTPException(
+            503, detail={"code": "SCIENTIFIC_INTERPRETATION_UNAVAILABLE"}
+        ) from exc
 
 
 @router.post("/evidence-packets", status_code=201)
@@ -142,21 +146,25 @@ def create_packet(payload: PacketIn):
             publication_metadata=source.publication_metadata,
             copyright_policy=source.copyright_policy,
             provenance=source.provenance,
-            anchors=tuple(SourceAnchorReference(**anchor.model_dump()) for anchor in source.anchors),
+            anchors=tuple(
+                SourceAnchorReference(**anchor.model_dump()) for anchor in source.anchors
+            ),
         )
         for source in payload.sources
     )
-    return _domain_error(lambda: SERVICE.construct_packet(
-        packet_key=payload.packet_key,
-        context_form=payload.context_form,
-        sources=sources,
-        context_dimensions=payload.context_dimensions,
-        material_dimensions=tuple(payload.material_dimensions),
-        structural_relationships=tuple(payload.structural_relationships),
-        construction_policy_version=payload.construction_policy_version,
-        boundary_analyzer_version=payload.boundary_analyzer_version,
-        construction_rationale=payload.construction_rationale,
-    ))
+    return _domain_error(
+        lambda: SERVICE.construct_packet(
+            packet_key=payload.packet_key,
+            context_form=payload.context_form,
+            sources=sources,
+            context_dimensions=payload.context_dimensions,
+            material_dimensions=tuple(payload.material_dimensions),
+            structural_relationships=tuple(payload.structural_relationships),
+            construction_policy_version=payload.construction_policy_version,
+            boundary_analyzer_version=payload.boundary_analyzer_version,
+            construction_rationale=payload.construction_rationale,
+        )
+    )
 
 
 @router.post("/interpretations", status_code=201)
@@ -193,7 +201,9 @@ def create_assertion(payload: AssertionIn):
         supporting_interpretation_ids=tuple(payload.supporting_interpretation_ids),
         conflicting_interpretation_ids=tuple(payload.conflicting_interpretation_ids),
     )
-    return _domain_error(lambda: SERVICE.create_assertion(request, payload.routing_decision_id))
+    return _domain_error(
+        lambda: SERVICE.create_assertion(request, payload.routing_decision_id)
+    )
 
 
 @router.post("/corrections", status_code=201)
@@ -208,7 +218,16 @@ def audit_history(artifact_type: str, artifact_id: int):
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "three_layers_separate": True, "publishes_graph": False, "immutable_evidence": True}
+    return {
+        "status": "ok",
+        "three_layers_separate": True,
+        "publishes_graph": False,
+        "immutable_evidence": True,
+        "research_to_article": True,
+        "scientific_language": True,
+    }
 
 
 router.include_router(scientific_synthesis_router)
+router.include_router(research_article_router)
+router.include_router(scientific_language_router)
