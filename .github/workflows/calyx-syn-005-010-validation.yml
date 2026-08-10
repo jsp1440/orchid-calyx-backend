@@ -1,0 +1,46 @@
+name: CALYX-SYN-005-010 Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/scientific_synthesis/**"
+      - "app/scientific_interpretation/routes.py"
+      - "tests/test_calyx_syn_005_009_research_article.py"
+      - "tests/test_calyx_syn_010_scientific_language.py"
+      - "docs/CALYX-SYN-010-scientific-language-integration.md"
+      - ".github/workflows/calyx-syn-005-010-validation.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+      - name: Lint integrated scientific synthesis and language files
+        run: |
+          ruff check \
+            app/scientific_synthesis/pipeline.py \
+            app/scientific_synthesis/pipeline_routes.py \
+            app/scientific_synthesis/language.py \
+            app/scientific_synthesis/language_routes.py \
+            app/scientific_interpretation/routes.py \
+            tests/test_calyx_syn_005_009_research_article.py \
+            tests/test_calyx_syn_010_scientific_language.py
+      - name: Run research, provenance, glossary, concept, and language regressions
+        run: |
+          pytest -q \
+            tests/test_calyx_syn_005_009_research_article.py \
+            tests/test_calyx_syn_010_scientific_language.py \
+            tests/test_calyx_syn_004_evidence_matrix.py \
+            tests/test_calyx_syn_001_scientific_synthesis.py \
+            tests/test_calyx_syn_001_routes.py \
+            tests/test_calyx_glossary_001_vocabulary_intake.py \
+            tests/test_build_sem_002b_lexical_services.py
+      - name: Import application
+        run: python -c "import app.main"
