@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from hashlib import sha256
 
 import pytest
 from fastapi import FastAPI
@@ -72,7 +73,10 @@ def test_mission_fails_closed_when_adapter_is_unavailable():
 
 def test_canonical_source_reconstruction_requires_exact_active_index_identity():
     original_documents = deepcopy(ENGINE.repo.documents)
+    original_lexical = deepcopy(ENGINE.repo.lexical)
     try:
+        text = "Laelia anceps is pollinated by Bombus sp."
+        content_hash = sha256(text.encode()).hexdigest()
         ENGINE.repo.documents[:] = [
             {
                 "index_document_id": 11,
@@ -81,7 +85,7 @@ def test_canonical_source_reconstruction_requires_exact_active_index_identity():
                 "revision_id": 202,
                 "extraction_run_id": 303,
                 "anchors": (404,),
-                "content_hash": "abc123",
+                "content_hash": content_hash,
                 "active": True,
                 "metadata": {
                     "candidate_facts": [
@@ -98,15 +102,32 @@ def test_canonical_source_reconstruction_requires_exact_active_index_identity():
                 },
             }
         ]
+        ENGINE.repo.lexical[:] = [
+            {
+                "index_document_id": 11,
+                "normalized_text": text.casefold(),
+                "verbatim_text": text,
+                "language": "en",
+                "title": "Laelia anceps pollination",
+            }
+        ]
         result = {
             "result_id": "result-1",
             "object_type": "CLAIM",
-            "authorized_excerpt": "Laelia anceps is pollinated by Bombus sp.",
+            "authorized_excerpt": text,
+            "source_content_hash": content_hash,
+            "excerpt_content_hash": content_hash,
             "fused_score": 0.82,
             "display_policy": "FULL_TEXT_ALLOWED",
             "citation": {
                 "revision_id": 202,
                 "source_anchor_ids": [404],
+                "source_anchors": [
+                    {
+                        "anchor_id": 404,
+                        "locator": {"page": 7, "char_start": 12, "char_end": 54},
+                    }
+                ],
                 "locator": {"page": 7, "char_start": 12, "char_end": 54},
             },
         }
@@ -123,6 +144,7 @@ def test_canonical_source_reconstruction_requires_exact_active_index_identity():
             ExistingBrainMissionAdapter._canonical_source(result)
     finally:
         ENGINE.repo.documents[:] = original_documents
+        ENGINE.repo.lexical[:] = original_lexical
 
 
 def test_mission_api_derives_tenant_from_auth_and_hides_cross_tenant_status(monkeypatch):
