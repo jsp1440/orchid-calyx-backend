@@ -72,7 +72,7 @@ class ReviewedEvidenceClassificationService:
 
 
 class CrossStudySynthesisService:
-    _recognized_polarities = {"positive", "negative", "mixed", "uncertain"}
+    _recognized_polarities = frozenset({"positive", "negative", "mixed", "uncertain"})
 
     def synthesize(self, rows: tuple[EvidenceMatrixRow, ...]) -> tuple[SynthesisClaim, ...]:
         if not rows:
