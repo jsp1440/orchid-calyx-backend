@@ -72,6 +72,8 @@ class ReviewedEvidenceClassificationService:
 
 
 class CrossStudySynthesisService:
+    _recognized_polarities = {"positive", "negative", "mixed", "uncertain"}
+
     def synthesize(self, rows: tuple[EvidenceMatrixRow, ...]) -> tuple[SynthesisClaim, ...]:
         if not rows:
             raise ValueError("EVIDENCE_ROWS_REQUIRED")
@@ -82,11 +84,6 @@ class CrossStudySynthesisService:
 
         claims: list[SynthesisClaim] = []
         for (taxon, outcome), members in sorted(groups.items()):
-            positives = [row for row in members if row.metadata.get("polarity") == "positive"]
-            negatives = [row for row in members if row.metadata.get("polarity") == "negative"]
-            mixed = bool(positives and negatives) or any(
-                row.metadata.get("polarity") in {"mixed", "uncertain"} for row in members
-            )
             if len(members) == 1:
                 row = members[0]
                 kind = (
@@ -105,25 +102,39 @@ class CrossStudySynthesisService:
                 continue
 
             support_ids = tuple(sorted(row.evidence_id for row in members))
-            if mixed:
+            polarities = {
+                row.evidence_id: str(row.metadata.get("polarity") or "").casefold()
+                for row in members
+            }
+            recognized = set(polarities.values()) <= self._recognized_polarities
+            all_positive = recognized and set(polarities.values()) == {"positive"}
+            all_negative = recognized and set(polarities.values()) == {"negative"}
+            directionally_consistent = all_positive or all_negative
+
+            if directionally_consistent:
+                text = (
+                    f"Across {len(members)} source-bound evidence records concerning "
+                    f"{outcome} in {taxon}, the extracted results are directionally consistent."
+                )
+                conflicting_ids: tuple[str, ...] = ()
+            else:
                 text = (
                     f"Across {len(members)} source-bound evidence records concerning "
                     f"{outcome} in {taxon}, the reported results are mixed or uncertain."
                 )
                 conflicting_ids = tuple(
                     sorted(
-                        row.evidence_id
-                        for row in members
-                        if row.metadata.get("polarity") in {"negative", "mixed", "uncertain"}
+                        evidence_id
+                        for evidence_id, polarity in polarities.items()
+                        if polarity != "positive" or not recognized
                     )
                 )
-            else:
-                text = (
-                    f"Across {len(members)} source-bound evidence records concerning "
-                    f"{outcome} in {taxon}, the extracted results are directionally consistent."
-                )
-                conflicting_ids = ()
-            digest = hashlib.sha256(repr((taxon, outcome, support_ids)).encode()).hexdigest()[:20]
+                if not conflicting_ids:
+                    conflicting_ids = support_ids
+
+            digest = hashlib.sha256(
+                repr((taxon, outcome, support_ids)).encode()
+            ).hexdigest()[:20]
             claims.append(
                 SynthesisClaim(
                     claim_id=f"synthesis:{digest}",
@@ -237,32 +248,52 @@ class ScientificArticleAuditService:
         for sentence in article.sentences:
             if not sentence.scientific:
                 continue
-            numbers = {match.group(0).rstrip("%") for match in self._number.finditer(sentence.text)}
+            numbers = {
+                match.group(0).rstrip("%")
+                for match in self._number.finditer(sentence.text)
+            }
             if not numbers:
                 continue
             support_text: list[str] = []
+            structurally_grounded: set[str] = set()
             for claim_id in sentence.claim_ids:
                 claim = claim_index.get(claim_id)
                 if claim is None:
                     continue
+                structurally_grounded.add(str(len(claim.supporting_evidence_ids)))
                 for evidence_id in claim.supporting_evidence_ids:
                     row = evidence.get(evidence_id)
                     if row is not None:
                         support_text.extend(
-                            value for value in (row.result, row.sample_size, row.uncertainty) if value
+                            value
+                            for value in (row.result, row.sample_size, row.uncertainty)
+                            if value
                         )
             corpus = " ".join(support_text)
-            unsupported = sorted(number for number in numbers if number not in corpus)
+            unsupported = sorted(
+                number
+                for number in numbers
+                if number not in corpus and number not in structurally_grounded
+            )
             if unsupported:
                 quantitative_errors.append(
                     {
                         "code": "QUANTITATIVE_SENTENCE_VALUE_UNSUPPORTED",
-                        "context": {"sentence_id": sentence.sentence_id, "values": unsupported},
+                        "context": {
+                            "sentence_id": sentence.sentence_id,
+                            "values": unsupported,
+                        },
                     }
                 )
         manifest["quantitative_errors"] = quantitative_errors
-        manifest["publication_ready"] = bool(manifest["publication_ready"]) and not quantitative_errors
-        manifest["state"] = "ARTICLE_AUDIT_PASSED" if manifest["publication_ready"] else "ARTICLE_AUDIT_BLOCKED"
+        manifest["publication_ready"] = bool(manifest["publication_ready"]) and not (
+            quantitative_errors
+        )
+        manifest["state"] = (
+            "ARTICLE_AUDIT_PASSED"
+            if manifest["publication_ready"]
+            else "ARTICLE_AUDIT_BLOCKED"
+        )
         return manifest
 
 
@@ -276,18 +307,27 @@ class FigureEvidenceBriefService:
         evidence = {row.evidence_id: row for row in evidence_rows}
         briefs: list[FigureBrief] = []
         for index, claim in enumerate(claims, start=1):
-            rows = [evidence[value] for value in claim.supporting_evidence_ids if value in evidence]
+            rows = [
+                evidence[value]
+                for value in claim.supporting_evidence_ids
+                if value in evidence
+            ]
             if len(rows) != len(claim.supporting_evidence_ids):
                 raise ValueError("FIGURE_CLAIM_EVIDENCE_NOT_FOUND")
             briefs.append(
                 FigureBrief(
                     figure_id=f"figure-{index}",
                     title=f"Evidence view {index}",
-                    purpose="Visualize a source-grounded scientific claim without adding unsupported biology.",
+                    purpose=(
+                        "Visualize a source-grounded scientific claim without adding "
+                        "unsupported biology."
+                    ),
                     visual_claims=(claim.text,),
                     supporting_claim_ids=(claim.claim_id,),
                     source_ids=tuple(sorted({row.source_id for row in rows})),
-                    uncertainty_notes=tuple(sorted({row.uncertainty for row in rows if row.uncertainty})),
+                    uncertainty_notes=tuple(
+                        sorted({row.uncertainty for row in rows if row.uncertainty})
+                    ),
                     generation_instruction=(
                         "Illustrate only the stated visual claim and explicitly supplied evidence. "
                         "Do not invent anatomy, measurements, causal mechanisms, taxa, or effect sizes."
@@ -335,7 +375,11 @@ class ResearchToArticleMissionService:
         )
         figures = self.figure_briefs.build(claims=claims, evidence_rows=classified)
         return {
-            "state": "RESEARCH_TO_ARTICLE_COMPLETE" if audit["publication_ready"] else "RESEARCH_TO_ARTICLE_BLOCKED",
+            "state": (
+                "RESEARCH_TO_ARTICLE_COMPLETE"
+                if audit["publication_ready"]
+                else "RESEARCH_TO_ARTICLE_BLOCKED"
+            ),
             "question": question,
             "classified_evidence_rows": [asdict(row) for row in classified],
             "claims": [asdict(claim) for claim in claims],
