@@ -71,10 +71,14 @@ def test_mission_fails_closed_when_adapter_is_unavailable():
     assert mission["publication_eligibility"]["eligible"] is False
 
 
-def test_canonical_source_reconstruction_requires_exact_active_index_identity():
+def test_canonical_source_reconstruction_requires_exact_active_index_identity(monkeypatch):
     original_repo = ENGINE.repo
     test_repo = MemoryIndexRepository()
     ENGINE.repo = test_repo
+    monkeypatch.setattr(
+        "app.brain_mission.routes.semantic_index_routes.get_repository_for_read",
+        lambda: test_repo,
+    )
     original_documents = deepcopy(test_repo.documents)
     try:
         test_repo.documents[:] = [
