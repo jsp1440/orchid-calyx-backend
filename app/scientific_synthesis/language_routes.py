@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
+import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -27,7 +28,7 @@ class TermAnalysisIn(BaseModel):
 def _concept_search(service: ConceptRegistryService, term: str) -> dict[str, Any]:
     try:
         return service.search_concepts(term, limit=10)
-    except Exception as exc:
+    except (LookupError, RuntimeError, ValueError, psycopg.Error) as exc:
         return {
             "query": term,
             "resolution": "UNAVAILABLE",
