@@ -1,5 +1,4 @@
-from fastapi import Depends, FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends, FastAPI, Response
 from pydantic import BaseModel
 from typing import Optional, Any
 import os
@@ -63,19 +62,24 @@ from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
 app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=sorted(allowed_mission_control_origins()),
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Accept",
-        "Authorization",
-        "Content-Type",
-        "X-API-Key",
-        "X-Orchid-Actor",
-    ],
-)
+
+
+@app.middleware("http")
+async def mission_control_preflight(request, call_next):
+    origin = request.headers.get("origin")
+    requested_method = request.headers.get("access-control-request-method")
+    if request.method == "OPTIONS" and origin and requested_method:
+        if origin.rstrip("/") in allowed_mission_control_origins():
+            response = Response(status_code=200)
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key, X-Orchid-Actor"
+            response.headers["Access-Control-Max-Age"] = "86400"
+            return response
+        return Response(status_code=400, content="Disallowed CORS origin")
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -95,8 +99,8 @@ async def mission_control_cors_on_all_responses(request, call_next):
         else:
             response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "accept, Content-Type, Authorization, X-API-Key, X-Orchid-Actor"
         response.headers["Access-Control-Max-Age"] = "86400"
     return response
 

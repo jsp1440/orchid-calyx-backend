@@ -45,7 +45,10 @@ def test_authorized_origin_preflight_is_cors_enabled(path: str, method: str):
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") == AUTHORIZED_ORIGIN
     assert response.headers.get("access-control-allow-credentials") == "true"
-    allowed_methods = {item.strip() for item in response.headers["access-control-allow-methods"].split(",")}
+    allowed_methods = {
+        item.strip()
+        for item in response.headers["access-control-allow-methods"].split(",")
+    }
     assert method in allowed_methods
     assert "OPTIONS" in allowed_methods
 
@@ -89,7 +92,9 @@ def test_protected_endpoint_stays_protected_after_preflight():
     assert preflight.status_code == 200
     assert preflight.headers.get("access-control-allow-origin") == AUTHORIZED_ORIGIN
 
-    protected = client.get("/brain/orchestrator/status", headers={"Origin": AUTHORIZED_ORIGIN})
+    protected = client.get(
+        "/brain/orchestrator/status", headers={"Origin": AUTHORIZED_ORIGIN}
+    )
     assert protected.status_code == 401
     assert protected.headers.get("access-control-allow-origin") == AUTHORIZED_ORIGIN
     assert protected.headers.get("access-control-allow-credentials") == "true"
