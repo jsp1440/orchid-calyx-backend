@@ -2,12 +2,20 @@ from typing import Annotated,Any
 from fastapi import APIRouter,Depends
 from pydantic import BaseModel,Field
 from app.security import verify_owner_or_api_key
+from app.persistence.state_repository import configured_database_url
 from .memory_repository import MemoryIndexRepository
 from .models import IndexDocument
 from .provider import DeterministicLocalProvider
 from .service import SemanticIndexService
 router=APIRouter(prefix="/api/semantic-index",tags=["semantic-index"],dependencies=[Depends(verify_owner_or_api_key)])
-REPO=MemoryIndexRepository(); SERVICE=SemanticIndexService(REPO,DeterministicLocalProvider())
+def _build_repository():
+ if configured_database_url():
+  from .postgres_repository import PostgresIndexRepository
+  return PostgresIndexRepository()
+ return MemoryIndexRepository()
+try:REPO=_build_repository();REPO_ERROR=None
+except Exception:REPO=MemoryIndexRepository();REPO_ERROR="SEMANTIC_INDEX_DATABASE_UNAVAILABLE"
+SERVICE=SemanticIndexService(REPO,DeterministicLocalProvider())
 class DocumentIn(BaseModel): source_object_type:str; source_object_id:int; revision_id:int; extraction_run_id:int; text:str; parent_type:str|None=None; parent_id:int|None=None; source_anchor_ids:list[int]=[]; internal_indexing_permission:bool=False; display_policy:str="UNKNOWN_REQUIRES_REVIEW"; metadata:dict[str,Any]={}
 class PreviewIn(BaseModel): documents:list[DocumentIn]=Field(min_length=1,max_length=500); configuration:dict[str,Any]={}
 @router.post("/preview",status_code=201)
