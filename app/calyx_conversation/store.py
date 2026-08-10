@@ -12,8 +12,17 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 
+LEGACY_OWNER = "legacy-owner"
+
+
 class ConversationStore:
-    """Owner-scoped Calyx conversation persistence with a deterministic memory fallback."""
+    """Owner-scoped Calyx conversation persistence with a deterministic memory fallback.
+
+    The legacy analysis API predates authenticated per-owner conversation semantics. Its
+    call shape remains supported under ``LEGACY_OWNER`` so this security upgrade does
+    not break existing notebook/dataset workflows. New Speak routes always supply the
+    authenticated owner explicitly.
+    """
 
     def __init__(self, dsn: str | None = None) -> None:
         self.dsn = dsn if dsn is not None else os.getenv("DATABASE_URL")
@@ -71,7 +80,9 @@ class ConversationStore:
                 )
                 cur.execute("ALTER TABLE calyx_conversation_messages ADD COLUMN IF NOT EXISTS content_hash TEXT")
                 cur.execute(
-                    "UPDATE calyx_conversation_messages SET content_hash=encode(digest(content, 'sha256'), 'hex') WHERE content_hash IS NULL"
+                    "UPDATE calyx_conversation_messages "
+                    "SET content_hash='legacy-unhashed:' || message_id::text "
+                    "WHERE content_hash IS NULL"
                 )
                 cur.execute("ALTER TABLE calyx_conversation_messages ALTER COLUMN content_hash SET NOT NULL")
                 cur.execute(
@@ -86,10 +97,10 @@ class ConversationStore:
         self,
         conversation_id: str | None,
         *,
-        owner: str,
-        project_id: str | None,
         title: str | None,
         context: dict[str, Any],
+        owner: str = LEGACY_OWNER,
+        project_id: str | None = None,
     ) -> str:
         owner = owner.strip()
         if not owner:
@@ -148,10 +159,11 @@ class ConversationStore:
     def append(
         self,
         conversation_id: str,
-        owner: str,
         role: str,
         content: str,
         metadata: dict[str, Any] | None = None,
+        *,
+        owner: str = LEGACY_OWNER,
     ) -> dict[str, Any]:
         message_id = str(uuid.uuid4())
         metadata = metadata or {}
@@ -197,7 +209,13 @@ class ConversationStore:
             conversation["updated_at"] = item["created_at"]
         return item
 
-    def get(self, conversation_id: str, owner: str, *, message_limit: int = 100) -> dict[str, Any] | None:
+    def get(
+        self,
+        conversation_id: str,
+        *,
+        message_limit: int = 100,
+        owner: str = LEGACY_OWNER,
+    ) -> dict[str, Any] | None:
         if self.dsn:
             self.ensure_schema()
             with psycopg.connect(self.dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
@@ -227,9 +245,17 @@ class ConversationStore:
             conversation = self._conversations.get(conversation_id)
             if conversation is None or conversation["owner"] != owner:
                 return None
-            return {**conversation, "messages": list(self._messages.get(conversation_id, []))[:message_limit]}
+            return {
+                **conversation,
+                "messages": list(self._messages.get(conversation_id, []))[:message_limit],
+            }
 
-    def recent(self, owner: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    def recent(
+        self,
+        *,
+        limit: int = 20,
+        owner: str = LEGACY_OWNER,
+    ) -> list[dict[str, Any]]:
         if self.dsn:
             self.ensure_schema()
             with psycopg.connect(self.dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
@@ -257,20 +283,49 @@ class ConversationStore:
             rows.sort(key=lambda item: item["updated_at"], reverse=True)
             return rows[:limit]
 
-    def history_text(self, conversation_id: str, owner: str, *, turns: int = 6, max_chars: int = 4000) -> str:
-        conversation = self.get(conversation_id, owner, message_limit=max(2, turns * 2))
+    def history_text(
+        self,
+        conversation_id: str,
+        *,
+        turns: int = 6,
+        max_chars: int = 4000,
+        owner: str = LEGACY_OWNER,
+    ) -> str:
+        conversation = self.get(
+            conversation_id,
+            owner=owner,
+            message_limit=max(2, turns * 2),
+        )
         if not conversation:
             return ""
         messages = conversation.get("messages", [])[-turns * 2 :]
         text = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
         return text[-max_chars:]
 
-    def provider_messages(self, conversation_id: str, owner: str, *, turns: int = 8) -> list[dict[str, str]]:
-        conversation = self.get(conversation_id, owner, message_limit=max(2, turns * 2))
+    def provider_messages(
+        self,
+        conversation_id: str,
+        *,
+        turns: int = 8,
+        owner: str = LEGACY_OWNER,
+    ) -> list[dict[str, str]]:
+        conversation = self.get(
+            conversation_id,
+            owner=owner,
+            message_limit=max(2, turns * 2),
+        )
         if not conversation:
             return []
-        role_map = {"operator": "user", "calyx": "assistant", "system": "system", "tool": "system"}
+        role_map = {
+            "operator": "user",
+            "calyx": "assistant",
+            "system": "system",
+            "tool": "system",
+        }
         return [
-            {"role": role_map.get(str(item.get("role")), "system"), "content": str(item.get("content") or "")}
+            {
+                "role": role_map.get(str(item.get("role")), "system"),
+                "content": str(item.get("content") or ""),
+            }
             for item in conversation.get("messages", [])[-turns * 2 :]
         ]
