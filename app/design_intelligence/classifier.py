@@ -4,7 +4,6 @@ import re
 
 from .models import DesignDomain, DesignKnowledgeType
 
-
 DOMAIN_TERMS: dict[DesignDomain, tuple[str, ...]] = {
     DesignDomain.USER_EXPERIENCE: (
         "user experience",
