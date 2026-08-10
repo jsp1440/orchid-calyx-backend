@@ -33,7 +33,11 @@ def _request_hash(payload: dict[str, Any]) -> str:
 
 
 class DeterministicGovernedReplyProvider:
-    """Safe fallback that never invents facts outside supplied governed context."""
+    """Safe fallback that never invents facts outside supplied governed context.
+
+    This provider also makes server-side conversation usable when no external model
+    provider has been configured, while keeping the limitation explicit in metadata.
+    """
 
     provider_name = "deterministic-governed"
     model_name = "calyx-governed-summary-v1"
