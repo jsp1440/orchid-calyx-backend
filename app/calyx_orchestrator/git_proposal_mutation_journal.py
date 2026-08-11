@@ -241,7 +241,10 @@ class DurableGitProposalMutationJournal:
         prior_count = len(previous.completed_actions)
         if tuple(current.completed_actions[:prior_count]) != previous.completed_actions:
             raise PermissionError("GIT_PROPOSAL_JOURNAL_COMPLETED_ACTIONS_REGRESSED")
-        if tuple(current.operation_evidence[:prior_count]) != previous.operation_evidence:
+        if (
+            tuple(current.operation_evidence[:prior_count])
+            != previous.operation_evidence
+        ):
             raise PermissionError("GIT_PROPOSAL_JOURNAL_EVIDENCE_HISTORY_CHANGED")
         if len(current.completed_actions) < prior_count:
             raise PermissionError("GIT_PROPOSAL_JOURNAL_COMPLETED_ACTIONS_REGRESSED")
