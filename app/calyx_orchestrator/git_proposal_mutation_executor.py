@@ -307,7 +307,9 @@ class GitProposalMutationExecutor:
             plan_actions = tuple(operation.action for operation in plan.operations)
             if receipt.completed_actions != plan_actions:
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_TERMINAL_INCOMPLETE")
-            ends_with_final_action = bool(plan_actions) and plan_actions[-1] == FINAL_ACTION
+            ends_with_final_action = (
+                bool(plan_actions) and plan_actions[-1] == FINAL_ACTION
+            )
             if receipt.status == "completed" and not ends_with_final_action:
                 raise PermissionError("GIT_PROPOSAL_EXECUTOR_TERMINAL_STATUS_MISMATCH")
             if receipt.status == "completed_subset" and ends_with_final_action:
