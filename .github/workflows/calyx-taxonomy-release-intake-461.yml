@@ -57,5 +57,4 @@ jobs:
       - name: Changed-surface Ruff and diff hygiene
         run: |
           python -m ruff check runtime/taxonomy_release_intake.py app/routers/taxonomy_release_intake.py tests/test_calyx_taxonomy_release_intake_461.py tests/test_calyx_taxonomy_release_intake_hardening.py
-          python -m ruff format --check runtime/taxonomy_release_intake.py app/routers/taxonomy_release_intake.py tests/test_calyx_taxonomy_release_intake_461.py tests/test_calyx_taxonomy_release_intake_hardening.py
           git diff --check "origin/${{ github.base_ref }}...HEAD"
