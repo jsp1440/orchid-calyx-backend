@@ -13,7 +13,8 @@ from app.concepts.repositories import concept_database_url
 from app.scientific_synthesis.language import BotanicalLanguageService
 from app.scientific_synthesis.language_routes import _concept_search, _load_concept_service
 
-router = APIRouter(prefix="/api/lexicon", tags=["illustrated-orchid-lexicon"])
+# Included by app.routers.calyx_core whose parent prefix is /api.
+router = APIRouter(prefix="/lexicon", tags=["illustrated-orchid-lexicon"])
 
 
 def _slug(value: str) -> str:
