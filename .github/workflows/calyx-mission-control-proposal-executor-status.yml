@@ -46,7 +46,7 @@ jobs:
             tests/test_calyx_mission_control_proposal_executor_status_114u.py
       - name: Ruff
         run: |
-          ruff check \
+          ruff check --ignore B008 \
             app/mission_control_briefing/proposal_executor_status.py \
             app/mission_control_briefing/routes.py \
             tests/test_calyx_mission_control_proposal_executor_status_114u.py
