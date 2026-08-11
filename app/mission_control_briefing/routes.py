@@ -6,11 +6,14 @@ from fastapi import APIRouter, Depends
 
 from app.mission_control_access import AccessPrincipal
 from app.review_api.dependencies import authenticated_principal
-from app.routers.mission_control import completeness_rows, harvester_rows, metric_snapshot
+from app.routers.mission_control import (
+    completeness_rows,
+    harvester_rows,
+    metric_snapshot,
+)
 
 from .proposal_executor_status import proposal_executor_mission_control_status
 from .service import MissionControlBriefingService
-
 
 router = APIRouter(prefix="/api/mission-control/briefing", tags=["MISSION-CONTROL-ROLE-001G"])
 
