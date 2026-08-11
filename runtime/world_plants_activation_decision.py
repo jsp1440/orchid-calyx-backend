@@ -7,11 +7,47 @@ capability.
 
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
 
 CONTRACT_VERSION = "calyx-taxonomy-activation-decision/v1"
+
+
+def _canonical_review_decision_hash(
+    *,
+    release_id: str,
+    review_key: str,
+    category: str,
+    summary: str,
+    evidence: dict[str, Any],
+    status: str,
+    updated_at: datetime | str,
+) -> str:
+    """Return the SHA-256 digest that binds a review disposition to current evidence."""
+    updated_at_text = (
+        updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at)
+    )
+    envelope = {
+        "release_id": release_id,
+        "review_key": review_key,
+        "category": category,
+        "summary": summary,
+        "evidence": evidence,
+        "status": status,
+        "updated_at": updated_at_text,
+    }
+    payload = json.dumps(
+        envelope,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _review_items(store: Any, release_id: str) -> list[dict[str, Any]]:
@@ -33,23 +69,47 @@ def _review_items(store: Any, release_id: str) -> list[dict[str, Any]]:
             .mappings()
             .all()
         )
-    return [
-        {
-            "review_key": str(row["review_key"]),
-            "category": str(row["category"]),
-            "summary": str(row["summary"]),
-            "evidence": dict(row["evidence"] or {}),
-            "status": str(row["status"]),
-            "updated_at": row["updated_at"].isoformat(),
-            "has_durable_provenance": (
-                row["reviewer_id"] is not None
-                and row["rationale"] is not None
-                and row["decision_hash"] is not None
-                and row["resolved_at"] is not None
-            ),
-        }
-        for row in rows
-    ]
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        evidence = dict(row["evidence"] or {})
+        status = str(row["status"])
+        reviewer_id = str(row["reviewer_id"] or "").strip()
+        rationale = str(row["rationale"] or "").strip()
+        decision_hash = str(row["decision_hash"] or "").strip().lower()
+        resolved_at = row["resolved_at"]
+        updated_at = row["updated_at"]
+        expected_hash = _canonical_review_decision_hash(
+            release_id=release_id,
+            review_key=str(row["review_key"]),
+            category=str(row["category"]),
+            summary=str(row["summary"]),
+            evidence=evidence,
+            status=status,
+            updated_at=updated_at,
+        )
+        provenance_is_current = (
+            bool(reviewer_id)
+            and bool(rationale)
+            and len(decision_hash) == 64
+            and decision_hash == expected_hash
+            and resolved_at is not None
+            and updated_at is not None
+            and resolved_at >= updated_at
+        )
+        items.append(
+            {
+                "review_key": str(row["review_key"]),
+                "category": str(row["category"]),
+                "summary": str(row["summary"]),
+                "evidence": evidence,
+                "status": status,
+                "updated_at": updated_at.isoformat(),
+                "has_durable_provenance": provenance_is_current,
+                "provenance_matches_current_evidence": provenance_is_current,
+            }
+        )
+    return items
 
 
 def build_activation_decision_packet(store: Any, release_id: str) -> dict[str, Any]:
@@ -136,9 +196,11 @@ def build_activation_decision_packet(store: Any, release_id: str) -> dict[str, A
             "note": (
                 "Migration 109 adds taxonomy_review_provenance for durable reviewer "
                 "identity, rationale, decision hash, and resolution timestamp. "
-                "Resolved/dismissed items satisfy activation review only when a "
-                "provenance row is present. Items without provenance continue to "
-                "produce REVIEW_DISPOSITION_PROVENANCE_UNAVAILABLE."
+                "Resolved/dismissed items satisfy activation review only when the "
+                "reviewer identity and rationale are non-empty, the stored SHA-256 "
+                "decision hash matches the current review evidence and disposition, "
+                "and the provenance resolution timestamp is not older than the "
+                "review item. Stale or malformed provenance remains blocked."
             ),
         },
         "decision_state": decision_state,
