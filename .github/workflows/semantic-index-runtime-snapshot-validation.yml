@@ -53,6 +53,7 @@ jobs:
             ('evidence_aggregation','{}'::jsonb),
             ('semantic_index','{}'::jsonb);
           SELECT repository_kind FROM oc_candidate_knowledge.runtime_repository_snapshots ORDER BY repository_kind;
+          DELETE FROM oc_candidate_knowledge.runtime_repository_snapshots WHERE repository_kind='semantic_index';
           SQL
       - name: Prove semantic repository initializes and persists
         run: |
