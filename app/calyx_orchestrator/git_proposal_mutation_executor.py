@@ -303,6 +303,15 @@ class GitProposalMutationExecutor:
             raise PermissionError("GIT_PROPOSAL_EXECUTOR_RESUME_ACTION_PREFIX_MISMATCH")
         if len(receipt.operation_evidence) != len(receipt.completed_actions):
             raise PermissionError("GIT_PROPOSAL_EXECUTOR_RESUME_EVIDENCE_MISMATCH")
+        if receipt.status in FINAL_STATUSES:
+            plan_actions = tuple(operation.action for operation in plan.operations)
+            if receipt.completed_actions != plan_actions:
+                raise PermissionError("GIT_PROPOSAL_EXECUTOR_TERMINAL_INCOMPLETE")
+            ends_with_final_action = bool(plan_actions) and plan_actions[-1] == FINAL_ACTION
+            if receipt.status == "completed" and not ends_with_final_action:
+                raise PermissionError("GIT_PROPOSAL_EXECUTOR_TERMINAL_STATUS_MISMATCH")
+            if receipt.status == "completed_subset" and ends_with_final_action:
+                raise PermissionError("GIT_PROPOSAL_EXECUTOR_TERMINAL_STATUS_MISMATCH")
 
     @staticmethod
     def _expected_commit_sha(
