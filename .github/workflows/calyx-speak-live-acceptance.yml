@@ -5,13 +5,43 @@ on:
     paths:
       - 'scripts/smoke_calyx_speak_live.py'
       - '.github/workflows/calyx-speak-live-acceptance.yml'
+      - 'docs/brain/CALYX-SPEAK-LIVE-ACCEPTANCE-CURRENT-MAIN-2026-08-11.md'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  validate-harness:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile validation harness
+        run: python -m py_compile scripts/smoke_calyx_speak_live.py
+      - name: Validate workflow and diff hygiene
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          text = Path('scripts/smoke_calyx_speak_live.py').read_text(encoding='utf-8')
+          required = (
+              'publication_authority": False',
+              'knowledge_graph_write_authority": False',
+              'CALYX_OWNER_ACCESS_CODE',
+              'deterministic-governed',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing live-acceptance governance invariant(s): {missing}')
+          PY
+          git diff --check "origin/${{ github.base_ref }}...HEAD"
+
   live-acceptance:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: production
     steps:
