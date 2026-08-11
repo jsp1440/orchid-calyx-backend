@@ -32,7 +32,7 @@ def retrieval_table(retrieval: dict[str, Any]) -> dict[str, Any] | None:
         rows.append(
             {
                 "rank": item.get("rank") or index,
-                "title": _text(item.get("title") or item.get("object_type") or "Evidence", 180),
+                "title": _text(item.get("title") or item.get("object_type") or "Retrieved object", 180),
                 "type": _text(item.get("object_type"), 80),
                 "review": _text(item.get("review_state"), 80),
                 "verification": _text(item.get("verification_state"), 80),
@@ -44,13 +44,16 @@ def retrieval_table(retrieval: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "id": _id("retrieval", rows),
         "kind": "table",
-        "title": "Retrieved Orchid Continuum evidence",
-        "subtitle": f"{retrieval.get('total_eligible_results', len(rows))} eligible result(s); showing up to {len(rows)}",
+        "title": "Retrieved Orchid Continuum objects",
+        "subtitle": (
+            f"{retrieval.get('total_eligible_results', len(rows))} eligible result(s); "
+            f"showing up to {len(rows)}. Retrieval alone does not establish evidence status."
+        ),
         "provenance": {
             "source_module": "evidence-retrieval",
             "source_id": _text(retrieval.get("ranking_configuration_version"), 120) or None,
             "generated": False,
-            "evidence_status": "evidence",
+            "evidence_status": "unknown",
         },
         "payload": {
             "columns": [
