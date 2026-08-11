@@ -19,7 +19,10 @@ BASE_URL = os.environ.get(
     "CALYX_BACKEND_URL", "https://orchid-calyx-backend.onrender.com"
 ).strip().rstrip("/")
 ACCESS_CODE = os.environ.get("CALYX_OWNER_ACCESS_CODE", "")
-EXPECTED_SPEAK_RELEASE = "CALYX-SPEAK-003"
+SUPPORTED_SPEAK_RELEASES = {
+    "CALYX-SPEAK-004-CONTEXT",
+    "CALYX-SPEAK-005-WORKSPACE-OUTPUTS",
+}
 
 QUESTIONS = [
     "Hello Calyx. What are you able to help me with?",
@@ -94,19 +97,33 @@ def main() -> int:
             status, speak_status = request("/api/calyx/speak/status")
         except HTTPError as exc:
             if exc.code == 404:
-                return fail(
-                    "deployed Speak release is stale: CALYX-SPEAK-003 status route is not yet deployed"
-                )
+                return fail("deployed Speak status route is not available")
             raise
         release = str(speak_status.get("release") or "")
-        if status != 200 or release != EXPECTED_SPEAK_RELEASE:
+        if status != 200 or release not in SUPPORTED_SPEAK_RELEASES:
+            supported = ", ".join(sorted(SUPPORTED_SPEAK_RELEASES))
             return fail(
-                f"deployed Speak release mismatch: expected {EXPECTED_SPEAK_RELEASE}, got {release or status}"
+                f"deployed Speak release mismatch: expected one of [{supported}], got {release or status}"
             )
         print(
             "PASS deployed Speak release: "
             f"{release} degraded_retrieval={speak_status.get('semantic_retrieval_degraded_mode')}"
         )
+
+        readiness = speak_status.get("reply_provider")
+        if isinstance(readiness, dict):
+            print(
+                "PROVIDER READINESS: "
+                f"mode={readiness.get('mode')} "
+                f"model={readiness.get('model')} "
+                f"generative_configured={readiness.get('generative_configured')} "
+                f"live_acceptance_verified={readiness.get('live_acceptance_verified')}"
+            )
+            if readiness.get("generative_configured") is False:
+                return fail(
+                    "Speak status reports deterministic/non-generative provider mode; "
+                    "do not consume the Vision acceptance dialogue until a generative provider is configured"
+                )
 
         status, conversation = request(
             "/api/calyx/speak/conversations",
@@ -130,6 +147,7 @@ def main() -> int:
         )
 
         provider_names: list[str] = []
+        provider_models: list[str] = []
         answers: list[str] = []
         for index, question in enumerate(QUESTIONS, start=1):
             status, turn = request(
@@ -148,15 +166,17 @@ def main() -> int:
             answer = str(turn.get("answer") or "").strip()
             provider = turn.get("provider") or {}
             provider_name = str(provider.get("name") or "")
+            provider_model = str(provider.get("model") or "")
             if not answer:
                 return fail(f"turn {index} returned an empty Calyx answer")
             if not provider_name:
                 return fail(f"turn {index} omitted provider identity")
             provider_names.append(provider_name)
+            provider_models.append(provider_model)
             answers.append(answer)
             print(f"\n===== CALYX TURN {index} =====")
             print(f"QUESTION: {question}")
-            print(f"PROVIDER: {provider_name} / {provider.get('model')}")
+            print(f"PROVIDER: {provider_name} / {provider_model}")
             research = turn.get("research") or {}
             mission = research.get("mission") or {}
             retrieval = research.get("retrieval") or {}
@@ -191,6 +211,12 @@ def main() -> int:
                 "configure CALYX_CHAT_COMPLETIONS_URL and CALYX_CHAT_MODEL before "
                 "claiming conversational-scientific acceptance"
             )
+        substantive_models = {model for model in provider_models[1:] if model}
+        if len(substantive_models) != 1:
+            return fail(
+                "substantive Vision turns did not use one stable reported provider model: "
+                f"{sorted(substantive_models)}"
+            )
 
         combined = " ".join(answers[1:]).casefold()
         expected_markers = ("evidence", "inference", "visual")
@@ -201,7 +227,10 @@ def main() -> int:
                 f"content markers: {missing}"
             )
 
-        print("PASS live multi-turn Calyx Vision requirements acceptance")
+        print(
+            "PASS live multi-turn Calyx Vision requirements acceptance "
+            f"release={release} model={next(iter(substantive_models))}"
+        )
         return 0
     except HTTPError as exc:
         detail = exc.read().decode(errors="replace")
