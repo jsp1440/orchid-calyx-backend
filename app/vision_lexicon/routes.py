@@ -18,11 +18,8 @@ from app.security import verify_owner_or_api_key
 
 from .contracts import (
     CalibrationState,
-    ColorPhenotypeClass,
     ImageQualityState,
-    MeasurementBasis,
     MediaType,
-    MetricType,
     ReviewDecision,
     ReviewerTier,
 )

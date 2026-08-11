@@ -21,8 +21,9 @@ Scientific safeguards tested:
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
-from uuid import UUID, uuid4
 
 from app.vision_lexicon.contracts import (
     AnalysisStatus,
@@ -32,24 +33,21 @@ from app.vision_lexicon.contracts import (
     CharacterObservation,
     ColorPhenotypeClass,
     ColorPhenotypeObservation,
-    FigureSpecification,
-    FigureValidationRun,
     ImageQualityState,
     MeasurementBasis,
     MediaType,
     MetricType,
     MorphometricObservation,
-    ReferenceImageSet,
-    ReferenceImageSetItem,
     ReviewDecision,
     ReviewerTier,
     ValidationRunStatus,
-    VisionAnalysisRecord,
     VisionReviewRecord,
     VisionReviewState,
 )
 from app.vision_lexicon.persistence import MemoryVisionLexiconRepository
 from app.vision_lexicon.resupination import (
+    LABELLUM_CONCEPT_ID,
+    RESUPINATION_CONCEPT_ID,
     ResupinationCharacters,
     fixture_aggregate_summary,
     fixture_character_observations,
@@ -61,11 +59,8 @@ from app.vision_lexicon.resupination import (
     fixture_vision_analysis,
     fixture_vision_regions,
     score_resupination_from_observation,
-    RESUPINATION_CONCEPT_ID,
-    LABELLUM_CONCEPT_ID,
 )
 from app.vision_lexicon.service import VisionLexiconService
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -353,7 +348,7 @@ def test_chemically_verified_with_evidence_source_is_valid():
 
 
 def test_fixture_analysis_has_cannot_determine_status_accessible():
-    analysis = fixture_vision_analysis()
+    fixture_vision_analysis()
     # Status can be CANNOT_DETERMINE — verify this is a valid value
     assert AnalysisStatus.CANNOT_DETERMINE == "CANNOT_DETERMINE"
 
@@ -370,7 +365,7 @@ def test_resupination_cropped_image_returns_cannot_determine():
 
 
 def test_resupination_detached_specimen_returns_cannot_determine():
-    state, warnings = score_resupination_from_observation(
+    state, _warnings = score_resupination_from_observation(
         labellum_position_state=None,
         image_quality=ImageQualityState.DETACHED_SPECIMEN,
         developmental_stage_state=None,
@@ -396,19 +391,19 @@ def test_resupination_no_labellum_observation_returns_cannot_determine():
 
 
 def test_duplicate_analysis_request_returns_same_record(service):
-    kwargs = dict(
-        image_id="image-001",
-        content_hash="a" * 64,
-        reference_set_id=None,
-        vision_model="fixture-model",
-        vision_model_version="1.0",
-        taxon_context=None,
-        taxon_confidence=None,
-        calibration_state=CalibrationState.UNCALIBRATED,
-        image_quality=ImageQualityState.ACCEPTABLE,
-        warnings=[],
-        limitations=[],
-    )
+    kwargs = {
+        "image_id": "image-001",
+        "content_hash": "a" * 64,
+        "reference_set_id": None,
+        "vision_model": "fixture-model",
+        "vision_model_version": "1.0",
+        "taxon_context": None,
+        "taxon_confidence": None,
+        "calibration_state": CalibrationState.UNCALIBRATED,
+        "image_quality": ImageQualityState.ACCEPTABLE,
+        "warnings": [],
+        "limitations": [],
+    }
     first = service.request_analysis(**kwargs)
     second = service.request_analysis(**kwargs)
     assert first.analysis_id == second.analysis_id
@@ -420,17 +415,17 @@ def test_duplicate_analysis_request_returns_same_record(service):
 
 
 def test_different_model_version_creates_new_record(service):
-    base = dict(
-        image_id="image-002",
-        content_hash="b" * 64,
-        reference_set_id=None,
-        taxon_context=None,
-        taxon_confidence=None,
-        calibration_state=CalibrationState.UNCALIBRATED,
-        image_quality=ImageQualityState.ACCEPTABLE,
-        warnings=[],
-        limitations=[],
-    )
+    base = {
+        "image_id": "image-002",
+        "content_hash": "b" * 64,
+        "reference_set_id": None,
+        "taxon_context": None,
+        "taxon_confidence": None,
+        "calibration_state": CalibrationState.UNCALIBRATED,
+        "image_quality": ImageQualityState.ACCEPTABLE,
+        "warnings": [],
+        "limitations": [],
+    }
     v1 = service.request_analysis(vision_model="m", vision_model_version="1.0", **base)
     v2 = service.request_analysis(vision_model="m", vision_model_version="2.0", **base)
     assert v1.analysis_id != v2.analysis_id
@@ -629,7 +624,7 @@ def test_resupination_valid_labellum_lowermost():
 
 def test_resupination_valid_labellum_uppermost_nonresupinate():
     RC = ResupinationCharacters
-    state, warnings = score_resupination_from_observation(
+    state, _warnings = score_resupination_from_observation(
         labellum_position_state=RC.STATE_LABELLUM_UPPERMOST,
         image_quality=ImageQualityState.ACCEPTABLE,
         developmental_stage_state=RC.STATE_STAGE_ANTHESIS,
@@ -652,7 +647,7 @@ def test_resupination_missing_orientation_context_adds_warning():
 
 def test_resupination_pre_anthesis_adds_warning():
     RC = ResupinationCharacters
-    state, warnings = score_resupination_from_observation(
+    _state, warnings = score_resupination_from_observation(
         labellum_position_state=RC.STATE_LABELLUM_LOWERMOST,
         image_quality=ImageQualityState.ACCEPTABLE,
         developmental_stage_state=RC.STATE_STAGE_PRE_ANTHESIS,
@@ -708,7 +703,7 @@ def test_figure_spec_creation_via_service(service):
 
 
 def test_figure_spec_purpose_required(service):
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError, match="purpose"):
         service.create_figure_spec(
             target_concept_id=None,
             purpose="",  # invalid

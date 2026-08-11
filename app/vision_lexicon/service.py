@@ -22,7 +22,6 @@ from uuid import UUID, uuid4
 
 from .contracts import (
     AnalysisStatus,
-    AssertionState,
     CalibrationState,
     CharacterConformanceCheck,
     CharacterConformanceResult,
@@ -42,8 +41,6 @@ from .contracts import (
     ReviewerTier,
     ValidationRunStatus,
     VisionAnalysisRecord,
-    VisionAssertion,
-    VisionRegion,
     VisionReviewRecord,
     VisionReviewState,
 )
@@ -665,8 +662,10 @@ def vision_lexicon_capability_status() -> dict[str, Any]:
             "automatic_publication": False,
         },
         "remaining_external_dependencies": [
-            "Live Vision inference provider credentials (e.g. ANTHROPIC_API_KEY "
-            "configured for image analysis, or equivalent)",
+            (
+                "Live Vision inference provider credentials "
+                "(e.g. ANTHROPIC_API_KEY configured for image analysis, or equivalent)"
+            ),
             "Governed migration activation of oc_vision schema",
             "Owner-approved candidate knowledge promotion execution",
         ],

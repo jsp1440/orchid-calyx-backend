@@ -11,29 +11,25 @@ tests and for status endpoints when the schema is not yet activated.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import asdict
 from typing import Any
 from uuid import UUID
 
 from .contracts import (
+    AnalysisStatus,
     CalibrationState,
     CharacterConformanceCheck,
     CharacterConformanceResult,
     CharacterObservation,
-    ColorPhenotypeClass,
     ColorPhenotypeObservation,
     FigureSpecification,
     FigureValidationRun,
     ImageQualityState,
-    AnalysisStatus,
     MeasurementBasis,
     MediaType,
     MetricType,
     MorphometricObservation,
     ReferenceImageSet,
     ReferenceImageSetItem,
-    ReviewDecision,
-    ReviewerTier,
     ValidationRunStatus,
     VisionAnalysisRecord,
     VisionAssertion,
@@ -41,7 +37,6 @@ from .contracts import (
     VisionReviewRecord,
     VisionReviewState,
 )
-
 
 # ---------------------------------------------------------------------------
 # In-memory repository (used for tests and fixture pipelines)
@@ -218,7 +213,6 @@ class PostgresVisionLexiconRepository:
     # ------------------------------------------------------------------
 
     def save_reference_set(self, ref_set: ReferenceImageSet) -> ReferenceImageSet:
-        import psycopg
         from psycopg.types.json import Jsonb
 
         with self._cf() as conn, conn.cursor() as cur:
@@ -746,7 +740,6 @@ class PostgresVisionLexiconRepository:
     def save_conformance_checks(
         self, checks: list[CharacterConformanceCheck]
     ) -> list[CharacterConformanceCheck]:
-        from psycopg.types.json import Jsonb
 
         if not checks:
             return []
