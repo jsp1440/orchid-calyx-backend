@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
@@ -68,7 +69,7 @@ class GitProposalOperationEvidence:
             "action": self.action,
             "status": self.status,
             "evidence_digest": self.evidence_digest,
-            "payload": dict(self.payload),
+            "payload": deepcopy(self.payload),
         }
 
 
@@ -359,7 +360,7 @@ class GitProposalMutationExecutor:
     ) -> GitProposalOperationEvidence:
         if not isinstance(raw, Mapping):
             raise TypeError("GIT_PROPOSAL_EXECUTOR_EVIDENCE_INVALID")
-        payload = dict(raw)
+        payload = deepcopy(dict(raw))
         action = str(payload.get("action") or "").strip()
         status = str(payload.get("status") or "").strip()
         repository = str(payload.get("repository") or "").strip()
