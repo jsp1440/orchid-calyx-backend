@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -89,6 +91,41 @@ def _item_with_provenance(status: str) -> dict:
         "updated_at": "2026-08-09T12:00:00+00:00",
         "has_durable_provenance": True,
     }
+
+
+def test_review_decision_hash_changes_when_evidence_or_disposition_changes():
+    updated_at = datetime(2026, 8, 9, 12, 0, tzinfo=timezone.utc)
+    base = decision._canonical_review_decision_hash(
+        release_id="release-1",
+        review_key="duplicate:S:Gastrochilus wenchuanensis",
+        category="duplicate_identity",
+        summary="Duplicate taxon identity requires review",
+        evidence={"count": 2},
+        status="resolved",
+        updated_at=updated_at,
+    )
+    changed_evidence = decision._canonical_review_decision_hash(
+        release_id="release-1",
+        review_key="duplicate:S:Gastrochilus wenchuanensis",
+        category="duplicate_identity",
+        summary="Duplicate taxon identity requires review",
+        evidence={"count": 3},
+        status="resolved",
+        updated_at=updated_at,
+    )
+    changed_status = decision._canonical_review_decision_hash(
+        release_id="release-1",
+        review_key="duplicate:S:Gastrochilus wenchuanensis",
+        category="duplicate_identity",
+        summary="Duplicate taxon identity requires review",
+        evidence={"count": 2},
+        status="dismissed",
+        updated_at=updated_at,
+    )
+
+    assert len(base) == 64
+    assert base != changed_evidence
+    assert base != changed_status
 
 
 def test_open_review_items_hold_activation_decision(monkeypatch):
