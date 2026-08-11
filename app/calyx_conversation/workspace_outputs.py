@@ -29,6 +29,8 @@ def retrieval_table(retrieval: dict[str, Any]) -> dict[str, Any] | None:
     for index, item in enumerate(results[:20], start=1):
         if not isinstance(item, dict):
             continue
+        citation = item.get("citation") if isinstance(item.get("citation"), dict) else {}
+        source_id = _text(item.get("result_id"), 160)
         rows.append(
             {
                 "rank": item.get("rank") or index,
@@ -37,10 +39,23 @@ def retrieval_table(retrieval: dict[str, Any]) -> dict[str, Any] | None:
                 "review": _text(item.get("review_state"), 80),
                 "verification": _text(item.get("verification_state"), 80),
                 "score": item.get("fused_score") if isinstance(item.get("fused_score"), (int, float)) else "",
+                "source_id": source_id,
+                "document_id": _text(citation.get("document_id"), 160),
+                "revision_id": _text(citation.get("revision_id"), 160),
+                "identifier": _text(citation.get("identifier"), 220),
+                "citation": citation,
             }
         )
     if not rows:
         return None
+    result_ids = [row["source_id"] for row in rows if row["source_id"]]
+    retrieval_set_id = _id(
+        "retrieval-set",
+        {
+            "result_ids": result_ids,
+            "ranking_configuration_version": retrieval.get("ranking_configuration_version"),
+        },
+    )
     return {
         "id": _id("retrieval", rows),
         "kind": "table",
@@ -51,7 +66,11 @@ def retrieval_table(retrieval: dict[str, Any]) -> dict[str, Any] | None:
         ),
         "provenance": {
             "source_module": "evidence-retrieval",
-            "source_id": _text(retrieval.get("ranking_configuration_version"), 120) or None,
+            "source_id": retrieval_set_id,
+            "ranking_configuration_version": _text(
+                retrieval.get("ranking_configuration_version"), 120
+            )
+            or None,
             "generated": False,
             "evidence_status": "unknown",
         },
@@ -63,6 +82,8 @@ def retrieval_table(retrieval: dict[str, Any]) -> dict[str, Any] | None:
                 {"key": "review", "label": "Review"},
                 {"key": "verification", "label": "Verification"},
                 {"key": "score", "label": "Score"},
+                {"key": "source_id", "label": "Retrieval source ID"},
+                {"key": "revision_id", "label": "Revision"},
             ],
             "rows": rows,
         },
@@ -95,17 +116,20 @@ def mission_evidence_table(mission: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "id": _id("mission-evidence", {"mission_id": mission_id, "rows": rows}),
         "kind": "table",
-        "title": "Brain mission evidence comparison",
-        "subtitle": "Supporting and contradicting Candidate Knowledge remain distinct from conclusions.",
+        "title": "Brain mission Candidate Knowledge comparison",
+        "subtitle": (
+            "Supporting and contradicting Candidate Knowledge are derived mission outputs, "
+            "not direct source evidence or conclusions."
+        ),
         "provenance": {
             "source_module": "brain-mission",
             "source_id": mission_id or None,
-            "generated": False,
-            "evidence_status": "evidence",
+            "generated": True,
+            "evidence_status": "derived",
         },
         "payload": {
             "columns": [
-                {"key": "status", "label": "Evidence role"},
+                {"key": "status", "label": "Candidate role"},
                 {"key": "candidate", "label": "Candidate"},
                 {"key": "subject", "label": "Subject"},
                 {"key": "predicate", "label": "Predicate"},
