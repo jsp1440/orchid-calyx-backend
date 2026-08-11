@@ -89,7 +89,9 @@ def test_scientific_turn_survives_semantic_index_outage(monkeypatch):
 
 def test_speak_status_exposes_degraded_mode_contract():
     result = speak_routes.speak_status(auth())
-    assert result["release"] == "CALYX-SPEAK-003"
+    assert result["release"] == "CALYX-SPEAK-004-CONTEXT"
     assert result["semantic_retrieval_degraded_mode"] is True
+    assert result["interaction_context"]["supported"] is True
+    assert result["interaction_context"]["evidence"] is False
     assert result["automatic_publication"] is False
     assert result["knowledge_graph_mutation"] is False
