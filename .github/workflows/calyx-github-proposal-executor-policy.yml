@@ -81,7 +81,9 @@ jobs:
           PY
       - name: No credential activation
         run: |
-          ! git diff --unified=0 ${{ github.event.pull_request.base.sha || 'HEAD^' }}...HEAD -- . \
+          ! git diff --unified=0 ${{ github.event.pull_request.base.sha || 'HEAD^' }}...HEAD -- \
+            . \
+            ':(exclude).github/workflows/calyx-github-proposal-executor-policy.yml' \
             | grep -E '^\+.*(gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]+|CALYX_GITHUB_PROPOSAL_TOKEN)'
       - name: Diff hygiene
         run: git diff --check ${{ github.event.pull_request.base.sha || 'HEAD^' }}...HEAD
