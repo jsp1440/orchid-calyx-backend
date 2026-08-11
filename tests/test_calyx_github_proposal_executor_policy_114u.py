@@ -80,13 +80,14 @@ def test_repository_allowlist_is_normalized_without_widening() -> None:
         REPOSITORY,
         "jsp1440/orchid-continuum-frontend",
     )
-    with pytest.raises(ValueError, match="REPOSITORIES_INVALID"):
-        GitHubProposalExecutorPolicy.from_environ(
-            {
-                **_enabled_environ(),
-                "CALYX_GITHUB_PROPOSAL_REPOSITORIES": "not-a-repository",
-            }
-        )
+    for invalid in ("not-a-repository", "org/repo name", "org//repo", "/repo"):
+        with pytest.raises(ValueError, match="REPOSITORIES_INVALID"):
+            GitHubProposalExecutorPolicy.from_environ(
+                {
+                    **_enabled_environ(),
+                    "CALYX_GITHUB_PROPOSAL_REPOSITORIES": invalid,
+                }
+            )
 
 
 def test_registration_fails_closed_until_all_four_gates_are_ready() -> None:
@@ -135,6 +136,10 @@ def test_ready_registration_constructs_only_the_bounded_proposal_executor() -> N
         evidence=journal,
     )
     assert isinstance(executor, GitProposalMutationExecutor)
+    with pytest.raises(PermissionError, match="OWNER_GRANT_MISMATCH"):
+        executor.execute(grant_mapping={"approved_by": "principal:other"})
+    with pytest.raises(PermissionError, match="OWNER_GRANT_REQUIRED"):
+        executor.execute()
     status = registration.status()
     assert status["branch_namespace"] == "autonomy/proposal/"
     assert status["draft_pull_request_only"] is True
