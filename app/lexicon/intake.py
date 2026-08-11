@@ -5,7 +5,15 @@ import io
 from collections import Counter
 from typing import Any
 
-from .intake_seed import POLICY, RELEASE, SOURCE_FILE, SOURCE_SHA256, SOURCE_SHEET, SUMMARY, csv_text
+from .intake_seed import (
+    POLICY,
+    RELEASE,
+    SOURCE_FILE,
+    SOURCE_SHA256,
+    SOURCE_SHEET,
+    SUMMARY,
+    csv_text,
+)
 
 EXPECTED_FIELDS = (
     "glossary_id",
