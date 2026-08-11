@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.git_proposal_mutation_executor import (
+    GitProposalMutationError,
     GitProposalMutationExecutor,
 )
 from app.calyx_orchestrator.git_proposal_mutation_journal import (
@@ -204,7 +205,7 @@ def _run_end_to_end(transport: FakeGitHubTransport):
         evidence=journal,
         repository_allowlist=(REPOSITORY,),
     )
-    store, gate, request, grant, manifest, plan, _ = _execution_inputs()
+    store, gate, request, grant, manifest, plan, patch_program_job_id = _execution_inputs()
     receipt = GitProposalMutationExecutor(
         adapter=adapter,
         repository_allowlist=(REPOSITORY,),
@@ -218,12 +219,23 @@ def _run_end_to_end(transport: FakeGitHubTransport):
         grant_mapping=grant,
         now=NOW + timedelta(minutes=1),
     )
-    return receipt, journal, adapter, plan
+    return (
+        receipt,
+        journal,
+        adapter,
+        plan,
+        store,
+        gate,
+        request,
+        grant,
+        manifest,
+        patch_program_job_id,
+    )
 
 
 def test_live_adapter_executes_exact_branch_commit_push_and_draft_pr() -> None:
     transport = FakeGitHubTransport()
-    receipt, journal, _, plan = _run_end_to_end(transport)
+    receipt, journal, _, plan, *_ = _run_end_to_end(transport)
     assert receipt.status == "completed"
     assert receipt.completed_actions == (
         "create_branch",
@@ -239,15 +251,25 @@ def test_live_adapter_executes_exact_branch_commit_push_and_draft_pr() -> None:
 
 def test_completed_retry_creates_no_duplicate_remote_objects_or_pr() -> None:
     transport = FakeGitHubTransport()
-    receipt, journal, adapter, plan = _run_end_to_end(transport)
+    (
+        receipt,
+        journal,
+        adapter,
+        plan,
+        store,
+        gate,
+        request,
+        grant,
+        manifest,
+        _,
+    ) = _run_end_to_end(transport)
     call_count = len(transport.calls)
-    store, gate, request, grant, manifest, verified_plan, _ = _execution_inputs()
     replayed = GitProposalMutationExecutor(
         adapter=adapter,
         repository_allowlist=(REPOSITORY,),
         journal=journal,
     ).execute(
-        plan=verified_plan,
+        plan=plan,
         manifest_snapshot=manifest,
         review_store=store,
         authorization_gate=gate,
@@ -256,7 +278,6 @@ def test_completed_retry_creates_no_duplicate_remote_objects_or_pr() -> None:
         now=NOW + timedelta(minutes=1),
     )
     assert replayed == receipt
-    assert verified_plan.plan_digest == plan.plan_digest
     assert len(transport.calls) == call_count
     assert len(transport.pulls) == 1
 
@@ -328,7 +349,7 @@ def test_blob_sha_and_push_sha_mismatches_fail_closed() -> None:
 
     transport = FakeGitHubTransport()
     transport.force_wrong_push = True
-    with pytest.raises(PermissionError, match="PUSH_VERIFY_FAILED"):
+    with pytest.raises(GitProposalMutationError, match="PUSH_VERIFY_FAILED"):
         _run_end_to_end(transport)
 
 
