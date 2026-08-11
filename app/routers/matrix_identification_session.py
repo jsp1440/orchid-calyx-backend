@@ -1,0 +1,107 @@
+"""Owner-gated API for governed Matrix Identification sessions."""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from app.security import verify_owner_or_api_key
+from runtime.matrix_identification_session import (
+    add_observation,
+    create_session,
+    evaluate_session,
+    get_session,
+)
+
+
+class SessionCreateRequest(BaseModel):
+    registry_id: str = Field(min_length=1, max_length=120)
+    version: str = Field(min_length=1, max_length=120)
+    actor: str = Field(min_length=1, max_length=200)
+    metadata: dict[str, Any] | None = None
+
+
+class SessionObservationRequest(BaseModel):
+    character: str = Field(min_length=1, max_length=120)
+    value: Any
+    certainty: Literal["certain", "probable", "uncertain", "unknown"] = "certain"
+    weight: float | None = Field(default=None, ge=0, le=100)
+    source: dict[str, Any] | None = None
+
+
+class SessionEvaluateRequest(BaseModel):
+    limit: int = Field(default=20, ge=1, le=200)
+
+
+router = APIRouter(
+    prefix="/api/matrix-identification/sessions",
+    tags=["matrix-identification-sessions"],
+)
+
+
+@router.post("")
+def create(
+    payload: SessionCreateRequest,
+    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    try:
+        return create_session(
+            registry_id=payload.registry_id,
+            version=payload.version,
+            actor=payload.actor,
+            metadata=payload.metadata,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/{session_id}")
+def get(
+    session_id: str,
+    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    try:
+        return get_session(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{session_id}/observations")
+def observe(
+    session_id: str,
+    payload: SessionObservationRequest,
+    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    try:
+        return add_observation(
+            session_id,
+            character=payload.character,
+            value=payload.value,
+            certainty=payload.certainty,
+            weight=payload.weight,
+            source=payload.source,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{session_id}/evaluate")
+def evaluate(
+    session_id: str,
+    payload: SessionEvaluateRequest,
+    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    try:
+        return evaluate_session(session_id, limit=payload.limit)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
