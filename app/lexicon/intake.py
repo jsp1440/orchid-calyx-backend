@@ -62,13 +62,16 @@ def validate_manifest() -> dict[str, Any]:
 
     actual = {
         "terms": len(rows),
-        "definitions_present": definition_counts["PRESENT"],
-        "placeholder_definitions": definition_counts["PLACEHOLDER"],
+        "real_terms_with_placeholder_definitions": definition_counts["PLACEHOLDER"],
+        "synthetic_placeholder_terms": definition_counts[
+            "PLACEHOLDER_TERM_AND_DEFINITION"
+        ],
         "existing_exact_assets": figure_exists_counts["YES"],
         "probable_assets": figure_exists_counts["PROBABLE / VERIFY"],
         "missing_assets": figure_exists_counts["NO"],
         "ready_for_concept_review": concept_counts["READY_FOR_CONCEPT_REVIEW"],
         "blocked_definition": concept_counts["BLOCKED_DEFINITION"],
+        "blocked_placeholder_term": concept_counts["BLOCKED_PLACEHOLDER_TERM"],
         "figure_generation_hold": figure_counts["FIGURE_GENERATION_HOLD"],
     }
     if actual != SUMMARY:
@@ -112,4 +115,7 @@ def filter_items(
 
 def get_item(glossary_id: str) -> dict[str, Any] | None:
     target = glossary_id.casefold().strip()
-    return next((row for row in load_items() if row["glossary_id"].casefold() == target), None)
+    return next(
+        (row for row in load_items() if row["glossary_id"].casefold() == target),
+        None,
+    )
