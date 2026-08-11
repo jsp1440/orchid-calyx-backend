@@ -34,14 +34,24 @@ def _actor(auth: dict[str, Any]) -> str:
     return actor
 
 
+def _access_actor(auth: dict[str, Any]) -> str | None:
+    if auth.get("auth_type") == "api_key":
+        return None
+    return _actor(auth)
+
+
 @router.post("/{session_id}/vision/analyses/{analysis_id}/suggestions")
 def attach_analysis(
     session_id: str,
     analysis_id: str,
-    _: dict[str, Any] = Depends(verify_owner_or_api_key),  # noqa: B008
+    auth: dict[str, Any] = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     try:
-        return attach_vision_analysis(session_id, analysis_id)
+        return attach_vision_analysis(
+            session_id,
+            analysis_id,
+            access_actor=_access_actor(auth),
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -53,10 +63,13 @@ def attach_analysis(
 @router.get("/{session_id}/vision/suggestions")
 def get_suggestions(
     session_id: str,
-    _: dict[str, Any] = Depends(verify_owner_or_api_key),  # noqa: B008
+    auth: dict[str, Any] = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     try:
-        return list_vision_suggestions(session_id)
+        return list_vision_suggestions(
+            session_id,
+            access_actor=_access_actor(auth),
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -77,6 +90,7 @@ def review_suggestion(
             certainty=payload.certainty,
             revised_value=payload.revised_value,
             comments=payload.comments,
+            access_actor=_access_actor(auth),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
