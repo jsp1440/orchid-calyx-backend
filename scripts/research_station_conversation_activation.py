@@ -775,7 +775,9 @@ def run_profile(database_url: str, apply: bool, evidence_path: Path) -> int:
         os.environ.get("CALYX_RESEARCH_STATION_CONFIRM", "").strip() == CONFIRMATION
     )
     target_environment = (
-        os.environ.get("CALYX_ACTIVATION_TARGET_ENVIRONMENT", "unspecified").strip().lower()
+        os.environ.get("CALYX_ACTIVATION_TARGET_ENVIRONMENT", "unspecified")
+        .strip()
+        .lower()
         or "unspecified"
     )
     production_target = target_environment == "production"
