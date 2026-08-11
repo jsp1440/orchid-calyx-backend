@@ -1,8 +1,9 @@
 """Fail-closed durable activation for the Vision-Lexicon bridge.
 
-This module deliberately does not connect to PostgreSQL at import time.  It
+This module deliberately does not connect to PostgreSQL at import time. It
 selects the repository from explicit runtime configuration and verifies the
-``oc_vision`` schema on each new durable connection before allowing writes.
+``oc_vision`` schema before durable writes are allowed. Schema activation and
+durable-write enablement are intentionally reported as separate states.
 """
 
 from __future__ import annotations
@@ -68,8 +69,13 @@ def _postgres_url() -> str:
 
 
 def schema_ready() -> bool:
-    if not durable_requested():
-        return False
+    """Report whether the governed Vision schema exists, independent of writes.
+
+    A migration may be safely applied before durable writes are enabled. The
+    status endpoint must therefore be able to report ``migration_activated``
+    truthfully while ``CALYX_VISION_DURABLE_ENABLED`` remains false.
+    """
+
     try:
         with psycopg.connect(_postgres_url()) as conn, conn.cursor() as cur:
             cur.execute("SELECT to_regnamespace('oc_vision') IS NOT NULL")
@@ -277,10 +283,12 @@ def build_vision_lexicon_service() -> VisionLexiconService:
 def capability_status() -> dict[str, Any]:
     base = vision_lexicon_capability_status()
     ready = schema_ready()
-    base["persistence_mode"] = "postgres" if durable_requested() else "memory"
+    durable = durable_requested()
+    base["persistence_mode"] = "postgres" if durable else "memory"
+    base["durable_persistence_enabled"] = durable
     base["schema_ready"] = ready
     base["migration_activated"] = ready
     base["live_inference_enabled"] = False
-    if durable_requested() and not ready:
+    if durable and not ready:
         base["provider_status"] = "PERSISTENCE_NOT_READY"
     return base
