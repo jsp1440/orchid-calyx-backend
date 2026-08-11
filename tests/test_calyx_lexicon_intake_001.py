@@ -13,7 +13,7 @@ from app.routers.calyx_core import router as calyx_core_router
 AUTH = {"actor": "owner", "auth_type": "owner_session"}
 
 
-def test_manifest_decodes_to_exact_workbook_reconciliation_counts():
+def test_manifest_decodes_to_exact_corrected_reconciliation_counts():
     rows = load_items()
     assert len(rows) == 420
     assert tuple(rows[0].keys()) == EXPECTED_FIELDS
@@ -24,14 +24,35 @@ def test_manifest_decodes_to_exact_workbook_reconciliation_counts():
     figure_exists_counts = Counter(row["figure_exists"] for row in rows)
     figure_state_counts = Counter(row["figure_state"] for row in rows)
 
-    assert definition_counts == {"PRESENT": 221, "PLACEHOLDER": 199}
-    assert concept_counts == {"READY_FOR_CONCEPT_REVIEW": 221, "BLOCKED_DEFINITION": 199}
+    assert definition_counts == {
+        "PLACEHOLDER_TERM_AND_DEFINITION": 221,
+        "PLACEHOLDER": 199,
+    }
+    assert concept_counts == {
+        "BLOCKED_PLACEHOLDER_TERM": 221,
+        "BLOCKED_DEFINITION": 199,
+    }
+    assert concept_counts["READY_FOR_CONCEPT_REVIEW"] == 0
     assert figure_exists_counts == {"NO": 383, "PROBABLE / VERIFY": 27, "YES": 10}
     assert figure_state_counts == {
         "FIGURE_GENERATION_HOLD": 383,
         "PROBABLE_ASSET_VERIFY": 27,
         "EXISTING_ASSET_VERIFY": 10,
     }
+
+
+def test_synthetic_botanical_term_rows_are_never_scientifically_reviewable():
+    rows = load_items()
+    synthetic = [row for row in rows if row["term"].startswith("botanical_term_")]
+    assert len(synthetic) == 221
+    assert all(
+        row["definition_state"] == "PLACEHOLDER_TERM_AND_DEFINITION"
+        for row in synthetic
+    )
+    assert all(
+        row["concept_intake_state"] == "BLOCKED_PLACEHOLDER_TERM"
+        for row in synthetic
+    )
 
 
 def test_existing_or_probable_assets_do_not_bypass_definition_quality_gate():
@@ -45,9 +66,15 @@ def test_existing_or_probable_assets_do_not_bypass_definition_quality_gate():
 def test_manifest_status_is_provenance_locked_and_nonpublishing():
     status = validate_manifest()
     assert status["valid"] is True
-    assert status["source_sha256"] == "fe0dfed4e6cd5e330ccba94967b4541f475389bb89065479ea2296fdce83e687"
+    assert status["source_sha256"] == (
+        "fe0dfed4e6cd5e330ccba94967b4541f475389bb89065479ea2296fdce83e687"
+    )
     assert status["summary"]["terms"] == 420
+    assert status["summary"]["ready_for_concept_review"] == 0
+    assert status["summary"]["synthetic_placeholder_terms"] == 221
+    assert status["summary"]["real_terms_with_placeholder_definitions"] == 199
     assert status["policy"]["placeholder_definitions_block_import"] is True
+    assert status["policy"]["placeholder_terms_block_import"] is True
     assert status["policy"]["figure_generation_hold_until_calyx_vision_review"] is True
     assert status["policy"]["automatic_concept_promotion"] is False
     assert status["policy"]["automatic_publication"] is False
@@ -60,7 +87,10 @@ def test_filtering_and_lookup_are_deterministic():
         limit=500,
     )
     assert blocked_priority_zero
-    assert all(row["concept_intake_state"] == "BLOCKED_DEFINITION" for row in blocked_priority_zero)
+    assert all(
+        row["concept_intake_state"] == "BLOCKED_DEFINITION"
+        for row in blocked_priority_zero
+    )
     assert all(row["priority"] == 0 for row in blocked_priority_zero)
 
     anther = get_item("T0014")
@@ -83,7 +113,9 @@ def test_read_only_routes_expose_status_items_and_item_detail():
     )
     assert result["read_only"] is True
     assert result["total_manifest_items"] == 420
-    assert any(item["term"].casefold() == "resupination" for item in result["items"])
+    assert any(
+        item["term"].casefold() == "resupination" for item in result["items"]
+    )
 
     detail = read_intake_item("T0014", AUTH)
     assert detail["read_only"] is True
