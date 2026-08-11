@@ -19,6 +19,7 @@ BASE_URL = os.environ.get(
     "CALYX_BACKEND_URL", "https://orchid-calyx-backend.onrender.com"
 ).strip().rstrip("/")
 ACCESS_CODE = os.environ.get("CALYX_OWNER_ACCESS_CODE", "")
+EXPECTED_SPEAK_RELEASE = "CALYX-SPEAK-003"
 
 QUESTIONS = [
     "Hello Calyx. What are you able to help me with?",
@@ -89,6 +90,24 @@ def main() -> int:
             f"mode={session.get('token') or session.get('access_token') or 'cookie'}"
         )
 
+        try:
+            status, speak_status = request("/api/calyx/speak/status")
+        except HTTPError as exc:
+            if exc.code == 404:
+                return fail(
+                    "deployed Speak release is stale: CALYX-SPEAK-003 status route is not yet deployed"
+                )
+            raise
+        release = str(speak_status.get("release") or "")
+        if status != 200 or release != EXPECTED_SPEAK_RELEASE:
+            return fail(
+                f"deployed Speak release mismatch: expected {EXPECTED_SPEAK_RELEASE}, got {release or status}"
+            )
+        print(
+            "PASS deployed Speak release: "
+            f"{release} degraded_retrieval={speak_status.get('semantic_retrieval_degraded_mode')}"
+        )
+
         status, conversation = request(
             "/api/calyx/speak/conversations",
             method="POST",
@@ -140,6 +159,11 @@ def main() -> int:
             print(f"PROVIDER: {provider_name} / {provider.get('model')}")
             research = turn.get("research") or {}
             mission = research.get("mission") or {}
+            retrieval = research.get("retrieval") or {}
+            print(
+                "RETRIEVAL: "
+                f"status={retrieval.get('status')} error={retrieval.get('error', 'none')}"
+            )
             print(
                 "MISSION: "
                 f"{mission.get('mission_id', 'none')} "
