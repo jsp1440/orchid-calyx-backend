@@ -9,6 +9,13 @@ import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from app.calyx_orchestrator.git_proposal_mutation_executor import (
+    GitProposalMutationExecutor,
+)
+from app.calyx_orchestrator.git_proposal_mutation_journal import (
+    DurableGitProposalMutationJournal,
+    GitProposalMutationJournalEventRecord,
+)
 from app.calyx_orchestrator.github_proposal_mutation_adapter import (
     GitHubProposalMutationAdapter,
     GitHubProposalTransportError,
@@ -16,13 +23,6 @@ from app.calyx_orchestrator.github_proposal_mutation_adapter import (
     RequestsGitHubTransport,
     _blob_sha,
     _expected_commit_sha,
-)
-from app.calyx_orchestrator.git_proposal_mutation_executor import (
-    GitProposalMutationExecutor,
-)
-from app.calyx_orchestrator.git_proposal_mutation_journal import (
-    DurableGitProposalMutationJournal,
-    GitProposalMutationJournalEventRecord,
 )
 from app.database import Base
 from tests.test_calyx_git_proposal_execution_plan_114r import (
@@ -78,6 +78,7 @@ class FakeGitHubTransport:
         self.force_wrong_blob = False
         self.force_wrong_push = False
         self.force_non_draft_pr = False
+        self.force_wrong_pr_base = False
 
     def request(self, method, path, *, json_body=None, params=None):
         self.calls.append((method, path))
@@ -101,7 +102,11 @@ class FakeGitHubTransport:
         if method == "GET" and "/git/commits/" in path:
             sha = path.rsplit("/", 1)[1]
             payload = self.commits.get(sha)
-            return GitHubTransportResponse(200, payload) if payload else GitHubTransportResponse(404, {})
+            return (
+                GitHubTransportResponse(200, payload)
+                if payload
+                else GitHubTransportResponse(404, {})
+            )
         if method == "POST" and path.endswith("/git/blobs"):
             assert json_body is not None
             import base64
@@ -114,11 +119,15 @@ class FakeGitHubTransport:
             tree = self.trees.get(sha)
             if tree is None:
                 return GitHubTransportResponse(404, {})
-            return GitHubTransportResponse(200, {"sha": sha, "tree": tree, "truncated": False})
+            return GitHubTransportResponse(
+                200, {"sha": sha, "tree": tree, "truncated": False}
+            )
         if method == "POST" and path.endswith("/git/trees"):
             assert json_body is not None
             base_tree = str(json_body["base_tree"])
-            current = {str(item["path"]): dict(item) for item in self.trees[base_tree]}
+            current = {
+                str(item["path"]): dict(item) for item in self.trees[base_tree]
+            }
             for item in json_body["tree"]:
                 current[str(item["path"])] = dict(item)
             self.trees[TREE_AFTER] = list(current.values())
@@ -150,7 +159,9 @@ class FakeGitHubTransport:
             self.refs[branch] = (
                 "f" * 40 if self.force_wrong_push else str(json_body["sha"])
             )
-            return GitHubTransportResponse(200, {"object": {"sha": self.refs[branch]}})
+            return GitHubTransportResponse(
+                200, {"object": {"sha": self.refs[branch]}}
+            )
         if method == "GET" and path.endswith("/pulls"):
             assert params is not None
             head_branch = str(params["head"]).split(":", 1)[1]
@@ -158,19 +169,23 @@ class FakeGitHubTransport:
             matches = [
                 pull
                 for pull in self.pulls
-                if pull["head"]["ref"] == head_branch and pull["base"]["ref"] == base_ref
+                if pull["head"]["ref"] == head_branch
+                and pull["base"]["ref"] == base_ref
             ]
             return GitHubTransportResponse(200, matches)
         if method == "POST" and path.endswith("/pulls"):
             assert json_body is not None
             branch = str(json_body["head"])
             base_ref = str(json_body["base"])
+            base_sha = "f" * 40 if self.force_wrong_pr_base else self.refs[base_ref]
             pull = {
                 "number": len(self.pulls) + 1,
-                "html_url": f"https://github.com/{REPOSITORY}/pull/{len(self.pulls) + 1}",
+                "html_url": (
+                    f"https://github.com/{REPOSITORY}/pull/{len(self.pulls) + 1}"
+                ),
                 "draft": False if self.force_non_draft_pr else bool(json_body["draft"]),
                 "head": {"ref": branch, "sha": self.refs[branch]},
-                "base": {"ref": base_ref, "sha": self.refs[base_ref]},
+                "base": {"ref": base_ref, "sha": base_sha},
             }
             self.pulls.append(pull)
             return GitHubTransportResponse(201, pull)
@@ -179,7 +194,9 @@ class FakeGitHubTransport:
 
 def _journal() -> DurableGitProposalMutationJournal:
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[GitProposalMutationJournalEventRecord.__table__])
+    Base.metadata.create_all(
+        engine, tables=[GitProposalMutationJournalEventRecord.__table__]
+    )
     return DurableGitProposalMutationJournal(Session(engine))
 
 
@@ -259,13 +276,19 @@ def test_branch_creation_is_idempotent_only_for_exact_reviewed_base() -> None:
     )
     _, _, _, _, _, plan, _ = _execution_inputs()
     operation = plan.operations[0]
-    first = adapter.apply_proposal_operation(plan_digest=plan.plan_digest, operation=operation)
-    second = adapter.apply_proposal_operation(plan_digest=plan.plan_digest, operation=operation)
+    first = adapter.apply_proposal_operation(
+        plan_digest=plan.plan_digest, operation=operation
+    )
+    second = adapter.apply_proposal_operation(
+        plan_digest=plan.plan_digest, operation=operation
+    )
     assert first["status"] == "created"
     assert second["status"] == "already_exists_exact"
     transport.refs[plan.proposed_branch] = "f" * 40
     with pytest.raises(PermissionError, match="BRANCH_ALREADY_EXISTS_MISMATCH"):
-        adapter.apply_proposal_operation(plan_digest=plan.plan_digest, operation=operation)
+        adapter.apply_proposal_operation(
+            plan_digest=plan.plan_digest, operation=operation
+        )
 
 
 def test_wrong_postimage_hash_fails_before_blob_or_commit_creation() -> None:
@@ -278,9 +301,13 @@ def test_wrong_postimage_hash_fails_before_blob_or_commit_creation() -> None:
         repository_allowlist=(REPOSITORY,),
     )
     _, _, _, _, _, plan, _ = _execution_inputs()
-    adapter.apply_proposal_operation(plan_digest=plan.plan_digest, operation=plan.operations[0])
+    adapter.apply_proposal_operation(
+        plan_digest=plan.plan_digest, operation=plan.operations[0]
+    )
     with pytest.raises(PermissionError, match="POSTIMAGE_HASH_MISMATCH"):
-        adapter.apply_proposal_operation(plan_digest=plan.plan_digest, operation=plan.operations[1])
+        adapter.apply_proposal_operation(
+            plan_digest=plan.plan_digest, operation=plan.operations[1]
+        )
     assert not any(path.endswith("/git/blobs") for _, path in transport.calls)
 
 
@@ -295,9 +322,13 @@ def test_blob_sha_and_push_sha_mismatches_fail_closed() -> None:
         repository_allowlist=(REPOSITORY,),
     )
     _, _, _, _, _, plan, _ = _execution_inputs()
-    adapter.apply_proposal_operation(plan_digest=plan.plan_digest, operation=plan.operations[0])
+    adapter.apply_proposal_operation(
+        plan_digest=plan.plan_digest, operation=plan.operations[0]
+    )
     with pytest.raises(PermissionError, match="BLOB_SHA_MISMATCH"):
-        adapter.apply_proposal_operation(plan_digest=plan.plan_digest, operation=plan.operations[1])
+        adapter.apply_proposal_operation(
+            plan_digest=plan.plan_digest, operation=plan.operations[1]
+        )
 
     transport = FakeGitHubTransport()
     transport.force_wrong_push = True
@@ -320,7 +351,6 @@ def test_base_move_and_non_draft_pr_are_rejected() -> None:
         repository_allowlist=(REPOSITORY,),
         journal=journal,
     )
-    # Stop after push using the full executor by making the PR base move just before PR creation.
     original_request = transport.request
 
     def moving_request(method, path, *, json_body=None, params=None):
@@ -346,6 +376,13 @@ def test_base_move_and_non_draft_pr_are_rejected() -> None:
         _run_end_to_end(transport)
 
 
+def test_pr_payload_base_sha_race_fails_closed() -> None:
+    transport = FakeGitHubTransport()
+    transport.force_wrong_pr_base = True
+    with pytest.raises(Exception, match="GITHUB_ADAPTER_PR_VERIFY_FAILED"):
+        _run_end_to_end(transport)
+
+
 def test_repository_allowlist_and_proposal_branch_namespace_fail_closed() -> None:
     transport = FakeGitHubTransport()
     journal = _journal()
@@ -362,13 +399,17 @@ def test_repository_allowlist_and_proposal_branch_namespace_fail_closed() -> Non
         parameters={**operation.parameters, "repository": "other/repo"},
     )
     with pytest.raises(PermissionError, match="REPOSITORY_NOT_ALLOWED"):
-        adapter.apply_proposal_operation(plan_digest=plan.plan_digest, operation=wrong_repo)
+        adapter.apply_proposal_operation(
+            plan_digest=plan.plan_digest, operation=wrong_repo
+        )
     wrong_branch = type(operation)(
         action=operation.action,
         parameters={**operation.parameters, "branch": "main"},
     )
     with pytest.raises(PermissionError, match="BRANCH_NOT_ALLOWED"):
-        adapter.apply_proposal_operation(plan_digest=plan.plan_digest, operation=wrong_branch)
+        adapter.apply_proposal_operation(
+            plan_digest=plan.plan_digest, operation=wrong_branch
+        )
 
 
 def test_transport_never_exposes_token_in_repr_or_exception() -> None:
@@ -379,11 +420,14 @@ def test_transport_never_exposes_token_in_repr_or_exception() -> None:
             del args, kwargs
             raise requests.RequestException(f"network failed with {token}")
 
-    transport = RequestsGitHubTransport(token=token, session=FailingSession())  # type: ignore[arg-type]
+    transport = RequestsGitHubTransport(  # type: ignore[arg-type]
+        token=token, session=FailingSession()
+    )
     assert token not in repr(transport)
     with pytest.raises(GitHubProposalTransportError) as raised:
         transport.request("GET", "/repos/jsp1440/orchid-calyx-backend")
     assert token not in str(raised.value)
+    assert raised.value.__cause__ is None
 
 
 def test_change_hash_fixture_is_exact() -> None:
