@@ -4,7 +4,7 @@ import json
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.git_proposal_mutation_executor import (
@@ -195,12 +195,68 @@ def test_event_index_rejects_boolean_gaps_and_appends_after_final() -> None:
     journal = DurableGitProposalMutationJournal(_session())
     with pytest.raises(ValueError, match="EVENT_INDEX_INVALID"):
         journal.record(_receipt(plan, "in_progress", 1), event_index=True)
+    with pytest.raises(ValueError, match="FIRST_EVENT_INDEX_INVALID"):
+        journal.record(_receipt(plan, "in_progress", 1), event_index=2)
     journal.record(_receipt(plan, "in_progress", 1), event_index=1)
     with pytest.raises(ValueError, match="EVENT_GAP"):
         journal.record(_receipt(plan, "in_progress", 2), event_index=3)
     journal.record(_receipt(plan, "completed_subset", 1), event_index=2)
     with pytest.raises(ValueError, match="FINAL_ALREADY_RECORDED"):
         journal.record(_receipt(plan, "in_progress", 2), event_index=3)
+
+
+def test_recovery_validates_every_earlier_event_and_detects_deletion() -> None:
+    _, _, _, _, _, plan, _ = _execution_inputs()
+    session = _session()
+    journal = DurableGitProposalMutationJournal(session)
+    journal.record(_receipt(plan, "in_progress", 1), event_index=1)
+    journal.record(_receipt(plan, "in_progress", 2), event_index=2)
+    journal.record(_receipt(plan, "in_progress", 3), event_index=3)
+
+    first = session.scalar(
+        select(GitProposalMutationJournalEventRecord).where(
+            GitProposalMutationJournalEventRecord.event_index == 1
+        )
+    )
+    assert first is not None
+    first.payload_json = "{}"
+    session.commit()
+    with pytest.raises(PermissionError, match="PAYLOAD_INVALID"):
+        journal.latest(plan_digest=plan.plan_digest)
+
+    session.rollback()
+    session.execute(
+        delete(GitProposalMutationJournalEventRecord).where(
+            GitProposalMutationJournalEventRecord.plan_digest == plan.plan_digest
+        )
+    )
+    session.commit()
+    journal.record(_receipt(plan, "in_progress", 1), event_index=1)
+    journal.record(_receipt(plan, "in_progress", 2), event_index=2)
+    journal.record(_receipt(plan, "in_progress", 3), event_index=3)
+    session.execute(
+        delete(GitProposalMutationJournalEventRecord).where(
+            GitProposalMutationJournalEventRecord.plan_digest == plan.plan_digest,
+            GitProposalMutationJournalEventRecord.event_index == 2,
+        )
+    )
+    session.commit()
+    with pytest.raises(PermissionError, match="HISTORY_GAP"):
+        journal.next_event_index(plan_digest=plan.plan_digest)
+
+
+def test_terminal_resume_receipt_must_cover_the_entire_reviewed_plan() -> None:
+    _, _, _, _, _, plan, _ = _execution_inputs()
+    with pytest.raises(PermissionError, match="TERMINAL_INCOMPLETE"):
+        GitProposalMutationExecutor._verify_resume_receipt(
+            plan=plan,
+            receipt=_receipt(plan, "completed", 1),
+        )
+    with pytest.raises(PermissionError, match="TERMINAL_STATUS_MISMATCH"):
+        GitProposalMutationExecutor._verify_resume_receipt(
+            plan=plan,
+            receipt=_receipt(plan, "completed_subset", len(plan.operations)),
+        )
 
 
 def test_executor_persists_verified_progress_and_final_receipt() -> None:
