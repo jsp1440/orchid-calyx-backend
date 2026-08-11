@@ -8,6 +8,7 @@ from app.mission_control_access import AccessPrincipal
 from app.review_api.dependencies import authenticated_principal
 from app.routers.mission_control import completeness_rows, harvester_rows, metric_snapshot
 
+from .proposal_executor_status import proposal_executor_mission_control_status
 from .service import MissionControlBriefingService
 
 
@@ -45,6 +46,16 @@ def harvester_feed(
         "principal_id": principal.principal_id,
         "count": len(harvesters),
         "harvesters": harvesters,
+    }
+
+
+@router.get("/proposal-executor")
+def proposal_executor_feed(
+    principal: AccessPrincipal = Depends(authenticated_principal),
+) -> dict[str, Any]:
+    return {
+        "principal_id": principal.principal_id,
+        "proposal_executor": proposal_executor_mission_control_status(),
     }
 
 
