@@ -1,6 +1,12 @@
 from collections import Counter
 
-from app.lexicon.intake import EXPECTED_FIELDS, filter_items, get_item, load_items, validate_manifest
+from app.lexicon.intake import (
+    EXPECTED_FIELDS,
+    filter_items,
+    get_item,
+    load_items,
+    validate_manifest,
+)
 from app.lexicon.intake_routes import intake_status, list_intake_items, read_intake_item
 from app.routers.calyx_core import router as calyx_core_router
 
