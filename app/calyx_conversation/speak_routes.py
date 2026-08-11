@@ -12,6 +12,7 @@ from app.security import verify_owner_or_api_key
 from .interaction_context import sanitize_interaction_context
 from .provider import DeterministicGovernedReplyProvider, configured_reply_provider
 from .routes import STORE, _retrieval
+from .workspace_outputs import grounded_workspace_outputs
 
 AuthDependency = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
 router = APIRouter(prefix="/calyx/speak", tags=["calyx-speak"])
@@ -151,13 +152,18 @@ def _run_governed_turn(
 def speak_status(auth: AuthDependency) -> dict[str, Any]:
     _subject(auth)
     return {
-        "release": "CALYX-SPEAK-004-CONTEXT",
+        "release": "CALYX-SPEAK-005-WORKSPACE-OUTPUTS",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
         "interaction_context": {
             "supported": True,
             "evidence": False,
             "max_session_trail": 8,
+        },
+        "workspace_outputs": {
+            "supported": True,
+            "server_grounded_only": True,
+            "kinds": ["table", "text"],
         },
         "automatic_publication": False,
         "knowledge_graph_mutation": False,
@@ -262,6 +268,7 @@ def append_turn(
         research_mode=payload.research_mode,
         retrieval_limit=payload.retrieval_limit,
     )
+    workspace_outputs = grounded_workspace_outputs(retrieval=retrieval, mission=mission)
 
     if mission is not None:
         STORE.append(
@@ -274,6 +281,7 @@ def append_turn(
                 "state": mission.get("state"),
                 "review_status": mission.get("review_status"),
                 "publication_eligibility": mission.get("publication_eligibility"),
+                "workspace_output_ids": [item["id"] for item in workspace_outputs],
             },
             owner=owner,
         )
@@ -286,10 +294,12 @@ def append_turn(
         "retrieval": retrieval,
         "mission": mission,
         "mission_error": mission_error,
+        "workspace_outputs": workspace_outputs,
         "epistemic_policy": {
             "continuum_first": True,
             "provider_memory_is_evidence": False,
             "interaction_context_is_evidence": False,
+            "workspace_outputs_are_automatically_evidence": False,
             "conversation_does_not_publish_knowledge": True,
             "candidate_knowledge_auto_promotion": False,
             "knowledge_graph_mutation": False,
@@ -328,6 +338,7 @@ def append_turn(
             "retrieval_status": retrieval.get("status"),
             "retrieval_error": retrieval.get("error"),
             "interaction_context": interaction_context,
+            "workspace_output_ids": [item["id"] for item in workspace_outputs],
             "research_mode": payload.research_mode,
             "publication_boundary": (
                 "human-review-governed; no automatic publication or graph mutation"
@@ -348,6 +359,7 @@ def append_turn(
             "fallback_error": provider_error,
         },
         "interaction_context": interaction_context,
+        "workspace_outputs": workspace_outputs,
         "research": {
             "casual": casual,
             "mission": mission,
