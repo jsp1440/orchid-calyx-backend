@@ -18,7 +18,13 @@ CREATE TABLE IF NOT EXISTS taxonomy_pipeline.taxonomy_review_provenance (
     PRIMARY KEY (release_id, review_key),
     FOREIGN KEY (release_id, review_key)
         REFERENCES taxonomy_pipeline.review_queue (release_id, review_key)
-        ON DELETE RESTRICT
+        ON DELETE RESTRICT,
+    CONSTRAINT taxonomy_review_provenance_reviewer_id_nonempty
+        CHECK (length(btrim(reviewer_id)) > 0),
+    CONSTRAINT taxonomy_review_provenance_rationale_nonempty
+        CHECK (length(btrim(rationale)) > 0),
+    CONSTRAINT taxonomy_review_provenance_decision_hash_sha256
+        CHECK (decision_hash ~ '^[0-9a-f]{64}$')
 );
 
 CREATE INDEX IF NOT EXISTS idx_taxonomy_review_provenance_release
@@ -26,6 +32,9 @@ CREATE INDEX IF NOT EXISTS idx_taxonomy_review_provenance_release
 
 COMMENT ON TABLE taxonomy_pipeline.taxonomy_review_provenance IS
     'Durable scientific review provenance for taxonomy review items. '
-    'A row here indicates a human reviewer provided identity, rationale, '
-    'and a verifiable decision hash. Absence of a row means no durable '
-    'provenance exists and the item cannot satisfy activation review.';
+    'A row here records a non-empty human reviewer identity and rationale plus '
+    'a lowercase SHA-256 decision hash. Runtime activation gating additionally '
+    'verifies that digest against the current review evidence/disposition and '
+    'rejects stale provenance whose resolution predates the review item update. '
+    'Absence, malformed content, stale content, or a digest mismatch cannot '
+    'satisfy activation review.';
