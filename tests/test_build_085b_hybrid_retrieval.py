@@ -56,7 +56,7 @@ def test_legacy_lexical_row_remains_metadata_retrievable_but_evidence_fails_clos
  assert result["authorized_excerpt"] is None
  assert result["source_content_hash"] is None
  assert result["excerpt_content_hash"] is None
- assert result["citation"]["source_anchors"]==[]
+ assert result["citation"]["source_anchors"]==[{"anchor_id":10,"locator":{"page":1,"paragraph":1}}]
 def test_document_locator_is_not_promoted_to_multiple_exact_anchor_locators():
  r,p,parents=corpus(); document=r.documents[0]; document["anchors"]=(10,11); document["metadata"]["anchor_locators"]={}; document["metadata"]["locator"]={"page":1}
  result=RetrievalEngine(r,p,parents).search(RetrievalQuery("asymbiotic",mode="LEXICAL"))["results"][0]
