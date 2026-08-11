@@ -246,11 +246,17 @@ class RetrievalEngine:
         excerpt_hash = (
             sha256(excerpt.encode()).hexdigest() if excerpt is not None else None
         )
-        exact_top_level_locator = (
-            locator
-            if len(anchor_ids) == 1 and isinstance(locator, dict) and locator
-            else "EXACT_LOCATOR_UNAVAILABLE"
-        )
+        exact_anchor_locators = [
+            item
+            for item in source_anchors
+            if isinstance(item.get("locator"), dict) and item["locator"]
+        ]
+        if len(anchor_ids) == 1 and isinstance(locator, dict) and locator:
+            exact_top_level_locator = locator
+        elif len(anchor_ids) > 1 and len(exact_anchor_locators) == len(anchor_ids):
+            exact_top_level_locator = {"source_anchors": source_anchors}
+        else:
+            exact_top_level_locator = "EXACT_LOCATOR_UNAVAILABLE"
         return {
             "result_id": str(
                 uuid.uuid5(
