@@ -35,7 +35,9 @@ def proposal_executor_mission_control_status(
     ]
     return {
         "schema": "calyx-mission-control-proposal-executor-status-v1",
-        "status": "ready" if policy["ready_for_owner_authorized_draft_pr"] else "blocked",
+        "status": "ready"
+        if policy["ready_for_owner_authorized_draft_pr"]
+        else "blocked",
         "policy": policy,
         "trust_chain": trust_chain,
         "evidence_chain_complete_through_policy": all(
