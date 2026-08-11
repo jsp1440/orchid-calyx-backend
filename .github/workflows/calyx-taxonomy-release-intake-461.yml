@@ -8,6 +8,7 @@ on:
       - "app/routers/taxonomy_release_intake.py"
       - "app/routers/live_mission_control.py"
       - "tests/test_calyx_taxonomy_release_intake_461.py"
+      - "tests/test_calyx_taxonomy_release_intake_hardening.py"
       - "docs/brain/CALYX-TAXONOMY-RELEASE-INTAKE-461.md"
       - ".github/workflows/calyx-taxonomy-release-intake-461.yml"
   workflow_dispatch:
@@ -20,6 +21,8 @@ jobs:
       PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install -r requirements.txt pytest httpx ruff
@@ -30,8 +33,12 @@ jobs:
           app/routers/taxonomy_release_intake.py
           app/routers/live_mission_control.py
           tests/test_calyx_taxonomy_release_intake_461.py
+          tests/test_calyx_taxonomy_release_intake_hardening.py
       - name: Deterministic intake and staging tests
-        run: python -m pytest -q tests/test_calyx_taxonomy_release_intake_461.py
+        run: >-
+          python -m pytest -q
+          tests/test_calyx_taxonomy_release_intake_461.py
+          tests/test_calyx_taxonomy_release_intake_hardening.py
       - name: Permanent non-authority assertions
         run: |
           python - <<'PY'
@@ -49,5 +56,6 @@ jobs:
           PY
       - name: Changed-surface Ruff and diff hygiene
         run: |
-          python -m ruff check runtime/taxonomy_release_intake.py app/routers/taxonomy_release_intake.py tests/test_calyx_taxonomy_release_intake_461.py
-          git diff --check
+          python -m ruff check runtime/taxonomy_release_intake.py app/routers/taxonomy_release_intake.py tests/test_calyx_taxonomy_release_intake_461.py tests/test_calyx_taxonomy_release_intake_hardening.py
+          python -m ruff format --check runtime/taxonomy_release_intake.py app/routers/taxonomy_release_intake.py tests/test_calyx_taxonomy_release_intake_461.py tests/test_calyx_taxonomy_release_intake_hardening.py
+          git diff --check "origin/${{ github.base_ref }}...HEAD"
