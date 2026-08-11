@@ -13,6 +13,7 @@ from runtime.matrix_identification_session import (
     create_session,
     evaluate_session,
     get_session,
+    persistence_status,
 )
 
 
@@ -58,6 +59,20 @@ def _access_actor(auth: Any) -> str | None:
     return _authenticated_actor(auth)
 
 
+def _service_unavailable(exc: RuntimeError) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={"code": "MATRIX_SESSION_PERSISTENCE_UNAVAILABLE", "message": str(exc)},
+    )
+
+
+@router.get("/persistence-status")
+def get_persistence_status(
+    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    return persistence_status()
+
+
 @router.post("")
 def create(
     payload: SessionCreateRequest,
@@ -74,6 +89,8 @@ def create(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _service_unavailable(exc) from exc
 
 
 @router.get("/{session_id}")
@@ -87,6 +104,8 @@ def get(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _service_unavailable(exc) from exc
 
 
 @router.post("/{session_id}/observations")
@@ -110,6 +129,8 @@ def observe(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _service_unavailable(exc) from exc
 
 
 @router.post("/{session_id}/evaluate")
@@ -128,3 +149,5 @@ def evaluate(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _service_unavailable(exc) from exc
