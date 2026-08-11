@@ -21,6 +21,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PYTHONPATH: .
+
 jobs:
   validate:
     runs-on: ubuntu-24.04
@@ -54,7 +57,7 @@ jobs:
             tests/test_calyx_github_proposal_executor_policy_114u.py
       - name: Focused policy and transport regressions
         run: |
-          pytest -q \
+          python -m pytest -q \
             tests/test_calyx_github_proposal_executor_policy_114u.py \
             tests/test_calyx_github_proposal_mutation_adapter_114u.py \
             tests/test_calyx_git_proposal_mutation_journal_114t.py \
