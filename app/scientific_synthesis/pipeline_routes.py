@@ -13,6 +13,7 @@ from .models import (
     VerificationState,
 )
 from .pipeline import EvidenceClassificationDecision, ResearchToArticleMissionService
+from .service import PRIMARY_EXPERIMENTAL_CLASSES
 
 SERVICE = ResearchToArticleMissionService()
 router = APIRouter(prefix="/research-article", tags=["scientific-synthesis"])
@@ -112,20 +113,44 @@ def _evidence(values: list[EvidenceIn]) -> tuple[EvidenceMatrixRow, ...]:
     )
 
 
+def _classification_decisions(
+    values: list[ClassificationIn],
+) -> tuple[EvidenceClassificationDecision, ...]:
+    return tuple(
+        EvidenceClassificationDecision(**value.model_dump()) for value in values
+    )
+
+
+def _require_primary_class_review(
+    evidence_rows: tuple[EvidenceMatrixRow, ...],
+    decisions: tuple[EvidenceClassificationDecision, ...],
+) -> None:
+    decisions_by_evidence: dict[str, list[EvidenceClassificationDecision]] = {}
+    for decision in decisions:
+        decisions_by_evidence.setdefault(decision.evidence_id, []).append(decision)
+
+    for row in evidence_rows:
+        if row.evidence_class not in PRIMARY_EXPERIMENTAL_CLASSES:
+            continue
+        matching = decisions_by_evidence.get(row.evidence_id, [])
+        if len(matching) != 1 or matching[0].evidence_class != row.evidence_class:
+            raise ValueError("PRIMARY_EVIDENCE_CLASS_REVIEW_REQUIRED")
+
+
 @router.post("/run")
 def run_research_article(payload: ResearchArticleIn):
     try:
+        evidence_rows = _evidence(payload.evidence_rows)
+        decisions = _classification_decisions(payload.classification_decisions)
+        _require_primary_class_review(evidence_rows, decisions)
         return SERVICE.run(
             question=payload.question,
             title=payload.title,
             audience=payload.audience,
             format=payload.format,
             bibliography=_bibliography(payload.bibliography),
-            evidence_rows=_evidence(payload.evidence_rows),
-            classification_decisions=tuple(
-                EvidenceClassificationDecision(**value.model_dump())
-                for value in payload.classification_decisions
-            ),
+            evidence_rows=evidence_rows,
+            classification_decisions=decisions,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
