@@ -67,7 +67,14 @@ def test_read_only_routes_expose_status_items_and_item_detail():
     status = intake_status(AUTH)
     assert status["valid"] is True
 
-    result = list_intake_items(AUTH, q="resupination", limit=100)
+    result = list_intake_items(
+        AUTH,
+        q="resupination",
+        concept_intake_state=None,
+        figure_state=None,
+        priority=None,
+        limit=100,
+    )
     assert result["read_only"] is True
     assert result["total_manifest_items"] == 420
     assert any(item["term"].casefold() == "resupination" for item in result["items"])
