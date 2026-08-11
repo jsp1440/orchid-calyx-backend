@@ -5,7 +5,7 @@ on:
     paths:
       - 'app/calyx_conversation/**'
       - 'app/routers/calyx_core.py'
-      - 'tests/test_calyx_speak_002.py'
+      - 'tests/test_calyx_speak*.py'
       - 'migrations/611_calyx_conversation_owner_scope.sql'
       - '.github/workflows/calyx-speak-002-validation.yml'
   workflow_dispatch:
@@ -26,11 +26,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pytest ruff
       - name: Compile Speak layer
-        run: python -m py_compile app/calyx_conversation/store.py app/calyx_conversation/provider.py app/calyx_conversation/speak_routes.py app/routers/calyx_core.py tests/test_calyx_speak_002.py
+        run: python -m py_compile app/calyx_conversation/store.py app/calyx_conversation/provider.py app/calyx_conversation/speak_routes.py app/routers/calyx_core.py tests/test_calyx_speak_002.py tests/test_calyx_speak_003_degraded_retrieval.py tests/test_calyx_speak_casual_capability_greeting.py
       - name: Run Speak acceptance regressions
-        run: python -m pytest -q tests/test_calyx_speak_002.py
+        run: python -m pytest -q tests/test_calyx_speak_002.py tests/test_calyx_speak_003_degraded_retrieval.py tests/test_calyx_speak_casual_capability_greeting.py
       - name: Lint Speak layer
-        run: ruff check app/calyx_conversation/store.py app/calyx_conversation/provider.py app/calyx_conversation/speak_routes.py tests/test_calyx_speak_002.py
+        run: ruff check app/calyx_conversation/store.py app/calyx_conversation/provider.py app/calyx_conversation/speak_routes.py tests/test_calyx_speak_002.py tests/test_calyx_speak_003_degraded_retrieval.py tests/test_calyx_speak_casual_capability_greeting.py
       - name: Verify mounted routes
         run: >-
-          python -c "from app.routers.calyx_core import router; paths={getattr(r,'path','') for r in router.routes}; required={'/api/calyx/speak/conversations','/api/calyx/speak/conversations/{conversation_id}','/api/calyx/speak/conversations/{conversation_id}/turns'}; missing=required-paths; assert not missing, 'missing routes: ' + repr(sorted(missing))"
+          python -c "from app.routers.calyx_core import router; paths={getattr(r,'path','') for r in router.routes}; required={'/api/calyx/speak/status','/api/calyx/speak/conversations','/api/calyx/speak/conversations/{conversation_id}','/api/calyx/speak/conversations/{conversation_id}/turns'}; missing=required-paths; assert not missing, 'missing routes: ' + repr(sorted(missing))"
