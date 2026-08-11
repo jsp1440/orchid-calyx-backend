@@ -268,7 +268,11 @@ def test_executor_restart_resumes_after_verified_partial_failure() -> None:
         grant_mapping=grant,
         now=NOW + timedelta(minutes=1),
     )
-    assert resumed_adapter.calls == ["create_commit", "push_branch", "open_pull_request"]
+    assert resumed_adapter.calls == [
+        "create_commit",
+        "push_branch",
+        "open_pull_request",
+    ]
     assert receipt.status == "completed"
     assert receipt.completed_actions == (
         "create_branch",
