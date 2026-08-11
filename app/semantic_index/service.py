@@ -23,6 +23,7 @@ class SemanticIndexService:
    elif previous["configuration_hash"]!=digest(cfg): action=PlanAction.CONFIGURATION_CHANGED
    elif previous["content_hash"]!=content: action=PlanAction.CHANGED_TEXT
    elif previous["metadata_hash"]!=metadata: action=PlanAction.CHANGED_METADATA
+   elif self.repo.needs_verbatim_backfill(previous["index_document_id"]): action=PlanAction.CHANGED_METADATA
    else: action=PlanAction.UNCHANGED
    self.repo.plan_item(run,doc,decision.value,action.value,content,metadata); counts[action.value]=counts.get(action.value,0)+1
   self.repo.transition(run,"PLANNED"); return {"index_run_id":run,"state":"PLANNED","counts":counts,"vectors_created":0}

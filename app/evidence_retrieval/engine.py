@@ -5,6 +5,7 @@ import time
 import uuid
 from collections import defaultdict
 from dataclasses import asdict
+from hashlib import sha256
 
 from .models import RetrievalQuery
 
@@ -200,21 +201,62 @@ class RetrievalEngine:
     def _assemble(self, q, d, l, matches, scores, fused, rank):
         meta = d.get("metadata", {})
         policy = meta.get("display_policy", "UNKNOWN_REQUIRES_REVIEW")
-        text = l.get("normalized_text", "")
+        text = l.get("verbatim_text")
         excerpt = None
-        if policy == "FULL_TEXT_ALLOWED" or (
-            policy == "INTERNAL_RESEARCH_ONLY"
-            and q.internal_access
-            and meta.get("internal_access_allowed", False)
-        ):
-            excerpt = text
-        elif policy == "LIMITED_PREVIEW_ONLY":
-            excerpt = text[: int(meta.get("excerpt_limit", 160))]
+        if isinstance(text, str):
+            if policy == "FULL_TEXT_ALLOWED" or (
+                policy == "INTERNAL_RESEARCH_ONLY"
+                and q.internal_access
+                and meta.get("internal_access_allowed", False)
+            ):
+                excerpt = text
+            elif policy == "LIMITED_PREVIEW_ONLY":
+                excerpt = text[: int(meta.get("excerpt_limit", 160))]
         parent = self.parents.get(
             (d.get("parent_type"), d.get("parent_id"))
         ) or self.parents.get((d["source_object_type"], d.get("parent_id")))
         expansion = self._expand(q, policy, parent, d)
         locator = meta.get("locator")
+        anchor_ids = tuple(d.get("anchors", ()))
+        configured = meta.get("anchor_locators") or {}
+        source_anchors = []
+        for index, anchor_id in enumerate(anchor_ids):
+            if isinstance(configured, dict):
+                anchor_locator = configured.get(anchor_id) or configured.get(
+                    str(anchor_id)
+                )
+            elif isinstance(configured, list) and index < len(configured):
+                anchor_locator = configured[index]
+            else:
+                anchor_locator = None
+            if anchor_locator is None and len(anchor_ids) == 1:
+                anchor_locator = locator
+            source_anchors.append(
+                {
+                    "anchor_id": anchor_id,
+                    "locator": anchor_locator or "EXACT_LOCATOR_UNAVAILABLE",
+                }
+            )
+
+        source_hash = (
+            sha256(text.encode()).hexdigest() if isinstance(text, str) else None
+        )
+        if source_hash is not None and source_hash != d.get("content_hash"):
+            raise ValueError("SOURCE_CONTENT_HASH_MISMATCH")
+        excerpt_hash = (
+            sha256(excerpt.encode()).hexdigest() if excerpt is not None else None
+        )
+        exact_anchor_locators = [
+            item
+            for item in source_anchors
+            if isinstance(item.get("locator"), dict) and item["locator"]
+        ]
+        if len(anchor_ids) == 1 and isinstance(locator, dict) and locator:
+            exact_top_level_locator = locator
+        elif len(anchor_ids) > 1 and len(exact_anchor_locators) == len(anchor_ids):
+            exact_top_level_locator = {"source_anchors": source_anchors}
+        else:
+            exact_top_level_locator = "EXACT_LOCATOR_UNAVAILABLE"
         return {
             "result_id": str(
                 uuid.uuid5(
@@ -234,6 +276,8 @@ class RetrievalEngine:
             "object_type": d["source_object_type"],
             "title": l.get("title") or meta.get("title"),
             "authorized_excerpt": excerpt,
+            "source_content_hash": source_hash,
+            "excerpt_content_hash": excerpt_hash,
             "matched_terms": matches if excerpt is not None else [],
             "canonical_parent": {
                 "type": d.get("parent_type") or d["source_object_type"],
@@ -254,10 +298,9 @@ class RetrievalEngine:
                 "canonical_object_type": d.get("parent_type")
                 or d["source_object_type"],
                 "canonical_object_id": d.get("parent_id"),
-                "source_anchor_ids": list(d.get("anchors", ())),
-                "locator": (
-                    locator if locator is not None else "EXACT_LOCATOR_UNAVAILABLE"
-                ),
+                "source_anchor_ids": list(anchor_ids),
+                "source_anchors": source_anchors,
+                "locator": exact_top_level_locator,
                 "identifier": meta.get("identifier"),
                 "model_id": d.get("model_id"),
                 "ranking_version": self.ranking_version,

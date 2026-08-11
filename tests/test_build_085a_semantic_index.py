@@ -23,6 +23,11 @@ def test_idempotency_changed_content_model_and_configuration_keep_history():
  c=s.preview([doc(text="changed")]); s.execute(c["index_run_id"]); assert len(r.vectors)==2 and len(r.documents)==2 and not r.documents[0]["active"]
  d=SemanticIndexService(r,DeterministicLocalProvider(12)).preview([doc(text="changed")]); assert d["counts"]=={"MODEL_CHANGED":1}
  e=s.preview([doc(text="changed")],configuration={"normalize":True}); assert e["counts"]=={"CONFIGURATION_CHANGED":1}
+def test_unchanged_legacy_row_missing_verbatim_is_reindexed():
+ r,s=setup(); first=s.preview([doc()]); s.execute(first["index_run_id"]); del r.lexical[0]["verbatim_text"]
+ repair=s.preview([doc()]); assert repair["counts"]=={"CHANGED_METADATA":1}; s.execute(repair["index_run_id"])
+ assert len(r.documents)==2 and not r.documents[0]["active"] and r.lexical[-1]["verbatim_text"]=="complete protocol evidence"
+ unchanged=s.preview([doc()]); assert unchanged["counts"]=={"UNCHANGED":1}
 def test_failure_partial_resume_and_completed_items_survive():
  class Flaky(DeterministicLocalProvider):
   def embed_batch(self,texts):
@@ -34,5 +39,5 @@ def test_cancel_preserves_progress_and_tombstone_preserves_canonical_identity():
  r,s=setup(); p=s.preview([doc()]); s.cancel(p["index_run_id"]); assert s.execute(p["index_run_id"])["state"]=="CANCELLED"
  s.resume(p["index_run_id"]); excluded=doc(1,internal_indexing_permission=False); q=s.preview([excluded]); assert q["counts"]=={"TOMBSTONE_REQUIRED":1}; s.execute(q["index_run_id"]); assert r.tombstones[0]["prior_index_document_id"] and r.documents[0]["revision_id"]==1
 def test_lexical_record_and_safety_contract():
- r,s=setup(); p=s.preview([doc()]); s.execute(p["index_run_id"]); assert r.lexical[0]["normalized_text"]=="complete protocol evidence"
+ r,s=setup(); p=s.preview([doc()]); s.execute(p["index_run_id"]); assert r.lexical[0]["normalized_text"]=="complete protocol evidence" and r.lexical[0]["verbatim_text"]=="complete protocol evidence"
  code="\n".join(x.read_text() for x in Path("app/semantic_index").glob("*.py")); assert all(x not in code for x in ("drive.files.update","production_publish","question_answer","knowledge_extract"))
