@@ -1,0 +1,38 @@
+name: CALYX Context Awareness Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/calyx_conversation/**'
+      - 'tests/test_calyx_context_awareness_001.py'
+      - 'tests/test_calyx_speak_002.py'
+      - 'tests/test_calyx_speak_casual_capability_greeting.py'
+      - 'docs/brain/CALYX-MULTIMODAL-WORKSPACE-001.md'
+      - '.github/workflows/calyx-context-awareness-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest ruff
+      - name: Compile context-aware Speak layer
+        run: python -m py_compile app/calyx_conversation/interaction_context.py app/calyx_conversation/speak_routes.py app/calyx_conversation/provider.py tests/test_calyx_context_awareness_001.py
+      - name: Run context and adjacent Speak regressions
+        run: python -m pytest -q tests/test_calyx_context_awareness_001.py tests/test_calyx_speak_002.py tests/test_calyx_speak_casual_capability_greeting.py
+      - name: Lint bounded context layer
+        run: ruff check app/calyx_conversation/interaction_context.py app/calyx_conversation/speak_routes.py tests/test_calyx_context_awareness_001.py
+      - name: Verify context release contract
+        run: >-
+          python -c "from app.calyx_conversation.speak_routes import speak_status; s=speak_status({'subject':'ci-owner'}); assert s['release']=='CALYX-SPEAK-004-CONTEXT'; assert s['interaction_context']['supported'] is True; assert s['interaction_context']['evidence'] is False; assert s['automatic_publication'] is False; assert s['knowledge_graph_mutation'] is False"
+      - name: Diff hygiene
+        run: git diff --check origin/${{ github.base_ref }}...HEAD
