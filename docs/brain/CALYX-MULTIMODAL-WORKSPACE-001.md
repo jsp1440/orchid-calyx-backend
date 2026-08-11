@@ -71,6 +71,15 @@ Initial producers are deliberately conservative:
 
 Important epistemic distinction: retrieval alone does not establish scientific evidence status. The retrieval table therefore uses `evidence_status = unknown`, while preserving row-level review and verification states. Mission evidence and derived uncertainty remain separately labeled.
 
+### Review hardening — 2026-08-11
+
+Two P1 provenance defects found during review were repaired on backend PR #873 head `33aff16b37edc776525b89586df82778a7205c07`:
+
+- retrieval rows now preserve each canonical retrieval `result_id` plus the citation payload, document ID, revision ID, and identifier; the ranking-configuration version is retained as ranking metadata rather than being misrepresented as the evidence source;
+- Brain supporting/contradicting Candidate Knowledge panels are now explicitly `generated = true` and `evidence_status = derived`, with wording that prevents them from being mistaken for direct source evidence or conclusions.
+
+Focused regression fixtures were strengthened to assert both boundaries. Both review threads are resolved. Executable CI certification remains pending because hosted runners are currently blocked before allocation by the account spending/billing gate described below.
+
 The frontend bridge is fail-soft: malformed auxiliary outputs are withheld at the shared schema/provenance boundary and cannot discard an otherwise valid Calyx conversation turn.
 
 ## Lexicon ↔ Identification Matrix interoperability
