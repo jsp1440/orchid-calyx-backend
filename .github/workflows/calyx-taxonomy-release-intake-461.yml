@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "runtime/taxonomy_release_intake.py"
+      - "runtime/taxonomy_release_intake_v2.py"
       - "runtime/taxonomy_preflight.py"
       - "app/routers/taxonomy_release_intake.py"
       - "app/routers/live_mission_control.py"
@@ -30,6 +31,7 @@ jobs:
         run: >-
           python -m py_compile
           runtime/taxonomy_release_intake.py
+          runtime/taxonomy_release_intake_v2.py
           app/routers/taxonomy_release_intake.py
           app/routers/live_mission_control.py
           tests/test_calyx_taxonomy_release_intake_461.py
@@ -43,7 +45,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          text = Path('runtime/taxonomy_release_intake.py').read_text()
+          text = Path('runtime/taxonomy_release_intake_v2.py').read_text()
           required = (
               '"ready_for_promotion": False',
               '"taxonomy_activation_authorized": False',
@@ -56,5 +58,5 @@ jobs:
           PY
       - name: Changed-surface Ruff and diff hygiene
         run: |
-          python -m ruff check runtime/taxonomy_release_intake.py app/routers/taxonomy_release_intake.py tests/test_calyx_taxonomy_release_intake_461.py tests/test_calyx_taxonomy_release_intake_hardening.py
+          python -m ruff check runtime/taxonomy_release_intake.py runtime/taxonomy_release_intake_v2.py app/routers/taxonomy_release_intake.py tests/test_calyx_taxonomy_release_intake_461.py tests/test_calyx_taxonomy_release_intake_hardening.py
           git diff --check "origin/${{ github.base_ref }}...HEAD"
