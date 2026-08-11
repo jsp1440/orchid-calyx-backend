@@ -300,20 +300,20 @@ DEFAULT_FRAGMENTS: dict[str, dict[str, str]] = {
     },
 }
 # Maps index name to a lowercase substring that must appear in pg_get_indexdef() output.
-# This validates both the index name and the columns/predicate it covers.
+# Table identity is enforced by the index name/schema query; fragments validate columns/predicate.
 INDEX_DEF_FRAGMENTS_101: dict[str, str] = {
-    "idx_rs_projects_owner_archive_updated": "projects(owner_subject, archived_at, updated_at desc)",
-    "idx_rs_projects_owner_status": "projects(owner_subject, status)",
-    "uq_rs_saved_search_name": "saved_searches(project_id, lower(name))",
-    "idx_rs_notes_project_updated": "notes(project_id, archived_at, updated_at desc)",
-    "idx_rs_project_taxa_id": "project_taxa(taxon_id)",
-    "idx_rs_project_documents_id": "project_documents(document_id)",
-    "idx_rs_project_evidence_id": "project_evidence(evidence_kind, evidence_id)",
-    "idx_rs_audit_project_time": "audit_events(project_id, occurred_at desc, event_id)",
+    "idx_rs_projects_owner_archive_updated": "(owner_subject, archived_at, updated_at desc)",
+    "idx_rs_projects_owner_status": "(owner_subject, status)",
+    "uq_rs_saved_search_name": "(project_id, lower(name)) where (archived_at is null)",
+    "idx_rs_notes_project_updated": "(project_id, archived_at, updated_at desc)",
+    "idx_rs_project_taxa_id": "(taxon_id)",
+    "idx_rs_project_documents_id": "(document_id)",
+    "idx_rs_project_evidence_id": "(evidence_kind, evidence_id)",
+    "idx_rs_audit_project_time": "(project_id, occurred_at desc, event_id)",
 }
 INDEX_DEF_FRAGMENTS_140: dict[str, str] = {
-    "idx_rs_conversation_owner_project_updated": "conversation_sessions(owner_subject, project_id, updated_at desc)",
-    "idx_rs_conversation_messages_session_time": "conversation_messages(conversation_id, created_at, message_id)",
+    "idx_rs_conversation_owner_project_updated": "(owner_subject, project_id, updated_at desc)",
+    "idx_rs_conversation_messages_session_time": "(conversation_id, created_at, message_id)",
 }
 CONSTRAINT_FRAGMENTS: dict[str, tuple[str, ...]] = {
     "projects": (
@@ -774,10 +774,17 @@ def run_profile(database_url: str, apply: bool, evidence_path: Path) -> int:
     confirmation_present = (
         os.environ.get("CALYX_RESEARCH_STATION_CONFIRM", "").strip() == CONFIRMATION
     )
+    target_environment = (
+        os.environ.get("CALYX_ACTIVATION_TARGET_ENVIRONMENT", "unspecified").strip().lower()
+        or "unspecified"
+    )
+    production_target = target_environment == "production"
+    mutation_authorized = bool(apply and confirmation_present)
     receipt: dict[str, Any] = {
         "schema_version": "1.0",
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "profile": "research-station-conversations",
+        "target_environment": target_environment,
         "mode": "apply" if apply else "preflight",
         "apply_requested": apply,
         "explicit_confirmation_present": confirmation_present,
@@ -788,12 +795,22 @@ def run_profile(database_url: str, apply: bool, evidence_path: Path) -> int:
             "lock_id": POSTGRES_VALIDATION_LOCK_ID,
         },
         "transaction_scope": "single_transaction_101_through_140_postconditions",
-        "production_database_mutation_authorized": bool(apply and confirmation_present),
+        "database_mutation_authorized": mutation_authorized,
+        "database_mutation_attempted": False,
+        "production_database_mutation_authorized": bool(
+            mutation_authorized and production_target
+        ),
         "production_database_mutation_attempted": False,
         "publication_authorized": False,
         "knowledge_graph_mutation_authorized": False,
     }
     with psycopg.connect(database_url, autocommit=True) as connection:
+        server_version = connection.execute("SHOW server_version").fetchone()[0]
+        server_version_num = connection.execute("SHOW server_version_num").fetchone()[0]
+        receipt["postgresql"] = {
+            "server_version": server_version,
+            "server_version_num": int(server_version_num),
+        }
         before = inspect_contract(connection)
         preflight = classify_preflight(before, identities_match)
         receipt["contract_before"] = before
@@ -814,7 +831,8 @@ def run_profile(database_url: str, apply: bool, evidence_path: Path) -> int:
             receipt["status"] = "blocked"
             _write_receipt(evidence_path, receipt)
             return 2
-        receipt["production_database_mutation_attempted"] = True
+        receipt["database_mutation_attempted"] = True
+        receipt["production_database_mutation_attempted"] = production_target
         try:
             result = apply_chain(connection)
         except (RuntimeError, psycopg.Error) as exc:
