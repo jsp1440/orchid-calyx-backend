@@ -68,6 +68,21 @@ def _mission_question(history: str, message: str) -> str:
     return text[-1000:]
 
 
+def _safe_retrieval(message: str, retrieval_limit: int) -> dict[str, Any]:
+    try:
+        result = _retrieval(message, "HYBRID", retrieval_limit, True)
+        result.setdefault("status", "available")
+        return result
+    except (ValueError, TypeError, RuntimeError) as exc:
+        return {
+            "results": [],
+            "total_eligible_results": 0,
+            "retrieval_mode": "HYBRID",
+            "status": "unavailable",
+            "error": str(exc),
+        }
+
+
 def _run_governed_turn(
     *,
     owner: str,
@@ -79,9 +94,14 @@ def _run_governed_turn(
 ) -> tuple[dict[str, Any], dict[str, Any] | None, str | None, bool]:
     casual = _is_casual(message) and research_mode != "always"
     if casual:
-        return {"results": [], "total_eligible_results": 0}, None, None, True
+        return {
+            "results": [],
+            "total_eligible_results": 0,
+            "retrieval_mode": "HYBRID",
+            "status": "not_requested",
+        }, None, None, True
 
-    retrieval = _retrieval(message, "HYBRID", retrieval_limit, True)
+    retrieval = _safe_retrieval(message, retrieval_limit)
     mission: dict[str, Any] | None = None
     mission_error: str | None = None
     should_run_mission = research_mode == "always" or (
@@ -107,6 +127,18 @@ def _run_governed_turn(
         except (ValueError, RuntimeError) as exc:
             mission_error = str(exc)
     return retrieval, mission, mission_error, False
+
+
+@router.get("/status")
+def speak_status(auth: AuthDependency) -> dict[str, Any]:
+    _subject(auth)
+    return {
+        "release": "CALYX-SPEAK-003",
+        "conversation_persistence": STORE.persistence_mode,
+        "semantic_retrieval_degraded_mode": True,
+        "automatic_publication": False,
+        "knowledge_graph_mutation": False,
+    }
 
 
 @router.post("/conversations", status_code=201)
@@ -197,17 +229,14 @@ def append_turn(
         owner=owner,
     )
 
-    try:
-        retrieval, mission, mission_error, casual = _run_governed_turn(
-            owner=owner,
-            conversation_id=conversation_id,
-            project_id=project_id,
-            message=payload.message,
-            research_mode=payload.research_mode,
-            retrieval_limit=payload.retrieval_limit,
-        )
-    except (ValueError, TypeError, RuntimeError) as exc:
-        raise HTTPException(422, detail={"code": str(exc)}) from exc
+    retrieval, mission, mission_error, casual = _run_governed_turn(
+        owner=owner,
+        conversation_id=conversation_id,
+        project_id=project_id,
+        message=payload.message,
+        research_mode=payload.research_mode,
+        retrieval_limit=payload.retrieval_limit,
+    )
 
     if mission is not None:
         STORE.append(
@@ -269,6 +298,8 @@ def append_turn(
             "mission_state": mission.get("state") if mission else None,
             "review_status": mission.get("review_status") if mission else None,
             "retrieval_eligible_results": retrieval.get("total_eligible_results"),
+            "retrieval_status": retrieval.get("status"),
+            "retrieval_error": retrieval.get("error"),
             "research_mode": payload.research_mode,
             "publication_boundary": (
                 "human-review-governed; no automatic publication or graph mutation"
