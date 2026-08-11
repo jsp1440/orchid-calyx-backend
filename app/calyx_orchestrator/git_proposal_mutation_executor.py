@@ -22,6 +22,7 @@ SCHEMA = "calyx-git-proposal-mutation-receipt-v3"
 ALLOWED_BRANCH_PREFIX = "autonomy/proposal/"
 ALLOWED_ACTIONS = frozenset(ACTION_ORDER)
 FINAL_ACTION = "open_pull_request"
+FINAL_STATUSES = frozenset({"completed", "completed_subset"})
 
 
 def _is_git_sha(value: str) -> bool:
@@ -115,6 +116,21 @@ class GitProposalMutationReceipt:
         return {**self.payload(), "receipt_digest": self.receipt_digest}
 
 
+class GitProposalMutationJournal(Protocol):
+    """Durable persistence capability injected separately from remote mutation."""
+
+    def record(
+        self,
+        receipt: GitProposalMutationReceipt,
+        *,
+        event_index: int,
+    ) -> GitProposalMutationReceipt: ...
+
+    def latest(self, *, plan_digest: str) -> GitProposalMutationReceipt | None: ...
+
+    def next_event_index(self, *, plan_digest: str) -> int: ...
+
+
 class GitProposalMutationError(RuntimeError):
     """Failure with exact evidence for side effects verified before the failure."""
 
@@ -132,6 +148,7 @@ class GitProposalMutationExecutor:
         *,
         adapter: GitProposalMutationAdapter,
         repository_allowlist: Sequence[str],
+        journal: GitProposalMutationJournal | None = None,
     ) -> None:
         normalized = frozenset(
             item.strip() for item in repository_allowlist if item.strip()
@@ -140,6 +157,7 @@ class GitProposalMutationExecutor:
             raise ValueError("GIT_PROPOSAL_EXECUTOR_REPOSITORY_ALLOWLIST_REQUIRED")
         self._adapter = adapter
         self._repository_allowlist = normalized
+        self._journal = journal
 
     def execute(
         self,
@@ -181,8 +199,20 @@ class GitProposalMutationExecutor:
         evidence: list[GitProposalOperationEvidence] = []
         completed: list[str] = []
         expected_commit_sha: str | None = None
+        event_index = 1
 
-        for operation in plan.operations:
+        if self._journal is not None:
+            persisted = self._journal.latest(plan_digest=plan.plan_digest)
+            event_index = self._journal.next_event_index(plan_digest=plan.plan_digest)
+            if persisted is not None:
+                self._verify_resume_receipt(plan=plan, receipt=persisted)
+                if persisted.status in FINAL_STATUSES:
+                    return persisted
+                evidence.extend(persisted.operation_evidence)
+                completed.extend(persisted.completed_actions)
+                expected_commit_sha = self._expected_commit_sha(evidence)
+
+        for operation in plan.operations[len(completed) :]:
             try:
                 authorization_gate.verify_grant(request, grant_mapping)
                 raw = self._adapter.apply_proposal_operation(
@@ -204,24 +234,87 @@ class GitProposalMutationExecutor:
                     evidence=evidence,
                     failure_code=code,
                 )
+                self._record(receipt, event_index=event_index)
                 raise GitProposalMutationError(code, receipt) from exc
+
             evidence.append(item)
             completed.append(operation.action)
             if operation.action == "create_commit":
                 expected_commit_sha = str(item.payload["commit_sha"]).lower()
+
+            progress = self._receipt(
+                plan=plan,
+                status="in_progress",
+                completed=completed,
+                evidence=evidence,
+                failure_code=None,
+            )
+            self._record(progress, event_index=event_index)
+            event_index += 1
 
         status = (
             "completed"
             if completed and completed[-1] == FINAL_ACTION
             else "completed_subset"
         )
-        return self._receipt(
+        receipt = self._receipt(
             plan=plan,
             status=status,
             completed=completed,
             evidence=evidence,
             failure_code=None,
         )
+        self._record(receipt, event_index=event_index)
+        return receipt
+
+    def _record(
+        self,
+        receipt: GitProposalMutationReceipt,
+        *,
+        event_index: int,
+    ) -> None:
+        if self._journal is None:
+            return
+        persisted = self._journal.record(receipt, event_index=event_index)
+        if persisted.snapshot() != receipt.snapshot():
+            raise PermissionError("GIT_PROPOSAL_EXECUTOR_JOURNAL_MISMATCH")
+
+    @staticmethod
+    def _verify_resume_receipt(
+        *,
+        plan: GitProposalExecutionPlan,
+        receipt: GitProposalMutationReceipt,
+    ) -> None:
+        if receipt.plan_digest != plan.plan_digest:
+            raise PermissionError("GIT_PROPOSAL_EXECUTOR_RESUME_PLAN_MISMATCH")
+        if (
+            receipt.patch_program_job_id != plan.patch_program_job_id
+            or receipt.repository != plan.repository
+            or receipt.proposed_branch != plan.proposed_branch
+            or receipt.base_commit_sha != plan.base_commit_sha
+            or receipt.base_ref != plan.base_ref
+        ):
+            raise PermissionError("GIT_PROPOSAL_EXECUTOR_RESUME_IDENTITY_MISMATCH")
+        expected_actions = tuple(
+            operation.action
+            for operation in plan.operations[: len(receipt.completed_actions)]
+        )
+        if receipt.completed_actions != expected_actions:
+            raise PermissionError("GIT_PROPOSAL_EXECUTOR_RESUME_ACTION_PREFIX_MISMATCH")
+        if len(receipt.operation_evidence) != len(receipt.completed_actions):
+            raise PermissionError("GIT_PROPOSAL_EXECUTOR_RESUME_EVIDENCE_MISMATCH")
+
+    @staticmethod
+    def _expected_commit_sha(
+        evidence: Sequence[GitProposalOperationEvidence],
+    ) -> str | None:
+        for item in evidence:
+            if item.action == "create_commit":
+                commit = str(item.payload.get("commit_sha") or "").strip().lower()
+                if not _is_git_sha(commit):
+                    raise PermissionError("GIT_PROPOSAL_EXECUTOR_RESUME_COMMIT_INVALID")
+                return commit
+        return None
 
     @staticmethod
     def _receipt(
