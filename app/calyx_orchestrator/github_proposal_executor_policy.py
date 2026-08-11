@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from .git_proposal_mutation_executor import GitProposalMutationExecutor
+from .git_proposal_mutation_executor import (
+    GitProposalMutationExecutor,
+    GitProposalMutationJournal,
+)
 from .github_proposal_mutation_adapter import (
     GitHubProposalMutationAdapter,
     GitHubTransport,
-    ProposalEvidenceResolver,
     ProposalPostimageResolver,
 )
 
@@ -133,7 +135,7 @@ class GovernedGitHubProposalExecutorRegistration:
         repository: str,
         transport: GitHubTransport,
         postimages: ProposalPostimageResolver,
-        evidence: ProposalEvidenceResolver,
+        evidence: GitProposalMutationJournal,
     ) -> GitProposalMutationExecutor:
         self.require_ready(owner=owner, repository=repository)
         adapter = GitHubProposalMutationAdapter(
