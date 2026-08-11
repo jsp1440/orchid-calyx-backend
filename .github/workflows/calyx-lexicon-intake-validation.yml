@@ -1,0 +1,62 @@
+name: CALYX-LEXICON-INTAKE-001 Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/lexicon/**'
+      - 'app/routers/calyx_core.py'
+      - 'tests/test_calyx_lexicon_integration.py'
+      - 'tests/test_calyx_lexicon_intake_001.py'
+      - 'docs/brain/CALYX-LEXICON-INTAKE-001.md'
+      - '.github/workflows/calyx-lexicon-intake-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+
+jobs:
+  validate-lexicon-intake:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest ruff httpx
+      - name: Compile intake slice
+        run: python -m py_compile app/lexicon/intake_seed.py app/lexicon/intake.py app/lexicon/intake_routes.py app/lexicon/routes.py tests/test_calyx_lexicon_intake_001.py
+      - name: Run lexicon integration and intake regressions
+        run: python -m pytest -q tests/test_calyx_lexicon_integration.py tests/test_calyx_lexicon_intake_001.py
+      - name: Lint intake slice
+        run: ruff check app/lexicon tests/test_calyx_lexicon_integration.py tests/test_calyx_lexicon_intake_001.py
+      - name: Verify immutable governance gates
+        run: |
+          python - <<'PY'
+          from app.lexicon.intake import validate_manifest
+          status = validate_manifest()
+          assert status['valid'] is True
+          assert status['summary']['terms'] == 420
+          assert status['summary']['blocked_definition'] == 199
+          assert status['summary']['figure_generation_hold'] == 383
+          assert status['policy']['automatic_concept_promotion'] is False
+          assert status['policy']['automatic_publication'] is False
+          assert status['policy']['figure_generation_hold_until_calyx_vision_review'] is True
+          PY
+      - name: Verify canonical route mounting
+        run: |
+          python - <<'PY'
+          from app.routers.calyx_core import router
+          paths = {getattr(route, 'path', '') for route in router.routes}
+          required = {
+              '/api/lexicon/intake/status',
+              '/api/lexicon/intake/items',
+              '/api/lexicon/intake/items/{glossary_id}',
+          }
+          missing = required - paths
+          assert not missing, f'missing routes: {sorted(missing)}'
+          PY
