@@ -1,0 +1,73 @@
+name: Semantic Index Runtime Snapshot Validation
+
+on:
+  pull_request:
+    paths:
+      - 'migrations/086e_semantic_index_runtime_snapshot.sql'
+      - 'app/semantic_index/postgres_repository.py'
+      - 'app/persistence/state_repository.py'
+      - 'tests/test_semantic_index_runtime_snapshot_kind.py'
+      - '.github/workflows/semantic-index-runtime-snapshot-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orchid_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d orchid_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_test
+      PGPASSWORD: postgres
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install focused dependencies
+        run: pip install psycopg[binary] pytest ruff
+      - name: Apply original and corrective snapshot migrations
+        run: |
+          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1 -f migrations/086d_persistent_runtime.sql
+          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1 -f migrations/086e_semantic_index_runtime_snapshot.sql
+      - name: Prove all governed repository kinds are accepted
+        run: |
+          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO oc_candidate_knowledge.runtime_repository_snapshots(repository_kind,state)
+          VALUES
+            ('candidate_knowledge','{}'::jsonb),
+            ('evidence_aggregation','{}'::jsonb),
+            ('semantic_index','{}'::jsonb);
+          SELECT repository_kind FROM oc_candidate_knowledge.runtime_repository_snapshots ORDER BY repository_kind;
+          SQL
+      - name: Prove semantic repository initializes and persists
+        run: |
+          python - <<'PY'
+          import os
+          from app.semantic_index.postgres_repository import PostgresIndexRepository
+          repo = PostgresIndexRepository(os.environ['TEST_DATABASE_URL'])
+          assert repo.snapshot_kind == 'semantic_index'
+          repo.atomic(lambda: repo.models.append({'model_id': 'validation-model'}))
+          rebuilt = PostgresIndexRepository(os.environ['TEST_DATABASE_URL'])
+          assert any(x.get('model_id') == 'validation-model' for x in rebuilt.models)
+          print('semantic index durable snapshot initialization: PASS')
+          PY
+      - name: Unit regression and lint
+        run: |
+          pytest -q tests/test_semantic_index_runtime_snapshot_kind.py
+          ruff check tests/test_semantic_index_runtime_snapshot_kind.py
+          git diff --check origin/${{ github.base_ref }}...HEAD
