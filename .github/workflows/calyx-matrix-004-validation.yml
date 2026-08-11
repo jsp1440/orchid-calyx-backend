@@ -1,0 +1,49 @@
+name: CALYX-MATRIX-004 Validation
+
+on:
+  pull_request:
+    branches: [main, agent/calyx-matrix-session-slice]
+  workflow_dispatch:
+
+jobs:
+  structured-calyx-explanations:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt pytest ruff
+      - name: Matrix evaluator, registry, session, and explanation regressions
+        run: |
+          pytest -q \
+            tests/test_matrix_identification_mvp_001.py \
+            tests/test_matrix_identification_registry_001.py \
+            tests/test_matrix_identification_session_001.py \
+            tests/test_matrix_identification_explanation_004.py
+      - name: Compile CALYX-MATRIX modules
+        run: |
+          python -m compileall -q \
+            runtime/matrix_identification.py \
+            runtime/matrix_identification_registry.py \
+            runtime/matrix_identification_session.py \
+            runtime/matrix_identification_explanation.py \
+            app/routers/matrix_identification.py \
+            app/routers/matrix_identification_registry.py \
+            app/routers/matrix_identification_session.py \
+            app/routers/matrix_identification_explanation.py
+      - name: Ruff CALYX-MATRIX modules
+        run: |
+          python -m ruff check \
+            runtime/matrix_identification.py \
+            runtime/matrix_identification_registry.py \
+            runtime/matrix_identification_session.py \
+            runtime/matrix_identification_explanation.py \
+            app/routers/matrix_identification.py \
+            app/routers/matrix_identification_registry.py \
+            app/routers/matrix_identification_session.py \
+            app/routers/matrix_identification_explanation.py \
+            tests/test_matrix_identification_explanation_004.py
