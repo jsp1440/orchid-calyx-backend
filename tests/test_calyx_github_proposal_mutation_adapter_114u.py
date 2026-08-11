@@ -205,7 +205,9 @@ def _run_end_to_end(transport: FakeGitHubTransport):
         evidence=journal,
         repository_allowlist=(REPOSITORY,),
     )
-    store, gate, request, grant, manifest, plan, patch_program_job_id = _execution_inputs()
+    store, gate, request, grant, manifest, plan, patch_program_job_id = (
+        _execution_inputs()
+    )
     receipt = GitProposalMutationExecutor(
         adapter=adapter,
         repository_allowlist=(REPOSITORY,),
