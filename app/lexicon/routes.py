@@ -11,10 +11,16 @@ from psycopg.rows import dict_row
 
 from app.concepts.repositories import concept_database_url
 from app.scientific_synthesis.language import BotanicalLanguageService
-from app.scientific_synthesis.language_routes import _concept_search, _load_concept_service
+from app.scientific_synthesis.language_routes import (
+    _concept_search,
+    _load_concept_service,
+)
+
+from .intake_routes import router as intake_router
 
 # Included by app.routers.calyx_core whose parent prefix is /api.
 router = APIRouter(prefix="/lexicon", tags=["illustrated-orchid-lexicon"])
+router.include_router(intake_router)
 
 
 def _slug(value: str) -> str:
