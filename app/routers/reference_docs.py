@@ -12,6 +12,7 @@ from app.species_exhibit.routes import router as species_exhibit_router
 from app.routers.matrix_identification import router as matrix_identification_router
 from app.routers.matrix_identification_registry import router as matrix_identification_registry_router
 from app.routers.matrix_identification_session import router as matrix_identification_session_router
+from app.routers.matrix_identification_report import router as matrix_identification_report_router
 
 router = APIRouter()
 
@@ -154,3 +155,4 @@ router.include_router(species_exhibit_router)
 router.include_router(matrix_identification_router)
 router.include_router(matrix_identification_registry_router)
 router.include_router(matrix_identification_session_router)
+router.include_router(matrix_identification_report_router)
