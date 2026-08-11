@@ -19,7 +19,6 @@ from runtime.matrix_identification_session import (
 class SessionCreateRequest(BaseModel):
     registry_id: str = Field(min_length=1, max_length=120)
     version: str = Field(min_length=1, max_length=120)
-    actor: str = Field(min_length=1, max_length=200)
     metadata: dict[str, Any] | None = None
 
 
@@ -41,16 +40,25 @@ router = APIRouter(
 )
 
 
+def _authenticated_actor(auth: Any) -> str:
+    if not isinstance(auth, dict):
+        raise HTTPException(status_code=401, detail="authenticated actor unavailable")
+    actor = str(auth.get("actor") or "").strip()
+    if not actor:
+        raise HTTPException(status_code=401, detail="authenticated actor unavailable")
+    return actor
+
+
 @router.post("")
 def create(
     payload: SessionCreateRequest,
-    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+    auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     try:
         return create_session(
             registry_id=payload.registry_id,
             version=payload.version,
-            actor=payload.actor,
+            actor=_authenticated_actor(auth),
             metadata=payload.metadata,
         )
     except FileNotFoundError as exc:
@@ -76,7 +84,7 @@ def get(
 def observe(
     session_id: str,
     payload: SessionObservationRequest,
-    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+    auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     try:
         return add_observation(
@@ -86,6 +94,7 @@ def observe(
             certainty=payload.certainty,
             weight=payload.weight,
             source=payload.source,
+            actor=_authenticated_actor(auth),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
