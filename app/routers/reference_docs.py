@@ -13,6 +13,7 @@ from app.routers.matrix_identification import router as matrix_identification_ro
 from app.routers.matrix_identification_registry import router as matrix_identification_registry_router
 from app.routers.matrix_identification_session import router as matrix_identification_session_router
 from app.routers.matrix_identification_explanation import router as matrix_identification_explanation_router
+from app.routers.matrix_identification_vision import router as matrix_identification_vision_router
 
 router = APIRouter()
 
@@ -156,3 +157,4 @@ router.include_router(matrix_identification_router)
 router.include_router(matrix_identification_registry_router)
 router.include_router(matrix_identification_session_router)
 router.include_router(matrix_identification_explanation_router)
+router.include_router(matrix_identification_vision_router)
