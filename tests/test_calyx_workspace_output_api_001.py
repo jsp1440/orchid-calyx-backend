@@ -58,7 +58,8 @@ def test_grounded_outputs_are_derived_from_retrieval_and_mission_only():
     outputs = grounded_workspace_outputs(retrieval=retrieval, mission=mission)
     assert [item["kind"] for item in outputs] == ["table", "table", "text"]
     assert outputs[0]["provenance"]["source_module"] == "evidence-retrieval"
-    assert outputs[0]["provenance"]["evidence_status"] == "evidence"
+    assert outputs[0]["provenance"]["evidence_status"] == "unknown"
+    assert "does not establish evidence status" in outputs[0]["subtitle"]
     assert outputs[1]["provenance"]["source_id"] == "mission-1"
     assert outputs[2]["provenance"]["evidence_status"] == "derived"
     assert "comparative replicated measurements" in outputs[2]["payload"]["body"]
@@ -136,6 +137,7 @@ def test_speak_turn_returns_server_grounded_workspace_outputs(monkeypatch):
         "evidence-retrieval",
         "brain-mission",
     }
+    assert outputs[0]["provenance"]["evidence_status"] == "unknown"
     assert result["epistemic_policy"][
         "workspace_outputs_are_automatically_evidence"
     ] is False
