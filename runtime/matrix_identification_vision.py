@@ -32,6 +32,15 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _assert_access(session: dict[str, Any], access_actor: str | None) -> None:
+    if access_actor is None:
+        return
+    if str(session.get("actor") or "").strip() != str(access_actor).strip():
+        raise FileNotFoundError(
+            f"identification session not found: {session.get('session_id', '')}"
+        )
+
+
 def _registry_character_map(registry: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {
         str(item["character"]): item
@@ -104,12 +113,14 @@ def attach_vision_analysis(
     session_id: str,
     analysis_id: str,
     *,
+    access_actor: str | None = None,
     root=None,
     registry_root=None,
     vision_service=None,
 ) -> dict[str, Any]:
     """Attach governed Vision observations as review-required Matrix suggestions."""
     session = get_session(session_id, root=root)
+    _assert_access(session, access_actor)
     registry_ref = session["registry"]
     registry = get_registry_version(
         registry_ref["registry_id"],
@@ -197,8 +208,14 @@ def attach_vision_analysis(
     }
 
 
-def list_vision_suggestions(session_id: str, *, root=None) -> dict[str, Any]:
+def list_vision_suggestions(
+    session_id: str,
+    *,
+    access_actor: str | None = None,
+    root=None,
+) -> dict[str, Any]:
     session = get_session(session_id, root=root)
+    _assert_access(session, access_actor)
     return {
         "session_id": session_id,
         "suggestions": session.get("vision_suggestions", []),
@@ -215,10 +232,12 @@ def review_vision_suggestion(
     certainty: str | None = None,
     revised_value: Any = None,
     comments: str | None = None,
+    access_actor: str | None = None,
     root=None,
 ) -> dict[str, Any]:
     """Review one suggestion; only accepted/revised output enters Matrix evidence."""
     session = get_session(session_id, root=root)
+    _assert_access(session, access_actor)
     suggestions = session.get("vision_suggestions", [])
     suggestion = next(
         (item for item in suggestions if item.get("suggestion_id") == suggestion_id),
@@ -263,6 +282,8 @@ def review_vision_suggestion(
     else:
         raise ValueError(f"unsupported Vision review decision: {decision}")
 
+    # Access has already been verified above. The base Matrix session runtime
+    # provides the same check after CALYX-MATRIX-003 hardening lands.
     updated = add_observation(
         session_id,
         character=suggestion["character"],
@@ -288,8 +309,8 @@ def review_vision_suggestion(
     )
     matrix_observation = updated["observations"][-1]
 
-    # Re-read because add_observation wrote a new revision to disk.
     session = get_session(session_id, root=root)
+    _assert_access(session, access_actor)
     suggestion = next(
         item
         for item in session.get("vision_suggestions", [])
