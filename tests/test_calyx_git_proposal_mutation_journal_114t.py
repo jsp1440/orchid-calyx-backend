@@ -325,7 +325,6 @@ def test_executor_rejects_journal_that_returns_different_receipt() -> None:
 
         def latest(self, *, plan_digest):
             del plan_digest
-            return None
 
         def next_event_index(self, *, plan_digest):
             del plan_digest
