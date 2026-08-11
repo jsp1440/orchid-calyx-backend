@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from .git_proposal_mutation_executor import (
     GitProposalMutationExecutor,
@@ -16,6 +17,7 @@ from .github_proposal_mutation_adapter import (
 )
 
 _ENABLED = frozenset({"1", "true", "yes", "on"})
+_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def _enabled(value: object) -> bool:
@@ -27,10 +29,8 @@ def _repositories(value: object) -> tuple[str, ...]:
     repositories = tuple(
         dict.fromkeys(item.strip() for item in raw.split(",") if item.strip())
     )
-    for repository in repositories:
-        parts = repository.split("/")
-        if len(parts) != 2 or not all(parts):
-            raise ValueError("CALYX_GITHUB_PROPOSAL_REPOSITORIES_INVALID")
+    if any(not _REPOSITORY_RE.fullmatch(repository) for repository in repositories):
+        raise ValueError("CALYX_GITHUB_PROPOSAL_REPOSITORIES_INVALID")
     return repositories
 
 
@@ -38,6 +38,23 @@ class CredentialReadiness(Protocol):
     """Secret-preserving readiness boundary; never exposes credential material."""
 
     def credential_ready(self) -> bool: ...
+
+
+class OwnerBoundGitProposalMutationExecutor(GitProposalMutationExecutor):
+    """Proposal executor that binds every execution grant to the configured owner."""
+
+    def __init__(self, *, configured_owner: str, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._configured_owner = configured_owner
+
+    def execute(self, *args: Any, **kwargs: Any):  # type: ignore[no-untyped-def]
+        grant_mapping = kwargs.get("grant_mapping")
+        if not isinstance(grant_mapping, Mapping):
+            raise PermissionError("GITHUB_PROPOSAL_EXECUTOR_OWNER_GRANT_REQUIRED")
+        approved_by = str(grant_mapping.get("approved_by") or "").strip()
+        if approved_by != self._configured_owner:
+            raise PermissionError("GITHUB_PROPOSAL_EXECUTOR_OWNER_GRANT_MISMATCH")
+        return super().execute(*args, **kwargs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,7 +161,8 @@ class GovernedGitHubProposalExecutorRegistration:
             evidence=evidence,
             repository_allowlist=self.policy.repositories,
         )
-        return GitProposalMutationExecutor(
+        return OwnerBoundGitProposalMutationExecutor(
+            configured_owner=self.policy.owner,
             adapter=adapter,
             repository_allowlist=self.policy.repositories,
             journal=evidence,
