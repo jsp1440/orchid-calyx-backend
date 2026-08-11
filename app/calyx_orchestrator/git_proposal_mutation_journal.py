@@ -91,9 +91,15 @@ class DurableGitProposalMutationJournal:
             if event_index != latest_row.event_index + 1:
                 raise ValueError("GIT_PROPOSAL_JOURNAL_EVENT_GAP")
             prior_count = len(latest.completed_actions)
-            if tuple(receipt.completed_actions[:prior_count]) != latest.completed_actions:
+            if (
+                tuple(receipt.completed_actions[:prior_count])
+                != latest.completed_actions
+            ):
                 raise ValueError("GIT_PROPOSAL_JOURNAL_COMPLETED_ACTIONS_REGRESSED")
-            if tuple(receipt.operation_evidence[:prior_count]) != latest.operation_evidence:
+            if (
+                tuple(receipt.operation_evidence[:prior_count])
+                != latest.operation_evidence
+            ):
                 raise ValueError("GIT_PROPOSAL_JOURNAL_EVIDENCE_HISTORY_CHANGED")
             if len(receipt.completed_actions) < prior_count:
                 raise ValueError("GIT_PROPOSAL_JOURNAL_COMPLETED_ACTIONS_REGRESSED")
