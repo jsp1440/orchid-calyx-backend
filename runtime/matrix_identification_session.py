@@ -43,11 +43,34 @@ def _write(record: dict[str, Any], *, root: Path | None = None) -> dict[str, Any
     return record
 
 
-def get_session(session_id: str, *, root: Path | None = None) -> dict[str, Any]:
+def _assert_session_owner(record: dict[str, Any], access_actor: str | None) -> None:
+    """Fail closed across owner-session boundaries without disclosing existence.
+
+    `access_actor=None` is reserved for trusted internal/API-key callers whose
+    authorization boundary is enforced at the router or service layer.
+    """
+    if access_actor is None:
+        return
+    expected = str(record.get("actor") or "").strip()
+    supplied = str(access_actor).strip()
+    if not expected or not supplied or supplied != expected:
+        raise FileNotFoundError(
+            f"identification session not found: {record.get('session_id', '')}"
+        )
+
+
+def get_session(
+    session_id: str,
+    *,
+    root: Path | None = None,
+    access_actor: str | None = None,
+) -> dict[str, Any]:
     path = _path(session_id, root=root)
     if not path.exists():
         raise FileNotFoundError(f"identification session not found: {session_id}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    record = json.loads(path.read_text(encoding="utf-8"))
+    _assert_session_owner(record, access_actor)
+    return record
 
 
 def _bound_registry(
@@ -107,10 +130,11 @@ def add_observation(
     weight: float | None = None,
     source: dict[str, Any] | None = None,
     actor: str | None = None,
+    access_actor: str | None = None,
     root: Path | None = None,
     registry_root: Path | None = None,
 ) -> dict[str, Any]:
-    record = get_session(session_id, root=root)
+    record = get_session(session_id, root=root, access_actor=access_actor)
     registry = _bound_registry(record, registry_root=registry_root)
     allowed_characters = {
         item.get("character") for item in registry.get("characters", []) if item.get("character")
@@ -215,10 +239,11 @@ def evaluate_session(
     session_id: str,
     *,
     limit: int = 20,
+    access_actor: str | None = None,
     root: Path | None = None,
     registry_root: Path | None = None,
 ) -> dict[str, Any]:
-    record = get_session(session_id, root=root)
+    record = get_session(session_id, root=root, access_actor=access_actor)
     registry = _bound_registry(record, registry_root=registry_root)
     registry_ref = record["registry"]
 
