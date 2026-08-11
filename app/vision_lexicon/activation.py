@@ -1,8 +1,9 @@
 """Fail-closed durable activation for the Vision-Lexicon bridge.
 
-This module deliberately does not connect to PostgreSQL at import time.  It
+This module deliberately does not connect to PostgreSQL at import time. It
 selects the repository from explicit runtime configuration and verifies the
-``oc_vision`` schema on each new durable connection before allowing writes.
+``oc_vision`` schema before durable writes are allowed. Schema activation and
+durable-write enablement are intentionally reported as separate states.
 """
 
 from __future__ import annotations
@@ -29,13 +30,23 @@ from .service import VisionLexiconService, vision_lexicon_capability_status
 
 _DURABLE_FLAG = "CALYX_VISION_DURABLE_ENABLED"
 _EPHEMERAL_FLAG = "CALYX_VISION_EPHEMERAL_WRITES_ENABLED"
+_SCHEMA_PROBE_CONNECT_TIMEOUT_SECONDS = 3
+_DURABLE_CONNECT_TIMEOUT_SECONDS = 5
 _REQUIRED_TABLES = (
     "reference_image_sets",
+    "reference_image_set_items",
     "vision_analyses",
+    "vision_regions",
+    "character_observations",
+    "morphometric_observations",
+    "color_phenotype_observations",
+    "vision_assertions",
     "figure_specifications",
     "figure_validation_runs",
+    "character_conformance_checks",
     "vision_review_records",
 )
+_FIGURE_REVIEW_CONSTRAINT = "figure_specifications_review_state_check"
 
 
 def _truthy(value: str | None) -> bool:
@@ -67,19 +78,51 @@ def _postgres_url() -> str:
     return url
 
 
+def _schema_problem(cur: Any) -> str | None:
+    """Return a fail-closed schema problem code or ``None`` when fully ready."""
+
+    cur.execute("SELECT to_regnamespace('oc_vision') IS NOT NULL")
+    if not bool(cur.fetchone()[0]):
+        return "VISION_SCHEMA_NOT_ACTIVATED"
+
+    for table in _REQUIRED_TABLES:
+        cur.execute("SELECT to_regclass(%s) IS NOT NULL", (f"oc_vision.{table}",))
+        if not bool(cur.fetchone()[0]):
+            return f"VISION_SCHEMA_TABLE_MISSING:{table}"
+
+    cur.execute(
+        """
+        SELECT pg_get_constraintdef(c.oid)
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'oc_vision'
+          AND t.relname = 'figure_specifications'
+          AND c.conname = %s
+        """,
+        (_FIGURE_REVIEW_CONSTRAINT,),
+    )
+    row = cur.fetchone()
+    if not row or not row[0] or "MACHINE_GENERATED" not in str(row[0]):
+        return "VISION_SCHEMA_GOVERNANCE_CONSTRAINT_MISSING"
+
+    return None
+
+
 def schema_ready() -> bool:
-    if not durable_requested():
-        return False
+    """Report whether the complete governed Vision schema is activated.
+
+    A migration may be safely applied before durable writes are enabled. The
+    status endpoint must therefore report schema activation independently from
+    ``CALYX_VISION_DURABLE_ENABLED`` while failing closed on partial schema,
+    governance drift, or an unavailable database.
+    """
+
     try:
-        with psycopg.connect(_postgres_url()) as conn, conn.cursor() as cur:
-            cur.execute("SELECT to_regnamespace('oc_vision') IS NOT NULL")
-            if not bool(cur.fetchone()[0]):
-                return False
-            for table in _REQUIRED_TABLES:
-                cur.execute("SELECT to_regclass(%s) IS NOT NULL", (f"oc_vision.{table}",))
-                if not bool(cur.fetchone()[0]):
-                    return False
-        return True
+        with psycopg.connect(
+            _postgres_url(), connect_timeout=_SCHEMA_PROBE_CONNECT_TIMEOUT_SECONDS
+        ) as conn, conn.cursor() as cur:
+            return _schema_problem(cur) is None
     except Exception:
         return False
 
@@ -87,16 +130,12 @@ def schema_ready() -> bool:
 def _guarded_connection() -> Any:
     if not durable_requested():
         raise RuntimeError("VISION_DURABLE_PERSISTENCE_DISABLED")
-    conn = psycopg.connect(_postgres_url())
+    conn = psycopg.connect(_postgres_url(), connect_timeout=_DURABLE_CONNECT_TIMEOUT_SECONDS)
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT to_regnamespace('oc_vision') IS NOT NULL")
-            if not bool(cur.fetchone()[0]):
-                raise RuntimeError("VISION_SCHEMA_NOT_ACTIVATED")
-            for table in _REQUIRED_TABLES:
-                cur.execute("SELECT to_regclass(%s) IS NOT NULL", (f"oc_vision.{table}",))
-                if not bool(cur.fetchone()[0]):
-                    raise RuntimeError(f"VISION_SCHEMA_TABLE_MISSING:{table}")
+            problem = _schema_problem(cur)
+            if problem:
+                raise RuntimeError(problem)
         return conn
     except Exception:
         conn.close()
@@ -277,10 +316,12 @@ def build_vision_lexicon_service() -> VisionLexiconService:
 def capability_status() -> dict[str, Any]:
     base = vision_lexicon_capability_status()
     ready = schema_ready()
-    base["persistence_mode"] = "postgres" if durable_requested() else "memory"
+    durable = durable_requested()
+    base["persistence_mode"] = "postgres" if durable else "memory"
+    base["durable_persistence_enabled"] = durable
     base["schema_ready"] = ready
     base["migration_activated"] = ready
     base["live_inference_enabled"] = False
-    if durable_requested() and not ready:
+    if durable and not ready:
         base["provider_status"] = "PERSISTENCE_NOT_READY"
     return base

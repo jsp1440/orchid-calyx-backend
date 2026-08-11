@@ -54,7 +54,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
+      - name: Verify migration prerequisites without mutation
+        id: prerequisites
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          concepts=$(psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --tuples-only --no-align <<'SQL'
+          SELECT to_regclass('oc_concepts.concepts') IS NOT NULL;
+          SQL
+          )
+          test "$concepts" = "t" || {
+            echo "Required canonical concept registry table oc_concepts.concepts is missing."
+            echo "Vision migration was not attempted."
+            exit 1
+          }
+
       - name: Apply Vision-Lexicon schema and hardening atomically
+        id: apply_migrations
         shell: bash
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -66,6 +83,7 @@ jobs:
             --file=migrations/20260811_vision_lexicon_activation_hardening.sql
 
       - name: Verify Vision schema objects and governance constraint
+        id: verify_schema
         shell: bash
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -107,16 +125,16 @@ jobs:
             exit 1
           }
 
-      - name: Record migration result
+      - name: Record truthful migration result
         if: always()
         shell: bash
         run: |
           {
             echo "## CALYX Vision production activation"
             echo "- Revision: \`${{ github.sha }}\`"
-            echo "- Base + hardening migrations: transactional"
-            echo "- Required oc_vision tables: verified"
-            echo "- Machine-generated review-state boundary: verified"
+            echo "- Prerequisite check: \`${{ steps.prerequisites.outcome }}\`"
+            echo "- Transactional migration step: \`${{ steps.apply_migrations.outcome }}\`"
+            echo "- Schema/governance verification: \`${{ steps.verify_schema.outcome }}\`"
             echo "- Live provider inference: not enabled by this workflow"
             echo "- Candidate Knowledge promotion/publication/taxonomy/KG mutation: not authorized"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -173,5 +191,8 @@ jobs:
               raise SystemExit('Vision status does not report migration_activated=true')
           if status.get('live_inference_enabled'):
               raise SystemExit('Live inference must remain disabled until a provider adapter is separately approved')
-          print('Vision schema activation is visible; provider inference remains safely disabled.')
+          print(
+              'Vision schema activation is visible; durable writes are separately gated; '
+              'provider inference remains safely disabled.'
+          )
           PY
