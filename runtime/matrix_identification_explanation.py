@@ -29,6 +29,15 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _assert_access(session: dict[str, Any], access_actor: str | None) -> None:
+    if access_actor is None:
+        return
+    if str(session.get("actor") or "").strip() != str(access_actor).strip():
+        raise FileNotFoundError(
+            f"identification session not found: {session.get('session_id', '')}"
+        )
+
+
 def _candidate_snapshot(report: dict[str, Any], limit: int = 5) -> list[dict[str, Any]]:
     snapshot: list[dict[str, Any]] = []
     for candidate in (report.get("candidates") or [])[:limit]:
@@ -178,16 +187,20 @@ def explain_session(
     audience: Audience = "intermediate",
     focus: Focus = "summary",
     provider: CalyxReplyProvider | None = None,
+    access_actor: str | None = None,
     root=None,
     registry_root=None,
 ) -> dict[str, Any]:
-    # Confirm the session exists before evaluating so missing-session errors remain precise.
-    get_session(session_id, root=root)
+    # Enforce session scope before evaluation or provider invocation. The base
+    # session runtime also enforces this after CALYX-MATRIX-003 hardening lands.
+    session = get_session(session_id, root=root)
+    _assert_access(session, access_actor)
     evaluation = evaluate_session(
         session_id,
         root=root,
         registry_root=registry_root,
     )
+    _assert_access(evaluation["session"], access_actor)
     evidence = build_explanation_evidence(evaluation, audience=audience, focus=focus)
     deterministic_text = _deterministic_narrative(evidence)
 
@@ -224,8 +237,6 @@ def explain_session(
             provider_response_id = None
             request_hash = _digest({"evidence": evidence, "text": text})
 
-    # The narrative is returned beside—not inside—the evidence object. Nothing in
-    # provider output is parsed back into ranking/session state.
     return {
         "schema_version": EXPLANATION_SCHEMA_VERSION,
         "session_id": session_id,
