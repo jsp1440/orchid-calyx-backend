@@ -57,21 +57,19 @@ def _is_casual(message: str) -> bool:
     if normalized in casual:
         return True
     if re.match(r"^(hello|hi|hey)\s+calyx(?:[.!?,;:]|\s|$)", normalized):
-        capability_phrases = (
+        capability_phrases = {
             "what are you able to help me with",
             "what can you help me with",
             "what can you do",
             "how can you help",
-        )
+        }
         remainder = re.sub(
             r"^(hello|hi|hey)\s+calyx(?:[.!?,;:]|\s)*",
             "",
             normalized,
             count=1,
         ).strip(" .!?,;:")
-        return not remainder or any(
-            remainder.startswith(phrase) for phrase in capability_phrases
-        )
+        return not remainder or remainder in capability_phrases
     return False
 
 
