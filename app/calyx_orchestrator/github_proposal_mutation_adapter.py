@@ -105,7 +105,7 @@ def _expected_commit_sha(
         f"author {identity}\n"
         f"committer {identity}\n"
         f"\n{message}\n"
-    ).encode("utf-8")
+    ).encode()
     header = f"commit {len(payload)}\0".encode("ascii")
     return hashlib.sha1(header + payload, usedforsecurity=False).hexdigest()
 
@@ -195,17 +195,17 @@ class RequestsGitHubTransport:
                 params=None if params is None else dict(params),
                 timeout=self._timeout_seconds,
             )
-        except requests.RequestException as exc:
+        except requests.RequestException:
             raise GitHubProposalTransportError(
                 "GITHUB_ADAPTER_TRANSPORT_REQUEST_FAILED"
-            ) from exc
+            ) from None
         try:
             payload: object = response.json() if response.content else {}
-        except ValueError as exc:
+        except ValueError:
             raise GitHubProposalTransportError(
                 "GITHUB_ADAPTER_TRANSPORT_RESPONSE_INVALID",
                 status_code=response.status_code,
-            ) from exc
+            ) from None
         return GitHubTransportResponse(
             status_code=response.status_code,
             payload=payload,
@@ -494,6 +494,7 @@ class GitHubProposalMutationAdapter:
                 pull,
                 branch=branch,
                 base_ref=base_ref,
+                base_commit_sha=base_commit_sha,
                 head_sha=expected_commit,
                 require_draft=True,
             )
@@ -529,6 +530,7 @@ class GitHubProposalMutationAdapter:
                 pull,
                 branch=branch,
                 base_ref=base_ref,
+                base_commit_sha=base_commit_sha,
                 head_sha=expected_commit,
                 require_draft=True,
             ):
@@ -685,6 +687,7 @@ class GitHubProposalMutationAdapter:
         *,
         branch: str,
         base_ref: str,
+        base_commit_sha: str,
         head_sha: str,
         require_draft: bool,
     ) -> bool:
@@ -695,6 +698,7 @@ class GitHubProposalMutationAdapter:
                 str(head.get("ref") or "") == branch
                 and _git_sha(head.get("sha")) == head_sha
                 and str(base.get("ref") or "") == base_ref
+                and _git_sha(base.get("sha")) == base_commit_sha
                 and payload.get("draft") is require_draft
             )
         except (PermissionError, TypeError):
