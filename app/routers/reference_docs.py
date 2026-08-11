@@ -9,6 +9,9 @@ from app.models import SystemReferenceDocument
 from app.schemas import ReferenceDocumentOut, ReferenceDocumentListOut, ReferenceDocumentUpdate
 from app.storage import compute_sha256, save_file, read_file, file_exists
 from app.species_exhibit.routes import router as species_exhibit_router
+from app.routers.matrix_identification import router as matrix_identification_router
+from app.routers.matrix_identification_registry import router as matrix_identification_registry_router
+from app.routers.matrix_identification_session import router as matrix_identification_session_router
 
 router = APIRouter()
 
@@ -145,6 +148,9 @@ def update_reference_doc(
     return doc
 
 
-# Platform composition point: app.main already mounts this router. Keeping the
-# species exhibit as a nested router avoids duplicate application bootstrapping.
+# Platform composition point: app.main already mounts this router. Keeping
+# feature routers nested here avoids duplicate application bootstrapping.
 router.include_router(species_exhibit_router)
+router.include_router(matrix_identification_router)
+router.include_router(matrix_identification_registry_router)
+router.include_router(matrix_identification_session_router)
