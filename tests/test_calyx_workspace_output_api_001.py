@@ -26,19 +26,34 @@ def auth():
     return {"subject": "owner-output"}
 
 
-def test_grounded_outputs_are_derived_from_retrieval_and_mission_only():
+def _retrieval_result(*, result_id: str, title: str, score: float) -> dict:
+    return {
+        "result_id": result_id,
+        "rank": 1,
+        "title": title,
+        "object_type": "LITERATURE",
+        "review_state": "REVIEWED",
+        "verification_state": "VERIFIED",
+        "fused_score": score,
+        "citation": {
+            "document_id": "doc-velamen-1",
+            "revision_id": "rev-2026-08",
+            "identifier": "doi:10.example/velamen",
+            "locator": {"page": 12},
+        },
+    }
+
+
+def test_grounded_outputs_preserve_retrieval_provenance_and_candidate_boundary():
     retrieval = {
         "total_eligible_results": 1,
         "ranking_configuration_version": "rank-v1",
         "results": [
-            {
-                "rank": 1,
-                "title": "Velamen anatomy study",
-                "object_type": "LITERATURE",
-                "review_state": "REVIEWED",
-                "verification_state": "VERIFIED",
-                "fused_score": 0.82,
-            }
+            _retrieval_result(
+                result_id="result-velamen-1",
+                title="Velamen anatomy study",
+                score=0.82,
+            )
         ],
     }
     mission = {
@@ -57,10 +72,25 @@ def test_grounded_outputs_are_derived_from_retrieval_and_mission_only():
 
     outputs = grounded_workspace_outputs(retrieval=retrieval, mission=mission)
     assert [item["kind"] for item in outputs] == ["table", "table", "text"]
-    assert outputs[0]["provenance"]["source_module"] == "evidence-retrieval"
-    assert outputs[0]["provenance"]["evidence_status"] == "unknown"
-    assert "does not establish evidence status" in outputs[0]["subtitle"]
-    assert outputs[1]["provenance"]["source_id"] == "mission-1"
+
+    retrieval_output = outputs[0]
+    assert retrieval_output["provenance"]["source_module"] == "evidence-retrieval"
+    assert retrieval_output["provenance"]["evidence_status"] == "unknown"
+    assert retrieval_output["provenance"]["source_id"].startswith("retrieval-set-")
+    assert retrieval_output["provenance"]["ranking_configuration_version"] == "rank-v1"
+    assert "does not establish evidence status" in retrieval_output["subtitle"]
+    row = retrieval_output["payload"]["rows"][0]
+    assert row["source_id"] == "result-velamen-1"
+    assert row["document_id"] == "doc-velamen-1"
+    assert row["revision_id"] == "rev-2026-08"
+    assert row["citation"]["locator"] == {"page": 12}
+
+    mission_output = outputs[1]
+    assert mission_output["provenance"]["source_id"] == "mission-1"
+    assert mission_output["provenance"]["generated"] is True
+    assert mission_output["provenance"]["evidence_status"] == "derived"
+    assert "not direct source evidence" in mission_output["subtitle"]
+
     assert outputs[2]["provenance"]["evidence_status"] == "derived"
     assert "comparative replicated measurements" in outputs[2]["payload"]["body"]
 
@@ -78,14 +108,11 @@ def test_speak_turn_returns_server_grounded_workspace_outputs(monkeypatch):
             "retrieval_mode": "HYBRID",
             "ranking_configuration_version": "rank-v1",
             "results": [
-                {
-                    "rank": 1,
-                    "title": "Velamen root anatomy",
-                    "object_type": "LITERATURE",
-                    "review_state": "REVIEWED",
-                    "verification_state": "VERIFIED",
-                    "fused_score": 0.91,
-                }
+                _retrieval_result(
+                    result_id="result-output-1",
+                    title="Velamen root anatomy",
+                    score=0.91,
+                )
             ],
         }
 
@@ -138,6 +165,8 @@ def test_speak_turn_returns_server_grounded_workspace_outputs(monkeypatch):
         "brain-mission",
     }
     assert outputs[0]["provenance"]["evidence_status"] == "unknown"
+    assert outputs[0]["payload"]["rows"][0]["source_id"] == "result-output-1"
+    assert outputs[1]["provenance"]["evidence_status"] == "derived"
     assert result["epistemic_policy"][
         "workspace_outputs_are_automatically_evidence"
     ] is False
