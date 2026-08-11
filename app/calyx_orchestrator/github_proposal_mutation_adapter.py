@@ -50,7 +50,11 @@ def _branch(value: object) -> str:
     normalized = str(value or "").strip()
     if not normalized.startswith(ALLOWED_BRANCH_PREFIX):
         raise PermissionError("GITHUB_ADAPTER_BRANCH_NOT_ALLOWED")
-    if normalized.startswith("/") or ".." in normalized.split("/") or "\x00" in normalized:
+    if (
+        normalized.startswith("/")
+        or ".." in normalized.split("/")
+        or "\x00" in normalized
+    ):
         raise PermissionError("GITHUB_ADAPTER_BRANCH_INVALID")
     return normalized
 
@@ -166,8 +170,7 @@ class RequestsGitHubTransport:
 
     def __repr__(self) -> str:
         return (
-            f"{self.__class__.__name__}(base_url={self._base_url!r}, "
-            "token=<redacted>)"
+            f"{self.__class__.__name__}(base_url={self._base_url!r}, token=<redacted>)"
         )
 
     def request(
@@ -671,12 +674,17 @@ class GitHubProposalMutationAdapter:
     ) -> None:
         if _git_sha(payload.get("sha")) != expected_sha:
             raise PermissionError("GITHUB_ADAPTER_COMMIT_VERIFY_SHA_MISMATCH")
-        if _git_sha(GitHubProposalMutationAdapter._nested(payload, "tree", "sha")) != tree_sha:
+        if (
+            _git_sha(GitHubProposalMutationAdapter._nested(payload, "tree", "sha"))
+            != tree_sha
+        ):
             raise PermissionError("GITHUB_ADAPTER_COMMIT_VERIFY_TREE_MISMATCH")
         parents = GitHubProposalMutationAdapter._sequence(payload.get("parents"))
-        if len(parents) != 1 or _git_sha(
-            GitHubProposalMutationAdapter._mapping(parents[0]).get("sha")
-        ) != parent_sha:
+        if (
+            len(parents) != 1
+            or _git_sha(GitHubProposalMutationAdapter._mapping(parents[0]).get("sha"))
+            != parent_sha
+        ):
             raise PermissionError("GITHUB_ADAPTER_COMMIT_VERIFY_PARENT_MISMATCH")
         if str(payload.get("message") or "") != message:
             raise PermissionError("GITHUB_ADAPTER_COMMIT_VERIFY_MESSAGE_MISMATCH")
@@ -742,7 +750,9 @@ class GitHubProposalMutationAdapter:
 
     @staticmethod
     def _sequence(value: object) -> Sequence[Any]:
-        if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        if not isinstance(value, Sequence) or isinstance(
+            value, (str, bytes, bytearray)
+        ):
             raise TypeError("GITHUB_ADAPTER_RESPONSE_SEQUENCE_REQUIRED")
         return value
 
