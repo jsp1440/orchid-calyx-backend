@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -27,26 +28,56 @@ EXECUTION_CONFIRMATION = "UPLOAD_WORLD_ORCHIDS_26_08"
 DEFAULT_REPORT = "calyx-hassler-upload-receipt.json"
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def validate_source(path: Path) -> dict[str, Any]:
+def _validated_source_bytes(path: Path) -> tuple[dict[str, Any], bytes]:
     if not path.is_file():
         raise ValueError(f"source file does not exist: {path}")
     if path.name != EXPECTED_FILENAME:
         raise ValueError(f"unexpected source filename: {path.name}")
-    size = path.stat().st_size
+    content = path.read_bytes()
+    size = len(content)
     if size != EXPECTED_SIZE_BYTES:
         raise ValueError(f"unexpected source size: {size}")
-    checksum = sha256_file(path)
+    checksum = hashlib.sha256(content).hexdigest()
     if checksum != EXPECTED_SHA256:
         raise ValueError(f"unexpected source sha256: {checksum}")
-    return {"filename": path.name, "size_bytes": size, "sha256": checksum}
+    return {"filename": path.name, "size_bytes": size, "sha256": checksum}, content
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def validate_source(path: Path) -> dict[str, Any]:
+    source, _ = _validated_source_bytes(path)
+    return source
+
+
+def _prepare_report_path(path: Path) -> Path:
+    target = path.expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() and target.is_dir():
+        raise ValueError(f"report path is a directory: {target}")
+    fd, probe = tempfile.mkstemp(prefix=f".{target.name}.probe-", dir=target.parent)
+    os.close(fd)
+    Path(probe).unlink()
+    return target
+
+
+def _write_report(path: Path, report: dict[str, Any]) -> None:
+    content = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _assert_release_report(report: dict[str, Any]) -> None:
@@ -135,7 +166,7 @@ def execute_upload(
     access_code: str,
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
-    source = validate_source(source_path)
+    source, validated_content = _validated_source_bytes(source_path)
     owns_client = client is None
     if client is None:
         client = httpx.Client(base_url=base_url.rstrip("/"), timeout=120.0)
@@ -175,19 +206,19 @@ def execute_upload(
 
         upload_invoked = False
         mutation_confirmed = False
+        readback_verified = False
         try:
-            with source_path.open("rb") as handle:
-                upload_invoked = True
-                uploaded = client.post(
-                    "/api/mission-control/taxonomy/releases/inspect",
-                    headers=headers,
-                    data={
-                        "version_label": VERSION_LABEL,
-                        "acquired_at": ACQUIRED_AT,
-                        "notes": "Guarded real Hassler release intake; no staging or activation authorized.",
-                    },
-                    files={"file": (EXPECTED_FILENAME, handle, "text/csv")},
-                )
+            upload_invoked = True
+            uploaded = client.post(
+                "/api/mission-control/taxonomy/releases/inspect",
+                headers=headers,
+                data={
+                    "version_label": VERSION_LABEL,
+                    "acquired_at": ACQUIRED_AT,
+                    "notes": "Guarded real Hassler release intake; no staging or activation authorized.",
+                },
+                files={"file": (EXPECTED_FILENAME, validated_content, "text/csv")},
+            )
             uploaded.raise_for_status()
             upload_report = uploaded.json()
             _assert_release_report(upload_report)
@@ -196,6 +227,7 @@ def execute_upload(
             readback = client.get(release_path, headers=headers)
             readback.raise_for_status()
             _assert_release_report(readback.json())
+            readback_verified = True
 
             post = _post_intake_state(client, headers)
             if post.get("pipeline_state") != "release_inspected_staging_smoke_required":
@@ -219,7 +251,7 @@ def execute_upload(
                 upload_invoked=True,
                 production_mutation=True if mutation_confirmed else None,
                 mutation_state="CONFIRMED" if mutation_confirmed else "UNKNOWN",
-                readback_verified=False,
+                readback_verified=readback_verified,
                 error=f"{type(exc).__name__}: {exc}",
             )
 
@@ -248,6 +280,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    report_path = _prepare_report_path(args.report)
     source = validate_source(args.source)
     if not args.execute:
         report = {
@@ -278,9 +311,7 @@ def main() -> int:
             access_code=access_code,
         )
 
-    args.report.write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    _write_report(report_path, report)
     print(json.dumps(report, indent=2, sort_keys=True))
     return (
         2
