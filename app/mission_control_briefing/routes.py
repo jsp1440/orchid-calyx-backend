@@ -6,12 +6,18 @@ from fastapi import APIRouter, Depends
 
 from app.mission_control_access import AccessPrincipal
 from app.review_api.dependencies import authenticated_principal
-from app.routers.mission_control import completeness_rows, harvester_rows, metric_snapshot
+from app.routers.mission_control import (
+    completeness_rows,
+    harvester_rows,
+    metric_snapshot,
+)
 
+from .proposal_executor_status import proposal_executor_mission_control_status
 from .service import MissionControlBriefingService
 
-
-router = APIRouter(prefix="/api/mission-control/briefing", tags=["MISSION-CONTROL-ROLE-001G"])
+router = APIRouter(
+    prefix="/api/mission-control/briefing", tags=["MISSION-CONTROL-ROLE-001G"]
+)
 
 
 def briefing_service_dependency() -> MissionControlBriefingService:
@@ -45,6 +51,16 @@ def harvester_feed(
         "principal_id": principal.principal_id,
         "count": len(harvesters),
         "harvesters": harvesters,
+    }
+
+
+@router.get("/proposal-executor")
+def proposal_executor_feed(
+    principal: AccessPrincipal = Depends(authenticated_principal),
+) -> dict[str, Any]:
+    return {
+        "principal_id": principal.principal_id,
+        "proposal_executor": proposal_executor_mission_control_status(),
     }
 
 
