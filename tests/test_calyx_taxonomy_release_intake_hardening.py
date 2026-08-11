@@ -9,7 +9,6 @@ from app.routers import taxonomy_release_intake as api
 from app.security import verify_owner_or_api_key
 from runtime.taxonomy_release_intake import TaxonomyReleaseIntakeService
 
-
 HASSLER_HEADER = (
     b"Taxon|Number|Name|Literature|TrivialName|Distribution|Synonyms|Status|Remarks|"
     b"ConservationStatus|Photo|Orientation|Author\n"
