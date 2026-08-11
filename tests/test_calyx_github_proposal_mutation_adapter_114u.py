@@ -125,9 +125,7 @@ class FakeGitHubTransport:
         if method == "POST" and path.endswith("/git/trees"):
             assert json_body is not None
             base_tree = str(json_body["base_tree"])
-            current = {
-                str(item["path"]): dict(item) for item in self.trees[base_tree]
-            }
+            current = {str(item["path"]): dict(item) for item in self.trees[base_tree]}
             for item in json_body["tree"]:
                 current[str(item["path"])] = dict(item)
             self.trees[TREE_AFTER] = list(current.values())
@@ -159,9 +157,7 @@ class FakeGitHubTransport:
             self.refs[branch] = (
                 "f" * 40 if self.force_wrong_push else str(json_body["sha"])
             )
-            return GitHubTransportResponse(
-                200, {"object": {"sha": self.refs[branch]}}
-            )
+            return GitHubTransportResponse(200, {"object": {"sha": self.refs[branch]}})
         if method == "GET" and path.endswith("/pulls"):
             assert params is not None
             head_branch = str(params["head"]).split(":", 1)[1]
