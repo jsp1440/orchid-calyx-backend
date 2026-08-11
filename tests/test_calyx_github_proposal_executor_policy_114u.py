@@ -117,7 +117,8 @@ def test_build_registration_checks_readiness_without_reading_a_secret() -> None:
     status = registration.status()
     assert status["ready_for_owner_authorized_draft_pr"] is True
     assert status["credential_ready"] is True
-    assert "credential" not in registration.__dict__
+    assert not hasattr(registration, "credential_readiness")
+    assert not hasattr(registration, "credential")
 
 
 def test_ready_registration_constructs_only_the_bounded_proposal_executor() -> None:
