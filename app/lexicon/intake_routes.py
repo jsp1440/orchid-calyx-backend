@@ -9,7 +9,7 @@ from app.security import verify_owner_or_api_key
 from .intake import filter_items, get_item, load_items, validate_manifest
 
 AuthDep = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
-router = APIRouter(prefix="/lexicon/intake", tags=["illustrated-orchid-lexicon-intake"])
+router = APIRouter(prefix="/intake", tags=["illustrated-orchid-lexicon-intake"])
 
 
 @router.get("/status")
