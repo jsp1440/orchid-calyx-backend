@@ -90,6 +90,9 @@ class WorldPlantsReleaseStore:
         ]
         return sorted(
             reports,
-            key=lambda item: str(item.get("snapshot", {}).get("acquired_at", "")),
+            key=lambda item: (
+                str(item.get("snapshot", {}).get("acquired_at", "")),
+                str(item.get("release_id", "")),
+            ),
             reverse=True,
         )
