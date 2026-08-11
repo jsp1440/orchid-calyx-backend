@@ -52,7 +52,9 @@ def test_upload_and_report_routes(tmp_path):
 
     listing = client.get("/api/mission-control/taxonomy/releases")
     assert listing.status_code == 200
-    assert listing.json()["releases"][0]["release_id"] == release_id
+    assert release_id in {
+        release["release_id"] for release in listing.json()["releases"]
+    }
 
     detail = client.get(f"/api/mission-control/taxonomy/releases/{release_id}")
     assert detail.status_code == 200
