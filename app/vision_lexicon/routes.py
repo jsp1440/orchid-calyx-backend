@@ -1,10 +1,8 @@
 """FastAPI routes for the Vision-Lexicon bridge.
 
-All write endpoints require owner/API-key authentication.
-Read endpoints for public Lexicon APIs follow the existing project pattern.
-
-Live Vision inference is not enabled until a provider is configured.
-The capability status endpoint always reports truthfully.
+All write endpoints require owner/API-key authentication. Production writes
+are fail-closed unless the governed durable PostgreSQL path is enabled and its
+schema is available. Local/unit-test use may retain process-local memory.
 """
 
 from __future__ import annotations
@@ -16,6 +14,12 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.security import verify_owner_or_api_key
 
+from .activation import (
+    build_vision_lexicon_service,
+    capability_status,
+    durable_requested,
+    ephemeral_writes_allowed,
+)
 from .contracts import (
     CalibrationState,
     ImageQualityState,
@@ -25,7 +29,6 @@ from .contracts import (
 )
 from .models import (
     AggregateSummaryResponse,
-    CapabilityStatusResponse,
     CharacterObservationResponse,
     CreateFigureSpecRequest,
     CreateReferenceSetRequest,
@@ -38,20 +41,13 @@ from .models import (
     VisionAnalysisRequest,
     VisionAnalysisResponse,
 )
-from .persistence import MemoryVisionLexiconRepository
-from .service import VisionLexiconService, vision_lexicon_capability_status
 
-router = APIRouter(
-    prefix="/api/vision-lexicon",
-    tags=["vision-lexicon"],
-)
-
+router = APIRouter(prefix="/api/vision-lexicon", tags=["vision-lexicon"])
 AuthDep = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
 
-# Module-level in-memory repository.
-# Replaced by PostgresVisionLexiconRepository once the migration is activated.
-_repo = MemoryVisionLexiconRepository()
-_service = VisionLexiconService(_repo)
+# Construction is inert: the Postgres repository receives a lazy guarded
+# connection factory and does not connect until an operation is performed.
+_service = build_vision_lexicon_service()
 
 
 def _404(detail: str) -> HTTPException:
@@ -62,29 +58,27 @@ def _422(code: str, msg: str) -> HTTPException:
     return HTTPException(status_code=422, detail={"code": code, "message": msg})
 
 
-# ---------------------------------------------------------------------------
-# Capability status (public — no auth required)
-# ---------------------------------------------------------------------------
+def _write_guard() -> None:
+    if durable_requested() or ephemeral_writes_allowed():
+        return
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "code": "VISION_DURABLE_PERSISTENCE_REQUIRED",
+            "message": "Vision-Lexicon writes are disabled until governed durable persistence is ready.",
+        },
+    )
 
 
 @router.get("/status")
-def get_capability_status() -> CapabilityStatusResponse:
-    """Return truthful capability status for the Vision-Lexicon bridge."""
-    status = vision_lexicon_capability_status()
-    return CapabilityStatusResponse(**status)
-
-
-# ---------------------------------------------------------------------------
-# Reference Image Sets
-# ---------------------------------------------------------------------------
+def get_capability_status() -> dict[str, Any]:
+    """Return truthful persistence, schema, provider, and safeguard status."""
+    return capability_status()
 
 
 @router.post("/reference-sets")
-def create_reference_set(
-    request: CreateReferenceSetRequest,
-    auth: AuthDep,
-) -> dict[str, Any]:
-    """Create a new Reference Image Set."""
+def create_reference_set(request: CreateReferenceSetRequest, auth: AuthDep) -> dict[str, Any]:
+    _write_guard()
     actor = auth.get("actor") or auth.get("owner") or "api"
     try:
         ref_set = _service.create_reference_set(
@@ -109,7 +103,6 @@ def create_reference_set(
 
 @router.get("/reference-sets/{reference_set_id}")
 def get_reference_set(reference_set_id: UUID) -> dict[str, Any]:
-    """Retrieve a Reference Image Set by ID."""
     ref_set = _service.get_reference_set(reference_set_id)
     if ref_set is None:
         raise _404(f"Reference set {reference_set_id} not found")
@@ -138,7 +131,6 @@ def get_reference_set(reference_set_id: UUID) -> dict[str, Any]:
 
 @router.get("/lexicon/concepts/{concept_id}/reference-sets")
 def list_reference_sets_for_concept(concept_id: UUID) -> dict[str, Any]:
-    """List all Reference Image Sets targeting a Lexicon concept."""
     sets = _service.list_reference_sets_for_concept(concept_id)
     return {
         "concept_id": str(concept_id),
@@ -154,17 +146,9 @@ def list_reference_sets_for_concept(concept_id: UUID) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Vision Analyses
-# ---------------------------------------------------------------------------
-
-
 @router.post("/analyses")
-def request_analysis(
-    request: VisionAnalysisRequest,
-    auth: AuthDep,
-) -> VisionAnalysisResponse:
-    """Request or retrieve (idempotent) a Vision analysis record."""
+def request_analysis(request: VisionAnalysisRequest, auth: AuthDep) -> VisionAnalysisResponse:
+    _write_guard()
     try:
         analysis = _service.request_analysis(
             image_id=request.image_id,
@@ -201,7 +185,6 @@ def request_analysis(
 
 @router.get("/analyses/{analysis_id}")
 def get_analysis(analysis_id: UUID) -> VisionAnalysisResponse:
-    """Retrieve a Vision analysis record by ID."""
     analysis = _service.get_analysis(analysis_id)
     if analysis is None:
         raise _404(f"Analysis {analysis_id} not found")
@@ -225,7 +208,6 @@ def get_analysis(analysis_id: UUID) -> VisionAnalysisResponse:
 
 @router.get("/analyses/{analysis_id}/observations")
 def list_observations(analysis_id: UUID) -> dict[str, Any]:
-    """Retrieve structured character observations for an analysis."""
     observations = _service.list_observations_for_analysis(analysis_id)
     return {
         "analysis_id": str(analysis_id),
@@ -253,7 +235,6 @@ def list_observations(analysis_id: UUID) -> dict[str, Any]:
 
 @router.get("/analyses/{analysis_id}/morphometrics")
 def list_morphometrics(analysis_id: UUID) -> dict[str, Any]:
-    """Retrieve morphometric observations for an analysis."""
     morphometrics = _service.list_morphometrics_for_analysis(analysis_id)
     return {
         "analysis_id": str(analysis_id),
@@ -273,17 +254,9 @@ def list_morphometrics(analysis_id: UUID) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Figure Specifications
-# ---------------------------------------------------------------------------
-
-
 @router.post("/figure-specifications")
-def create_figure_spec(
-    request: CreateFigureSpecRequest,
-    auth: AuthDep,
-) -> FigureSpecResponse:
-    """Create a new Figure Specification under governance."""
+def create_figure_spec(request: CreateFigureSpecRequest, auth: AuthDep) -> FigureSpecResponse:
+    _write_guard()
     actor = auth.get("actor") or auth.get("owner") or "api"
     try:
         spec = _service.create_figure_spec(
@@ -332,7 +305,6 @@ def create_figure_spec(
 
 @router.get("/figure-specifications/{figure_spec_id}")
 def get_figure_spec(figure_spec_id: UUID) -> FigureSpecResponse:
-    """Retrieve a Figure Specification by ID."""
     spec = _service.get_figure_spec(figure_spec_id)
     if spec is None:
         raise _404(f"Figure specification {figure_spec_id} not found")
@@ -350,17 +322,9 @@ def get_figure_spec(figure_spec_id: UUID) -> FigureSpecResponse:
     )
 
 
-# ---------------------------------------------------------------------------
-# Validation Runs
-# ---------------------------------------------------------------------------
-
-
 @router.post("/validation-runs")
-def create_validation_run(
-    request: CreateValidationRunRequest,
-    auth: AuthDep,
-) -> ValidationRunResponse:
-    """Create a new Figure Validation Run."""
+def create_validation_run(request: CreateValidationRunRequest, auth: AuthDep) -> ValidationRunResponse:
+    _write_guard()
     try:
         run = _service.create_validation_run(
             asset_id=request.asset_id,
@@ -382,7 +346,6 @@ def create_validation_run(
 
 @router.get("/figures/{asset_id}/validation")
 def get_figure_validation(asset_id: str) -> dict[str, Any]:
-    """Retrieve validation information for a figure asset (by asset_id)."""
     return {
         "asset_id": asset_id,
         "validation_runs": [],
@@ -392,7 +355,6 @@ def get_figure_validation(asset_id: str) -> dict[str, Any]:
 
 @router.get("/validation-runs/{validation_run_id}")
 def get_validation_run(validation_run_id: UUID) -> ValidationRunResponse:
-    """Retrieve a validation run with character-level conformance checks."""
     run = _service.get_validation_run(validation_run_id)
     if run is None:
         raise _404(f"Validation run {validation_run_id} not found")
@@ -418,56 +380,24 @@ def get_validation_run(validation_run_id: UUID) -> ValidationRunResponse:
     )
 
 
-# ---------------------------------------------------------------------------
-# Aggregate Reference-Set Summary
-# ---------------------------------------------------------------------------
-
-
 @router.get("/reference-sets/{reference_set_id}/aggregate-summary")
 def get_aggregate_summary(reference_set_id: UUID) -> AggregateSummaryResponse:
-    """Return aggregate observation summary across all analyses in a reference set."""
     summary = _service.aggregate_reference_set(reference_set_id)
     return AggregateSummaryResponse(**summary)
 
 
-# ---------------------------------------------------------------------------
-# Frontend Evidence Summary
-# ---------------------------------------------------------------------------
-
-
 @router.get("/lexicon/concepts/{concept_id}/vision-evidence")
 def get_evidence_summary(concept_id: UUID) -> EvidenceSummaryResponse:
-    """Return the complete vision evidence summary for a Lexicon concept.
-
-    This is the primary endpoint consumed by the Famous Lexicon frontend.
-    The frontend must not need to reconstruct scientific assertions from
-    raw database tables.
-    """
     summary = _service.get_evidence_summary(concept_id)
     return EvidenceSummaryResponse(**summary)
 
 
-# ---------------------------------------------------------------------------
-# Human Review (governance write endpoint)
-# ---------------------------------------------------------------------------
-
-
 @router.post("/reviews")
-def record_review(
-    request: ReviewDecisionRequest,
-    auth: AuthDep,
-) -> dict[str, Any]:
-    """Record a human review decision for a Vision pipeline object.
-
-    Community reviews (reviewer_tier=COMMUNITY) have auto_promotion_blocked=True
-    enforced; they cannot automatically promote a record to scientific truth.
-    """
+def record_review(request: ReviewDecisionRequest, auth: AuthDep) -> dict[str, Any]:
+    _write_guard()
     actor = auth.get("actor") or auth.get("owner") or "api"
     if auth.get("auth_type") not in ("owner_session", "api_key"):
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "REVIEW_AUTH_REQUIRED"},
-        )
+        raise HTTPException(status_code=403, detail={"code": "REVIEW_AUTH_REQUIRED"})
     try:
         review = _service.record_review(
             subject_type=request.subject_type,
