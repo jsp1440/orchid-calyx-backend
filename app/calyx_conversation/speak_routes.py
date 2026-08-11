@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.brain_mission.routes import SERVICE as BRAIN_MISSION_SERVICE
 from app.security import verify_owner_or_api_key
 
+from .interaction_context import sanitize_interaction_context
 from .provider import DeterministicGovernedReplyProvider, configured_reply_provider
 from .routes import STORE, _retrieval
 
@@ -150,9 +151,14 @@ def _run_governed_turn(
 def speak_status(auth: AuthDependency) -> dict[str, Any]:
     _subject(auth)
     return {
-        "release": "CALYX-SPEAK-003",
+        "release": "CALYX-SPEAK-004-CONTEXT",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
+        "interaction_context": {
+            "supported": True,
+            "evidence": False,
+            "max_session_trail": 8,
+        },
         "automatic_publication": False,
         "knowledge_graph_mutation": False,
     }
@@ -164,12 +170,13 @@ def create_conversation(
     auth: AuthDependency,
 ) -> dict[str, Any]:
     owner = _subject(auth)
+    interaction_context = sanitize_interaction_context(payload.context)
     conversation_id = STORE.create_or_touch(
         None,
         owner=owner,
         project_id=payload.project_id,
         title=payload.title,
-        context=payload.context,
+        context=interaction_context,
     )
     conversation = STORE.get(conversation_id, owner=owner)
     if conversation is None:
@@ -231,18 +238,19 @@ def append_turn(
         or str(existing.get("project_id") or "").strip()
         or f"calyx-speak:{conversation_id}"
     )
+    interaction_context = sanitize_interaction_context(payload.context)
     STORE.create_or_touch(
         conversation_id,
         owner=owner,
         project_id=project_id,
         title=None,
-        context=payload.context,
+        context=interaction_context,
     )
     operator_message = STORE.append(
         conversation_id,
         "operator",
         payload.message,
-        {"context": payload.context, "research_mode": payload.research_mode},
+        {"context": interaction_context, "research_mode": payload.research_mode},
         owner=owner,
     )
 
@@ -274,12 +282,14 @@ def append_turn(
         "casual": casual,
         "conversation_id": conversation_id,
         "project_id": project_id,
+        "interaction_context": interaction_context,
         "retrieval": retrieval,
         "mission": mission,
         "mission_error": mission_error,
         "epistemic_policy": {
             "continuum_first": True,
             "provider_memory_is_evidence": False,
+            "interaction_context_is_evidence": False,
             "conversation_does_not_publish_knowledge": True,
             "candidate_knowledge_auto_promotion": False,
             "knowledge_graph_mutation": False,
@@ -317,6 +327,7 @@ def append_turn(
             "retrieval_eligible_results": retrieval.get("total_eligible_results"),
             "retrieval_status": retrieval.get("status"),
             "retrieval_error": retrieval.get("error"),
+            "interaction_context": interaction_context,
             "research_mode": payload.research_mode,
             "publication_boundary": (
                 "human-review-governed; no automatic publication or graph mutation"
@@ -336,6 +347,7 @@ def append_turn(
             "provider_response_id": reply.provider_response_id,
             "fallback_error": provider_error,
         },
+        "interaction_context": interaction_context,
         "research": {
             "casual": casual,
             "mission": mission,
