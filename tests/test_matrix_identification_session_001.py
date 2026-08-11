@@ -1,0 +1,134 @@
+from pathlib import Path
+
+from runtime.matrix_identification import Candidate
+from runtime.matrix_identification_registry import RegistryCharacter, create_registry_version
+from runtime.matrix_identification_session import (
+    add_observation,
+    create_session,
+    evaluate_session,
+    get_session,
+)
+
+
+def _registry(root: Path) -> None:
+    create_registry_version(
+        registry_id="angraecum-demo",
+        version="1",
+        title="Angraecum bounded diagnostic matrix",
+        scope={"genus": "Angraecum"},
+        characters=[
+            RegistryCharacter("flower_color", "Flower color", weight=1),
+            RegistryCharacter("spur_length_mm", "Spur length", value_type="numeric_range", weight=3),
+            RegistryCharacter("flower_shape", "Flower shape", weight=1),
+        ],
+        candidates=[
+            Candidate(
+                "world-plants:angraecum-sesquipedale",
+                "Angraecum sesquipedale",
+                {
+                    "flower_color": "white",
+                    "spur_length_mm": {"min": 250, "max": 350},
+                    "flower_shape": "star-shaped",
+                },
+            ),
+            Candidate(
+                "world-plants:angraecum-eburneum",
+                "Angraecum eburneum",
+                {
+                    "flower_color": "white",
+                    "spur_length_mm": {"min": 80, "max": 150},
+                    "flower_shape": "star-shaped",
+                },
+            ),
+        ],
+        provenance={"source": "test governed assertions"},
+        actor="test",
+        root=root,
+    )
+
+
+def test_session_binds_registry_and_preserves_observation_provenance(tmp_path: Path):
+    registry_root = tmp_path / "registries"
+    session_root = tmp_path / "sessions"
+    _registry(registry_root)
+
+    session = create_session(
+        registry_id="angraecum-demo",
+        version="1",
+        actor="owner",
+        metadata={"input_mode": "guided"},
+        root=session_root,
+        registry_root=registry_root,
+    )
+    session = add_observation(
+        session["session_id"],
+        character="flower_color",
+        value="white",
+        certainty="certain",
+        source={"kind": "user_observation", "interface": "guided"},
+        root=session_root,
+    )
+
+    stored = get_session(session["session_id"], root=session_root)
+    assert stored["registry"]["registry_id"] == "angraecum-demo"
+    assert stored["registry"]["checksum_sha256"]
+    assert stored["observations"][0]["source"]["interface"] == "guided"
+    assert stored["observations"][0]["review_state"] == "observed"
+
+
+def test_next_observation_prefers_discriminating_weighted_character(tmp_path: Path):
+    registry_root = tmp_path / "registries"
+    session_root = tmp_path / "sessions"
+    _registry(registry_root)
+
+    session = create_session(
+        registry_id="angraecum-demo",
+        version="1",
+        actor="owner",
+        root=session_root,
+        registry_root=registry_root,
+    )
+    add_observation(
+        session["session_id"],
+        character="flower_color",
+        value="white",
+        root=session_root,
+    )
+    result = evaluate_session(
+        session["session_id"],
+        root=session_root,
+        registry_root=registry_root,
+    )
+
+    assert result["report"]["candidates"][0]["score"] == 1.0
+    assert result["next_observation"]["character"] == "spur_length_mm"
+    assert result["next_observation"]["reason_code"] == "highest_deterministic_discrimination"
+
+
+def test_observing_next_character_revises_ranking_and_removes_it_from_next_question(tmp_path: Path):
+    registry_root = tmp_path / "registries"
+    session_root = tmp_path / "sessions"
+    _registry(registry_root)
+
+    session = create_session(
+        registry_id="angraecum-demo",
+        version="1",
+        actor="owner",
+        root=session_root,
+        registry_root=registry_root,
+    )
+    add_observation(
+        session["session_id"], character="flower_color", value="white", root=session_root
+    )
+    add_observation(
+        session["session_id"], character="spur_length_mm", value=300, root=session_root
+    )
+    result = evaluate_session(
+        session["session_id"],
+        root=session_root,
+        registry_root=registry_root,
+    )
+
+    assert result["report"]["candidates"][0]["taxon_id"].endswith("sesquipedale")
+    if result["next_observation"] is not None:
+        assert result["next_observation"]["character"] != "spur_length_mm"
