@@ -74,35 +74,25 @@ class DurableGitProposalMutationJournal:
             raise ValueError("GIT_PROPOSAL_JOURNAL_EVENT_INDEX_INVALID")
         snapshot = receipt.snapshot()
         self._validate_snapshot(snapshot)
-        latest_row = self._latest_row(receipt.plan_digest)
-        if latest_row is not None:
-            if latest_row.patch_program_job_id != receipt.patch_program_job_id:
+        history = self._validated_history(receipt.plan_digest)
+        if not history:
+            if event_index != 1:
+                raise ValueError("GIT_PROPOSAL_JOURNAL_FIRST_EVENT_INDEX_INVALID")
+        else:
+            latest_row, latest = history[-1]
+            if latest.patch_program_job_id != receipt.patch_program_job_id:
                 raise PermissionError("GIT_PROPOSAL_JOURNAL_PATCH_JOB_MISMATCH")
             if event_index < latest_row.event_index:
                 raise ValueError("GIT_PROPOSAL_JOURNAL_EVENT_ORDER_INVALID")
             if event_index == latest_row.event_index:
-                persisted = self._decode(latest_row)
-                if persisted.snapshot() != snapshot:
+                if latest.snapshot() != snapshot:
                     raise ValueError("GIT_PROPOSAL_JOURNAL_EVENT_DIVERGENT_REPLAY")
-                return persisted
-            latest = self._decode(latest_row)
+                return latest
             if latest.status in FINAL_STATUSES:
                 raise ValueError("GIT_PROPOSAL_JOURNAL_FINAL_ALREADY_RECORDED")
             if event_index != latest_row.event_index + 1:
                 raise ValueError("GIT_PROPOSAL_JOURNAL_EVENT_GAP")
-            prior_count = len(latest.completed_actions)
-            if (
-                tuple(receipt.completed_actions[:prior_count])
-                != latest.completed_actions
-            ):
-                raise ValueError("GIT_PROPOSAL_JOURNAL_COMPLETED_ACTIONS_REGRESSED")
-            if (
-                tuple(receipt.operation_evidence[:prior_count])
-                != latest.operation_evidence
-            ):
-                raise ValueError("GIT_PROPOSAL_JOURNAL_EVIDENCE_HISTORY_CHANGED")
-            if len(receipt.completed_actions) < prior_count:
-                raise ValueError("GIT_PROPOSAL_JOURNAL_COMPLETED_ACTIONS_REGRESSED")
+            self._validate_history_transition(previous=latest, current=receipt)
 
         payload = {
             "schema": JOURNAL_SCHEMA,
@@ -121,27 +111,26 @@ class DurableGitProposalMutationJournal:
             self.db.commit()
         except IntegrityError:
             self.db.rollback()
-            existing = self.db.scalar(
-                select(GitProposalMutationJournalEventRecord).where(
-                    GitProposalMutationJournalEventRecord.plan_digest
-                    == receipt.plan_digest,
-                    GitProposalMutationJournalEventRecord.event_index == event_index,
-                )
+            history = self._validated_history(receipt.plan_digest)
+            existing = next(
+                (
+                    persisted
+                    for persisted_row, persisted in history
+                    if persisted_row.event_index == event_index
+                ),
+                None,
             )
             if existing is None:
                 raise
-            persisted = self._decode(existing)
-            if persisted.snapshot() != snapshot:
+            if existing.snapshot() != snapshot:
                 raise ValueError("GIT_PROPOSAL_JOURNAL_EVENT_DIVERGENT_REPLAY")
-            return persisted
+            return existing
         return self._decode(row)
 
     def latest(self, *, plan_digest: str) -> GitProposalMutationReceipt | None:
-        digest = plan_digest.strip().lower()
-        if not _is_sha256(digest):
-            raise ValueError("GIT_PROPOSAL_JOURNAL_PLAN_DIGEST_INVALID")
-        row = self._latest_row(digest)
-        return None if row is None else self._decode(row)
+        digest = self._normalized_plan_digest(plan_digest)
+        history = self._validated_history(digest)
+        return None if not history else history[-1][1]
 
     def recovery_state(
         self,
@@ -203,22 +192,66 @@ class DurableGitProposalMutationJournal:
         )
 
     def next_event_index(self, *, plan_digest: str) -> int:
+        digest = self._normalized_plan_digest(plan_digest)
+        history = self._validated_history(digest)
+        return 1 if not history else history[-1][0].event_index + 1
+
+    def _validated_history(
+        self,
+        plan_digest: str,
+    ) -> list[tuple[GitProposalMutationJournalEventRecord, GitProposalMutationReceipt]]:
+        rows = list(
+            self.db.scalars(
+                select(GitProposalMutationJournalEventRecord)
+                .where(GitProposalMutationJournalEventRecord.plan_digest == plan_digest)
+                .order_by(GitProposalMutationJournalEventRecord.event_index.asc())
+            ).all()
+        )
+        history: list[
+            tuple[GitProposalMutationJournalEventRecord, GitProposalMutationReceipt]
+        ] = []
+        previous: GitProposalMutationReceipt | None = None
+        for expected_index, row in enumerate(rows, start=1):
+            if row.event_index != expected_index:
+                raise PermissionError("GIT_PROPOSAL_JOURNAL_HISTORY_GAP")
+            current = self._decode(row)
+            if previous is not None:
+                if previous.status in FINAL_STATUSES:
+                    raise PermissionError("GIT_PROPOSAL_JOURNAL_HISTORY_AFTER_FINAL")
+                self._validate_history_transition(previous=previous, current=current)
+            history.append((row, current))
+            previous = current
+        return history
+
+    @staticmethod
+    def _validate_history_transition(
+        *,
+        previous: GitProposalMutationReceipt,
+        current: GitProposalMutationReceipt,
+    ) -> None:
+        if (
+            current.plan_digest != previous.plan_digest
+            or current.patch_program_job_id != previous.patch_program_job_id
+            or current.repository != previous.repository
+            or current.proposed_branch != previous.proposed_branch
+            or current.base_commit_sha != previous.base_commit_sha
+            or current.base_ref != previous.base_ref
+        ):
+            raise PermissionError("GIT_PROPOSAL_JOURNAL_HISTORY_IDENTITY_CHANGED")
+        prior_count = len(previous.completed_actions)
+        if tuple(current.completed_actions[:prior_count]) != previous.completed_actions:
+            raise PermissionError("GIT_PROPOSAL_JOURNAL_COMPLETED_ACTIONS_REGRESSED")
+        if tuple(current.operation_evidence[:prior_count]) != previous.operation_evidence:
+            raise PermissionError("GIT_PROPOSAL_JOURNAL_EVIDENCE_HISTORY_CHANGED")
+        if len(current.completed_actions) < prior_count:
+            raise PermissionError("GIT_PROPOSAL_JOURNAL_COMPLETED_ACTIONS_REGRESSED")
+
+    @staticmethod
+    def _normalized_plan_digest(plan_digest: str) -> str:
         digest = plan_digest.strip().lower()
         if not _is_sha256(digest):
             raise ValueError("GIT_PROPOSAL_JOURNAL_PLAN_DIGEST_INVALID")
-        row = self._latest_row(digest)
-        return 1 if row is None else row.event_index + 1
-
-    def _latest_row(
-        self,
-        plan_digest: str,
-    ) -> GitProposalMutationJournalEventRecord | None:
-        return self.db.scalar(
-            select(GitProposalMutationJournalEventRecord)
-            .where(GitProposalMutationJournalEventRecord.plan_digest == plan_digest)
-            .order_by(GitProposalMutationJournalEventRecord.event_index.desc())
-            .limit(1)
-        )
+        return digest
 
     @staticmethod
     def _validate_snapshot(snapshot: Mapping[str, Any]) -> None:
