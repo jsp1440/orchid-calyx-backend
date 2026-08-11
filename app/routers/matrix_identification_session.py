@@ -49,6 +49,15 @@ def _authenticated_actor(auth: Any) -> str:
     return actor
 
 
+def _access_actor(auth: Any) -> str | None:
+    """Owner sessions are tenant-scoped; API-key callers are trusted system automation."""
+    if not isinstance(auth, dict):
+        raise HTTPException(status_code=401, detail="authenticated actor unavailable")
+    if auth.get("auth_type") == "api_key":
+        return None
+    return _authenticated_actor(auth)
+
+
 @router.post("")
 def create(
     payload: SessionCreateRequest,
@@ -70,10 +79,10 @@ def create(
 @router.get("/{session_id}")
 def get(
     session_id: str,
-    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+    auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     try:
-        return get_session(session_id)
+        return get_session(session_id, access_actor=_access_actor(auth))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -95,6 +104,7 @@ def observe(
             weight=payload.weight,
             source=payload.source,
             actor=_authenticated_actor(auth),
+            access_actor=_access_actor(auth),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -106,10 +116,14 @@ def observe(
 def evaluate(
     session_id: str,
     payload: SessionEvaluateRequest,
-    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+    auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     try:
-        return evaluate_session(session_id, limit=payload.limit)
+        return evaluate_session(
+            session_id,
+            limit=payload.limit,
+            access_actor=_access_actor(auth),
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
