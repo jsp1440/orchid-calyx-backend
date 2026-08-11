@@ -65,6 +65,30 @@ def test_atomic_apply_and_canonical_rerun():
         assert rerun["contract_after"]["complete"] is True
 
 
+def test_canonical_101_only_state_resumes_by_applying_only_140():
+    with psycopg.connect(_dsn(), autocommit=True) as connection:
+        migration_101 = activation.ROOT / "migrations" / activation.MIGRATIONS[0][0]
+        connection.execute(migration_101.read_text())
+
+        before = activation.inspect_contract(connection)
+        assert before["state"] == "COMPLETE_101_ONLY"
+        assert before["migration_101_complete"] is True
+        assert before["migration_140_complete"] is False
+        assert before["safe_resume"] is True
+        assert activation.classify_preflight(before, True) == {
+            "status": "ready",
+            "activation_required": True,
+            "ready_to_apply": True,
+            "blockers": [],
+        }
+
+        result = activation.apply_chain(connection)
+        assert result["applied_migrations"] == ["140_calyx_conversation_sessions.sql"]
+        assert result["contract_before"]["state"] == "COMPLETE_101_ONLY"
+        assert result["contract_after"]["state"] == "COMPLETE_101_140"
+        assert result["contract_after"]["complete"] is True
+
+
 def test_failure_after_101_rolls_back_entire_chain():
     with psycopg.connect(_dsn(), autocommit=True) as connection:
         with pytest.raises(RuntimeError, match="INTENTIONAL_FAILURE_AFTER_101"):
