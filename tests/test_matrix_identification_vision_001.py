@@ -17,6 +17,7 @@ from runtime.matrix_identification_registry import RegistryCharacter, create_reg
 from runtime.matrix_identification_session import create_session, get_session
 from runtime.matrix_identification_vision import (
     attach_vision_analysis,
+    list_vision_suggestions,
     review_vision_suggestion,
 )
 
@@ -126,6 +127,7 @@ def test_machine_suggestion_does_not_enter_matrix_before_review(tmp_path: Path):
     result = attach_vision_analysis(
         session["session_id"],
         str(service.analysis.analysis_id),
+        access_actor="owner",
         root=session_root,
         registry_root=registry_root,
         vision_service=service,
@@ -145,6 +147,7 @@ def test_accepting_suggestion_creates_reviewed_matrix_observation(tmp_path: Path
     attached = attach_vision_analysis(
         session["session_id"],
         str(service.analysis.analysis_id),
+        access_actor="owner",
         root=session_root,
         registry_root=registry_root,
         vision_service=service,
@@ -157,6 +160,7 @@ def test_accepting_suggestion_creates_reviewed_matrix_observation(tmp_path: Path
         decision="accept",
         reviewer="owner",
         certainty="probable",
+        access_actor="owner",
         root=session_root,
     )
 
@@ -176,6 +180,7 @@ def test_rejection_preserves_provenance_without_scoring_observation(tmp_path: Pa
     attached = attach_vision_analysis(
         session["session_id"],
         str(service.analysis.analysis_id),
+        access_actor="owner",
         root=session_root,
         registry_root=registry_root,
         vision_service=service,
@@ -188,6 +193,7 @@ def test_rejection_preserves_provenance_without_scoring_observation(tmp_path: Pa
         decision="reject",
         reviewer="owner",
         comments="structure was obscured",
+        access_actor="owner",
         root=session_root,
     )
 
@@ -203,6 +209,7 @@ def test_ambiguous_unit_cannot_be_auto_accepted_but_can_be_revised(tmp_path: Pat
     attached = attach_vision_analysis(
         session["session_id"],
         str(service.analysis.analysis_id),
+        access_actor="owner",
         root=session_root,
         registry_root=registry_root,
         vision_service=service,
@@ -218,6 +225,7 @@ def test_ambiguous_unit_cannot_be_auto_accepted_but_can_be_revised(tmp_path: Pat
             decision="accept",
             reviewer="owner",
             certainty="certain",
+            access_actor="owner",
             root=session_root,
         )
 
@@ -229,7 +237,56 @@ def test_ambiguous_unit_cannot_be_auto_accepted_but_can_be_revised(tmp_path: Pat
         certainty="certain",
         revised_value=300.0,
         comments="reviewer converted 30 cm to 300 mm",
+        access_actor="owner",
         root=session_root,
     )
     assert revised["suggestion"]["state"] == "revised"
     assert revised["session"]["observations"][-1]["value"] == 300.0
+
+
+def test_cross_owner_cannot_attach_list_or_review_vision_suggestions(tmp_path: Path):
+    session, session_root, registry_root = _session(tmp_path)
+    service = _vision()
+
+    with pytest.raises(FileNotFoundError, match="identification session not found"):
+        attach_vision_analysis(
+            session["session_id"],
+            str(service.analysis.analysis_id),
+            access_actor="other-owner",
+            root=session_root,
+            registry_root=registry_root,
+            vision_service=service,
+        )
+
+    attached = attach_vision_analysis(
+        session["session_id"],
+        str(service.analysis.analysis_id),
+        access_actor="owner",
+        root=session_root,
+        registry_root=registry_root,
+        vision_service=service,
+    )
+    suggestion_id = attached["suggestions"][0]["suggestion_id"]
+
+    with pytest.raises(FileNotFoundError, match="identification session not found"):
+        list_vision_suggestions(
+            session["session_id"],
+            access_actor="other-owner",
+            root=session_root,
+        )
+    with pytest.raises(FileNotFoundError, match="identification session not found"):
+        review_vision_suggestion(
+            session["session_id"],
+            suggestion_id,
+            decision="reject",
+            reviewer="other-owner",
+            access_actor="other-owner",
+            root=session_root,
+        )
+
+    owner_view = list_vision_suggestions(
+        session["session_id"],
+        access_actor="owner",
+        root=session_root,
+    )
+    assert owner_view["suggestions"][0]["state"] == "pending_review"
