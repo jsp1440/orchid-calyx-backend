@@ -50,6 +50,7 @@ def test_casual_turn_never_requires_semantic_retrieval(monkeypatch):
 
     assert result["research"]["casual"] is True
     assert result["research"]["retrieval"]["status"] == "not_requested"
+    assert result["workspace_outputs"] == []
     assert result["answer"].startswith("Hello")
 
 
@@ -83,15 +84,18 @@ def test_scientific_turn_survives_semantic_index_outage(monkeypatch):
     assert retrieval["error"] == "SEMANTIC_INDEX_UNAVAILABLE"
     assert result["research"]["mission"] is None
     assert result["research"]["mission_error"] == "SEMANTIC_INDEX_UNAVAILABLE"
+    assert result["workspace_outputs"] == []
     assert "could not complete a governed Brain mission" in result["answer"]
     assert result["calyx_message"]["metadata"]["retrieval_status"] == "unavailable"
 
 
 def test_speak_status_exposes_degraded_mode_contract():
     result = speak_routes.speak_status(auth())
-    assert result["release"] == "CALYX-SPEAK-004-CONTEXT"
+    assert result["release"] == "CALYX-SPEAK-005-WORKSPACE-OUTPUTS"
     assert result["semantic_retrieval_degraded_mode"] is True
     assert result["interaction_context"]["supported"] is True
     assert result["interaction_context"]["evidence"] is False
+    assert result["workspace_outputs"]["supported"] is True
+    assert result["workspace_outputs"]["server_grounded_only"] is True
     assert result["automatic_publication"] is False
     assert result["knowledge_graph_mutation"] is False
