@@ -123,8 +123,10 @@ def test_turn_passes_sanitized_page_context_to_provider_and_persists_it(isolated
 
 def test_status_advertises_context_support_without_knowledge_mutation(isolated):
     status = speak_routes.speak_status(auth())
-    assert status["release"] == "CALYX-SPEAK-004-CONTEXT"
+    assert status["release"] == "CALYX-SPEAK-005-WORKSPACE-OUTPUTS"
     assert status["interaction_context"]["supported"] is True
     assert status["interaction_context"]["evidence"] is False
+    assert status["workspace_outputs"]["supported"] is True
+    assert status["workspace_outputs"]["server_grounded_only"] is True
     assert status["automatic_publication"] is False
     assert status["knowledge_graph_mutation"] is False
