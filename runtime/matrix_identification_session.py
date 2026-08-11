@@ -50,6 +50,18 @@ def get_session(session_id: str, *, root: Path | None = None) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _bound_registry(
+    record: dict[str, Any], *, registry_root: Path | None = None
+) -> dict[str, Any]:
+    registry_ref = record["registry"]
+    registry = get_registry_version(
+        registry_ref["registry_id"], registry_ref["version"], root=registry_root
+    )
+    if registry.get("checksum_sha256") != registry_ref.get("checksum_sha256"):
+        raise ValueError("registry checksum drift detected for identification session")
+    return registry
+
+
 def create_session(
     *,
     registry_id: str,
@@ -59,6 +71,9 @@ def create_session(
     root: Path | None = None,
     registry_root: Path | None = None,
 ) -> dict[str, Any]:
+    actor = str(actor).strip()
+    if not actor:
+        raise ValueError("authenticated actor is required")
     registry = get_registry_version(registry_id, version, root=registry_root)
     now = _now()
     record = {
@@ -91,9 +106,22 @@ def add_observation(
     certainty: str = "certain",
     weight: float | None = None,
     source: dict[str, Any] | None = None,
+    actor: str | None = None,
     root: Path | None = None,
+    registry_root: Path | None = None,
 ) -> dict[str, Any]:
     record = get_session(session_id, root=root)
+    registry = _bound_registry(record, registry_root=registry_root)
+    allowed_characters = {
+        item.get("character") for item in registry.get("characters", []) if item.get("character")
+    }
+    if character not in allowed_characters:
+        raise ValueError(
+            f"character is not defined by bound registry {record['registry']['registry_id']}@{record['registry']['version']}: {character}"
+        )
+    recorded_by = str(actor or record.get("actor") or "").strip()
+    if not recorded_by:
+        raise ValueError("authenticated actor is required for observation provenance")
     record["revision"] = int(record.get("revision", 0)) + 1
     record.setdefault("observations", []).append(
         {
@@ -104,6 +132,7 @@ def add_observation(
             "certainty": certainty,
             "weight": weight,
             "source": source or {"kind": "user_observation"},
+            "recorded_by": recorded_by,
             "review_state": "observed",
             "created_at": _now(),
         }
@@ -190,12 +219,8 @@ def evaluate_session(
     registry_root: Path | None = None,
 ) -> dict[str, Any]:
     record = get_session(session_id, root=root)
+    registry = _bound_registry(record, registry_root=registry_root)
     registry_ref = record["registry"]
-    registry = get_registry_version(
-        registry_ref["registry_id"], registry_ref["version"], root=registry_root
-    )
-    if registry.get("checksum_sha256") != registry_ref.get("checksum_sha256"):
-        raise ValueError("registry checksum drift detected for identification session")
 
     default_weights = {
         item["character"]: float(item.get("weight", 1.0))
