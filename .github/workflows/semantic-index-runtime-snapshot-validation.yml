@@ -62,9 +62,15 @@ jobs:
           from app.semantic_index.postgres_repository import PostgresIndexRepository
           repo = PostgresIndexRepository(os.environ['TEST_DATABASE_URL'])
           assert repo.snapshot_kind == 'semantic_index'
-          repo.atomic(lambda: repo.models.append({'model_id': 'validation-model'}))
+          model = {
+              'provider_name': 'validation',
+              'model_name': 'semantic-index-test',
+              'model_version': '1',
+              'dimension': 12,
+          }
+          model_id = repo.atomic(lambda: repo.ensure_model(model))
           rebuilt = PostgresIndexRepository(os.environ['TEST_DATABASE_URL'])
-          assert any(x.get('model_id') == 'validation-model' for x in rebuilt.models)
+          assert rebuilt.ensure_model(model) == model_id
           print('semantic index durable snapshot initialization: PASS')
           PY
       - name: Unit regression and lint
