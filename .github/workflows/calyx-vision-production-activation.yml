@@ -1,0 +1,177 @@
+name: CALYX Vision Production Activation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type APPLY CALYX VISION MIGRATIONS'
+        required: true
+        type: string
+      run_smoke_test:
+        description: 'Verify Vision-Lexicon status after migration'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calyx-vision-production-activation
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply governed Vision-Lexicon migrations
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Validate explicit owner confirmation
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [[ "$CONFIRMATION" != "APPLY CALYX VISION MIGRATIONS" ]]; then
+            echo "Manual activation requires the exact confirmation phrase."
+            exit 1
+          fi
+
+      - name: Check required database secret
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          test -n "$DATABASE_URL" || { echo "DATABASE_URL secret is not configured"; exit 1; }
+
+      - name: Check out approved main revision
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Apply Vision-Lexicon schema and hardening atomically
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          psql "$DATABASE_URL" \
+            --set=ON_ERROR_STOP=1 \
+            --single-transaction \
+            --file=migrations/20260811_vision_lexicon_bridge.sql \
+            --file=migrations/20260811_vision_lexicon_activation_hardening.sql
+
+      - name: Verify Vision schema objects and governance constraint
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          table_count=$(psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --tuples-only --no-align <<'SQL'
+          SELECT count(*)
+          FROM information_schema.tables
+          WHERE table_schema = 'oc_vision'
+            AND table_name IN (
+              'reference_image_sets',
+              'reference_image_set_items',
+              'vision_analyses',
+              'vision_regions',
+              'character_observations',
+              'morphometric_observations',
+              'color_phenotype_observations',
+              'vision_assertions',
+              'figure_specifications',
+              'figure_validation_runs',
+              'character_conformance_checks',
+              'vision_review_records'
+            );
+          SQL
+          )
+          test "$table_count" = "12" || { echo "Expected 12 oc_vision tables; found $table_count"; exit 1; }
+
+          constraint=$(psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --tuples-only --no-align <<'SQL'
+          SELECT pg_get_constraintdef(c.oid)
+          FROM pg_constraint c
+          JOIN pg_class t ON t.oid = c.conrelid
+          JOIN pg_namespace n ON n.oid = t.relnamespace
+          WHERE n.nspname = 'oc_vision'
+            AND t.relname = 'figure_specifications'
+            AND c.conname = 'figure_specifications_review_state_check';
+          SQL
+          )
+          echo "$constraint" | grep -q "MACHINE_GENERATED" || {
+            echo "Vision figure governance constraint is not hardened as expected"
+            exit 1
+          }
+
+      - name: Record migration result
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## CALYX Vision production activation"
+            echo "- Revision: \`${{ github.sha }}\`"
+            echo "- Base + hardening migrations: transactional"
+            echo "- Required oc_vision tables: verified"
+            echo "- Machine-generated review-state boundary: verified"
+            echo "- Live provider inference: not enabled by this workflow"
+            echo "- Candidate Knowledge promotion/publication/taxonomy/KG mutation: not authorized"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  smoke:
+    name: Verify deployed Vision-Lexicon capability status
+    if: ${{ inputs.run_smoke_test }}
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check backend URL secret
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+        run: |
+          test -n "$CALYX_BACKEND_URL" || { echo "CALYX_BACKEND_URL secret is not configured"; exit 1; }
+
+      - name: Wait for backend health
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+        run: |
+          base="${CALYX_BACKEND_URL%/}"
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "$base/" >/dev/null; then
+              exit 0
+            fi
+            echo "Backend not ready yet (attempt $attempt/30)"
+            sleep 10
+          done
+          echo "Backend did not become healthy in time"
+          exit 1
+
+      - name: Read Vision-Lexicon status
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+        run: |
+          base="${CALYX_BACKEND_URL%/}"
+          curl --fail --silent --show-error \
+            "$base/api/vision-lexicon/status" \
+            | tee /tmp/vision-status.json \
+            | python -m json.tool
+
+      - name: Enforce truthful activation status
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          with open('/tmp/vision-status.json', encoding='utf-8') as f:
+              status = json.load(f)
+          if not status.get('migration_activated'):
+              raise SystemExit('Vision status does not report migration_activated=true')
+          if status.get('live_inference_enabled'):
+              raise SystemExit('Live inference must remain disabled until a provider adapter is separately approved')
+          print('Vision schema activation is visible; provider inference remains safely disabled.')
+          PY
