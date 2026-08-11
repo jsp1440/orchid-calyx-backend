@@ -15,7 +15,9 @@ from app.routers.mission_control import (
 from .proposal_executor_status import proposal_executor_mission_control_status
 from .service import MissionControlBriefingService
 
-router = APIRouter(prefix="/api/mission-control/briefing", tags=["MISSION-CONTROL-ROLE-001G"])
+router = APIRouter(
+    prefix="/api/mission-control/briefing", tags=["MISSION-CONTROL-ROLE-001G"]
+)
 
 
 def briefing_service_dependency() -> MissionControlBriefingService:
