@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.calyx_orchestrator.git_proposal_mutation_executor import GitProposalMutationExecutor
+from app.calyx_orchestrator.git_proposal_mutation_executor import (
+    GitProposalMutationExecutor,
+)
 from app.calyx_orchestrator.github_proposal_executor_policy import (
-    GovernedGitHubProposalExecutorRegistration,
     GitHubProposalExecutorPolicy,
+    GovernedGitHubProposalExecutorRegistration,
     build_registration,
     github_proposal_executor_status,
 )
