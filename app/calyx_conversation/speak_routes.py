@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -38,7 +39,7 @@ def _subject(auth: dict[str, Any]) -> str:
 
 def _is_casual(message: str) -> bool:
     normalized = " ".join(message.casefold().split()).strip(" .!?,")
-    if len(normalized) > 80:
+    if len(normalized) > 120:
         return False
     casual = {
         "hi",
@@ -53,7 +54,25 @@ def _is_casual(message: str) -> bool:
         "hi calyx",
         "hey calyx",
     }
-    return normalized in casual or normalized.startswith("hello calyx ")
+    if normalized in casual:
+        return True
+    if re.match(r"^(hello|hi|hey)\s+calyx(?:[.!?,;:]|\s|$)", normalized):
+        capability_phrases = (
+            "what are you able to help me with",
+            "what can you help me with",
+            "what can you do",
+            "how can you help",
+        )
+        remainder = re.sub(
+            r"^(hello|hi|hey)\s+calyx(?:[.!?,;:]|\s)*",
+            "",
+            normalized,
+            count=1,
+        ).strip(" .!?,;:")
+        return not remainder or any(
+            remainder.startswith(phrase) for phrase in capability_phrases
+        )
+    return False
 
 
 def _mission_question(history: str, message: str) -> str:
