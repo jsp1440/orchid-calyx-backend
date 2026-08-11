@@ -37,8 +37,15 @@ def test_store_is_checksum_idempotent(tmp_path):
 def test_upload_and_report_routes(tmp_path):
     store = WorldPlantsReleaseStore(tmp_path)
     app = FastAPI()
+    def _no_durable() -> None:
+        raise ValueError("no durable store in unit test")
+
     app.include_router(
-        create_taxonomy_release_router(lambda: store, lambda: {"actor": "test-owner"})
+        create_taxonomy_release_router(
+            lambda: store,
+            lambda: {"actor": "test-owner"},
+            get_durable_store=_no_durable,
+        )
     )
     client = TestClient(app)
 
