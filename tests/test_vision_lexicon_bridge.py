@@ -703,7 +703,7 @@ def test_figure_spec_creation_via_service(service):
 
 
 def test_figure_spec_purpose_required(service):
-    with pytest.raises(ValueError, match="purpose"):
+    with pytest.raises(ValueError, match="FIGURE_SPEC_PURPOSE_REQUIRED"):
         service.create_figure_spec(
             target_concept_id=None,
             purpose="",  # invalid
