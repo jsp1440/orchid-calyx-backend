@@ -22,17 +22,29 @@ router = APIRouter(
 )
 
 
+def _access_actor(auth: Any) -> str | None:
+    if not isinstance(auth, dict):
+        raise HTTPException(status_code=401, detail="authenticated actor unavailable")
+    if auth.get("auth_type") == "api_key":
+        return None
+    actor = str(auth.get("actor") or "").strip()
+    if not actor:
+        raise HTTPException(status_code=401, detail="authenticated actor unavailable")
+    return actor
+
+
 @router.post("/{session_id}/explain")
 def explain(
     session_id: str,
     payload: ExplanationRequest,
-    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+    auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     try:
         return explain_session(
             session_id,
             audience=payload.audience,
             focus=payload.focus,
+            access_actor=_access_actor(auth),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
