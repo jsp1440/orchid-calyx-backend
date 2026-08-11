@@ -222,7 +222,9 @@ class RetrievalEngine:
         source_anchors = []
         for index, anchor_id in enumerate(anchor_ids):
             if isinstance(configured, dict):
-                anchor_locator = configured.get(anchor_id) or configured.get(str(anchor_id))
+                anchor_locator = configured.get(anchor_id) or configured.get(
+                    str(anchor_id)
+                )
             elif isinstance(configured, list) and index < len(configured):
                 anchor_locator = configured[index]
             else:
@@ -236,10 +238,14 @@ class RetrievalEngine:
                 }
             )
 
-        source_hash = sha256(text.encode()).hexdigest() if isinstance(text, str) else None
+        source_hash = (
+            sha256(text.encode()).hexdigest() if isinstance(text, str) else None
+        )
         if source_hash is not None and source_hash != d.get("content_hash"):
             raise ValueError("SOURCE_CONTENT_HASH_MISMATCH")
-        excerpt_hash = sha256(excerpt.encode()).hexdigest() if excerpt is not None else None
+        excerpt_hash = (
+            sha256(excerpt.encode()).hexdigest() if excerpt is not None else None
+        )
         exact_top_level_locator = (
             locator
             if len(anchor_ids) == 1 and isinstance(locator, dict) and locator
