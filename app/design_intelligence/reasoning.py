@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Iterable
 from dataclasses import asdict
-from typing import Iterable
 
 from app.semantic_index.provider import DeterministicLocalProvider, EmbeddingProvider
 
@@ -17,7 +17,6 @@ from .knowledge import (
     SourceLocation,
 )
 from .models import DesignDocument
-
 
 DOMAIN_TERMS = {
     SemanticDesignDomain.UX: ("user experience", "usability", "ux"),
