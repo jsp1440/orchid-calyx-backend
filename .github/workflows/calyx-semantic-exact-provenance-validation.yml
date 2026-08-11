@@ -1,0 +1,76 @@
+name: CALYX Semantic Exact Provenance Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/semantic_index/memory_repository.py"
+      - "app/semantic_index/postgres_repository.py"
+      - "app/evidence_retrieval/engine.py"
+      - "tests/test_build_085a_semantic_index.py"
+      - "tests/test_build_085b_hybrid_retrieval.py"
+      - "tests/test_build_085c_retrieval_validation.py"
+      - "tests/test_build_085d_durable_retrieval.py"
+      - ".github/workflows/calyx-semantic-exact-provenance-validation.yml"
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff httpx
+      - name: Compile
+        run: |
+          python -m compileall -q \
+            app/semantic_index/memory_repository.py \
+            app/semantic_index/postgres_repository.py \
+            app/evidence_retrieval/engine.py \
+            tests/test_build_085b_hybrid_retrieval.py
+      - name: Ruff
+        run: |
+          ruff check app/evidence_retrieval/engine.py
+          ruff format --check app/evidence_retrieval/engine.py
+      - name: Semantic and retrieval regressions
+        run: |
+          python -m pytest -q \
+            tests/test_build_085a_semantic_index.py \
+            tests/test_build_085b_hybrid_retrieval.py \
+            tests/test_build_085c_retrieval_validation.py \
+            tests/test_build_085d_durable_retrieval.py
+      - name: Provenance boundary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          engine = Path("app/evidence_retrieval/engine.py").read_text(encoding="utf-8")
+          repo = Path("app/semantic_index/memory_repository.py").read_text(encoding="utf-8")
+          for required in (
+              "verbatim_text",
+              "source_content_hash",
+              "excerpt_content_hash",
+              "SOURCE_CONTENT_HASH_MISMATCH",
+              "source_anchors",
+              "EXACT_LOCATOR_UNAVAILABLE",
+          ):
+              assert required in engine + repo, required
+          for forbidden in (
+              "production_publish",
+              "publish_scientific",
+              "knowledge_graph_mutation_authorized=True",
+          ):
+              assert forbidden not in engine, forbidden
+          PY
+      - name: Diff hygiene
+        run: git diff --check "origin/${{ github.base_ref }}...HEAD"
