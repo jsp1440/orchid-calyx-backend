@@ -74,6 +74,20 @@ def _item(status: str) -> dict:
         "evidence": {"count": 2},
         "status": status,
         "updated_at": "2026-08-08T20:00:00+00:00",
+        "has_durable_provenance": False,
+    }
+
+
+def _item_with_provenance(status: str) -> dict:
+    """A resolved/dismissed item whose durable scientific review provenance is present."""
+    return {
+        "review_key": "duplicate:S:Gastrochilus wenchuanensis",
+        "category": "duplicate_identity",
+        "summary": "Duplicate taxon identity requires review",
+        "evidence": {"count": 2},
+        "status": status,
+        "updated_at": "2026-08-09T12:00:00+00:00",
+        "has_durable_provenance": True,
     }
 
 
@@ -113,6 +127,32 @@ def test_status_only_resolution_is_not_accepted_as_durable_scientific_review(
     assert packet["review"]["disposition_without_durable_provenance_count"] == 1
     assert packet["review"]["durable_reviewer_identity_available"] is False
     assert packet["review"]["durable_rationale_available"] is False
+
+
+def test_provenance_bound_resolved_review_clears_disposition_blocker(monkeypatch):
+    """When a resolved item carries durable scientific review provenance (migration 109),
+    REVIEW_DISPOSITION_PROVENANCE_UNAVAILABLE is not raised and the packet is ready
+    for the owner activation decision (subject to no other blockers)."""
+    store = FakeStore(completed=True, staged=34724, rows=34724, report=REPORT)
+    monkeypatch.setattr(
+        decision,
+        "_review_items",
+        lambda store, release_id: [_item_with_provenance("resolved")],
+    )
+
+    packet = decision.build_activation_decision_packet(store, "release-1")
+
+    assert packet["decision_state"] == "READY_FOR_OWNER_ACTIVATION_DECISION"
+    assert packet["ready_for_owner_activation_decision"] is True
+    assert "REVIEW_DISPOSITION_PROVENANCE_UNAVAILABLE" not in packet["blockers"]
+    assert packet["blockers"] == []
+    assert packet["review"]["disposition_without_durable_provenance_count"] == 0
+    assert packet["review"]["disposition_with_durable_provenance_count"] == 1
+    assert packet["review"]["durable_reviewer_identity_available"] is True
+    assert packet["review"]["durable_rationale_available"] is True
+    assert packet["activation_authorized"] is False
+    assert packet["owner_approval_required"] is True
+    assert packet["read_only"] is True
 
 
 def test_no_review_items_is_ready_only_for_owner_decision(monkeypatch):

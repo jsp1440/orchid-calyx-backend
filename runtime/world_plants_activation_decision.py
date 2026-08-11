@@ -19,10 +19,14 @@ def _review_items(store: Any, release_id: str) -> list[dict[str, Any]]:
         rows = (
             connection.execute(
                 text(
-                    "SELECT review_key, category, summary, evidence, status, updated_at "
-                    "FROM taxonomy_pipeline.review_queue "
-                    "WHERE release_id = :release_id "
-                    "ORDER BY category, review_key"
+                    "SELECT q.review_key, q.category, q.summary, q.evidence, "
+                    "       q.status, q.updated_at, "
+                    "       p.reviewer_id, p.rationale, p.decision_hash, p.resolved_at "
+                    "FROM taxonomy_pipeline.review_queue q "
+                    "LEFT JOIN taxonomy_pipeline.taxonomy_review_provenance p "
+                    "  ON q.release_id = p.release_id AND q.review_key = p.review_key "
+                    "WHERE q.release_id = :release_id "
+                    "ORDER BY q.category, q.review_key"
                 ),
                 {"release_id": release_id},
             )
@@ -37,6 +41,12 @@ def _review_items(store: Any, release_id: str) -> list[dict[str, Any]]:
             "evidence": dict(row["evidence"] or {}),
             "status": str(row["status"]),
             "updated_at": row["updated_at"].isoformat(),
+            "has_durable_provenance": (
+                row["reviewer_id"] is not None
+                and row["rationale"] is not None
+                and row["decision_hash"] is not None
+                and row["resolved_at"] is not None
+            ),
         }
         for row in rows
     ]
@@ -62,8 +72,17 @@ def build_activation_decision_packet(store: Any, release_id: str) -> dict[str, A
     )
     report_present = isinstance(report, dict)
     open_reviews = [item for item in review_items if item["status"] == "open"]
-    disposition_reviews = [
-        item for item in review_items if item["status"] in {"resolved", "dismissed"}
+    disposition_reviews_without_provenance = [
+        item
+        for item in review_items
+        if item["status"] in {"resolved", "dismissed"}
+        and not item.get("has_durable_provenance")
+    ]
+    disposition_reviews_with_provenance = [
+        item
+        for item in review_items
+        if item["status"] in {"resolved", "dismissed"}
+        and item.get("has_durable_provenance")
     ]
 
     blockers: list[str] = []
@@ -73,7 +92,7 @@ def build_activation_decision_packet(store: Any, release_id: str) -> dict[str, A
         blockers.append("CHANGE_REPORT_MISSING")
     if open_reviews:
         blockers.append("OPEN_TAXONOMY_REVIEW_ITEMS")
-    if disposition_reviews:
+    if disposition_reviews_without_provenance:
         blockers.append("REVIEW_DISPOSITION_PROVENANCE_UNAVAILABLE")
 
     ready_for_owner_decision = not blockers
@@ -104,13 +123,22 @@ def build_activation_decision_packet(store: Any, release_id: str) -> dict[str, A
         "review": {
             "items": review_items,
             "open_count": len(open_reviews),
-            "disposition_without_durable_provenance_count": len(disposition_reviews),
-            "durable_reviewer_identity_available": False,
-            "durable_rationale_available": False,
+            "disposition_without_durable_provenance_count": len(
+                disposition_reviews_without_provenance
+            ),
+            "disposition_with_durable_provenance_count": len(
+                disposition_reviews_with_provenance
+            ),
+            "durable_reviewer_identity_available": bool(
+                disposition_reviews_with_provenance
+            ),
+            "durable_rationale_available": bool(disposition_reviews_with_provenance),
             "note": (
-                "Migration 107 records review status but not reviewer identity, rationale, "
-                "decision timestamp, or evidence hash. Resolved/dismissed statuses therefore "
-                "cannot by themselves satisfy scientific activation review."
+                "Migration 109 adds taxonomy_review_provenance for durable reviewer "
+                "identity, rationale, decision hash, and resolution timestamp. "
+                "Resolved/dismissed items satisfy activation review only when a "
+                "provenance row is present. Items without provenance continue to "
+                "produce REVIEW_DISPOSITION_PROVENANCE_UNAVAILABLE."
             ),
         },
         "decision_state": decision_state,

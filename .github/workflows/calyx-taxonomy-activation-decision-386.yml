@@ -8,6 +8,7 @@ on:
       - "tests/test_world_plants_activation_decision.py"
       - "docs/brain/CALYX-TAXONOMY-ACTIVATION-DECISION-386.md"
       - ".github/workflows/calyx-taxonomy-activation-decision-386.yml"
+      - "migrations/109_taxonomy_review_provenance.sql"
   workflow_dispatch:
 
 permissions:
@@ -32,6 +33,25 @@ jobs:
         run: python -m pytest -q tests/test_world_plants_activation_decision.py
       - name: Ruff
         run: ruff check runtime/world_plants_activation_decision.py app/routers/taxonomy_releases.py tests/test_world_plants_activation_decision.py
+      - name: Migration 109 syntax guard
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          sql = Path("migrations/109_taxonomy_review_provenance.sql").read_text()
+          required = [
+              "taxonomy_review_provenance",
+              "reviewer_id",
+              "rationale",
+              "decision_hash",
+              "resolved_at",
+              "FOREIGN KEY",
+              "taxonomy_pipeline.review_queue",
+          ]
+          missing = [t for t in required if t not in sql]
+          if missing:
+              raise SystemExit(f"migration 109 missing required elements: {missing}")
+          print("migration 109 guard passed")
+          PY
       - name: Permanent non-authority assertions
         run: |
           python - <<'PY'
