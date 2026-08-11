@@ -7,6 +7,9 @@ class MemoryIndexRepository:
  def transition(self,rid,state): self.runs[rid]["state"]=state
  def plan_item(self,rid,doc,eligible,action,content,metadata): self.items[rid].append({"item_id":self._next(),"run_id":rid,"document":doc,"eligibility":eligible,"action":action,"content_hash":content,"metadata_hash":metadata,"state":"PLANNED"}); self.runs[rid]["metrics"]["planned"]+=1
  def latest(self,t,i): return next((d for d in reversed(self.documents) if d["source_object_type"]==t and d["source_object_id"]==i and d["active"]),None)
+ def needs_verbatim_backfill(self,index_document_id):
+  row=next((x for x in reversed(self.lexical) if x.get("index_document_id")==index_document_id),None)
+  return row is None or not isinstance(row.get("verbatim_text"),str) or not row["verbatim_text"]
  def pending_items(self,rid): return [x for x in self.items[rid] if x["state"] in {"PLANNED","FAILED"}]
  def persist(self,item,vector,tokens):
   was_failed=item["state"]=="FAILED"
