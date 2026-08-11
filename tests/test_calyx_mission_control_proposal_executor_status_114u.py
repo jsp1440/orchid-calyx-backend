@@ -37,7 +37,9 @@ def test_enabled_configuration_remains_blocked_without_credential_readiness() ->
     assert "credential_not_ready" in status["policy"]["blockers"]
 
 
-def test_status_never_widens_authority_even_when_all_readiness_inputs_are_true() -> None:
+def test_status_never_widens_authority_even_when_all_readiness_inputs_are_true() -> (
+    None
+):
     status = proposal_executor_mission_control_status(
         {
             "CALYX_GITHUB_PROPOSAL_EXECUTOR_ENABLED": "true",
