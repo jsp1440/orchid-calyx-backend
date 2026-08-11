@@ -11,7 +11,10 @@ from psycopg.rows import dict_row
 
 from app.concepts.repositories import concept_database_url
 from app.scientific_synthesis.language import BotanicalLanguageService
-from app.scientific_synthesis.language_routes import _concept_search, _load_concept_service
+from app.scientific_synthesis.language_routes import (
+    _concept_search,
+    _load_concept_service,
+)
 
 from .intake_routes import router as intake_router
 
