@@ -69,17 +69,78 @@ def test_session_binds_registry_and_preserves_observation_provenance(tmp_path: P
         certainty="certain",
         source={"kind": "user_observation", "interface": "guided"},
         actor="owner",
+        access_actor="owner",
         root=session_root,
         registry_root=registry_root,
     )
 
-    stored = get_session(session["session_id"], root=session_root)
+    stored = get_session(session["session_id"], root=session_root, access_actor="owner")
     assert stored["registry"]["registry_id"] == "angraecum-demo"
     assert stored["registry"]["checksum_sha256"]
     assert stored["actor"] == "owner"
     assert stored["observations"][0]["source"]["interface"] == "guided"
     assert stored["observations"][0]["recorded_by"] == "owner"
     assert stored["observations"][0]["review_state"] == "observed"
+
+
+def test_owner_scope_hides_session_from_other_owner(tmp_path: Path):
+    registry_root = tmp_path / "registries"
+    session_root = tmp_path / "sessions"
+    _registry(registry_root)
+    session = create_session(
+        registry_id="angraecum-demo",
+        version="1",
+        actor="owner-a",
+        root=session_root,
+        registry_root=registry_root,
+    )
+
+    with pytest.raises(FileNotFoundError, match="identification session not found"):
+        get_session(session["session_id"], root=session_root, access_actor="owner-b")
+    with pytest.raises(FileNotFoundError, match="identification session not found"):
+        evaluate_session(
+            session["session_id"],
+            access_actor="owner-b",
+            root=session_root,
+            registry_root=registry_root,
+        )
+    with pytest.raises(FileNotFoundError, match="identification session not found"):
+        add_observation(
+            session["session_id"],
+            character="flower_color",
+            value="white",
+            actor="owner-b",
+            access_actor="owner-b",
+            root=session_root,
+            registry_root=registry_root,
+        )
+
+    stored = get_session(session["session_id"], root=session_root, access_actor="owner-a")
+    assert stored["revision"] == 0
+    assert stored["observations"] == []
+
+
+def test_trusted_system_scope_can_access_session_without_impersonating_owner(tmp_path: Path):
+    registry_root = tmp_path / "registries"
+    session_root = tmp_path / "sessions"
+    _registry(registry_root)
+    session = create_session(
+        registry_id="angraecum-demo",
+        version="1",
+        actor="owner-a",
+        root=session_root,
+        registry_root=registry_root,
+    )
+
+    system_read = get_session(session["session_id"], root=session_root, access_actor=None)
+    assert system_read["actor"] == "owner-a"
+    system_eval = evaluate_session(
+        session["session_id"],
+        access_actor=None,
+        root=session_root,
+        registry_root=registry_root,
+    )
+    assert system_eval["session"]["actor"] == "owner-a"
 
 
 def test_observation_rejects_character_outside_bound_registry(tmp_path: Path):
@@ -100,11 +161,12 @@ def test_observation_rejects_character_outside_bound_registry(tmp_path: Path):
             character="invented_character",
             value="invented_state",
             actor="owner",
+            access_actor="owner",
             root=session_root,
             registry_root=registry_root,
         )
 
-    stored = get_session(session["session_id"], root=session_root)
+    stored = get_session(session["session_id"], root=session_root, access_actor="owner")
     assert stored["revision"] == 0
     assert stored["observations"] == []
 
@@ -125,11 +187,14 @@ def test_next_observation_prefers_discriminating_weighted_character(tmp_path: Pa
         session["session_id"],
         character="flower_color",
         value="white",
+        actor="owner",
+        access_actor="owner",
         root=session_root,
         registry_root=registry_root,
     )
     result = evaluate_session(
         session["session_id"],
+        access_actor="owner",
         root=session_root,
         registry_root=registry_root,
     )
@@ -155,6 +220,8 @@ def test_observing_next_character_revises_ranking_and_removes_it_from_next_quest
         session["session_id"],
         character="flower_color",
         value="white",
+        actor="owner",
+        access_actor="owner",
         root=session_root,
         registry_root=registry_root,
     )
@@ -162,11 +229,14 @@ def test_observing_next_character_revises_ranking_and_removes_it_from_next_quest
         session["session_id"],
         character="spur_length_mm",
         value=300,
+        actor="owner",
+        access_actor="owner",
         root=session_root,
         registry_root=registry_root,
     )
     result = evaluate_session(
         session["session_id"],
+        access_actor="owner",
         root=session_root,
         registry_root=registry_root,
     )
