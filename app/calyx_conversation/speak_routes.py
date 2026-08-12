@@ -11,6 +11,7 @@ from app.security import verify_owner_or_api_key
 
 from .interaction_context import sanitize_interaction_context
 from .provider import DeterministicGovernedReplyProvider, configured_reply_provider
+from .provider_readiness import reply_provider_readiness
 from .routes import STORE, _retrieval
 from .workspace_outputs import grounded_workspace_outputs
 
@@ -155,6 +156,7 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
         "release": "CALYX-SPEAK-005-WORKSPACE-OUTPUTS",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
+        "reply_provider": reply_provider_readiness(),
         "interaction_context": {
             "supported": True,
             "evidence": False,
