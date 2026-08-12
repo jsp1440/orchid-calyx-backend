@@ -57,12 +57,18 @@ class TraitGenomicsDiscoveryEngine:
                         or str(interaction.value or "")
                     )
                     for mol in molecular:
+                        # Prefer a cross-taxon biological feature (gene/protein/pathway/
+                        # named marker) over a record-specific sequence accession. This
+                        # prevents two records for the same marker from failing to align
+                        # merely because each taxon has a different accession identifier.
+                        marker_name = str(mol.metadata.get("marker_name") or "").strip() or None
                         feature = (
                             mol.gene_id
                             or mol.protein_id
-                            or mol.sequence_accession
                             or mol.pathway_id
+                            or marker_name
                             or mol.predicate
+                            or mol.sequence_accession
                         )
                         if not feature:
                             continue
