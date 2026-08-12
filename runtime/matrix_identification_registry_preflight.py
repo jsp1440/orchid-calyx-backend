@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 from typing import Any
 
+from runtime.matrix_identification_registry import compute_registry_record_checksum
 from runtime.matrix_identification_registry_store import (
     FileMatrixRegistryStore,
     PostgresMatrixRegistryStore,
@@ -12,7 +15,63 @@ from runtime.matrix_identification_registry_store import (
     registry_durable_requested,
 )
 
-PREFLIGHT_SCHEMA_VERSION = "matrix-identification-registry-persistence-preflight/v1"
+PREFLIGHT_SCHEMA_VERSION = "matrix-identification-registry-persistence-preflight/v2"
+
+
+def strict_file_registry_inventory(root: Path) -> dict[str, Any]:
+    """Read every physical registry package and independently verify its checksum."""
+    records: list[dict[str, Any]] = []
+    blockers: list[dict[str, Any]] = []
+    paths = sorted(root.glob("*/*.json")) if root.exists() else []
+    for path in paths:
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            blockers.append(
+                {
+                    "code": "MATRIX_REGISTRY_SOURCE_PACKAGE_UNREADABLE",
+                    "path": str(path),
+                    "error_type": type(exc).__name__,
+                }
+            )
+            continue
+
+        registry_id = str(record.get("registry_id") or "").strip()
+        version = str(record.get("version") or "").strip()
+        claimed = str(record.get("checksum_sha256") or "").strip()
+        if not registry_id or not version or not claimed:
+            blockers.append(
+                {
+                    "code": "MATRIX_REGISTRY_SOURCE_PACKAGE_INCOMPLETE",
+                    "path": str(path),
+                    "registry_id": registry_id or None,
+                    "version": version or None,
+                }
+            )
+            continue
+
+        actual = compute_registry_record_checksum(record)
+        if actual != claimed:
+            blockers.append(
+                {
+                    "code": "MATRIX_REGISTRY_SOURCE_CHECKSUM_INVALID",
+                    "path": str(path),
+                    "registry_id": registry_id,
+                    "version": version,
+                    "claimed_checksum_sha256": claimed,
+                    "computed_checksum_sha256": actual,
+                }
+            )
+            continue
+        records.append(record)
+
+    return {
+        "physical_package_count": len(paths),
+        "valid_package_count": len(records),
+        "records": records,
+        "blockers": blockers,
+        "inventory_complete": not blockers and len(records) == len(paths),
+    }
 
 
 def compare_registry_records(
@@ -65,6 +124,7 @@ def matrix_registry_persistence_preflight() -> dict[str, Any]:
         "durable_requested": requested,
         "activated": False,
         "migration_613_schema_ready": False,
+        "source_inventory_ready": False,
         "data_copy_ready": False,
         "activation_ready": False,
         "migration_applied_by_preflight": False,
@@ -85,15 +145,21 @@ def matrix_registry_persistence_preflight() -> dict[str, Any]:
         base["blockers"] = inspection.get("blockers") or ["MATRIX_REGISTRY_SCHEMA_NOT_READY"]
         return base
 
+    inventory = strict_file_registry_inventory(default_registry_root())
+    base["source_inventory"] = {key: value for key, value in inventory.items() if key != "records"}
+    base["source_inventory_ready"] = bool(inventory["inventory_complete"])
+    if not inventory["inventory_complete"]:
+        base["blockers"] = [item["code"] for item in inventory["blockers"]]
+        return base
+
     try:
-        file_records = FileMatrixRegistryStore(default_registry_root()).list_records()
         database_records = postgres_store.list_records()
     except Exception as exc:
         base["blockers"] = ["MATRIX_REGISTRY_COPY_VERIFICATION_FAILED"]
         base["error_type"] = type(exc).__name__
         return base
 
-    comparison = compare_registry_records(file_records, database_records)
+    comparison = compare_registry_records(inventory["records"], database_records)
     base.update(comparison)
     blockers: list[str] = []
     if comparison["missing_in_database"]:
@@ -102,7 +168,9 @@ def matrix_registry_persistence_preflight() -> dict[str, Any]:
         blockers.append("MATRIX_REGISTRY_CHECKSUM_MISMATCH")
     base["blockers"] = blockers
     base["activation_ready"] = bool(
-        inspection.get("migration_613_schema_ready") and comparison["data_copy_ready"]
+        inspection.get("migration_613_schema_ready")
+        and inventory["inventory_complete"]
+        and comparison["data_copy_ready"]
     )
     base["activated"] = bool(requested and base["activation_ready"])
     return base
