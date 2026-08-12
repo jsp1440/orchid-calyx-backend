@@ -36,7 +36,7 @@ def _paper() -> PaperKnowledge:
         claim_type="result",
         subject_ids=["taxon-1"],
         evidence_ids=["e1"],
-        provenance=_prov("accepted"),
+        provenance=_prov("unreviewed", method="model_extracted"),
     )
     reviewed_but_not_publishable = Claim(
         claim_id="reviewed-hypothesis",
@@ -120,7 +120,7 @@ def _paper() -> PaperKnowledge:
     )
 
 
-def test_strict_projection_requires_publication_decision_for_claims():
+def test_publication_decision_is_authoritative_for_claim_inclusion():
     bundle = build_publication_eligible_paper_graph_specs(
         _paper(),
         taxon_keys_by_entity_id={"taxon-1": canonical_key("taxon", 42)},
