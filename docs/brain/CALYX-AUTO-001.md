@@ -6,7 +6,8 @@ IMPLEMENTED + HARDENED ON FEATURE BRANCH / NON-PRODUCTION / EXECUTABLE REPOSITOR
 
 Branch: `feature/calyx-auto-001-durable-missions`
 
-Current hardened code/workflow head before this documentation commit: `c71c37f89ff6a2671f703eed3d0387ab7ff9ca2d`.
+Current hardened code/workflow head before documentation commits: `c71c37f89ff6a2671f703eed3d0387ab7ff9ca2d`.
+Canonical Brain checkpoint after hardening: `Orchid-Continuum-Brain@72c9dc8e8da99e4a2a3ff3d2ebd26bf452aa67b1`.
 
 ## Mission
 
