@@ -28,6 +28,22 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: calyx
+          POSTGRES_PASSWORD: calyx
+          POSTGRES_DB: calyx_auto_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U calyx -d calyx_auto_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CALYX_AUTO_TEST_DATABASE_URL: postgresql+psycopg://calyx:calyx@localhost:5432/calyx_auto_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pytest ruff
+          pip install 'psycopg[binary]' pytest ruff
       - name: Compile CALYX-AUTO-001
         run: >-
           python -m py_compile
