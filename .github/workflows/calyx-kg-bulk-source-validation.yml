@@ -7,6 +7,8 @@ on:
       - 'runtime/knowledge_graph/production_materializer.py'
       - 'runtime/knowledge_graph/adapters.py'
       - 'runtime/knowledge_graph/paper_knowledge_graph.py'
+      - 'runtime/knowledge_graph/source_coverage_audit.py'
+      - 'scripts/audit_source_graph_coverage.py'
       - 'tests/test_verified_bulk_graph_sources.py'
       - 'tests/test_paper_knowledge_graph.py'
       - '.github/workflows/calyx-kg-bulk-source-validation.yml'
@@ -34,6 +36,8 @@ jobs:
           runtime/knowledge_graph/production_materializer.py
           runtime/knowledge_graph/adapters.py
           runtime/knowledge_graph/paper_knowledge_graph.py
+          runtime/knowledge_graph/source_coverage_audit.py
+          scripts/audit_source_graph_coverage.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
       - name: Focused graph regressions
@@ -51,6 +55,8 @@ jobs:
           runtime/knowledge_graph/production_materializer.py
           runtime/knowledge_graph/adapters.py
           runtime/knowledge_graph/paper_knowledge_graph.py
+          runtime/knowledge_graph/source_coverage_audit.py
+          scripts/audit_source_graph_coverage.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
       - name: Diff hygiene
