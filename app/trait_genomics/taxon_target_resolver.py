@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -8,11 +9,34 @@ from typing import Any, Literal
 import psycopg
 from psycopg.rows import dict_row
 
-from app.species_dossier.service import normalize_scientific_name
-from app.trait_genomics.molecular_harvester import MolecularHarvestTarget
+from .molecular_harvester import MolecularHarvestTarget
 
 
 ResolutionStatus = Literal["resolved", "unresolved", "ambiguous", "invalid"]
+
+_SCIENTIFIC_NAME_RE = re.compile(
+    r"^([A-Za-z][A-Za-z-]+)\s+([a-z][a-z-]+)"
+    r"(?:\s+(subsp\.|var\.|f\.)\s+([a-z][a-z-]+))?"
+)
+
+
+def _normalize_scientific_name(value: str) -> str | None:
+    """Normalize a binomial or supported infraspecific name without fuzzy matching.
+
+    Authorship and trailing annotation text are intentionally ignored after the
+    binomial/infraspecific identity. This mirrors the operational species resolver
+    semantics without importing an unrelated application service into TIG.
+    """
+
+    cleaned = " ".join((value or "").replace("_", " ").split())
+    match = _SCIENTIFIC_NAME_RE.match(cleaned)
+    if not match:
+        return None
+    genus, epithet, rank, infra = match.groups()
+    normalized = f"{genus[:1].upper()}{genus[1:].lower()} {epithet.lower()}"
+    if rank and infra:
+        normalized += f" {rank} {infra.lower()}"
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -62,7 +86,7 @@ class CanonicalTaxonTargetResolver:
 
     @staticmethod
     def _normalized_row_name(value: str) -> str | None:
-        return normalize_scientific_name(value)
+        return _normalize_scientific_name(value)
 
     @staticmethod
     def _candidate(row: dict[str, Any]) -> dict[str, str]:
@@ -73,7 +97,7 @@ class CanonicalTaxonTargetResolver:
 
     def resolve(self, scientific_name: str) -> TaxonTargetResolution:
         query_name = " ".join((scientific_name or "").split())
-        normalized = normalize_scientific_name(query_name)
+        normalized = _normalize_scientific_name(query_name)
         if normalized is None:
             return TaxonTargetResolution(
                 status="invalid",
