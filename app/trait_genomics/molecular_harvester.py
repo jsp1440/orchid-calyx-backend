@@ -4,8 +4,9 @@ import json
 import re
 import urllib.parse
 import urllib.request
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable, Protocol
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
