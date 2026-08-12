@@ -14,6 +14,10 @@ from runtime.matrix_identification_registry import (
     candidates_from_registry,
     get_registry_version,
 )
+from runtime.matrix_identification_session_store import (
+    configured_matrix_session_store,
+    matrix_session_persistence_status,
+)
 
 SESSION_SCHEMA_VERSION = "matrix-identification-session/v1"
 
@@ -28,19 +32,8 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _path(session_id: str, *, root: Path | None = None) -> Path:
-    if not session_id or any(part in session_id for part in ("/", "\\", "..")):
-        raise ValueError("invalid session_id")
-    return (root or session_root()) / f"{session_id}.json"
-
-
 def _write(record: dict[str, Any], *, root: Path | None = None) -> dict[str, Any]:
-    path = _path(record["session_id"], root=root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".json.tmp")
-    temp.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temp.replace(path)
-    return record
+    return configured_matrix_session_store(root=root).save(record)
 
 
 def _assert_session_owner(record: dict[str, Any], access_actor: str | None) -> None:
@@ -65,12 +58,18 @@ def get_session(
     root: Path | None = None,
     access_actor: str | None = None,
 ) -> dict[str, Any]:
-    path = _path(session_id, root=root)
-    if not path.exists():
+    record = configured_matrix_session_store(root=root).get(
+        session_id,
+        access_actor=access_actor,
+    )
+    if record is None:
         raise FileNotFoundError(f"identification session not found: {session_id}")
-    record = json.loads(path.read_text(encoding="utf-8"))
     _assert_session_owner(record, access_actor)
     return record
+
+
+def persistence_status() -> dict[str, Any]:
+    return matrix_session_persistence_status()
 
 
 def _bound_registry(
@@ -113,6 +112,7 @@ def create_session(
         "metadata": metadata or {},
         "observations": [],
         "revision": 0,
+        "status": "active",
         "created_at": now,
         "updated_at": now,
         "latest_evaluation": None,
