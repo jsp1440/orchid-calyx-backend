@@ -31,6 +31,10 @@ Finish the runtime connection between the migrated Famous AI Illustrated Orchid 
 14. Calyx page/session context remains attached to the active lexicon concept, so the restored visual experience and the canonical conversational workspace share the same current-object identity.
 15. The full source export showed that the first GitHub migration had stripped most of the rich Resupination layers. A dedicated draft enrichment now restores high-value source-backed anatomy, morphology, developmental mechanism, functional significance, evolutionary interpretation, conservation recording guidance, relationship edges, schematic asset metadata, and proposed funding recognition into the single Famous fallback Resupination record. These fields remain draft migration content and are suppressed when a canonical reviewed record supplies governed scientific fields.
 16. Codex review identified a visual/provenance mismatch in the restored Entry Hero. The fix now renders the hard-coded Resupination schematic only when a matching `resupination-sequence` asset exists; otherwise a canonical URL asset is shown or the interface displays an honest in-development state. Visual title/kind/provenance and displayed asset therefore derive from the same record metadata.
+17. A source-derived `famousExportRecordOverrides` layer now restores the exact exported wording and compact record relationships for all non-Resupination terms, including aliases, related terminology, contrasts, identification cautions, categories and certainty notes present in the uploaded ZIP. The override is applied only to the draft fallback inventory and is never applied to canonical records.
+18. Regression coverage now proves the fallback inventory contains exactly 45 unique slugs and checks representative source fidelity: Labellum retains the exported definition and `lip` synonym, Pollinium is restored to the exported Reproductive Biology category, Velamen retains its exported Epiphyte/Rhizome relationships, and Non-resupination retains its exported expanded definition and identification cautions while remaining draft.
+19. A canonical-collision regression proves that richer recovered Famous aliases, related terminology, cautions and certainty state disappear when the same slug is supplied by an ACTIVE + APPROVED canonical concept unless the backend itself supplies those fields. This prevents source recovery from becoming a backdoor publication path.
+20. The restored Entry Hero again displays canonical aliases/synonyms, and the conservation section now renders every supported canonical conservation field—minimum evidence, monitoring/restoration relevance, standards mappings, linked evidence, scope and certainty—or an explicit pending state rather than a blank panel.
 
 ## Full-export audit finding
 
@@ -44,6 +48,19 @@ The archive also contains legacy runtime dependencies that must not become canon
 - CloudFront-hosted partner imagery.
 
 Those legacy services are migration source material only. Canonical writes remain routed through Orchid Continuum governance, and Calyx uses the canonical Speak service.
+
+## Review disposition
+
+All currently raised Codex review findings on frontend PR #144 are resolved:
+
+1. direct entry routes now use the direct canonical entry loader;
+2. nested empty presentation objects are treated as empty for migration-overlay purposes;
+3. Famous maturity/capability flags cannot leak into canonical state;
+4. the Resupination hero schematic is bound to matching asset metadata rather than slug alone;
+5. synonyms remain visible in the recovered full entry view;
+6. conservation records render their supported fields or an explicit pending state instead of a blank section.
+
+Backend PR #889 also has all previously raised Codex review findings resolved: hyphen-safe slug identity, exact lookup independent of broad-search limits, and the documented `CALYX-LEXICON-LIVE-002` release identifier.
 
 ## Governance
 
@@ -59,4 +76,4 @@ Those legacy services are migration source material only. Canonical writes remai
 
 ## Validation boundary
 
-GitHub-hosted workflow jobs for this change were created but received no execution steps because of the repository/account Actions runner allocation condition. This is an infrastructure block, not an executed test failure. No green-CI claim is made, and merge remains blocked pending trusted execution.
+GitHub-hosted workflow jobs for this change were created but received no execution steps because of the repository/account Actions runner allocation condition. The latest frontend exact-head Frontend CI job again reports `steps: null`. This is an infrastructure block, not an executed test failure. A local dependency install attempt also did not complete within the available execution window, so no local build claim is made. No green-CI claim is made, and merge remains blocked pending trusted execution.
