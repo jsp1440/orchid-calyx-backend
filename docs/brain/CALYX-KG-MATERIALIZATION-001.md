@@ -4,6 +4,24 @@
 
 The executive audit can report millions of source records while still reporting taxonomy-to-domain relationships as missing. Canonical main already contains domain adapters, verified SELECT-only source projections, graph publication infrastructure, staging validation, and a writable PostgreSQL graph repository. The missing operational bridge was a single governed path that actually uses those verified projections to materialize persistent `oc_graph` nodes and edges.
 
+## Live production baseline — 2026-08-12
+
+A read-only Render-shell measurement against the deployed production database established that `oc_graph` is real and populated but only partially materialized:
+
+- 37,641 graph nodes
+- 70,602 graph edges
+- 33,878 taxon nodes
+- 2,807 trait nodes
+- 115 pollinator nodes
+- 51 image nodes
+- 29 publication nodes
+- 26 occurrence nodes
+- 2 conservation-assessment nodes
+
+The source registry itself records expected occurrence scale near 580,000 records and expected resolved trait scale near 33,791 records, while the currently selected occurrence source and graph each expose only 26 and the graph exposes 2,807 traits. This proves that a green statement such as “occurrences integrated” is insufficient: integration must measure source-corpus coverage, not merely presence of an edge type.
+
+`runtime/knowledge_graph/scientific_corpus_inventory.py` and `scripts/inventory_scientific_corpora.py` now provide a read-only source-vs-graph inventory for occurrence, trait, literature, evidence, habitat, elevation, pollinator, mycorrhizal and conservation corpora. The operator checks multiple known candidate relations rather than assuming the first telemetry relation is the complete corpus.
+
 ## Static verified-domain materialization
 
 `runtime/knowledge_graph/production_materializer.py` connects the verified source registry directly to the canonical domain adapters.
@@ -14,15 +32,49 @@ Production execution reuses `publish_to_production`. The canonical publisher acq
 
 Production execution additionally requires an explicit `--domains` list, `--execute`, and the exact confirmation token `PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS`.
 
-The static audit-priority verified domains are:
+The static verified integration set is now:
 
 - media → `has_image`
 - occurrences → `occurs_at`
+- traits → `has_trait`
 - climate → `experiences_climate`
 - literature → `documented_by`
 - pollinators → `associated_with_pollinator`
 - mycorrhiza → `associated_with_mycorrhiza`
 - conservation → `has_conservation_assessment`
+
+Traits were explicitly added to the materialization operator after the production baseline demonstrated that the graph contains only a subset of the available trait corpus.
+
+## Scientific-method graph model
+
+The literature extraction subsystem already models far more than papers. `PaperKnowledge` contains sections, entities, measurements, claims, evidence spans, normalized evidence records, relationships, figures, tables and references; claims distinguish observations, results, interpretations, hypotheses, methodological claims, limitations and recommendations. The Knowledge Graph must preserve that structure instead of flattening a paper into one `publication` node.
+
+`runtime/knowledge_graph/scientific_method_vocabulary.py` now adds controlled graph semantics for:
+
+- observation
+- measurement
+- method / protocol / experiment
+- dataset
+- result
+- conclusion
+- limitation
+- recommendation
+- citation / reference
+- paper section
+- figure evidence
+- table evidence
+
+It also adds relationships such as `has_observation`, `has_measurement`, `uses_method`, `tests_hypothesis`, `reports_result`, `states_conclusion`, `cites`, `extracted_from`, `result_of`, and `conclusion_from`. These labels are registered in the canonical graph vocabulary, but vocabulary definition alone does not publish extracted science. A later source projection must preserve extraction provenance, review state, source span and publication decision before graph mutation.
+
+## Occurrence, geography and elevation semantics
+
+Occurrence data are first-class evidence records, not merely taxon labels. Existing occurrence projections already retain latitude, longitude, locality, country, event date and elevation in the occurrence payload. The canonical graph also treats elevation as a first-class node domain via `has_elevation`.
+
+The target query shape for a question such as “Which orchids in Ecuador occur above 3,000 m?” is therefore:
+
+`taxon -> occurrence -> geographic/elevation evidence`
+
+with numeric altitude and coordinates retained as queryable measurements/properties. Derived taxon elevation profiles and standardized elevation bands may be additional nodes; they must remain distinguishable from raw occurrence-level measurements. The graph should support zero-result queries truthfully rather than infer taxa merely because a country or elevation concept exists.
 
 ## Habitat and elevation: verified live-schema projection
 
@@ -71,7 +123,7 @@ This closes the storage-only gap: once relationships and publication nodes exist
 
 This branch creates and hardens executable bridges but does not itself run against production. It does not bypass blocked source projections, publish staging-only science, activate taxonomy, infer fuzzy taxon crosswalks, or suppress source-contract failures.
 
-Production Knowledge Graph publication remains owner-governed. A failed or rolled-back attempt is never reported as successful mutation. Speak graph access and graph-literature search are strictly read-only.
+Production Knowledge Graph publication remains owner-governed. A failed or rolled-back attempt is never reported as successful mutation. Speak graph access, graph-literature search and scientific-corpus inventory are strictly read-only.
 
 ## Validation hardening completed
 
@@ -82,6 +134,9 @@ Production Knowledge Graph publication remains owner-governed. A failed or rolle
 - canonical single-writer transactional publisher reuse;
 - rollback result cannot masquerade as graph mutation;
 - complete nine-relationship persisted graph measurement;
+- source-vs-graph corpus inventory for major scientific domains;
+- traits included in the verified static materialization set;
+- canonical scientific-method node/edge vocabulary aligned to `PaperKnowledge` extraction objects;
 - node/edge integrity measurement including orphan endpoints;
 - regressions proving readiness reflects only actually absent relationships;
 - Mission Control relationship-field adapter derived from measured graph evidence;
@@ -96,7 +151,7 @@ Production Knowledge Graph publication remains owner-governed. A failed or rolle
 
 ## Current branch state
 
-The integration is intentionally concentrated in one PR instead of spawning separate graph, audit, habitat/elevation, or Speak PRs. Re-check branch drift before merge; do not assume a prior zero-behind result remains current after later main activity.
+The integration is intentionally concentrated in one PR instead of spawning separate graph, audit, habitat/elevation, scientific-method, occurrence/trait, or Speak PRs. Re-check branch drift before merge; do not assume a prior zero-behind result remains current after later main activity.
 
 ## Current validation and merge boundary
 
@@ -106,10 +161,10 @@ The branch therefore remains draft. It must not be merged merely because GitHub 
 
 ## Next integration work
 
-1. Obtain exact-head executable validation when a trusted runner is available.
-2. Run bounded read-only validation against the deployed database for the seven static verified domains.
-3. Run read-only habitat and elevation discovery/dry-runs against the deployed database; either produce verified projections or return precise source/crosswalk blockers.
-4. Run the persisted relationship audit against the deployed database and capture exact baseline counts.
-5. Resolve source-contract failures rather than suppressing them.
-6. With owner authorization, publish verified domains transactionally one domain at a time, beginning with literature and auditing after every slice.
-7. Re-run live Speak acceptance for `Laelia anceps` and the foliar-nutrition literature question after graph publication; then separately repair/populate the semantic evidence index so full evidence-grounded synthesis can inspect underlying document text rather than relying on graph metadata alone.
+1. Run `scripts/inventory_scientific_corpora.py` against the deployed database and capture the real source-vs-graph counts for occurrences, traits, literature, extracted evidence, habitat and elevation.
+2. Identify the authoritative bulk occurrence and trait relations/crosswalks rather than accepting the current 26-occurrence / 2,807-trait graph as corpus-complete.
+3. Run bounded read-only validation for each newly verified bulk source projection.
+4. Verify source projections for literature-extraction scientific-method objects and preserve review/provenance state before enabling publication.
+5. Run read-only habitat and elevation discovery/dry-runs and return precise source/crosswalk blockers where unresolved.
+6. With owner authorization only after validation, publish verified domains transactionally one domain at a time and audit after every slice.
+7. Re-run live Speak acceptance for `Laelia anceps`, Ecuador/elevation queries, and the foliar-nutrition literature question after graph publication; then separately repair/populate the semantic evidence index so full evidence-grounded synthesis can inspect underlying document text rather than relying on graph metadata alone.
