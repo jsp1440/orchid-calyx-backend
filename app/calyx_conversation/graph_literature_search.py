@@ -5,7 +5,8 @@ provenance. Because the live audit proved that the graph currently represents
 only a small subset of the 6,725-document research corpus, an exact-binomial
 fallback also searches ``public.research_documents`` for literal taxon mentions.
 Where a corpus document has a canonical literature-extraction binding, the result
-is enriched with integrity-verified, publication-eligible normalized evidence.
+is enriched with integrity-verified, publication-eligible normalized evidence and
+a read-only preview of its publication-eligible scientific-method graph structure.
 No literal mention is promoted into a scientific claim or persisted graph edge.
 """
 
@@ -19,6 +20,9 @@ import psycopg
 
 from .extracted_literature_evidence import reviewed_evidence_for_documents
 from .graph_context import explicit_taxon_names
+from .scientific_method_graph_preview import (
+    preview_scientific_method_graph_for_documents,
+)
 
 MAX_QUERY_TERMS = 6
 MAX_RESULTS = 8
@@ -136,13 +140,17 @@ def _research_document_matches(
     return results
 
 
-def _attach_reviewed_evidence(results: list[dict[str, Any]]) -> dict[str, Any]:
-    document_ids = [
-        item.get("source_pk")
+def _corpus_document_ids(results: list[dict[str, Any]]) -> list[str]:
+    return [
+        str(item.get("source_pk"))
         for item in results
         if item.get("source_table") == "public.research_documents"
+        and item.get("source_pk") not in (None, "")
     ]
-    bridge = reviewed_evidence_for_documents(document_ids)
+
+
+def _attach_reviewed_evidence(results: list[dict[str, Any]]) -> dict[str, Any]:
+    bridge = reviewed_evidence_for_documents(_corpus_document_ids(results))
     documents = bridge.get("documents") or {}
     for item in results:
         if item.get("source_table") != "public.research_documents":
@@ -266,6 +274,10 @@ def search_persisted_literature(
         }
 
     bridge = _attach_reviewed_evidence(results)
+    scientific_preview = preview_scientific_method_graph_for_documents(
+        _corpus_document_ids(results),
+        dsn=resolved_dsn,
+    )
     graph_count = sum(bool(item.get("kg_node_id")) for item in results)
     document_count = len(results) - graph_count
     reviewed_count = sum(len(item.get("reviewed_evidence") or []) for item in results)
@@ -284,6 +296,16 @@ def search_persisted_literature(
             "status": bridge.get("status"),
             "reviewed_record_count": bridge.get("reviewed_record_count", 0),
             "automatic_publication": False,
+        },
+        "scientific_method_graph_preview": {
+            "status": scientific_preview.get("status"),
+            "contract": scientific_preview.get("contract"),
+            "preview_node_count": scientific_preview.get("preview_node_count", 0),
+            "preview_edge_count": scientific_preview.get("preview_edge_count", 0),
+            "document_count": scientific_preview.get("document_count", 0),
+            "knowledge_graph_mutation": False,
+            "automatic_publication": False,
+            "documents": scientific_preview.get("documents", {}),
         },
         "results": results,
     }
