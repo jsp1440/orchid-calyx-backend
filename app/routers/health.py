@@ -129,6 +129,12 @@ def workflow_options(full_path: str, request: Request, response: Response):
     return {"status": "ok", "path": full_path}
 
 
+@router.options("/api/trait-genomics/{full_path:path}")
+def trait_genomics_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
 @router.options("/archive/{full_path:path}")
 def archive_options(full_path: str, request: Request, response: Response):
     add_mission_control_cors_headers(request, response)
