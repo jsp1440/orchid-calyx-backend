@@ -72,6 +72,35 @@ def _normalize(value: str) -> str:
     return " ".join(value.lower().split())
 
 
+def _compact_index(value: str) -> str:
+    """Normalize PostgreSQL's presentation-only index rendering differences."""
+    normalized = value.lower().replace("research_station.", "")
+    normalized = normalized.replace(" using btree ", " ")
+    return "".join(normalized.split())
+
+
+def _strict_index_blockers(
+    connection: psycopg.Connection,
+) -> tuple[list[str], list[str], list[str]]:
+    definitions = base._index_defs(connection)
+    missing_101 = sorted(
+        name
+        for name, fragment in base.INDEX_DEF_FRAGMENTS_101.items()
+        if _compact_index(fragment) not in _compact_index(definitions.get(name, ""))
+    )
+    missing_140 = sorted(
+        name
+        for name, fragment in base.INDEX_DEF_FRAGMENTS_140.items()
+        if _compact_index(fragment) not in _compact_index(definitions.get(name, ""))
+    )
+    blockers: list[str] = []
+    if missing_101:
+        blockers.append("MIGRATION_101_REQUIRED_INDEX_MISSING")
+    if missing_140:
+        blockers.append("MIGRATION_140_REQUIRED_INDEX_MISSING")
+    return blockers, missing_101, missing_140
+
+
 def _strict_constraint_blockers(
     connection: psycopg.Connection,
     report: dict[str, Any],
@@ -88,22 +117,51 @@ def _strict_constraint_blockers(
             definitions = [_normalize(value) for value in base._constraints(connection, table)]
             for index, fragments in enumerate(required_groups, start=1):
                 normalized = tuple(fragment.lower() for fragment in fragments)
-                if not any(all(fragment in definition for fragment in normalized) for definition in definitions):
+                if not any(
+                    all(fragment in definition for fragment in normalized)
+                    for definition in definitions
+                ):
                     blockers.append(f"{prefix}_CHECK_CONSTRAINT_MISSING:{table}:{index}")
     return blockers
 
 
 def inspect_contract(connection: psycopg.Connection) -> dict[str, Any]:
     report = _BASE_INSPECT_CONTRACT(connection)
+    inherited_blockers = [
+        blocker
+        for blocker in report["blockers"]
+        if blocker
+        not in {
+            "MIGRATION_101_REQUIRED_INDEX_MISSING",
+            "MIGRATION_140_REQUIRED_INDEX_MISSING",
+        }
+    ]
+    index_blockers, missing_101_indexes, missing_140_indexes = _strict_index_blockers(
+        connection
+    )
     blockers = sorted(
-        set(report["blockers"] + _strict_constraint_blockers(connection, report))
+        set(
+            inherited_blockers
+            + index_blockers
+            + _strict_constraint_blockers(connection, report)
+        )
     )
     complete_101 = report["migration_101_complete"] and not any(
-        blocker.startswith("MIGRATION_101_CHECK_CONSTRAINT_MISSING:")
+        blocker.startswith(
+            (
+                "MIGRATION_101_CHECK_CONSTRAINT_MISSING:",
+                "MIGRATION_101_REQUIRED_INDEX_MISSING",
+            )
+        )
         for blocker in blockers
     )
     complete_140 = report["migration_140_complete"] and not any(
-        blocker.startswith("MIGRATION_140_CHECK_CONSTRAINT_MISSING:")
+        blocker.startswith(
+            (
+                "MIGRATION_140_CHECK_CONSTRAINT_MISSING:",
+                "MIGRATION_140_REQUIRED_INDEX_MISSING",
+            )
+        )
         for blocker in blockers
     )
     complete = complete_101 and complete_140 and not blockers
@@ -128,6 +186,8 @@ def inspect_contract(connection: psycopg.Connection) -> dict[str, Any]:
         "complete": complete,
         "safe_resume": safe_resume,
         "blockers": blockers,
+        "missing_101_indexes": missing_101_indexes,
+        "missing_140_indexes": missing_140_indexes,
     }
 
 
