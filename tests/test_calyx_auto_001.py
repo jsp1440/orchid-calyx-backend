@@ -216,6 +216,36 @@ def test_governance_owner_only_action_is_held_without_consuming_mission():
         assert session.query(CalyxBrainCompletionWriteback).count() == 0
 
 
+def test_newly_released_owner_only_child_stops_at_governance_boundary():
+    with db() as session:
+        item = program(
+            session,
+            [spec("automatic-parent", 1), spec("merge-child", 2, "merge")],
+            [("automatic-parent", "merge-child")],
+        )
+        executor = FeedbackExecutor()
+        result = AutoMissionCoordinator(
+            session,
+            registry=Registry(executor),
+        ).run_cycle(owner="owner", worker_id="w", max_jobs=5)
+        assert result.stop_reason == "governance_boundary"
+        assert result.completed_jobs == 1
+        assert result.attempted_jobs == 1
+        assert result.governance_holds == 1
+        assert [call.job_key for call in executor.calls] == ["automatic-parent"]
+        jobs = (
+            session.query(CalyxProgramJob)
+            .filter(CalyxProgramJob.program_id == item.program_id)
+            .all()
+        )
+        by_key = {job.job_key: job for job in jobs}
+        assert by_key["automatic-parent"].status == "completed"
+        assert by_key["merge-child"].status == "queued"
+        assert by_key["merge-child"].outcome is None
+        assert by_key["merge-child"].attempt_count == 0
+        assert by_key["merge-child"].lease_token is None
+
+
 def test_priority_selector_runs_lower_numeric_priority_first():
     with db() as session:
         program(session, [spec("later", 50), spec("urgent", 5)])
