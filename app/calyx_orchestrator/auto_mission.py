@@ -8,15 +8,38 @@ from typing import Any, Mapping, Sequence
 from .executor import ExecutionReceipt, ExecutionState
 from .program_models import CalyxProgramJob
 
-OWNER_ONLY_ACTIONS = frozenset({
-    "merge", "auto_merge", "deploy", "deployment", "publish", "publication",
-    "production_mutation", "production_database_mutation", "production_graph_mutation",
-    "production_knowledge_graph_mutation", "taxonomy_activation", "credential_access",
-    "spending", "force_push", "branch_delete", "delete_branch",
-})
-REVIEW_REQUIRED_ACTIONS = frozenset({
-    "cross_repository", "external_send", "production_migration", "schema_activation",
-})
+OWNER_ONLY_ACTIONS = frozenset(
+    {
+        "merge",
+        "auto_merge",
+        "automatic_merge",
+        "deploy",
+        "deployment",
+        "automatic_deployment",
+        "publish",
+        "publication",
+        "automatic_publication",
+        "production_mutation",
+        "production_database_mutation",
+        "production_graph_mutation",
+        "production_knowledge_graph_mutation",
+        "taxonomy_activation",
+        "credential_access",
+        "spending",
+        "force_push",
+        "branch_delete",
+        "delete_branch",
+    }
+)
+REVIEW_REQUIRED_ACTIONS = frozenset(
+    {
+        "cross_repository",
+        "external_send",
+        "production_migration",
+        "schema_activation",
+    }
+)
+_TRUE_ACTION_FLAGS = frozenset({"1", "true", "yes", "on", "requested", "enabled"})
 
 
 class GovernanceDisposition(StrEnum):
@@ -71,10 +94,19 @@ def _normalized_actions(value: Any) -> set[str]:
     if isinstance(value, Mapping):
         for key, item in value.items():
             normalized_key = str(key).strip().lower()
-            if normalized_key in {"action", "operation", "action_class", "requested_action"}:
+            if normalized_key in {
+                "action",
+                "operation",
+                "action_class",
+                "requested_action",
+            }:
                 if isinstance(item, str):
                     actions.add(item.strip().lower())
-            elif normalized_key in {"requested_capabilities", "capabilities", "actions"}:
+            elif normalized_key in {
+                "requested_capabilities",
+                "capabilities",
+                "actions",
+            }:
                 if isinstance(item, Sequence) and not isinstance(item, (str, bytes)):
                     actions.update(str(entry).strip().lower() for entry in item)
             actions.update(_normalized_actions(item))
@@ -82,6 +114,33 @@ def _normalized_actions(value: Any) -> set[str]:
         for item in value:
             actions.update(_normalized_actions(item))
     return {item for item in actions if item}
+
+
+def _direct_requested_action_flags(value: Any) -> set[str]:
+    """Detect explicit boolean/string action requests expressed as direct keys.
+
+    Mission payloads are not required to encode intent only as ``action=merge`` or
+    an ``actions`` list. A request such as ``{"merge": true}`` must not bypass the
+    pre-claim governance hold. Only clearly enabled scalar flags are treated as
+    action requests so evidence payloads like ``{"publication": {"doi": ...}}``
+    are not misclassified as execution intent.
+    """
+
+    requested: set[str] = set()
+    recognized = OWNER_ONLY_ACTIONS | REVIEW_REQUIRED_ACTIONS
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            normalized_key = str(key).strip().lower()
+            if normalized_key in recognized:
+                if item is True:
+                    requested.add(normalized_key)
+                elif isinstance(item, str) and item.strip().lower() in _TRUE_ACTION_FLAGS:
+                    requested.add(normalized_key)
+            requested.update(_direct_requested_action_flags(item))
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        for item in value:
+            requested.update(_direct_requested_action_flags(item))
+    return requested
 
 
 class GovernanceAwarePrioritySelector:
@@ -98,14 +157,20 @@ class GovernanceAwarePrioritySelector:
             raise TypeError("MISSION_GOVERNANCE_OBJECT_REQUIRED")
         explicit = str(governance.get("class", "")).strip().lower() if governance else ""
         if explicit in {"owner_only", "owner"}:
-            return GovernanceDecision(GovernanceDisposition.OWNER_ONLY, "EXPLICIT_OWNER_ONLY", priority)
-        if explicit in {"review_required", "review"} or bool(governance.get("review_required", False)):
+            return GovernanceDecision(
+                GovernanceDisposition.OWNER_ONLY,
+                "EXPLICIT_OWNER_ONLY",
+                priority,
+            )
+        if explicit in {"review_required", "review"} or bool(
+            governance.get("review_required", False)
+        ):
             return GovernanceDecision(
                 GovernanceDisposition.REVIEW_REQUIRED,
                 "EXPLICIT_REVIEW_REQUIRED",
                 priority,
             )
-        actions = _normalized_actions(inputs)
+        actions = _normalized_actions(inputs) | _direct_requested_action_flags(inputs)
         owner_action = sorted(actions & OWNER_ONLY_ACTIONS)
         if owner_action:
             return GovernanceDecision(
@@ -120,7 +185,11 @@ class GovernanceAwarePrioritySelector:
                 f"REVIEW_REQUIRED_ACTION:{review_action[0]}",
                 priority,
             )
-        return GovernanceDecision(GovernanceDisposition.AUTOMATIC, "AUTOMATICALLY_ADMISSIBLE", priority)
+        return GovernanceDecision(
+            GovernanceDisposition.AUTOMATIC,
+            "AUTOMATICALLY_ADMISSIBLE",
+            priority,
+        )
 
     def order(
         self,
@@ -164,7 +233,9 @@ class MissionReceiptValidator:
             feedback = ["VALIDATOR_FEEDBACK_INVALID"]
         normalized_feedback = tuple(str(item) for item in feedback if str(item).strip())
 
-        if bool(output.get("requires_human_review")) or bool(output.get("governance_boundary")):
+        if bool(output.get("requires_human_review")) or bool(
+            output.get("governance_boundary")
+        ):
             return ValidationDecision(
                 ValidationDisposition.REVIEW_REQUIRED,
                 "VALIDATOR_REQUIRES_HUMAN_REVIEW",
@@ -176,17 +247,28 @@ class MissionReceiptValidator:
                 if attempt_count >= max_attempts
                 else ValidationDisposition.RETRY
             )
-            return ValidationDecision(disposition, "VALIDATOR_FEEDBACK_REJECTED_RESULT", normalized_feedback)
+            return ValidationDecision(
+                disposition,
+                "VALIDATOR_FEEDBACK_REJECTED_RESULT",
+                normalized_feedback,
+            )
         if receipt.state == ExecutionState.DELIVERED:
             return ValidationDecision(ValidationDisposition.ACCEPT, "VALIDATED")
-        if receipt.blocker_code in {"PROHIBITED_CAPABILITY", "EXTERNAL_SIDE_EFFECT_EXECUTOR_NOT_ALLOWED"}:
+        if receipt.blocker_code in {
+            "PROHIBITED_CAPABILITY",
+            "EXTERNAL_SIDE_EFFECT_EXECUTOR_NOT_ALLOWED",
+        }:
             return ValidationDecision(
                 ValidationDisposition.REVIEW_REQUIRED,
                 receipt.blocker_code or "GOVERNANCE_BLOCKED",
                 normalized_feedback,
             )
         if receipt.state == ExecutionState.CANCELLED:
-            return ValidationDecision(ValidationDisposition.REVIEW_REQUIRED, "EXECUTION_CANCELLED", normalized_feedback)
+            return ValidationDecision(
+                ValidationDisposition.REVIEW_REQUIRED,
+                "EXECUTION_CANCELLED",
+                normalized_feedback,
+            )
         disposition = (
             ValidationDisposition.DEAD_LETTER
             if attempt_count >= max_attempts
