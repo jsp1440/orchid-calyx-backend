@@ -27,7 +27,11 @@ class ExactTaxonResolution:
         return len(self.keys_by_entity_id)
 
 
-def _resolve_with_cursor(cur, paper: PaperKnowledge) -> ExactTaxonResolution:
+def resolve_exact_taxon_keys_with_cursor(
+    cur: Any,
+    paper: PaperKnowledge,
+) -> ExactTaxonResolution:
+    """Resolve exact taxon keys using an existing read-capable database cursor."""
     keys: dict[str, str] = {}
     unresolved: list[str] = []
     ambiguous: list[str] = []
@@ -75,4 +79,4 @@ def resolve_exact_taxon_keys_for_paper(
         raise ValueError("DATABASE_URL_REQUIRED")
     with psycopg.connect(dsn, connect_timeout=5) as conn, conn.cursor() as cur:
         conn.read_only = True
-        return _resolve_with_cursor(cur, paper)
+        return resolve_exact_taxon_keys_with_cursor(cur, paper)
