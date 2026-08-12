@@ -1,11 +1,11 @@
 """Strict graph projection for publication-eligible literature extraction.
 
 ``build_paper_graph_specs`` is intentionally useful for staging and candidate
-inspection.  This module is the stricter publication-side projection: scientific
+inspection. This module is the stricter publication-side projection: scientific
 claims are included only when a normalized evidence record for that claim has an
-explicit ``eligible_for_publication`` decision.  Source structure (publication,
+explicit ``eligible_for_publication`` decision. Source structure (publication,
 sections, evidence spans, references, figures, tables) remains representable,
-while reviewed measurements continue to use their own provenance review state.
+while measurements require their own reviewed provenance state.
 
 The function is pure and never mutates the Knowledge Graph.
 """
@@ -51,35 +51,51 @@ def build_publication_eligible_paper_graph_specs(
 ) -> PaperGraphBundle:
     """Return a fail-closed graph bundle suitable for governed publication review.
 
-    Claims require an explicit publication-eligible normalized evidence record.
+    The explicit ``PublicationDecision`` is authoritative for claims. This is
+    intentionally independent of the raw claim's extraction provenance review
+    flag: a reviewed normalized record may be publication-eligible even when the
+    original model-extracted claim object remains marked ``unreviewed``.
+
+    Measurements do not currently have a normalized publication-decision object,
+    so they remain fail-closed on their own ``accepted``/``corrected`` provenance.
     Taxon links require either a reviewed entity or an entity used by an eligible
-    claim.  This keeps exact taxonomy resolution useful without allowing an
-    unreviewed entity extraction to create a free-standing ``documented_by`` edge.
+    claim. Exact taxonomy keys must be supplied by a canonical resolver.
     """
     taxon_keys = dict(taxon_keys_by_entity_id or {})
+
+    # Start from a complete pure representation, then apply the stricter
+    # publication contract here. This prevents a stale raw-claim review flag from
+    # overriding an explicit normalized-record PublicationDecision.
     base = build_paper_graph_specs(
         paper,
         taxon_keys_by_entity_id=taxon_keys,
-        include_candidates=False,
+        include_candidates=True,
     )
     eligible_claim_ids = _publication_eligible_claim_ids(paper)
 
-    blocked_claim_keys: set[str] = set()
-    for claim in paper.claims:
-        if claim.claim_id in eligible_claim_ids:
-            continue
-        blocked_claim_keys.add(
-            canonical_key(
-                CLAIM_TYPE_TO_NODE_TYPE[claim.claim_type],
-                f"{paper.paper_id}:{claim.claim_id}",
-            )
+    blocked_claim_keys = {
+        canonical_key(
+            CLAIM_TYPE_TO_NODE_TYPE[claim.claim_type],
+            f"{paper.paper_id}:{claim.claim_id}",
         )
+        for claim in paper.claims
+        if claim.claim_id not in eligible_claim_ids
+    }
+    blocked_measurement_keys = {
+        canonical_key(
+            "measurement",
+            f"{paper.paper_id}:{measurement.measurement_id}",
+        )
+        for measurement in paper.measurements
+        if measurement.provenance.review_status not in _REVIEWED
+    }
+    blocked_keys = blocked_claim_keys | blocked_measurement_keys
 
-    nodes = [node for node in base.nodes if node.key() not in blocked_claim_keys]
+    nodes = [node for node in base.nodes if node.key() not in blocked_keys]
     edges = [
         edge
         for edge in base.edges
-        if edge.from_key not in blocked_claim_keys and edge.to_key not in blocked_claim_keys
+        if edge.from_key not in blocked_keys and edge.to_key not in blocked_keys
     ]
 
     eligible_entity_ids = _reviewed_entity_ids(paper)
@@ -122,7 +138,9 @@ def build_publication_eligible_paper_graph_specs(
                         from_key=claim_key,
                         to_key=taxon_key,
                         source_table="literature_extraction.paper_knowledge",
-                        source_pk=f"{paper.paper_id}:{claim.claim_id}:{role}:{entity_id}",
+                        source_pk=(
+                            f"{paper.paper_id}:{claim.claim_id}:{role}:{entity_id}"
+                        ),
                         evidence_class=claim.provenance.method,
                         confidence_score=float(claim.provenance.confidence),
                         confidence_label="publication_eligible",
@@ -163,7 +181,8 @@ def build_publication_eligible_paper_graph_specs(
         )
 
     existing = {
-        (edge.edge_type, edge.from_key, edge.to_key, str(edge.source_pk)) for edge in edges
+        (edge.edge_type, edge.from_key, edge.to_key, str(edge.source_pk))
+        for edge in edges
     }
     for edge in extra_edges:
         identity = (edge.edge_type, edge.from_key, edge.to_key, str(edge.source_pk))
@@ -171,14 +190,11 @@ def build_publication_eligible_paper_graph_specs(
             edges.append(edge)
             existing.add(identity)
 
-    publication_ineligible = sum(
-        claim.provenance.review_status in _REVIEWED
-        and claim.claim_id not in eligible_claim_ids
-        for claim in paper.claims
-    )
+    omitted_claims = len(blocked_claim_keys)
+    omitted_measurements = len(blocked_measurement_keys)
     return PaperGraphBundle(
         nodes=tuple(nodes),
         edges=tuple(edges),
-        candidate_objects_omitted=base.candidate_objects_omitted + publication_ineligible,
+        candidate_objects_omitted=omitted_claims + omitted_measurements,
         publication_key=base.publication_key,
     )
