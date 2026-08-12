@@ -24,6 +24,7 @@ def _source(root: Path):
             RegistryCharacter(
                 "flower_color",
                 "Flower color",
+                weight=0,
                 provenance={"source": "matrix fixture"},
             ),
             RegistryCharacter(
@@ -54,7 +55,7 @@ def _source(root: Path):
     )["record"]
 
 
-def test_reviewed_derivation_preserves_candidates_and_source_checksum(tmp_path: Path):
+def test_reviewed_derivation_preserves_candidates_source_checksum_and_zero_weight(tmp_path: Path):
     source = _source(tmp_path)
     result = derive_registry_version_with_concept_mappings(
         registry_id="angraecum-reviewed",
@@ -74,6 +75,7 @@ def test_reviewed_derivation_preserves_candidates_and_source_checksum(tmp_path: 
     assert derived["created_by"] == "reviewer-a"
     assert derived["candidates"] == source["candidates"]
     assert derived["scope"] == source["scope"]
+    assert derived["characters"][0]["weight"] == 0
     assert derived["characters"][0]["concept_id"] == CONCEPT_A
     assert derived["characters"][1]["concept_id"] == CONCEPT_B
     assert derived["provenance"]["source_registry"]["checksum_sha256"] == source["checksum_sha256"]
