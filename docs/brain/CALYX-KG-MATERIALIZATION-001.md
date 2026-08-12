@@ -36,6 +36,25 @@ The audit-priority verified domains are:
 
 These domains already have verified source queries and adapters on canonical main. The materializer refuses domains such as habitat and elevation while their production projections remain unverified; it does not invent joins to make the audit look green.
 
+## Persisted graph audit now measures the real integration target
+
+`app/readiness/live_graph_audit.py` has been upgraded from an image-only graph check to a complete persisted relationship audit. It independently measures:
+
+- `taxonomy_to_images`
+- `taxonomy_to_occurrences`
+- `taxonomy_to_elevation`
+- `taxonomy_to_climate`
+- `taxonomy_to_literature`
+- `taxonomy_to_pollinators`
+- `taxonomy_to_mycorrhiza`
+- `taxonomy_to_habitat`
+- `taxonomy_to_conservation`
+- Knowledge Graph node/edge integrity
+
+For canonical `oc_graph.kg_edges`, the audit counts the actual graph predicates rather than inferring success from relational foreign keys. It reports explicit missing relationships and verifies null endpoints, orphan endpoints, and duplicate edges. The readiness state cannot become green until every required persisted relationship is present and graph integrity passes.
+
+This closes a second source of repeated false-negative/false-positive audit loops: relational linkage and graph materialization are now measured separately, and each of the executive-audit relationship targets has a persisted graph measurement.
+
 ## Operator
 
 Bounded read-only proof across all audit-priority verified domains:
@@ -65,7 +84,11 @@ This branch creates and hardens the executable bridge but does not itself run ag
 - batch-size bounds;
 - canonical two-pass dry-run reuse;
 - canonical single-writer transactional production publisher reuse;
-- regression proving rolled-back publication is not reported as graph mutation.
+- regression proving rolled-back publication is not reported as graph mutation;
+- complete nine-relationship persisted graph measurement;
+- node/edge integrity measurement including orphan endpoints;
+- regression proving readiness remains blocked for only the relationships that are actually absent;
+- regression proving readiness can become green only when all required relationships and integrity exist.
 
 ## Next integration work
 
@@ -73,5 +96,6 @@ This branch creates and hardens the executable bridge but does not itself run ag
 2. Run bounded read-only validation against the deployed database.
 3. Resolve any source-contract failures rather than suppressing them.
 4. With owner authorization, publish verified domains transactionally, preferably one domain at a time.
-5. Re-run persisted graph audit and Calyx scientific retrieval acceptance after each publication slice.
+5. Re-run the persisted graph audit and Calyx scientific retrieval acceptance after each publication slice.
 6. Verify real habitat and elevation source projections/crosswalks, then add them to the verified materialization set.
+7. Feed persisted taxon-linked graph context into the live Calyx Speak evidence path so graph materialization is not merely stored but actually consumable by scientific conversation.
