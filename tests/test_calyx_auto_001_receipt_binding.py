@@ -127,7 +127,12 @@ def _assert_rejected_without_validator_side_effects(mutation: str, expected_code
         result = AutoMissionCoordinator(
             session,
             registry=Registry(MisboundReceiptExecutor(mutation)),
-        ).run_cycle(owner="owner", worker_id="worker", lease_seconds=60)
+        ).run_cycle(
+            owner="owner",
+            worker_id="worker",
+            lease_seconds=60,
+            timeout_seconds=60,
+        )
 
         assert result.stop_reason == "error"
         assert result.attempted_jobs == 1
