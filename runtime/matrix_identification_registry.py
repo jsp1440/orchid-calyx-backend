@@ -183,6 +183,92 @@ def get_registry_version(
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def derive_registry_version_with_concept_mappings(
+    *,
+    registry_id: str,
+    source_version: str,
+    new_version: str,
+    concept_mappings: dict[str, str],
+    actor: str,
+    title: str | None = None,
+    mapping_provenance: dict[str, Any] | None = None,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Create a new immutable registry version from explicit reviewed concept mappings.
+
+    This function never searches the Lexicon and never guesses a concept. Callers
+    must validate that each supplied concept is governed/approved before invoking
+    this derivation. Candidate identities and states are copied exactly from the
+    source registry; only explicit character concept bindings may change.
+    """
+    if not concept_mappings:
+        raise ValueError("at least one reviewed concept mapping is required")
+
+    source = get_registry_version(registry_id, source_version, root=root)
+    source_characters = source.get("characters", [])
+    character_ids = {
+        str(item.get("character"))
+        for item in source_characters
+        if item.get("character")
+    }
+    unknown = sorted(set(concept_mappings) - character_ids)
+    if unknown:
+        raise ValueError(
+            "concept mappings reference characters absent from source registry: "
+            + ", ".join(unknown)
+        )
+
+    mapped_characters: list[RegistryCharacter] = []
+    decisions: list[dict[str, str]] = []
+    for item in source_characters:
+        character_id = str(item["character"])
+        concept_id = concept_mappings.get(character_id, item.get("concept_id"))
+        character = RegistryCharacter(
+            character=character_id,
+            label=str(item["label"]),
+            description=item.get("description"),
+            value_type=str(item.get("value_type") or "categorical"),
+            weight=float(item.get("weight", 1.0) or 1.0),
+            provenance=item.get("provenance"),
+            concept_id=str(concept_id) if concept_id is not None else None,
+        )
+        _validate_character(character)
+        mapped_characters.append(character)
+        if character_id in concept_mappings:
+            decisions.append(
+                {
+                    "character": character_id,
+                    "concept_id": str(concept_mappings[character_id]),
+                }
+            )
+
+    source_provenance = source.get("provenance") or {}
+    provenance = {
+        "source": "derived Matrix registry version",
+        "derivation_type": "reviewed_canonical_concept_mappings",
+        "source_registry": {
+            "registry_id": source["registry_id"],
+            "version": source["version"],
+            "checksum_sha256": source["checksum_sha256"],
+        },
+        "mapping_decisions": decisions,
+        "mapping_provenance": mapping_provenance or {},
+        "source_provenance": source_provenance,
+    }
+
+    return create_registry_version(
+        registry_id=source["registry_id"],
+        version=new_version,
+        title=(title or source.get("title") or source["registry_id"]).strip(),
+        scope=source.get("scope", {}),
+        characters=mapped_characters,
+        candidates=candidates_from_registry(source),
+        provenance=provenance,
+        actor=actor,
+        root=root,
+    )
+
+
 def list_registry_versions(*, root: Path | None = None) -> list[dict[str, Any]]:
     destination_root = root or registry_root()
     if not destination_root.exists():
