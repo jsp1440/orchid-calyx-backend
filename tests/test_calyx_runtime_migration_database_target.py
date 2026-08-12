@@ -28,6 +28,8 @@ def test_exact_config_identity_is_accepted():
     result = compare_targets(_target(source="runtime"), _target(source="migration"))
     assert result["same_target"] is True
     assert result["config_identity_match"] is True
+    assert result["system_identifier_mismatch"] is False
+    assert result["same_cluster_database_oid_mismatch"] is False
     assert result["blockers"] == []
 
 
@@ -38,6 +40,27 @@ def test_same_cluster_database_allows_different_connection_endpoint():
     assert result["same_target"] is True
     assert result["config_identity_match"] is False
     assert result["cluster_database_identity_match"] is True
+
+
+def test_exact_config_identity_rejects_observed_cluster_identifier_mismatch():
+    runtime = _target(source="runtime")
+    migration = _target(source="migration", system_identifier="8888888888888888888")
+    result = compare_targets(runtime, migration)
+    assert result["config_identity_match"] is True
+    assert result["system_identifier_mismatch"] is True
+    assert result["same_target"] is False
+    assert "POSTGRES_CLUSTER_SYSTEM_IDENTIFIER_MISMATCH" in result["blockers"]
+    assert "RUNTIME_MIGRATION_DATABASE_TARGET_NOT_PROVEN_EQUAL" in result["blockers"]
+
+
+def test_same_cluster_same_database_name_rejects_database_oid_mismatch():
+    runtime = _target(source="runtime")
+    migration = _target(source="migration", database_oid="16385")
+    result = compare_targets(runtime, migration)
+    assert result["config_identity_match"] is True
+    assert result["same_cluster_database_oid_mismatch"] is True
+    assert result["same_target"] is False
+    assert "POSTGRES_DATABASE_OID_MISMATCH" in result["blockers"]
 
 
 def test_different_database_fails_closed():
@@ -61,3 +84,4 @@ def test_relation_identity_mismatch_fails_closed():
     )
     assert result["same_target"] is False
     assert result["sentinel_relation_mismatch_indexes"] == [0]
+    assert "CANONICAL_SENTINEL_RELATION_IDENTITY_MISMATCH" in result["blockers"]
