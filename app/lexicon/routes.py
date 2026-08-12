@@ -224,7 +224,7 @@ def _find_approved_concept_id_by_slug(slug: str) -> UUID | None:
         with _connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT c.concept_id
+                SELECT DISTINCT c.concept_id
                 FROM oc_concepts.concepts c
                 JOIN oc_concepts.concept_labels l ON l.concept_id=c.concept_id
                 WHERE c.status='ACTIVE'
@@ -234,17 +234,24 @@ def _find_approved_concept_id_by_slug(slug: str) -> UUID | None:
                     regexp_replace(lower(trim(l.label)), '[^a-z0-9×]+', '-', 'g'),
                     '-'
                   ) = %s
-                ORDER BY CASE l.label_type WHEN 'PREFERRED' THEN 0 ELSE 1 END,
-                         c.revised_at DESC,
-                         c.concept_id
-                LIMIT 1
+                ORDER BY c.concept_id
+                LIMIT 2
                 """,
                 (normalized_slug,),
             )
-            row = cur.fetchone()
+            rows = cur.fetchall()
     except (RuntimeError, psycopg.Error) as exc:
         raise HTTPException(status_code=503, detail={"code": "LEXICON_DATABASE_UNAVAILABLE"}) from exc
-    return row["concept_id"] if row else None
+    if len(rows) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "LEXICON_APPROVED_SLUG_AMBIGUOUS",
+                "message": "More than one ACTIVE + APPROVED concept has this approved normalized label.",
+                "slug": normalized_slug,
+            },
+        )
+    return rows[0]["concept_id"] if rows else None
 
 
 def _load_entry_by_slug(slug: str) -> dict[str, Any] | None:
@@ -354,6 +361,7 @@ def lexicon_capabilities() -> dict[str, Any]:
             "invented_enrichment_prohibited": True,
             "public_entries_require_active_concept": True,
             "public_entries_require_approved_review": True,
+            "ambiguous_approved_slugs_fail_closed": True,
             "automatic_concept_promotion": False,
             "automatic_publication": False,
         },
