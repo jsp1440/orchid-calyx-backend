@@ -1,9 +1,9 @@
 """Read-only bridge from canonical literature documents to reviewed extraction output.
 
 The canonical source binding is the authority connecting a literature document id
-to a ``PaperKnowledge`` extraction bundle.  This module follows that binding,
+to a ``PaperKnowledge`` extraction bundle. This module follows that binding,
 re-verifies source integrity, and exposes only normalized evidence records whose
-publication decision is ``eligible_for_publication``.  It never promotes records,
+publication decision is ``eligible_for_publication``. It never promotes records,
 changes review state, or writes to either storage layer.
 """
 
@@ -81,10 +81,18 @@ def reviewed_evidence_for_documents(
         binding_summaries: list[dict[str, Any]] = []
         integrity_failures: list[str] = []
         for binding in matched_bindings:
-            paper = papers.get(binding.paper_id)
-            raw_bytes = papers.get_raw_bytes(binding.paper_id)
+            try:
+                paper = papers.get(binding.paper_id)
+                raw_bytes = papers.get_raw_bytes(binding.paper_id)
+            except (OSError, TypeError, ValueError) as exc:
+                integrity_failures.append(
+                    f"{binding.paper_id}:EXTRACTION_BUNDLE_READ_FAILED:{exc.__class__.__name__}"
+                )
+                continue
             if paper is None or raw_bytes is None:
-                integrity_failures.append(f"{binding.paper_id}:EXTRACTION_BUNDLE_INCOMPLETE")
+                integrity_failures.append(
+                    f"{binding.paper_id}:EXTRACTION_BUNDLE_INCOMPLETE"
+                )
                 continue
             try:
                 binding.validate_integrity(paper, raw_bytes)
@@ -145,7 +153,11 @@ def reviewed_evidence_for_documents(
             if len(document_records) >= record_limit:
                 break
 
-        status = "available" if document_records else "no_publication_eligible_evidence"
+        status = (
+            "available"
+            if document_records
+            else "no_publication_eligible_evidence"
+        )
         if not binding_summaries and integrity_failures:
             status = "integrity_validation_failed"
         documents[str(document_id)] = {
