@@ -220,13 +220,28 @@ def _load_entry_by_slug(slug: str) -> dict[str, Any] | None:
     normalized_slug = _slug(slug)
     if not normalized_slug:
         return None
-    search_term = normalized_slug.replace("-", " ")
-    for entry in _load_entries(q=search_term, limit=50):
-        if entry.get("slug") == normalized_slug:
-            return entry
-        labels = [entry.get("preferred_term"), *(entry.get("synonyms") or [])]
-        if any(_slug(str(label or "")) == normalized_slug for label in labels):
-            return entry
+
+    # Concept label normalization preserves hyphens but removes punctuation such
+    # as '/'. Try both forms, then require an exact UI-slug match on the returned
+    # preferred/alternate labels. Definition-only matches can never satisfy this.
+    search_terms = [normalized_slug]
+    spaced = normalized_slug.replace("-", " ")
+    if spaced != normalized_slug:
+        search_terms.append(spaced)
+
+    seen_ids: set[str] = set()
+    for search_term in search_terms:
+        for entry in _load_entries(q=search_term, limit=50):
+            entry_id = str(entry.get("concept_id") or entry.get("id") or "")
+            if entry_id and entry_id in seen_ids:
+                continue
+            if entry_id:
+                seen_ids.add(entry_id)
+            if entry.get("slug") == normalized_slug:
+                return entry
+            labels = [entry.get("preferred_term"), *(entry.get("synonyms") or [])]
+            if any(_slug(str(label or "")) == normalized_slug for label in labels):
+                return entry
     return None
 
 
