@@ -7,7 +7,6 @@ IMPLEMENTED + HARDENED ON FEATURE BRANCH / NON-PRODUCTION / EXECUTABLE REPOSITOR
 Branch: `feature/calyx-auto-001-durable-missions`
 
 Validated-by-inspection code/workflow boundary: `c71c37f89ff6a2671f703eed3d0387ab7ff9ca2d`.
-Current documentation-only branch head is recorded in PR #900 metadata.
 Canonical Brain checkpoint: `Orchid-Continuum-Brain@72c9dc8e8da99e4a2a3ff3d2ebd26bf452aa67b1`.
 
 ## Mission
