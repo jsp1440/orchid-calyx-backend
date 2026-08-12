@@ -35,18 +35,18 @@ The repository already had canonical source bindings that cryptographically conn
 
 `graph_literature_search.py` attaches those publication-eligible evidence records to matching `public.research_documents` results when a canonical extraction binding exists. The deterministic and configured Calyx providers can therefore distinguish three different epistemic levels: persisted graph publication relationships, literal document discovery matches, and integrity-verified publication-eligible normalized evidence.
 
+Speak now persists this distinction in the conversation/tool metadata as well: graph result count, research-document fallback count, publication-eligible evidence-record count, and extraction-bridge status are recorded for each relevant turn. The status contract is `CALYX-SPEAK-008-CORPUS-EVIDENCE` and explicitly advertises exact-binomial corpus fallback plus canonical-binding reviewed-extraction evidence.
+
 ## Epistemic boundary
 
 A research-document match by itself is discovery metadata, not a scientific finding. A publication-eligible normalized extraction record is stronger: its canonical binding and source anchors have been revalidated and it passed the recorded publication-eligibility gate. Calyx still must preserve the distinction between the source excerpt, normalized evidence record, and any higher-level synthesis or causal conclusion.
 
 ## Validation
 
-Focused tests cover exact-binomial document matching, rejection of documents without the literal taxon, reverse source-binding lookup, integrity-verified publication-eligible evidence retrieval, provider distinction among graph/document/reviewed-evidence states, and explicit rendering of review/confidence metadata. The dedicated KG workflow includes all bridge, source-binding, provider, and regression files for compile, pytest, Ruff, and diff hygiene when GitHub allocates an executable runner.
+Focused tests cover exact-binomial document matching, rejection of documents without the literal taxon, reverse source-binding lookup, integrity-verified publication-eligible evidence retrieval, provider distinction among graph/document/reviewed-evidence states, and explicit rendering of review/confidence metadata. The dedicated KG workflow includes all bridge, source-binding, Speak/provider, and regression files for compile, pytest, Ruff, and diff hygiene when GitHub allocates an executable runner.
 
 GitHub-hosted Actions remains affected by the zero-step runner allocation incident; a job with `steps:null` is infrastructure non-execution and is not accepted as validation evidence.
 
 ## Status
 
 Implementation-complete on PR #901 pending executable CI and live read-only acceptance. No production graph mutation is introduced by this bridge. The next scientific-literature integration step is materializing reviewed `PaperKnowledge` entities, observations, hypotheses, methods, measurements, results, conclusions, references, figures, and tables through the already-defined scientific-method graph vocabulary, after the corresponding publication-governance conditions are satisfied.
-
-Exact-head hardening also moved JSON imports to module scope in the reviewed-evidence regression and keeps malformed extraction bundles fail-closed rather than allowing a damaged file to enter Calyx evidence context.
