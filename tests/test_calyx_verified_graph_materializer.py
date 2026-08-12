@@ -16,21 +16,22 @@ def test_audit_priority_domains_are_backed_by_verified_queries_and_adapters():
     assert selection.valid is True
     assert selection.unavailable == ()
     assert set(selection.selected) == set(AUDIT_PRIORITY_DOMAINS)
+    assert {"occurrences", "traits", "habitat", "elevation"}.issubset(selection.selected)
 
 
 def test_unverified_domain_fails_closed_before_database_access():
-    selection = select_domains(["literature", "habitat"])
+    selection = select_domains(["literature", "geography"])
     assert selection.selected == ("literature",)
-    assert selection.unavailable == ("habitat",)
+    assert selection.unavailable == ("geography",)
     assert selection.valid is False
 
     with pytest.raises(
         ValueError,
-        match="UNVERIFIED_OR_UNAVAILABLE_GRAPH_DOMAINS:habitat",
+        match="UNVERIFIED_OR_UNAVAILABLE_GRAPH_DOMAINS:geography",
     ):
         materialize_verified_relationships(
             "postgresql://not-opened",
-            domains=["literature", "habitat"],
+            domains=["literature", "geography"],
         )
 
 
@@ -85,24 +86,31 @@ def test_dry_run_is_bounded_and_uses_controlled_two_pass_engine(monkeypatch):
 
     report = materialize_verified_relationships(
         "postgresql://example",
-        domains=["literature", "occurrences"],
+        domains=["literature", "occurrences", "habitat", "elevation"],
         batch_size=250,
     )
 
-    assert captured["domains"] == ("literature", "occurrences")
+    assert captured["domains"] == ("literature", "occurrences", "habitat", "elevation")
+    assert set(captured["queries"]) == {"literature", "occurrences", "habitat", "elevation"}
     assert captured["maximum"] == DEFAULT_DRY_RUN_MAX_ROWS_PER_DOMAIN
     assert captured["batch_size"] == 250
     assert report["materialization"]["production_graph_mutation"] is False
     assert report["materialization"]["bounded_validation"] is True
+    assert set(report["materialization"]["bulk_source_domains"]) == {
+        "occurrences", "habitat", "elevation"
+    }
 
 
-def test_production_delegates_to_transactional_single_writer_publisher(monkeypatch):
+def test_production_delegates_reviewed_queries_to_transactional_single_writer_publisher(
+    monkeypatch,
+):
     captured = {}
 
-    def fake_publish(dsn, *, adapters, batch_size):
+    def fake_publish(dsn, *, adapters, batch_size, queries):
         captured["dsn"] = dsn
         captured["domains"] = tuple(adapter.domain for adapter in adapters)
         captured["batch_size"] = batch_size
+        captured["query_domains"] = tuple(queries)
         return {
             "healthy": True,
             "committed": True,
@@ -132,6 +140,7 @@ def test_production_delegates_to_transactional_single_writer_publisher(monkeypat
         "dsn": "postgresql://example",
         "domains": ("literature",),
         "batch_size": 100,
+        "query_domains": ("literature",),
     }
     status = report["materialization"]
     assert status["transactional"] is True
