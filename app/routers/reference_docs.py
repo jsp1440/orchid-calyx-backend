@@ -13,6 +13,7 @@ from app.routers.matrix_identification import router as matrix_identification_ro
 from app.routers.matrix_identification_registry import router as matrix_identification_registry_router
 from app.routers.matrix_identification_session import router as matrix_identification_session_router
 from app.routers.matrix_identification_explanation import router as matrix_identification_explanation_router
+from app.routers.matrix_identification_vision import router as matrix_identification_vision_router
 
 router = APIRouter()
 
@@ -59,14 +60,9 @@ def download_reference_doc(doc_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Document not found")
     if not file_exists(doc.file_path):
         raise HTTPException(status_code=404, detail="File not found on storage")
-    
     data = read_file(doc.file_path)
     filename = doc.title.replace(" ", "_") + ".pdf"
-    return Response(
-        content=data,
-        media_type=doc.mime_type,
-        headers={"Content-Disposition": f'inline; filename="{filename}"'}
-    )
+    return Response(content=data, media_type=doc.mime_type, headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 
 @router.post("/admin/reference-docs", response_model=ReferenceDocumentOut)
@@ -82,19 +78,12 @@ def upload_reference_doc(
     db: Session = Depends(get_db)
 ):
     require_admin(api_key)
-    
     if document_type not in VALID_DOCUMENT_TYPES:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Invalid document_type. Must be one of: {VALID_DOCUMENT_TYPES}"
-        )
-    
+        raise HTTPException(status_code=400, detail=f"Invalid document_type. Must be one of: {VALID_DOCUMENT_TYPES}")
     if not file.content_type or "pdf" not in file.content_type.lower():
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
-    
     file_data = file.file.read()
     sha256 = compute_sha256(file_data)
-    
     existing = db.execute(
         select(SystemReferenceDocument).where(
             SystemReferenceDocument.document_type == document_type,
@@ -102,12 +91,9 @@ def upload_reference_doc(
             SystemReferenceDocument.sha256 == sha256
         )
     ).scalar_one_or_none()
-    
     if existing:
         return existing
-    
     file_path = save_file(file_data, file.filename or "document.pdf")
-    
     doc = SystemReferenceDocument(
         document_type=document_type,
         title=title,
@@ -134,16 +120,13 @@ def update_reference_doc(
     db: Session = Depends(get_db)
 ):
     require_admin(api_key)
-    
     doc = db.get(SystemReferenceDocument, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    
     if update.is_active is not None:
         doc.is_active = update.is_active
     if update.notes is not None:
         doc.notes = update.notes
-    
     db.commit()
     db.refresh(doc)
     return doc
@@ -156,3 +139,4 @@ router.include_router(matrix_identification_router)
 router.include_router(matrix_identification_registry_router)
 router.include_router(matrix_identification_session_router)
 router.include_router(matrix_identification_explanation_router)
+router.include_router(matrix_identification_vision_router)
