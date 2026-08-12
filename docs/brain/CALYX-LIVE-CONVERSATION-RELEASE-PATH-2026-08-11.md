@@ -1,6 +1,6 @@
 # CALYX Live Conversation — Release Path Checkpoint
 
-Status: **TECHNICAL RELEASE PATH VALIDATED / STRICT CONTRACT REVALIDATION IN PROGRESS / PRODUCTION ACTIVATION AND DEPLOYMENT NOT AUTHORIZED**
+Status: **TECHNICAL RELEASE PATH VALIDATED / STRICT CONTRACT + DATABASE-TARGET GUARD PENDING EXECUTABLE REVALIDATION / PRODUCTION ACTIVATION AND DEPLOYMENT NOT AUTHORIZED**
 
 ## Canonical conversation capability
 
@@ -16,7 +16,7 @@ Job: `93892890344`.
 
 Result: **PASS** — formatting, lint, full Vitest suite including the client E2E-001 contract, and production build.
 
-A stronger rendered-screen test was subsequently added at `src/components/research/PersistentAskCalyx.e2e.test.tsx`. Its first run and one targeted retry both failed before checkout with `steps=null`; this is runner allocation evidence, not a code verdict. No additional retries are authorized merely to probe allocation.
+A stronger rendered-screen test now exists at `src/components/research/PersistentAskCalyx.e2e.test.tsx`. Relative to the validated head, the newer Research Station delta is test/documentation only; application runtime files are unchanged. Its current hosted run terminates before checkout with `steps=null`, so no executable claim is made for that rendered-screen test yet and blind retries are not used.
 
 The validated client contract proves create → ask → reopen → exact-document follow-up → exact persisted source/revision link → Markdown report export with owner-session authentication and permanent non-evidence/non-publication/non-KG-mutation boundaries. This remains mocked transport and is **not** production verification.
 
@@ -41,31 +41,32 @@ That validated behavior includes exact migration identities, transaction-scoped 
 
 ## Review hardening — current work
 
-A review audit found that the prior existing-schema CHECK validation used representative fragments and could accept a weakened constraint that still contained one expected token. The function-body and index-definition review findings are already implemented in the validated base; the CHECK review required further hardening.
+A review audit found that prior existing-schema CHECK validation could accept weakened constraints and that presentation-level index matching could report canonical PostgreSQL indexes missing.
 
-The current branch therefore adds a strict contract facade around the previously validated activation state machine. The base implementation is preserved byte-for-byte as `scripts/research_station_conversation_activation_base.py`; the public module path now strengthens `inspect_contract()` so every canonical CHECK requires the complete value/bound fragment set to occur in one `pg_get_constraintdef()` result.
+The branch preserves the previously validated state machine in `scripts/research_station_conversation_activation_base.py` and strengthens the public facade. The facade now requires complete canonical CHECK fragment groups and normalizes PostgreSQL index rendering differences such as schema qualification, `USING btree`, and whitespace while continuing to require the exact named index plus its expected columns/predicate.
 
-New regressions explicitly require fail-closed behavior for:
+Regressions require fail-closed behavior for:
 
-- a weakened `projects.status` CHECK that permits only `ACTIVE`;
-- a neutered conversation append-only function that returns instead of raising;
-- an expected index name recreated on the wrong columns.
+- a weakened `projects.status` CHECK;
+- a neutered conversation append-only function;
+- an expected index name recreated on the wrong columns;
+- canonical migration-101-only resume by applying only migration 140.
 
-The validation workflow now compiles/lints/formats both facade and preserved base and executes the strengthened test suite on PostgreSQL 15/16/17.
+The latest backend hosted runs for this strict delta terminate before step 1 with `steps=null`; therefore **the strict facade remains implementation-complete but exact-head executable validation is pending runner recovery**. The open CHECK-semantics P1 review thread remains unresolved until that executable proof exists.
 
-**This strict-contract delta is not yet claimed validated until its exact-head CI completes.**
+## Runtime database-target alignment
 
-## Runtime database-target alignment — new release blocker
+Canonical `app.database.get_database_url()` currently prefers `PGHOST` over `DATABASE_URL`, while the guarded 101/140 activation profile targets `DATABASE_URL`. Conversation persistence uses the shared runtime database selector, so applying migrations to a different database would produce a false-success release.
 
-Canonical `app.database.get_database_url()` currently prefers `PGHOST` over `DATABASE_URL`. Persistent CALYX-CONV routes inject `get_db`, so conversation persistence uses that shared runtime database selector.
+PR #819 now adds `scripts/verify_calyx_runtime_database_target.py`, a non-mutating fail-closed release guard. It compares an explicitly supplied deployed-runtime DSN (`CALYX_RUNTIME_DATABASE_URL`) with the migration `DATABASE_URL` by PostgreSQL host, port, and database identity. Credentials may differ because the migration and application roles may legitimately differ. It emits only SHA-256 target fingerprints and never logs passwords.
 
-Production schema activation therefore must not proceed until a read-only release check proves that the database targeted by the 101/140 activation workflow is the same database selected by the deployed CALYX-CONV runtime. Applying 101/140 to Neon while a deployed runtime still resolves to a different `PGHOST` database would leave Talk-to-Calyx persistence unavailable even though the migration itself succeeded.
+The protected production activation workflow now runs this guard before **any** `research-station-conversations` preflight or apply. Missing runtime-target evidence or a target mismatch blocks the workflow. The disposable validation workflow includes unit coverage for matching targets, host/database mismatches, default-port normalization, invalid DSNs, and a same-target rehearsal.
 
-No production environment value was changed. Actual deployed `PGHOST`/`DATABASE_URL` resolution remains **UNVERIFIED**.
+This closes the code-side fail-open path, but actual deployed runtime target evidence is still **UNVERIFIED** until the production environment supplies `CALYX_RUNTIME_DATABASE_URL` from the real deployed Calyx runtime configuration. No production environment setting was changed.
 
 ## Guarded production-workflow wiring
 
-The existing manual production activation workflow is extended in PR #819 rather than creating a parallel migration framework. It remains `workflow_dispatch` only, refuses non-main dispatch, verifies exact current main, defaults to read-only preflight, requires explicit profile selection, and requires the distinct `APPLY_RESEARCH_STATION_101_140` token for a Research Station apply.
+The existing manual production activation workflow is extended in PR #819 rather than creating a parallel migration framework. It remains `workflow_dispatch` only, refuses non-main dispatch, verifies exact current main, defaults to read-only preflight, requires explicit profile selection, requires runtime/migration target identity for Research Station operations, and requires the distinct `APPLY_RESEARCH_STATION_101_140` token for an apply.
 
 **The production workflow was not dispatched during this work.**
 
@@ -75,15 +76,16 @@ Previous read-only Neon preflight observed PostgreSQL 17.10 and `pgcrypto` 1.3, 
 
 ## Remaining release dependencies
 
-1. Complete exact-head validation of the strict #819 CHECK-contract hardening and resolve only demonstrably addressed review threads.
-2. Governed review/merge disposition for #819; do not merge without authorization.
-3. Prove deployed CALYX-CONV runtime database target equals the schema-activation target database.
-4. Identify and verify the intended production CALYX-CONV application database role and required privileges.
-5. Obtain a separate governance authorization for production Research Station schema activation (migration 101 plus migration 140 through the validated atomic profile).
-6. Perform post-schema read-only verification.
-7. Obtain a separate governance authorization for Research Station/CALYX-CONV deployment and persistent-conversation traffic.
-8. Configure deployed Research Station URLs and add its exact origin through the existing CORS allow-list.
-9. Run live browser E2E-001 after deployment; only then mark Talk-to-Calyx **PRODUCTION VERIFIED**.
+1. Recover executable backend hosted CI and complete exact-head PG15/16/17 validation of the strict #819 contract + database-target guard.
+2. Resolve the remaining CHECK-semantics P1 only after that exact-head proof.
+3. Governed review/merge disposition for #819; do not merge without authorization.
+4. Supply read-only evidence of the actual deployed CALYX runtime target and prove its fingerprint matches the migration target.
+5. Identify and verify the intended production CALYX-CONV application database role and required privileges.
+6. Obtain separate governance authorization for production Research Station schema activation (migration 101 plus migration 140 through the validated atomic profile).
+7. Perform post-schema read-only verification.
+8. Obtain separate governance authorization for Research Station/CALYX-CONV deployment and persistent-conversation traffic.
+9. Configure deployed Research Station URLs and add its exact origin through the existing CORS allow-list.
+10. Run live browser E2E-001 after deployment; only then mark Talk-to-Calyx **PRODUCTION VERIFIED**.
 
 ## Governance
 
