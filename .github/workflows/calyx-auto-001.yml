@@ -34,7 +34,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install pytest ruff
       - name: Compile CALYX-AUTO-001
         run: >-
           python -m py_compile
