@@ -12,6 +12,7 @@ on:
       - 'app/readiness/live_graph_audit.py'
       - 'app/readiness/owner_audit_relationships.py'
       - 'app/calyx_conversation/graph_context.py'
+      - 'app/calyx_conversation/graph_literature_search.py'
       - 'app/calyx_conversation/speak_routes.py'
       - 'app/calyx_conversation/provider.py'
       - 'tests/test_calyx_verified_graph_materializer.py'
@@ -19,6 +20,7 @@ on:
       - 'tests/test_calyx_live_graph_audit.py'
       - 'tests/test_owner_audit_relationships.py'
       - 'tests/test_calyx_speak_graph_context.py'
+      - 'tests/test_calyx_graph_literature_search.py'
       - 'tests/test_calyx_deterministic_graph_provider.py'
       - 'docs/brain/CALYX-KG-MATERIALIZATION-001.md'
       - '.github/workflows/calyx-kg-materialization-001.yml'
@@ -39,7 +41,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install pytest ruff
-      - name: Compile materializers, audit, and Speak graph bridge
+      - name: Compile materializers, audit, and Speak graph evidence bridges
         run: >-
           python -m py_compile
           runtime/knowledge_graph/production_materializer.py
@@ -51,6 +53,7 @@ jobs:
           app/readiness/live_graph_audit.py
           app/readiness/owner_audit_relationships.py
           app/calyx_conversation/graph_context.py
+          app/calyx_conversation/graph_literature_search.py
           app/calyx_conversation/speak_routes.py
           app/calyx_conversation/provider.py
           tests/test_calyx_verified_graph_materializer.py
@@ -58,6 +61,7 @@ jobs:
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
           tests/test_calyx_speak_graph_context.py
+          tests/test_calyx_graph_literature_search.py
           tests/test_calyx_deterministic_graph_provider.py
       - name: Focused integration tests
         run: >-
@@ -67,6 +71,7 @@ jobs:
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
           tests/test_calyx_speak_graph_context.py
+          tests/test_calyx_graph_literature_search.py
           tests/test_calyx_deterministic_graph_provider.py
       - name: Adjacent graph and Speak regressions
         run: >-
@@ -90,6 +95,7 @@ jobs:
           app/readiness/live_graph_audit.py
           app/readiness/owner_audit_relationships.py
           app/calyx_conversation/graph_context.py
+          app/calyx_conversation/graph_literature_search.py
           app/calyx_conversation/speak_routes.py
           app/calyx_conversation/provider.py
           tests/test_calyx_verified_graph_materializer.py
@@ -97,6 +103,7 @@ jobs:
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
           tests/test_calyx_speak_graph_context.py
+          tests/test_calyx_graph_literature_search.py
           tests/test_calyx_deterministic_graph_provider.py
       - name: Permanent publication and read-only guards
         run: |
@@ -113,9 +120,10 @@ jobs:
           grep -q 'persisted_knowledge_graph_audit' app/readiness/owner_audit_relationships.py
           grep -q 'run_live_graph_audit' scripts/audit_persisted_graph_relationships.py
           grep -q 'explicit_binomial_exact_display_label_only' app/calyx_conversation/graph_context.py
-          grep -q 'knowledge_graph_mutation.*False' app/calyx_conversation/graph_context.py
-          grep -q 'persisted_graph_context_is_evidence' app/calyx_conversation/speak_routes.py
-          grep -q 'calyx-governed-summary-v2-graph' app/calyx_conversation/provider.py
-          grep -q 'graph connectivity alone does not justify' app/calyx_conversation/provider.py
+          grep -q 'literal_terms_no_synonym_expansion' app/calyx_conversation/graph_literature_search.py
+          grep -q 'knowledge_graph_mutation.*False' app/calyx_conversation/graph_literature_search.py
+          grep -q 'persisted_graph_literature_is_evidence' app/calyx_conversation/speak_routes.py
+          grep -q 'calyx-governed-summary-v3-graph-literature' app/calyx_conversation/provider.py
+          grep -q 'not a substitute for inspecting the underlying paper text' app/calyx_conversation/provider.py
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
