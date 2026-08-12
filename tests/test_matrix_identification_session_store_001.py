@@ -1,3 +1,4 @@
+import json
 from copy import deepcopy
 from pathlib import Path
 
@@ -86,6 +87,30 @@ def test_file_store_rejects_same_revision_stale_writer(tmp_path: Path):
     assert "identification_reports" not in restored
 
 
+def test_legacy_zero_version_record_is_adopted_once(tmp_path: Path):
+    store = FileMatrixSessionStore(tmp_path)
+    legacy = _record()
+    path = tmp_path / f"{legacy['session_id']}.json"
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+
+    writer_a = store.get(legacy["session_id"], access_actor="owner-a")
+    writer_b = deepcopy(writer_a)
+    assert "persistence_version" not in writer_a
+
+    writer_a["latest_evaluation"] = {"candidate": "legacy-A"}
+    store.save(writer_a)
+    assert writer_a["persistence_version"] == 1
+
+    writer_b["identification_reports"] = [{"report_id": "legacy-stale"}]
+    with pytest.raises(MatrixSessionPersistenceError, match="stale persistence version"):
+        store.save(writer_b)
+
+    restored = store.get(legacy["session_id"], access_actor="owner-a")
+    assert restored["persistence_version"] == 1
+    assert restored["latest_evaluation"] == {"candidate": "legacy-A"}
+    assert "identification_reports" not in restored
+
+
 def test_missing_record_rejects_nonzero_persistence_version(tmp_path: Path):
     store = FileMatrixSessionStore(tmp_path)
     record = _record()
@@ -119,6 +144,7 @@ def test_durable_mode_fails_closed_without_database_url(monkeypatch):
     assert status["durable"] is True
     assert status["ready"] is False
     assert status["optimistic_concurrency"] is True
+    assert status["legacy_zero_version_adoption"] is True
     assert "DATABASE_URL_REQUIRED" in status["error"]
 
 
