@@ -236,20 +236,13 @@ class PostgresMatrixRegistryStore:
             raise ValueError("registry_id, version and checksum_sha256 are required")
         with psycopg.connect(self.dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
             cur.execute(
-                f"SELECT checksum_sha256, record FROM {MATRIX_REGISTRY_TABLE} WHERE registry_id=%s AND version=%s",
-                (registry_id, version),
-            )
-            existing = cur.fetchone()
-            if existing is not None:
-                if str(existing["checksum_sha256"]) == checksum:
-                    return {"created": False, "record": dict(existing["record"])}
-                raise ValueError("registry version already exists with different content")
-            cur.execute(
                 f"""
                 INSERT INTO {MATRIX_REGISTRY_TABLE}(
                     registry_id, version, checksum_sha256, publication_state,
                     record, created_by, created_at
                 ) VALUES (%s, %s, %s, %s, %s, %s, COALESCE(%s::timestamptz, now()))
+                ON CONFLICT (registry_id, version) DO NOTHING
+                RETURNING registry_id
                 """,
                 (
                     registry_id,
@@ -261,8 +254,23 @@ class PostgresMatrixRegistryStore:
                     record.get("created_at"),
                 ),
             )
-            conn.commit()
-        return {"created": True, "record": record}
+            inserted = cur.fetchone()
+            if inserted is not None:
+                conn.commit()
+                return {"created": True, "record": record}
+
+            cur.execute(
+                f"SELECT checksum_sha256, record FROM {MATRIX_REGISTRY_TABLE} WHERE registry_id=%s AND version=%s",
+                (registry_id, version),
+            )
+            existing = cur.fetchone()
+            if existing is None:
+                raise MatrixRegistryPersistenceError(
+                    "MATRIX_REGISTRY_WRITE_CONFLICT: registry version conflict could not be resolved"
+                )
+            if str(existing["checksum_sha256"]) == checksum:
+                return {"created": False, "record": dict(existing["record"])}
+            raise ValueError("registry version already exists with different content")
 
     def list_records(self) -> list[dict[str, Any]]:
         self._require_schema()
