@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable
+from typing import Any
 
 import psycopg
 from psycopg import sql
@@ -180,7 +181,6 @@ def _confidence(row: dict[str, Any]) -> tuple[float, str]:
             return score, "source_supplied"
         except (TypeError, ValueError):
             pass
-    # Deliberately conservative. Missing confidence is not interpreted as certainty.
     return 0.5, "conservative_default_missing_source_confidence"
 
 
@@ -367,11 +367,9 @@ def make_live_dataset(
 class LiveScientificEvidenceBuilder:
     """Read canonical Orchid Continuum scientific sources into TIG evidence.
 
-    The builder is deliberately schema-tolerant but scientifically conservative:
-    rows lacking a recognized canonical taxon identifier or required domain
+    Rows without recognized canonical taxon identifiers or required domain
     identifiers are skipped rather than guessed from names. Raw phylogenetic
-    sequence records are preserved as context but are not promoted to genetic
-    association evidence.
+    sequences remain context and are not promoted to genetic association evidence.
     """
 
     def __init__(
@@ -519,7 +517,12 @@ class LiveScientificEvidenceBuilder:
                 candidate = self._first_existing(cur, candidates)
                 domain = candidates[0].domain
                 if candidate is None:
-                    diagnostics[domain] = {"source": None, "fetched": 0, "accepted": 0, "skipped": 0}
+                    diagnostics[domain] = {
+                        "source": None,
+                        "fetched": 0,
+                        "accepted": 0,
+                        "skipped": 0,
+                    }
                     continue
                 rows = self._fetch_rows(
                     cur,
@@ -605,8 +608,6 @@ class LiveScientificEvidenceBuilder:
                         "skipped": len(rows) - accepted,
                     }
 
-        # Evidence identity is authoritative; repeated rows from overlapping source views
-        # collapse deterministically instead of inflating support.
         deduplicated = {record.evidence_id: record for record in records}
         dataset = make_live_dataset(
             list(deduplicated.values()),
