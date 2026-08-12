@@ -5,6 +5,7 @@ on:
     paths:
       - 'runtime/knowledge_graph/production_materializer.py'
       - 'scripts/materialize_verified_graph_relationships.py'
+      - 'scripts/audit_persisted_graph_relationships.py'
       - 'app/readiness/live_graph_audit.py'
       - 'app/readiness/owner_audit_relationships.py'
       - 'tests/test_calyx_verified_graph_materializer.py'
@@ -34,6 +35,7 @@ jobs:
           python -m py_compile
           runtime/knowledge_graph/production_materializer.py
           scripts/materialize_verified_graph_relationships.py
+          scripts/audit_persisted_graph_relationships.py
           app/readiness/live_graph_audit.py
           app/readiness/owner_audit_relationships.py
           tests/test_calyx_verified_graph_materializer.py
@@ -60,6 +62,7 @@ jobs:
           ruff check
           runtime/knowledge_graph/production_materializer.py
           scripts/materialize_verified_graph_relationships.py
+          scripts/audit_persisted_graph_relationships.py
           app/readiness/live_graph_audit.py
           app/readiness/owner_audit_relationships.py
           tests/test_calyx_verified_graph_materializer.py
@@ -75,5 +78,6 @@ jobs:
           grep -q 'taxonomy_to_literature' app/readiness/live_graph_audit.py
           grep -q 'taxonomy_to_habitat' app/readiness/live_graph_audit.py
           grep -q 'persisted_knowledge_graph_audit' app/readiness/owner_audit_relationships.py
+          grep -q 'run_live_graph_audit' scripts/audit_persisted_graph_relationships.py
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
