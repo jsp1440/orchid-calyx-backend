@@ -103,9 +103,14 @@ GEOGRAPHY_ADAPTER = _make_adapter(
 )
 HABITAT_ADAPTER = _make_adapter(
     domain="habitat", node_type="habitat", edge_type="occupies_habitat",
-    source_table="oc_habitat.taxon_habitats",
+    source_table="public.oc_species_habitat_claims",
     label_fields=("habitat_name", "habitat_type"),
-    payload_fields=("habitat_type", "biome", "substrate", "description", "source_name"),
+    payload_fields=(
+        "habitat_type", "biome", "substrate", "description", "source_name",
+        "elevation_min", "elevation_max", "climate_zone", "canopy_cover",
+        "moisture_regime", "citation_url", "citation_text", "evidence_text",
+        "claim_status", "needs_review", "source_id", "source_table", "source_column",
+    ),
 )
 CLIMATE_ADAPTER = _make_adapter(
     domain="climate", node_type="climate", edge_type="experiences_climate",
@@ -115,9 +120,13 @@ CLIMATE_ADAPTER = _make_adapter(
 )
 ELEVATION_ADAPTER = _make_adapter(
     domain="elevation", node_type="elevation", edge_type="has_elevation",
-    source_table="oc_env.taxon_elevation_profiles",
+    source_table="public.species_elevation_profile",
     label_fields=("elevation_label", "scientific_name"),
-    payload_fields=("minimum_elevation_m", "maximum_elevation_m", "mean_elevation_m", "method", "source_name"),
+    payload_fields=(
+        "minimum_elevation_m", "maximum_elevation_m", "mean_elevation_m", "method",
+        "source_name", "n_records", "elev_p05_m", "elev_p25_m", "elev_p50_m",
+        "elev_p75_m", "elev_p95_m", "elev_sd_m",
+    ),
 )
 TRAITS_ADAPTER = _make_adapter(
     domain="traits", node_type="trait", edge_type="has_trait",
