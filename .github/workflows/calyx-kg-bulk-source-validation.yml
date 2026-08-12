@@ -20,6 +20,8 @@ on:
       - 'app/calyx_conversation/speak_routes.py'
       - 'app/literature_extraction/source_binding.py'
       - 'scripts/audit_source_graph_coverage.py'
+      - 'scripts/materialize_reviewed_literature_graph.py'
+      - 'tests/test_exact_taxon_resolution.py'
       - 'tests/test_verified_bulk_graph_sources.py'
       - 'tests/test_paper_knowledge_graph.py'
       - 'tests/test_publication_eligible_paper_graph.py'
@@ -69,6 +71,8 @@ jobs:
           app/calyx_conversation/speak_routes.py
           app/literature_extraction/source_binding.py
           scripts/audit_source_graph_coverage.py
+          scripts/materialize_reviewed_literature_graph.py
+          tests/test_exact_taxon_resolution.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_publication_eligible_paper_graph.py
@@ -83,6 +87,7 @@ jobs:
       - name: Focused graph regressions
         run: >-
           pytest -q
+          tests/test_exact_taxon_resolution.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_publication_eligible_paper_graph.py
@@ -117,6 +122,8 @@ jobs:
           app/calyx_conversation/speak_routes.py
           app/literature_extraction/source_binding.py
           scripts/audit_source_graph_coverage.py
+          scripts/materialize_reviewed_literature_graph.py
+          tests/test_exact_taxon_resolution.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_publication_eligible_paper_graph.py
