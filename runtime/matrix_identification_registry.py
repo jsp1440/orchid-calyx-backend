@@ -78,6 +78,26 @@ def _checksum(payload: dict[str, Any]) -> str:
     return hashlib.sha256(_canonical_payload(payload)).hexdigest()
 
 
+def registry_unsigned_payload(record: dict[str, Any]) -> dict[str, Any]:
+    """Return the exact scientific payload covered by the immutable registry checksum."""
+    return {
+        "schema_version": record.get("schema_version"),
+        "registry_id": record.get("registry_id"),
+        "version": record.get("version"),
+        "title": record.get("title"),
+        "scope": record.get("scope"),
+        "characters": record.get("characters"),
+        "candidates": record.get("candidates"),
+        "provenance": record.get("provenance"),
+        "publication_state": record.get("publication_state"),
+    }
+
+
+def compute_registry_record_checksum(record: dict[str, Any]) -> str:
+    """Recompute a registry package checksum independently of its claimed digest."""
+    return _checksum(registry_unsigned_payload(record))
+
+
 def _validate_character(character: RegistryCharacter) -> None:
     if not character.character.strip() or not character.label.strip():
         raise ValueError("character and label are required")
