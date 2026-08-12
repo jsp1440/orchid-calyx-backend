@@ -5,7 +5,9 @@ on:
     paths:
       - 'runtime/knowledge_graph/production_materializer.py'
       - 'scripts/materialize_verified_graph_relationships.py'
+      - 'app/readiness/live_graph_audit.py'
       - 'tests/test_calyx_verified_graph_materializer.py'
+      - 'tests/test_calyx_live_graph_audit.py'
       - 'docs/brain/CALYX-KG-MATERIALIZATION-001.md'
       - '.github/workflows/calyx-kg-materialization-001.yml'
 
@@ -25,14 +27,19 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install pytest ruff
-      - name: Compile materializer
+      - name: Compile materializer and live audit
         run: >-
           python -m py_compile
           runtime/knowledge_graph/production_materializer.py
           scripts/materialize_verified_graph_relationships.py
+          app/readiness/live_graph_audit.py
           tests/test_calyx_verified_graph_materializer.py
-      - name: Focused graph materializer tests
-        run: pytest -q tests/test_calyx_verified_graph_materializer.py
+          tests/test_calyx_live_graph_audit.py
+      - name: Focused integration tests
+        run: >-
+          pytest -q
+          tests/test_calyx_verified_graph_materializer.py
+          tests/test_calyx_live_graph_audit.py
       - name: Adjacent graph regressions
         run: >-
           pytest -q
@@ -42,12 +49,15 @@ jobs:
           tests/test_controlled_graph_dry_run.py
           tests/test_build_067_pg_writer.py
           tests/test_audit_relationship_integration_001.py
+          tests/test_calyx_homepage_readiness_route.py
       - name: Ruff
         run: >-
           ruff check
           runtime/knowledge_graph/production_materializer.py
           scripts/materialize_verified_graph_relationships.py
+          app/readiness/live_graph_audit.py
           tests/test_calyx_verified_graph_materializer.py
+          tests/test_calyx_live_graph_audit.py
       - name: Permanent publication guards
         run: |
           grep -q 'PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS' runtime/knowledge_graph/production_materializer.py
@@ -55,5 +65,7 @@ jobs:
           grep -q 'run_controlled_dry_run' runtime/knowledge_graph/production_materializer.py
           grep -q 'publish_to_production' runtime/knowledge_graph/production_materializer.py
           grep -q 'production_graph_mutation.*summary' runtime/knowledge_graph/production_materializer.py
+          grep -q 'taxonomy_to_literature' app/readiness/live_graph_audit.py
+          grep -q 'taxonomy_to_habitat' app/readiness/live_graph_audit.py
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
