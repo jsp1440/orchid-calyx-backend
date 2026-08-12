@@ -15,7 +15,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,6 +39,8 @@ jobs:
           tests/test_source_registry.py
           tests/test_full_domain_adapters.py
           tests/test_knowledge_graph_orchestrator.py
+          tests/test_controlled_graph_dry_run.py
+          tests/test_build_067_pg_writer.py
           tests/test_audit_relationship_integration_001.py
       - name: Ruff
         run: >-
@@ -46,10 +48,12 @@ jobs:
           runtime/knowledge_graph/production_materializer.py
           scripts/materialize_verified_graph_relationships.py
           tests/test_calyx_verified_graph_materializer.py
-      - name: Permanent publication guard
+      - name: Permanent publication guards
         run: |
           grep -q 'PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS' runtime/knowledge_graph/production_materializer.py
-          grep -q 'authorized_to_publish=True' runtime/knowledge_graph/production_materializer.py
-          grep -q 'ExecutionMode.DRY_RUN' runtime/knowledge_graph/production_materializer.py
+          grep -q 'EXPLICIT_PRODUCTION_DOMAINS_REQUIRED' runtime/knowledge_graph/production_materializer.py
+          grep -q 'run_controlled_dry_run' runtime/knowledge_graph/production_materializer.py
+          grep -q 'publish_to_production' runtime/knowledge_graph/production_materializer.py
+          grep -q 'production_graph_mutation.*summary' runtime/knowledge_graph/production_materializer.py
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
