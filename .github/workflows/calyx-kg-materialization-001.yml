@@ -4,11 +4,15 @@ on:
   pull_request:
     paths:
       - 'runtime/knowledge_graph/production_materializer.py'
+      - 'runtime/knowledge_graph/production_publish.py'
+      - 'runtime/knowledge_graph/verified_dynamic_materializer.py'
       - 'scripts/materialize_verified_graph_relationships.py'
+      - 'scripts/materialize_dynamic_graph_relationship.py'
       - 'scripts/audit_persisted_graph_relationships.py'
       - 'app/readiness/live_graph_audit.py'
       - 'app/readiness/owner_audit_relationships.py'
       - 'tests/test_calyx_verified_graph_materializer.py'
+      - 'tests/test_verified_dynamic_materializer.py'
       - 'tests/test_calyx_live_graph_audit.py'
       - 'tests/test_owner_audit_relationships.py'
       - 'docs/brain/CALYX-KG-MATERIALIZATION-001.md'
@@ -30,21 +34,26 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install pytest ruff
-      - name: Compile materializer and live audit
+      - name: Compile materializers and live audit
         run: >-
           python -m py_compile
           runtime/knowledge_graph/production_materializer.py
+          runtime/knowledge_graph/production_publish.py
+          runtime/knowledge_graph/verified_dynamic_materializer.py
           scripts/materialize_verified_graph_relationships.py
+          scripts/materialize_dynamic_graph_relationship.py
           scripts/audit_persisted_graph_relationships.py
           app/readiness/live_graph_audit.py
           app/readiness/owner_audit_relationships.py
           tests/test_calyx_verified_graph_materializer.py
+          tests/test_verified_dynamic_materializer.py
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
       - name: Focused integration tests
         run: >-
           pytest -q
           tests/test_calyx_verified_graph_materializer.py
+          tests/test_verified_dynamic_materializer.py
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
       - name: Adjacent graph regressions
@@ -61,11 +70,15 @@ jobs:
         run: >-
           ruff check
           runtime/knowledge_graph/production_materializer.py
+          runtime/knowledge_graph/production_publish.py
+          runtime/knowledge_graph/verified_dynamic_materializer.py
           scripts/materialize_verified_graph_relationships.py
+          scripts/materialize_dynamic_graph_relationship.py
           scripts/audit_persisted_graph_relationships.py
           app/readiness/live_graph_audit.py
           app/readiness/owner_audit_relationships.py
           tests/test_calyx_verified_graph_materializer.py
+          tests/test_verified_dynamic_materializer.py
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
       - name: Permanent publication guards
@@ -75,6 +88,9 @@ jobs:
           grep -q 'run_controlled_dry_run' runtime/knowledge_graph/production_materializer.py
           grep -q 'publish_to_production' runtime/knowledge_graph/production_materializer.py
           grep -q 'production_graph_mutation.*summary' runtime/knowledge_graph/production_materializer.py
+          grep -q 'DYNAMIC_DOMAINS = ("habitat", "elevation")' runtime/knowledge_graph/verified_dynamic_materializer.py
+          grep -q 'taxon_resolved_rows' runtime/knowledge_graph/verified_dynamic_materializer.py
+          grep -q 'queries: dict\[str, str\] | None' runtime/knowledge_graph/production_publish.py
           grep -q 'taxonomy_to_literature' app/readiness/live_graph_audit.py
           grep -q 'taxonomy_to_habitat' app/readiness/live_graph_audit.py
           grep -q 'persisted_knowledge_graph_audit' app/readiness/owner_audit_relationships.py
