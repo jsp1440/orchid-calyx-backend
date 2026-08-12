@@ -2,8 +2,8 @@
 
 File persistence remains available for tests/local development. Governed durable
 mode uses PostgreSQL and is fail-closed: enabling durable mode without a database
-or migrated schema raises an explicit readiness error rather than falling back to
-/tmp and silently losing scientific provenance on restart.
+or fully migrated schema raises an explicit readiness error rather than falling back
+to /tmp or operating against a partial schema.
 """
 
 from __future__ import annotations
@@ -88,19 +88,26 @@ class PostgresMatrixSessionStore:
         if not self.dsn:
             raise MatrixSessionPersistenceError("MATRIX_SESSION_DATABASE_URL_REQUIRED")
 
+    def schema_inspection(self) -> dict[str, Any]:
+        # Local import avoids module-import recursion while allowing the durable
+        # enforcement path and read-only preflight to share one schema contract.
+        from runtime.matrix_identification_persistence_preflight import (
+            inspect_matrix_session_database,
+        )
+
+        return inspect_matrix_session_database(self.dsn)
+
     def schema_ready(self) -> bool:
-        try:
-            with psycopg.connect(self.dsn, connect_timeout=5) as conn, conn.cursor() as cur:
-                cur.execute("SELECT to_regclass(%s)", (f"public.{MATRIX_SESSION_TABLE}",))
-                row = cur.fetchone()
-                return bool(row and row[0])
-        except Exception:
-            return False
+        return bool(self.schema_inspection().get("migration_612_schema_ready"))
 
     def _require_schema(self) -> None:
-        if not self.schema_ready():
+        inspection = self.schema_inspection()
+        if not inspection.get("migration_612_schema_ready"):
+            blockers = inspection.get("blockers") or ["MATRIX_SESSION_SCHEMA_NOT_READY"]
             raise MatrixSessionPersistenceError(
-                "MATRIX_SESSION_SCHEMA_NOT_READY: apply the governed Matrix session migration before enabling durable persistence"
+                "MATRIX_SESSION_SCHEMA_NOT_READY: "
+                + ",".join(map(str, blockers))
+                + "; apply/repair governed migration 612 before enabling durable persistence"
             )
 
     def get(self, session_id: str, *, access_actor: str | None = None) -> dict[str, Any] | None:
@@ -173,12 +180,14 @@ class PostgresMatrixSessionStore:
         return record
 
     def status(self) -> dict[str, Any]:
-        ready = self.schema_ready()
+        inspection = self.schema_inspection()
+        ready = bool(inspection.get("migration_612_schema_ready"))
         return {
             "mode": self.mode,
             "durable": True,
             "ready": ready,
             "schema": MATRIX_SESSION_TABLE,
+            "schema_contract": inspection,
             "error": None if ready else "MATRIX_SESSION_SCHEMA_NOT_READY",
         }
 
