@@ -33,12 +33,19 @@ ALLOWED_MISSION_CONTROL_ORIGINS = {
 }
 
 
+def _configured_mission_control_origins() -> set[str]:
+    configured: set[str] = set()
+    for env_name in ("CORS_ALLOW_ORIGIN", "CORS_ALLOW_ORIGINS"):
+        configured.update(
+            item.strip().rstrip("/")
+            for item in os.getenv(env_name, "").split(",")
+            if item.strip() and item.strip() != "*"
+        )
+    return configured
+
+
 def allowed_mission_control_origins() -> set[str]:
-    return ALLOWED_MISSION_CONTROL_ORIGINS | {
-        item.strip().rstrip("/")
-        for item in os.getenv("CORS_ALLOW_ORIGIN", "").split(",")
-        if item.strip() and item.strip() != "*"
-    }
+    return ALLOWED_MISSION_CONTROL_ORIGINS | _configured_mission_control_origins()
 
 
 router = APIRouter(tags=["health"])
