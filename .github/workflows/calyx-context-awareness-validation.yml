@@ -33,6 +33,6 @@ jobs:
         run: ruff check app/calyx_conversation/interaction_context.py app/calyx_conversation/speak_routes.py tests/test_calyx_context_awareness_001.py
       - name: Verify context release contract
         run: >-
-          python -c "from app.calyx_conversation.speak_routes import speak_status; s=speak_status({'subject':'ci-owner'}); assert s['release']=='CALYX-SPEAK-004-CONTEXT'; assert s['interaction_context']['supported'] is True; assert s['interaction_context']['evidence'] is False; assert s['automatic_publication'] is False; assert s['knowledge_graph_mutation'] is False"
+          python -c "from app.calyx_conversation.speak_routes import speak_status; s=speak_status({'subject':'ci-owner'}); assert s['release']=='CALYX-SPEAK-005-WORKSPACE-OUTPUTS'; assert s['interaction_context']['supported'] is True; assert s['interaction_context']['evidence'] is False; assert s['automatic_publication'] is False; assert s['knowledge_graph_mutation'] is False"
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
