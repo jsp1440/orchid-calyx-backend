@@ -7,6 +7,11 @@ explicit ``eligible_for_publication`` decision. Source structure (publication,
 sections, evidence spans, references, figures, tables) remains representable,
 while measurements require their own reviewed provenance state.
 
+Publication-eligible claims that explicitly relate two exactly-resolved taxa may
+also emit a GloBI-compatible OBO Relations Ontology edge when their predicate is
+recognized by the controlled interaction translation layer. Unknown predicates
+fail closed and remain available only on the reviewed claim node.
+
 The function is pure and never mutates the Knowledge Graph.
 """
 
@@ -17,6 +22,7 @@ from typing import Mapping
 
 from app.literature_extraction.models import PaperKnowledge
 
+from .biotic_relation_ontology import normalize_biotic_relation
 from .paper_knowledge_graph import PaperGraphBundle, build_paper_graph_specs
 from .publisher import EdgeSpec, canonical_key
 from .scientific_method_vocabulary import CLAIM_TYPE_TO_NODE_TYPE
@@ -193,6 +199,57 @@ def build_publication_eligible_paper_graph_specs(
                         },
                     )
                 )
+
+        # GloBI-style literature relationship normalization.  This is stricter
+        # than merely finding two taxa in the same paper: the source claim must
+        # have an explicit publication-eligible normalized record, both endpoints
+        # must resolve exactly to canonical active taxa, and the predicate must map
+        # to a supported OBO RO biotic interaction term.
+        relation = normalize_biotic_relation(claim.predicate)
+        if relation:
+            subject_pairs = [
+                (entity_id, taxon_keys[entity_id])
+                for entity_id in claim.subject_ids
+                if entity_id in taxon_keys
+            ]
+            object_pairs = [
+                (entity_id, taxon_keys[entity_id])
+                for entity_id in claim.object_ids
+                if entity_id in taxon_keys
+            ]
+            for subject_id, subject_key in subject_pairs:
+                for object_id, object_key in object_pairs:
+                    if subject_key == object_key:
+                        continue
+                    extra_edges.append(
+                        EdgeSpec(
+                            edge_type=relation.label,
+                            from_key=subject_key,
+                            to_key=object_key,
+                            source_table="literature_extraction.paper_knowledge",
+                            source_pk=(
+                                f"{paper.paper_id}:{claim.claim_id}:"
+                                f"{subject_id}:{object_id}:{relation.label}"
+                            ),
+                            evidence_class=claim.provenance.method,
+                            confidence_score=float(claim.provenance.confidence),
+                            confidence_label="publication_eligible",
+                            rule_name="paper_globi_ro_biotic_relation",
+                            payload={
+                                "ro_uri": relation.ro_uri,
+                                "canonical_interaction_type": relation.label,
+                                "verbatim_predicate": claim.predicate,
+                                "source_claim_id": claim.claim_id,
+                                "subject_entity_id": subject_id,
+                                "object_entity_id": object_id,
+                                "publication_key": base.publication_key,
+                                "publication_eligible": True,
+                                "publication_eligible_record_ids": list(
+                                    eligible_records[claim.claim_id]
+                                ),
+                            },
+                        )
+                    )
 
     for measurement in paper.measurements:
         if measurement.provenance.review_status not in _REVIEWED:
