@@ -6,8 +6,9 @@ IMPLEMENTED + HARDENED ON FEATURE BRANCH / NON-PRODUCTION / EXECUTABLE REPOSITOR
 
 Branch: `feature/calyx-auto-001-durable-missions`
 
-Current hardened code/workflow head before documentation commits: `c71c37f89ff6a2671f703eed3d0387ab7ff9ca2d`.
-Canonical Brain checkpoint after hardening: `Orchid-Continuum-Brain@72c9dc8e8da99e4a2a3ff3d2ebd26bf452aa67b1`.
+Validated-by-inspection code/workflow boundary: `c71c37f89ff6a2671f703eed3d0387ab7ff9ca2d`.
+Current documentation-only branch head is recorded in PR #900 metadata.
+Canonical Brain checkpoint: `Orchid-Continuum-Brain@72c9dc8e8da99e4a2a3ff3d2ebd26bf452aa67b1`.
 
 ## Mission
 
@@ -121,7 +122,7 @@ Dependency-light validation recorded before the latest hardening:
 - Python syntax compilation for the original new source/test modules: passed;
 - selector/validator state assertions: 6/6 passed.
 
-The latest hardened code/workflow head has **not** received executable repository CI because private hosted Actions is again failing before step creation. On `c71c37f89ff6a2671f703eed3d0387ab7ff9ca2d`, dedicated run `31566349713`, job `94018830326`, returned `steps = null`; BUILD-088E, CALYX-AGENT-003, and Workflow Governance failed with the same allocator signature. Those runs executed no PostgreSQL service initialization, checkout, Ruff, tests, migration assertions, or application code and are infrastructure evidence only.
+The latest hardened code/workflow boundary has **not** received executable repository CI because private hosted Actions is again failing before step creation. On `c71c37f89ff6a2671f703eed3d0387ab7ff9ca2d`, dedicated run `31566349713`, job `94018830326`, returned `steps = null`; BUILD-088E, CALYX-AGENT-003, and Workflow Governance failed with the same allocator signature. Those runs executed no PostgreSQL service initialization, checkout, Ruff, tests, migration assertions, or application code and are infrastructure evidence only.
 
 Dedicated workflow `.github/workflows/calyx-auto-001.yml` remains the authoritative acceptance gate. It now runs PostgreSQL 16 claim-contention coverage plus the CALYX-AUTO-001 integration suite, adjacent autonomous-program worker/persistence tests, Python compile, Ruff, migration invariants, permanent non-authority assertions, and diff hygiene.
 
