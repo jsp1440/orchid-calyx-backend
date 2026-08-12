@@ -186,7 +186,20 @@ class PostgresMatrixSessionStore:
                         %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s,
                         COALESCE(%s::timestamptz, now()), COALESCE(%s::timestamptz, now())
                     )
-                    ON CONFLICT (session_id) DO NOTHING
+                    ON CONFLICT (session_id) DO UPDATE SET
+                        revision=EXCLUDED.revision,
+                        status=EXCLUDED.status,
+                        record=EXCLUDED.record,
+                        updated_at=EXCLUDED.updated_at
+                    WHERE {MATRIX_SESSION_TABLE}.owner=EXCLUDED.owner
+                      AND {MATRIX_SESSION_TABLE}.registry_id=EXCLUDED.registry_id
+                      AND {MATRIX_SESSION_TABLE}.registry_version=EXCLUDED.registry_version
+                      AND {MATRIX_SESSION_TABLE}.registry_checksum_sha256=EXCLUDED.registry_checksum_sha256
+                      AND {MATRIX_SESSION_TABLE}.revision <= EXCLUDED.revision
+                      AND COALESCE(
+                            ({MATRIX_SESSION_TABLE}.record->>'persistence_version')::bigint,
+                            0
+                          )=0
                     RETURNING session_id
                     """,
                     (
@@ -252,6 +265,7 @@ class PostgresMatrixSessionStore:
             "ready": ready,
             "schema": MATRIX_SESSION_TABLE,
             "optimistic_concurrency": True,
+            "legacy_zero_version_adoption": True,
             "error": None if ready else "MATRIX_SESSION_SCHEMA_NOT_READY",
         }
 
@@ -290,6 +304,7 @@ def matrix_session_persistence_status() -> dict[str, Any]:
             "durable": requested,
             "ready": False,
             "optimistic_concurrency": True,
+            "legacy_zero_version_adoption": True,
             "error": str(exc),
         }
     status["durable_requested"] = requested
