@@ -41,10 +41,12 @@ A research-document match by itself is discovery metadata, not a scientific find
 
 ## Validation
 
-Focused tests cover exact-binomial document matching, rejection of documents without the literal taxon, reverse source-binding lookup, integrity-verified publication-eligible evidence retrieval, provider distinction among graph/document/reviewed-evidence states, and explicit rendering of review/confidence metadata. The dedicated KG workflow compiles and tests these paths when GitHub allocates an executable runner.
+Focused tests cover exact-binomial document matching, rejection of documents without the literal taxon, reverse source-binding lookup, integrity-verified publication-eligible evidence retrieval, provider distinction among graph/document/reviewed-evidence states, and explicit rendering of review/confidence metadata. The dedicated KG workflow includes all bridge, source-binding, provider, and regression files for compile, pytest, Ruff, and diff hygiene when GitHub allocates an executable runner.
 
 GitHub-hosted Actions remains affected by the zero-step runner allocation incident; a job with `steps:null` is infrastructure non-execution and is not accepted as validation evidence.
 
 ## Status
 
 Implementation-complete on PR #901 pending executable CI and live read-only acceptance. No production graph mutation is introduced by this bridge. The next scientific-literature integration step is materializing reviewed `PaperKnowledge` entities, observations, hypotheses, methods, measurements, results, conclusions, references, figures, and tables through the already-defined scientific-method graph vocabulary, after the corresponding publication-governance conditions are satisfied.
+
+Exact-head hardening also moved JSON imports to module scope in the reviewed-evidence regression and keeps malformed extraction bundles fail-closed rather than allowing a damaged file to enter Calyx evidence context.
