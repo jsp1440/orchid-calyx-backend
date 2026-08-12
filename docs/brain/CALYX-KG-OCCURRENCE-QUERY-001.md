@@ -33,3 +33,7 @@ Exact-head GitHub-hosted execution remains blocked by the ongoing runner allocat
 ## Governance
 
 This path is read-only. It does not publish occurrence nodes, alter taxonomy, mutate the Knowledge Graph, or promote Candidate Knowledge. Production graph materialization remains a separate owner-governed action.
+
+## Completion note
+
+This closes the first retrieval-side acceptance slice requested during the live audit: Calyx can now convert an explicit geographic/elevation question into a bounded evidence query over the large occurrence corpus, anchor each returned species to the persisted graph taxonomy backbone, and surface the resulting observations in both deterministic and configured-provider replies. The next high-priority retrieval work is richer taxon-to-literature/evidence retrieval over the 6,725-document research corpus and scientific-method extraction graph.
