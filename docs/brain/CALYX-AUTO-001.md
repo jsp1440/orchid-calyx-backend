@@ -5,7 +5,7 @@
 IMPLEMENTED + HARDENED ON FEATURE BRANCH / NON-PRODUCTION / EXECUTABLE REPOSITORY ACCEPTANCE PENDING
 
 Branch: `feature/calyx-auto-001-durable-missions`
-Canonical Brain checkpoint: `Orchid-Continuum-Brain@72c9dc8e8da99e4a2a3ff3d2ebd26bf452aa67b1`.
+Canonical Brain checkpoint: `Orchid-Continuum-Brain@678ac97f156c7553aac1b55637abf500c44404e3`.
 
 CALYX-AUTO-001 extends the canonical `CalyxProgramJob`/dependency/lease substrate rather than introducing a second autonomous queue.
 
@@ -14,6 +14,7 @@ CALYX-AUTO-001 extends the canonical `CalyxProgramJob`/dependency/lease substrat
 - Durable mission queue and dependency continuation remain rooted in existing engineering-program tables.
 - Governance-aware deterministic priority runs before autonomous claim.
 - Governance-bound jobs remain queued/non-terminal and are not leased, attempted, or written back.
+- Runnable jobs whose role has no registered authoritative executor are also held rather than being misreported as idle.
 - Newly released governance-bound children are re-detected in the same cycle and stop at `governance_boundary`.
 - Owner/program claim admission is serialized with deterministic PostgreSQL `FOR UPDATE` locking before active-job/concurrency admission; a conditional job UPDATE remains the final claim guard.
 - Each lease carries worker identity, random token, expiry, and bounded attempt count; expired leases are recovered and post-executor heartbeat verifies continued ownership.
@@ -26,7 +27,9 @@ CALYX-AUTO-001 extends the canonical `CalyxProgramJob`/dependency/lease substrat
 
 Owner-only intents include merge, auto/automatic merge, deploy/automatic deployment, publish/publication/automatic publication, production mutation, taxonomy activation, credential access, spending, force-push, and branch deletion. Review-class intents include cross-repository actions, external sends, production migrations, and schema activation.
 
-The selector recognizes canonical action fields (`action`, `operation`, `requested_action`, action/capability lists) and now also detects clearly enabled direct nested flags such as `{"merge": true}`, `{"automatic_merge": "enabled"}`, or `{"workflow": {"production_migration": true}}`. This closes a pre-claim bypass where a governance-bound request encoded as a direct boolean/string flag could evade the action-list parser. Only explicit enabled scalar flags are interpreted as requests; false flags and evidence metadata such as `{"publication": {"doi": ...}}` remain ordinary data and do not create false holds.
+The selector recognizes canonical action fields (`action`, `operation`, `requested_action`, action/capability lists) and also detects clearly enabled direct nested flags such as `{"merge": true}`, `{"automatic_merge": "enabled"}`, or `{"workflow": {"production_migration": true}}`. This closes a pre-claim bypass where a governance-bound request encoded as a direct boolean/string flag could evade the action-list parser. Only explicit enabled scalar flags are interpreted as requests; false flags and evidence metadata such as `{"publication": {"doi": ...}}` remain ordinary data and do not create false holds.
+
+A separate false-idle condition was also closed. The prior hold scan filtered to currently registered executor roles, so runnable queued work with an unsupported role could survive unconsumed while the cycle returned `idle`. The hold scan now examines every runnable queued job. Unsupported roles remain queued with zero attempts/lease/writeback and cause the cycle to stop at the governance boundary instead of claiming that all work is idle.
 
 ## Persistence
 
@@ -42,6 +45,7 @@ The Brain writeback is an internal engineering completion ledger. It does not re
 - owner-only mission held queued/non-terminal with zero attempts/writeback;
 - direct/nested boolean and enabled-string owner/review action flags cannot bypass the pre-claim governance selector;
 - false action flags and publication evidence metadata do not create false governance holds;
+- unsupported runnable executor role is reported as a hold, not idle, while remaining queued/non-terminal with zero attempts;
 - automatic parent → newly released owner-only child → same-cycle governance stop;
 - deterministic priority ordering;
 - sequential active-job limit enforcement;
@@ -52,9 +56,7 @@ The Brain writeback is an internal engineering completion ledger. It does not re
 
 ## Validation boundary
 
-Dependency-light validation recorded before the latest hardening passed Python syntax/AST compilation for the original new modules/tests and 6/6 selector/validator assertions.
-
-The authoritative dedicated workflow provisions PostgreSQL 16 and runs the focused + adjacent autonomous-program suites, PostgreSQL claim contention, Python compile, Ruff, migration invariants, permanent non-authority assertions, and diff hygiene.
+The authoritative dedicated workflow provisions PostgreSQL 16 and runs the focused + adjacent autonomous-program suites, unsupported-role hold regression, PostgreSQL claim contention, Python compile, Ruff, migration invariants, permanent non-authority assertions, and diff hygiene.
 
 Private hosted Actions continue to exhibit zero-step allocator failures (`steps = null`) on feature heads. Such runs execute no PostgreSQL service, checkout, Ruff, tests, migration assertions, or project code. Full executable repository acceptance therefore remains pending; zero-step failure is infrastructure evidence only.
 
