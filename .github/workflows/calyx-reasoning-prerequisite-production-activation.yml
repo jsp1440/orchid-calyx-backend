@@ -43,6 +43,13 @@ jobs:
       - name: Install activation dependencies
         run: python -m pip install 'psycopg[binary]'
 
+      - name: Verify CALYX runtime and migration database targets match
+        if: ${{ inputs.profile == 'research-station-conversations' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CALYX_RUNTIME_DATABASE_URL: ${{ secrets.CALYX_RUNTIME_DATABASE_URL }}
+        run: python scripts/verify_calyx_runtime_database_target.py
+
       - name: Read-only reasoning prerequisite preflight
         if: ${{ inputs.profile == 'reasoning-prerequisites' && !inputs.apply_prerequisites }}
         env:
