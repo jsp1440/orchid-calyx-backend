@@ -1,0 +1,1 @@
+CALYX-AUTO-001 validation marker. Authoritative implementation and architecture are documented in docs/brain/CALYX-AUTO-001.md. This file exists only to trigger the dedicated exact-head validation workflow after the complete implementation/test/workflow set is present; it grants no additional runtime or governance authority.
