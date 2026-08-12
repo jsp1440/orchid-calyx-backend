@@ -13,11 +13,13 @@ on:
       - 'app/readiness/owner_audit_relationships.py'
       - 'app/calyx_conversation/graph_context.py'
       - 'app/calyx_conversation/speak_routes.py'
+      - 'app/calyx_conversation/provider.py'
       - 'tests/test_calyx_verified_graph_materializer.py'
       - 'tests/test_verified_dynamic_materializer.py'
       - 'tests/test_calyx_live_graph_audit.py'
       - 'tests/test_owner_audit_relationships.py'
       - 'tests/test_calyx_speak_graph_context.py'
+      - 'tests/test_calyx_deterministic_graph_provider.py'
       - 'docs/brain/CALYX-KG-MATERIALIZATION-001.md'
       - '.github/workflows/calyx-kg-materialization-001.yml'
 
@@ -50,11 +52,13 @@ jobs:
           app/readiness/owner_audit_relationships.py
           app/calyx_conversation/graph_context.py
           app/calyx_conversation/speak_routes.py
+          app/calyx_conversation/provider.py
           tests/test_calyx_verified_graph_materializer.py
           tests/test_verified_dynamic_materializer.py
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
           tests/test_calyx_speak_graph_context.py
+          tests/test_calyx_deterministic_graph_provider.py
       - name: Focused integration tests
         run: >-
           pytest -q
@@ -63,6 +67,7 @@ jobs:
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
           tests/test_calyx_speak_graph_context.py
+          tests/test_calyx_deterministic_graph_provider.py
       - name: Adjacent graph and Speak regressions
         run: >-
           pytest -q
@@ -86,11 +91,13 @@ jobs:
           app/readiness/owner_audit_relationships.py
           app/calyx_conversation/graph_context.py
           app/calyx_conversation/speak_routes.py
+          app/calyx_conversation/provider.py
           tests/test_calyx_verified_graph_materializer.py
           tests/test_verified_dynamic_materializer.py
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
           tests/test_calyx_speak_graph_context.py
+          tests/test_calyx_deterministic_graph_provider.py
       - name: Permanent publication and read-only guards
         run: |
           grep -q 'PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS' runtime/knowledge_graph/production_materializer.py
@@ -108,5 +115,7 @@ jobs:
           grep -q 'explicit_binomial_exact_display_label_only' app/calyx_conversation/graph_context.py
           grep -q 'knowledge_graph_mutation.*False' app/calyx_conversation/graph_context.py
           grep -q 'persisted_graph_context_is_evidence' app/calyx_conversation/speak_routes.py
+          grep -q 'calyx-governed-summary-v2-graph' app/calyx_conversation/provider.py
+          grep -q 'graph connectivity alone does not justify' app/calyx_conversation/provider.py
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
