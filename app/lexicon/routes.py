@@ -11,14 +11,10 @@ from psycopg.rows import dict_row
 
 from app.concepts.repositories import concept_database_url
 from app.scientific_synthesis.language import BotanicalLanguageService
-from app.scientific_synthesis.language_routes import (
-    _concept_search,
-    _load_concept_service,
-)
+from app.scientific_synthesis.language_routes import _concept_search, _load_concept_service
 
 from .intake_routes import router as intake_router
 
-# Included by app.routers.calyx_core whose parent prefix is /api.
 router = APIRouter(prefix="/lexicon", tags=["illustrated-orchid-lexicon"])
 router.include_router(intake_router)
 
@@ -168,16 +164,52 @@ def _load_entries(*, q: str | None = None, limit: int = 500) -> list[dict[str, A
             for row in cur.fetchall():
                 defs_by[row["concept_id"]].append(dict(row))
     except (RuntimeError, psycopg.Error) as exc:
-        raise HTTPException(
-            status_code=503,
-            detail={"code": "LEXICON_DATABASE_UNAVAILABLE"},
-        ) from exc
+        raise HTTPException(status_code=503, detail={"code": "LEXICON_DATABASE_UNAVAILABLE"}) from exc
 
     return [
         _entry_payload(concept, labels_by[concept["concept_id"]], defs_by[concept["concept_id"]])
         for concept in concepts
         if labels_by[concept["concept_id"]]
     ]
+
+
+def _load_entry_by_concept_id(concept_id: UUID) -> dict[str, Any] | None:
+    try:
+        with _connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT * FROM oc_concepts.concepts
+                WHERE concept_id=%s AND status='ACTIVE' AND review_state='APPROVED'
+                """,
+                (concept_id,),
+            )
+            concept_row = cur.fetchone()
+            if concept_row is None:
+                return None
+            concept = dict(concept_row)
+            cur.execute(
+                """
+                SELECT * FROM oc_concepts.concept_labels
+                WHERE concept_id=%s AND review_state='APPROVED'
+                ORDER BY CASE label_type WHEN 'PREFERRED' THEN 0 ELSE 1 END, normalized_label
+                """,
+                (concept_id,),
+            )
+            labels = [dict(row) for row in cur.fetchall()]
+            if not labels:
+                return None
+            cur.execute(
+                """
+                SELECT * FROM oc_concepts.concept_definitions
+                WHERE concept_id=%s AND review_state='APPROVED'
+                ORDER BY definition_type, revised_at DESC
+                """,
+                (concept_id,),
+            )
+            definitions = [dict(row) for row in cur.fetchall()]
+    except (RuntimeError, psycopg.Error) as exc:
+        raise HTTPException(status_code=503, detail={"code": "LEXICON_DATABASE_UNAVAILABLE"}) from exc
+    return _entry_payload(concept, labels, definitions)
 
 
 @router.get("")
@@ -190,6 +222,26 @@ def list_entries(
         "release": "CALYX-LEXICON-INTEGRATION-001",
         "count": len(entries),
         "entries": entries,
+        "source_of_truth": "oc_concepts",
+        "automatic_publication": False,
+        "visibility": "ACTIVE + APPROVED concepts only",
+    }
+
+
+@router.get("/concepts/{concept_id}")
+def get_approved_concept(concept_id: UUID) -> dict[str, Any]:
+    entry = _load_entry_by_concept_id(concept_id)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "LEXICON_APPROVED_CONCEPT_NOT_FOUND",
+                "message": "No ACTIVE + APPROVED Lexicon concept is available for this concept_id.",
+            },
+        )
+    return {
+        "release": "CALYX-LEXICON-INTEGRATION-001",
+        "entry": entry,
         "source_of_truth": "oc_concepts",
         "automatic_publication": False,
         "visibility": "ACTIVE + APPROVED concepts only",

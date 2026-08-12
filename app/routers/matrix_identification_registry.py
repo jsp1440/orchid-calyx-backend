@@ -22,11 +22,10 @@ class RegistryCharacterInput(BaseModel):
     character: str = Field(min_length=1, max_length=120)
     label: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
-    value_type: Literal["categorical", "multi_state", "numeric", "numeric_range"] = (
-        "categorical"
-    )
+    value_type: Literal["categorical", "multi_state", "numeric", "numeric_range"] = "categorical"
     weight: float = Field(default=1.0, ge=0, le=100)
     provenance: dict[str, Any] | None = None
+    concept_id: str | None = Field(default=None, max_length=36)
 
 
 class RegistryCandidateInput(BaseModel):
@@ -44,7 +43,6 @@ class RegistryCreateRequest(BaseModel):
     characters: list[RegistryCharacterInput] = Field(min_length=1, max_length=500)
     candidates: list[RegistryCandidateInput] = Field(min_length=1, max_length=5000)
     provenance: dict[str, Any]
-    actor: str = Field(min_length=1, max_length=200)
 
 
 class RegistryObservationInput(BaseModel):
@@ -61,10 +59,16 @@ class RegistryEvaluateRequest(BaseModel):
     limit: int = Field(default=20, ge=1, le=200)
 
 
-router = APIRouter(
-    prefix="/api/matrix-identification/registry",
-    tags=["matrix-identification-registry"],
-)
+router = APIRouter(prefix="/api/matrix-identification/registry", tags=["matrix-identification-registry"])
+
+
+def _actor(auth: Any) -> str:
+    if not isinstance(auth, dict):
+        raise HTTPException(status_code=401, detail="authenticated actor unavailable")
+    actor = str(auth.get("actor") or "").strip()
+    if not actor:
+        raise HTTPException(status_code=401, detail="authenticated actor unavailable")
+    return actor
 
 
 @router.get("")
@@ -89,7 +93,7 @@ def get_version(
 @router.post("")
 def create_version(
     payload: RegistryCreateRequest,
-    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+    auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     try:
         from runtime.matrix_identification import Candidate
@@ -102,7 +106,7 @@ def create_version(
             characters=[RegistryCharacter(**item.model_dump()) for item in payload.characters],
             candidates=[Candidate(**item.model_dump()) for item in payload.candidates],
             provenance=payload.provenance,
-            actor=payload.actor,
+            actor=_actor(auth),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -124,19 +128,11 @@ def evaluate_version(
                 character=item.character,
                 value=item.value,
                 certainty=item.certainty,
-                weight=(
-                    item.weight
-                    if item.weight is not None
-                    else character_weights.get(item.character, 1.0)
-                ),
+                weight=item.weight if item.weight is not None else character_weights.get(item.character, 1.0),
             )
             for item in payload.observations
         ]
-        result = rank_candidates(
-            observations,
-            candidates_from_registry(record),
-            limit=payload.limit,
-        )
+        result = rank_candidates(observations, candidates_from_registry(record), limit=payload.limit)
         result["registry"] = {
             "registry_id": record["registry_id"],
             "version": record["version"],

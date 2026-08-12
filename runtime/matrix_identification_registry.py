@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from runtime.matrix_identification import Candidate
 
@@ -27,6 +28,7 @@ class RegistryCharacter:
     value_type: str = "categorical"
     weight: float = 1.0
     provenance: dict[str, Any] | None = None
+    concept_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,9 +51,7 @@ class RegistryVersion:
 
 
 def registry_root() -> Path:
-    return Path(
-        os.getenv("CALYX_MATRIX_REGISTRY_DIR", "/tmp/calyx/matrix-identification-registry")
-    )
+    return Path(os.getenv("CALYX_MATRIX_REGISTRY_DIR", "/tmp/calyx/matrix-identification-registry"))
 
 
 def _safe_component(value: str, field: str) -> str:
@@ -62,12 +62,7 @@ def _safe_component(value: str, field: str) -> str:
 
 
 def _canonical_payload(payload: dict[str, Any]) -> bytes:
-    return json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
 def _checksum(payload: dict[str, Any]) -> str:
@@ -81,6 +76,11 @@ def _validate_character(character: RegistryCharacter) -> None:
         raise ValueError("character weight must be between 0 and 100")
     if character.value_type not in {"categorical", "multi_state", "numeric", "numeric_range"}:
         raise ValueError(f"unsupported character value_type: {character.value_type}")
+    if character.concept_id is not None:
+        try:
+            UUID(character.concept_id)
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ValueError("character concept_id must be a canonical concept UUID") from exc
 
 
 def _validate_candidate(candidate: Candidate, character_ids: set[str]) -> None:
@@ -88,10 +88,7 @@ def _validate_candidate(candidate: Candidate, character_ids: set[str]) -> None:
         raise ValueError("candidate taxon_id and scientific_name are required")
     unknown = set(candidate.states) - character_ids
     if unknown:
-        raise ValueError(
-            "candidate contains states for unregistered characters: "
-            + ", ".join(sorted(unknown))
-        )
+        raise ValueError("candidate contains states for unregistered characters: " + ", ".join(sorted(unknown)))
 
 
 def create_registry_version(
