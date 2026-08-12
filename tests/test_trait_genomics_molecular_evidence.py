@@ -24,17 +24,17 @@ def test_candidate_requires_real_molecular_feature():
 
 
 def test_candidate_id_is_deterministic():
-    payload = dict(
-        canonical_taxon_id="taxon-1",
-        scientific_name="Example orchid",
-        evidence_kind="expression_association",
-        trait_predicate="floral_scent",
-        association_type="differential_expression_associated_with",
-        gene_id="OC-GENE-1",
-        evidence_text="Expression differs with floral scent phenotype.",
-        source_id="pmid:123",
-        confidence_score=0.8,
-    )
+    payload = {
+        "canonical_taxon_id": "taxon-1",
+        "scientific_name": "Example orchid",
+        "evidence_kind": "expression_association",
+        "trait_predicate": "floral_scent",
+        "association_type": "differential_expression_associated_with",
+        "gene_id": "OC-GENE-1",
+        "evidence_text": "Expression differs with floral scent phenotype.",
+        "source_id": "pmid:123",
+        "confidence_score": 0.8,
+    }
     first = MolecularEvidenceCandidate(**payload)
     second = MolecularEvidenceCandidate(**payload)
     assert first.stable_id() == second.stable_id()
