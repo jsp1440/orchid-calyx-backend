@@ -23,7 +23,7 @@ from .auto_mission_models import (
     CalyxProgramValidationEvent,
 )
 from .engineering_core import EngineeringWorkIdentity, TerminalOutcome
-from .executor import ExecutionReceipt
+from .executor import ExecutionReceipt, GovernedAssignment
 from .executor_registry import AuthoritativeExecutorRegistry, RegisteredExecutor
 from .models import utcnow
 from .persisted_scheduler import project_persisted_schedule
@@ -330,7 +330,7 @@ class AutoMissionCoordinator:
         owner: str,
         job: CalyxProgramJob,
         timeout_seconds: int,
-    ):
+    ) -> GovernedAssignment:
         assignment = governed_assignment_from_claimed_job(
             self.db,
             owner=owner,
@@ -355,6 +355,26 @@ class AutoMissionCoordinator:
             "previous_attempt_count": latest.attempt_count,
         }
         return replace(assignment, inputs=inputs, input_checksum=None)
+
+    @staticmethod
+    def _verify_receipt_binding(
+        *,
+        registered: RegisteredExecutor,
+        assignment: GovernedAssignment,
+        receipt: ExecutionReceipt,
+    ) -> None:
+        """Bind a self-consistent receipt to the exact dispatched assignment/executor."""
+        receipt.verify()
+        if (
+            receipt.assignment_id != assignment.assignment_id
+            or receipt.program_id != assignment.program_id
+            or receipt.job_key != assignment.job_key
+        ):
+            raise ValueError("RECEIPT_IDENTITY_MISMATCH")
+        if receipt.executor_key != registered.executor.executor_key:
+            raise ValueError("RECEIPT_EXECUTOR_IDENTITY_MISMATCH")
+        if receipt.input_checksum != assignment.verified_input_checksum():
+            raise ValueError("RECEIPT_INPUT_CHECKSUM_MISMATCH")
 
     def record_validation(
         self,
@@ -743,7 +763,7 @@ class AutoMissionCoordinator:
                     {"code": "CLAIMED_JOB_LEASE_TOKEN_MISSING"},
                 )
             registered: RegisteredExecutor | None = None
-            assignment = None
+            assignment: GovernedAssignment | None = None
             try:
                 registered = self.registry.require_authoritative(job.role_key)
                 assignment = self.assignment_with_feedback(
@@ -752,6 +772,11 @@ class AutoMissionCoordinator:
                     timeout_seconds=timeout_seconds,
                 )
                 receipt = registered.executor.execute(assignment)
+                self._verify_receipt_binding(
+                    registered=registered,
+                    assignment=assignment,
+                    receipt=receipt,
+                )
                 self.worker.base.heartbeat(
                     program_job_id=job.program_job_id,
                     worker_id=worker_id,
