@@ -43,6 +43,7 @@ SCIENTIFIC_METHOD_EDGE_TYPE_DOMAIN: Final[dict[str, str]] = {
     "states_limitation": "scientific_method",
     "makes_recommendation": "scientific_method",
     "tests_hypothesis": "scientific_method",
+    "about_taxon": "scientific_method",
     "measurement_of": "scientific_method",
     "measured_at": "scientific_method",
     "derived_from_measurement": "scientific_method",
