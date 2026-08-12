@@ -6,8 +6,10 @@ on:
       - 'runtime/knowledge_graph/production_materializer.py'
       - 'scripts/materialize_verified_graph_relationships.py'
       - 'app/readiness/live_graph_audit.py'
+      - 'app/readiness/owner_audit_relationships.py'
       - 'tests/test_calyx_verified_graph_materializer.py'
       - 'tests/test_calyx_live_graph_audit.py'
+      - 'tests/test_owner_audit_relationships.py'
       - 'docs/brain/CALYX-KG-MATERIALIZATION-001.md'
       - '.github/workflows/calyx-kg-materialization-001.yml'
 
@@ -33,13 +35,16 @@ jobs:
           runtime/knowledge_graph/production_materializer.py
           scripts/materialize_verified_graph_relationships.py
           app/readiness/live_graph_audit.py
+          app/readiness/owner_audit_relationships.py
           tests/test_calyx_verified_graph_materializer.py
           tests/test_calyx_live_graph_audit.py
+          tests/test_owner_audit_relationships.py
       - name: Focused integration tests
         run: >-
           pytest -q
           tests/test_calyx_verified_graph_materializer.py
           tests/test_calyx_live_graph_audit.py
+          tests/test_owner_audit_relationships.py
       - name: Adjacent graph regressions
         run: >-
           pytest -q
@@ -56,8 +61,10 @@ jobs:
           runtime/knowledge_graph/production_materializer.py
           scripts/materialize_verified_graph_relationships.py
           app/readiness/live_graph_audit.py
+          app/readiness/owner_audit_relationships.py
           tests/test_calyx_verified_graph_materializer.py
           tests/test_calyx_live_graph_audit.py
+          tests/test_owner_audit_relationships.py
       - name: Permanent publication guards
         run: |
           grep -q 'PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS' runtime/knowledge_graph/production_materializer.py
@@ -67,5 +74,6 @@ jobs:
           grep -q 'production_graph_mutation.*summary' runtime/knowledge_graph/production_materializer.py
           grep -q 'taxonomy_to_literature' app/readiness/live_graph_audit.py
           grep -q 'taxonomy_to_habitat' app/readiness/live_graph_audit.py
+          grep -q 'persisted_knowledge_graph_audit' app/readiness/owner_audit_relationships.py
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
