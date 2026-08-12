@@ -179,13 +179,51 @@ class FileLiteratureSourceBindingRepository:
             raise LiteratureSourceBindingError("INVALID_PAPER_ID")
         return self.root / paper_id / "source-binding.json"
 
+    @staticmethod
+    def _load_path(path: Path) -> CanonicalLiteratureSourceBinding:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload.pop("binding_fingerprint", None)
+        return CanonicalLiteratureSourceBinding(**payload)
+
     def get(self, paper_id: str) -> CanonicalLiteratureSourceBinding | None:
         path = self._path(paper_id)
         if not path.is_file():
             return None
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        payload.pop("binding_fingerprint", None)
-        return CanonicalLiteratureSourceBinding(**payload)
+        return self._load_path(path)
+
+    def find_by_source_object(
+        self,
+        source_object_type: str,
+        source_object_id: int,
+        *,
+        limit: int = 8,
+    ) -> list[CanonicalLiteratureSourceBinding]:
+        """Reverse-resolve canonical bindings without mutating extraction state.
+
+        Source bindings are persisted per paper rather than in a central index.
+        This bounded scan provides the missing read path needed to connect a
+        canonical literature-document id back to reviewed extraction output.
+        Invalid/tampered binding files fail closed rather than being returned.
+        """
+        expected_type = str(source_object_type or "").strip().casefold()
+        expected_id = int(source_object_id)
+        maximum = max(1, min(int(limit), 50))
+        if not expected_type or expected_id <= 0 or not self.root.is_dir():
+            return []
+        matches: list[CanonicalLiteratureSourceBinding] = []
+        for path in sorted(self.root.glob("*/source-binding.json")):
+            try:
+                binding = self._load_path(path)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                continue
+            if binding.source_object_type.casefold() != expected_type:
+                continue
+            if binding.source_object_id != expected_id:
+                continue
+            matches.append(binding)
+            if len(matches) >= maximum:
+                break
+        return matches
 
     def create(
         self, binding: CanonicalLiteratureSourceBinding
