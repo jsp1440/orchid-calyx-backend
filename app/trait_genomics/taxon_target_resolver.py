@@ -9,8 +9,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.species_dossier.service import normalize_scientific_name
-
-from .molecular_harvester import MolecularHarvestTarget
+from app.trait_genomics.molecular_harvester import MolecularHarvestTarget
 
 
 ResolutionStatus = Literal["resolved", "unresolved", "ambiguous", "invalid"]
