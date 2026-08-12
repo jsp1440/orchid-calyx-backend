@@ -223,12 +223,13 @@ def derive_registry_version_with_concept_mappings(
     for item in source_characters:
         character_id = str(item["character"])
         concept_id = concept_mappings.get(character_id, item.get("concept_id"))
+        source_weight = item.get("weight")
         character = RegistryCharacter(
             character=character_id,
             label=str(item["label"]),
             description=item.get("description"),
             value_type=str(item.get("value_type") or "categorical"),
-            weight=float(item.get("weight", 1.0) or 1.0),
+            weight=float(source_weight) if source_weight is not None else 1.0,
             provenance=item.get("provenance"),
             concept_id=str(concept_id) if concept_id is not None else None,
         )
