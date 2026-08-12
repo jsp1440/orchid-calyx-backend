@@ -29,6 +29,32 @@ def test_slug_lookup_requires_exact_canonical_slug_or_label(monkeypatch):
     assert entry["slug"] == "velamen"
 
 
+def test_slug_lookup_tries_hyphenated_and_space_normalized_forms(monkeypatch):
+    queries: list[str] = []
+
+    def fake_load_entries(*, q: str, limit: int):
+        queries.append(q)
+        if q == "labellum lip":
+            return [
+                {
+                    "id": "concept-lip",
+                    "concept_id": "concept-lip",
+                    "slug": "labellum-lip",
+                    "preferred_term": "Labellum / Lip",
+                    "synonyms": [],
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(routes, "_load_entries", fake_load_entries)
+
+    entry = routes._load_entry_by_slug("labellum-lip")
+
+    assert entry is not None
+    assert entry["slug"] == "labellum-lip"
+    assert queries == ["labellum-lip", "labellum lip"]
+
+
 def test_slug_lookup_does_not_return_definition_only_near_match(monkeypatch):
     monkeypatch.setattr(
         routes,
