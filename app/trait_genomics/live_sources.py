@@ -293,17 +293,20 @@ def map_molecular_association_row(
     metadata = _base_metadata(row, table, confidence_basis)
     if marker_name:
         metadata["marker_name"] = marker_name
+    evidence_kind = (_text(row.get("evidence_kind")) or "").lower()
+    if evidence_kind == EvidenceKind.SELECTION_ASSOCIATION.value:
+        kind = EvidenceKind.SELECTION_ASSOCIATION
+    elif expression or evidence_kind == EvidenceKind.EXPRESSION_ASSOCIATION.value:
+        kind = EvidenceKind.EXPRESSION_ASSOCIATION
+    else:
+        kind = EvidenceKind.GENETIC_ASSOCIATION
     return EvidenceRecord(
         evidence_id=_stable_evidence_id("molecular", table, row),
         taxon_id=taxon_id,
         taxon_name=taxon_name,
-        kind=(
-            EvidenceKind.EXPRESSION_ASSOCIATION
-            if expression
-            else EvidenceKind.GENETIC_ASSOCIATION
-        ),
+        kind=kind,
         predicate=predicate,
-        value=_first(row, ("effect", "effect_size", "association_value", "value")),
+        value=_first(row, ("effect", "effect_size", "association_value", "value", "effect_value")),
         gene_id=gene_id,
         protein_id=protein_id,
         sequence_accession=sequence_accession,
@@ -444,16 +447,19 @@ class LiveScientificEvidenceBuilder:
                         "columns": [],
                     }
                     continue
+                row_count = self._count(cur, candidate.table)
                 details[domain] = {
                     "available": True,
                     "source": candidate.table,
-                    "row_count": self._count(cur, candidate.table),
+                    "row_count": row_count,
+                    "has_evidence": row_count > 0,
                     "columns": list(self._columns(cur, candidate.table)),
                 }
 
+        required_domains = ("traits", "interactions", "molecular_association")
         three_domain_ready = all(
-            details[domain]["available"]
-            for domain in ("traits", "interactions", "molecular_association")
+            details[domain]["available"] and details[domain]["row_count"] > 0
+            for domain in required_domains
         )
         return {
             "contract": "calyx-tig-live-evidence-readiness-v1",
@@ -461,8 +467,9 @@ class LiveScientificEvidenceBuilder:
             "three_domain_discovery_ready": three_domain_ready,
             "phylogenetic_context_available": details["phylogenetic_context"]["available"],
             "scientific_boundary": (
-                "Raw phylogenetic sequence presence is contextual evidence only and is not "
-                "treated as a genetic or expression association."
+                "A source object is not evidence readiness: all three required domains must "
+                "contain at least one evidence row. Raw phylogenetic sequence presence is "
+                "contextual evidence only and is not treated as a genetic or expression association."
             ),
         }
 
@@ -627,6 +634,7 @@ class LiveScientificEvidenceBuilder:
                 {
                     EvidenceKind.GENETIC_ASSOCIATION,
                     EvidenceKind.EXPRESSION_ASSOCIATION,
+                    EvidenceKind.SELECTION_ASSOCIATION,
                 },
             )
         )
