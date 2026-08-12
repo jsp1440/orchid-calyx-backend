@@ -29,6 +29,8 @@ Finish the runtime connection between the migrated Famous AI Illustrated Orchid 
 12. The Famous adaptive Entry Hero has been restored over the canonical record loader. It provides record-driven summary cards plus Quick / Learn / Scientific depth controls. The depth controls change navigation emphasis only; they do not alter, hide, publish, or synthesize scientific record content.
 13. A Connected Knowledge panel has been restored using only the active `LexiconEntry` record: broader/narrower concepts, related terminology, explicit relationship edges, example taxa, and identification character states. The separate demo `knowledgeGraph.ts` dataset remains excluded from canonical authority.
 14. Calyx page/session context remains attached to the active lexicon concept, so the restored visual experience and the canonical conversational workspace share the same current-object identity.
+15. The full source export showed that the first GitHub migration had stripped most of the rich Resupination layers. A dedicated draft enrichment now restores high-value source-backed anatomy, morphology, developmental mechanism, functional significance, evolutionary interpretation, conservation recording guidance, relationship edges, schematic asset metadata, and proposed funding recognition into the single Famous fallback Resupination record. These fields remain draft migration content and are suppressed when a canonical reviewed record supplies governed scientific fields.
+16. Codex review identified a visual/provenance mismatch in the restored Entry Hero. The fix now renders the hard-coded Resupination schematic only when a matching `resupination-sequence` asset exists; otherwise a canonical URL asset is shown or the interface displays an honest in-development state. Visual title/kind/provenance and displayed asset therefore derive from the same record metadata.
 
 ## Full-export audit finding
 
@@ -53,6 +55,7 @@ Those legacy services are migration source material only. Canonical writes remai
 - Migration overlays preserve presentation continuity only; they are not canonical evidence and do not confer scientific review status.
 - Recovered full-export records remain `draft` fallback content until canonical review/migration occurs.
 - Restored visual components render only fields already present on the active record; they do not manufacture knowledge-graph edges, conservation claims, evidence, or review state.
+- Draft Famous scientific enrichment never upgrades a canonical concept's review state or fills missing governed scientific fields on an ACTIVE + APPROVED canonical record.
 
 ## Validation boundary
 
