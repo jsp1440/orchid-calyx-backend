@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.security import verify_owner_or_api_key
+from app.security import verify_owner_or_api_key, verify_owner_session
 
 from .discovery import TraitGenomicsDiscoveryEngine
 from .models import DiscoveryDataset, DiscoveryResult
@@ -28,8 +28,7 @@ class DiscoveryRunRequest(BaseModel):
 
 class ArchiveRequest(BaseModel):
     dataset: DiscoveryDataset
-    result: DiscoveryResult
-    root: str | None = None
+    result: DiscoveryResult | None = None
 
 
 class ZenodoDraftRequest(BaseModel):
@@ -50,6 +49,7 @@ def status():
         "zenodo_base": config.base_url,
         "zenodo_community": config.community,
         "causal_policy": "hypotheses_are_non_causal_until_reviewed",
+        "zenodo_publication_enabled": False,
     }
 
 
@@ -69,9 +69,21 @@ def discover(payload: DiscoveryRunRequest):
 
 @router.post("/archive/build")
 def build_archive(payload: ArchiveRequest):
-    root = payload.root or os.getenv("CALYX_SCIENTIFIC_ARCHIVE_STAGING", "/var/data/scientific_archive_staging")
-    release_dir = ZenodoArchiveBridge().build_release(payload.dataset, payload.result, root)
-    return {"release_dir": str(release_dir), "files": sorted(p.name for p in Path(release_dir).iterdir())}
+    # The server derives the canonical result so a caller cannot combine evidence
+    # from one dataset with hypotheses/counts from another.
+    result = TraitGenomicsDiscoveryEngine().discover(payload.dataset)
+    if payload.result is not None and payload.result.dataset_id != payload.dataset.dataset_id:
+        raise HTTPException(status_code=422, detail="Archive result dataset_id does not match dataset")
+
+    root = os.getenv("CALYX_SCIENTIFIC_ARCHIVE_STAGING", "/var/data/scientific_archive_staging")
+    release_dir = ZenodoArchiveBridge().build_release(payload.dataset, result, root)
+    return {
+        "release_dir": str(release_dir),
+        "files": sorted(p.name for p in Path(release_dir).iterdir()),
+        "dataset_id": payload.dataset.dataset_id,
+        "evidence_count": result.evidence_count,
+        "hypothesis_count": len(result.hypotheses),
+    }
 
 
 @router.post("/zenodo/drafts")
@@ -86,10 +98,17 @@ def create_zenodo_draft(payload: ZenodoDraftRequest):
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@router.post("/zenodo/drafts/{deposition_id}/publish")
+@router.post(
+    "/zenodo/drafts/{deposition_id}/publish",
+    dependencies=[Depends(verify_owner_session)],
+)
 def publish_zenodo_draft(deposition_id: int):
-    # Publication is intentionally a separately authenticated explicit action.
-    try:
-        return ZenodoArchiveBridge().publish(deposition_id)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    # Public publication remains disabled until a durable scientific-release
+    # approval record is implemented. Draft creation is intentionally separate.
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "Zenodo publication is disabled in Calyx. Review the draft in Zenodo and "
+            "publish manually until the owner-approved release ledger is available."
+        ),
+    )
