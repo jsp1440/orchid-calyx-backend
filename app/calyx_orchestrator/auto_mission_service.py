@@ -648,6 +648,10 @@ class AutoMissionCoordinator:
                 lease_seconds=lease_seconds,
             )
             if job is None:
+                held = self.worker.hold_governance_bound(
+                    owner=owner,
+                    roles=self.registry.eligible_role_keys,
+                )
                 stop_reason = "governance_boundary" if held else "idle"
                 return AutoMissionCycleResult(
                     owner,
