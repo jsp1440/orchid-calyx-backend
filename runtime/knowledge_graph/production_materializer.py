@@ -27,12 +27,18 @@ CONFIRMATION_TOKEN = "PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS"
 DEFAULT_DRY_RUN_MAX_ROWS_PER_DOMAIN = 10_000
 MAX_BATCH_SIZE = 5_000
 
-# Audit-priority domains whose read projections are already verified in
-# source_registry.py. Runtime selection still intersects the live registry and
-# adapter map, so a domain cannot become publishable merely by appearing here.
+# Integration-priority domains whose read projections are already verified in
+# source_registry.py. Traits are intentionally included: the production graph
+# currently reflects only a partial materialization of the resolved trait corpus,
+# and omitting an already-verified domain from this operator would perpetuate the
+# exact integration gap this module exists to close.
+#
+# Runtime selection still intersects the live registry and adapter map, so a
+# domain cannot become publishable merely by appearing here.
 AUDIT_PRIORITY_DOMAINS = (
     "media",
     "occurrences",
+    "traits",
     "climate",
     "literature",
     "pollinators",
@@ -156,7 +162,7 @@ def materialize_verified_relationships(
             batch_size=batch,
         )
         report["materialization"] = {
-            "contract": "calyx-verified-relationship-materialization-v2",
+            "contract": "calyx-verified-relationship-materialization-v3",
             "requested_domains": list(selection.requested),
             "selected_domains": list(selection.selected),
             "production_graph_mutation": False,
@@ -173,7 +179,7 @@ def materialize_verified_relationships(
     )
     summary = _publication_summary(report)
     report["materialization"] = {
-        "contract": "calyx-verified-relationship-materialization-v2",
+        "contract": "calyx-verified-relationship-materialization-v3",
         "requested_domains": list(selection.requested),
         "selected_domains": list(selection.selected),
         "production_graph_mutation": summary["committed"],
