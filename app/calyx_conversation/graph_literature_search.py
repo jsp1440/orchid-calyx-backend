@@ -1,11 +1,12 @@
 """Read-only literature retrieval across persisted graph and research documents.
 
 The primary path searches persisted ``publication`` nodes and their taxon-link
-provenance.  Because the live audit proved that the graph currently represents
+provenance. Because the live audit proved that the graph currently represents
 only a small subset of the 6,725-document research corpus, an exact-binomial
 fallback also searches ``public.research_documents`` for literal taxon mentions.
-The fallback is metadata/document retrieval only: a literal mention is never
-promoted into a scientific claim or a persisted graph edge.
+Where a corpus document has a canonical literature-extraction binding, the result
+is enriched with integrity-verified, publication-eligible normalized evidence.
+No literal mention is promoted into a scientific claim or persisted graph edge.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from typing import Any
 
 import psycopg
 
+from .extracted_literature_evidence import reviewed_evidence_for_documents
 from .graph_context import explicit_taxon_names
 
 MAX_QUERY_TERMS = 6
@@ -121,6 +123,7 @@ def _research_document_matches(
                 "year": row[3],
                 "document_type": row[4],
                 "associated_taxa": matched_taxa,
+                "reviewed_evidence": [],
                 "provenance": {
                     "graph_node_type": None,
                     "relationship": "literal_binomial_mention",
@@ -131,6 +134,28 @@ def _research_document_matches(
             }
         )
     return results
+
+
+def _attach_reviewed_evidence(results: list[dict[str, Any]]) -> dict[str, Any]:
+    document_ids = [
+        item.get("source_pk")
+        for item in results
+        if item.get("source_table") == "public.research_documents"
+    ]
+    bridge = reviewed_evidence_for_documents(document_ids)
+    documents = bridge.get("documents") or {}
+    for item in results:
+        if item.get("source_table") != "public.research_documents":
+            continue
+        document = documents.get(str(item.get("source_pk"))) or {}
+        records = list(document.get("records") or [])
+        item["reviewed_evidence"] = records
+        item["extraction_evidence_status"] = document.get("status")
+        item["provenance"]["reviewed_extraction_binding"] = bool(
+            document.get("bindings")
+        )
+        item["provenance"]["publication_eligible_evidence"] = bool(records)
+    return bridge
 
 
 def search_persisted_literature(
@@ -210,6 +235,7 @@ def search_persisted_literature(
                             "year": payload.get("year"),
                             "edge_strength": payload.get("edge_strength"),
                             "associated_taxa": taxa,
+                            "reviewed_evidence": [],
                             "provenance": {
                                 "graph_node_type": "publication",
                                 "relationship": "documented_by",
@@ -239,8 +265,10 @@ def search_persisted_literature(
             "results": [],
         }
 
+    bridge = _attach_reviewed_evidence(results)
     graph_count = sum(bool(item.get("kg_node_id")) for item in results)
     document_count = len(results) - graph_count
+    reviewed_count = sum(len(item.get("reviewed_evidence") or []) for item in results)
     return {
         "status": "available",
         "read_only": True,
@@ -251,5 +279,11 @@ def search_persisted_literature(
         "result_count": len(results),
         "persisted_graph_results": graph_count,
         "research_document_fallback_results": document_count,
+        "publication_eligible_evidence_records": reviewed_count,
+        "extraction_evidence_bridge": {
+            "status": bridge.get("status"),
+            "reviewed_record_count": bridge.get("reviewed_record_count", 0),
+            "automatic_publication": False,
+        },
         "results": results,
     }
