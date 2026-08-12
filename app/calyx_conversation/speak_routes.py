@@ -46,32 +46,18 @@ def _is_casual(message: str) -> bool:
     if len(normalized) > 120:
         return False
     casual = {
-        "hi",
-        "hello",
-        "hey",
-        "good morning",
-        "good afternoon",
-        "good evening",
-        "thanks",
-        "thank you",
-        "hello calyx",
-        "hi calyx",
-        "hey calyx",
+        "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+        "thanks", "thank you", "hello calyx", "hi calyx", "hey calyx",
     }
     if normalized in casual:
         return True
     if re.match(r"^(hello|hi|hey)\s+calyx(?:[.!?,;:]|\s|$)", normalized):
         capability_phrases = {
-            "what are you able to help me with",
-            "what can you help me with",
-            "what can you do",
-            "how can you help",
+            "what are you able to help me with", "what can you help me with",
+            "what can you do", "how can you help",
         }
         remainder = re.sub(
-            r"^(hello|hi|hey)\s+calyx(?:[.!?,;:]|\s)*",
-            "",
-            normalized,
-            count=1,
+            r"^(hello|hi|hey)\s+calyx(?:[.!?,;:]|\s)*", "", normalized, count=1
         ).strip(" .!?,;:")
         return not remainder or remainder in capability_phrases
     return False
@@ -96,32 +82,21 @@ def _safe_retrieval(message: str, retrieval_limit: int) -> dict[str, Any]:
         return result
     except (ValueError, TypeError, RuntimeError) as exc:
         return {
-            "results": [],
-            "total_eligible_results": 0,
-            "retrieval_mode": "HYBRID",
-            "status": "unavailable",
-            "error": str(exc),
+            "results": [], "total_eligible_results": 0, "retrieval_mode": "HYBRID",
+            "status": "unavailable", "error": str(exc),
         }
 
 
 def _run_governed_turn(
-    *,
-    owner: str,
-    conversation_id: str,
-    project_id: str,
-    message: str,
-    research_mode: str,
-    retrieval_limit: int,
+    *, owner: str, conversation_id: str, project_id: str, message: str,
+    research_mode: str, retrieval_limit: int,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, str | None, bool]:
     casual = _is_casual(message) and research_mode != "always"
     if casual:
         return {
-            "results": [],
-            "total_eligible_results": 0,
-            "retrieval_mode": "HYBRID",
-            "status": "not_requested",
+            "results": [], "total_eligible_results": 0,
+            "retrieval_mode": "HYBRID", "status": "not_requested",
         }, None, None, True
-
     retrieval = _safe_retrieval(message, retrieval_limit)
     mission: dict[str, Any] | None = None
     mission_error: str | None = None
@@ -130,20 +105,13 @@ def _run_governed_turn(
     )
     if should_run_mission:
         history = STORE.history_text(
-            conversation_id,
-            owner=owner,
-            turns=6,
-            max_chars=1800,
+            conversation_id, owner=owner, turns=6, max_chars=1800
         )
         try:
             mission = BRAIN_MISSION_SERVICE.start(
                 question=_mission_question(history, message),
-                tenant_id=owner,
-                project_id=project_id,
-                actor=owner,
-                max_sources=20,
-                max_steps=10,
-                timeout_seconds=30,
+                tenant_id=owner, project_id=project_id, actor=owner,
+                max_sources=20, max_steps=10, timeout_seconds=30,
             )
         except (ValueError, RuntimeError) as exc:
             mission_error = str(exc)
@@ -154,19 +122,16 @@ def _run_governed_turn(
 def speak_status(auth: AuthDependency) -> dict[str, Any]:
     _subject(auth)
     return {
-        "release": "CALYX-SPEAK-007-OCCURRENCE-CONSTRAINTS",
+        "release": "CALYX-SPEAK-008-CORPUS-EVIDENCE",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
-        "interaction_context": {
-            "supported": True,
-            "evidence": False,
-            "max_session_trail": 8,
-        },
+        "interaction_context": {"supported": True, "evidence": False, "max_session_trail": 8},
         "knowledge_graph_context": {
             "supported": True,
             "read_only": True,
             "taxon_resolution": "explicit_binomial_exact_display_label_only",
-            "literature_fallback": "literal_terms_persisted_publication_nodes",
+            "literature_fallback": "graph_publications_plus_exact_binomial_research_documents",
+            "reviewed_extraction_evidence": "canonical_binding_integrity_verified_publication_eligible_only",
             "occurrence_constraints": "explicit_country_plus_metric_elevation",
         },
         "automatic_publication": False,
@@ -175,17 +140,11 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
 
 
 @router.post("/conversations", status_code=201)
-def create_conversation(
-    payload: ConversationCreateRequest,
-    auth: AuthDependency,
-) -> dict[str, Any]:
+def create_conversation(payload: ConversationCreateRequest, auth: AuthDependency) -> dict[str, Any]:
     owner = _subject(auth)
     interaction_context = sanitize_interaction_context(payload.context)
     conversation_id = STORE.create_or_touch(
-        None,
-        owner=owner,
-        project_id=payload.project_id,
-        title=payload.title,
+        None, owner=owner, project_id=payload.project_id, title=payload.title,
         context=interaction_context,
     )
     conversation = STORE.get(conversation_id, owner=owner)
@@ -196,37 +155,23 @@ def create_conversation(
 
 
 @router.get("/conversations")
-def list_conversations(
-    auth: AuthDependency,
-    limit: int = Query(20, ge=1, le=100),
-) -> dict[str, Any]:
+def list_conversations(auth: AuthDependency, limit: int = Query(20, ge=1, le=100)) -> dict[str, Any]:
     owner = _subject(auth)
     resolved_limit = limit if isinstance(limit, int) else 20
-    return {
-        "conversations": STORE.recent(owner=owner, limit=resolved_limit),
-        "persistence_mode": STORE.persistence_mode,
-    }
+    return {"conversations": STORE.recent(owner=owner, limit=resolved_limit), "persistence_mode": STORE.persistence_mode}
 
 
 @router.get("/conversations/{conversation_id}")
 def get_conversation(
-    conversation_id: str,
-    auth: AuthDependency,
+    conversation_id: str, auth: AuthDependency,
     message_limit: int = Query(100, ge=1, le=500),
 ) -> dict[str, Any]:
     owner = _subject(auth)
     resolved_limit = message_limit if isinstance(message_limit, int) else 100
     try:
-        conversation = STORE.get(
-            conversation_id,
-            owner=owner,
-            message_limit=resolved_limit,
-        )
+        conversation = STORE.get(conversation_id, owner=owner, message_limit=resolved_limit)
     except Exception as exc:
-        raise HTTPException(
-            422,
-            detail={"code": "INVALID_CONVERSATION_IDENTIFIER"},
-        ) from exc
+        raise HTTPException(422, detail={"code": "INVALID_CONVERSATION_IDENTIFIER"}) from exc
     if conversation is None:
         raise HTTPException(404, detail={"code": "CONVERSATION_NOT_FOUND"})
     conversation["persistence_mode"] = STORE.persistence_mode
@@ -235,154 +180,95 @@ def get_conversation(
 
 @router.post("/conversations/{conversation_id}/turns")
 def append_turn(
-    conversation_id: str,
-    payload: ConversationTurnRequest,
-    auth: AuthDependency,
+    conversation_id: str, payload: ConversationTurnRequest, auth: AuthDependency,
 ) -> dict[str, Any]:
     owner = _subject(auth)
     existing = STORE.get(conversation_id, owner=owner)
     if existing is None:
         raise HTTPException(404, detail={"code": "CONVERSATION_NOT_FOUND"})
     project_id = (
-        payload.project_id
-        or str(existing.get("project_id") or "").strip()
+        payload.project_id or str(existing.get("project_id") or "").strip()
         or f"calyx-speak:{conversation_id}"
     )
     interaction_context = sanitize_interaction_context(payload.context)
     STORE.create_or_touch(
-        conversation_id,
-        owner=owner,
-        project_id=project_id,
-        title=None,
+        conversation_id, owner=owner, project_id=project_id, title=None,
         context=interaction_context,
     )
     operator_message = STORE.append(
-        conversation_id,
-        "operator",
-        payload.message,
+        conversation_id, "operator", payload.message,
         {"context": interaction_context, "research_mode": payload.research_mode},
         owner=owner,
     )
-
     retrieval, mission, mission_error, casual = _run_governed_turn(
-        owner=owner,
-        conversation_id=conversation_id,
-        project_id=project_id,
-        message=payload.message,
-        research_mode=payload.research_mode,
+        owner=owner, conversation_id=conversation_id, project_id=project_id,
+        message=payload.message, research_mode=payload.research_mode,
         retrieval_limit=payload.retrieval_limit,
     )
-
     graph_context = graph_context_for_message(payload.message)
     graph_literature = (
         {"status": "not_requested", "results": [], "terms": []}
-        if casual
-        else search_persisted_literature(
-            payload.message,
-            limit=min(payload.retrieval_limit, 8),
+        if casual else search_persisted_literature(
+            payload.message, limit=min(payload.retrieval_limit, 8)
         )
     )
     occurrence_constraints = (
-        {
-            "status": "not_requested",
-            "read_only": True,
-            "knowledge_graph_mutation": False,
-            "filter": None,
-            "results": [],
-        }
-        if casual
-        else query_occurrence_constraints(
-            payload.message,
-            limit=min(max(payload.retrieval_limit * 5, 25), 100),
+        {"status": "not_requested", "read_only": True, "knowledge_graph_mutation": False, "filter": None, "results": []}
+        if casual else query_occurrence_constraints(
+            payload.message, limit=min(max(payload.retrieval_limit * 5, 25), 100)
         )
     )
 
     if mission is not None:
         STORE.append(
-            conversation_id,
-            "tool",
+            conversation_id, "tool",
             f"Governed Brain mission {mission.get('mission_id', 'unknown')} completed for this turn.",
-            {
-                "tool": "brain_mission",
-                "mission_id": mission.get("mission_id"),
-                "state": mission.get("state"),
-                "review_status": mission.get("review_status"),
-                "publication_eligibility": mission.get("publication_eligibility"),
-            },
+            {"tool": "brain_mission", "mission_id": mission.get("mission_id"), "state": mission.get("state"), "review_status": mission.get("review_status"), "publication_eligibility": mission.get("publication_eligibility")},
             owner=owner,
         )
-
-    found_graph_taxa = [
-        item
-        for item in graph_context.get("taxa", [])
-        if item.get("status") == "found"
-    ]
+    found_graph_taxa = [item for item in graph_context.get("taxa", []) if item.get("status") == "found"]
     if found_graph_taxa:
         STORE.append(
-            conversation_id,
-            "tool",
-            (
-                "Read-only Knowledge Graph context loaded for "
-                + ", ".join(str(item.get("scientific_name")) for item in found_graph_taxa)
-                + "."
-            ),
-            {
-                "tool": "knowledge_graph_read",
-                "status": graph_context.get("status"),
-                "requested_taxa": graph_context.get("requested_taxa"),
-                "found_taxa": graph_context.get("found_taxa"),
-                "knowledge_graph_mutation": False,
-            },
+            conversation_id, "tool",
+            "Read-only Knowledge Graph context loaded for " + ", ".join(str(item.get("scientific_name")) for item in found_graph_taxa) + ".",
+            {"tool": "knowledge_graph_read", "status": graph_context.get("status"), "requested_taxa": graph_context.get("requested_taxa"), "found_taxa": graph_context.get("found_taxa"), "knowledge_graph_mutation": False},
             owner=owner,
         )
-
     if graph_literature.get("results"):
         STORE.append(
-            conversation_id,
-            "tool",
+            conversation_id, "tool",
             (
-                "Read-only persisted graph literature search found "
-                f"{len(graph_literature['results'])} publication node(s)."
+                "Read-only literature retrieval found "
+                f"{graph_literature.get('result_count', 0)} document/publication result(s), including "
+                f"{graph_literature.get('publication_eligible_evidence_records', 0)} publication-eligible normalized evidence record(s)."
             ),
             {
                 "tool": "knowledge_graph_literature_read",
                 "status": graph_literature.get("status"),
                 "terms": graph_literature.get("terms"),
+                "explicit_taxa": graph_literature.get("explicit_taxa"),
                 "result_count": graph_literature.get("result_count"),
+                "persisted_graph_results": graph_literature.get("persisted_graph_results"),
+                "research_document_fallback_results": graph_literature.get("research_document_fallback_results"),
+                "publication_eligible_evidence_records": graph_literature.get("publication_eligible_evidence_records"),
+                "extraction_evidence_bridge": graph_literature.get("extraction_evidence_bridge"),
                 "knowledge_graph_mutation": False,
             },
             owner=owner,
         )
-
     if occurrence_constraints.get("status") == "available":
         STORE.append(
-            conversation_id,
-            "tool",
-            (
-                "Read-only occurrence constraint query resolved "
-                f"{occurrence_constraints.get('result_count', 0)} taxon result(s)."
-            ),
-            {
-                "tool": "occurrence_constraint_read",
-                "status": occurrence_constraints.get("status"),
-                "filter": occurrence_constraints.get("filter"),
-                "result_count": occurrence_constraints.get("result_count"),
-                "source_relation": occurrence_constraints.get("source_relation"),
-                "knowledge_graph_mutation": False,
-            },
+            conversation_id, "tool",
+            f"Read-only occurrence constraint query resolved {occurrence_constraints.get('result_count', 0)} taxon result(s).",
+            {"tool": "occurrence_constraint_read", "status": occurrence_constraints.get("status"), "filter": occurrence_constraints.get("filter"), "result_count": occurrence_constraints.get("result_count"), "source_relation": occurrence_constraints.get("source_relation"), "knowledge_graph_mutation": False},
             owner=owner,
         )
 
     governed_context = {
-        "casual": casual,
-        "conversation_id": conversation_id,
-        "project_id": project_id,
-        "interaction_context": interaction_context,
-        "retrieval": retrieval,
-        "mission": mission,
-        "mission_error": mission_error,
-        "knowledge_graph": graph_context,
-        "graph_literature": graph_literature,
+        "casual": casual, "conversation_id": conversation_id, "project_id": project_id,
+        "interaction_context": interaction_context, "retrieval": retrieval,
+        "mission": mission, "mission_error": mission_error,
+        "knowledge_graph": graph_context, "graph_literature": graph_literature,
         "occurrence_constraints": occurrence_constraints,
         "epistemic_policy": {
             "continuum_first": True,
@@ -390,6 +276,8 @@ def append_turn(
             "interaction_context_is_evidence": False,
             "persisted_graph_context_is_evidence": True,
             "persisted_graph_literature_is_evidence": True,
+            "literal_research_document_match_is_discovery_metadata": True,
+            "publication_eligible_extraction_is_governed_evidence": True,
             "occurrence_constraint_results_are_evidence": True,
             "graph_taxon_resolution_is_exact_only": True,
             "graph_literature_search_uses_literal_terms_only": True,
@@ -403,73 +291,47 @@ def append_turn(
     provider = configured_reply_provider()
     provider_error: str | None = None
     try:
-        reply = provider.generate(
-            messages=messages,
-            governed_context=governed_context,
-        )
+        reply = provider.generate(messages=messages, governed_context=governed_context)
     except Exception as exc:  # noqa: BLE001
         provider_error = str(exc)
-        fallback = DeterministicGovernedReplyProvider()
-        reply = fallback.generate(
-            messages=messages,
-            governed_context=governed_context,
+        reply = DeterministicGovernedReplyProvider().generate(
+            messages=messages, governed_context=governed_context
         )
 
     calyx_message = STORE.append(
-        conversation_id,
-        "calyx",
-        reply.text,
+        conversation_id, "calyx", reply.text,
         {
-            "provider": reply.provider,
-            "model": reply.model,
+            "provider": reply.provider, "model": reply.model,
             "provider_response_id": reply.provider_response_id,
-            "request_hash": reply.request_hash,
-            "provider_error": provider_error,
+            "request_hash": reply.request_hash, "provider_error": provider_error,
             "mission_id": mission.get("mission_id") if mission else None,
             "mission_state": mission.get("state") if mission else None,
             "review_status": mission.get("review_status") if mission else None,
             "retrieval_eligible_results": retrieval.get("total_eligible_results"),
-            "retrieval_status": retrieval.get("status"),
-            "retrieval_error": retrieval.get("error"),
+            "retrieval_status": retrieval.get("status"), "retrieval_error": retrieval.get("error"),
             "graph_status": graph_context.get("status"),
             "graph_requested_taxa": graph_context.get("requested_taxa"),
             "graph_found_taxa": graph_context.get("found_taxa"),
             "graph_literature_status": graph_literature.get("status"),
             "graph_literature_terms": graph_literature.get("terms"),
             "graph_literature_results": len(graph_literature.get("results") or []),
+            "graph_literature_research_document_results": graph_literature.get("research_document_fallback_results"),
+            "graph_literature_publication_eligible_evidence_records": graph_literature.get("publication_eligible_evidence_records"),
+            "graph_literature_extraction_bridge_status": (graph_literature.get("extraction_evidence_bridge") or {}).get("status"),
             "occurrence_constraint_status": occurrence_constraints.get("status"),
             "occurrence_constraint_filter": occurrence_constraints.get("filter"),
             "occurrence_constraint_results": len(occurrence_constraints.get("results") or []),
-            "interaction_context": interaction_context,
-            "research_mode": payload.research_mode,
-            "publication_boundary": (
-                "human-review-governed; no automatic publication or graph mutation"
-            ),
+            "interaction_context": interaction_context, "research_mode": payload.research_mode,
+            "publication_boundary": "human-review-governed; no automatic publication or graph mutation",
         },
         owner=owner,
     )
     return {
-        "conversation_id": conversation_id,
-        "operator_message": operator_message,
-        "calyx_message": calyx_message,
-        "answer": reply.text,
-        "provider": {
-            "name": reply.provider,
-            "model": reply.model,
-            "request_hash": reply.request_hash,
-            "provider_response_id": reply.provider_response_id,
-            "fallback_error": provider_error,
-        },
+        "conversation_id": conversation_id, "operator_message": operator_message,
+        "calyx_message": calyx_message, "answer": reply.text,
+        "provider": {"name": reply.provider, "model": reply.model, "request_hash": reply.request_hash, "provider_response_id": reply.provider_response_id, "fallback_error": provider_error},
         "interaction_context": interaction_context,
-        "research": {
-            "casual": casual,
-            "mission": mission,
-            "mission_error": mission_error,
-            "retrieval": retrieval,
-            "knowledge_graph": graph_context,
-            "graph_literature": graph_literature,
-            "occurrence_constraints": occurrence_constraints,
-        },
+        "research": {"casual": casual, "mission": mission, "mission_error": mission_error, "retrieval": retrieval, "knowledge_graph": graph_context, "graph_literature": graph_literature, "occurrence_constraints": occurrence_constraints},
         "persistence_mode": STORE.persistence_mode,
         "epistemic_policy": governed_context["epistemic_policy"],
     }
