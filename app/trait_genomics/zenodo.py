@@ -29,17 +29,35 @@ class ZenodoConfig:
 
 
 class ZenodoArchiveBridge:
-    """Creates reproducible release packages and optionally deposits them to Zenodo.
-
-    Publishing is never implicit. ``publish`` requires an access token and an
-    explicit call so a scientific release cannot become public accidentally.
-    """
+    """Creates reproducible release packages and optionally deposits them to Zenodo."""
 
     def __init__(self, config: ZenodoConfig | None = None) -> None:
         self.config = config or ZenodoConfig.from_env()
 
-    def build_release(self, dataset: DiscoveryDataset, result: DiscoveryResult, root: str | Path) -> Path:
-        release_dir = Path(root) / dataset.dataset_id
+    @staticmethod
+    def _release_dir(root: str | Path, dataset_id: str) -> Path:
+        root_path = Path(root).expanduser().resolve()
+        if not dataset_id or dataset_id in {".", ".."}:
+            raise ValueError("dataset_id must be a non-empty archive identifier")
+        if Path(dataset_id).is_absolute() or "/" in dataset_id or "\\" in dataset_id:
+            raise ValueError("dataset_id must not contain path separators")
+        release_dir = (root_path / dataset_id).resolve()
+        if release_dir.parent != root_path:
+            raise ValueError("archive release path escapes configured staging root")
+        return release_dir
+
+    def build_release(
+        self,
+        dataset: DiscoveryDataset,
+        result: DiscoveryResult,
+        root: str | Path,
+    ) -> Path:
+        if result.dataset_id != dataset.dataset_id:
+            raise ValueError("DiscoveryResult dataset_id does not match DiscoveryDataset")
+        if result.evidence_count != len(dataset.records):
+            raise ValueError("DiscoveryResult evidence_count does not match dataset records")
+
+        release_dir = self._release_dir(root, dataset.dataset_id)
         release_dir.mkdir(parents=True, exist_ok=True)
         evidence_path = release_dir / "trait_interaction_genomics_evidence.jsonl"
         hypotheses_path = release_dir / "discovery_hypotheses.jsonl"
@@ -68,7 +86,10 @@ class ZenodoArchiveBridge:
             "archive_policy": "versioned_public_scientific_archive",
             "causal_policy": "candidate hypotheses are non-causal until reviewed",
         }
-        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
         readme_path.write_text(
             "# Orchid Continuum Trait–Interaction–Genomics dataset\n\n"
             "This release contains provenance-bearing evidence and non-causal discovery hypotheses.\n"
@@ -77,7 +98,14 @@ class ZenodoArchiveBridge:
         )
         return release_dir
 
-    def _request(self, method: str, url: str, *, body: bytes | None = None, content_type: str = "application/json") -> dict[str, Any]:
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        body: bytes | None = None,
+        content_type: str = "application/json",
+    ) -> dict[str, Any]:
         if not self.config.token:
             raise RuntimeError("ZENODO_ACCESS_TOKEN is required for Zenodo deposit operations")
         request = urllib.request.Request(
@@ -97,7 +125,13 @@ class ZenodoArchiveBridge:
             detail = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"Zenodo API error {exc.code}: {detail[:1000]}") from exc
 
-    def create_draft(self, *, title: str, description: str, creators: list[dict[str, str]]) -> dict[str, Any]:
+    def create_draft(
+        self,
+        *,
+        title: str,
+        description: str,
+        creators: list[dict[str, str]],
+    ) -> dict[str, Any]:
         metadata: dict[str, Any] = {
             "title": title,
             "upload_type": "dataset",
@@ -110,4 +144,8 @@ class ZenodoArchiveBridge:
         return self._request("POST", f"{self.config.base_url}/deposit/depositions", body=payload)
 
     def publish(self, deposition_id: int) -> dict[str, Any]:
-        return self._request("POST", f"{self.config.base_url}/deposit/depositions/{deposition_id}/actions/publish", body=b"")
+        return self._request(
+            "POST",
+            f"{self.config.base_url}/deposit/depositions/{deposition_id}/actions/publish",
+            body=b"",
+        )
