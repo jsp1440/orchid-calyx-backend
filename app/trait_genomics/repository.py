@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
+import os
 from typing import Any
 
 import psycopg
@@ -139,19 +139,18 @@ class TraitGenomicsRepository:
         provider: str = "zenodo",
     ) -> dict[str, Any] | None:
         self.ensure_schema()
-        with self.connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT release_id, dataset_id, provider, deposition_id,
-                           release_fingerprint, state, community, manifest,
-                           provider_payload, release_path, created_at, updated_at
-                    FROM calyx_scientific_archive_releases
-                    WHERE provider=%s AND release_fingerprint=%s
-                    """,
-                    (provider, release_fingerprint),
-                )
-                row = cur.fetchone()
+        with self.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT release_id, dataset_id, provider, deposition_id,
+                       release_fingerprint, state, community, manifest,
+                       provider_payload, release_path, created_at, updated_at
+                FROM calyx_scientific_archive_releases
+                WHERE provider=%s AND release_fingerprint=%s
+                """,
+                (provider, release_fingerprint),
+            )
+            row = cur.fetchone()
         if row is None:
             return None
         keys = (
