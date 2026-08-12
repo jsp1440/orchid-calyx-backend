@@ -20,7 +20,7 @@ class ZenodoConfig:
     community: str | None = None
 
     @classmethod
-    def from_env(cls) -> "ZenodoConfig":
+    def from_env(cls) -> ZenodoConfig:
         base = os.getenv("ZENODO_API_BASE", "https://zenodo.org/api").rstrip("/")
         return cls(
             token=os.getenv("ZENODO_ACCESS_TOKEN"),
