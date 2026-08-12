@@ -91,6 +91,10 @@ Production Knowledge Graph publication remains owner-governed. A failed or rolle
 - deterministic fallback graph-context reporting without promoting connectivity to scientific conclusion;
 - focused unit/regression tests and dedicated CI coverage for all of the above.
 
+## Current branch state
+
+The branch remains based directly on current canonical `main` and has no behind-main drift at this checkpoint. The integration is intentionally concentrated in one PR instead of spawning another graph, audit, habitat/elevation, or Speak PR.
+
 ## Current validation boundary
 
 GitHub-hosted Actions remains affected by the runner allocation incident. Recent branch workflows have produced a job with `steps: null`; that means no checkout, compile, tests, Ruff, or graph regression commands executed. Zero-step failures are not accepted as validation evidence.
