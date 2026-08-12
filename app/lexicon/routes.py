@@ -216,33 +216,40 @@ def _load_entry_by_concept_id(concept_id: UUID) -> dict[str, Any] | None:
     return _entry_payload(concept, labels, definitions)
 
 
-def _load_entry_by_slug(slug: str) -> dict[str, Any] | None:
+def _find_approved_concept_id_by_slug(slug: str) -> UUID | None:
     normalized_slug = _slug(slug)
     if not normalized_slug:
         return None
+    try:
+        with _connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT c.concept_id
+                FROM oc_concepts.concepts c
+                JOIN oc_concepts.concept_labels l ON l.concept_id=c.concept_id
+                WHERE c.status='ACTIVE'
+                  AND c.review_state='APPROVED'
+                  AND l.review_state='APPROVED'
+                  AND btrim(
+                    regexp_replace(lower(trim(l.label)), '[^a-z0-9×]+', '-', 'g'),
+                    '-'
+                  ) = %s
+                ORDER BY CASE l.label_type WHEN 'PREFERRED' THEN 0 ELSE 1 END,
+                         c.revised_at DESC,
+                         c.concept_id
+                LIMIT 1
+                """,
+                (normalized_slug,),
+            )
+            row = cur.fetchone()
+    except (RuntimeError, psycopg.Error) as exc:
+        raise HTTPException(status_code=503, detail={"code": "LEXICON_DATABASE_UNAVAILABLE"}) from exc
+    return row["concept_id"] if row else None
 
-    # Concept label normalization preserves hyphens but removes punctuation such
-    # as '/'. Try both forms, then require an exact UI-slug match on the returned
-    # preferred/alternate labels. Definition-only matches can never satisfy this.
-    search_terms = [normalized_slug]
-    spaced = normalized_slug.replace("-", " ")
-    if spaced != normalized_slug:
-        search_terms.append(spaced)
 
-    seen_ids: set[str] = set()
-    for search_term in search_terms:
-        for entry in _load_entries(q=search_term, limit=50):
-            entry_id = str(entry.get("concept_id") or entry.get("id") or "")
-            if entry_id and entry_id in seen_ids:
-                continue
-            if entry_id:
-                seen_ids.add(entry_id)
-            if entry.get("slug") == normalized_slug:
-                return entry
-            labels = [entry.get("preferred_term"), *(entry.get("synonyms") or [])]
-            if any(_slug(str(label or "")) == normalized_slug for label in labels):
-                return entry
-    return None
+def _load_entry_by_slug(slug: str) -> dict[str, Any] | None:
+    concept_id = _find_approved_concept_id_by_slug(slug)
+    return _load_entry_by_concept_id(concept_id) if concept_id is not None else None
 
 
 @router.get("")
@@ -275,7 +282,7 @@ def get_approved_entry_by_slug(
             },
         )
     return {
-        "release": "CALYX-LEXICON-LIVE-001",
+        "release": "CALYX-LEXICON-LIVE-002",
         "entry": entry,
         "source_of_truth": "oc_concepts",
         "automatic_publication": False,
