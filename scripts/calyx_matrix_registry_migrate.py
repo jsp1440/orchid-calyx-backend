@@ -3,7 +3,7 @@
 
 Dry-run is the default. `--apply` is required to write missing immutable registry
 packages after migration 613 is already ready. The utility never enables durable
-registry mode and aborts on checksum conflicts.
+registry mode and aborts on checksum conflicts or unreadable/corrupt source files.
 """
 
 from __future__ import annotations
@@ -15,12 +15,69 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from runtime.matrix_identification_registry import compute_registry_record_checksum
 from runtime.matrix_identification_registry_preflight import compare_registry_records
 from runtime.matrix_identification_registry_store import (
     FileMatrixRegistryStore,
     PostgresMatrixRegistryStore,
     default_registry_root,
 )
+
+
+def strict_source_inventory(source: FileMatrixRegistryStore) -> dict[str, Any]:
+    """Read every physical source package and validate its claimed immutable digest."""
+    records: list[dict[str, Any]] = []
+    blockers: list[dict[str, Any]] = []
+    paths = sorted(source.root.glob("*/*.json")) if source.root.exists() else []
+    for path in paths:
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            blockers.append(
+                {
+                    "code": "MATRIX_REGISTRY_SOURCE_PACKAGE_UNREADABLE",
+                    "path": str(path),
+                    "error_type": type(exc).__name__,
+                }
+            )
+            continue
+
+        claimed = str(record.get("checksum_sha256") or "").strip()
+        registry_id = str(record.get("registry_id") or "").strip()
+        version = str(record.get("version") or "").strip()
+        if not registry_id or not version or not claimed:
+            blockers.append(
+                {
+                    "code": "MATRIX_REGISTRY_SOURCE_PACKAGE_INCOMPLETE",
+                    "path": str(path),
+                    "registry_id": registry_id or None,
+                    "version": version or None,
+                }
+            )
+            continue
+
+        actual = compute_registry_record_checksum(record)
+        if actual != claimed:
+            blockers.append(
+                {
+                    "code": "MATRIX_REGISTRY_SOURCE_CHECKSUM_INVALID",
+                    "path": str(path),
+                    "registry_id": registry_id,
+                    "version": version,
+                    "claimed_checksum_sha256": claimed,
+                    "computed_checksum_sha256": actual,
+                }
+            )
+            continue
+        records.append(record)
+
+    return {
+        "physical_package_count": len(paths),
+        "valid_package_count": len(records),
+        "records": records,
+        "blockers": blockers,
+        "inventory_complete": not blockers and len(records) == len(paths),
+    }
 
 
 def plan_registry_migration(
@@ -61,7 +118,21 @@ def execute_registry_migration(
             "blockers": inspection.get("blockers") or ["MATRIX_REGISTRY_SCHEMA_NOT_READY"],
         }
 
-    file_records = source.list_records()
+    inventory = strict_source_inventory(source)
+    if not inventory["inventory_complete"]:
+        return {
+            "mode": "apply" if apply else "dry_run",
+            "schema_ready": True,
+            "applied": False,
+            "source_root": str(source.root),
+            "source_inventory": {
+                key: value for key, value in inventory.items() if key != "records"
+            },
+            "blockers": [item["code"] for item in inventory["blockers"]],
+            "automatic_activation": False,
+        }
+
+    file_records = inventory["records"]
     database_records = destination.list_records()
     plan = plan_registry_migration(file_records, database_records)
     result: dict[str, Any] = {
@@ -69,6 +140,9 @@ def execute_registry_migration(
         "schema_ready": True,
         "applied": False,
         "source_root": str(source.root),
+        "source_inventory": {
+            key: value for key, value in inventory.items() if key != "records"
+        },
         "plan": {key: value for key, value in plan.items() if key != "copy_records"},
         "automatic_activation": False,
     }
@@ -99,7 +173,18 @@ def execute_registry_migration(
             }
         )
 
-    verification = compare_registry_records(source.list_records(), destination.list_records())
+    verification_inventory = strict_source_inventory(source)
+    if not verification_inventory["inventory_complete"]:
+        result["blockers"] = ["MATRIX_REGISTRY_SOURCE_CHANGED_DURING_COPY"]
+        result["copy_receipts"] = receipts
+        result["verification_source_inventory"] = {
+            key: value for key, value in verification_inventory.items() if key != "records"
+        }
+        return result
+
+    verification = compare_registry_records(
+        verification_inventory["records"], destination.list_records()
+    )
     if not verification["data_copy_ready"]:
         result["blockers"] = ["MATRIX_REGISTRY_POST_COPY_VERIFICATION_FAILED"]
         result["copy_receipts"] = receipts
