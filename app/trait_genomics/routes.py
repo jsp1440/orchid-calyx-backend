@@ -11,6 +11,11 @@ from app.security import verify_owner_or_api_key, verify_owner_session
 from .discovery import TraitGenomicsDiscoveryEngine
 from .live_sources import LiveScientificEvidenceBuilder
 from .models import DiscoveryDataset, DiscoveryResult
+from .molecular_evidence import (
+    MolecularEvidenceCandidate,
+    MolecularEvidenceRepository,
+    MolecularReviewDecision,
+)
 from .release_service import ScientificArchiveReleaseService
 from .repository import TraitGenomicsRepository
 from .zenodo import ZenodoArchiveBridge, ZenodoConfig
@@ -73,6 +78,7 @@ def status():
         "scientific_archive_ledger": "neon_postgres",
         "archive_draft_mode": "versioned_checksums_idempotent",
         "live_evidence_adapter": "canonical_sources_schema_tolerant_strict_taxon_identity",
+        "molecular_evidence_policy": "candidate_until_explicit_human_review",
         "causal_policy": "hypotheses_are_non_causal_until_reviewed",
         "zenodo_publication_enabled": False,
     }
@@ -90,6 +96,64 @@ def discover(payload: DiscoveryRunRequest):
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"Trait-genomics persistence failed: {exc}") from exc
     return result
+
+
+@router.get("/molecular/status")
+def molecular_status():
+    try:
+        summary = MolecularEvidenceRepository().summary()
+        return {
+            "schema": "oc_genomics",
+            "candidate_table": "oc_genomics.molecular_evidence_candidates",
+            "live_views": [
+                "oc_genomics.trait_associations",
+                "oc_genomics.expression_associations",
+            ],
+            "review_gate": "accepted_only_enters_live_tig",
+            "counts": summary.__dict__,
+        }
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Molecular evidence status failed: {exc}") from exc
+
+
+@router.post(
+    "/molecular/candidates",
+    dependencies=[Depends(verify_owner_session)],
+)
+def ingest_molecular_candidate(payload: MolecularEvidenceCandidate):
+    try:
+        row = MolecularEvidenceRepository().upsert_candidate(payload)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Molecular evidence intake failed: {exc}") from exc
+    return {
+        "candidate": row,
+        "live_tig_eligible": False,
+        "scientific_boundary": "Candidate evidence requires explicit human acceptance before TIG can consume it.",
+    }
+
+
+@router.post(
+    "/molecular/candidates/{association_id}/review",
+    dependencies=[Depends(verify_owner_session)],
+)
+def review_molecular_candidate(association_id: str, payload: MolecularReviewDecision):
+    try:
+        row = MolecularEvidenceRepository().review(association_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Molecular evidence candidate not found") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Molecular evidence review failed: {exc}") from exc
+    return {
+        "candidate": row,
+        "live_tig_eligible": row.get("review_state") == "accepted",
+        "scientific_boundary": "Acceptance exposes evidence to live TIG; it does not establish causation.",
+    }
 
 
 @router.get("/live/readiness")
