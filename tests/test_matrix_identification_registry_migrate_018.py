@@ -1,29 +1,57 @@
+import json
 from pathlib import Path
 
+from runtime.matrix_identification_registry import compute_registry_record_checksum
+from runtime.matrix_identification_registry_store import FileMatrixRegistryStore
 from scripts.calyx_matrix_registry_migrate import (
     execute_registry_migration,
     plan_registry_migration,
+    strict_source_inventory,
 )
 
 
-def _record(registry_id: str, version: str, checksum: str) -> dict:
-    return {
+def _record(registry_id: str, version: str) -> dict:
+    record = {
+        "schema_version": "matrix-identification-registry/v1",
         "registry_id": registry_id,
         "version": version,
-        "checksum_sha256": checksum,
+        "title": f"{registry_id} matrix",
+        "scope": {"genus": registry_id.title()},
+        "characters": [
+            {
+                "character": "flower_color",
+                "label": "Flower color",
+                "description": None,
+                "value_type": "categorical",
+                "weight": 1.0,
+                "provenance": {"source": "test"},
+                "concept_id": None,
+            }
+        ],
+        "candidates": [
+            {
+                "taxon_id": f"taxon-{version}",
+                "scientific_name": f"{registry_id.title()} testensis",
+                "states": {"flower_color": "white"},
+                "provenance": {"source": "test"},
+            }
+        ],
+        "provenance": {"source": "test"},
         "publication_state": "review_required",
         "created_by": "reviewer",
         "created_at": "2026-08-12T00:00:00+00:00",
     }
+    record["checksum_sha256"] = compute_registry_record_checksum(record)
+    return record
 
 
-class FakeSource:
-    def __init__(self, records):
-        self.records = list(records)
-        self.root = Path("/tmp/test-matrix-registry")
-
-    def list_records(self):
-        return list(self.records)
+def _source(tmp_path: Path, records: list[dict]) -> FileMatrixRegistryStore:
+    store = FileMatrixRegistryStore(tmp_path)
+    for record in records:
+        path = tmp_path / record["registry_id"] / f"{record['version']}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(record), encoding="utf-8")
+    return store
 
 
 class FakeDestination:
@@ -61,13 +89,9 @@ class FakeDestination:
 
 
 def test_plan_selects_only_missing_file_backed_versions():
-    file_records = [
-        _record("angraecum", "1", "a" * 64),
-        _record("angraecum", "2", "b" * 64),
-    ]
-    database_records = [_record("angraecum", "1", "a" * 64)]
-
-    plan = plan_registry_migration(file_records, database_records)
+    first = _record("angraecum", "1")
+    second = _record("angraecum", "2")
+    plan = plan_registry_migration([first, second], [first])
 
     assert plan["copy_count"] == 1
     assert [(item["registry_id"], item["version"]) for item in plan["copy_records"]] == [
@@ -76,8 +100,9 @@ def test_plan_selects_only_missing_file_backed_versions():
     assert plan["apply_allowed"] is True
 
 
-def test_dry_run_performs_zero_writes_and_reports_would_copy():
-    source = FakeSource([_record("angraecum", "1", "a" * 64)])
+def test_dry_run_performs_zero_writes_and_reports_would_copy(tmp_path: Path):
+    record = _record("angraecum", "1")
+    source = _source(tmp_path, [record])
     destination = FakeDestination([])
 
     result = execute_registry_migration(source=source, destination=destination, apply=False)
@@ -89,15 +114,19 @@ def test_dry_run_performs_zero_writes_and_reports_would_copy():
         {
             "registry_id": "angraecum",
             "version": "1",
-            "checksum_sha256": "a" * 64,
+            "checksum_sha256": record["checksum_sha256"],
         }
     ]
+    assert result["source_inventory"]["inventory_complete"] is True
     assert result["automatic_activation"] is False
 
 
-def test_checksum_conflict_blocks_even_explicit_apply_before_any_write():
-    source = FakeSource([_record("angraecum", "1", "a" * 64)])
-    destination = FakeDestination([_record("angraecum", "1", "b" * 64)])
+def test_checksum_conflict_blocks_even_explicit_apply_before_any_write(tmp_path: Path):
+    source_record = _record("angraecum", "1")
+    conflicting = dict(source_record)
+    conflicting["checksum_sha256"] = "b" * 64
+    source = _source(tmp_path, [source_record])
+    destination = FakeDestination([conflicting])
 
     result = execute_registry_migration(source=source, destination=destination, apply=True)
 
@@ -106,14 +135,11 @@ def test_checksum_conflict_blocks_even_explicit_apply_before_any_write():
     assert destination.saved == []
 
 
-def test_apply_copies_only_missing_versions_then_verifies_checksums():
-    source = FakeSource(
-        [
-            _record("angraecum", "1", "a" * 64),
-            _record("angraecum", "2", "b" * 64),
-        ]
-    )
-    destination = FakeDestination([_record("angraecum", "1", "a" * 64)])
+def test_apply_copies_only_missing_versions_then_verifies_checksums(tmp_path: Path):
+    first = _record("angraecum", "1")
+    second = _record("angraecum", "2")
+    source = _source(tmp_path, [first, second])
+    destination = FakeDestination([first])
 
     result = execute_registry_migration(source=source, destination=destination, apply=True)
 
@@ -125,8 +151,8 @@ def test_apply_copies_only_missing_versions_then_verifies_checksums():
     assert result["automatic_activation"] is False
 
 
-def test_schema_not_ready_blocks_dry_run_before_inventory_copy_logic():
-    source = FakeSource([_record("angraecum", "1", "a" * 64)])
+def test_schema_not_ready_blocks_dry_run_before_inventory_copy_logic(tmp_path: Path):
+    source = _source(tmp_path, [_record("angraecum", "1")])
     destination = FakeDestination([], schema_ready=False)
 
     result = execute_registry_migration(source=source, destination=destination, apply=False)
@@ -135,3 +161,35 @@ def test_schema_not_ready_blocks_dry_run_before_inventory_copy_logic():
     assert result["applied"] is False
     assert result["blockers"] == ["MATRIX_REGISTRY_TABLE_NOT_FOUND"]
     assert destination.saved == []
+
+
+def test_strict_inventory_rejects_tampered_payload_even_when_claimed_checksum_is_present(tmp_path: Path):
+    record = _record("angraecum", "1")
+    claimed = record["checksum_sha256"]
+    record["title"] = "tampered after checksum"
+    source = _source(tmp_path, [record])
+
+    inventory = strict_source_inventory(source)
+
+    assert inventory["inventory_complete"] is False
+    assert inventory["valid_package_count"] == 0
+    blocker = inventory["blockers"][0]
+    assert blocker["code"] == "MATRIX_REGISTRY_SOURCE_CHECKSUM_INVALID"
+    assert blocker["claimed_checksum_sha256"] == claimed
+    assert blocker["computed_checksum_sha256"] != claimed
+
+
+def test_malformed_source_package_blocks_migration_instead_of_being_skipped(tmp_path: Path):
+    valid = _record("angraecum", "1")
+    source = _source(tmp_path, [valid])
+    bad_path = tmp_path / "angraecum" / "2.json"
+    bad_path.write_text("{not-json", encoding="utf-8")
+    destination = FakeDestination([])
+
+    result = execute_registry_migration(source=source, destination=destination, apply=True)
+
+    assert result["applied"] is False
+    assert "MATRIX_REGISTRY_SOURCE_PACKAGE_UNREADABLE" in result["blockers"]
+    assert destination.saved == []
+    assert result["source_inventory"]["physical_package_count"] == 2
+    assert result["source_inventory"]["valid_package_count"] == 1
