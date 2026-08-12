@@ -140,6 +140,7 @@ class DeterministicGovernedReplyProvider:
             return []
         graph_results = [item for item in results if item.get("provenance", {}).get("persisted_graph_edge")]
         corpus_results = [item for item in results if not item.get("provenance", {}).get("persisted_graph_edge")]
+        reviewed_total = sum(len(item.get("reviewed_evidence") or []) for item in results)
         lines: list[str] = []
         if graph_results:
             lines.append(f"Persisted Knowledge Graph literature matches: {len(graph_results)}.")
@@ -148,6 +149,10 @@ class DeterministicGovernedReplyProvider:
             lines.append(
                 f"Additional research-document corpus matches: {len(corpus_results)}"
                 + (f" for exact taxon literal(s) {taxa}." if taxa else ".")
+            )
+        if reviewed_total:
+            lines.append(
+                f"Integrity-verified publication-eligible normalized evidence records attached to these documents: {reviewed_total}."
             )
         for index, item in enumerate(results[:8], start=1):
             title = str(item.get("title") or f"Publication {item.get('source_pk')}")
@@ -159,13 +164,36 @@ class DeterministicGovernedReplyProvider:
             taxa = [str(value) for value in item.get("associated_taxa") or []]
             if taxa:
                 details.append("taxa=" + ", ".join(taxa[:5]))
+            reviewed = [record for record in item.get("reviewed_evidence") or [] if isinstance(record, dict)]
+            if reviewed:
+                details.append(f"reviewed-evidence={len(reviewed)}")
             source_kind = "graph publication" if item.get("provenance", {}).get("persisted_graph_edge") else "literal document match"
             details.append(source_kind)
             lines.append(f"{index}. {title}" + (" (" + "; ".join(details) + ")" if details else ""))
+            for evidence in reviewed[:3]:
+                statement = str(evidence.get("normalized_statement") or evidence.get("statement") or "").strip()
+                if not statement:
+                    continue
+                qualifiers = [
+                    f"domain={evidence.get('domain')}",
+                    f"polarity={evidence.get('polarity')}",
+                    f"review={evidence.get('review_status')}",
+                ]
+                if evidence.get("normalization_confidence") is not None:
+                    qualifiers.append(f"normalization-confidence={float(evidence['normalization_confidence']):.2f}")
+                lines.append(
+                    "   Publication-eligible normalized evidence: "
+                    + statement
+                    + " ("
+                    + "; ".join(qualifiers)
+                    + ")"
+                )
         if corpus_results:
-            lines.append("Literal research-document matches are discovery metadata only. A taxon mention does not establish that the paper supports a particular scientific claim; the governed paper text/extraction must be inspected first.")
+            lines.append("Literal research-document matches without reviewed evidence are discovery metadata only. A taxon mention does not establish that the paper supports a particular scientific claim.")
+        if reviewed_total:
+            lines.append("The attached normalized evidence passed its recorded publication-eligibility gate and source-integrity check; Calyx still preserves the distinction between the source excerpt, normalized record, and any higher-level synthesis.")
         if graph_results:
-            lines.append("Persisted publication-node metadata and taxon links likewise do not substitute for inspecting underlying evidence when making physiological, ecological, or causal conclusions.")
+            lines.append("Persisted publication-node metadata and taxon links do not substitute for inspecting underlying evidence when making physiological, ecological, or causal conclusions.")
         return lines
 
     @staticmethod
@@ -214,7 +242,7 @@ class DeterministicGovernedReplyProvider:
         question = next((item["content"] for item in reversed(messages) if item.get("role") == "user"), "")
         lines: list[str] = []
         if governed_context.get("casual"):
-            lines.append("Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. I can retrieve Continuum evidence, inspect persisted graph context, search exact-taxon research-document metadata, evaluate explicit country/elevation occurrence constraints, and run governed Brain missions while keeping evidence and publication boundaries visible.")
+            lines.append("Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. I can retrieve Continuum evidence, inspect persisted graph context, search exact-taxon research-document metadata and reviewed extraction evidence, evaluate explicit country/elevation occurrence constraints, and run governed Brain missions while keeping evidence and publication boundaries visible.")
         elif mission:
             lines.extend(self._format_mission_answer(mission))
             lines.extend(occurrence_lines)
@@ -270,8 +298,9 @@ class OpenAICompatibleReplyProvider:
         system = (
             "You are Calyx, the Orchid Continuum's governed scientific collaborator. "
             "Use only supplied conversation and governed context for factual scientific claims. "
-            "Distinguish direct evidence, inference, missing evidence, and proposed designs. "
+            "Distinguish direct evidence, normalized evidence records, synthesis/inference, missing evidence, and proposed designs. "
             "Persisted graph relationships may be used as governed provenance. Literal research-document matches are discovery metadata only and do not establish scientific claims. "
+            "Publication-eligible normalized extraction evidence may be summarized, but preserve its source anchors, review status, and distinction from higher-level synthesis. "
             "Occurrence constraint records are observations and must not be described as complete species ranges unless supported. "
             "Never claim a capability is implemented unless the context says it is. Do not publish, promote Candidate Knowledge, or mutate the Knowledge Graph."
         )
