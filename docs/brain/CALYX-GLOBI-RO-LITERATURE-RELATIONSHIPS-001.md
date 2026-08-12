@@ -56,15 +56,45 @@ The emitted edge retains:
 
 This means a reviewed statement such as `Apis mellifera visits flowers of Laelia anceps` can become a semantically interoperable `visitsFlowersOf` edge between the exact canonical taxa, while the supporting claim/evidence/publication structure remains separately inspectable.
 
+### Retrospective corpus backfill
+
+Added `runtime/knowledge_graph/globi_corpus_backfill.py` and `scripts/audit_globi_literature_backfill.py` so the GloBI/RO normalization is not limited to newly harvested papers.
+
+The backfill walks the canonical literature-extraction bundles already present in Orchid Continuum and, for each bound `LITERATURE_DOCUMENT`:
+
+1. reloads the persisted extraction;
+2. reloads the immutable source bytes;
+3. revalidates the canonical source binding and evidence-integrity proof;
+4. resolves taxon entities using the exact active Knowledge Graph resolver;
+5. runs the strict publication-eligible paper graph projection;
+6. extracts only recognized GloBI/RO taxon-to-taxon interaction edges;
+7. carries the source paper, DOI where present, claim statement, evidence excerpts, section/page/character spans, publication-eligible normalized-record ids, source hash and binding fingerprint into a contribution candidate record.
+
+The scanner is read-only and paginated. It does not publish to `oc_graph`, alter review state, or contact GloBI.
+
+### GloBI contribution candidate queue
+
+Every recovered reviewed interaction is emitted with `candidate_status=candidate_for_globi_review`. Novelty is deliberately not guessed.
+
+If no separately versioned GloBI snapshot is supplied, the record is marked `not_checked_against_globi`. If a known GloBI interaction identity set is supplied, the same scanner can distinguish `already_present_in_supplied_globi_snapshot` from `candidate_new_to_supplied_globi_snapshot` using the tuple `(sourceTaxonName, interactionTypeName, targetTaxonName)`.
+
+This distinction is mandatory: a new literature record may be new to Orchid Continuum but already known to GloBI. Conversely, a relationship type can be standard RO/GloBI vocabulary while the specific organism pair is a novel interaction record.
+
+`globi_tsv_rows()` produces a GloBI-template-friendly staging representation with `sourceTaxonName`, `interactionTypeName`, `interactionTypeId`, `targetTaxonName`, DOI/citation, source identity and claim notes. It is an export staging format only, not an automatic submission.
+
+A future external contribution workflow should publish only governance-approved candidate records, preserve attribution to the original paper authors, and version the exported dataset independently (for example through a public repository and/or DOI-bearing archive) before asking GloBI to index it.
+
 ## Epistemic boundary
 
 Co-occurrence in a paper does not create an interaction. Two taxon mentions do not create an interaction. An unrecognized verb does not create an interaction. An unreviewed or non-publication-eligible claim does not create an interaction. A fuzzy or ambiguous taxon resolution does not create an interaction.
 
 The relationship edge is therefore a normalized representation of a governed reviewed claim, not an AI inference from proximity in text.
 
+The corpus backfill also does not claim an interaction is new to GloBI unless it has been compared against a named/versioned GloBI snapshot. External contribution remains a separate governance action.
+
 ## Validation coverage
 
-Added `tests/test_globi_ro_literature_relations.py` covering:
+`tests/test_globi_ro_literature_relations.py` covers:
 
 - controlled verbatim-to-GloBI normalization;
 - canonical RO URI retention;
@@ -75,8 +105,19 @@ Added `tests/test_globi_ro_literature_relations.py` covering:
 - missing canonical endpoint blocks the relationship;
 - removal of publication eligibility blocks the relationship.
 
-The focused KG validation workflow now includes the relation ontology module, graph vocabulary, and these regressions.
+`tests/test_globi_corpus_backfill.py` additionally covers:
 
-## Production boundary
+- retrospective screening of an already-existing reviewed paper;
+- source/target taxon and RO identity preservation;
+- no graph mutation or external submission during backfill;
+- no novelty claim without a supplied GloBI snapshot;
+- known-snapshot novelty classification;
+- GloBI-template export rows preserving reference and relationship identity.
 
-No production graph relationship was added by this implementation. These interaction edges enter the existing reviewed-literature dry-run/publication path and remain subject to the same explicit production confirmation, single-writer lock, validation, and transactional rollback boundary.
+The focused KG validation workflow now includes the relation ontology, retrospective corpus scanner, export operator and both regression suites.
+
+## Production and external-publication boundary
+
+No production graph relationship and no external GloBI record was added by this implementation. Reviewed interaction edges enter the existing reviewed-literature dry-run/publication path and remain subject to explicit graph-publication confirmation, single-writer locking, validation and rollback.
+
+Submitting or publishing an Orchid Continuum interaction dataset for GloBI indexing is a separate external-publication governance boundary. The contribution candidate queue is deliberately designed to accumulate and audit evidence before that decision is made.
