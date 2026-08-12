@@ -10,6 +10,7 @@ on:
       - 'migrations/20260811_calyx_auto_001.sql'
       - 'tests/test_calyx_auto_001.py'
       - 'tests/test_calyx_auto_001_unsupported_role.py'
+      - 'tests/test_calyx_auto_001_action_aliases.py'
       - '.github/workflows/calyx-auto-001.yml'
   push:
     branches: [main]
@@ -21,6 +22,7 @@ on:
       - 'migrations/20260811_calyx_auto_001.sql'
       - 'tests/test_calyx_auto_001.py'
       - 'tests/test_calyx_auto_001_unsupported_role.py'
+      - 'tests/test_calyx_auto_001_action_aliases.py'
       - '.github/workflows/calyx-auto-001.yml'
 
 permissions:
@@ -64,11 +66,13 @@ jobs:
           runtime/calyx_auto_worker.py
           tests/test_calyx_auto_001.py
           tests/test_calyx_auto_001_unsupported_role.py
+          tests/test_calyx_auto_001_action_aliases.py
       - name: Focused and adjacent regressions
         run: >-
           pytest -q
           tests/test_calyx_auto_001.py
           tests/test_calyx_auto_001_unsupported_role.py
+          tests/test_calyx_auto_001_action_aliases.py
           tests/test_calyx_autonomous_program_cycle.py
           tests/test_calyx_engineering_program_worker.py
           tests/test_calyx_engineering_program_persistence.py
@@ -81,6 +85,7 @@ jobs:
           runtime/calyx_auto_worker.py
           tests/test_calyx_auto_001.py
           tests/test_calyx_auto_001_unsupported_role.py
+          tests/test_calyx_auto_001_action_aliases.py
       - name: Migration invariants
         run: |
           grep -q 'calyx_program_validation_events' migrations/20260811_calyx_auto_001.sql
