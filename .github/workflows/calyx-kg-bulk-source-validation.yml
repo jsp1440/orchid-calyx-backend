@@ -16,6 +16,7 @@ on:
       - 'tests/test_verified_bulk_graph_sources.py'
       - 'tests/test_paper_knowledge_graph.py'
       - 'tests/test_source_coverage_audit.py'
+      - 'tests/test_calyx_literature_provider.py'
       - 'tests/test_calyx_occurrence_query.py'
       - 'tests/test_calyx_occurrence_provider.py'
       - 'tests/test_calyx_research_document_fallback.py'
@@ -53,6 +54,7 @@ jobs:
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_source_coverage_audit.py
+          tests/test_calyx_literature_provider.py
           tests/test_calyx_occurrence_query.py
           tests/test_calyx_occurrence_provider.py
           tests/test_calyx_research_document_fallback.py
@@ -62,6 +64,7 @@ jobs:
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_source_coverage_audit.py
+          tests/test_calyx_literature_provider.py
           tests/test_calyx_occurrence_query.py
           tests/test_calyx_occurrence_provider.py
           tests/test_calyx_research_document_fallback.py
@@ -84,6 +87,7 @@ jobs:
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_source_coverage_audit.py
+          tests/test_calyx_literature_provider.py
           tests/test_calyx_occurrence_query.py
           tests/test_calyx_occurrence_provider.py
           tests/test_calyx_research_document_fallback.py
