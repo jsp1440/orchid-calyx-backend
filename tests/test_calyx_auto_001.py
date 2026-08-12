@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
+import threading
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -348,6 +351,78 @@ def test_post_commit_finalize_failure_never_rolls_back_accepted_workspace():
         assert executor.rollback_calls == 0
         assert len(executor.calls) == 1
         assert session.query(CalyxBrainCompletionWriteback).count() == 1
+
+
+@pytest.mark.skipif(
+    not os.environ.get("CALYX_AUTO_TEST_DATABASE_URL"),
+    reason="PostgreSQL concurrency DSN not configured",
+)
+def test_postgres_concurrent_workers_cannot_exceed_active_job_limit():
+    engine = create_engine(os.environ["CALYX_AUTO_TEST_DATABASE_URL"])
+    tables = [
+        CalyxProgram.__table__,
+        CalyxProgramJob.__table__,
+        CalyxProgramDependency.__table__,
+    ]
+    Base.metadata.drop_all(engine, tables=tables)
+    Base.metadata.create_all(engine, tables=tables)
+    try:
+        with Session(engine) as setup:
+            program(
+                setup,
+                [spec("one", 1), spec("two", 2)],
+                max_active_jobs=1,
+            )
+
+        barrier = threading.Barrier(2)
+        claimed: list[str | None] = []
+        errors: list[BaseException] = []
+        result_lock = threading.Lock()
+
+        def claim(worker_id: str) -> None:
+            try:
+                with Session(engine) as session:
+                    worker = GovernedAutoMissionWorker(
+                        session,
+                        GovernanceAwarePrioritySelector(),
+                    )
+                    barrier.wait(timeout=5)
+                    job = worker.claim(
+                        worker_id=worker_id,
+                        owner="owner",
+                        roles=frozenset({AUTONOMY_PROBE_ROLE}),
+                        lease_seconds=60,
+                    )
+                    with result_lock:
+                        claimed.append(job.program_job_id if job else None)
+            except BaseException as exc:
+                with result_lock:
+                    errors.append(exc)
+
+        threads = [
+            threading.Thread(target=claim, args=("worker-a",)),
+            threading.Thread(target=claim, args=("worker-b",)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        assert all(not thread.is_alive() for thread in threads)
+        assert errors == []
+        assert len(claimed) == 2
+        assert sum(item is not None for item in claimed) == 1
+        with Session(engine) as verify:
+            running = (
+                verify.query(CalyxProgramJob)
+                .filter(CalyxProgramJob.status == "running")
+                .all()
+            )
+            assert len(running) == 1
+            assert running[0].attempt_count == 1
+    finally:
+        Base.metadata.drop_all(engine, tables=tables)
+        engine.dispose()
 
 
 def test_timeout_cannot_exceed_lease():
