@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.brain_mission.routes import SERVICE as BRAIN_MISSION_SERVICE
 from app.security import verify_owner_or_api_key
 
+from .graph_context import graph_context_for_message
 from .interaction_context import sanitize_interaction_context
 from .provider import DeterministicGovernedReplyProvider, configured_reply_provider
 from .routes import STORE, _retrieval
@@ -151,13 +152,18 @@ def _run_governed_turn(
 def speak_status(auth: AuthDependency) -> dict[str, Any]:
     _subject(auth)
     return {
-        "release": "CALYX-SPEAK-004-CONTEXT",
+        "release": "CALYX-SPEAK-005-GRAPH-CONTEXT",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
         "interaction_context": {
             "supported": True,
             "evidence": False,
             "max_session_trail": 8,
+        },
+        "knowledge_graph_context": {
+            "supported": True,
+            "read_only": True,
+            "taxon_resolution": "explicit_binomial_exact_display_label_only",
         },
         "automatic_publication": False,
         "knowledge_graph_mutation": False,
@@ -263,6 +269,8 @@ def append_turn(
         retrieval_limit=payload.retrieval_limit,
     )
 
+    graph_context = graph_context_for_message(payload.message)
+
     if mission is not None:
         STORE.append(
             conversation_id,
@@ -278,6 +286,30 @@ def append_turn(
             owner=owner,
         )
 
+    found_graph_taxa = [
+        item
+        for item in graph_context.get("taxa", [])
+        if item.get("status") == "found"
+    ]
+    if found_graph_taxa:
+        STORE.append(
+            conversation_id,
+            "tool",
+            (
+                "Read-only Knowledge Graph context loaded for "
+                + ", ".join(str(item.get("scientific_name")) for item in found_graph_taxa)
+                + "."
+            ),
+            {
+                "tool": "knowledge_graph_read",
+                "status": graph_context.get("status"),
+                "requested_taxa": graph_context.get("requested_taxa"),
+                "found_taxa": graph_context.get("found_taxa"),
+                "knowledge_graph_mutation": False,
+            },
+            owner=owner,
+        )
+
     governed_context = {
         "casual": casual,
         "conversation_id": conversation_id,
@@ -286,10 +318,13 @@ def append_turn(
         "retrieval": retrieval,
         "mission": mission,
         "mission_error": mission_error,
+        "knowledge_graph": graph_context,
         "epistemic_policy": {
             "continuum_first": True,
             "provider_memory_is_evidence": False,
             "interaction_context_is_evidence": False,
+            "persisted_graph_context_is_evidence": True,
+            "graph_taxon_resolution_is_exact_only": True,
             "conversation_does_not_publish_knowledge": True,
             "candidate_knowledge_auto_promotion": False,
             "knowledge_graph_mutation": False,
@@ -327,6 +362,9 @@ def append_turn(
             "retrieval_eligible_results": retrieval.get("total_eligible_results"),
             "retrieval_status": retrieval.get("status"),
             "retrieval_error": retrieval.get("error"),
+            "graph_status": graph_context.get("status"),
+            "graph_requested_taxa": graph_context.get("requested_taxa"),
+            "graph_found_taxa": graph_context.get("found_taxa"),
             "interaction_context": interaction_context,
             "research_mode": payload.research_mode,
             "publication_boundary": (
@@ -353,6 +391,7 @@ def append_turn(
             "mission": mission,
             "mission_error": mission_error,
             "retrieval": retrieval,
+            "knowledge_graph": graph_context,
         },
         "persistence_mode": STORE.persistence_mode,
         "epistemic_policy": governed_context["epistemic_policy"],
