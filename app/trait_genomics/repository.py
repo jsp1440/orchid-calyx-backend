@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import os
+from contextlib import contextmanager
 from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
 
 from .models import DiscoveryDataset, DiscoveryHypothesis
-
 
 DDL = """
 CREATE TABLE IF NOT EXISTS calyx_trait_evidence (

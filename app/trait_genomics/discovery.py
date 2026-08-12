@@ -10,7 +10,6 @@ from .models import (
     EvidenceKind,
 )
 
-
 TRAIT_KINDS = {
     EvidenceKind.OBSERVED_TRAIT,
     EvidenceKind.INFERRED_TRAIT,
