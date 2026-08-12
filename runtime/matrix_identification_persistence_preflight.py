@@ -72,29 +72,13 @@ def assess_matrix_session_schema(
     }
 
 
-def matrix_session_persistence_preflight() -> dict[str, Any]:
-    """Inspect activation prerequisites without applying migration 612 or changing flags."""
-    requested = durable_requested()
-    dsn = os.getenv("DATABASE_URL", "").strip()
+def inspect_matrix_session_database(dsn: str) -> dict[str, Any]:
+    """Read the target database's Matrix-session schema contract without mutation."""
     base: dict[str, Any] = {
-        "schema_version": PREFLIGHT_SCHEMA_VERSION,
-        "database_url_configured": bool(dsn),
-        "durable_requested": requested,
-        "activated": False,
         "connectivity": False,
         "table_exists": False,
         "migration_612_schema_ready": False,
-        "activation_ready": False,
-        "migration_applied_by_preflight": False,
-        "environment_changed_by_preflight": False,
-        "governance_boundary": (
-            "Applying migration 612 and enabling CALYX_MATRIX_SESSION_DURABLE_ENABLED are separate governed deployment actions."
-        ),
     }
-    if not dsn:
-        base["blockers"] = ["DATABASE_URL_NOT_CONFIGURED"]
-        return base
-
     try:
         with psycopg.connect(dsn, connect_timeout=5, row_factory=dict_row) as conn, conn.cursor() as cur:
             base["connectivity"] = True
@@ -161,6 +145,36 @@ def matrix_session_persistence_preflight() -> dict[str, Any]:
     if assessment["missing_indexes"]:
         blockers.append("MATRIX_SESSION_REQUIRED_INDEXES_MISSING")
     base["blockers"] = blockers
-    base["activation_ready"] = bool(base["connectivity"] and assessment["migration_612_schema_ready"])
+    return base
+
+
+def matrix_session_persistence_preflight() -> dict[str, Any]:
+    """Inspect activation prerequisites without applying migration 612 or changing flags."""
+    requested = durable_requested()
+    dsn = os.getenv("DATABASE_URL", "").strip()
+    base: dict[str, Any] = {
+        "schema_version": PREFLIGHT_SCHEMA_VERSION,
+        "database_url_configured": bool(dsn),
+        "durable_requested": requested,
+        "activated": False,
+        "connectivity": False,
+        "table_exists": False,
+        "migration_612_schema_ready": False,
+        "activation_ready": False,
+        "migration_applied_by_preflight": False,
+        "environment_changed_by_preflight": False,
+        "governance_boundary": (
+            "Applying migration 612 and enabling CALYX_MATRIX_SESSION_DURABLE_ENABLED are separate governed deployment actions."
+        ),
+    }
+    if not dsn:
+        base["blockers"] = ["DATABASE_URL_NOT_CONFIGURED"]
+        return base
+
+    inspection = inspect_matrix_session_database(dsn)
+    base.update(inspection)
+    base["activation_ready"] = bool(
+        inspection.get("connectivity") and inspection.get("migration_612_schema_ready")
+    )
     base["activated"] = bool(requested and base["activation_ready"])
     return base
