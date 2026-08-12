@@ -11,6 +11,7 @@ on:
       - 'scripts/audit_source_graph_coverage.py'
       - 'tests/test_verified_bulk_graph_sources.py'
       - 'tests/test_paper_knowledge_graph.py'
+      - 'tests/test_source_coverage_audit.py'
       - '.github/workflows/calyx-kg-bulk-source-validation.yml'
 
 permissions:
@@ -40,11 +41,13 @@ jobs:
           scripts/audit_source_graph_coverage.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
+          tests/test_source_coverage_audit.py
       - name: Focused graph regressions
         run: >-
           pytest -q
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
+          tests/test_source_coverage_audit.py
           tests/test_calyx_verified_graph_materializer.py
           tests/test_source_registry.py
           tests/test_scientific_method_graph_vocabulary.py
@@ -59,5 +62,6 @@ jobs:
           scripts/audit_source_graph_coverage.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
+          tests/test_source_coverage_audit.py
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
