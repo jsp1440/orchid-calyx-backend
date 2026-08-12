@@ -9,6 +9,14 @@ def test_parses_country_and_above_elevation():
     assert parsed.elevation_min_m == 3000.0
 
 
+def test_parses_country_and_below_elevation():
+    parsed = parse_occurrence_filter("List all orchids in Ecuador below 1500 metres")
+    assert parsed is not None
+    assert parsed.country == "Ecuador"
+    assert parsed.elevation_mode == "below"
+    assert parsed.elevation_max_m == 1500.0
+
+
 def test_parses_between_range_order_independently():
     parsed = parse_occurrence_filter("Which orchids in Ecuador occur between 4000 and 3000 m?")
     assert parsed is not None
