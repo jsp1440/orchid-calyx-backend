@@ -60,6 +60,10 @@ class FileMatrixSessionStore:
 
     def save(self, record: dict[str, Any]) -> dict[str, Any]:
         path = self._path(str(record["session_id"]))
+        if path.exists():
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            if int(record.get("revision", 0)) < int(existing.get("revision", 0)):
+                raise MatrixSessionPersistenceError("MATRIX_SESSION_STALE_REVISION")
         path.parent.mkdir(parents=True, exist_ok=True)
         temp = path.with_suffix(".json.tmp")
         temp.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -143,6 +147,7 @@ class PostgresMatrixSessionStore:
                   AND {MATRIX_SESSION_TABLE}.registry_id=EXCLUDED.registry_id
                   AND {MATRIX_SESSION_TABLE}.registry_version=EXCLUDED.registry_version
                   AND {MATRIX_SESSION_TABLE}.registry_checksum_sha256=EXCLUDED.registry_checksum_sha256
+                  AND {MATRIX_SESSION_TABLE}.revision <= EXCLUDED.revision
                 RETURNING session_id
                 """,
                 (
@@ -162,7 +167,7 @@ class PostgresMatrixSessionStore:
             row = cur.fetchone()
             if row is None:
                 raise MatrixSessionPersistenceError(
-                    "MATRIX_SESSION_IMMUTABLE_IDENTITY_CONFLICT: owner or bound registry changed"
+                    "MATRIX_SESSION_WRITE_CONFLICT: immutable identity changed or stale revision attempted"
                 )
             conn.commit()
         return record
