@@ -22,19 +22,17 @@ from .production_publish import publish_to_production
 from .repository import PostgresGraphRepository
 from .source_registry import enabled_queries
 from .sources import PostgresSourceProvider
+from .verified_bulk_sources import bulk_verified_queries
 
 CONFIRMATION_TOKEN = "PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS"
 DEFAULT_DRY_RUN_MAX_ROWS_PER_DOMAIN = 10_000
 MAX_BATCH_SIZE = 5_000
 
-# Integration-priority domains whose read projections are already verified in
-# source_registry.py. Traits are intentionally included: the production graph
-# currently reflects only a partial materialization of the resolved trait corpus,
-# and omitting an already-verified domain from this operator would perpetuate the
-# exact integration gap this module exists to close.
-#
-# Runtime selection still intersects the live registry and adapter map, so a
-# domain cannot become publishable merely by appearing here.
+# Integration-priority domains whose read projections are verified.  Occurrences
+# and traits intentionally resolve through verified_bulk_sources.py because the
+# deployed catalog proved that the legacy registry selected tiny partial corpora
+# (26 occurrence rows and 6,751 resolved trait rows) while production contains
+# 580,612 occurrence rows and 19,929 normalized trait-consensus rows.
 AUDIT_PRIORITY_DOMAINS = (
     "media",
     "occurrences",
@@ -58,8 +56,15 @@ class MaterializationSelection:
         return not self.unavailable and bool(self.selected)
 
 
+def _verified_query_map() -> dict[str, str]:
+    """Return canonical verified queries with live bulk overrides applied."""
+    query_map = dict(enabled_queries())
+    query_map.update(bulk_verified_queries())
+    return query_map
+
+
 def select_domains(domains: Iterable[str] | None = None) -> MaterializationSelection:
-    queries = dict(enabled_queries())
+    queries = _verified_query_map()
     adapters = adapters_by_domain()
     allowed = set(queries).intersection(adapters)
     raw = AUDIT_PRIORITY_DOMAINS if domains is None else domains
@@ -102,7 +107,7 @@ def _selected_adapters(selection: MaterializationSelection):
 
 
 def _selected_queries(selection: MaterializationSelection) -> dict[str, str]:
-    query_map = dict(enabled_queries())
+    query_map = _verified_query_map()
     return {domain: query_map[domain] for domain in selection.selected}
 
 
@@ -148,12 +153,13 @@ def materialize_verified_relationships(
         raise PermissionError("GRAPH_PUBLICATION_CONFIRMATION_REQUIRED")
 
     adapters = _selected_adapters(selection)
+    queries = _selected_queries(selection)
 
     if not execute:
         maximum = int(max_dry_run_rows_per_domain)
         if maximum < 1:
             raise ValueError("DRY_RUN_ROW_LIMIT_MUST_BE_POSITIVE")
-        source = PostgresSourceProvider(dsn, _selected_queries(selection))
+        source = PostgresSourceProvider(dsn, queries)
         report = run_controlled_dry_run(
             PostgresGraphRepository(dsn),
             source,
@@ -162,12 +168,15 @@ def materialize_verified_relationships(
             batch_size=batch,
         )
         report["materialization"] = {
-            "contract": "calyx-verified-relationship-materialization-v3",
+            "contract": "calyx-verified-relationship-materialization-v4-bulk",
             "requested_domains": list(selection.requested),
             "selected_domains": list(selection.selected),
             "production_graph_mutation": False,
             "bounded_validation": True,
             "max_rows_per_domain": maximum,
+            "bulk_source_domains": [
+                domain for domain in selection.selected if domain in bulk_verified_queries()
+            ],
             "confirmation_required": CONFIRMATION_TOKEN,
         }
         return report
@@ -176,12 +185,16 @@ def materialize_verified_relationships(
         dsn,
         adapters=adapters,
         batch_size=batch,
+        queries=queries,
     )
     summary = _publication_summary(report)
     report["materialization"] = {
-        "contract": "calyx-verified-relationship-materialization-v3",
+        "contract": "calyx-verified-relationship-materialization-v4-bulk",
         "requested_domains": list(selection.requested),
         "selected_domains": list(selection.selected),
+        "bulk_source_domains": [
+            domain for domain in selection.selected if domain in bulk_verified_queries()
+        ],
         "production_graph_mutation": summary["committed"],
         "confirmation": "verified",
         "transactional": True,
