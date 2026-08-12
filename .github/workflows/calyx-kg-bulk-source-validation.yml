@@ -8,10 +8,13 @@ on:
       - 'runtime/knowledge_graph/adapters.py'
       - 'runtime/knowledge_graph/paper_knowledge_graph.py'
       - 'runtime/knowledge_graph/source_coverage_audit.py'
+      - 'app/calyx_conversation/occurrence_query.py'
+      - 'app/calyx_conversation/speak_routes.py'
       - 'scripts/audit_source_graph_coverage.py'
       - 'tests/test_verified_bulk_graph_sources.py'
       - 'tests/test_paper_knowledge_graph.py'
       - 'tests/test_source_coverage_audit.py'
+      - 'tests/test_calyx_occurrence_query.py'
       - '.github/workflows/calyx-kg-bulk-source-validation.yml'
 
 permissions:
@@ -38,16 +41,20 @@ jobs:
           runtime/knowledge_graph/adapters.py
           runtime/knowledge_graph/paper_knowledge_graph.py
           runtime/knowledge_graph/source_coverage_audit.py
+          app/calyx_conversation/occurrence_query.py
+          app/calyx_conversation/speak_routes.py
           scripts/audit_source_graph_coverage.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_source_coverage_audit.py
+          tests/test_calyx_occurrence_query.py
       - name: Focused graph regressions
         run: >-
           pytest -q
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_source_coverage_audit.py
+          tests/test_calyx_occurrence_query.py
           tests/test_calyx_verified_graph_materializer.py
           tests/test_source_registry.py
           tests/test_scientific_method_graph_vocabulary.py
@@ -59,9 +66,12 @@ jobs:
           runtime/knowledge_graph/adapters.py
           runtime/knowledge_graph/paper_knowledge_graph.py
           runtime/knowledge_graph/source_coverage_audit.py
+          app/calyx_conversation/occurrence_query.py
+          app/calyx_conversation/speak_routes.py
           scripts/audit_source_graph_coverage.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_source_coverage_audit.py
+          tests/test_calyx_occurrence_query.py
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
