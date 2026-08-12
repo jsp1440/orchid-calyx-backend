@@ -53,23 +53,25 @@ A dedicated read-only deployed graph audit operator is available:
 
 It queries PostgreSQL, emits the complete relationship/integrity report as JSON, performs no writes, and returns non-zero while required integrations remain incomplete.
 
-## Calyx Speak now consumes persisted graph context
+## Calyx Speak consumes persisted graph context and literature metadata
 
 `app/calyx_conversation/graph_context.py` adds a conservative read-only bridge from a scientific Speak turn to `oc_graph`.
 
-The bridge does not perform fuzzy identification. It extracts only explicit binomial names in the current user message, resolves them by exact case-insensitive `taxon` display label, and returns a bounded persisted graph traversal. No common-name inference or image-identification inference is used.
+The taxon bridge does not perform fuzzy identification. It extracts only explicit binomial names in the current user message, resolves them by exact case-insensitive `taxon` display label, and returns a bounded persisted graph traversal. No common-name inference or image-identification inference is used.
 
-`app/calyx_conversation/speak_routes.py` now adds that graph traversal to the governed provider context for every non-casual turn containing an explicit binomial. The stored message metadata records graph status/requested/found taxa and the epistemic policy explicitly marks persisted graph context as governed evidence while retaining `knowledge_graph_mutation=False`.
+`app/calyx_conversation/graph_literature_search.py` adds a second read-only bridge for scientific questions that do not contain an explicit taxon name, such as foliar-nutrition questions. It performs bounded literal-term search over persisted `publication` nodes and their payload metadata, then follows incoming `documented_by` edges to report associated taxon provenance. It does not expand synonyms, does not claim full-text retrieval, and does not infer causal or physiological conclusions from publication titles or metadata.
 
-The deterministic fallback provider was upgraded to `calyx-governed-summary-v2-graph`. This matters because the deployed Speak screenshots showed the deterministic provider being used. When semantic retrieval or a Brain mission returns no evidence but persisted graph context exists, fallback output now reports the graph predicates/domain coverage and data gaps instead of collapsing everything into a generic “no governed evidence” response. It still refuses to turn graph connectivity by itself into a new scientific conclusion.
+`app/calyx_conversation/speak_routes.py` now adds both graph sources to the governed provider context. Stored message metadata records taxon-graph status and graph-literature search status/result counts. The epistemic policy marks persisted graph context and persisted publication-node metadata as governed Continuum evidence while retaining `knowledge_graph_mutation=False`.
 
-This closes the storage-only gap: once relationships exist in `oc_graph`, Speak has an implemented read-only path to consume them.
+The deterministic fallback provider is now `calyx-governed-summary-v3-graph-literature`. This matters because deployed Speak has been operating through the deterministic fallback. When semantic retrieval or a Brain mission returns no evidence but persisted graph evidence exists, fallback output now reports graph predicates/domain coverage and/or matching publication metadata instead of collapsing all of those states into a generic “no governed evidence” response. It explicitly warns that graph connectivity and title/metadata matches do not by themselves justify a new scientific conclusion and that the underlying paper text must still be inspected for substantive literature synthesis.
+
+This closes the storage-only gap: once relationships and publication nodes exist in `oc_graph`, Speak has implemented read-only paths to consume both taxon-linked graph context and persisted literature metadata.
 
 ## Governance
 
 This branch creates and hardens executable bridges but does not itself run against production. It does not bypass blocked source projections, publish staging-only science, activate taxonomy, infer fuzzy taxon crosswalks, or suppress source-contract failures.
 
-Production Knowledge Graph publication remains owner-governed. A failed or rolled-back attempt is never reported as successful mutation. Speak graph access is strictly read-only.
+Production Knowledge Graph publication remains owner-governed. A failed or rolled-back attempt is never reported as successful mutation. Speak graph access and graph-literature search are strictly read-only.
 
 ## Validation hardening completed
 
@@ -88,25 +90,26 @@ Production Knowledge Graph publication remains owner-governed. A failed or rolle
 - full source-row preservation for dynamically projected habitat/elevation nodes;
 - optional explicit reviewed query-map support in `publish_to_production` without changing its default registry path;
 - exact-binomial-only Speak graph resolver and bounded traversal;
-- deterministic fallback graph-context reporting without promoting connectivity to scientific conclusion;
+- bounded literal-term persisted publication-node search with taxon-link provenance;
+- deterministic fallback graph-context and graph-literature reporting without promoting connectivity/title matches to scientific conclusions;
 - focused unit/regression tests and dedicated CI coverage for all of the above.
 
 ## Current branch state
 
-The branch remains based directly on canonical `main` and had zero behind-main drift at the latest comparison checkpoint. The integration is intentionally concentrated in one PR instead of spawning separate graph, audit, habitat/elevation, or Speak PRs.
+The integration is intentionally concentrated in one PR instead of spawning separate graph, audit, habitat/elevation, or Speak PRs. Re-check branch drift before merge; do not assume a prior zero-behind result remains current after later main activity.
 
 ## Current validation and merge boundary
 
-GitHub-hosted Actions remains affected by the runner allocation incident. Recent branch workflows have produced a job with `steps: null`; no checkout, compile, tests, Ruff, or graph regression commands executed. Zero-step failures are not accepted as validation evidence.
+GitHub-hosted Actions remains affected by the runner allocation incident. Recent branch workflows have produced jobs with `steps: null`; no checkout, compile, tests, Ruff, or graph regression commands executed. Zero-step failures are not accepted as validation evidence.
 
 The branch therefore remains draft. It must not be merged merely because GitHub reports it as mergeable. Required next proof is executable exact-head validation through a trusted runner or a trusted local/deployed read-only validation path.
 
 ## Next integration work
 
-1. Obtain exact-head executable CI when GitHub Actions allocates a runner.
+1. Obtain exact-head executable validation when a trusted runner is available.
 2. Run bounded read-only validation against the deployed database for the seven static verified domains.
 3. Run read-only habitat and elevation discovery/dry-runs against the deployed database; either produce verified projections or return precise source/crosswalk blockers.
 4. Run the persisted relationship audit against the deployed database and capture exact baseline counts.
 5. Resolve source-contract failures rather than suppressing them.
 6. With owner authorization, publish verified domains transactionally one domain at a time, beginning with literature and auditing after every slice.
-7. Re-run live Speak acceptance for `Laelia anceps` and the foliar-nutrition literature question after graph publication and semantic-evidence repair.
+7. Re-run live Speak acceptance for `Laelia anceps` and the foliar-nutrition literature question after graph publication; then separately repair/populate the semantic evidence index so full evidence-grounded synthesis can inspect underlying document text rather than relying on graph metadata alone.
