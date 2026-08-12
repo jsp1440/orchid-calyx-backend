@@ -12,6 +12,7 @@ from app.security import verify_owner_or_api_key
 from .graph_context import graph_context_for_message
 from .graph_literature_search import search_persisted_literature
 from .interaction_context import sanitize_interaction_context
+from .occurrence_query import query_occurrence_constraints
 from .provider import DeterministicGovernedReplyProvider, configured_reply_provider
 from .routes import STORE, _retrieval
 
@@ -153,7 +154,7 @@ def _run_governed_turn(
 def speak_status(auth: AuthDependency) -> dict[str, Any]:
     _subject(auth)
     return {
-        "release": "CALYX-SPEAK-006-GRAPH-EVIDENCE",
+        "release": "CALYX-SPEAK-007-OCCURRENCE-CONSTRAINTS",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
         "interaction_context": {
@@ -166,6 +167,7 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
             "read_only": True,
             "taxon_resolution": "explicit_binomial_exact_display_label_only",
             "literature_fallback": "literal_terms_persisted_publication_nodes",
+            "occurrence_constraints": "explicit_country_plus_metric_elevation",
         },
         "automatic_publication": False,
         "knowledge_graph_mutation": False,
@@ -280,6 +282,20 @@ def append_turn(
             limit=min(payload.retrieval_limit, 8),
         )
     )
+    occurrence_constraints = (
+        {
+            "status": "not_requested",
+            "read_only": True,
+            "knowledge_graph_mutation": False,
+            "filter": None,
+            "results": [],
+        }
+        if casual
+        else query_occurrence_constraints(
+            payload.message,
+            limit=min(max(payload.retrieval_limit * 5, 25), 100),
+        )
+    )
 
     if mission is not None:
         STORE.append(
@@ -338,6 +354,25 @@ def append_turn(
             owner=owner,
         )
 
+    if occurrence_constraints.get("status") == "available":
+        STORE.append(
+            conversation_id,
+            "tool",
+            (
+                "Read-only occurrence constraint query resolved "
+                f"{occurrence_constraints.get('result_count', 0)} taxon result(s)."
+            ),
+            {
+                "tool": "occurrence_constraint_read",
+                "status": occurrence_constraints.get("status"),
+                "filter": occurrence_constraints.get("filter"),
+                "result_count": occurrence_constraints.get("result_count"),
+                "source_relation": occurrence_constraints.get("source_relation"),
+                "knowledge_graph_mutation": False,
+            },
+            owner=owner,
+        )
+
     governed_context = {
         "casual": casual,
         "conversation_id": conversation_id,
@@ -348,14 +383,17 @@ def append_turn(
         "mission_error": mission_error,
         "knowledge_graph": graph_context,
         "graph_literature": graph_literature,
+        "occurrence_constraints": occurrence_constraints,
         "epistemic_policy": {
             "continuum_first": True,
             "provider_memory_is_evidence": False,
             "interaction_context_is_evidence": False,
             "persisted_graph_context_is_evidence": True,
             "persisted_graph_literature_is_evidence": True,
+            "occurrence_constraint_results_are_evidence": True,
             "graph_taxon_resolution_is_exact_only": True,
             "graph_literature_search_uses_literal_terms_only": True,
+            "occurrence_constraint_parser_is_explicit_only": True,
             "conversation_does_not_publish_knowledge": True,
             "candidate_knowledge_auto_promotion": False,
             "knowledge_graph_mutation": False,
@@ -399,6 +437,9 @@ def append_turn(
             "graph_literature_status": graph_literature.get("status"),
             "graph_literature_terms": graph_literature.get("terms"),
             "graph_literature_results": len(graph_literature.get("results") or []),
+            "occurrence_constraint_status": occurrence_constraints.get("status"),
+            "occurrence_constraint_filter": occurrence_constraints.get("filter"),
+            "occurrence_constraint_results": len(occurrence_constraints.get("results") or []),
             "interaction_context": interaction_context,
             "research_mode": payload.research_mode,
             "publication_boundary": (
@@ -427,6 +468,7 @@ def append_turn(
             "retrieval": retrieval,
             "knowledge_graph": graph_context,
             "graph_literature": graph_literature,
+            "occurrence_constraints": occurrence_constraints,
         },
         "persistence_mode": STORE.persistence_mode,
         "epistemic_policy": governed_context["epistemic_policy"],
