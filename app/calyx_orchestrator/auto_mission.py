@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Mapping, Sequence
@@ -89,11 +90,25 @@ def _inputs(job: CalyxProgramJob) -> dict[str, Any]:
     return value
 
 
+def _action_token(value: Any) -> str:
+    """Canonicalize equivalent action spellings before governance comparison.
+
+    Human-authored mission inputs may use spaces, hyphens, repeated separators, or
+    mixed case (for example ``force-push`` or ``Production Migration``). Governance
+    classification must not depend on superficial spelling choices.
+    """
+
+    token = str(value).strip().casefold()
+    token = re.sub(r"[\s\-]+", "_", token)
+    token = re.sub(r"_+", "_", token)
+    return token.strip("_")
+
+
 def _normalized_actions(value: Any) -> set[str]:
     actions: set[str] = set()
     if isinstance(value, Mapping):
         for key, item in value.items():
-            normalized_key = str(key).strip().lower()
+            normalized_key = _action_token(key)
             if normalized_key in {
                 "action",
                 "operation",
@@ -101,14 +116,14 @@ def _normalized_actions(value: Any) -> set[str]:
                 "requested_action",
             }:
                 if isinstance(item, str):
-                    actions.add(item.strip().lower())
+                    actions.add(_action_token(item))
             elif normalized_key in {
                 "requested_capabilities",
                 "capabilities",
                 "actions",
             }:
                 if isinstance(item, Sequence) and not isinstance(item, (str, bytes)):
-                    actions.update(str(entry).strip().lower() for entry in item)
+                    actions.update(_action_token(entry) for entry in item)
             actions.update(_normalized_actions(item))
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         for item in value:
@@ -130,11 +145,11 @@ def _direct_requested_action_flags(value: Any) -> set[str]:
     recognized = OWNER_ONLY_ACTIONS | REVIEW_REQUIRED_ACTIONS
     if isinstance(value, Mapping):
         for key, item in value.items():
-            normalized_key = str(key).strip().lower()
+            normalized_key = _action_token(key)
             if normalized_key in recognized:
                 if item is True:
                     requested.add(normalized_key)
-                elif isinstance(item, str) and item.strip().lower() in _TRUE_ACTION_FLAGS:
+                elif isinstance(item, str) and item.strip().casefold() in _TRUE_ACTION_FLAGS:
                     requested.add(normalized_key)
             requested.update(_direct_requested_action_flags(item))
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
@@ -155,7 +170,7 @@ class GovernanceAwarePrioritySelector:
         governance = inputs.get("governance") or {}
         if governance and not isinstance(governance, Mapping):
             raise TypeError("MISSION_GOVERNANCE_OBJECT_REQUIRED")
-        explicit = str(governance.get("class", "")).strip().lower() if governance else ""
+        explicit = _action_token(governance.get("class", "")) if governance else ""
         if explicit in {"owner_only", "owner"}:
             return GovernanceDecision(
                 GovernanceDisposition.OWNER_ONLY,
