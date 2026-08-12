@@ -3,7 +3,12 @@ from __future__ import annotations
 from collections import defaultdict
 from hashlib import sha256
 
-from .models import DiscoveryDataset, DiscoveryHypothesis, DiscoveryResult, EvidenceKind
+from .models import (
+    DiscoveryDataset,
+    DiscoveryHypothesis,
+    DiscoveryResult,
+    EvidenceKind,
+)
 
 
 TRAIT_KINDS = {
