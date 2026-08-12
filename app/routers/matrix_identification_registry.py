@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.lexicon.routes import _load_entry_by_concept_id
 from app.security import verify_owner_or_api_key
 from runtime.matrix_identification import Observation, rank_candidates
 from runtime.matrix_identification_registry import (
     RegistryCharacter,
     candidates_from_registry,
     create_registry_version,
+    derive_registry_version_with_concept_mappings,
     get_registry_version,
     list_registry_versions,
 )
@@ -43,6 +46,18 @@ class RegistryCreateRequest(BaseModel):
     characters: list[RegistryCharacterInput] = Field(min_length=1, max_length=500)
     candidates: list[RegistryCandidateInput] = Field(min_length=1, max_length=5000)
     provenance: dict[str, Any]
+
+
+class RegistryConceptMappingInput(BaseModel):
+    character: str = Field(min_length=1, max_length=120)
+    concept_id: str = Field(min_length=36, max_length=36)
+
+
+class RegistryConceptMappingDerivationRequest(BaseModel):
+    new_version: str = Field(min_length=1, max_length=120)
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    mappings: list[RegistryConceptMappingInput] = Field(min_length=1, max_length=500)
+    review_note: str | None = Field(default=None, max_length=2000)
 
 
 class RegistryObservationInput(BaseModel):
@@ -110,6 +125,91 @@ def create_version(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{registry_id}/{version}/derive-concept-mappings")
+def derive_concept_mappings(
+    registry_id: str,
+    version: str,
+    payload: RegistryConceptMappingDerivationRequest,
+    auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    actor = _actor(auth)
+    mapping_by_character: dict[str, str] = {}
+    approved_concepts: list[dict[str, Any]] = []
+    for mapping in payload.mappings:
+        if mapping.character in mapping_by_character:
+            raise HTTPException(
+                status_code=422,
+                detail=f"duplicate concept mapping for character: {mapping.character}",
+            )
+        try:
+            concept_uuid = UUID(mapping.concept_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"invalid canonical concept UUID for {mapping.character}",
+            ) from exc
+        entry = _load_entry_by_concept_id(concept_uuid)
+        if entry is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "MATRIX_CONCEPT_MAPPING_NOT_APPROVED",
+                    "character": mapping.character,
+                    "concept_id": mapping.concept_id,
+                    "message": "Concept mapping requires an ACTIVE + APPROVED canonical Lexicon concept.",
+                },
+            )
+        mapping_by_character[mapping.character] = mapping.concept_id
+        approved_concepts.append(
+            {
+                "character": mapping.character,
+                "concept_id": mapping.concept_id,
+                "preferred_term": entry.get("preferred_term"),
+                "source_system": entry.get("source_system"),
+                "source_record_id": entry.get("source_record_id"),
+                "review_state": entry.get("review_state"),
+            }
+        )
+
+    try:
+        result = derive_registry_version_with_concept_mappings(
+            registry_id=registry_id,
+            source_version=version,
+            new_version=payload.new_version,
+            concept_mappings=mapping_by_character,
+            actor=actor,
+            title=payload.title,
+            mapping_provenance={
+                "reviewer": actor,
+                "review_note": payload.review_note,
+                "approved_concepts": approved_concepts,
+                "policy": "explicit mappings only; no fuzzy matching or automatic concept promotion",
+            },
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    record = result["record"]
+    return {
+        **result,
+        "source_registry": {
+            "registry_id": registry_id,
+            "version": version,
+        },
+        "new_registry": {
+            "registry_id": record["registry_id"],
+            "version": record["version"],
+            "checksum_sha256": record["checksum_sha256"],
+            "publication_state": record["publication_state"],
+        },
+        "mapping_count": len(mapping_by_character),
+        "automatic_concept_matching": False,
+        "automatic_publication": False,
+    }
 
 
 @router.post("/evaluate")
