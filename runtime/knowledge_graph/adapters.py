@@ -85,9 +85,15 @@ IMAGES_ADAPTER = _make_adapter(
 )
 OCCURRENCES_ADAPTER = _make_adapter(
     domain="occurrences", node_type="occurrence", edge_type="occurs_at",
-    source_table="oc_atlas.occurrences",
+    source_table="public.orchid_occurrence",
     label_fields=("locality", "scientific_name"),
-    payload_fields=("latitude", "longitude", "elevation", "country", "event_date", "basis_of_record", "source_name"),
+    payload_fields=(
+        "scientific_name", "latitude", "longitude", "elevation",
+        "minimum_elevation", "maximum_elevation", "country", "region", "locality",
+        "growth_habit", "habitat_description", "climate_preference",
+        "temperature_range", "humidity_preference", "source_name",
+        "source_record_id", "raw_payload", "created_at", "updated_at",
+    ),
 )
 GEOGRAPHY_ADAPTER = _make_adapter(
     domain="geography", node_type="place", edge_type="occurs_in",
@@ -115,9 +121,14 @@ ELEVATION_ADAPTER = _make_adapter(
 )
 TRAITS_ADAPTER = _make_adapter(
     domain="traits", node_type="trait", edge_type="has_trait",
-    source_table="oc_views.trait_resolved_v4",
+    source_table="public.oc_trait_consensus_normalized",
     label_fields=("trait_name",),
-    payload_fields=("trait_value", "support_count"),
+    payload_fields=(
+        "trait_value", "trait_unit", "support_count", "source_schema", "source_table",
+        "source_pk_text", "page_id", "source_scientific_name", "match_type",
+        "match_rank", "match_confidence", "candidate_count", "source_weight",
+        "vocabulary_normalization_method",
+    ),
 )
 GLOSSARY_ADAPTER = _make_adapter(
     domain="glossary", node_type="glossary_term", edge_type="defined_by_term",
