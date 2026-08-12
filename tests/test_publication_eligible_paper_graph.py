@@ -125,9 +125,13 @@ def test_publication_decision_is_authoritative_for_claim_inclusion():
         _paper(),
         taxon_keys_by_entity_id={"taxon-1": canonical_key("taxon", 42)},
     )
-    keys = {node.key() for node in bundle.nodes}
-    assert canonical_key("result", "paper-eligible-1:accepted-result") in keys
-    assert canonical_key("hypothesis", "paper-eligible-1:reviewed-hypothesis") not in keys
+    result_key = canonical_key("result", "paper-eligible-1:accepted-result")
+    nodes = {node.key(): node for node in bundle.nodes}
+    assert result_key in nodes
+    assert canonical_key("hypothesis", "paper-eligible-1:reviewed-hypothesis") not in nodes
+    assert nodes[result_key].confidence_label == "publication_eligible"
+    assert nodes[result_key].payload["publication_eligible"] is True
+    assert nodes[result_key].payload["publication_eligible_record_ids"] == ["record-1"]
     assert bundle.candidate_objects_omitted == 1
 
 
@@ -144,6 +148,7 @@ def test_eligible_claim_and_reviewed_measurement_connect_to_taxon():
     assert len(about_edges) == 1
     assert about_edges[0].to_key == taxon_key
     assert about_edges[0].payload["publication_eligible"] is True
+    assert about_edges[0].payload["publication_eligible_record_ids"] == ["record-1"]
     assert len(measurement_edges) == 1
     assert measurement_edges[0].to_key == taxon_key
     assert domain_for_edge_type("about_taxon") == "scientific_method"
