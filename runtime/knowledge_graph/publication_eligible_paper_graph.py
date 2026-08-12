@@ -12,6 +12,7 @@ The function is pure and never mutates the Knowledge Graph.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Mapping
 
 from app.literature_extraction.models import PaperKnowledge
@@ -23,17 +24,18 @@ from .scientific_method_vocabulary import CLAIM_TYPE_TO_NODE_TYPE
 _REVIEWED = {"accepted", "corrected"}
 
 
-def _publication_eligible_claim_ids(paper: PaperKnowledge) -> set[str]:
+def _eligible_records_by_claim(paper: PaperKnowledge) -> dict[str, list[str]]:
     eligible_record_ids = {
         decision.source_record_id
         for decision in paper.publication_decisions
         if decision.status == "eligible_for_publication"
     }
-    return {
-        record.source_claim_id
-        for record in paper.normalized_evidence_records
-        if record.record_id in eligible_record_ids
-    }
+    result: dict[str, list[str]] = {}
+    for record in paper.normalized_evidence_records:
+        if record.record_id not in eligible_record_ids:
+            continue
+        result.setdefault(record.source_claim_id, []).append(record.record_id)
+    return result
 
 
 def _reviewed_entity_ids(paper: PaperKnowledge) -> set[str]:
@@ -71,15 +73,20 @@ def build_publication_eligible_paper_graph_specs(
         taxon_keys_by_entity_id=taxon_keys,
         include_candidates=True,
     )
-    eligible_claim_ids = _publication_eligible_claim_ids(paper)
+    eligible_records = _eligible_records_by_claim(paper)
+    eligible_claim_ids = set(eligible_records)
 
-    blocked_claim_keys = {
-        canonical_key(
+    claim_keys_by_id = {
+        claim.claim_id: canonical_key(
             CLAIM_TYPE_TO_NODE_TYPE[claim.claim_type],
             f"{paper.paper_id}:{claim.claim_id}",
         )
         for claim in paper.claims
-        if claim.claim_id not in eligible_claim_ids
+    }
+    blocked_claim_keys = {
+        key
+        for claim_id, key in claim_keys_by_id.items()
+        if claim_id not in eligible_claim_ids
     }
     blocked_measurement_keys = {
         canonical_key(
@@ -91,12 +98,46 @@ def build_publication_eligible_paper_graph_specs(
     }
     blocked_keys = blocked_claim_keys | blocked_measurement_keys
 
-    nodes = [node for node in base.nodes if node.key() not in blocked_keys]
-    edges = [
-        edge
-        for edge in base.edges
-        if edge.from_key not in blocked_keys and edge.to_key not in blocked_keys
-    ]
+    eligible_key_records = {
+        claim_keys_by_id[claim_id]: tuple(sorted(record_ids))
+        for claim_id, record_ids in eligible_records.items()
+        if claim_id in claim_keys_by_id
+    }
+    nodes = []
+    for node in base.nodes:
+        key = node.key()
+        if key in blocked_keys:
+            continue
+        record_ids = eligible_key_records.get(key)
+        if record_ids:
+            nodes.append(
+                replace(
+                    node,
+                    confidence_label="publication_eligible",
+                    payload={
+                        **node.payload,
+                        "publication_eligible": True,
+                        "publication_eligible_record_ids": list(record_ids),
+                    },
+                )
+            )
+        else:
+            nodes.append(node)
+
+    edges = []
+    for edge in base.edges:
+        if edge.from_key in blocked_keys or edge.to_key in blocked_keys:
+            continue
+        if edge.from_key in eligible_key_records or edge.to_key in eligible_key_records:
+            edges.append(
+                replace(
+                    edge,
+                    confidence_label="publication_eligible",
+                    payload={**edge.payload, "publication_eligible": True},
+                )
+            )
+        else:
+            edges.append(edge)
 
     eligible_entity_ids = _reviewed_entity_ids(paper)
     for claim in paper.claims:
@@ -120,10 +161,7 @@ def build_publication_eligible_paper_graph_specs(
     for claim in paper.claims:
         if claim.claim_id not in eligible_claim_ids:
             continue
-        claim_key = canonical_key(
-            CLAIM_TYPE_TO_NODE_TYPE[claim.claim_type],
-            f"{paper.paper_id}:{claim.claim_id}",
-        )
+        claim_key = claim_keys_by_id[claim.claim_id]
         if claim_key not in node_keys:
             continue
         roles = (("subject", claim.subject_ids), ("object", claim.object_ids))
@@ -149,6 +187,9 @@ def build_publication_eligible_paper_graph_specs(
                             "entity_id": entity_id,
                             "semantic_role": role,
                             "publication_eligible": True,
+                            "publication_eligible_record_ids": list(
+                                eligible_records[claim.claim_id]
+                            ),
                         },
                     )
                 )
