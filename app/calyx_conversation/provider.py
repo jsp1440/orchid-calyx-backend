@@ -35,14 +35,14 @@ def _request_hash(payload: dict[str, Any]) -> str:
 class DeterministicGovernedReplyProvider:
     """Safe fallback that never invents facts outside supplied governed context.
 
-    This provider also makes server-side conversation usable when no external model
-    provider has been configured, while keeping the limitation explicit in metadata.
-    Its identity is persisted on each reply so a fallback can never masquerade as a
-    configured generative model.
+    This provider makes server-side conversation usable when no external model
+    provider has been configured, while keeping the limitation explicit in
+    metadata. Its identity is persisted on each reply so fallback output cannot
+    masquerade as a configured generative model.
     """
 
     provider_name = "deterministic-governed"
-    model_name = "calyx-governed-summary-v1"
+    model_name = "calyx-governed-summary-v2-graph"
 
     @staticmethod
     def _format_mission_answer(mission: dict[str, Any]) -> list[str]:
@@ -73,9 +73,7 @@ class DeterministicGovernedReplyProvider:
                     for item in supporting[:5]
                 )
             )
-            lines.append(
-                f"Supporting evidence count: {len(supporting)}."
-            )
+            lines.append(f"Supporting evidence count: {len(supporting)}.")
         else:
             lines.append(
                 "Evidence summary: the mission did not surface any supporting evidence records that could justify a conclusion."
@@ -173,6 +171,49 @@ class DeterministicGovernedReplyProvider:
                 citations.append(summary)
         return citations
 
+    @staticmethod
+    def _format_graph_context(graph_context: dict[str, Any]) -> list[str]:
+        """Summarize persisted graph evidence without inventing a conclusion."""
+        if graph_context.get("status") != "available":
+            return []
+        found = [
+            item
+            for item in graph_context.get("taxa") or []
+            if isinstance(item, dict) and item.get("status") == "found"
+        ]
+        if not found:
+            return []
+
+        lines = [
+            "Persisted Knowledge Graph context was found for the explicit taxon name(s) in this question."
+        ]
+        for item in found[:3]:
+            name = str(item.get("scientific_name") or "taxon")
+            edges = list(dict.fromkeys(str(value) for value in item.get("edge_types") or []))
+            coverage = item.get("domain_coverage") or {}
+            node_count = len(item.get("nodes") or [])
+            edge_count = len(item.get("edges") or [])
+            parts = [f"{name}: {node_count} neighboring nodes, {edge_count} edges"]
+            if edges:
+                parts.append("predicates=" + ", ".join(edges[:8]))
+            if coverage:
+                parts.append(
+                    "domain coverage="
+                    + ", ".join(
+                        f"{key}:{value}" for key, value in list(coverage.items())[:8]
+                    )
+                )
+            lines.append("; ".join(parts) + ".")
+            gaps = item.get("data_gaps") or []
+            if gaps:
+                lines.append(
+                    f"Graph data gaps for {name}: " + "; ".join(str(gap) for gap in gaps[:6]) + "."
+                )
+        lines.append(
+            "Graph context is persisted Continuum evidence/provenance, but graph connectivity alone does not justify a new scientific conclusion."
+        )
+        return lines
+
     def generate(
         self,
         *,
@@ -182,6 +223,8 @@ class DeterministicGovernedReplyProvider:
         payload = {"messages": messages, "governed_context": governed_context}
         mission = governed_context.get("mission")
         retrieval = governed_context.get("retrieval") or {}
+        graph_context = governed_context.get("knowledge_graph") or {}
+        graph_lines = self._format_graph_context(graph_context)
         question = next(
             (item["content"] for item in reversed(messages) if item.get("role") == "user"),
             "",
@@ -190,10 +233,11 @@ class DeterministicGovernedReplyProvider:
         if governed_context.get("casual"):
             lines.append(
                 "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. "
-                "I can discuss a question conversationally, retrieve Continuum evidence, run a governed Brain mission when a scientific question needs it, and keep the evidence and publication boundaries visible."
+                "I can discuss a question conversationally, retrieve Continuum evidence, run a governed Brain mission when a scientific question needs it, read persisted Knowledge Graph context, and keep evidence and publication boundaries visible."
             )
         elif mission:
             lines.extend(self._format_mission_answer(mission))
+            lines.extend(graph_lines)
             lines.append("This answer remains review-bound and is not automatically published knowledge.")
         elif governed_context.get("mission_error"):
             lines.append(
@@ -204,6 +248,7 @@ class DeterministicGovernedReplyProvider:
                 lines.append(
                     f"I did retrieve {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible evidence objects that can be inspected while the mission gap is repaired."
                 )
+            lines.extend(graph_lines)
         elif retrieval.get("results"):
             lines.append(
                 f"I found {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible Orchid Continuum evidence objects relevant to your question."
@@ -212,7 +257,13 @@ class DeterministicGovernedReplyProvider:
                 excerpt = str(result.get("authorized_excerpt") or "").strip().replace("\n", " ")
                 title = result.get("title") or result.get("object_type") or f"Evidence {index}"
                 lines.append(f"{index}. {title}" + (f": {excerpt[:360]}" if excerpt else ""))
+            lines.extend(graph_lines)
             lines.append("I have not promoted these retrieved records into published knowledge.")
+        elif graph_lines:
+            lines.extend(graph_lines)
+            lines.append(
+                "The semantic evidence index did not surface an eligible evidence object for this turn, so I am limiting this response to persisted graph context rather than guessing beyond it."
+            )
         else:
             lines.append(
                 "I do not yet have enough governed Orchid Continuum evidence to answer that substantively without guessing."
@@ -252,6 +303,7 @@ class OpenAICompatibleReplyProvider:
             "Explicitly distinguish direct evidence, inference, missing evidence, and proposed design ideas. "
             "Never claim an Orchid Continuum capability is implemented unless the governed context says it is. "
             "For casual conversation, be natural and concise. For scientific questions, explain what is supported and what remains uncertain. "
+            "Persisted Knowledge Graph context may be used as governed Continuum evidence, but graph connectivity alone must not be promoted into a new scientific conclusion. "
             "Do not publish, promote Candidate Knowledge, or mutate the Knowledge Graph."
         )
         context_text = json.dumps(governed_context, sort_keys=True, default=str)
