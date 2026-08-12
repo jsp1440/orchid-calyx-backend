@@ -6,12 +6,14 @@ on:
       - 'runtime/knowledge_graph/verified_bulk_sources.py'
       - 'runtime/knowledge_graph/production_materializer.py'
       - 'runtime/knowledge_graph/adapters.py'
+      - 'runtime/knowledge_graph/biotic_relation_ontology.py'
       - 'runtime/knowledge_graph/exact_taxon_resolution.py'
       - 'runtime/knowledge_graph/paper_knowledge_graph.py'
       - 'runtime/knowledge_graph/publication_eligible_paper_graph.py'
       - 'runtime/knowledge_graph/reviewed_literature_materializer.py'
       - 'runtime/knowledge_graph/scientific_method_vocabulary.py'
       - 'runtime/knowledge_graph/source_coverage_audit.py'
+      - 'runtime/knowledge_graph/vocabulary.py'
       - 'app/calyx_conversation/extracted_literature_evidence.py'
       - 'app/calyx_conversation/graph_literature_search.py'
       - 'app/calyx_conversation/scientific_method_graph_preview.py'
@@ -22,6 +24,7 @@ on:
       - 'scripts/audit_source_graph_coverage.py'
       - 'scripts/materialize_reviewed_literature_graph.py'
       - 'tests/test_exact_taxon_resolution.py'
+      - 'tests/test_globi_ro_literature_relations.py'
       - 'tests/test_verified_bulk_graph_sources.py'
       - 'tests/test_paper_knowledge_graph.py'
       - 'tests/test_publication_eligible_paper_graph.py'
@@ -57,12 +60,14 @@ jobs:
           runtime/knowledge_graph/verified_bulk_sources.py
           runtime/knowledge_graph/production_materializer.py
           runtime/knowledge_graph/adapters.py
+          runtime/knowledge_graph/biotic_relation_ontology.py
           runtime/knowledge_graph/exact_taxon_resolution.py
           runtime/knowledge_graph/paper_knowledge_graph.py
           runtime/knowledge_graph/publication_eligible_paper_graph.py
           runtime/knowledge_graph/reviewed_literature_materializer.py
           runtime/knowledge_graph/scientific_method_vocabulary.py
           runtime/knowledge_graph/source_coverage_audit.py
+          runtime/knowledge_graph/vocabulary.py
           app/calyx_conversation/extracted_literature_evidence.py
           app/calyx_conversation/graph_literature_search.py
           app/calyx_conversation/scientific_method_graph_preview.py
@@ -73,6 +78,7 @@ jobs:
           scripts/audit_source_graph_coverage.py
           scripts/materialize_reviewed_literature_graph.py
           tests/test_exact_taxon_resolution.py
+          tests/test_globi_ro_literature_relations.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_publication_eligible_paper_graph.py
@@ -88,6 +94,7 @@ jobs:
         run: >-
           pytest -q
           tests/test_exact_taxon_resolution.py
+          tests/test_globi_ro_literature_relations.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_publication_eligible_paper_graph.py
@@ -108,12 +115,14 @@ jobs:
           runtime/knowledge_graph/verified_bulk_sources.py
           runtime/knowledge_graph/production_materializer.py
           runtime/knowledge_graph/adapters.py
+          runtime/knowledge_graph/biotic_relation_ontology.py
           runtime/knowledge_graph/exact_taxon_resolution.py
           runtime/knowledge_graph/paper_knowledge_graph.py
           runtime/knowledge_graph/publication_eligible_paper_graph.py
           runtime/knowledge_graph/reviewed_literature_materializer.py
           runtime/knowledge_graph/scientific_method_vocabulary.py
           runtime/knowledge_graph/source_coverage_audit.py
+          runtime/knowledge_graph/vocabulary.py
           app/calyx_conversation/extracted_literature_evidence.py
           app/calyx_conversation/graph_literature_search.py
           app/calyx_conversation/scientific_method_graph_preview.py
@@ -124,6 +133,7 @@ jobs:
           scripts/audit_source_graph_coverage.py
           scripts/materialize_reviewed_literature_graph.py
           tests/test_exact_taxon_resolution.py
+          tests/test_globi_ro_literature_relations.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_publication_eligible_paper_graph.py
