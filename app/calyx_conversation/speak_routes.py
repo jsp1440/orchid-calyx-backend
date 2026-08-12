@@ -10,6 +10,7 @@ from app.brain_mission.routes import SERVICE as BRAIN_MISSION_SERVICE
 from app.security import verify_owner_or_api_key
 
 from .graph_context import graph_context_for_message
+from .graph_literature_search import search_persisted_literature
 from .interaction_context import sanitize_interaction_context
 from .provider import DeterministicGovernedReplyProvider, configured_reply_provider
 from .routes import STORE, _retrieval
@@ -152,7 +153,7 @@ def _run_governed_turn(
 def speak_status(auth: AuthDependency) -> dict[str, Any]:
     _subject(auth)
     return {
-        "release": "CALYX-SPEAK-005-GRAPH-CONTEXT",
+        "release": "CALYX-SPEAK-006-GRAPH-EVIDENCE",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
         "interaction_context": {
@@ -164,6 +165,7 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
             "supported": True,
             "read_only": True,
             "taxon_resolution": "explicit_binomial_exact_display_label_only",
+            "literature_fallback": "literal_terms_persisted_publication_nodes",
         },
         "automatic_publication": False,
         "knowledge_graph_mutation": False,
@@ -270,6 +272,14 @@ def append_turn(
     )
 
     graph_context = graph_context_for_message(payload.message)
+    graph_literature = (
+        {"status": "not_requested", "results": [], "terms": []}
+        if casual
+        else search_persisted_literature(
+            payload.message,
+            limit=min(payload.retrieval_limit, 8),
+        )
+    )
 
     if mission is not None:
         STORE.append(
@@ -310,6 +320,24 @@ def append_turn(
             owner=owner,
         )
 
+    if graph_literature.get("results"):
+        STORE.append(
+            conversation_id,
+            "tool",
+            (
+                "Read-only persisted graph literature search found "
+                f"{len(graph_literature['results'])} publication node(s)."
+            ),
+            {
+                "tool": "knowledge_graph_literature_read",
+                "status": graph_literature.get("status"),
+                "terms": graph_literature.get("terms"),
+                "result_count": graph_literature.get("result_count"),
+                "knowledge_graph_mutation": False,
+            },
+            owner=owner,
+        )
+
     governed_context = {
         "casual": casual,
         "conversation_id": conversation_id,
@@ -319,12 +347,15 @@ def append_turn(
         "mission": mission,
         "mission_error": mission_error,
         "knowledge_graph": graph_context,
+        "graph_literature": graph_literature,
         "epistemic_policy": {
             "continuum_first": True,
             "provider_memory_is_evidence": False,
             "interaction_context_is_evidence": False,
             "persisted_graph_context_is_evidence": True,
+            "persisted_graph_literature_is_evidence": True,
             "graph_taxon_resolution_is_exact_only": True,
+            "graph_literature_search_uses_literal_terms_only": True,
             "conversation_does_not_publish_knowledge": True,
             "candidate_knowledge_auto_promotion": False,
             "knowledge_graph_mutation": False,
@@ -365,6 +396,9 @@ def append_turn(
             "graph_status": graph_context.get("status"),
             "graph_requested_taxa": graph_context.get("requested_taxa"),
             "graph_found_taxa": graph_context.get("found_taxa"),
+            "graph_literature_status": graph_literature.get("status"),
+            "graph_literature_terms": graph_literature.get("terms"),
+            "graph_literature_results": len(graph_literature.get("results") or []),
             "interaction_context": interaction_context,
             "research_mode": payload.research_mode,
             "publication_boundary": (
@@ -392,6 +426,7 @@ def append_turn(
             "mission_error": mission_error,
             "retrieval": retrieval,
             "knowledge_graph": graph_context,
+            "graph_literature": graph_literature,
         },
         "persistence_mode": STORE.persistence_mode,
         "epistemic_policy": governed_context["epistemic_policy"],
