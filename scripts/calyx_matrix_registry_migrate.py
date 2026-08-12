@@ -15,8 +15,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from runtime.matrix_identification_registry import compute_registry_record_checksum
-from runtime.matrix_identification_registry_preflight import compare_registry_records
+from runtime.matrix_identification_registry_preflight import (
+    compare_registry_records,
+    strict_file_registry_inventory,
+)
 from runtime.matrix_identification_registry_store import (
     FileMatrixRegistryStore,
     PostgresMatrixRegistryStore,
@@ -25,59 +27,8 @@ from runtime.matrix_identification_registry_store import (
 
 
 def strict_source_inventory(source: FileMatrixRegistryStore) -> dict[str, Any]:
-    """Read every physical source package and validate its claimed immutable digest."""
-    records: list[dict[str, Any]] = []
-    blockers: list[dict[str, Any]] = []
-    paths = sorted(source.root.glob("*/*.json")) if source.root.exists() else []
-    for path in paths:
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            blockers.append(
-                {
-                    "code": "MATRIX_REGISTRY_SOURCE_PACKAGE_UNREADABLE",
-                    "path": str(path),
-                    "error_type": type(exc).__name__,
-                }
-            )
-            continue
-
-        claimed = str(record.get("checksum_sha256") or "").strip()
-        registry_id = str(record.get("registry_id") or "").strip()
-        version = str(record.get("version") or "").strip()
-        if not registry_id or not version or not claimed:
-            blockers.append(
-                {
-                    "code": "MATRIX_REGISTRY_SOURCE_PACKAGE_INCOMPLETE",
-                    "path": str(path),
-                    "registry_id": registry_id or None,
-                    "version": version or None,
-                }
-            )
-            continue
-
-        actual = compute_registry_record_checksum(record)
-        if actual != claimed:
-            blockers.append(
-                {
-                    "code": "MATRIX_REGISTRY_SOURCE_CHECKSUM_INVALID",
-                    "path": str(path),
-                    "registry_id": registry_id,
-                    "version": version,
-                    "claimed_checksum_sha256": claimed,
-                    "computed_checksum_sha256": actual,
-                }
-            )
-            continue
-        records.append(record)
-
-    return {
-        "physical_package_count": len(paths),
-        "valid_package_count": len(records),
-        "records": records,
-        "blockers": blockers,
-        "inventory_complete": not blockers and len(records) == len(paths),
-    }
+    """Compatibility wrapper around the canonical strict registry inventory."""
+    return strict_file_registry_inventory(source.root)
 
 
 def plan_registry_migration(
