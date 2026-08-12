@@ -88,7 +88,7 @@ class MolecularReviewQueueRepository:
                 SELECT count(*) AS total
                 FROM oc_genomics.molecular_evidence_candidates
                 WHERE {where_sql}
-                """,  # noqa: S608 - WHERE fragments are fixed application constants; values are parameters.
+                """,
                 params,
             )
             total = int(cur.fetchone()["total"] or 0)
@@ -114,7 +114,7 @@ class MolecularReviewQueueRepository:
                     created_at ASC,
                     association_id ASC
                 LIMIT %s OFFSET %s
-                """,  # noqa: S608 - WHERE fragments are fixed application constants; values are parameters.
+                """,
                 (*params, query.limit, query.offset),
             )
             rows = tuple(dict(row) for row in cur.fetchall())
