@@ -122,10 +122,22 @@ def compare_targets(
         and runtime.port == migration.port
         and runtime.database == migration.database
     )
+    both_system_identifiers_observed = bool(
+        runtime.system_identifier and migration.system_identifier
+    )
+    system_identifier_mismatch = bool(
+        both_system_identifiers_observed
+        and runtime.system_identifier != migration.system_identifier
+    )
+    same_cluster_database_oid_mismatch = bool(
+        both_system_identifiers_observed
+        and not system_identifier_mismatch
+        and runtime.database == migration.database
+        and runtime.database_oid != migration.database_oid
+    )
     cluster_match = bool(
-        runtime.system_identifier
-        and migration.system_identifier
-        and runtime.system_identifier == migration.system_identifier
+        both_system_identifiers_observed
+        and not system_identifier_mismatch
         and runtime.database_oid == migration.database_oid
         and runtime.database == migration.database
     )
@@ -141,8 +153,19 @@ def compare_targets(
         for index, (runtime_oid, migration_oid) in enumerate(sentinel_pairs)
         if runtime_oid != migration_oid
     ]
-    same_target = (config_match or cluster_match) and not sentinel_mismatches
+    observed_identity_conflict = bool(
+        system_identifier_mismatch
+        or same_cluster_database_oid_mismatch
+        or sentinel_mismatches
+    )
+    same_target = (config_match or cluster_match) and not observed_identity_conflict
     blockers: list[str] = []
+    if system_identifier_mismatch:
+        blockers.append("POSTGRES_CLUSTER_SYSTEM_IDENTIFIER_MISMATCH")
+    if same_cluster_database_oid_mismatch:
+        blockers.append("POSTGRES_DATABASE_OID_MISMATCH")
+    if sentinel_mismatches:
+        blockers.append("CANONICAL_SENTINEL_RELATION_IDENTITY_MISMATCH")
     if not same_target:
         blockers.append("RUNTIME_MIGRATION_DATABASE_TARGET_NOT_PROVEN_EQUAL")
     if runtime.transaction_read_only != "on" or migration.transaction_read_only != "on":
@@ -151,6 +174,8 @@ def compare_targets(
         "same_target": same_target and not blockers,
         "config_identity_match": config_match,
         "cluster_database_identity_match": cluster_match,
+        "system_identifier_mismatch": system_identifier_mismatch,
+        "same_cluster_database_oid_mismatch": same_cluster_database_oid_mismatch,
         "sentinel_relation_mismatch_indexes": sentinel_mismatches,
         "blockers": blockers,
     }
