@@ -70,7 +70,7 @@ def test_selected_next_observation_retains_null_concept_when_unmapped():
     assert result["concept_id"] is None
 
 
-def test_zero_weight_only_character_remains_explicitly_zero_when_returned():
+def test_zero_weight_only_character_is_not_recommended():
     registry = {
         "characters": [
             {
@@ -92,6 +92,4 @@ def test_zero_weight_only_character_remains_explicitly_zero_when_returned():
         set(),
     )
 
-    assert result["matrix_weight"] == 0
-    assert result["selection_score"] == 0
-    assert result["concept_id"] == CONCEPT_ID
+    assert result is None
