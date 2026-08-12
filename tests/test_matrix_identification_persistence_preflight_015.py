@@ -1,8 +1,15 @@
+import os
+from pathlib import Path
+
+import psycopg
+import pytest
+
 from runtime.matrix_identification_persistence_preflight import (
     REQUIRED_COLUMNS,
     REQUIRED_DEFAULTS,
     REQUIRED_INDEX_COLUMNS,
     assess_matrix_session_schema,
+    inspect_matrix_session_database,
     matrix_session_persistence_preflight,
 )
 
@@ -31,6 +38,26 @@ def _valid_snapshot():
         "index_definitions": index_definitions,
         "check_constraints": ["CHECK (revision >= 0)"],
     }
+
+
+def _reset_live_migration_612_schema(dsn: str) -> None:
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "612_matrix_identification_sessions.sql"
+    ).read_text(encoding="utf-8")
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute("DROP TABLE IF EXISTS matrix_identification_sessions CASCADE")
+        for statement in migration.split(";"):
+            sql = statement.strip()
+            if not sql or sql.upper() in {"BEGIN", "COMMIT"}:
+                continue
+            conn.execute(sql)
+
+
+def _drop_live_matrix_schema(dsn: str) -> None:
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute("DROP TABLE IF EXISTS matrix_identification_sessions CASCADE")
 
 
 def test_complete_migration_612_schema_is_activation_ready_snapshot():
@@ -173,3 +200,41 @@ def test_preflight_never_claims_activation_from_schema_readiness_alone(monkeypat
     assert assess_matrix_session_schema(**_valid_snapshot())[
         "migration_612_schema_ready"
     ] is True
+
+
+@pytest.mark.skipif(
+    not os.environ.get("CALYX_MATRIX_PREFLIGHT_TEST_DATABASE_URL"),
+    reason="PostgreSQL Matrix preflight DSN not configured",
+)
+def test_live_postgres_exact_migration_612_passes_read_only_preflight():
+    dsn = os.environ["CALYX_MATRIX_PREFLIGHT_TEST_DATABASE_URL"]
+    _reset_live_migration_612_schema(dsn)
+    try:
+        result = inspect_matrix_session_database(dsn)
+        assert result["connectivity"] is True
+        assert result["read_only"] is True
+        assert result["table_exists"] is True
+        assert result["migration_612_schema_ready"] is True
+        assert result["blockers"] == []
+    finally:
+        _drop_live_matrix_schema(dsn)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("CALYX_MATRIX_PREFLIGHT_TEST_DATABASE_URL"),
+    reason="PostgreSQL Matrix preflight DSN not configured",
+)
+def test_live_postgres_nullability_drift_fails_closed():
+    dsn = os.environ["CALYX_MATRIX_PREFLIGHT_TEST_DATABASE_URL"]
+    _reset_live_migration_612_schema(dsn)
+    try:
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            conn.execute(
+                "ALTER TABLE matrix_identification_sessions ALTER COLUMN owner DROP NOT NULL"
+            )
+        result = inspect_matrix_session_database(dsn)
+        assert result["migration_612_schema_ready"] is False
+        assert result["nullable_mismatches"] == ["owner"]
+        assert "MATRIX_SESSION_NULLABILITY_MISMATCH" in result["blockers"]
+    finally:
+        _drop_live_matrix_schema(dsn)
