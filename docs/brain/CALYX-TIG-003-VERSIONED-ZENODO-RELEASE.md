@@ -63,6 +63,10 @@ The production Render service authenticated successfully to Zenodo and created a
 
 The test established successful Calyx-to-Zenodo draft creation without public publication. The subsequent publication attempt remained blocked; no DOI was minted and the record remained unpublished.
 
+## Validation contract
+
+The repository includes a focused `CALYX TIG Zenodo Validation` workflow. It executes TIG discovery, scientific hardening, Zenodo packaging, release-service tests, subsystem compilation, and Ruff checks whenever the TIG/archive surface changes. Archive workflow changes are not merge-ready until this focused validation and applicable repository governance checks are green.
+
 ## Operational configuration
 
 Required runtime variables:
