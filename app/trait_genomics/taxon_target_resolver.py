@@ -1,3 +1,4 @@
+# ruff: noqa: I001 -- keep stdlib/psycopg/local dependency groups explicit in this isolated resolver.
 from __future__ import annotations
 
 import os
