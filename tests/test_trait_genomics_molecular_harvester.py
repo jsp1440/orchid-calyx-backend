@@ -27,7 +27,8 @@ class FakeRepository:
         self.rows = []
 
     def upsert_candidate(self, candidate):
-        row = {"association_id": candidate.stable_id(), **candidate.model_dump(mode="json")}
+        row = candidate.model_dump(mode="json")
+        row["association_id"] = candidate.stable_id()
         self.rows.append(row)
         return row
 
