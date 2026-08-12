@@ -21,6 +21,7 @@ from app.routers.owner_session_token import router as owner_session_token_router
 from app.routers.release_identity import router as release_identity_router
 from app.routers.scientific_intelligence import router as scientific_intelligence_router
 from app.routers.taxonomy_releases import router as taxonomy_releases_router
+from app.trait_genomics.routes import router as trait_genomics_router
 from runtime.connector_routes import router as connector_router
 from runtime.router_fastapi import config_router, infrastructure_router
 
@@ -164,6 +165,7 @@ router.include_router(calyx_queue_router, dependencies=[Depends(add_mission_cont
 router.include_router(multimodal_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(archive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(parallel_platform_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(trait_genomics_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(workflow_router)
 router.include_router(executive_intelligence_router)
 router.include_router(connector_router)
