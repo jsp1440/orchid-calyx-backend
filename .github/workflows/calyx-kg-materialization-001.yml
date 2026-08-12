@@ -11,10 +11,13 @@ on:
       - 'scripts/audit_persisted_graph_relationships.py'
       - 'app/readiness/live_graph_audit.py'
       - 'app/readiness/owner_audit_relationships.py'
+      - 'app/calyx_conversation/graph_context.py'
+      - 'app/calyx_conversation/speak_routes.py'
       - 'tests/test_calyx_verified_graph_materializer.py'
       - 'tests/test_verified_dynamic_materializer.py'
       - 'tests/test_calyx_live_graph_audit.py'
       - 'tests/test_owner_audit_relationships.py'
+      - 'tests/test_calyx_speak_graph_context.py'
       - 'docs/brain/CALYX-KG-MATERIALIZATION-001.md'
       - '.github/workflows/calyx-kg-materialization-001.yml'
 
@@ -34,7 +37,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install pytest ruff
-      - name: Compile materializers and live audit
+      - name: Compile materializers, audit, and Speak graph bridge
         run: >-
           python -m py_compile
           runtime/knowledge_graph/production_materializer.py
@@ -45,10 +48,13 @@ jobs:
           scripts/audit_persisted_graph_relationships.py
           app/readiness/live_graph_audit.py
           app/readiness/owner_audit_relationships.py
+          app/calyx_conversation/graph_context.py
+          app/calyx_conversation/speak_routes.py
           tests/test_calyx_verified_graph_materializer.py
           tests/test_verified_dynamic_materializer.py
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
+          tests/test_calyx_speak_graph_context.py
       - name: Focused integration tests
         run: >-
           pytest -q
@@ -56,7 +62,8 @@ jobs:
           tests/test_verified_dynamic_materializer.py
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
-      - name: Adjacent graph regressions
+          tests/test_calyx_speak_graph_context.py
+      - name: Adjacent graph and Speak regressions
         run: >-
           pytest -q
           tests/test_source_registry.py
@@ -77,11 +84,14 @@ jobs:
           scripts/audit_persisted_graph_relationships.py
           app/readiness/live_graph_audit.py
           app/readiness/owner_audit_relationships.py
+          app/calyx_conversation/graph_context.py
+          app/calyx_conversation/speak_routes.py
           tests/test_calyx_verified_graph_materializer.py
           tests/test_verified_dynamic_materializer.py
           tests/test_calyx_live_graph_audit.py
           tests/test_owner_audit_relationships.py
-      - name: Permanent publication guards
+          tests/test_calyx_speak_graph_context.py
+      - name: Permanent publication and read-only guards
         run: |
           grep -q 'PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS' runtime/knowledge_graph/production_materializer.py
           grep -q 'EXPLICIT_PRODUCTION_DOMAINS_REQUIRED' runtime/knowledge_graph/production_materializer.py
@@ -95,5 +105,8 @@ jobs:
           grep -q 'taxonomy_to_habitat' app/readiness/live_graph_audit.py
           grep -q 'persisted_knowledge_graph_audit' app/readiness/owner_audit_relationships.py
           grep -q 'run_live_graph_audit' scripts/audit_persisted_graph_relationships.py
+          grep -q 'explicit_binomial_exact_display_label_only' app/calyx_conversation/graph_context.py
+          grep -q 'knowledge_graph_mutation.*False' app/calyx_conversation/graph_context.py
+          grep -q 'persisted_graph_context_is_evidence' app/calyx_conversation/speak_routes.py
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
