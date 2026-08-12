@@ -40,18 +40,27 @@ def _valid_snapshot():
     }
 
 
-def _reset_live_migration_612_schema(dsn: str) -> None:
+def _migration_statements() -> list[str]:
     migration = (
         Path(__file__).resolve().parents[1]
         / "migrations"
         / "612_matrix_identification_sessions.sql"
     ).read_text(encoding="utf-8")
+    statements: list[str] = []
+    for raw_statement in migration.split(";"):
+        sql = "\n".join(
+            line for line in raw_statement.splitlines() if not line.strip().startswith("--")
+        ).strip()
+        if not sql or sql.upper() in {"BEGIN", "COMMIT"}:
+            continue
+        statements.append(sql)
+    return statements
+
+
+def _reset_live_migration_612_schema(dsn: str) -> None:
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute("DROP TABLE IF EXISTS matrix_identification_sessions CASCADE")
-        for statement in migration.split(";"):
-            sql = statement.strip()
-            if not sql or sql.upper() in {"BEGIN", "COMMIT"}:
-                continue
+        for sql in _migration_statements():
             conn.execute(sql)
 
 
