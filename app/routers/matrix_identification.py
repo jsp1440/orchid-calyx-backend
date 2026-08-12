@@ -7,6 +7,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.calyx_conversation.workspace_outputs import matrix_identification_table
 from app.security import verify_owner_or_api_key
 from runtime.matrix_identification import Candidate, Observation, rank_candidates
 
@@ -50,7 +51,13 @@ def contract(_: Any = Depends(verify_owner_or_api_key)) -> dict[str, Any]:  # no
             "uncertainty reduces effective character weight",
             "every score includes character-level explanations",
             "results rank candidates and do not assert an identification",
+            "workspace ranking panels are derived outputs and do not establish identification truth",
         ],
+        "workspace_outputs": {
+            "supported": True,
+            "kinds": ["table"],
+            "evidence_status": "derived",
+        },
         "canonical_taxonomy_mutation": False,
         "collection_record_mutation": False,
     }
@@ -66,6 +73,11 @@ def evaluate(
             Observation(**item.model_dump()) for item in payload.observations
         ]
         candidates = [Candidate(**item.model_dump()) for item in payload.candidates]
-        return rank_candidates(observations, candidates, limit=payload.limit)
+        report = rank_candidates(observations, candidates, limit=payload.limit)
+        workspace_output = matrix_identification_table(report)
+        return {
+            **report,
+            "workspace_outputs": [workspace_output] if workspace_output else [],
+        }
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
