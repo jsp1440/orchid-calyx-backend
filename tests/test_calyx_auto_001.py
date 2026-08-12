@@ -138,10 +138,12 @@ def program(session, specs, dependencies=(), *, max_active_jobs=6):
     return item
 
 
-def spec(key, priority=100, action=None):
+def spec(key, priority=100, action=None, extra_inputs=None):
     inputs = {"priority": priority}
     if action:
         inputs["action"] = action
+    if extra_inputs:
+        inputs.update(extra_inputs)
     return ProgramJobSpec(
         key,
         AUTONOMY_PROBE_ROLE,
@@ -217,6 +219,72 @@ def test_governance_owner_only_action_is_held_without_consuming_mission():
         assert job.lease_token is None
         assert job.attempt_count == 0
         assert session.query(CalyxBrainCompletionWriteback).count() == 0
+
+
+@pytest.mark.parametrize(
+    ("extra_inputs", "expected_code"),
+    [
+        ({"merge": True}, "OWNER_ONLY_ACTION:merge"),
+        ({"automatic_merge": "enabled"}, "OWNER_ONLY_ACTION:automatic_merge"),
+        (
+            {"request": {"production_database_mutation": "requested"}},
+            "OWNER_ONLY_ACTION:production_database_mutation",
+        ),
+        (
+            {"workflow": {"production_migration": True}},
+            "REVIEW_REQUIRED_ACTION:production_migration",
+        ),
+    ],
+)
+def test_direct_action_flags_cannot_bypass_preclaim_governance(extra_inputs, expected_code):
+    with db() as session:
+        item = program(session, [spec("guarded", 0, extra_inputs=extra_inputs)])
+        job = (
+            session.query(CalyxProgramJob)
+            .filter_by(program_id=item.program_id)
+            .one()
+        )
+        decision = GovernanceAwarePrioritySelector().decision(job)
+        assert decision.code == expected_code
+        assert decision.automatically_executable is False
+
+        executor = FeedbackExecutor()
+        result = AutoMissionCoordinator(
+            session,
+            registry=Registry(executor),
+        ).run_cycle(owner="owner", worker_id="w")
+        assert result.stop_reason == "governance_boundary"
+        assert result.attempted_jobs == 0
+        assert executor.calls == []
+        session.refresh(job)
+        assert job.status == "queued"
+        assert job.attempt_count == 0
+        assert job.lease_token is None
+
+
+def test_false_action_flag_and_publication_metadata_do_not_create_false_governance_hold():
+    with db() as session:
+        item = program(
+            session,
+            [
+                spec(
+                    "science-read",
+                    0,
+                    extra_inputs={
+                        "merge": False,
+                        "publication": {"doi": "10.0000/example", "title": "evidence only"},
+                    },
+                )
+            ],
+        )
+        job = (
+            session.query(CalyxProgramJob)
+            .filter_by(program_id=item.program_id)
+            .one()
+        )
+        decision = GovernanceAwarePrioritySelector().decision(job)
+        assert decision.automatically_executable is True
+        assert decision.code == "AUTOMATICALLY_ADMISSIBLE"
 
 
 def test_newly_released_owner_only_child_stops_at_governance_boundary():
