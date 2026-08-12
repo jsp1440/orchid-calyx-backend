@@ -64,7 +64,7 @@ class ScientificArchiveReleaseService:
         )
         deposition_id = draft.get("id")
         if not isinstance(deposition_id, int):
-            raise RuntimeError("Zenodo draft response did not contain an integer deposition id")
+            raise TypeError("Zenodo draft response did not contain an integer deposition id")
 
         compact = self.bridge.compact_draft_payload(draft)
         self.repository.save_archive_release(
