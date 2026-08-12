@@ -1,0 +1,159 @@
+name: CALYX KG Bulk Source Validation
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/knowledge_graph/verified_bulk_sources.py'
+      - 'runtime/knowledge_graph/production_materializer.py'
+      - 'runtime/knowledge_graph/adapters.py'
+      - 'runtime/knowledge_graph/biotic_relation_ontology.py'
+      - 'runtime/knowledge_graph/globi_corpus_backfill.py'
+      - 'runtime/knowledge_graph/exact_taxon_resolution.py'
+      - 'runtime/knowledge_graph/paper_knowledge_graph.py'
+      - 'runtime/knowledge_graph/publication_eligible_paper_graph.py'
+      - 'runtime/knowledge_graph/reviewed_literature_materializer.py'
+      - 'runtime/knowledge_graph/scientific_method_vocabulary.py'
+      - 'runtime/knowledge_graph/source_coverage_audit.py'
+      - 'runtime/knowledge_graph/vocabulary.py'
+      - 'app/calyx_conversation/extracted_literature_evidence.py'
+      - 'app/calyx_conversation/graph_literature_search.py'
+      - 'app/calyx_conversation/scientific_method_graph_preview.py'
+      - 'app/calyx_conversation/occurrence_query.py'
+      - 'app/calyx_conversation/provider.py'
+      - 'app/calyx_conversation/speak_routes.py'
+      - 'app/literature_extraction/source_binding.py'
+      - 'scripts/audit_globi_literature_backfill.py'
+      - 'scripts/audit_source_graph_coverage.py'
+      - 'scripts/materialize_reviewed_literature_graph.py'
+      - 'tests/test_exact_taxon_resolution.py'
+      - 'tests/test_globi_ro_literature_relations.py'
+      - 'tests/test_globi_corpus_backfill.py'
+      - 'tests/test_verified_bulk_graph_sources.py'
+      - 'tests/test_paper_knowledge_graph.py'
+      - 'tests/test_publication_eligible_paper_graph.py'
+      - 'tests/test_publication_eligible_paper_graph_publish.py'
+      - 'tests/test_reviewed_literature_materializer.py'
+      - 'tests/test_source_coverage_audit.py'
+      - 'tests/test_calyx_literature_provider.py'
+      - 'tests/test_calyx_occurrence_query.py'
+      - 'tests/test_calyx_occurrence_provider.py'
+      - 'tests/test_calyx_research_document_fallback.py'
+      - 'tests/test_calyx_reviewed_literature_evidence_bridge.py'
+      - '.github/workflows/calyx-kg-bulk-source-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile graph integration
+        run: >-
+          python -m py_compile
+          runtime/knowledge_graph/verified_bulk_sources.py
+          runtime/knowledge_graph/production_materializer.py
+          runtime/knowledge_graph/adapters.py
+          runtime/knowledge_graph/biotic_relation_ontology.py
+          runtime/knowledge_graph/globi_corpus_backfill.py
+          runtime/knowledge_graph/exact_taxon_resolution.py
+          runtime/knowledge_graph/paper_knowledge_graph.py
+          runtime/knowledge_graph/publication_eligible_paper_graph.py
+          runtime/knowledge_graph/reviewed_literature_materializer.py
+          runtime/knowledge_graph/scientific_method_vocabulary.py
+          runtime/knowledge_graph/source_coverage_audit.py
+          runtime/knowledge_graph/vocabulary.py
+          app/calyx_conversation/extracted_literature_evidence.py
+          app/calyx_conversation/graph_literature_search.py
+          app/calyx_conversation/scientific_method_graph_preview.py
+          app/calyx_conversation/occurrence_query.py
+          app/calyx_conversation/provider.py
+          app/calyx_conversation/speak_routes.py
+          app/literature_extraction/source_binding.py
+          scripts/audit_globi_literature_backfill.py
+          scripts/audit_source_graph_coverage.py
+          scripts/materialize_reviewed_literature_graph.py
+          tests/test_exact_taxon_resolution.py
+          tests/test_globi_ro_literature_relations.py
+          tests/test_globi_corpus_backfill.py
+          tests/test_verified_bulk_graph_sources.py
+          tests/test_paper_knowledge_graph.py
+          tests/test_publication_eligible_paper_graph.py
+          tests/test_publication_eligible_paper_graph_publish.py
+          tests/test_reviewed_literature_materializer.py
+          tests/test_source_coverage_audit.py
+          tests/test_calyx_literature_provider.py
+          tests/test_calyx_occurrence_query.py
+          tests/test_calyx_occurrence_provider.py
+          tests/test_calyx_research_document_fallback.py
+          tests/test_calyx_reviewed_literature_evidence_bridge.py
+      - name: Focused graph regressions
+        run: >-
+          pytest -q
+          tests/test_exact_taxon_resolution.py
+          tests/test_globi_ro_literature_relations.py
+          tests/test_globi_corpus_backfill.py
+          tests/test_verified_bulk_graph_sources.py
+          tests/test_paper_knowledge_graph.py
+          tests/test_publication_eligible_paper_graph.py
+          tests/test_publication_eligible_paper_graph_publish.py
+          tests/test_reviewed_literature_materializer.py
+          tests/test_source_coverage_audit.py
+          tests/test_calyx_literature_provider.py
+          tests/test_calyx_occurrence_query.py
+          tests/test_calyx_occurrence_provider.py
+          tests/test_calyx_research_document_fallback.py
+          tests/test_calyx_reviewed_literature_evidence_bridge.py
+          tests/test_calyx_verified_graph_materializer.py
+          tests/test_source_registry.py
+          tests/test_scientific_method_graph_vocabulary.py
+      - name: Ruff
+        run: >-
+          ruff check
+          runtime/knowledge_graph/verified_bulk_sources.py
+          runtime/knowledge_graph/production_materializer.py
+          runtime/knowledge_graph/adapters.py
+          runtime/knowledge_graph/biotic_relation_ontology.py
+          runtime/knowledge_graph/globi_corpus_backfill.py
+          runtime/knowledge_graph/exact_taxon_resolution.py
+          runtime/knowledge_graph/paper_knowledge_graph.py
+          runtime/knowledge_graph/publication_eligible_paper_graph.py
+          runtime/knowledge_graph/reviewed_literature_materializer.py
+          runtime/knowledge_graph/scientific_method_vocabulary.py
+          runtime/knowledge_graph/source_coverage_audit.py
+          runtime/knowledge_graph/vocabulary.py
+          app/calyx_conversation/extracted_literature_evidence.py
+          app/calyx_conversation/graph_literature_search.py
+          app/calyx_conversation/scientific_method_graph_preview.py
+          app/calyx_conversation/occurrence_query.py
+          app/calyx_conversation/provider.py
+          app/calyx_conversation/speak_routes.py
+          app/literature_extraction/source_binding.py
+          scripts/audit_globi_literature_backfill.py
+          scripts/audit_source_graph_coverage.py
+          scripts/materialize_reviewed_literature_graph.py
+          tests/test_exact_taxon_resolution.py
+          tests/test_globi_ro_literature_relations.py
+          tests/test_globi_corpus_backfill.py
+          tests/test_verified_bulk_graph_sources.py
+          tests/test_paper_knowledge_graph.py
+          tests/test_publication_eligible_paper_graph.py
+          tests/test_publication_eligible_paper_graph_publish.py
+          tests/test_reviewed_literature_materializer.py
+          tests/test_source_coverage_audit.py
+          tests/test_calyx_literature_provider.py
+          tests/test_calyx_occurrence_query.py
+          tests/test_calyx_occurrence_provider.py
+          tests/test_calyx_research_document_fallback.py
+          tests/test_calyx_reviewed_literature_evidence_bridge.py
+      - name: Diff hygiene
+        run: git diff --check origin/${{ github.base_ref }}...HEAD

@@ -4,7 +4,10 @@ Node types and edge types are grouped into scientific *domains* so that a
 traversal can report domain coverage and explicit data gaps. The original
 production graph was taxon-centered; the causal-reasoning vocabulary extends
 that model across molecular biology, anatomy, physiology, development,
-environment, phenotype, cultivation, and biotic interactions.
+environment, phenotype, cultivation, and biotic interactions. The scientific-
+method vocabulary additionally models the internal evidence structure of papers:
+observations, measurements, methods, experiments, results, conclusions,
+citations, figures, tables and source spans.
 
 Nothing in this vocabulary publishes scientific claims. It defines canonical
 labels and domain assignments that publishers and validators may accept.
@@ -12,10 +15,15 @@ labels and domain assignments that publishers and validators may accept.
 
 from __future__ import annotations
 
+from .biotic_relation_ontology import BIOTIC_RELATION_EDGE_TYPE_DOMAIN
 from .causal_vocabulary import (
     CANONICAL_CAUSAL_EDGE_TYPES,
     CAUSAL_EVIDENCE_EDGE_TYPES,
     CAUSAL_NODE_TYPE_DOMAIN,
+)
+from .scientific_method_vocabulary import (
+    SCIENTIFIC_METHOD_EDGE_TYPE_DOMAIN,
+    SCIENTIFIC_METHOD_NODE_TYPE_DOMAIN,
 )
 
 NODE_TYPE_DOMAIN: dict[str, str] = {
@@ -47,6 +55,7 @@ NODE_TYPE_DOMAIN: dict[str, str] = {
     "chapter": "education",
     "figure": "education",
     **CAUSAL_NODE_TYPE_DOMAIN,
+    **SCIENTIFIC_METHOD_NODE_TYPE_DOMAIN,
 }
 
 EDGE_TYPE_DOMAIN: dict[str, str] = {
@@ -73,6 +82,8 @@ EDGE_TYPE_DOMAIN: dict[str, str] = {
     "explained_by": "education",
     "raises_question": "research",
     "tested_by_hypothesis": "research",
+    **SCIENTIFIC_METHOD_EDGE_TYPE_DOMAIN,
+    **BIOTIC_RELATION_EDGE_TYPE_DOMAIN,
 }
 
 # Extend rather than overwrite the legacy domain assignment of evidence aliases
@@ -99,6 +110,7 @@ ALL_DOMAINS: tuple[str, ...] = (
     "conservation",
     "molecular",
     "research",
+    "scientific_method",
     "education",
     "anatomy",
     "physiology",

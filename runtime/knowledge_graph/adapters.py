@@ -85,9 +85,15 @@ IMAGES_ADAPTER = _make_adapter(
 )
 OCCURRENCES_ADAPTER = _make_adapter(
     domain="occurrences", node_type="occurrence", edge_type="occurs_at",
-    source_table="oc_atlas.occurrences",
+    source_table="public.orchid_occurrence",
     label_fields=("locality", "scientific_name"),
-    payload_fields=("latitude", "longitude", "elevation", "country", "event_date", "basis_of_record", "source_name"),
+    payload_fields=(
+        "scientific_name", "latitude", "longitude", "elevation",
+        "minimum_elevation", "maximum_elevation", "country", "region", "locality",
+        "growth_habit", "habitat_description", "climate_preference",
+        "temperature_range", "humidity_preference", "source_name",
+        "source_record_id", "raw_payload", "created_at", "updated_at",
+    ),
 )
 GEOGRAPHY_ADAPTER = _make_adapter(
     domain="geography", node_type="place", edge_type="occurs_in",
@@ -97,9 +103,14 @@ GEOGRAPHY_ADAPTER = _make_adapter(
 )
 HABITAT_ADAPTER = _make_adapter(
     domain="habitat", node_type="habitat", edge_type="occupies_habitat",
-    source_table="oc_habitat.taxon_habitats",
+    source_table="public.oc_species_habitat_claims",
     label_fields=("habitat_name", "habitat_type"),
-    payload_fields=("habitat_type", "biome", "substrate", "description", "source_name"),
+    payload_fields=(
+        "habitat_type", "biome", "substrate", "description", "source_name",
+        "elevation_min", "elevation_max", "climate_zone", "canopy_cover",
+        "moisture_regime", "citation_url", "citation_text", "evidence_text",
+        "claim_status", "needs_review", "source_id", "source_table", "source_column",
+    ),
 )
 CLIMATE_ADAPTER = _make_adapter(
     domain="climate", node_type="climate", edge_type="experiences_climate",
@@ -109,15 +120,24 @@ CLIMATE_ADAPTER = _make_adapter(
 )
 ELEVATION_ADAPTER = _make_adapter(
     domain="elevation", node_type="elevation", edge_type="has_elevation",
-    source_table="oc_env.taxon_elevation_profiles",
+    source_table="public.species_elevation_profile",
     label_fields=("elevation_label", "scientific_name"),
-    payload_fields=("minimum_elevation_m", "maximum_elevation_m", "mean_elevation_m", "method", "source_name"),
+    payload_fields=(
+        "minimum_elevation_m", "maximum_elevation_m", "mean_elevation_m", "method",
+        "source_name", "n_records", "elev_p05_m", "elev_p25_m", "elev_p50_m",
+        "elev_p75_m", "elev_p95_m", "elev_sd_m",
+    ),
 )
 TRAITS_ADAPTER = _make_adapter(
     domain="traits", node_type="trait", edge_type="has_trait",
-    source_table="oc_views.trait_resolved_v4",
+    source_table="public.oc_trait_consensus_normalized",
     label_fields=("trait_name",),
-    payload_fields=("trait_value", "support_count"),
+    payload_fields=(
+        "trait_value", "trait_unit", "support_count", "source_schema", "source_table",
+        "source_pk_text", "page_id", "source_scientific_name", "match_type",
+        "match_rank", "match_confidence", "candidate_count", "source_weight",
+        "vocabulary_normalization_method",
+    ),
 )
 GLOSSARY_ADAPTER = _make_adapter(
     domain="glossary", node_type="glossary_term", edge_type="defined_by_term",

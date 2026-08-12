@@ -1,0 +1,151 @@
+name: CALYX KG Materialization 001
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/knowledge_graph/production_materializer.py'
+      - 'runtime/knowledge_graph/production_publish.py'
+      - 'runtime/knowledge_graph/verified_dynamic_materializer.py'
+      - 'runtime/knowledge_graph/scientific_method_vocabulary.py'
+      - 'runtime/knowledge_graph/scientific_corpus_inventory.py'
+      - 'runtime/knowledge_graph/vocabulary.py'
+      - 'scripts/materialize_verified_graph_relationships.py'
+      - 'scripts/materialize_dynamic_graph_relationship.py'
+      - 'scripts/audit_persisted_graph_relationships.py'
+      - 'scripts/inventory_scientific_corpora.py'
+      - 'app/readiness/live_graph_audit.py'
+      - 'app/readiness/owner_audit_relationships.py'
+      - 'app/calyx_conversation/graph_context.py'
+      - 'app/calyx_conversation/graph_literature_search.py'
+      - 'app/calyx_conversation/speak_routes.py'
+      - 'app/calyx_conversation/provider.py'
+      - 'tests/test_calyx_verified_graph_materializer.py'
+      - 'tests/test_verified_dynamic_materializer.py'
+      - 'tests/test_calyx_live_graph_audit.py'
+      - 'tests/test_owner_audit_relationships.py'
+      - 'tests/test_calyx_speak_graph_context.py'
+      - 'tests/test_calyx_graph_literature_search.py'
+      - 'tests/test_calyx_deterministic_graph_provider.py'
+      - 'tests/test_scientific_method_graph_vocabulary.py'
+      - 'docs/brain/CALYX-KG-MATERIALIZATION-001.md'
+      - '.github/workflows/calyx-kg-materialization-001.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile materializers, audit, scientific vocabulary, and Speak bridges
+        run: >-
+          python -m py_compile
+          runtime/knowledge_graph/production_materializer.py
+          runtime/knowledge_graph/production_publish.py
+          runtime/knowledge_graph/verified_dynamic_materializer.py
+          runtime/knowledge_graph/scientific_method_vocabulary.py
+          runtime/knowledge_graph/scientific_corpus_inventory.py
+          runtime/knowledge_graph/vocabulary.py
+          scripts/materialize_verified_graph_relationships.py
+          scripts/materialize_dynamic_graph_relationship.py
+          scripts/audit_persisted_graph_relationships.py
+          scripts/inventory_scientific_corpora.py
+          app/readiness/live_graph_audit.py
+          app/readiness/owner_audit_relationships.py
+          app/calyx_conversation/graph_context.py
+          app/calyx_conversation/graph_literature_search.py
+          app/calyx_conversation/speak_routes.py
+          app/calyx_conversation/provider.py
+          tests/test_calyx_verified_graph_materializer.py
+          tests/test_verified_dynamic_materializer.py
+          tests/test_calyx_live_graph_audit.py
+          tests/test_owner_audit_relationships.py
+          tests/test_calyx_speak_graph_context.py
+          tests/test_calyx_graph_literature_search.py
+          tests/test_calyx_deterministic_graph_provider.py
+          tests/test_scientific_method_graph_vocabulary.py
+      - name: Focused integration tests
+        run: >-
+          pytest -q
+          tests/test_calyx_verified_graph_materializer.py
+          tests/test_verified_dynamic_materializer.py
+          tests/test_calyx_live_graph_audit.py
+          tests/test_owner_audit_relationships.py
+          tests/test_calyx_speak_graph_context.py
+          tests/test_calyx_graph_literature_search.py
+          tests/test_calyx_deterministic_graph_provider.py
+          tests/test_scientific_method_graph_vocabulary.py
+      - name: Adjacent graph and Speak regressions
+        run: >-
+          pytest -q
+          tests/test_source_registry.py
+          tests/test_full_domain_adapters.py
+          tests/test_knowledge_graph_orchestrator.py
+          tests/test_controlled_graph_dry_run.py
+          tests/test_build_067_pg_writer.py
+          tests/test_audit_relationship_integration_001.py
+          tests/test_calyx_homepage_readiness_route.py
+      - name: Ruff
+        run: >-
+          ruff check
+          runtime/knowledge_graph/production_materializer.py
+          runtime/knowledge_graph/production_publish.py
+          runtime/knowledge_graph/verified_dynamic_materializer.py
+          runtime/knowledge_graph/scientific_method_vocabulary.py
+          runtime/knowledge_graph/scientific_corpus_inventory.py
+          runtime/knowledge_graph/vocabulary.py
+          scripts/materialize_verified_graph_relationships.py
+          scripts/materialize_dynamic_graph_relationship.py
+          scripts/audit_persisted_graph_relationships.py
+          scripts/inventory_scientific_corpora.py
+          app/readiness/live_graph_audit.py
+          app/readiness/owner_audit_relationships.py
+          app/calyx_conversation/graph_context.py
+          app/calyx_conversation/graph_literature_search.py
+          app/calyx_conversation/speak_routes.py
+          app/calyx_conversation/provider.py
+          tests/test_calyx_verified_graph_materializer.py
+          tests/test_verified_dynamic_materializer.py
+          tests/test_calyx_live_graph_audit.py
+          tests/test_owner_audit_relationships.py
+          tests/test_calyx_speak_graph_context.py
+          tests/test_calyx_graph_literature_search.py
+          tests/test_calyx_deterministic_graph_provider.py
+          tests/test_scientific_method_graph_vocabulary.py
+      - name: Permanent publication and read-only guards
+        run: |
+          grep -q 'PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS' runtime/knowledge_graph/production_materializer.py
+          grep -q 'EXPLICIT_PRODUCTION_DOMAINS_REQUIRED' runtime/knowledge_graph/production_materializer.py
+          grep -q '"traits"' runtime/knowledge_graph/production_materializer.py
+          grep -q 'run_controlled_dry_run' runtime/knowledge_graph/production_materializer.py
+          grep -q 'publish_to_production' runtime/knowledge_graph/production_materializer.py
+          grep -q 'production_graph_mutation.*summary' runtime/knowledge_graph/production_materializer.py
+          grep -q 'DYNAMIC_DOMAINS = ("habitat", "elevation")' runtime/knowledge_graph/verified_dynamic_materializer.py
+          grep -q 'taxon_resolved_rows' runtime/knowledge_graph/verified_dynamic_materializer.py
+          grep -q 'queries: dict\[str, str\] | None' runtime/knowledge_graph/production_publish.py
+          grep -q 'observation' runtime/knowledge_graph/scientific_method_vocabulary.py
+          grep -q 'measurement' runtime/knowledge_graph/scientific_method_vocabulary.py
+          grep -q 'reports_result' runtime/knowledge_graph/scientific_method_vocabulary.py
+          grep -q 'states_conclusion' runtime/knowledge_graph/scientific_method_vocabulary.py
+          grep -q 'read_only.*True' runtime/knowledge_graph/scientific_corpus_inventory.py
+          grep -q 'taxonomy_to_literature' app/readiness/live_graph_audit.py
+          grep -q 'taxonomy_to_habitat' app/readiness/live_graph_audit.py
+          grep -q 'persisted_knowledge_graph_audit' app/readiness/owner_audit_relationships.py
+          grep -q 'run_live_graph_audit' scripts/audit_persisted_graph_relationships.py
+          grep -q 'explicit_binomial_exact_display_label_only' app/calyx_conversation/graph_context.py
+          grep -q 'literal_terms_no_synonym_expansion' app/calyx_conversation/graph_literature_search.py
+          grep -q 'knowledge_graph_mutation.*False' app/calyx_conversation/graph_literature_search.py
+          grep -q 'persisted_graph_literature_is_evidence' app/calyx_conversation/speak_routes.py
+          grep -q 'calyx-governed-summary-v3-graph-literature' app/calyx_conversation/provider.py
+          grep -q 'not a substitute for inspecting the underlying paper text' app/calyx_conversation/provider.py
+      - name: Diff hygiene
+        run: git diff --check origin/${{ github.base_ref }}...HEAD
