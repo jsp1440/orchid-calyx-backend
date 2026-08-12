@@ -1,0 +1,45 @@
+name: CALYX KG Bulk Source Validation
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/knowledge_graph/verified_bulk_sources.py'
+      - 'runtime/knowledge_graph/production_materializer.py'
+      - 'runtime/knowledge_graph/adapters.py'
+      - 'tests/test_verified_bulk_graph_sources.py'
+      - '.github/workflows/calyx-kg-bulk-source-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile bulk graph source integration
+        run: >-
+          python -m py_compile
+          runtime/knowledge_graph/verified_bulk_sources.py
+          runtime/knowledge_graph/production_materializer.py
+          runtime/knowledge_graph/adapters.py
+          tests/test_verified_bulk_graph_sources.py
+      - name: Bulk source projection regressions
+        run: pytest -q tests/test_verified_bulk_graph_sources.py tests/test_calyx_verified_graph_materializer.py tests/test_source_registry.py
+      - name: Ruff
+        run: >-
+          ruff check
+          runtime/knowledge_graph/verified_bulk_sources.py
+          runtime/knowledge_graph/production_materializer.py
+          runtime/knowledge_graph/adapters.py
+          tests/test_verified_bulk_graph_sources.py
+      - name: Diff hygiene
+        run: git diff --check origin/${{ github.base_ref }}...HEAD
