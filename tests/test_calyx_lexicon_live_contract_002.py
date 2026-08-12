@@ -1,73 +1,49 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 import pytest
 from fastapi import HTTPException
 
 from app.lexicon import routes
 
 
-def test_slug_lookup_requires_exact_canonical_slug_or_label(monkeypatch):
+def test_slug_normalization_handles_hyphenated_and_punctuated_labels():
+    assert routes._slug("semi-terete") == "semi-terete"
+    assert routes._slug("Labellum / Lip") == "labellum-lip"
+    assert routes._slug("  CAM photosynthesis  ") == "cam-photosynthesis"
+
+
+def test_slug_lookup_uses_exact_approved_concept_identity(monkeypatch):
+    concept_id = UUID("11111111-1111-1111-1111-111111111111")
+    canonical = {
+        "id": str(concept_id),
+        "concept_id": str(concept_id),
+        "slug": "labellum-lip",
+        "preferred_term": "Labellum / Lip",
+        "source_system": "oc_concepts",
+    }
+    seen: list[str] = []
+
     monkeypatch.setattr(
         routes,
-        "_load_entries",
-        lambda **_kwargs: [
-            {
-                "slug": "velamen-radicum",
-                "preferred_term": "Velamen radicum",
-                "synonyms": ["root velamen"],
-            },
-            {
-                "slug": "velamen",
-                "preferred_term": "Velamen",
-                "synonyms": [],
-            },
-        ],
+        "_find_approved_concept_id_by_slug",
+        lambda slug: seen.append(slug) or concept_id,
     )
-
-    entry = routes._load_entry_by_slug("Velamen")
-    assert entry is not None
-    assert entry["slug"] == "velamen"
-
-
-def test_slug_lookup_tries_hyphenated_and_space_normalized_forms(monkeypatch):
-    queries: list[str] = []
-
-    def fake_load_entries(*, q: str, limit: int):
-        queries.append(q)
-        if q == "labellum lip":
-            return [
-                {
-                    "id": "concept-lip",
-                    "concept_id": "concept-lip",
-                    "slug": "labellum-lip",
-                    "preferred_term": "Labellum / Lip",
-                    "synonyms": [],
-                }
-            ]
-        return []
-
-    monkeypatch.setattr(routes, "_load_entries", fake_load_entries)
+    monkeypatch.setattr(
+        routes,
+        "_load_entry_by_concept_id",
+        lambda value: canonical if value == concept_id else None,
+    )
 
     entry = routes._load_entry_by_slug("labellum-lip")
 
-    assert entry is not None
-    assert entry["slug"] == "labellum-lip"
-    assert queries == ["labellum-lip", "labellum lip"]
+    assert seen == ["labellum-lip"]
+    assert entry is canonical
 
 
-def test_slug_lookup_does_not_return_definition_only_near_match(monkeypatch):
-    monkeypatch.setattr(
-        routes,
-        "_load_entries",
-        lambda **_kwargs: [
-            {
-                "slug": "orchid-root",
-                "preferred_term": "Orchid root",
-                "synonyms": [],
-            }
-        ],
-    )
-
+def test_slug_lookup_returns_none_without_approved_exact_label(monkeypatch):
+    monkeypatch.setattr(routes, "_find_approved_concept_id_by_slug", lambda _slug: None)
     assert routes._load_entry_by_slug("velamen") is None
 
 
@@ -81,7 +57,7 @@ def test_public_slug_endpoint_fails_closed_when_no_approved_entry(monkeypatch):
     assert exc_info.value.detail["code"] == "LEXICON_APPROVED_ENTRY_NOT_FOUND"
 
 
-def test_public_slug_endpoint_preserves_canonical_authority(monkeypatch):
+def test_public_slug_endpoint_preserves_canonical_authority_and_release(monkeypatch):
     canonical = {
         "id": "concept-1",
         "concept_id": "concept-1",
@@ -94,6 +70,7 @@ def test_public_slug_endpoint_preserves_canonical_authority(monkeypatch):
 
     payload = routes.get_approved_entry_by_slug("velamen")
 
+    assert payload["release"] == "CALYX-LEXICON-LIVE-002"
     assert payload["entry"] is canonical
     assert payload["source_of_truth"] == "oc_concepts"
     assert payload["automatic_publication"] is False
