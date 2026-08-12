@@ -28,44 +28,22 @@ The static audit-priority verified domains are:
 
 Habitat and elevation are configured production domains and already have canonical graph vocabulary/adapters, but they do not have frozen static source queries. They are therefore not guessed into the static registry.
 
-`runtime/knowledge_graph/verified_dynamic_materializer.py` now provides a conservative live verification path for exactly these two remaining audit domains.
+`runtime/knowledge_graph/verified_dynamic_materializer.py` provides a conservative live verification path for exactly these two remaining audit domains. It examines only fixed candidate relations, requires stable record and canonical taxon identifiers on the same relation, validates SELECT-only SQL, requires at least one row to resolve to an existing persisted taxon node, preserves the complete relational row in graph payload provenance, runs bounded two-pass staging validation by default, and delegates authorized production writes to the same single-writer transactional publisher.
 
-For each domain it:
-
-1. examines only fixed candidate relations already listed in `DOMAIN_TABLE_CANDIDATES`;
-2. requires the stable record identifier and canonical taxon identifier to coexist on the same relation;
-3. builds a SELECT-only projection and passes it through the canonical SQL safety validator;
-4. requires at least one projected row to resolve to an existing persisted `taxon` node before the projection becomes executable;
-5. preserves the complete relational row inside the graph node payload as source provenance;
-6. runs bounded two-pass staging validation by default;
-7. requires the same exact publication confirmation for production;
-8. delegates production writes to the same single-writer, all-or-nothing publisher.
-
-The production publisher was extended additively so a caller may supply an explicit reviewed SELECT-only query map. The default registry behavior is unchanged. This makes a live-verified projection usable transactionally without weakening the frozen static registry.
+The production publisher was extended additively so a caller may supply an explicit reviewed SELECT-only query map. The default source-registry behavior remains unchanged.
 
 Operators:
 
 - `python scripts/materialize_dynamic_graph_relationship.py habitat`
 - `python scripts/materialize_dynamic_graph_relationship.py elevation`
 
-Both commands are read-only by default. Publication requires `--execute --confirm PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS` and remains an owner-governed production mutation.
+Both are read-only by default. Publication requires `--execute --confirm PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS` and remains an owner-governed production mutation.
 
 ## Persisted graph audit measures the real target
 
-`app/readiness/live_graph_audit.py` has been upgraded from an image-only graph check to a complete persisted relationship audit. It independently measures:
+`app/readiness/live_graph_audit.py` has been upgraded from an image-only graph check to a complete persisted relationship audit covering taxonomy→images, occurrences, elevation, climate, literature, pollinators, mycorrhiza, habitat, conservation, plus Knowledge Graph node/edge integrity.
 
-- `taxonomy_to_images`
-- `taxonomy_to_occurrences`
-- `taxonomy_to_elevation`
-- `taxonomy_to_climate`
-- `taxonomy_to_literature`
-- `taxonomy_to_pollinators`
-- `taxonomy_to_mycorrhiza`
-- `taxonomy_to_habitat`
-- `taxonomy_to_conservation`
-- Knowledge Graph node/edge integrity
-
-For canonical `oc_graph.kg_edges`, the audit counts actual graph predicates rather than inferring success from relational foreign keys. It reports explicit missing relationships and verifies null endpoints, orphan endpoints, and duplicate edges. Readiness cannot become green until every required persisted relationship is present and graph integrity passes.
+For canonical `oc_graph.kg_edges`, the audit counts actual graph predicates rather than inferring success from relational foreign keys. It reports explicit missing relationships and verifies null endpoints, orphan endpoints, and duplicate edges. Readiness cannot become green until every required persisted relationship is present and integrity passes.
 
 `app/readiness/owner_audit_relationships.py` provides a pure adapter for Mission Control audits. It replaces the legacy behavior in which every relationship was listed as missing whenever any unrelated subsystem was incomplete. Its output is derived only from measured persisted graph state and is covered by regressions. Wiring that adapter into the large legacy Owner Operations module remains a mechanical integration step; the measurement contract itself is isolated and testable.
 
@@ -75,30 +53,43 @@ A dedicated read-only deployed graph audit operator is available:
 
 It queries PostgreSQL, emits the complete relationship/integrity report as JSON, performs no writes, and returns non-zero while required integrations remain incomplete.
 
+## Calyx Speak now consumes persisted graph context
+
+`app/calyx_conversation/graph_context.py` adds a conservative read-only bridge from a scientific Speak turn to `oc_graph`.
+
+The bridge does not perform fuzzy identification. It extracts only explicit binomial names in the current user message, resolves them by exact case-insensitive `taxon` display label, and returns a bounded persisted graph traversal. No common-name inference or image-identification inference is used.
+
+`app/calyx_conversation/speak_routes.py` now adds that graph traversal to the governed provider context for every non-casual turn containing an explicit binomial. The stored message metadata records graph status/requested/found taxa and the epistemic policy explicitly marks persisted graph context as governed evidence while retaining `knowledge_graph_mutation=False`.
+
+The deterministic fallback provider was upgraded to `calyx-governed-summary-v2-graph`. This matters because the deployed Speak screenshots showed the deterministic provider being used. When semantic retrieval or a Brain mission returns no evidence but persisted graph context exists, fallback output now reports the graph predicates/domain coverage and data gaps instead of collapsing everything into a generic “no governed evidence” response. It still refuses to turn graph connectivity by itself into a new scientific conclusion.
+
+This closes the storage-only gap: once relationships exist in `oc_graph`, Speak has an implemented read-only path to consume them.
+
 ## Governance
 
 This branch creates and hardens executable bridges but does not itself run against production. It does not bypass blocked source projections, publish staging-only science, activate taxonomy, infer fuzzy taxon crosswalks, or suppress source-contract failures.
 
-Production Knowledge Graph publication remains owner-governed. A failed or rolled-back attempt is never reported as successful mutation.
+Production Knowledge Graph publication remains owner-governed. A failed or rolled-back attempt is never reported as successful mutation. Speak graph access is strictly read-only.
 
 ## Validation hardening completed
 
 - fail closed for blocked/unverified static domains;
-- explicit production domain selection;
-- exact confirmation before production publication;
+- explicit production domain selection and exact confirmation;
 - bounded dry-run row ceilings and batch-size bounds;
 - canonical two-pass staging validation;
 - canonical single-writer transactional publisher reuse;
-- regression proving rolled-back publication is not reported as graph mutation;
+- rollback result cannot masquerade as graph mutation;
 - complete nine-relationship persisted graph measurement;
 - node/edge integrity measurement including orphan endpoints;
 - regressions proving readiness reflects only actually absent relationships;
 - Mission Control relationship-field adapter derived from measured graph evidence;
 - read-only deployed graph audit operator;
-- live-schema verification for habitat/elevation requiring same-table identity + taxon keys and at least one taxon-resolved row;
+- live-schema verification for habitat/elevation requiring same-table identity + taxon keys and taxon-resolved rows;
 - full source-row preservation for dynamically projected habitat/elevation nodes;
 - optional explicit reviewed query-map support in `publish_to_production` without changing its default registry path;
-- dedicated dynamic materializer tests and CI coverage.
+- exact-binomial-only Speak graph resolver and bounded traversal;
+- deterministic fallback graph-context reporting without promoting connectivity to scientific conclusion;
+- focused unit/regression tests and dedicated CI coverage for all of the above.
 
 ## Current validation boundary
 
@@ -112,4 +103,4 @@ GitHub-hosted Actions remains affected by the runner allocation incident. Recent
 4. Run the persisted relationship audit against the deployed database and capture exact baseline counts.
 5. Resolve source-contract failures rather than suppressing them.
 6. With owner authorization, publish verified domains transactionally one domain at a time, beginning with literature and auditing after every slice.
-7. Feed persisted taxon-linked graph context into the live Calyx Speak evidence path so graph materialization is actually consumed by scientific conversation.
+7. Re-run live Speak acceptance for `Laelia anceps` and the foliar-nutrition literature question after graph publication and semantic-evidence repair.
