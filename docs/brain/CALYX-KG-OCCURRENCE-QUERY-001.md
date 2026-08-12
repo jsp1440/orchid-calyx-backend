@@ -26,9 +26,9 @@ A query such as `List orchids in Ecuador at 10000 meters` is treated as a range-
 
 ## Validation
 
-Focused parser regressions cover above, between, exact elevation, missing-country/missing-elevation rejection, and avoidance of treating a binomial name as a country. Provider regressions verify positive-result rendering and truthful zero-result behavior. The dedicated KG validation workflow now compiles and tests the occurrence-query, Speak, and deterministic-provider integration.
+Focused parser regressions cover above, below, between, exact elevation, missing-country/missing-elevation rejection, and avoidance of treating a binomial name as a country. Provider regressions verify positive-result rendering and truthful zero-result behavior. The dedicated KG validation workflow compiles and tests the occurrence-query, Speak, and deterministic-provider integration when a runner actually executes.
 
-GitHub-hosted runner execution remains subject to the existing zero-step allocation incident. `steps:null` is not considered executable validation.
+Exact-head GitHub-hosted execution remains blocked by the ongoing runner allocation incident: the dedicated KG Bulk Source Validation job is again created with `steps:null`, so checkout, compile, pytest, and Ruff do not execute. Such runs are infrastructure non-execution and are not accepted as code validation.
 
 ## Governance
 
