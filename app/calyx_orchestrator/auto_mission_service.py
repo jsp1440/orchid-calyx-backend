@@ -107,17 +107,15 @@ class GovernedAutoMissionWorker:
         Governance-bound jobs and jobs without a registered authoritative executor
         remain queued/non-terminal. Treating unsupported roles as holds prevents a
         cycle from reporting ``idle`` while runnable work is actually blocked on an
-        executor/governance decision.
+        executor/governance decision. Invalid persisted scheduler state is allowed
+        to propagate so the coordinator can report a truthful scheduler error.
         """
-        try:
-            runnable = set(
-                project_persisted_schedule(
-                    self.db,
-                    owner=owner,
-                ).runnable_program_job_ids
-            )
-        except ValueError:
-            return []
+        runnable = set(
+            project_persisted_schedule(
+                self.db,
+                owner=owner,
+            ).runnable_program_job_ids
+        )
         if not runnable:
             return []
         jobs = self.db.scalars(
@@ -171,9 +169,9 @@ class GovernedAutoMissionWorker:
             return None
         try:
             schedule = project_persisted_schedule(self.db, owner=owner)
-        except ValueError:
+        except (TypeError, ValueError):
             self.db.rollback()
-            return None
+            raise
         rank = {
             job_id: index
             for index, job_id in enumerate(schedule.runnable_program_job_ids)
@@ -597,6 +595,32 @@ class AutoMissionCoordinator:
             finalized.append(job.program_job_id)
         return tuple(finalized)
 
+    @staticmethod
+    def _scheduler_error_result(
+        *,
+        owner: str,
+        worker_id: str,
+        attempted: int,
+        completed: int,
+        retries: int,
+        jobs: tuple[AutoMissionJobResult, ...],
+        exc: Exception,
+    ) -> AutoMissionCycleResult:
+        return AutoMissionCycleResult(
+            owner,
+            worker_id,
+            attempted,
+            completed,
+            retries,
+            0,
+            "scheduler_invalid",
+            jobs,
+            {
+                "code": str(exc) or type(exc).__name__,
+                "exception_type": type(exc).__name__,
+            },
+        )
+
     def run_cycle(
         self,
         *,
@@ -638,24 +662,61 @@ class AutoMissionCoordinator:
                 },
             )
 
-        held = self.worker.hold_governance_bound(
-            owner=owner,
-            roles=self.registry.eligible_role_keys,
-        )
+        try:
+            held = self.worker.hold_governance_bound(
+                owner=owner,
+                roles=self.registry.eligible_role_keys,
+            )
+        except (TypeError, ValueError) as exc:
+            self.db.rollback()
+            return self._scheduler_error_result(
+                owner=owner,
+                worker_id=worker_id,
+                attempted=0,
+                completed=0,
+                retries=0,
+                jobs=(),
+                exc=exc,
+            )
+
         results: list[AutoMissionJobResult] = []
         completed_count = retries = attempted = 0
         for _ in range(max_jobs):
-            job = self.worker.claim(
-                worker_id=worker_id,
-                owner=owner,
-                roles=self.registry.eligible_role_keys,
-                lease_seconds=lease_seconds,
-            )
-            if job is None:
-                held = self.worker.hold_governance_bound(
+            try:
+                job = self.worker.claim(
+                    worker_id=worker_id,
                     owner=owner,
                     roles=self.registry.eligible_role_keys,
+                    lease_seconds=lease_seconds,
                 )
+            except (TypeError, ValueError) as exc:
+                self.db.rollback()
+                return self._scheduler_error_result(
+                    owner=owner,
+                    worker_id=worker_id,
+                    attempted=attempted,
+                    completed=completed_count,
+                    retries=retries,
+                    jobs=tuple(results),
+                    exc=exc,
+                )
+            if job is None:
+                try:
+                    held = self.worker.hold_governance_bound(
+                        owner=owner,
+                        roles=self.registry.eligible_role_keys,
+                    )
+                except (TypeError, ValueError) as exc:
+                    self.db.rollback()
+                    return self._scheduler_error_result(
+                        owner=owner,
+                        worker_id=worker_id,
+                        attempted=attempted,
+                        completed=completed_count,
+                        retries=retries,
+                        jobs=tuple(results),
+                        exc=exc,
+                    )
                 stop_reason = "governance_boundary" if held else "idle"
                 return AutoMissionCycleResult(
                     owner,
