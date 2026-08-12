@@ -47,6 +47,43 @@ def test_slug_lookup_returns_none_without_approved_exact_label(monkeypatch):
     assert routes._load_entry_by_slug("velamen") is None
 
 
+def test_ambiguous_approved_slug_fails_closed(monkeypatch):
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, _query, _params):
+            return None
+
+        def fetchall(self):
+            return [
+                {"concept_id": UUID("11111111-1111-1111-1111-111111111111")},
+                {"concept_id": UUID("22222222-2222-2222-2222-222222222222")},
+            ]
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cursor(self):
+            return Cursor()
+
+    monkeypatch.setattr(routes, "_connect", lambda: Connection())
+
+    with pytest.raises(HTTPException) as exc_info:
+        routes._find_approved_concept_id_by_slug("lip")
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "LEXICON_APPROVED_SLUG_AMBIGUOUS"
+    assert exc_info.value.detail["slug"] == "lip"
+
+
 def test_public_slug_endpoint_fails_closed_when_no_approved_entry(monkeypatch):
     monkeypatch.setattr(routes, "_load_entry_by_slug", lambda _slug: None)
 
