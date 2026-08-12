@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,7 +20,7 @@ class ZenodoConfig:
     community: str | None = None
 
     @classmethod
-    def from_env(cls) -> "ZenodoConfig":
+    def from_env(cls) -> ZenodoConfig:
         base = os.getenv("ZENODO_API_BASE", "https://zenodo.org/api").rstrip("/")
         return cls(
             token=os.getenv("ZENODO_ACCESS_TOKEN"),
@@ -29,7 +30,7 @@ class ZenodoConfig:
 
 
 class ZenodoArchiveBridge:
-    """Creates reproducible release packages and optionally deposits them to Zenodo."""
+    """Build reproducible TIG release packages and deposit them to Zenodo drafts."""
 
     def __init__(self, config: ZenodoConfig | None = None) -> None:
         self.config = config or ZenodoConfig.from_env()
@@ -45,6 +46,15 @@ class ZenodoArchiveBridge:
         if release_dir.parent != root_path:
             raise ValueError("archive release path escapes configured staging root")
         return release_dir
+
+    @staticmethod
+    def _release_fingerprint(dataset_id: str, checksums: dict[str, str]) -> str:
+        payload = json.dumps(
+            {"dataset_id": dataset_id, "checksums_sha256": checksums},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
 
     def build_release(
         self,
@@ -71,29 +81,38 @@ class ZenodoArchiveBridge:
             for hypothesis in result.hypotheses:
                 handle.write(json.dumps(hypothesis.model_dump(mode="json"), sort_keys=True) + "\n")
 
-        checksums = {}
-        for path in (evidence_path, hypotheses_path):
-            checksums[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        readme_path.write_text(
+            "# Orchid Continuum Trait–Interaction–Genomics dataset\n\n"
+            "This release contains provenance-bearing evidence and non-causal discovery hypotheses.\n"
+            "The operational database remains authoritative for mutable review state; this package is a versioned scientific snapshot.\n"
+            "Public publication requires explicit human review outside the automated draft pipeline.\n",
+            encoding="utf-8",
+        )
 
+        checksums = {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in (evidence_path, hypotheses_path, readme_path)
+        }
+        release_fingerprint = self._release_fingerprint(dataset.dataset_id, checksums)
         manifest = {
+            "schema_version": 1,
             "dataset_id": dataset.dataset_id,
             "title": dataset.title,
             "generated_at": result.generated_at.isoformat(),
             "source_snapshot_ids": dataset.source_snapshot_ids,
             "evidence_count": result.evidence_count,
+            "trait_count": result.trait_count,
+            "interaction_count": result.interaction_count,
+            "molecular_count": result.molecular_count,
             "hypothesis_count": len(result.hypotheses),
             "checksums_sha256": checksums,
+            "release_fingerprint": release_fingerprint,
             "archive_policy": "versioned_public_scientific_archive",
+            "publication_policy": "draft_only_until_human_review",
             "causal_policy": "candidate hypotheses are non-causal until reviewed",
         }
         manifest_path.write_text(
             json.dumps(manifest, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        readme_path.write_text(
-            "# Orchid Continuum Trait–Interaction–Genomics dataset\n\n"
-            "This release contains provenance-bearing evidence and non-causal discovery hypotheses.\n"
-            "The operational database remains authoritative for mutable review state; this package is a versioned scientific snapshot.\n",
             encoding="utf-8",
         )
         return release_dir
@@ -142,6 +161,43 @@ class ZenodoArchiveBridge:
             metadata["communities"] = [{"identifier": self.config.community}]
         payload = json.dumps({"metadata": metadata}).encode("utf-8")
         return self._request("POST", f"{self.config.base_url}/deposit/depositions", body=payload)
+
+    def upload_release_files(
+        self,
+        draft: dict[str, Any],
+        release_dir: str | Path,
+    ) -> list[str]:
+        bucket_url = str(draft.get("links", {}).get("bucket") or "").rstrip("/")
+        if not bucket_url:
+            raise RuntimeError("Zenodo draft response does not contain a file bucket URL")
+        release_path = Path(release_dir).resolve()
+        uploaded: list[str] = []
+        for path in sorted(release_path.iterdir(), key=lambda item: item.name):
+            if not path.is_file():
+                continue
+            filename = urllib.parse.quote(path.name, safe="")
+            self._request(
+                "PUT",
+                f"{bucket_url}/{filename}",
+                body=path.read_bytes(),
+                content_type="application/octet-stream",
+            )
+            uploaded.append(path.name)
+        return uploaded
+
+    @staticmethod
+    def compact_draft_payload(draft: dict[str, Any], *, files: list[str] | None = None) -> dict[str, Any]:
+        links = draft.get("links") or {}
+        payload: dict[str, Any] = {
+            "id": draft.get("id"),
+            "state": draft.get("state"),
+            "submitted": draft.get("submitted"),
+            "doi": draft.get("doi"),
+            "html": links.get("html"),
+        }
+        if files is not None:
+            payload["files"] = files
+        return payload
 
     def publish(self, deposition_id: int) -> dict[str, Any]:
         return self._request(

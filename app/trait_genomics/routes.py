@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -11,6 +10,7 @@ from app.security import verify_owner_or_api_key, verify_owner_session
 
 from .discovery import TraitGenomicsDiscoveryEngine
 from .models import DiscoveryDataset, DiscoveryResult
+from .release_service import ScientificArchiveReleaseService
 from .repository import TraitGenomicsRepository
 from .zenodo import ZenodoArchiveBridge, ZenodoConfig
 
@@ -37,6 +37,13 @@ class ZenodoDraftRequest(BaseModel):
     creators: list[dict[str, str]] = Field(min_length=1)
 
 
+class VersionedArchiveDraftRequest(BaseModel):
+    dataset: DiscoveryDataset
+    creators: list[dict[str, str]] = Field(min_length=1)
+    title: str | None = None
+    description: str | None = None
+
+
 @router.get("/status")
 def status():
     config = ZenodoConfig.from_env()
@@ -48,6 +55,8 @@ def status():
         "zenodo_configured": bool(config.token),
         "zenodo_base": config.base_url,
         "zenodo_community": config.community,
+        "scientific_archive_ledger": "neon_postgres",
+        "archive_draft_mode": "versioned_checksums_idempotent",
         "causal_policy": "hypotheses_are_non_causal_until_reviewed",
         "zenodo_publication_enabled": False,
     }
@@ -69,8 +78,6 @@ def discover(payload: DiscoveryRunRequest):
 
 @router.post("/archive/build")
 def build_archive(payload: ArchiveRequest):
-    # The server derives the canonical result so a caller cannot combine evidence
-    # from one dataset with hypotheses/counts from another.
     result = TraitGenomicsDiscoveryEngine().discover(payload.dataset)
     if payload.result is not None and payload.result.dataset_id != payload.dataset.dataset_id:
         raise HTTPException(status_code=422, detail="Archive result dataset_id does not match dataset")
@@ -86,8 +93,31 @@ def build_archive(payload: ArchiveRequest):
     }
 
 
-@router.post("/zenodo/drafts")
+@router.post("/archive/zenodo-draft")
+def create_versioned_archive_draft(payload: VersionedArchiveDraftRequest):
+    root = os.getenv("CALYX_SCIENTIFIC_ARCHIVE_STAGING", "/var/data/scientific_archive_staging")
+    try:
+        service = ScientificArchiveReleaseService(staging_root=root)
+        return service.create_zenodo_draft(
+            payload.dataset,
+            creators=payload.creators,
+            title=payload.title,
+            description=payload.description,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Scientific archive draft failed: {exc}") from exc
+
+
+@router.post(
+    "/zenodo/drafts",
+    dependencies=[Depends(verify_owner_session)],
+)
 def create_zenodo_draft(payload: ZenodoDraftRequest):
+    """Low-level owner-only draft helper; scientific releases should use /archive/zenodo-draft."""
     try:
         return ZenodoArchiveBridge().create_draft(
             title=payload.title,
@@ -103,8 +133,6 @@ def create_zenodo_draft(payload: ZenodoDraftRequest):
     dependencies=[Depends(verify_owner_session)],
 )
 def publish_zenodo_draft(deposition_id: int):
-    # Public publication remains disabled until a durable scientific-release
-    # approval record is implemented. Draft creation is intentionally separate.
     raise HTTPException(
         status_code=403,
         detail=(
