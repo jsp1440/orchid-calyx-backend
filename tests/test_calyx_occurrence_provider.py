@@ -38,11 +38,11 @@ def test_deterministic_provider_surfaces_structured_occurrence_results():
             }
         ]),
     )
-    assert reply.model == "calyx-governed-summary-v4-occurrence"
+    assert reply.model == "calyx-governed-summary-v5-corpus-bridge"
     assert "Example orchid" in reply.text
     assert "records=6" in reply.text
     assert "Ecuador above 3000 m" in reply.text
-    assert "observational evidence" in reply.text
+    assert "occurrence observations" in reply.text
 
 
 def test_deterministic_provider_reports_zero_result_without_inference():
