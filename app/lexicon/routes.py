@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Path, Query
 from psycopg.rows import dict_row
 
 from app.concepts.repositories import concept_database_url
@@ -118,10 +118,14 @@ def _load_entries(*, q: str | None = None, limit: int = 500) -> list[dict[str, A
             if q:
                 needle = f"%{q.casefold().strip()}%"
                 where.append(
-                    "EXISTS (SELECT 1 FROM oc_concepts.concept_labels sx "
-                    "WHERE sx.concept_id=c.concept_id AND sx.normalized_label LIKE %s)"
+                    "(EXISTS (SELECT 1 FROM oc_concepts.concept_labels sx "
+                    "WHERE sx.concept_id=c.concept_id AND sx.review_state='APPROVED' "
+                    "AND sx.normalized_label LIKE %s) OR "
+                    "EXISTS (SELECT 1 FROM oc_concepts.concept_definitions sd "
+                    "WHERE sd.concept_id=c.concept_id AND sd.review_state='APPROVED' "
+                    "AND lower(sd.text) LIKE %s))"
                 )
-                params.append(needle)
+                params.extend([needle, needle])
             params.append(max(1, min(limit, 2000)))
             cur.execute(
                 f"""
@@ -212,6 +216,42 @@ def _load_entry_by_concept_id(concept_id: UUID) -> dict[str, Any] | None:
     return _entry_payload(concept, labels, definitions)
 
 
+def _find_approved_concept_id_by_slug(slug: str) -> UUID | None:
+    normalized_slug = _slug(slug)
+    if not normalized_slug:
+        return None
+    try:
+        with _connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT c.concept_id
+                FROM oc_concepts.concepts c
+                JOIN oc_concepts.concept_labels l ON l.concept_id=c.concept_id
+                WHERE c.status='ACTIVE'
+                  AND c.review_state='APPROVED'
+                  AND l.review_state='APPROVED'
+                  AND btrim(
+                    regexp_replace(lower(trim(l.label)), '[^a-z0-9×]+', '-', 'g'),
+                    '-'
+                  ) = %s
+                ORDER BY CASE l.label_type WHEN 'PREFERRED' THEN 0 ELSE 1 END,
+                         c.revised_at DESC,
+                         c.concept_id
+                LIMIT 1
+                """,
+                (normalized_slug,),
+            )
+            row = cur.fetchone()
+    except (RuntimeError, psycopg.Error) as exc:
+        raise HTTPException(status_code=503, detail={"code": "LEXICON_DATABASE_UNAVAILABLE"}) from exc
+    return row["concept_id"] if row else None
+
+
+def _load_entry_by_slug(slug: str) -> dict[str, Any] | None:
+    concept_id = _find_approved_concept_id_by_slug(slug)
+    return _load_entry_by_concept_id(concept_id) if concept_id is not None else None
+
+
 @router.get("")
 def list_entries(
     q: str | None = Query(default=None, max_length=300),
@@ -222,6 +262,28 @@ def list_entries(
         "release": "CALYX-LEXICON-INTEGRATION-001",
         "count": len(entries),
         "entries": entries,
+        "source_of_truth": "oc_concepts",
+        "automatic_publication": False,
+        "visibility": "ACTIVE + APPROVED concepts only",
+    }
+
+
+@router.get("/entries/{slug}")
+def get_approved_entry_by_slug(
+    slug: str = Path(..., min_length=1, max_length=240),
+) -> dict[str, Any]:
+    entry = _load_entry_by_slug(slug)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "LEXICON_APPROVED_ENTRY_NOT_FOUND",
+                "message": "No ACTIVE + APPROVED Lexicon concept is available for this slug.",
+            },
+        )
+    return {
+        "release": "CALYX-LEXICON-LIVE-002",
+        "entry": entry,
         "source_of_truth": "oc_concepts",
         "automatic_publication": False,
         "visibility": "ACTIVE + APPROVED concepts only",
@@ -281,6 +343,7 @@ def lexicon_capabilities() -> dict[str, Any]:
         "source_ui": "Famous AI Illustrated Orchid Lexicon",
         "canonical_concept_registry": "/api/concepts",
         "canonical_lexicon_api": "/api/lexicon",
+        "canonical_entry_by_slug": "/api/lexicon/entries/{slug}",
         "botanical_language": "/api/scientific-interpretation/language",
         "vision_lexicon": "/api/vision-lexicon",
         "calyx_conversation": "/api/calyx/speak/conversations",
