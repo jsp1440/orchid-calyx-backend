@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import json
 import os
 from contextlib import contextmanager
 
 import psycopg
 from psycopg.types.json import Jsonb
 
-from .models import DiscoveryDataset, DiscoveryHypothesis, EvidenceRecord
+from .models import DiscoveryDataset, DiscoveryHypothesis
 
 
 DDL = """
@@ -94,6 +93,7 @@ class TraitGenomicsRepository:
                             (hypothesis_id, dataset_id, payload, confidence, status)
                         VALUES (%s, %s, %s, %s, %s)
                         ON CONFLICT (hypothesis_id) DO UPDATE SET
+                            dataset_id=EXCLUDED.dataset_id,
                             payload=EXCLUDED.payload,
                             confidence=EXCLUDED.confidence,
                             status=EXCLUDED.status,
