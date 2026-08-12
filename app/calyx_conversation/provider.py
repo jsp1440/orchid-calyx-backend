@@ -42,7 +42,7 @@ class DeterministicGovernedReplyProvider:
     """
 
     provider_name = "deterministic-governed"
-    model_name = "calyx-governed-summary-v2-graph"
+    model_name = "calyx-governed-summary-v3-graph-literature"
 
     @staticmethod
     def _format_mission_answer(mission: dict[str, Any]) -> list[str]:
@@ -214,6 +214,41 @@ class DeterministicGovernedReplyProvider:
         )
         return lines
 
+    @staticmethod
+    def _format_graph_literature(graph_literature: dict[str, Any]) -> list[str]:
+        """Format persisted publication-node matches without claiming full-text support."""
+        if graph_literature.get("status") != "available":
+            return []
+        results = [
+            item for item in graph_literature.get("results") or [] if isinstance(item, dict)
+        ]
+        if not results:
+            return []
+        terms = ", ".join(str(value) for value in graph_literature.get("terms") or [])
+        lines = [
+            "Persisted Knowledge Graph literature matches were found"
+            + (f" for literal terms: {terms}." if terms else ".")
+        ]
+        for index, item in enumerate(results[:5], start=1):
+            title = str(item.get("title") or f"Publication node {item.get('kg_node_id')}")
+            doi = str(item.get("doi") or "").strip()
+            year = item.get("year")
+            taxa = [str(value) for value in item.get("associated_taxa") or []]
+            details: list[str] = []
+            if year not in (None, ""):
+                details.append(f"year={year}")
+            if doi:
+                details.append(f"doi={doi}")
+            if taxa:
+                details.append("taxa=" + ", ".join(taxa[:5]))
+            lines.append(
+                f"{index}. {title}" + (" (" + "; ".join(details) + ")" if details else "")
+            )
+        lines.append(
+            "These are persisted publication-node metadata and taxon links, not a substitute for inspecting the underlying paper text; no causal or physiological conclusion is inferred from title/metadata matches alone."
+        )
+        return lines
+
     def generate(
         self,
         *,
@@ -224,7 +259,9 @@ class DeterministicGovernedReplyProvider:
         mission = governed_context.get("mission")
         retrieval = governed_context.get("retrieval") or {}
         graph_context = governed_context.get("knowledge_graph") or {}
+        graph_literature = governed_context.get("graph_literature") or {}
         graph_lines = self._format_graph_context(graph_context)
+        literature_lines = self._format_graph_literature(graph_literature)
         question = next(
             (item["content"] for item in reversed(messages) if item.get("role") == "user"),
             "",
@@ -233,11 +270,12 @@ class DeterministicGovernedReplyProvider:
         if governed_context.get("casual"):
             lines.append(
                 "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. "
-                "I can discuss a question conversationally, retrieve Continuum evidence, run a governed Brain mission when a scientific question needs it, read persisted Knowledge Graph context, and keep evidence and publication boundaries visible."
+                "I can discuss a question conversationally, retrieve Continuum evidence, run a governed Brain mission when a scientific question needs it, read persisted Knowledge Graph context and literature metadata, and keep evidence and publication boundaries visible."
             )
         elif mission:
             lines.extend(self._format_mission_answer(mission))
             lines.extend(graph_lines)
+            lines.extend(literature_lines)
             lines.append("This answer remains review-bound and is not automatically published knowledge.")
         elif governed_context.get("mission_error"):
             lines.append(
@@ -249,6 +287,7 @@ class DeterministicGovernedReplyProvider:
                     f"I did retrieve {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible evidence objects that can be inspected while the mission gap is repaired."
                 )
             lines.extend(graph_lines)
+            lines.extend(literature_lines)
         elif retrieval.get("results"):
             lines.append(
                 f"I found {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible Orchid Continuum evidence objects relevant to your question."
@@ -258,11 +297,13 @@ class DeterministicGovernedReplyProvider:
                 title = result.get("title") or result.get("object_type") or f"Evidence {index}"
                 lines.append(f"{index}. {title}" + (f": {excerpt[:360]}" if excerpt else ""))
             lines.extend(graph_lines)
+            lines.extend(literature_lines)
             lines.append("I have not promoted these retrieved records into published knowledge.")
-        elif graph_lines:
+        elif graph_lines or literature_lines:
             lines.extend(graph_lines)
+            lines.extend(literature_lines)
             lines.append(
-                "The semantic evidence index did not surface an eligible evidence object for this turn, so I am limiting this response to persisted graph context rather than guessing beyond it."
+                "The semantic evidence index did not surface an eligible evidence object for this turn, so I am limiting this response to persisted graph evidence and publication metadata rather than guessing beyond it."
             )
         else:
             lines.append(
@@ -303,7 +344,7 @@ class OpenAICompatibleReplyProvider:
             "Explicitly distinguish direct evidence, inference, missing evidence, and proposed design ideas. "
             "Never claim an Orchid Continuum capability is implemented unless the governed context says it is. "
             "For casual conversation, be natural and concise. For scientific questions, explain what is supported and what remains uncertain. "
-            "Persisted Knowledge Graph context may be used as governed Continuum evidence, but graph connectivity alone must not be promoted into a new scientific conclusion. "
+            "Persisted Knowledge Graph context and publication-node metadata may be used as governed Continuum evidence, but graph connectivity or title matches alone must not be promoted into new scientific conclusions. "
             "Do not publish, promote Candidate Knowledge, or mutate the Knowledge Graph."
         )
         context_text = json.dumps(governed_context, sort_keys=True, default=str)
