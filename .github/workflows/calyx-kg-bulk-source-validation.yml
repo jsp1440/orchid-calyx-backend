@@ -6,7 +6,9 @@ on:
       - 'runtime/knowledge_graph/verified_bulk_sources.py'
       - 'runtime/knowledge_graph/production_materializer.py'
       - 'runtime/knowledge_graph/adapters.py'
+      - 'runtime/knowledge_graph/paper_knowledge_graph.py'
       - 'tests/test_verified_bulk_graph_sources.py'
+      - 'tests/test_paper_knowledge_graph.py'
       - '.github/workflows/calyx-kg-bulk-source-validation.yml'
 
 permissions:
@@ -25,21 +27,31 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install pytest ruff
-      - name: Compile bulk graph source integration
+      - name: Compile graph integration
         run: >-
           python -m py_compile
           runtime/knowledge_graph/verified_bulk_sources.py
           runtime/knowledge_graph/production_materializer.py
           runtime/knowledge_graph/adapters.py
+          runtime/knowledge_graph/paper_knowledge_graph.py
           tests/test_verified_bulk_graph_sources.py
-      - name: Bulk source projection regressions
-        run: pytest -q tests/test_verified_bulk_graph_sources.py tests/test_calyx_verified_graph_materializer.py tests/test_source_registry.py
+          tests/test_paper_knowledge_graph.py
+      - name: Focused graph regressions
+        run: >-
+          pytest -q
+          tests/test_verified_bulk_graph_sources.py
+          tests/test_paper_knowledge_graph.py
+          tests/test_calyx_verified_graph_materializer.py
+          tests/test_source_registry.py
+          tests/test_scientific_method_graph_vocabulary.py
       - name: Ruff
         run: >-
           ruff check
           runtime/knowledge_graph/verified_bulk_sources.py
           runtime/knowledge_graph/production_materializer.py
           runtime/knowledge_graph/adapters.py
+          runtime/knowledge_graph/paper_knowledge_graph.py
           tests/test_verified_bulk_graph_sources.py
+          tests/test_paper_knowledge_graph.py
       - name: Diff hygiene
         run: git diff --check origin/${{ github.base_ref }}...HEAD
