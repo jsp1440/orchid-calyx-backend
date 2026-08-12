@@ -24,8 +24,11 @@ Finish the runtime connection between the migrated Famous AI Illustrated Orchid 
 7. Every preserved Famous presentation field is explicitly named in `migration_overlay.fields`.
 8. Famous definitions, scope/evidence prose, relationships, character states, taxa, conservation guidance, literature, maturity flags, certainty state, and import identity never inherit canonical review status.
 9. Frontend direct entry loading falls back to canonical search during staggered deployment before using the static read-only migration fallback.
-10. The complete Famous source ZIP supplied on 2026-08-11 was inspected directly and established a 45-term exported lexicon inventory. The previous GitHub fallback contained 35 terms. Ten recovered terms were added as provenance-marked draft migration records: Form, Symmetry, Texture, Substance, Sensu lato, Sensu stricto, Pollination syndrome, Deceptive pollination, Keiki, and Bark mix.
-11. The integrated entry page now restores read-only rich sections represented in the full export—significance, evolutionary interpretation, variation, conservation guidance, and funding/recognition—without restoring the legacy demo write path.
+10. The complete Famous source ZIP supplied on 2026-08-11 established a 45-term exported lexicon inventory. The previous GitHub fallback contained 35 terms. Ten recovered terms were added as provenance-marked draft migration records: Form, Symmetry, Texture, Substance, Sensu lato, Sensu stricto, Pollination syndrome, Deceptive pollination, Keiki, and Bark mix.
+11. The integrated entry page restores read-only rich sections represented in the full export—significance, evolutionary interpretation, variation, conservation guidance, and funding/recognition—without restoring the legacy demo write path.
+12. The Famous adaptive Entry Hero has been restored over the canonical record loader. It provides record-driven summary cards plus Quick / Learn / Scientific depth controls. The depth controls change navigation emphasis only; they do not alter, hide, publish, or synthesize scientific record content.
+13. A Connected Knowledge panel has been restored using only the active `LexiconEntry` record: broader/narrower concepts, related terminology, explicit relationship edges, example taxa, and identification character states. The separate demo `knowledgeGraph.ts` dataset remains excluded from canonical authority.
+14. Calyx page/session context remains attached to the active lexicon concept, so the restored visual experience and the canonical conversational workspace share the same current-object identity.
 
 ## Full-export audit finding
 
@@ -49,6 +52,7 @@ Those legacy services are migration source material only. Canonical writes remai
 - Missing canonical scientific fields remain legitimate and visibly incomplete.
 - Migration overlays preserve presentation continuity only; they are not canonical evidence and do not confer scientific review status.
 - Recovered full-export records remain `draft` fallback content until canonical review/migration occurs.
+- Restored visual components render only fields already present on the active record; they do not manufacture knowledge-graph edges, conservation claims, evidence, or review state.
 
 ## Validation boundary
 
