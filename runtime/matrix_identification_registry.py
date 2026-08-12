@@ -27,8 +27,8 @@ class RegistryCharacter:
     description: str | None = None
     value_type: str = "categorical"
     weight: float = 1.0
-    concept_id: str | None = None
     provenance: dict[str, Any] | None = None
+    concept_id: str | None = None
 
 
 @dataclass(frozen=True)
