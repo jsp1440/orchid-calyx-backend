@@ -1,7 +1,7 @@
 """Verified read-only projections for the live bulk scientific corpora.
 
 These projections are intentionally separate from the legacy source registry until
-current-main can absorb the production-schema correction cleanly.  They were
+current-main can absorb the production-schema correction cleanly. They were
 verified against the deployed PostgreSQL catalog on 2026-08-12.
 
 The module contains SELECT-only SQL and performs no graph mutation.
@@ -78,6 +78,72 @@ BULK_SOURCE_QUERIES: dict[str, str] = {
               from oc_graph.kg_nodes k
               where k.node_type = 'taxon'
                 and k.source_pk = coalesce(t.accepted_taxon_id, t.taxon_id)::text
+          )
+    """,
+    "habitat": """
+        select h.claim_id as source_pk,
+               h.taxonomy_id as taxon_pk,
+               h.habitat_class as habitat_name,
+               h.habitat_class as habitat_type,
+               h.climate_zone as biome,
+               h.substrate,
+               h.habitat_text as description,
+               coalesce(h.source_type, h.source_table) as source_name,
+               h.elevation_min,
+               h.elevation_max,
+               h.climate_zone,
+               h.canopy_cover,
+               h.moisture_regime,
+               h.citation_url,
+               h.citation_text,
+               h.evidence_text,
+               h.observed_inferred_heuristic as evidence_class,
+               h.confidence_score_numeric as confidence_score,
+               h.review_status as confidence_label,
+               h.claim_status,
+               h.needs_review,
+               h.source_id,
+               h.source_table,
+               h.source_column,
+               h.created_at,
+               h.updated_at
+        from public.oc_species_habitat_claims h
+        where h.taxonomy_id is not null
+          and h.claim_id is not null
+          and exists (
+              select 1
+              from oc_graph.kg_nodes k
+              where k.node_type = 'taxon'
+                and k.source_pk = h.taxonomy_id::text
+          )
+    """,
+    "elevation": """
+        select e.accepted_taxon_id as source_pk,
+               e.accepted_taxon_id as taxon_pk,
+               concat_ws(' ', initcap(e.genus_lower), e.species_lower) as scientific_name,
+               concat_ws('–', e.elev_min_m::text, e.elev_max_m::text) || ' m' as elevation_label,
+               e.elev_min_m as minimum_elevation_m,
+               e.elev_max_m as maximum_elevation_m,
+               e.elev_mean_m as mean_elevation_m,
+               'derived_from_occurrence_records'::text as method,
+               'public.species_elevation_profile'::text as source_name,
+               'derived_occurrence_profile'::text as evidence_class,
+               e.n_records,
+               e.elev_p05_m,
+               e.elev_p25_m,
+               e.elev_p50_m,
+               e.elev_p75_m,
+               e.elev_p95_m,
+               e.elev_sd_m,
+               e.created_at,
+               e.updated_at
+        from public.species_elevation_profile e
+        where e.accepted_taxon_id is not null
+          and exists (
+              select 1
+              from oc_graph.kg_nodes k
+              where k.node_type = 'taxon'
+                and k.source_pk = e.accepted_taxon_id::text
           )
     """,
 }
