@@ -176,7 +176,7 @@ def recommend_next_observation(
     *,
     candidate_limit: int = 10,
 ) -> dict[str, Any] | None:
-    """Choose the unobserved character with the strongest deterministic discrimination signal."""
+    """Choose the unobserved positive-weight character with strongest discrimination."""
     if not ranked_candidates:
         return None
 
@@ -196,6 +196,10 @@ def recommend_next_observation(
     for character, meta in character_meta.items():
         if character in observed_characters:
             continue
+        source_weight = meta.get("weight")
+        weight = float(source_weight) if source_weight is not None else 1.0
+        if weight <= 0:
+            continue
         states = [candidate.get("states", {}).get(character) for candidate in candidates]
         present = [state for state in states if state is not None]
         if len(present) < 2:
@@ -205,9 +209,7 @@ def recommend_next_observation(
             continue
         coverage = len(present) / len(candidates)
         discrimination = (distinct - 1) / max(len(present) - 1, 1)
-        source_weight = meta.get("weight")
-        weight = float(source_weight) if source_weight is not None else 1.0
-        score = coverage * discrimination * max(weight, 0.0)
+        score = coverage * discrimination * weight
         scored.append(
             (
                 score,
