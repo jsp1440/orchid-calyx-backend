@@ -102,7 +102,13 @@ class GovernedAutoMissionWorker:
         owner: str,
         roles: frozenset[str],
     ) -> list[str]:
-        """Report governance-bound runnable work without consuming or terminalizing it."""
+        """Report runnable work that cannot be claimed automatically.
+
+        Governance-bound jobs and jobs without a registered authoritative executor
+        remain queued/non-terminal. Treating unsupported roles as holds prevents a
+        cycle from reporting ``idle`` while runnable work is actually blocked on an
+        executor/governance decision.
+        """
         try:
             runnable = set(
                 project_persisted_schedule(
@@ -112,7 +118,7 @@ class GovernedAutoMissionWorker:
             )
         except ValueError:
             return []
-        if not runnable or not roles:
+        if not runnable:
             return []
         jobs = self.db.scalars(
             select(CalyxProgramJob)
@@ -124,13 +130,13 @@ class GovernedAutoMissionWorker:
                 CalyxProgramJob.status == "queued",
                 CalyxProgramJob.outcome.is_(None),
                 CalyxProgramJob.program_job_id.in_(tuple(runnable)),
-                CalyxProgramJob.role_key.in_(tuple(sorted(roles))),
             )
         ).all()
         held = [
             job.program_job_id
             for job in jobs
-            if self.selector.decision(job).disposition
+            if job.role_key not in roles
+            or self.selector.decision(job).disposition
             != GovernanceDisposition.AUTOMATIC
         ]
         return sorted(held)
@@ -511,9 +517,7 @@ class AutoMissionCoordinator:
         self.db.commit()
         self.db.refresh(current)
         self.db.refresh(writeback)
-        return current, writeback, tuple(
-            item.program_job_id for item in released
-        )
+        return current, writeback, tuple(item.program_job_id for item in released)
 
     def _review(
         self,
