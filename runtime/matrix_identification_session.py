@@ -205,7 +205,8 @@ def recommend_next_observation(
             continue
         coverage = len(present) / len(candidates)
         discrimination = (distinct - 1) / max(len(present) - 1, 1)
-        weight = float(meta.get("weight", 1.0) or 1.0)
+        source_weight = meta.get("weight")
+        weight = float(source_weight) if source_weight is not None else 1.0
         score = coverage * discrimination * max(weight, 0.0)
         scored.append(
             (
@@ -216,6 +217,7 @@ def recommend_next_observation(
                     "label": meta.get("label") or character.replace("_", " "),
                     "description": meta.get("description"),
                     "value_type": meta.get("value_type", "categorical"),
+                    "concept_id": meta.get("concept_id"),
                     "matrix_weight": weight,
                     "candidate_coverage": round(coverage, 6),
                     "distinct_state_count": distinct,
