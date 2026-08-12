@@ -1,0 +1,55 @@
+name: CALYX KG Materialization 001
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/knowledge_graph/production_materializer.py'
+      - 'scripts/materialize_verified_graph_relationships.py'
+      - 'tests/test_calyx_verified_graph_materializer.py'
+      - 'docs/brain/CALYX-KG-MATERIALIZATION-001.md'
+      - '.github/workflows/calyx-kg-materialization-001.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile materializer
+        run: >-
+          python -m py_compile
+          runtime/knowledge_graph/production_materializer.py
+          scripts/materialize_verified_graph_relationships.py
+          tests/test_calyx_verified_graph_materializer.py
+      - name: Focused graph materializer tests
+        run: pytest -q tests/test_calyx_verified_graph_materializer.py
+      - name: Adjacent graph regressions
+        run: >-
+          pytest -q
+          tests/test_source_registry.py
+          tests/test_full_domain_adapters.py
+          tests/test_knowledge_graph_orchestrator.py
+          tests/test_audit_relationship_integration_001.py
+      - name: Ruff
+        run: >-
+          ruff check
+          runtime/knowledge_graph/production_materializer.py
+          scripts/materialize_verified_graph_relationships.py
+          tests/test_calyx_verified_graph_materializer.py
+      - name: Permanent publication guard
+        run: |
+          grep -q 'PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS' runtime/knowledge_graph/production_materializer.py
+          grep -q 'authorized_to_publish=True' runtime/knowledge_graph/production_materializer.py
+          grep -q 'ExecutionMode.DRY_RUN' runtime/knowledge_graph/production_materializer.py
+      - name: Diff hygiene
+        run: git diff --check origin/${{ github.base_ref }}...HEAD
