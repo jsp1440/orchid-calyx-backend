@@ -29,7 +29,8 @@ jobs:
             tests/test_trait_genomics_discovery.py \
             tests/test_trait_genomics_hardening.py \
             tests/test_trait_genomics_zenodo_archive.py \
-            tests/test_trait_genomics_release_service.py
+            tests/test_trait_genomics_release_service.py \
+            tests/test_trait_genomics_live_sources.py
       - name: Compile TIG subsystem
         run: python -m compileall -q app/trait_genomics tests/test_trait_genomics_*.py
       - name: Ruff TIG subsystem
