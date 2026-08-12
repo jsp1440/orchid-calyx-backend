@@ -7,6 +7,7 @@ on:
       - 'runtime/knowledge_graph/production_materializer.py'
       - 'runtime/knowledge_graph/adapters.py'
       - 'runtime/knowledge_graph/biotic_relation_ontology.py'
+      - 'runtime/knowledge_graph/globi_corpus_backfill.py'
       - 'runtime/knowledge_graph/exact_taxon_resolution.py'
       - 'runtime/knowledge_graph/paper_knowledge_graph.py'
       - 'runtime/knowledge_graph/publication_eligible_paper_graph.py'
@@ -21,10 +22,12 @@ on:
       - 'app/calyx_conversation/provider.py'
       - 'app/calyx_conversation/speak_routes.py'
       - 'app/literature_extraction/source_binding.py'
+      - 'scripts/audit_globi_literature_backfill.py'
       - 'scripts/audit_source_graph_coverage.py'
       - 'scripts/materialize_reviewed_literature_graph.py'
       - 'tests/test_exact_taxon_resolution.py'
       - 'tests/test_globi_ro_literature_relations.py'
+      - 'tests/test_globi_corpus_backfill.py'
       - 'tests/test_verified_bulk_graph_sources.py'
       - 'tests/test_paper_knowledge_graph.py'
       - 'tests/test_publication_eligible_paper_graph.py'
@@ -61,6 +64,7 @@ jobs:
           runtime/knowledge_graph/production_materializer.py
           runtime/knowledge_graph/adapters.py
           runtime/knowledge_graph/biotic_relation_ontology.py
+          runtime/knowledge_graph/globi_corpus_backfill.py
           runtime/knowledge_graph/exact_taxon_resolution.py
           runtime/knowledge_graph/paper_knowledge_graph.py
           runtime/knowledge_graph/publication_eligible_paper_graph.py
@@ -75,10 +79,12 @@ jobs:
           app/calyx_conversation/provider.py
           app/calyx_conversation/speak_routes.py
           app/literature_extraction/source_binding.py
+          scripts/audit_globi_literature_backfill.py
           scripts/audit_source_graph_coverage.py
           scripts/materialize_reviewed_literature_graph.py
           tests/test_exact_taxon_resolution.py
           tests/test_globi_ro_literature_relations.py
+          tests/test_globi_corpus_backfill.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_publication_eligible_paper_graph.py
@@ -95,6 +101,7 @@ jobs:
           pytest -q
           tests/test_exact_taxon_resolution.py
           tests/test_globi_ro_literature_relations.py
+          tests/test_globi_corpus_backfill.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_publication_eligible_paper_graph.py
@@ -116,6 +123,7 @@ jobs:
           runtime/knowledge_graph/production_materializer.py
           runtime/knowledge_graph/adapters.py
           runtime/knowledge_graph/biotic_relation_ontology.py
+          runtime/knowledge_graph/globi_corpus_backfill.py
           runtime/knowledge_graph/exact_taxon_resolution.py
           runtime/knowledge_graph/paper_knowledge_graph.py
           runtime/knowledge_graph/publication_eligible_paper_graph.py
@@ -130,10 +138,12 @@ jobs:
           app/calyx_conversation/provider.py
           app/calyx_conversation/speak_routes.py
           app/literature_extraction/source_binding.py
+          scripts/audit_globi_literature_backfill.py
           scripts/audit_source_graph_coverage.py
           scripts/materialize_reviewed_literature_graph.py
           tests/test_exact_taxon_resolution.py
           tests/test_globi_ro_literature_relations.py
+          tests/test_globi_corpus_backfill.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
           tests/test_publication_eligible_paper_graph.py
