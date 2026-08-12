@@ -28,15 +28,16 @@ CONFIRMATION_TOKEN = "PUBLISH_VERIFIED_GRAPH_RELATIONSHIPS"
 DEFAULT_DRY_RUN_MAX_ROWS_PER_DOMAIN = 10_000
 MAX_BATCH_SIZE = 5_000
 
-# Integration-priority domains whose read projections are verified.  Occurrences
-# and traits intentionally resolve through verified_bulk_sources.py because the
-# deployed catalog proved that the legacy registry selected tiny partial corpora
-# (26 occurrence rows and 6,751 resolved trait rows) while production contains
-# 580,612 occurrence rows and 19,929 normalized trait-consensus rows.
+# Integration-priority domains whose read projections are verified. Occurrences,
+# traits, habitat, and elevation resolve through verified_bulk_sources.py because
+# live production catalog inspection established authoritative current sources
+# that are richer than the legacy registry projections.
 AUDIT_PRIORITY_DOMAINS = (
     "media",
     "occurrences",
     "traits",
+    "habitat",
+    "elevation",
     "climate",
     "literature",
     "pollinators",
@@ -168,7 +169,7 @@ def materialize_verified_relationships(
             batch_size=batch,
         )
         report["materialization"] = {
-            "contract": "calyx-verified-relationship-materialization-v4-bulk",
+            "contract": "calyx-verified-relationship-materialization-v5-live-sources",
             "requested_domains": list(selection.requested),
             "selected_domains": list(selection.selected),
             "production_graph_mutation": False,
@@ -189,7 +190,7 @@ def materialize_verified_relationships(
     )
     summary = _publication_summary(report)
     report["materialization"] = {
-        "contract": "calyx-verified-relationship-materialization-v4-bulk",
+        "contract": "calyx-verified-relationship-materialization-v5-live-sources",
         "requested_domains": list(selection.requested),
         "selected_domains": list(selection.selected),
         "bulk_source_domains": [
