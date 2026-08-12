@@ -105,6 +105,90 @@ def get_version(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/{registry_id}/{version}/concept-mapping-status")
+def concept_mapping_status(
+    registry_id: str,
+    version: str,
+    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    try:
+        record = get_registry_version(registry_id, version)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    characters: list[dict[str, Any]] = []
+    mapped_approved = 0
+    mapped_unavailable = 0
+    invalid_mapping = 0
+    unmapped = 0
+
+    for item in record.get("characters", []):
+        character_id = str(item.get("character") or "")
+        concept_id = item.get("concept_id")
+        status = "unmapped"
+        concept_summary: dict[str, Any] | None = None
+        if not concept_id:
+            unmapped += 1
+        else:
+            try:
+                concept_uuid = UUID(str(concept_id))
+            except ValueError:
+                status = "invalid_concept_id"
+                invalid_mapping += 1
+            else:
+                entry = _load_entry_by_concept_id(concept_uuid)
+                if entry is None:
+                    status = "mapped_concept_unavailable"
+                    mapped_unavailable += 1
+                else:
+                    status = "mapped_approved"
+                    mapped_approved += 1
+                    concept_summary = {
+                        "concept_id": str(concept_id),
+                        "preferred_term": entry.get("preferred_term"),
+                        "review_state": entry.get("review_state"),
+                        "source_system": entry.get("source_system"),
+                        "source_record_id": entry.get("source_record_id"),
+                    }
+        characters.append(
+            {
+                "character": character_id,
+                "label": item.get("label"),
+                "weight": item.get("weight"),
+                "concept_id": concept_id,
+                "mapping_status": status,
+                "concept": concept_summary,
+            }
+        )
+
+    total = len(characters)
+    return {
+        "registry": {
+            "registry_id": record.get("registry_id"),
+            "version": record.get("version"),
+            "checksum_sha256": record.get("checksum_sha256"),
+            "publication_state": record.get("publication_state"),
+        },
+        "character_count": total,
+        "mapped_approved_count": mapped_approved,
+        "mapped_unavailable_count": mapped_unavailable,
+        "invalid_mapping_count": invalid_mapping,
+        "unmapped_count": unmapped,
+        "approved_mapping_coverage": (mapped_approved / total) if total else 0.0,
+        "ready_for_reviewed_lexicon_guidance": total > 0 and mapped_approved == total,
+        "characters": characters,
+        "automatic_concept_matching": False,
+        "meaning": {
+            "mapped_approved": "Character is explicitly bound to a currently ACTIVE + APPROVED canonical concept.",
+            "mapped_concept_unavailable": "Registry retains a concept UUID, but that concept is not currently available as ACTIVE + APPROVED.",
+            "invalid_concept_id": "Registry contains a malformed concept identifier and requires review.",
+            "unmapped": "No canonical concept binding has been reviewed for this character.",
+        },
+    }
+
+
 @router.post("")
 def create_version(
     payload: RegistryCreateRequest,
