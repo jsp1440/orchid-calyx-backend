@@ -7,9 +7,12 @@ on:
       - 'runtime/knowledge_graph/production_materializer.py'
       - 'runtime/knowledge_graph/adapters.py'
       - 'runtime/knowledge_graph/paper_knowledge_graph.py'
+      - 'runtime/knowledge_graph/publication_eligible_paper_graph.py'
+      - 'runtime/knowledge_graph/scientific_method_vocabulary.py'
       - 'runtime/knowledge_graph/source_coverage_audit.py'
       - 'app/calyx_conversation/extracted_literature_evidence.py'
       - 'app/calyx_conversation/graph_literature_search.py'
+      - 'app/calyx_conversation/scientific_method_graph_preview.py'
       - 'app/calyx_conversation/occurrence_query.py'
       - 'app/calyx_conversation/provider.py'
       - 'app/calyx_conversation/speak_routes.py'
@@ -17,6 +20,7 @@ on:
       - 'scripts/audit_source_graph_coverage.py'
       - 'tests/test_verified_bulk_graph_sources.py'
       - 'tests/test_paper_knowledge_graph.py'
+      - 'tests/test_publication_eligible_paper_graph.py'
       - 'tests/test_source_coverage_audit.py'
       - 'tests/test_calyx_literature_provider.py'
       - 'tests/test_calyx_occurrence_query.py'
@@ -48,9 +52,12 @@ jobs:
           runtime/knowledge_graph/production_materializer.py
           runtime/knowledge_graph/adapters.py
           runtime/knowledge_graph/paper_knowledge_graph.py
+          runtime/knowledge_graph/publication_eligible_paper_graph.py
+          runtime/knowledge_graph/scientific_method_vocabulary.py
           runtime/knowledge_graph/source_coverage_audit.py
           app/calyx_conversation/extracted_literature_evidence.py
           app/calyx_conversation/graph_literature_search.py
+          app/calyx_conversation/scientific_method_graph_preview.py
           app/calyx_conversation/occurrence_query.py
           app/calyx_conversation/provider.py
           app/calyx_conversation/speak_routes.py
@@ -58,6 +65,7 @@ jobs:
           scripts/audit_source_graph_coverage.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
+          tests/test_publication_eligible_paper_graph.py
           tests/test_source_coverage_audit.py
           tests/test_calyx_literature_provider.py
           tests/test_calyx_occurrence_query.py
@@ -69,6 +77,7 @@ jobs:
           pytest -q
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
+          tests/test_publication_eligible_paper_graph.py
           tests/test_source_coverage_audit.py
           tests/test_calyx_literature_provider.py
           tests/test_calyx_occurrence_query.py
@@ -85,9 +94,12 @@ jobs:
           runtime/knowledge_graph/production_materializer.py
           runtime/knowledge_graph/adapters.py
           runtime/knowledge_graph/paper_knowledge_graph.py
+          runtime/knowledge_graph/publication_eligible_paper_graph.py
+          runtime/knowledge_graph/scientific_method_vocabulary.py
           runtime/knowledge_graph/source_coverage_audit.py
           app/calyx_conversation/extracted_literature_evidence.py
           app/calyx_conversation/graph_literature_search.py
+          app/calyx_conversation/scientific_method_graph_preview.py
           app/calyx_conversation/occurrence_query.py
           app/calyx_conversation/provider.py
           app/calyx_conversation/speak_routes.py
@@ -95,6 +107,7 @@ jobs:
           scripts/audit_source_graph_coverage.py
           tests/test_verified_bulk_graph_sources.py
           tests/test_paper_knowledge_graph.py
+          tests/test_publication_eligible_paper_graph.py
           tests/test_source_coverage_audit.py
           tests/test_calyx_literature_provider.py
           tests/test_calyx_occurrence_query.py
