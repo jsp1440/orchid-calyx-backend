@@ -51,19 +51,29 @@ These domains already have verified source queries and adapters on canonical mai
 - `taxonomy_to_conservation`
 - Knowledge Graph node/edge integrity
 
-For canonical `oc_graph.kg_edges`, the audit counts the actual graph predicates rather than inferring success from relational foreign keys. It reports explicit missing relationships and verifies null endpoints, orphan endpoints, and duplicate edges. The readiness state cannot become green until every required persisted relationship is present and graph integrity passes.
+For canonical `oc_graph.kg_edges`, the audit counts actual graph predicates rather than inferring success from relational foreign keys. It reports explicit missing relationships and verifies null endpoints, orphan endpoints, and duplicate edges. The readiness state cannot become green until every required persisted relationship is present and graph integrity passes.
 
-This closes a second source of repeated false-negative/false-positive audit loops: relational linkage and graph materialization are now measured separately, and each of the executive-audit relationship targets has a persisted graph measurement.
+`app/readiness/owner_audit_relationships.py` now provides a pure adapter for Mission Control audits. It replaces the legacy behavior in which every relationship was listed as missing whenever any unrelated subsystem was incomplete. Its output is derived only from measured persisted graph state and is covered by regression tests. Wiring that adapter into the large legacy Owner Operations module remains a mechanical integration step; the measurement contract itself is now isolated and testable.
+
+A dedicated read-only operator is also available:
+
+`python scripts/audit_persisted_graph_relationships.py`
+
+It queries the deployed PostgreSQL graph, emits the complete relationship/integrity report as JSON, performs no writes, and returns a non-zero status while required integrations remain incomplete.
 
 ## Operator
 
-Bounded read-only proof across all audit-priority verified domains:
+Bounded read-only materialization proof across all audit-priority verified domains:
 
 `python scripts/materialize_verified_graph_relationships.py`
 
 Bounded read-only proof for a subset:
 
 `python scripts/materialize_verified_graph_relationships.py --domains literature occurrences media`
+
+Persisted relationship/integrity audit:
+
+`python scripts/audit_persisted_graph_relationships.py`
 
 Production publication is intentionally explicit and should normally be executed one verified domain at a time so failures are isolated and post-publication measurements are easy to interpret:
 
@@ -87,15 +97,22 @@ This branch creates and hardens the executable bridge but does not itself run ag
 - regression proving rolled-back publication is not reported as graph mutation;
 - complete nine-relationship persisted graph measurement;
 - node/edge integrity measurement including orphan endpoints;
-- regression proving readiness remains blocked for only the relationships that are actually absent;
-- regression proving readiness can become green only when all required relationships and integrity exist.
+- regression proving readiness remains blocked for only the relationships actually absent;
+- regression proving readiness can become green only when all required relationships and integrity exist;
+- Mission Control relationship-field adapter that replaces legacy hard-coded relationship placeholders with measured graph evidence;
+- read-only deployed graph audit operator.
+
+## Current validation boundary
+
+The exact-head GitHub Actions run for this branch is still affected by the hosted-runner allocation incident. The CALYX KG Materialization job exists but its job payload has `steps: null`; therefore no checkout, compile, tests, Ruff, or graph regression commands executed. This is not accepted as validation evidence.
 
 ## Next integration work
 
 1. Obtain exact-head executable CI when GitHub Actions allocates a runner.
-2. Run bounded read-only validation against the deployed database.
-3. Resolve any source-contract failures rather than suppressing them.
-4. With owner authorization, publish verified domains transactionally, preferably one domain at a time.
-5. Re-run the persisted graph audit and Calyx scientific retrieval acceptance after each publication slice.
-6. Verify real habitat and elevation source projections/crosswalks, then add them to the verified materialization set.
-7. Feed persisted taxon-linked graph context into the live Calyx Speak evidence path so graph materialization is not merely stored but actually consumable by scientific conversation.
+2. Run bounded read-only materialization validation against the deployed database.
+3. Run the persisted relationship audit against the deployed database and capture exact baseline counts.
+4. Resolve any source-contract failures rather than suppressing them.
+5. With owner authorization, publish verified domains transactionally, preferably one domain at a time.
+6. Re-run the persisted graph audit and Calyx scientific retrieval acceptance after each publication slice.
+7. Verify real habitat and elevation source projections/crosswalks, then add them to the verified materialization set.
+8. Feed persisted taxon-linked graph context into the live Calyx Speak evidence path so graph materialization is not merely stored but actually consumable by scientific conversation.
