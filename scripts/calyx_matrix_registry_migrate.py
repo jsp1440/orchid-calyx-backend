@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 from runtime.matrix_identification_registry_preflight import compare_registry_records
@@ -68,11 +69,7 @@ def execute_registry_migration(
         "schema_ready": True,
         "applied": False,
         "source_root": str(source.root),
-        "plan": {
-            key: value
-            for key, value in plan.items()
-            if key != "copy_records"
-        },
+        "plan": {key: value for key, value in plan.items() if key != "copy_records"},
         "automatic_activation": False,
     }
 
@@ -139,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"ok": False, "blockers": ["DATABASE_URL_NOT_CONFIGURED"]}, indent=2))
         return 2
 
-    source_root = default_registry_root() if not args.source_root else __import__("pathlib").Path(args.source_root)
+    source_root = default_registry_root() if not args.source_root else Path(args.source_root)
     result = execute_registry_migration(
         source=FileMatrixRegistryStore(source_root),
         destination=PostgresMatrixRegistryStore(dsn),
