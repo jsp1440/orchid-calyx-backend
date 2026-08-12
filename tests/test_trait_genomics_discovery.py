@@ -13,16 +13,38 @@ def record(evidence_id: str, taxon: str, kind: EvidenceKind, predicate: str, **k
     )
 
 
+def complete_records(taxon: str):
+    return [
+        record(
+            f"{taxon}:trait",
+            taxon,
+            EvidenceKind.OBSERVED_TRAIT,
+            "spur_length",
+            value="long",
+            confidence=0.9,
+            direct_observation=True,
+        ),
+        record(
+            f"{taxon}:poll",
+            taxon,
+            EvidenceKind.ECOLOGICAL_INTERACTION,
+            "pollinatedBy",
+            target_taxon_id="pollinator:long_tongued",
+            confidence=0.9,
+        ),
+        record(
+            f"{taxon}:gene",
+            taxon,
+            EvidenceKind.GENETIC_ASSOCIATION,
+            "associatedWithTrait",
+            gene_id="GENE1",
+            confidence=0.8,
+        ),
+    ]
+
+
 def test_repeated_trait_interaction_molecular_pattern_becomes_noncausal_candidate():
-    records = []
-    for taxon in ("taxon:a", "taxon:b"):
-        records.extend(
-            [
-                record(f"{taxon}:trait", taxon, EvidenceKind.OBSERVED_TRAIT, "spur_length", value="long", confidence=0.9, direct_observation=True),
-                record(f"{taxon}:poll", taxon, EvidenceKind.ECOLOGICAL_INTERACTION, "pollinatedBy", target_taxon_id="pollinator:long_tongued", confidence=0.9),
-                record(f"{taxon}:gene", taxon, EvidenceKind.GENETIC_ASSOCIATION, "associatedWithTrait", gene_id="GENE1", confidence=0.8),
-            ]
-        )
+    records = complete_records("taxon:a") + complete_records("taxon:b")
     dataset = DiscoveryDataset(dataset_id="tig-test", title="test", records=records)
     result = TraitGenomicsDiscoveryEngine().discover(dataset)
     assert len(result.hypotheses) == 1
@@ -35,12 +57,33 @@ def test_repeated_trait_interaction_molecular_pattern_becomes_noncausal_candidat
 
 
 def test_single_taxon_pattern_is_not_promoted_to_discovery_candidate():
-    dataset = DiscoveryDataset(
-        dataset_id="single",
-        title="single",
-        records=[
-            record("t", "taxon:a", EvidenceKind.OBSERVED_TRAIT, "color", value="red"),
-            record("i", "taxon:a", EvidenceKind.ECOLOGICAL_INTERACTION, "pollinatedBy", target_taxon_id="bird:x"),
-        ],
-    )
+    dataset = DiscoveryDataset(dataset_id="single", title="single", records=complete_records("taxon:a"))
+    assert TraitGenomicsDiscoveryEngine().discover(dataset).hypotheses == []
+
+
+def test_repeated_trait_only_pattern_is_not_a_tig_candidate():
+    records = [
+        record("a:trait", "taxon:a", EvidenceKind.OBSERVED_TRAIT, "color", value="red"),
+        record("b:trait", "taxon:b", EvidenceKind.OBSERVED_TRAIT, "color", value="red"),
+    ]
+    dataset = DiscoveryDataset(dataset_id="trait-only", title="trait only", records=records)
+    assert TraitGenomicsDiscoveryEngine().discover(dataset).hypotheses == []
+
+
+def test_repeated_trait_and_interaction_without_molecular_evidence_is_not_candidate():
+    records = []
+    for taxon in ("taxon:a", "taxon:b"):
+        records.extend(
+            [
+                record(f"{taxon}:trait", taxon, EvidenceKind.OBSERVED_TRAIT, "color", value="red"),
+                record(
+                    f"{taxon}:poll",
+                    taxon,
+                    EvidenceKind.ECOLOGICAL_INTERACTION,
+                    "pollinatedBy",
+                    target_taxon_id="bird:x",
+                ),
+            ]
+        )
+    dataset = DiscoveryDataset(dataset_id="no-molecular", title="no molecular", records=records)
     assert TraitGenomicsDiscoveryEngine().discover(dataset).hypotheses == []
