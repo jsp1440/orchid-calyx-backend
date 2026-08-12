@@ -4,7 +4,7 @@ Date: 2026-08-11
 
 ## Status
 
-Current-main candidate. The Famous-derived Lexicon presentation is retained in the public frontend, while scientific authority remains the Orchid Continuum Concept Registry (`oc_concepts`). Backend PR #896 supersedes closed/unmerged #889 and preserves the current Matrix/Lexicon lineage.
+Current-main candidates are backend PR #896 and frontend PR #147. The Famous-derived Lexicon presentation is retained in the public frontend, while scientific authority remains the Orchid Continuum Concept Registry (`oc_concepts`). Backend PR #896 supersedes closed/unmerged #889. Frontend PR #147 supersedes closed/unmerged #144 and preserves the current Matrix 013 frontend lineage exactly.
 
 ## Runtime contract
 
@@ -20,7 +20,7 @@ Current-main candidate. The Famous-derived Lexicon presentation is retained in t
 
 The uploaded archive `orchid-lexicon-botany 2(1).zip` supplied on 2026-08-11 is the migration source of truth for the prototype presentation. Audit confirmed a 129-file Famous/Lovable-style source export containing the original lexicon UI, editor/ingestion views, demo Calyx service, validation/knowledge-graph demo data and a 45-term `src/data/lexiconEntries.ts`.
 
-The first GitHub migration retained only 35 fallback terms. Frontend PR #144 now restores the full 45-term export inventory. Ten source-only terms recovered from the ZIP are: Form, Symmetry, Texture, Substance, Sensu lato, Sensu stricto, Pollination syndrome, Deceptive pollination, Keiki and Bark mix.
+The first GitHub migration retained only 35 fallback terms. The reviewed frontend implementation now restored in PR #147 carries the full 45-term export inventory. Ten source-only terms recovered from the ZIP are: Form, Symmetry, Texture, Substance, Sensu lato, Sensu stricto, Pollination syndrome, Deceptive pollination, Keiki and Bark mix.
 
 A source-derived `famousExportRecordOverrides` layer restores the exported wording and compact record relationships for all non-Resupination fallback terms, including aliases, related terminology, contrasts, identification cautions, categories and certainty notes. Representative regressions verify:
 
@@ -34,7 +34,7 @@ Resupination receives a dedicated source-backed draft enrichment restoring anato
 
 ## Restored frontend presentation
 
-Frontend PR #144 restores the richer Famous entry experience over the canonical loader without restoring the prototype backend:
+Frontend PR #147 restores the richer Famous entry experience over the canonical loader without restoring the prototype backend:
 
 - adaptive Entry Hero;
 - Quick / Learn / Scientific navigation emphasis;
@@ -47,6 +47,20 @@ Frontend PR #144 restores the richer Famous entry experience over the canonical 
 - Calyx page/session context bound to the active concept.
 
 The Resupination schematic is displayed only when matching `resupination-sequence` asset metadata exists, preventing a hard-coded diagram from being paired with unrelated canonical asset title/provenance.
+
+## Current-main frontend reconstruction
+
+The original reviewed frontend candidate #144 diverged after Matrix 013 advanced `main`. The replacement #147 was reconstructed without semantic cherry-picking:
+
+- reviewed Lexicon head: `66531d0f05716e8e9275de6d4fe3b781ce22e943`;
+- current frontend main / Matrix 013 head: `7d5d5238af950b26fae3b8e12e4ea493b6bf3442`;
+- reconstruction merge commit: `5de618ab657eaac51c2817b901211a4e3de59581`;
+- both heads are explicit parents of the reconstruction commit;
+- comparison against current main is 0 commits behind;
+- the exact diff against current main contains only the same 13 Lexicon integration files from #144;
+- no Matrix 013 file is modified by #147.
+
+This proves the current-main candidate preserves both reviewed Lexicon implementation history and current Matrix registry-review behavior.
 
 ## Famous migration boundary
 
@@ -78,7 +92,7 @@ The current Matrix lineage stores explicit reviewed Concept Registry UUID bindin
 
 ## Review disposition
 
-All currently raised Codex findings on frontend PR #144 are resolved:
+All six Codex findings raised on source frontend PR #144 were repaired before current-main reconstruction and the repaired file contents are preserved unchanged in #147:
 
 1. direct entry routes use the direct canonical loader;
 2. nested empty presentation objects are treated as empty for migration-overlay purposes;
@@ -87,7 +101,9 @@ All currently raised Codex findings on frontend PR #144 are resolved:
 5. aliases/synonyms remain visible in the recovered full entry view;
 6. conservation records render all supported fields or an explicit pending state.
 
-The previous backend review findings from #889 are incorporated into #896's current-main reconstruction: hyphen-safe slug identity, exact lookup independent of broad-search limits and the documented release contract. #896 additionally fails closed on ambiguous normalized approved labels. No unresolved review threads are currently present on #896.
+The previous backend review findings from #889 are incorporated into #896's current-main reconstruction: hyphen-safe slug identity, exact lookup independent of broad-search limits and the documented release contract. #896 additionally fails closed on ambiguous normalized approved labels.
+
+#147 still requires its own exact-head review/validation disposition before merge; inherited review history is not treated as a substitute for current-head validation.
 
 ## Governance
 
@@ -102,4 +118,4 @@ The previous backend review findings from #889 are incorporated into #896's curr
 
 ## Validation
 
-Dedicated `CALYX Lexicon Live 002 Validation` compiles and executes the direct-entry contract, adjacent canonical Lexicon/Matrix registry regressions, Ruff, format and diff hygiene. Private GitHub Actions incident #481 currently prevents hosted jobs from obtaining executable steps; latest frontend jobs again report `steps: null`. A local dependency-install attempt on the source export did not complete within the available execution window, so no local-build claim is made. Zero-step failures are infrastructure evidence, not a green or red product-test result. Backend #896 remains Draft and frontend #144 remains unmerged pending trusted execution.
+Dedicated `CALYX Lexicon Live 002 Validation` compiles and executes the direct-entry contract, adjacent canonical Lexicon/Matrix registry regressions, Ruff, format and diff hygiene. Private GitHub Actions incident #481 currently prevents hosted jobs from obtaining executable steps; repeated backend reruns still return `steps: null`. A local dependency-install attempt on the source export did not complete within the available execution window, so no local-build claim is made. Zero-step failures are infrastructure evidence, not a green or red product-test result. Backend #896 and frontend #147 remain Draft/unmerged pending trusted execution.
