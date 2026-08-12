@@ -93,11 +93,13 @@ Production Knowledge Graph publication remains owner-governed. A failed or rolle
 
 ## Current branch state
 
-The branch remains based directly on current canonical `main` and has no behind-main drift at this checkpoint. The integration is intentionally concentrated in one PR instead of spawning another graph, audit, habitat/elevation, or Speak PR.
+The branch remains based directly on canonical `main` and had zero behind-main drift at the latest comparison checkpoint. The integration is intentionally concentrated in one PR instead of spawning separate graph, audit, habitat/elevation, or Speak PRs.
 
-## Current validation boundary
+## Current validation and merge boundary
 
-GitHub-hosted Actions remains affected by the runner allocation incident. Recent branch workflows have produced a job with `steps: null`; that means no checkout, compile, tests, Ruff, or graph regression commands executed. Zero-step failures are not accepted as validation evidence.
+GitHub-hosted Actions remains affected by the runner allocation incident. Recent branch workflows have produced a job with `steps: null`; no checkout, compile, tests, Ruff, or graph regression commands executed. Zero-step failures are not accepted as validation evidence.
+
+The branch therefore remains draft. It must not be merged merely because GitHub reports it as mergeable. Required next proof is executable exact-head validation through a trusted runner or a trusted local/deployed read-only validation path.
 
 ## Next integration work
 
