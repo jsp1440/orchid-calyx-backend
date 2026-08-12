@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,9 @@ def _source(path: Path) -> Path:
 
 
 @pytest.mark.asyncio
-async def test_bridge_returns_only_publication_eligible_integrity_verified_records(tmp_path: Path):
+async def test_bridge_returns_only_publication_eligible_integrity_verified_records(
+    tmp_path: Path,
+):
     root = tmp_path / "literature"
     repository = LiteratureResultRepository(root)
     paper = await extract_and_persist(_source(tmp_path / "paper.txt"), repository)
@@ -93,8 +96,9 @@ def test_reverse_binding_lookup_is_bounded_and_type_specific(tmp_path: Path):
             "language": "en",
             "evidence_integrity": {"e1": {"anchor_id": 1}},
         }
-        import json
-        (path / "source-binding.json").write_text(json.dumps(binding), encoding="utf-8")
+        (path / "source-binding.json").write_text(
+            json.dumps(binding), encoding="utf-8"
+        )
 
     matches = FileLiteratureSourceBindingRepository(root).find_by_source_object(
         "LITERATURE_DOCUMENT", 101
