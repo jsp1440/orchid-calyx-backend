@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key, verify_owner_session
@@ -15,6 +15,10 @@ from .molecular_evidence import (
     MolecularEvidenceCandidate,
     MolecularEvidenceRepository,
     MolecularReviewDecision,
+)
+from .molecular_review_queue import (
+    MolecularReviewQueueQuery,
+    MolecularReviewQueueRepository,
 )
 from .release_service import ScientificArchiveReleaseService
 from .repository import TraitGenomicsRepository
@@ -116,6 +120,40 @@ def molecular_status():
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Molecular evidence status failed: {exc}") from exc
+
+
+@router.get(
+    "/molecular/candidates",
+    dependencies=[Depends(verify_owner_session)],
+)
+def list_molecular_candidates(
+    review_state: str | None = None,
+    evidence_kind: str | None = None,
+    canonical_taxon_id: str | None = None,
+    scientific_name: str | None = None,
+    source_id: str | None = None,
+    min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    try:
+        query = MolecularReviewQueueQuery(
+            review_state=review_state,
+            evidence_kind=evidence_kind,
+            canonical_taxon_id=canonical_taxon_id,
+            scientific_name=scientific_name,
+            source_id=source_id,
+            min_confidence=min_confidence,
+            limit=limit,
+            offset=offset,
+        )
+        return MolecularReviewQueueRepository().list(query).as_dict()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Molecular review queue failed: {exc}") from exc
 
 
 @router.post(
