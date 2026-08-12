@@ -6,7 +6,7 @@ IMPLEMENTED + HARDENED ON FEATURE BRANCH / NON-PRODUCTION / EXECUTABLE REPOSITOR
 
 Branch: `feature/calyx-auto-001-durable-missions`
 
-Current hardened implementation head before this documentation commit: `d0cd85a462a13f03984fe2f1adbaeb27f3fe0be7`.
+Current hardened code/workflow head before this documentation commit: `c71c37f89ff6a2671f703eed3d0387ab7ff9ca2d`.
 
 ## Mission
 
@@ -61,6 +61,8 @@ CALYX-AUTO-001 reuses `PersistentProgramWorker` recovery and heartbeat semantics
 
 Claim admission is serialized on PostgreSQL by locking the owner's active/running `CalyxProgram` rows in deterministic program-ID order before recomputing the persisted runnable schedule, active jobs, governance ordering, and concurrency admission. The conditional job update remains the final claim guard. This closes the race where concurrent workers could both observe the same pre-claim active set and independently exceed the configured active-job policy.
 
+The dedicated acceptance workflow now provisions PostgreSQL 16 and includes a two-session contention regression. Two workers are released concurrently against one owner/program with `max_active_jobs=1`; the required invariant is exactly one successful lease claim and exactly one running job. This PostgreSQL regression is committed but has not yet executed because the current private hosted Actions allocation fails before step creation.
+
 Execution timeout is prohibited from exceeding the lease, and the lease is heartbeat-verified immediately after executor return before validator disposition/final completion.
 
 ## Validator feedback loop
@@ -89,6 +91,8 @@ The isolated workspace patch executor intentionally retains its rollback journal
 - instead the cycle returns `finalization_pending`, keeps the accepted job/writeback durable, and stops before claiming more work;
 - the next worker cycle retries idempotent finalization cleanup before any new mission is claimed.
 
+`IsolatedWorkspacePatchExecutor.finalize()` is idempotent: deleting an already-missing rollback journal is a no-op. Therefore cleanup retry cannot restore or re-execute accepted work.
+
 This prevents a split-brain state where durable orchestration says a patch succeeded while a late cleanup exception restores the accepted workspace bytes.
 
 ## Persistent worker
@@ -108,6 +112,7 @@ Committed regression coverage now verifies:
 - configured active-job limit prevents a second claim while one mission is running;
 - expired lease reclaim changes token/worker and increments attempt count;
 - post-commit workspace-finalization failure never calls rollback, preserves the accepted job/writeback, stops new work, and retries cleanup on the next cycle without re-executing the mission;
+- PostgreSQL two-session contention is required to preserve `max_active_jobs=1`;
 - timeout cannot exceed the lease.
 
 Dependency-light validation recorded before the latest hardening:
@@ -115,9 +120,9 @@ Dependency-light validation recorded before the latest hardening:
 - Python syntax compilation for the original new source/test modules: passed;
 - selector/validator state assertions: 6/6 passed.
 
-The latest hardened implementation has **not** received executable repository CI because private hosted Actions is again failing before step creation. On head `4c88f145229ba030fc743abb961e9931b4823c79`, dedicated run `31565772832`, job `94017142348`, returned `steps = null`; BUILD-088E, CALYX-AGENT-003, and Workflow Governance failed with the same allocator signature. Those runs executed no checkout, Ruff, tests, migration assertions, or application code and are infrastructure evidence only.
+The latest hardened code/workflow head has **not** received executable repository CI because private hosted Actions is again failing before step creation. On `c71c37f89ff6a2671f703eed3d0387ab7ff9ca2d`, dedicated run `31566349713`, job `94018830326`, returned `steps = null`; BUILD-088E, CALYX-AGENT-003, and Workflow Governance failed with the same allocator signature. Those runs executed no PostgreSQL service initialization, checkout, Ruff, tests, migration assertions, or application code and are infrastructure evidence only.
 
-Dedicated workflow `.github/workflows/calyx-auto-001.yml` remains the authoritative acceptance gate. It runs the CALYX-AUTO-001 integration suite plus adjacent autonomous-program worker/persistence tests, Python compile, Ruff, migration invariants, permanent non-authority assertions, and diff hygiene.
+Dedicated workflow `.github/workflows/calyx-auto-001.yml` remains the authoritative acceptance gate. It now runs PostgreSQL 16 claim-contention coverage plus the CALYX-AUTO-001 integration suite, adjacent autonomous-program worker/persistence tests, Python compile, Ruff, migration invariants, permanent non-authority assertions, and diff hygiene.
 
 Full repository acceptance remains pending a real step-bearing Actions run. Do not substitute the zero-step failures for either a code pass or a code failure.
 
