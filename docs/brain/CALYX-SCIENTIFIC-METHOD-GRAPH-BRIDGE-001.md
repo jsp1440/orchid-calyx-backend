@@ -66,6 +66,12 @@ Added `tests/test_publication_eligible_paper_graph.py` covering:
 
 The dedicated `CALYX KG Bulk Source Validation` workflow now compiles and tests the strict graph projection, scientific-method vocabulary, preview bridge, reviewed extraction bridge, research-document fallback, occurrence query, providers and existing graph materialization paths.
 
+### Exact-head validation state
+
+At exact head `14fbc0f27c648df5249dc68afa5eef227d962f96`, GitHub created `CALYX KG Bulk Source Validation` run `31611617521`, but the only `validate` job completed with `steps=null` and no logs. Therefore checkout, dependency installation, Python compilation, pytest, Ruff and diff hygiene did not execute. This is recorded as runner/infrastructure non-execution, not as a code-test failure and not as successful validation.
+
+No validation claim in this Brain record treats a zero-step GitHub job as executable evidence.
+
 ## Governance boundary
 
 This implementation deliberately stops before production graph publication. The preview is read-only. Publishing the resulting reviewed scientific-method nodes and edges into production `oc_graph` is a graph mutation and remains subject to the existing explicit publication/owner governance boundary.
