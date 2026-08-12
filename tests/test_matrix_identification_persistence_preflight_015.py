@@ -1,5 +1,3 @@
-import pytest
-
 from runtime.matrix_identification_persistence_preflight import (
     REQUIRED_COLUMNS,
     REQUIRED_INDEXES,
