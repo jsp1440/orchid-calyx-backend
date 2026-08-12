@@ -14,6 +14,7 @@ from app.routers.matrix_identification_registry import router as matrix_identifi
 from app.routers.matrix_identification_session import router as matrix_identification_session_router
 from app.routers.matrix_identification_explanation import router as matrix_identification_explanation_router
 from app.routers.matrix_identification_vision import router as matrix_identification_vision_router
+from app.routers.matrix_identification_report import router as matrix_identification_report_router
 
 router = APIRouter()
 
@@ -39,10 +40,7 @@ def require_admin(api_key: str = None):
 
 @router.get("/reference-docs", response_model=list[ReferenceDocumentListOut])
 def list_reference_docs(db: Session = Depends(get_db)):
-    docs = db.execute(
-        select(SystemReferenceDocument).where(SystemReferenceDocument.is_active == True)
-    ).scalars().all()
-    return docs
+    return db.execute(select(SystemReferenceDocument).where(SystemReferenceDocument.is_active == True)).scalars().all()
 
 
 @router.get("/reference-docs/{doc_id}", response_model=ReferenceDocumentOut)
@@ -67,15 +65,9 @@ def download_reference_doc(doc_id: str, db: Session = Depends(get_db)):
 
 @router.post("/admin/reference-docs", response_model=ReferenceDocumentOut)
 def upload_reference_doc(
-    document_type: str = Form(...),
-    title: str = Form(...),
-    version_label: str = Form(...),
-    source_org: str = Form("AOS"),
-    source_url: str = Form(None),
-    notes: str = Form(None),
-    file: UploadFile = File(...),
-    api_key: str = Form(None),
-    db: Session = Depends(get_db)
+    document_type: str = Form(...), title: str = Form(...), version_label: str = Form(...),
+    source_org: str = Form("AOS"), source_url: str = Form(None), notes: str = Form(None),
+    file: UploadFile = File(...), api_key: str = Form(None), db: Session = Depends(get_db)
 ):
     require_admin(api_key)
     if document_type not in VALID_DOCUMENT_TYPES:
@@ -84,28 +76,17 @@ def upload_reference_doc(
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
     file_data = file.file.read()
     sha256 = compute_sha256(file_data)
-    existing = db.execute(
-        select(SystemReferenceDocument).where(
-            SystemReferenceDocument.document_type == document_type,
-            SystemReferenceDocument.version_label == version_label,
-            SystemReferenceDocument.sha256 == sha256
-        )
-    ).scalar_one_or_none()
+    existing = db.execute(select(SystemReferenceDocument).where(
+        SystemReferenceDocument.document_type == document_type,
+        SystemReferenceDocument.version_label == version_label,
+        SystemReferenceDocument.sha256 == sha256
+    )).scalar_one_or_none()
     if existing:
         return existing
     file_path = save_file(file_data, file.filename or "document.pdf")
-    doc = SystemReferenceDocument(
-        document_type=document_type,
-        title=title,
-        version_label=version_label,
-        source_org=source_org,
-        source_url=source_url,
-        file_path=file_path,
-        mime_type=file.content_type or "application/pdf",
-        file_size_bytes=len(file_data),
-        sha256=sha256,
-        notes=notes
-    )
+    doc = SystemReferenceDocument(document_type=document_type, title=title, version_label=version_label,
+        source_org=source_org, source_url=source_url, file_path=file_path,
+        mime_type=file.content_type or "application/pdf", file_size_bytes=len(file_data), sha256=sha256, notes=notes)
     db.add(doc)
     db.commit()
     db.refresh(doc)
@@ -113,12 +94,7 @@ def upload_reference_doc(
 
 
 @router.patch("/admin/reference-docs/{doc_id}", response_model=ReferenceDocumentOut)
-def update_reference_doc(
-    doc_id: str,
-    update: ReferenceDocumentUpdate,
-    api_key: str = None,
-    db: Session = Depends(get_db)
-):
+def update_reference_doc(doc_id: str, update: ReferenceDocumentUpdate, api_key: str = None, db: Session = Depends(get_db)):
     require_admin(api_key)
     doc = db.get(SystemReferenceDocument, doc_id)
     if not doc:
@@ -132,11 +108,10 @@ def update_reference_doc(
     return doc
 
 
-# Platform composition point: app.main already mounts this router. Keeping
-# feature routers nested here avoids duplicate application bootstrapping.
 router.include_router(species_exhibit_router)
 router.include_router(matrix_identification_router)
 router.include_router(matrix_identification_registry_router)
 router.include_router(matrix_identification_session_router)
 router.include_router(matrix_identification_explanation_router)
 router.include_router(matrix_identification_vision_router)
+router.include_router(matrix_identification_report_router)
