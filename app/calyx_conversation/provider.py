@@ -33,16 +33,10 @@ def _request_hash(payload: dict[str, Any]) -> str:
 
 
 class DeterministicGovernedReplyProvider:
-    """Safe fallback that never invents facts outside supplied governed context.
-
-    This provider makes server-side conversation usable when no external model
-    provider has been configured, while keeping the limitation explicit in
-    metadata. Its identity is persisted on each reply so fallback output cannot
-    masquerade as a configured generative model.
-    """
+    """Safe fallback that never invents facts outside supplied governed context."""
 
     provider_name = "deterministic-governed"
-    model_name = "calyx-governed-summary-v3-graph-literature"
+    model_name = "calyx-governed-summary-v4-occurrence"
 
     @staticmethod
     def _format_mission_answer(mission: dict[str, Any]) -> list[str]:
@@ -118,36 +112,31 @@ class DeterministicGovernedReplyProvider:
         lines.append(
             "Evidence vs inference: source evidence and extracted evidence remain distinct from this provisional synthesis, which is not reviewed or published knowledge."
         )
-        lines.append(
-            "Relevant terminology: supporting evidence, contradicting evidence, missing evidence, provisional synthesis, human review required."
-        )
         return lines
 
     @staticmethod
     def _supporting_evidence_summary(item: Any) -> str:
         if not isinstance(item, dict):
             return str(item)
-        subject = item.get("subject")
-        predicate = item.get("predicate")
-        value = item.get("value")
-        parts = [str(value) for value in (subject, predicate, value) if value not in (None, "")]
-        if parts:
-            return " ".join(parts)
-        return str(item.get("candidate_id") or "unlabeled supporting evidence")
+        parts = [
+            str(value)
+            for value in (item.get("subject"), item.get("predicate"), item.get("value"))
+            if value not in (None, "")
+        ]
+        return " ".join(parts) if parts else str(item.get("candidate_id") or "unlabeled supporting evidence")
 
     @staticmethod
     def _contradicting_evidence_summary(item: Any) -> str:
         if not isinstance(item, dict):
             return str(item)
         candidate_id = item.get("candidate_id")
-        subject = item.get("subject")
-        predicate = item.get("predicate")
-        value = item.get("value")
-        parts = [str(value) for value in (subject, predicate, value) if value not in (None, "")]
+        parts = [
+            str(value)
+            for value in (item.get("subject"), item.get("predicate"), item.get("value"))
+            if value not in (None, "")
+        ]
         label = " ".join(parts) if parts else "conflicting evidence"
-        if candidate_id is not None:
-            return f"{label} (candidate {candidate_id})"
-        return label
+        return f"{label} (candidate {candidate_id})" if candidate_id is not None else label
 
     @staticmethod
     def _collect_citations(mission: dict[str, Any]) -> list[str]:
@@ -173,80 +162,92 @@ class DeterministicGovernedReplyProvider:
 
     @staticmethod
     def _format_graph_context(graph_context: dict[str, Any]) -> list[str]:
-        """Summarize persisted graph evidence without inventing a conclusion."""
         if graph_context.get("status") != "available":
             return []
         found = [
-            item
-            for item in graph_context.get("taxa") or []
+            item for item in graph_context.get("taxa") or []
             if isinstance(item, dict) and item.get("status") == "found"
         ]
         if not found:
             return []
-
-        lines = [
-            "Persisted Knowledge Graph context was found for the explicit taxon name(s) in this question."
-        ]
+        lines = ["Persisted Knowledge Graph context was found for the explicit taxon name(s) in this question."]
         for item in found[:3]:
             name = str(item.get("scientific_name") or "taxon")
             edges = list(dict.fromkeys(str(value) for value in item.get("edge_types") or []))
             coverage = item.get("domain_coverage") or {}
-            node_count = len(item.get("nodes") or [])
-            edge_count = len(item.get("edges") or [])
-            parts = [f"{name}: {node_count} neighboring nodes, {edge_count} edges"]
+            parts = [
+                f"{name}: {len(item.get('nodes') or [])} neighboring nodes, {len(item.get('edges') or [])} edges"
+            ]
             if edges:
                 parts.append("predicates=" + ", ".join(edges[:8]))
             if coverage:
-                parts.append(
-                    "domain coverage="
-                    + ", ".join(
-                        f"{key}:{value}" for key, value in list(coverage.items())[:8]
-                    )
-                )
+                parts.append("domain coverage=" + ", ".join(f"{key}:{value}" for key, value in list(coverage.items())[:8]))
             lines.append("; ".join(parts) + ".")
             gaps = item.get("data_gaps") or []
             if gaps:
-                lines.append(
-                    f"Graph data gaps for {name}: " + "; ".join(str(gap) for gap in gaps[:6]) + "."
-                )
-        lines.append(
-            "Graph context is persisted Continuum evidence/provenance, but graph connectivity alone does not justify a new scientific conclusion."
-        )
+                lines.append(f"Graph data gaps for {name}: " + "; ".join(str(gap) for gap in gaps[:6]) + ".")
+        lines.append("Graph context is persisted Continuum evidence/provenance, but graph connectivity alone does not justify a new scientific conclusion.")
         return lines
 
     @staticmethod
     def _format_graph_literature(graph_literature: dict[str, Any]) -> list[str]:
-        """Format persisted publication-node matches without claiming full-text support."""
         if graph_literature.get("status") != "available":
             return []
-        results = [
-            item for item in graph_literature.get("results") or [] if isinstance(item, dict)
-        ]
+        results = [item for item in graph_literature.get("results") or [] if isinstance(item, dict)]
         if not results:
             return []
         terms = ", ".join(str(value) for value in graph_literature.get("terms") or [])
-        lines = [
-            "Persisted Knowledge Graph literature matches were found"
-            + (f" for literal terms: {terms}." if terms else ".")
-        ]
+        lines = ["Persisted Knowledge Graph literature matches were found" + (f" for literal terms: {terms}." if terms else ".")]
         for index, item in enumerate(results[:5], start=1):
             title = str(item.get("title") or f"Publication node {item.get('kg_node_id')}")
-            doi = str(item.get("doi") or "").strip()
-            year = item.get("year")
-            taxa = [str(value) for value in item.get("associated_taxa") or []]
             details: list[str] = []
-            if year not in (None, ""):
-                details.append(f"year={year}")
-            if doi:
-                details.append(f"doi={doi}")
+            if item.get("year") not in (None, ""):
+                details.append(f"year={item.get('year')}")
+            if str(item.get("doi") or "").strip():
+                details.append(f"doi={item.get('doi')}")
+            taxa = [str(value) for value in item.get("associated_taxa") or []]
             if taxa:
                 details.append("taxa=" + ", ".join(taxa[:5]))
-            lines.append(
-                f"{index}. {title}" + (" (" + "; ".join(details) + ")" if details else "")
-            )
-        lines.append(
-            "These are persisted publication-node metadata and taxon links, not a substitute for inspecting the underlying paper text; no causal or physiological conclusion is inferred from title/metadata matches alone."
-        )
+            lines.append(f"{index}. {title}" + (" (" + "; ".join(details) + ")" if details else ""))
+        lines.append("These are persisted publication-node metadata and taxon links, not a substitute for inspecting the underlying paper text; no causal or physiological conclusion is inferred from title/metadata matches alone.")
+        return lines
+
+    @staticmethod
+    def _format_occurrence_constraints(occurrence: dict[str, Any]) -> list[str]:
+        if occurrence.get("status") != "available":
+            return []
+        filters = occurrence.get("filter") or {}
+        results = [item for item in occurrence.get("results") or [] if isinstance(item, dict)]
+        country = str(filters.get("country") or "the requested country")
+        mode = str(filters.get("elevation_mode") or "elevation")
+        if mode == "above":
+            constraint = f"above {filters.get('elevation_min_m'):g} m"
+        elif mode == "below":
+            constraint = f"below {filters.get('elevation_max_m'):g} m"
+        elif mode == "between":
+            constraint = f"between {filters.get('elevation_min_m'):g} and {filters.get('elevation_max_m'):g} m"
+        else:
+            constraint = f"at {filters.get('target_elevation_m'):g} m"
+        if not results:
+            return [
+                f"Occurrence evidence query: no taxon records in the verified bulk occurrence corpus matched {country} {constraint}.",
+                "A zero result is reported as a data result, not replaced by an inferred species list.",
+            ]
+        lines = [
+            f"Occurrence evidence query: {len(results)} taxon result(s) matched {country} {constraint} in the verified bulk occurrence corpus."
+        ]
+        for index, item in enumerate(results[:20], start=1):
+            name = str(item.get("scientific_name") or f"taxon {item.get('taxonomy_id')}")
+            details = [f"records={item.get('occurrence_count', 0)}"]
+            if item.get("observed_min_elevation_m") is not None:
+                details.append(f"observed-min={item['observed_min_elevation_m']:g} m")
+            if item.get("observed_max_elevation_m") is not None:
+                details.append(f"observed-max={item['observed_max_elevation_m']:g} m")
+            details.append(f"kg-node={item.get('kg_node_id')}")
+            lines.append(f"{index}. {name} (" + "; ".join(details) + ")")
+        if len(results) > 20:
+            lines.append(f"{len(results) - 20} additional matching taxa were omitted from this concise reply.")
+        lines.append("These are occurrence records linked to canonical Knowledge Graph taxon identities; they are observational evidence, not a claim that the listed elevation is the complete biological range of each species.")
         return lines
 
     def generate(
@@ -258,57 +259,44 @@ class DeterministicGovernedReplyProvider:
         payload = {"messages": messages, "governed_context": governed_context}
         mission = governed_context.get("mission")
         retrieval = governed_context.get("retrieval") or {}
-        graph_context = governed_context.get("knowledge_graph") or {}
-        graph_literature = governed_context.get("graph_literature") or {}
-        graph_lines = self._format_graph_context(graph_context)
-        literature_lines = self._format_graph_literature(graph_literature)
-        question = next(
-            (item["content"] for item in reversed(messages) if item.get("role") == "user"),
-            "",
-        )
+        graph_lines = self._format_graph_context(governed_context.get("knowledge_graph") or {})
+        literature_lines = self._format_graph_literature(governed_context.get("graph_literature") or {})
+        occurrence_lines = self._format_occurrence_constraints(governed_context.get("occurrence_constraints") or {})
+        question = next((item["content"] for item in reversed(messages) if item.get("role") == "user"), "")
         lines: list[str] = []
         if governed_context.get("casual"):
-            lines.append(
-                "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. "
-                "I can discuss a question conversationally, retrieve Continuum evidence, run a governed Brain mission when a scientific question needs it, read persisted Knowledge Graph context and literature metadata, and keep evidence and publication boundaries visible."
-            )
+            lines.append("Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. I can discuss a question conversationally, retrieve Continuum evidence, run a governed Brain mission, query persisted graph context and literature metadata, and evaluate explicit country/elevation occurrence constraints while keeping evidence and publication boundaries visible.")
         elif mission:
             lines.extend(self._format_mission_answer(mission))
+            lines.extend(occurrence_lines)
             lines.extend(graph_lines)
             lines.extend(literature_lines)
             lines.append("This answer remains review-bound and is not automatically published knowledge.")
         elif governed_context.get("mission_error"):
-            lines.append(
-                "I could not complete a governed Brain mission for this turn, so I will not present a scientific conclusion as established."
-            )
+            lines.append("I could not complete a governed Brain mission for this turn, so I will not present a scientific conclusion as established.")
             lines.append("Mission status: " + str(governed_context["mission_error"]))
             if retrieval.get("results"):
-                lines.append(
-                    f"I did retrieve {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible evidence objects that can be inspected while the mission gap is repaired."
-                )
+                lines.append(f"I did retrieve {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible evidence objects that can be inspected while the mission gap is repaired.")
+            lines.extend(occurrence_lines)
             lines.extend(graph_lines)
             lines.extend(literature_lines)
         elif retrieval.get("results"):
-            lines.append(
-                f"I found {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible Orchid Continuum evidence objects relevant to your question."
-            )
+            lines.append(f"I found {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible Orchid Continuum evidence objects relevant to your question.")
             for index, result in enumerate(retrieval["results"][:5], start=1):
                 excerpt = str(result.get("authorized_excerpt") or "").strip().replace("\n", " ")
                 title = result.get("title") or result.get("object_type") or f"Evidence {index}"
                 lines.append(f"{index}. {title}" + (f": {excerpt[:360]}" if excerpt else ""))
+            lines.extend(occurrence_lines)
             lines.extend(graph_lines)
             lines.extend(literature_lines)
             lines.append("I have not promoted these retrieved records into published knowledge.")
-        elif graph_lines or literature_lines:
+        elif occurrence_lines or graph_lines or literature_lines:
+            lines.extend(occurrence_lines)
             lines.extend(graph_lines)
             lines.extend(literature_lines)
-            lines.append(
-                "The semantic evidence index did not surface an eligible evidence object for this turn, so I am limiting this response to persisted graph evidence and publication metadata rather than guessing beyond it."
-            )
+            lines.append("The semantic evidence index did not surface an eligible evidence object for this turn, so I am limiting this response to the governed structured evidence that was available rather than guessing beyond it.")
         else:
-            lines.append(
-                "I do not yet have enough governed Orchid Continuum evidence to answer that substantively without guessing."
-            )
+            lines.append("I do not yet have enough governed Orchid Continuum evidence to answer that substantively without guessing.")
         if question and not governed_context.get("casual"):
             lines.append(f"Question retained in this thread: {question}")
         text = "\n\n".join(item for item in lines if item)
@@ -344,7 +332,8 @@ class OpenAICompatibleReplyProvider:
             "Explicitly distinguish direct evidence, inference, missing evidence, and proposed design ideas. "
             "Never claim an Orchid Continuum capability is implemented unless the governed context says it is. "
             "For casual conversation, be natural and concise. For scientific questions, explain what is supported and what remains uncertain. "
-            "Persisted Knowledge Graph context and publication-node metadata may be used as governed Continuum evidence, but graph connectivity or title matches alone must not be promoted into new scientific conclusions. "
+            "Persisted Knowledge Graph context, publication-node metadata, and structured occurrence-constraint records may be used as governed Continuum evidence, but graph connectivity or metadata alone must not be promoted into unsupported scientific conclusions. "
+            "Occurrence records are observations and must not be described as complete species ranges unless the evidence supports that inference. "
             "Do not publish, promote Candidate Knowledge, or mutate the Knowledge Graph."
         )
         context_text = json.dumps(governed_context, sort_keys=True, default=str)
