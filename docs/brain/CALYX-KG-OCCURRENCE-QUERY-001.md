@@ -14,7 +14,7 @@ Close the retrieval-side gap after identifying the authoritative 580,612-row occ
 - Raw point elevation and reported min/max ranges are treated as occurrence evidence; this is distinct from the derived taxon elevation-profile nodes materialized elsewhere in PR #901.
 - SQL is parameterized, bounded, read-only, and sets the PostgreSQL connection read-only.
 - Speak now adds these results to governed context and message metadata; no graph mutation or knowledge publication occurs.
-- The deterministic governed provider is upgraded to `calyx-governed-summary-v4-occurrence` and renders matching taxa, occurrence counts, observed elevation bounds, and graph node identity instead of falling back to a generic no-evidence response.
+- The deterministic governed provider is now `calyx-governed-summary-v5-corpus-bridge` and renders matching taxa, occurrence counts, observed elevation bounds, and graph node identity instead of falling back to a generic no-evidence response.
 - Zero-result occurrence queries remain explicit zero results. The provider is forbidden from manufacturing a species list when the source query returns none.
 - The optional configured generative provider receives the same occurrence evidence plus an explicit instruction that occurrence records are observations and must not be promoted into complete-range claims without supporting evidence.
 
@@ -38,4 +38,4 @@ This path is read-only. It does not publish occurrence nodes, alter taxonomy, mu
 
 This closes the first retrieval-side acceptance slice requested during the live audit: Calyx can now convert an explicit geographic/elevation question into a bounded evidence query over the large occurrence corpus, anchor each returned species to the persisted graph taxonomy backbone, and surface the resulting observations in both deterministic and configured-provider replies.
 
-Status: implementation-complete on the #901 branch pending executable CI and bounded live acceptance. Next priority: richer taxon-to-literature/evidence retrieval over the 6,725-document research corpus and scientific-method extraction graph.
+Status: implementation-complete on the #901 branch pending executable CI and bounded live acceptance. The next retrieval slice is the scientific-evidence extraction bridge over research documents; exact-binomial document discovery is now implemented separately in `CALYX-LITERATURE-CORPUS-BRIDGE-001`.
