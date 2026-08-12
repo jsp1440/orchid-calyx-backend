@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Path, Query
 from psycopg.rows import dict_row
 
 from app.concepts.repositories import concept_database_url
@@ -118,10 +118,14 @@ def _load_entries(*, q: str | None = None, limit: int = 500) -> list[dict[str, A
             if q:
                 needle = f"%{q.casefold().strip()}%"
                 where.append(
-                    "EXISTS (SELECT 1 FROM oc_concepts.concept_labels sx "
-                    "WHERE sx.concept_id=c.concept_id AND sx.normalized_label LIKE %s)"
+                    "(EXISTS (SELECT 1 FROM oc_concepts.concept_labels sx "
+                    "WHERE sx.concept_id=c.concept_id AND sx.review_state='APPROVED' "
+                    "AND sx.normalized_label LIKE %s) OR "
+                    "EXISTS (SELECT 1 FROM oc_concepts.concept_definitions sd "
+                    "WHERE sd.concept_id=c.concept_id AND sd.review_state='APPROVED' "
+                    "AND lower(sd.text) LIKE %s))"
                 )
-                params.append(needle)
+                params.extend([needle, needle])
             params.append(max(1, min(limit, 2000)))
             cur.execute(
                 f"""
@@ -212,6 +216,20 @@ def _load_entry_by_concept_id(concept_id: UUID) -> dict[str, Any] | None:
     return _entry_payload(concept, labels, definitions)
 
 
+def _load_entry_by_slug(slug: str) -> dict[str, Any] | None:
+    normalized_slug = _slug(slug)
+    if not normalized_slug:
+        return None
+    search_term = normalized_slug.replace("-", " ")
+    for entry in _load_entries(q=search_term, limit=50):
+        if entry.get("slug") == normalized_slug:
+            return entry
+        labels = [entry.get("preferred_term"), *(entry.get("synonyms") or [])]
+        if any(_slug(str(label or "")) == normalized_slug for label in labels):
+            return entry
+    return None
+
+
 @router.get("")
 def list_entries(
     q: str | None = Query(default=None, max_length=300),
@@ -222,6 +240,28 @@ def list_entries(
         "release": "CALYX-LEXICON-INTEGRATION-001",
         "count": len(entries),
         "entries": entries,
+        "source_of_truth": "oc_concepts",
+        "automatic_publication": False,
+        "visibility": "ACTIVE + APPROVED concepts only",
+    }
+
+
+@router.get("/entries/{slug}")
+def get_approved_entry_by_slug(
+    slug: str = Path(..., min_length=1, max_length=240),
+) -> dict[str, Any]:
+    entry = _load_entry_by_slug(slug)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "LEXICON_APPROVED_ENTRY_NOT_FOUND",
+                "message": "No ACTIVE + APPROVED Lexicon concept is available for this slug.",
+            },
+        )
+    return {
+        "release": "CALYX-LEXICON-LIVE-001",
+        "entry": entry,
         "source_of_truth": "oc_concepts",
         "automatic_publication": False,
         "visibility": "ACTIVE + APPROVED concepts only",
@@ -254,7 +294,13 @@ def search_entries(
     limit: int = Query(default=50, ge=1, le=200),
 ) -> dict[str, Any]:
     entries = _load_entries(q=q, limit=limit)
-    return {"query": q, "count": len(entries), "entries": entries}
+    return {
+        "release": "CALYX-LEXICON-LIVE-001",
+        "query": q,
+        "count": len(entries),
+        "entries": entries,
+        "searches": ["approved labels", "approved definitions"],
+    }
 
 
 @router.get("/language/{term}")
@@ -281,6 +327,8 @@ def lexicon_capabilities() -> dict[str, Any]:
         "source_ui": "Famous AI Illustrated Orchid Lexicon",
         "canonical_concept_registry": "/api/concepts",
         "canonical_lexicon_api": "/api/lexicon",
+        "direct_entry_lookup": "/api/lexicon/entries/{slug}",
+        "search_scope": ["approved labels", "approved definitions"],
         "botanical_language": "/api/scientific-interpretation/language",
         "vision_lexicon": "/api/vision-lexicon",
         "calyx_conversation": "/api/calyx/speak/conversations",
