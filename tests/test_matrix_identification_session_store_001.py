@@ -5,6 +5,7 @@ import pytest
 from runtime.matrix_identification_session_store import (
     FileMatrixSessionStore,
     MatrixSessionPersistenceError,
+    PostgresMatrixSessionStore,
     configured_matrix_session_store,
     durable_requested,
     matrix_session_persistence_status,
@@ -92,3 +93,51 @@ def test_default_mode_remains_explicitly_ephemeral_until_governed_activation(mon
     assert status["mode"] == "file_ephemeral"
     assert status["durable"] is False
     assert "not restart-durable" in status["warning"]
+
+
+def test_postgres_store_rejects_partial_schema_before_read(monkeypatch):
+    store = PostgresMatrixSessionStore("postgresql://example.invalid/test")
+    monkeypatch.setattr(
+        store,
+        "schema_inspection",
+        lambda: {
+            "migration_612_schema_ready": False,
+            "blockers": ["MATRIX_SESSION_REQUIRED_INDEXES_MISSING"],
+        },
+    )
+
+    with pytest.raises(MatrixSessionPersistenceError, match="REQUIRED_INDEXES_MISSING"):
+        store.get(_record()["session_id"], access_actor="owner-a")
+
+
+def test_postgres_store_rejects_partial_schema_before_write(monkeypatch):
+    store = PostgresMatrixSessionStore("postgresql://example.invalid/test")
+    monkeypatch.setattr(
+        store,
+        "schema_inspection",
+        lambda: {
+            "migration_612_schema_ready": False,
+            "blockers": ["MATRIX_SESSION_COLUMN_TYPE_MISMATCH"],
+        },
+    )
+
+    with pytest.raises(MatrixSessionPersistenceError, match="COLUMN_TYPE_MISMATCH"):
+        store.save(_record())
+
+
+def test_postgres_status_exposes_full_schema_contract(monkeypatch):
+    store = PostgresMatrixSessionStore("postgresql://example.invalid/test")
+    monkeypatch.setattr(
+        store,
+        "schema_inspection",
+        lambda: {
+            "migration_612_schema_ready": True,
+            "blockers": [],
+            "missing_columns": [],
+            "missing_indexes": [],
+        },
+    )
+
+    status = store.status()
+    assert status["ready"] is True
+    assert status["schema_contract"]["migration_612_schema_ready"] is True
