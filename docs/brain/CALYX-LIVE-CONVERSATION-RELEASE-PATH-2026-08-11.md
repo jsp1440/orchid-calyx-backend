@@ -1,6 +1,6 @@
 # CALYX Live Conversation — Release Path Checkpoint
 
-Status: **TECHNICAL RELEASE PATH VALIDATED / STRICT CONTRACT + DATABASE-TARGET GUARD PENDING EXECUTABLE REVALIDATION / PRODUCTION ACTIVATION AND DEPLOYMENT NOT AUTHORIZED**
+Status: **TECHNICAL RELEASE PATH VALIDATED / STRICT CONTRACT + DATABASE-TARGET + CORS HARDENING PENDING EXECUTABLE REVALIDATION / PRODUCTION ACTIVATION AND DEPLOYMENT NOT AUTHORIZED**
 
 ## Canonical conversation capability
 
@@ -64,6 +64,14 @@ The protected production activation workflow now runs this guard before **any** 
 
 This closes the code-side fail-open path, but actual deployed runtime target evidence is still **UNVERIFIED** until the production environment supplies `CALYX_RUNTIME_DATABASE_URL` from the real deployed Calyx runtime configuration. No production environment setting was changed.
 
+## Browser origin / CORS compatibility
+
+Research Station deployment guidance names `CORS_ALLOW_ORIGINS`, while canonical backend code historically read only singular `CORS_ALLOW_ORIGIN`. Following the documented deployment instructions could therefore leave the new Research Station origin outside the browser allow-list even when an operator believed it was configured.
+
+PR #819 now makes `allowed_mission_control_origins()` backward-compatible with both `CORS_ALLOW_ORIGIN` and `CORS_ALLOW_ORIGINS`. Existing hard-coded origins remain unchanged, configured origins remain comma-delimited and trailing-slash normalized, and `*` remains rejected. No production CORS value or deployed origin was changed.
+
+This compatibility correction is implementation-complete but, like the latest strict migration/target-guard delta, awaits executable hosted CI because current backend jobs terminate before checkout.
+
 ## Guarded production-workflow wiring
 
 The existing manual production activation workflow is extended in PR #819 rather than creating a parallel migration framework. It remains `workflow_dispatch` only, refuses non-main dispatch, verifies exact current main, defaults to read-only preflight, requires explicit profile selection, requires runtime/migration target identity for Research Station operations, and requires the distinct `APPLY_RESEARCH_STATION_101_140` token for an apply.
@@ -76,7 +84,7 @@ Previous read-only Neon preflight observed PostgreSQL 17.10 and `pgcrypto` 1.3, 
 
 ## Remaining release dependencies
 
-1. Recover executable backend hosted CI and complete exact-head PG15/16/17 validation of the strict #819 contract + database-target guard.
+1. Recover executable backend hosted CI and complete exact-head PG15/16/17 validation of the strict #819 contract, database-target guard, and CORS compatibility delta.
 2. Resolve the remaining CHECK-semantics P1 only after that exact-head proof.
 3. Governed review/merge disposition for #819; do not merge without authorization.
 4. Supply read-only evidence of the actual deployed CALYX runtime target and prove its fingerprint matches the migration target.
