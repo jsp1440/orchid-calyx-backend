@@ -4,6 +4,7 @@ import os
 
 import psycopg
 import pytest
+from psycopg import sql
 
 from scripts import research_station_conversation_activation as activation
 
@@ -259,3 +260,75 @@ def test_transaction_lock_contends_with_existing_session_lock_namespace():
                 "SELECT pg_advisory_unlock(%s)",
                 (activation.POSTGRES_VALIDATION_LOCK_ID,),
             )
+
+
+def test_weakened_project_status_check_fails_closed():
+    with psycopg.connect(_dsn(), autocommit=True) as connection:
+        activation.apply_chain(connection)
+        row = connection.execute(
+            """
+            SELECT c.conname
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid=c.conrelid
+            JOIN pg_namespace n ON n.oid=t.relnamespace
+            WHERE n.nspname='research_station'
+              AND t.relname='projects'
+              AND c.contype='c'
+              AND lower(pg_get_constraintdef(c.oid)) LIKE '%status%'
+            """
+        ).fetchone()
+        assert row is not None
+        connection.execute(
+            sql.SQL("ALTER TABLE research_station.projects DROP CONSTRAINT {}").format(
+                sql.Identifier(row[0])
+            )
+        )
+        connection.execute(
+            "ALTER TABLE research_station.projects "
+            "ADD CONSTRAINT projects_status_check_weakened CHECK (status IN ('ACTIVE'))"
+        )
+
+        contract = activation.inspect_contract(connection)
+        assert contract["state"] == "MALFORMED_OR_OUT_OF_ORDER"
+        assert contract["migration_101_complete"] is False
+        assert any(
+            blocker.startswith("MIGRATION_101_CHECK_CONSTRAINT_MISSING:projects:")
+            for blocker in contract["blockers"]
+        )
+        assert activation.classify_preflight(contract, True)["status"] == "blocked"
+
+
+def test_neutered_append_only_function_fails_closed():
+    with psycopg.connect(_dsn(), autocommit=True) as connection:
+        activation.apply_chain(connection)
+        connection.execute(
+            """
+            CREATE OR REPLACE FUNCTION research_station.reject_conversation_message_mutation()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RETURN NEW;
+            END $$
+            """
+        )
+
+        contract = activation.inspect_contract(connection)
+        assert "CONVERSATION_REJECT_FUNCTION_BODY_INVALID" in contract["blockers"]
+        assert contract["migration_140_complete"] is False
+        assert contract["safe_resume"] is False
+        assert activation.classify_preflight(contract, True)["status"] == "blocked"
+
+
+def test_expected_index_name_on_wrong_columns_fails_closed():
+    with psycopg.connect(_dsn(), autocommit=True) as connection:
+        activation.apply_chain(connection)
+        connection.execute("DROP INDEX research_station.idx_rs_projects_owner_status")
+        connection.execute(
+            "CREATE INDEX idx_rs_projects_owner_status "
+            "ON research_station.projects(status)"
+        )
+
+        contract = activation.inspect_contract(connection)
+        assert "MIGRATION_101_REQUIRED_INDEX_MISSING" in contract["blockers"]
+        assert "idx_rs_projects_owner_status" in contract["missing_101_indexes"]
+        assert contract["migration_101_complete"] is False
+        assert activation.classify_preflight(contract, True)["status"] == "blocked"
