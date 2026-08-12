@@ -1,13 +1,14 @@
-"""Additive helper that wires the *unchanged* orchestrator/publisher to the
+"""Additive helper that wires the canonical orchestrator/publisher to the
 writable PostgreSQL repository with run-level transactional safety.
 
-This module does not modify any existing component.  It is NOT executed by
-BUILD-067 (which ends at validation) and never runs on import.  A future,
-separately-authorized production publish calls :func:`publish_to_production`.
+The default source remains the canonical source registry. Callers that have
+performed a separate live-schema verification step may provide an explicit
+SELECT-only query map; those queries are validated by ``PostgresSourceProvider``
+before any publication work begins.
 
 Transaction guarantee: the entire run commits once only if every domain
 completed and cross-domain validation is healthy; otherwise the whole run is
-rolled back.  No partial batches are ever committed.
+rolled back. No partial batches are ever committed.
 """
 
 from __future__ import annotations
@@ -31,19 +32,36 @@ def publish_to_production(
     commit_every: int | None = None,
     resume: bool = False,
     schema: str = "oc_graph",
+    queries: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Run an authorized production publish with all-or-nothing commit semantics.
 
     Rolls back and reports ``committed=False`` when any domain fails or the
     graph is unhealthy; commits once when the whole run succeeds.
+
+    ``queries`` is intentionally optional. When omitted, the frozen canonical
+    registry is used exactly as before. When supplied, it must contain reviewed
+    SELECT-only projections for the selected adapters; ``PostgresSourceProvider``
+    applies the same SQL safety validation used by the registry path.
     """
     repo = WritablePostgresGraphRepository(
-        dsn, schema=schema, build_run_id=build_run_id, commit_every=commit_every,
+        dsn,
+        schema=schema,
+        build_run_id=build_run_id,
+        commit_every=commit_every,
     )
-    source = PostgresSourceProvider.from_registry(dsn)
+    source = (
+        PostgresSourceProvider(dsn, queries)
+        if queries is not None
+        else PostgresSourceProvider.from_registry(dsn)
+    )
     orch = BuildOrchestrator(
-        repo, source, checkpoint_store=checkpoint_store, adapters=tuple(adapters),
-        batch_size=batch_size, authorized_to_publish=True,
+        repo,
+        source,
+        checkpoint_store=checkpoint_store,
+        adapters=tuple(adapters),
+        batch_size=batch_size,
+        authorized_to_publish=True,
         activated_domains=activated_domains,
     )
     mode = ExecutionMode.RESUME if resume else ExecutionMode.PUBLISH
