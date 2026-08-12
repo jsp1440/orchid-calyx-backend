@@ -3,7 +3,7 @@
 Given canonical literature document ids, this bridge follows the existing source
 bindings back to ``PaperKnowledge``, revalidates immutable source integrity,
 resolves extracted taxon entities only by exact active Knowledge Graph labels, and
-builds the strict publication-eligible graph projection.  It never publishes the
+builds the strict publication-eligible graph projection. It never publishes the
 returned specs and never mutates review or graph state.
 """
 
@@ -19,6 +19,9 @@ from app.literature_extraction.source_binding import (
     FileLiteratureSourceBindingRepository,
     LiteratureSourceBindingError,
 )
+from runtime.knowledge_graph.exact_taxon_resolution import (
+    resolve_exact_taxon_keys_with_cursor,
+)
 from runtime.knowledge_graph.publication_eligible_paper_graph import (
     build_publication_eligible_paper_graph_specs,
 )
@@ -29,33 +32,6 @@ MAX_DOCUMENTS = 8
 
 def _root() -> str:
     return os.getenv("LITERATURE_EXTRACTION_ROOT", "runtime/literature_extraction")
-
-
-def _exact_taxon_keys(cur, paper) -> dict[str, str]:
-    """Resolve only explicit extracted taxon names to active persisted taxon nodes."""
-    result: dict[str, str] = {}
-    for entity in paper.entities:
-        if entity.entity_type != "taxon":
-            continue
-        name = str(entity.normalized_name or entity.name or "").strip()
-        if not name:
-            continue
-        cur.execute(
-            """
-            SELECT canonical_key
-            FROM oc_graph.kg_nodes
-            WHERE node_type = 'taxon'
-              AND is_active
-              AND lower(display_label) = lower(%s)
-            ORDER BY kg_node_id
-            LIMIT 2
-            """,
-            (name,),
-        )
-        rows = cur.fetchall()
-        if len(rows) == 1:
-            result[entity.entity_id] = str(rows[0][0])
-    return result
 
 
 def _document_ids(values: Iterable[int | str], limit: int) -> list[int]:
@@ -122,8 +98,8 @@ def preview_scientific_method_graph_for_documents(
                 if not matched:
                     documents[str(document_id)] = {
                         "status": "no_canonical_extraction_binding",
-                        "nodes": [],
-                        "edges": [],
+                        "previews": [],
+                        "integrity_failures": [],
                     }
                     continue
 
@@ -143,10 +119,10 @@ def preview_scientific_method_graph_for_documents(
                         failures.append(f"{binding.paper_id}:{exc.code}")
                         continue
 
-                    taxon_keys = _exact_taxon_keys(cur, paper)
+                    resolution = resolve_exact_taxon_keys_with_cursor(cur, paper)
                     bundle = build_publication_eligible_paper_graph_specs(
                         paper,
-                        taxon_keys_by_entity_id=taxon_keys,
+                        taxon_keys_by_entity_id=resolution.keys_by_entity_id,
                     )
                     node_types: dict[str, int] = {}
                     edge_types: dict[str, int] = {}
@@ -159,7 +135,13 @@ def preview_scientific_method_graph_for_documents(
                         "binding_fingerprint": binding.fingerprint,
                         "source_hash": paper.source.content_hash,
                         "title": paper.metadata.title,
-                        "exact_taxon_resolutions": len(taxon_keys),
+                        "exact_taxon_resolutions": resolution.resolved_count,
+                        "unresolved_taxon_entity_ids": list(
+                            resolution.unresolved_entity_ids
+                        ),
+                        "ambiguous_taxon_entity_ids": list(
+                            resolution.ambiguous_entity_ids
+                        ),
                         "node_count": len(bundle.nodes),
                         "edge_count": len(bundle.edges),
                         "node_types": node_types,
@@ -179,6 +161,7 @@ def preview_scientific_method_graph_for_documents(
                                 "recommendation",
                                 "assertion",
                             }
+                            and node.confidence_label == "publication_eligible"
                             for node in bundle.nodes
                         ),
                     }
@@ -203,7 +186,7 @@ def preview_scientific_method_graph_for_documents(
 
     return {
         "status": "available",
-        "contract": "calyx-scientific-method-graph-preview-v1",
+        "contract": "calyx-scientific-method-graph-preview-v2-strict-publication",
         "read_only": True,
         "knowledge_graph_mutation": False,
         "automatic_publication": False,
