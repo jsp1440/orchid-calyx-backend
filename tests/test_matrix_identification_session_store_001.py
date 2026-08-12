@@ -41,6 +41,24 @@ def test_file_store_preserves_owner_scope_and_record(tmp_path: Path):
     assert status["ready"] is True
 
 
+def test_file_store_rejects_stale_revision_overwrite(tmp_path: Path):
+    store = FileMatrixSessionStore(tmp_path)
+    current = _record()
+    current["revision"] = 2
+    current["observations"] = [{"observation_id": "newer"}]
+    store.save(current)
+
+    stale = _record()
+    stale["revision"] = 1
+    stale["observations"] = [{"observation_id": "stale"}]
+    with pytest.raises(MatrixSessionPersistenceError, match="STALE_REVISION"):
+        store.save(stale)
+
+    restored = store.get(current["session_id"], access_actor="owner-a")
+    assert restored["revision"] == 2
+    assert restored["observations"] == [{"observation_id": "newer"}]
+
+
 def test_explicit_root_always_selects_file_store_for_bounded_tests(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("CALYX_MATRIX_SESSION_DURABLE_ENABLED", "true")
     monkeypatch.delenv("DATABASE_URL", raising=False)
