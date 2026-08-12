@@ -16,10 +16,14 @@ Finish the runtime connection between the migrated Famous AI Illustrated Orchid 
 ## Runtime repairs
 
 1. Added `GET /api/lexicon/entries/{slug}` for direct page-level canonical entry loading.
-2. Canonical search now matches reviewed definitions as well as reviewed labels.
-3. Frontend canonical/fallback merging must preserve canonical identity, reviewed definitions, review state and provenance.
-4. Empty canonical presentation fields must not erase still-unmigrated Famous UI/presentation fields. Such fields are explicitly tracked as a Famous migration overlay.
-5. Frontend direct entry loading falls back to canonical search during staggered deployment before using the static read-only migration fallback.
+2. Direct slug lookup performs an exact normalized-label query against ACTIVE + APPROVED concepts and APPROVED labels, independent of broad-search limits.
+3. Canonical search now matches reviewed definitions as well as reviewed labels.
+4. Frontend entry routes use the direct canonical slug endpoint instead of loading the full registry first.
+5. Frontend canonical/fallback merging preserves canonical identity, reviewed definitions, review state, provenance, certainty, definition history, maturity/capability state, and evidence-bearing scientific fields.
+6. Famous migration content may overlay only narrow presentation-oriented fields when canonical equivalents are empty: pronunciation, category, subcategory, etymology, visual assets, and funding attribution.
+7. Every preserved Famous presentation field is explicitly named in `migration_overlay.fields`.
+8. Famous definitions, scope/evidence prose, relationships, character states, taxa, conservation guidance, literature, maturity flags, certainty state, and import identity never inherit canonical review status.
+9. Frontend direct entry loading falls back to canonical search during staggered deployment before using the static read-only migration fallback.
 
 ## Audit finding
 
@@ -31,4 +35,9 @@ Repository search confirms the Famous-derived interface migration but did not lo
 - No automatic publication.
 - No pending/unreviewed concept exposure through the public slug route.
 - No legacy Famous scientific writes.
-- Missing canonical fields remain legitimate; migration overlays are presentation continuity, not canonical evidence.
+- Missing canonical scientific fields remain legitimate and visibly incomplete.
+- Migration overlays preserve presentation continuity only; they are not canonical evidence and do not confer scientific review status.
+
+## Validation boundary
+
+GitHub-hosted workflow jobs for this change were created but received no execution steps because of the repository/account Actions runner allocation condition. This is an infrastructure block, not an executed test failure. No green-CI claim is made, and merge remains blocked pending trusted execution.
