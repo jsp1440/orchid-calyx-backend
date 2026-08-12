@@ -15,6 +15,7 @@ labels and domain assignments that publishers and validators may accept.
 
 from __future__ import annotations
 
+from .biotic_relation_ontology import BIOTIC_RELATION_EDGE_TYPE_DOMAIN
 from .causal_vocabulary import (
     CANONICAL_CAUSAL_EDGE_TYPES,
     CAUSAL_EVIDENCE_EDGE_TYPES,
@@ -82,6 +83,7 @@ EDGE_TYPE_DOMAIN: dict[str, str] = {
     "raises_question": "research",
     "tested_by_hypothesis": "research",
     **SCIENTIFIC_METHOD_EDGE_TYPE_DOMAIN,
+    **BIOTIC_RELATION_EDGE_TYPE_DOMAIN,
 }
 
 # Extend rather than overwrite the legacy domain assignment of evidence aliases
