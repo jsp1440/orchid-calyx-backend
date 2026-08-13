@@ -13,6 +13,7 @@ from runtime.matrix_identification_vision import (
     list_vision_suggestions,
     review_vision_suggestion,
 )
+from runtime.matrix_identification_vision_discovery import list_vision_analyses_for_image
 
 router = APIRouter(
     prefix="/api/matrix-identification/sessions",
@@ -38,6 +39,26 @@ def _access_actor(auth: dict[str, Any]) -> str | None:
     if auth.get("auth_type") == "api_key":
         return None
     return _actor(auth)
+
+
+@router.get("/{session_id}/vision/images/{image_id}/analyses")
+def discover_image_analyses(
+    session_id: str,
+    image_id: str,
+    auth: dict[str, Any] = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    try:
+        return list_vision_analyses_for_image(
+            session_id,
+            image_id,
+            access_actor=_access_actor(auth),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/{session_id}/vision/analyses/{analysis_id}/suggestions")
