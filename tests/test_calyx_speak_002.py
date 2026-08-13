@@ -27,6 +27,22 @@ def isolated_store(monkeypatch):
             "retrieval_mode": mode,
         },
     )
+    monkeypatch.setattr(
+        speak_routes,
+        "augment_retrieval_with_external_literature",
+        lambda retrieval, message, limit: retrieval,
+    )
+    monkeypatch.setattr(
+        speak_routes,
+        "build_seasonal_climate_context",
+        lambda message: {
+            "requested": False,
+            "status": "not_relevant",
+            "products": [],
+            "external": True,
+            "time_sensitive": True,
+        },
+    )
     return store
 
 

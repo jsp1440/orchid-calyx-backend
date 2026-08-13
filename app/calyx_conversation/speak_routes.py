@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field
 from app.brain_mission.routes import SERVICE as BRAIN_MISSION_SERVICE
 from app.security import verify_owner_or_api_key
 
+from .climate_context import build_seasonal_climate_context
 from .continuum_context import build_continuum_context
+from .external_literature import augment_retrieval_with_external_literature
 from .interaction_context import sanitize_interaction_context
 from .provider import DeterministicGovernedReplyProvider, configured_reply_provider
 from .routes import STORE, _retrieval
@@ -91,15 +93,19 @@ def _safe_retrieval(message: str, retrieval_limit: int) -> dict[str, Any]:
     try:
         result = _retrieval(message, "HYBRID", retrieval_limit, True)
         result.setdefault("status", "available")
-        return result
     except (ValueError, TypeError, RuntimeError) as exc:
-        return {
+        result = {
             "results": [],
             "total_eligible_results": 0,
             "retrieval_mode": "HYBRID",
             "status": "unavailable",
             "error": str(exc),
         }
+    return augment_retrieval_with_external_literature(
+        result,
+        message,
+        limit=retrieval_limit,
+    )
 
 
 def _safe_continuum_context(message: str) -> dict[str, Any]:
@@ -119,6 +125,23 @@ def _safe_continuum_context(message: str) -> dict[str, Any]:
         }
 
 
+def _safe_climate_context(message: str) -> dict[str, Any]:
+    try:
+        return build_seasonal_climate_context(message)
+    except Exception as exc:  # noqa: BLE001 - external source degradation cannot fail a turn
+        return {
+            "requested": True,
+            "status": "unavailable",
+            "provider": "NOAA/NWS Climate Prediction Center",
+            "products": [],
+            "diagnostics": [{"source": "climate_context", "error": str(exc)}],
+            "external": True,
+            "time_sensitive": True,
+            "automatic_publication": False,
+            "knowledge_graph_mutation": False,
+        }
+
+
 def _run_governed_turn(
     *,
     owner: str,
@@ -127,7 +150,14 @@ def _run_governed_turn(
     message: str,
     research_mode: str,
     retrieval_limit: int,
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None, str | None, bool]:
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any] | None,
+    str | None,
+    bool,
+]:
     casual = _is_casual(message) and research_mode != "always"
     if casual:
         return {
@@ -143,10 +173,17 @@ def _run_governed_turn(
             "read_only": True,
             "automatic_publication": False,
             "knowledge_graph_mutation": False,
+        }, {
+            "requested": False,
+            "status": "not_relevant",
+            "products": [],
+            "external": True,
+            "time_sensitive": True,
         }, None, None, True
 
     retrieval = _safe_retrieval(message, retrieval_limit)
     continuum = _safe_continuum_context(message)
+    climate = _safe_climate_context(message)
     mission: dict[str, Any] | None = None
     mission_error: str | None = None
     should_run_mission = research_mode == "always" or (
@@ -171,7 +208,7 @@ def _run_governed_turn(
             )
         except (ValueError, RuntimeError) as exc:
             mission_error = str(exc)
-    return retrieval, continuum, mission, mission_error, False
+    return retrieval, continuum, climate, mission, mission_error, False
 
 
 @router.get("/status")
@@ -180,7 +217,7 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
     provider = configured_reply_provider()
     return {
         "release": "CALYX-SPEAK-004-CONTEXT",
-        "integration_release": "CALYX-SPEAK-005-CONTINUUM-INTEGRATION",
+        "integration_release": "CALYX-SPEAK-006-FEDERATED-SCIENCE-CONTEXT",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
         "provider": {
@@ -192,7 +229,10 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
             "automatic_taxon_resolution": True,
             "knowledge_graph_read": True,
             "brain_graph_read": True,
-            "climate_provider": False,
+            "climate_provider": True,
+            "climate_provider_name": "NOAA/NWS Climate Prediction Center",
+            "external_literature_fallback": True,
+            "external_literature_provider": "Europe PMC",
         },
         "interaction_context": {
             "supported": True,
@@ -294,7 +334,7 @@ def append_turn(
         owner=owner,
     )
 
-    retrieval, continuum, mission, mission_error, casual = _run_governed_turn(
+    retrieval, continuum, climate, mission, mission_error, casual = _run_governed_turn(
         owner=owner,
         conversation_id=conversation_id,
         project_id=project_id,
@@ -333,6 +373,35 @@ def append_turn(
             owner=owner,
         )
 
+    external_literature = retrieval.get("external_literature") or {}
+    if external_literature.get("results"):
+        STORE.append(
+            conversation_id,
+            "tool",
+            f"Europe PMC external literature discovery returned {len(external_literature['results'])} records.",
+            {
+                "tool": "external_literature",
+                "provider": "Europe PMC",
+                "review_required": True,
+                "canonical_evidence": False,
+            },
+            owner=owner,
+        )
+
+    if climate.get("products"):
+        STORE.append(
+            conversation_id,
+            "tool",
+            f"NOAA CPC climate context returned {len(climate['products'])} current discussion products.",
+            {
+                "tool": "seasonal_climate_context",
+                "provider": climate.get("provider"),
+                "time_sensitive": True,
+                "canonical_orchid_evidence": False,
+            },
+            owner=owner,
+        )
+
     governed_context = {
         "casual": casual,
         "conversation_id": conversation_id,
@@ -340,12 +409,15 @@ def append_turn(
         "interaction_context": interaction_context,
         "retrieval": retrieval,
         "continuum": continuum,
+        "climate": climate,
         "mission": mission,
         "mission_error": mission_error,
         "epistemic_policy": {
             "continuum_first": True,
             "provider_memory_is_evidence": False,
             "interaction_context_is_evidence": False,
+            "external_literature_requires_review": True,
+            "climate_products_are_time_sensitive_external_context": True,
             "conversation_does_not_publish_knowledge": True,
             "candidate_knowledge_auto_promotion": False,
             "knowledge_graph_mutation": False,
@@ -383,6 +455,10 @@ def append_turn(
             "retrieval_eligible_results": retrieval.get("total_eligible_results"),
             "retrieval_status": retrieval.get("status"),
             "retrieval_error": retrieval.get("error"),
+            "external_literature_count": external_literature.get("result_count", 0),
+            "external_literature_status": external_literature.get("status"),
+            "climate_status": climate.get("status"),
+            "climate_product_count": len(climate.get("products") or []),
             "continuum_resolved_genera": continuum.get("resolved_genera"),
             "continuum_diagnostics": continuum.get("diagnostics"),
             "interaction_context": interaction_context,
@@ -412,6 +488,7 @@ def append_turn(
             "mission_error": mission_error,
             "retrieval": retrieval,
             "continuum": continuum,
+            "climate": climate,
         },
         "persistence_mode": STORE.persistence_mode,
         "epistemic_policy": governed_context["epistemic_policy"],

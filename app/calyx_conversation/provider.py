@@ -33,13 +33,7 @@ def _request_hash(payload: dict[str, Any]) -> str:
 
 
 class DeterministicGovernedReplyProvider:
-    """Safe fallback that never invents facts outside supplied governed context.
-
-    This provider also makes server-side conversation usable when no external model
-    provider has been configured, while keeping the limitation explicit in metadata.
-    Its identity is persisted on each reply so a fallback can never masquerade as a
-    configured generative model.
-    """
+    """Safe fallback that never invents facts outside supplied governed context."""
 
     provider_name = "deterministic-governed"
     model_name = "calyx-governed-summary-v1"
@@ -135,12 +129,56 @@ class DeterministicGovernedReplyProvider:
             genus = str(item.get("genus") or "unknown taxon")
             graph = item.get("knowledge_graph") or {}
             brain = item.get("brain_graph") or {}
+            environmental = item.get("environmental_facts") or []
+            suffix = f"; environmental graph facts={len(environmental)}" if environmental else ""
             lines.append(
                 f"- {genus}: Knowledge Graph nodes={len(graph.get('nodes') or [])}, "
-                f"edges={len(graph.get('edges') or [])}; Brain graph nodes={len(brain.get('nodes') or [])}."
+                f"edges={len(graph.get('edges') or [])}; Brain graph nodes={len(brain.get('nodes') or [])}{suffix}."
             )
         lines.append(
             "Graph context is read-only supporting context; it does not by itself establish a literature-backed horticultural conclusion."
+        )
+        return lines
+
+    @staticmethod
+    def _format_external_literature(retrieval: dict[str, Any]) -> list[str]:
+        external = retrieval.get("external_literature") or {}
+        records = external.get("results") or []
+        if not records:
+            return []
+        lines = [
+            "External literature discovery: Europe PMC returned review-required records because local indexed coverage was insufficient."
+        ]
+        for index, record in enumerate(records[:5], start=1):
+            title = str(record.get("title") or "Untitled publication")
+            authors = str(record.get("authors") or "").strip()
+            date = str(record.get("publication_date") or "").strip()
+            doi = str(record.get("doi") or "").strip()
+            abstract = str(record.get("abstract") or "").strip().replace("\n", " ")
+            citation_parts = [value for value in (authors, date, f"DOI {doi}" if doi else "") if value]
+            citation = "; ".join(citation_parts)
+            lines.append(
+                f"{index}. {title}" + (f" — {citation}" if citation else "") + (f": {abstract[:500]}" if abstract else "")
+            )
+        lines.append(
+            "These external records are discovery context, not yet reviewed/indexed Orchid Continuum evidence and not automatically promoted to canonical knowledge."
+        )
+        return lines
+
+    @staticmethod
+    def _format_climate_context(climate: dict[str, Any]) -> list[str]:
+        products = climate.get("products") or []
+        if not products:
+            return []
+        lines = [
+            "Current seasonal climate context: NOAA/NWS Climate Prediction Center products were retrieved for this climate-sensitive question."
+        ]
+        for product in products[:2]:
+            name = str(product.get("product") or "climate discussion")
+            text = str(product.get("text") or "").strip().replace("\n", " ")
+            lines.append(f"- {name}: {text[:1200]}")
+        lines.append(
+            "Climate products are time-sensitive external context. They describe forecast conditions and do not establish orchid physiological responses by themselves."
         )
         return lines
 
@@ -202,6 +240,7 @@ class DeterministicGovernedReplyProvider:
         mission = governed_context.get("mission")
         retrieval = governed_context.get("retrieval") or {}
         continuum = governed_context.get("continuum") or {}
+        climate = governed_context.get("climate") or {}
         question = next(
             (item["content"] for item in reversed(messages) if item.get("role") == "user"),
             "",
@@ -209,11 +248,12 @@ class DeterministicGovernedReplyProvider:
         lines: list[str] = []
         if governed_context.get("casual"):
             lines.append(
-                "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. "
-                "I can discuss a question conversationally, retrieve Continuum evidence, run a governed Brain mission when a scientific question needs it, and keep the evidence and publication boundaries visible."
+                "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. I can discuss a question conversationally, retrieve Continuum evidence, discover external literature when local coverage is incomplete, consult current NOAA CPC seasonal climate context, run a governed Brain mission, and keep the evidence and publication boundaries visible."
             )
         elif mission:
             lines.extend(self._format_mission_answer(mission))
+            lines.extend(self._format_external_literature(retrieval))
+            lines.extend(self._format_climate_context(climate))
             lines.extend(self._format_continuum_context(continuum))
             lines.append("This answer remains review-bound and is not automatically published knowledge.")
         elif governed_context.get("mission_error"):
@@ -225,6 +265,8 @@ class DeterministicGovernedReplyProvider:
                 lines.append(
                     f"I did retrieve {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible evidence objects that can be inspected while the mission gap is repaired."
                 )
+            lines.extend(self._format_external_literature(retrieval))
+            lines.extend(self._format_climate_context(climate))
             lines.extend(self._format_continuum_context(continuum))
         elif retrieval.get("results"):
             lines.append(
@@ -234,12 +276,22 @@ class DeterministicGovernedReplyProvider:
                 excerpt = str(result.get("authorized_excerpt") or "").strip().replace("\n", " ")
                 title = result.get("title") or result.get("object_type") or f"Evidence {index}"
                 lines.append(f"{index}. {title}" + (f": {excerpt[:360]}" if excerpt else ""))
+            lines.extend(self._format_external_literature(retrieval))
+            lines.extend(self._format_climate_context(climate))
             lines.extend(self._format_continuum_context(continuum))
             lines.append("I have not promoted these retrieved records into published knowledge.")
-        elif continuum.get("taxa"):
+        elif (retrieval.get("external_literature") or {}).get("results"):
+            lines.extend(self._format_external_literature(retrieval))
+            lines.extend(self._format_climate_context(climate))
             lines.extend(self._format_continuum_context(continuum))
             lines.append(
-                "I resolved relevant Continuum graph context, but I do not yet have sufficient governed evidence to make the requested scientific conclusion without guessing."
+                "The external papers can support a provisional synthesis, but they must remain clearly labeled as unreviewed external literature until indexed/reviewed by the Continuum."
+            )
+        elif continuum.get("taxa") or climate.get("products"):
+            lines.extend(self._format_climate_context(climate))
+            lines.extend(self._format_continuum_context(continuum))
+            lines.append(
+                "I have relevant context, but I do not yet have sufficient governed biological evidence to make the requested physiological conclusion without guessing."
             )
         else:
             lines.append(
@@ -277,10 +329,11 @@ class OpenAICompatibleReplyProvider:
         system = (
             "You are Calyx, the Orchid Continuum's governed scientific collaborator. "
             "Use only the supplied conversation and governed context for factual scientific claims. "
-            "The governed context may contain literature/evidence retrieval, Brain mission output, and canonical read-only Knowledge Graph/Brain graph context. "
-            "Integrate those sources when relevant and explicitly distinguish direct evidence, graph facts, inference, missing evidence, and proposed design ideas. "
+            "The governed context may contain local indexed evidence, review-required Europe PMC literature discovery, Brain mission output, current NOAA CPC seasonal climate products, and canonical read-only Knowledge Graph/Brain graph context. "
+            "Integrate those sources when relevant and explicitly distinguish local governed evidence, external unreviewed literature, time-sensitive climate forecasts, canonical graph facts, inference, missing evidence, and proposed design ideas. "
+            "Never treat a climate forecast as evidence of orchid physiology, and never treat an external literature discovery record as canonical Continuum evidence until review/indexing says so. "
             "Never claim an Orchid Continuum capability is implemented unless the governed context says it is. "
-            "For casual conversation, be natural and concise. For scientific questions, explain what is supported and what remains uncertain. "
+            "For casual conversation, be natural and concise. For scientific questions, synthesize across taxa when useful and prefer a compact comparison table when the user asks about several genera or horticultural groups. "
             "Do not publish, promote Candidate Knowledge, or mutate the Knowledge Graph."
         )
         context_text = json.dumps(governed_context, sort_keys=True, default=str)
