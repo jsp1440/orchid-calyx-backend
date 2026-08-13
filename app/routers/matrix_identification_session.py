@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
-from runtime.matrix_identification_persistence_preflight import matrix_session_persistence_preflight
+from runtime.matrix_identification_persistence_preflight import (
+    matrix_session_persistence_preflight,
+)
 from runtime.matrix_identification_session import (
     add_observation,
     create_session,
