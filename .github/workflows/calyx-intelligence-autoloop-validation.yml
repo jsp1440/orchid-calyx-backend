@@ -1,0 +1,95 @@
+name: Calyx Intelligence Autoloop Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/intake/intelligence_autonomy.py"
+      - "runtime/autonomous_runner.py"
+      - ".github/workflows/calyx-intelligence-autoloop-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: calyx_intelligence_autoloop
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d calyx_intelligence_autoloop"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/calyx_intelligence_autoloop
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+      - name: Apply intelligence migrations
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/070_knowledge_intake.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/076a_universal_intake.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/108_intelligence_assimilation_ledger.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/109_intelligence_verification_routing.sql
+      - name: Exercise intelligence autoloop
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          from runtime.autonomous_runner import execute_all_pending_jobs
+
+          db = os.environ['DATABASE_URL']
+          with psycopg.connect(db) as conn:
+              with conn.cursor() as cur:
+                  cur.execute("""
+                    INSERT INTO oc_intake.intelligence_items
+                      (knowledge_fingerprint,domain,title,normalized_title,priority,canonical_destinations)
+                    VALUES (%s,'research','New orchid evidence','new orchid evidence','HIGH','[\"orep\"]'::jsonb)
+                    RETURNING id
+                  """, ('2'*64,))
+                  compare_id = cur.fetchone()[0]
+                  cur.execute("""
+                    INSERT INTO oc_intake.intelligence_items
+                      (knowledge_fingerprint,domain,title,normalized_title,priority,lifecycle,knowledge_delta,canonical_destinations)
+                    VALUES (%s,'technology','Earth Engine provider','earth engine provider','HIGH','COMPARED','ALREADY_KNOWN','[\"atlas\",\"source_registry\"]'::jsonb)
+                    RETURNING id
+                  """, ('3'*64,))
+                  route_id = cur.fetchone()[0]
+                  cur.execute("""
+                    INSERT INTO oc_intake.intelligence_verifications
+                      (intelligence_item_id,source_url,resolved_url,source_kind,outcome,http_status,
+                       authority_tier,evidence_sha256,metadata,verifier_version)
+                    VALUES (%s,'https://earthengine.google.com/','https://earthengine.google.com/','URL',
+                            'SOURCE_CONFIRMED',200,'AUTHORITATIVE',%s,'{\"claim_verified\":false}'::jsonb,'test')
+                  """, (route_id, 'a'*64))
+
+          result = execute_all_pending_jobs(max_jobs=10)
+          assert result['failed'] == 0, result
+          names = [row.get('job_name') for row in result['results']]
+          assert f'calyx_intelligence_compare_{compare_id}' in names, names
+          assert f'calyx_intelligence_route_{route_id}' in names, names
+
+          with psycopg.connect(db) as conn:
+              with conn.cursor() as cur:
+                  cur.execute('SELECT knowledge_delta FROM oc_intake.intelligence_items WHERE id=%s', (compare_id,))
+                  assert cur.fetchone()[0] in {'ALREADY_KNOWN','REQUIRES_REVIEW'}
+                  cur.execute('SELECT lifecycle FROM oc_intake.intelligence_items WHERE id=%s', (route_id,))
+                  assert cur.fetchone()[0] == 'ROUTED'
+                  cur.execute('SELECT destination, route_status, canonical_mutation_performed, external_contact_performed FROM oc_intake.intelligence_routes WHERE intelligence_item_id=%s', (route_id,))
+                  rows = cur.fetchall()
+                  assert {(r[0], r[1]) for r in rows} == {('atlas','READY'),('source_registry','READY')}
+                  assert all(r[2] is False and r[3] is False for r in rows)
+          PY
+      - name: Compile runtime and intelligence modules
+        run: python -m compileall -q app/intake runtime
