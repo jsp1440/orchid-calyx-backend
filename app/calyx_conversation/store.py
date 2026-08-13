@@ -230,12 +230,13 @@ class ConversationStore:
                     SELECT message_id::text, conversation_id::text, role, content, content_hash, created_at, metadata
                     FROM calyx_conversation_messages
                     WHERE conversation_id=%s::uuid
-                    ORDER BY created_at ASC
+                    ORDER BY created_at DESC, message_id DESC
                     LIMIT %s
                     """,
                     (conversation_id, message_limit),
                 )
-                messages = [dict(row) for row in cur.fetchall()]
+                rows = cur.fetchall()
+                messages = [dict(row) for row in reversed(rows)]
             result = dict(conversation)
             result["messages"] = messages
             return result
@@ -244,9 +245,10 @@ class ConversationStore:
             conversation = self._conversations.get(conversation_id)
             if conversation is None or conversation["owner"] != owner:
                 return None
+            messages = list(self._messages.get(conversation_id, []))[-message_limit:]
             return {
                 **conversation,
-                "messages": list(self._messages.get(conversation_id, []))[:message_limit],
+                "messages": messages,
             }
 
     def recent(

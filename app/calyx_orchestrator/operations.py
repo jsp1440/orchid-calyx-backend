@@ -10,6 +10,7 @@ from .approved_tasks import task_profile, task_provider_status
 from .models import CalyxJob, utcnow
 from .persisted_scheduler import persisted_schedule_status
 from .program_models import CalyxProgram, CalyxProgramJob
+from .schema import ensure_orchestrator_schema
 from .service import CalyxOrchestrator
 
 GLOBAL_ENGINEERING_SLOT_LIMIT = 6
@@ -17,6 +18,7 @@ REPOSITORY_ENGINEERING_SLOT_LIMIT = 2
 
 
 def seed_approved_tasks(db: Session, *, owner: str) -> list[CalyxJob]:
+    ensure_orchestrator_schema(db)
     jobs: list[CalyxJob] = []
     for task in task_profile():
         existing = db.scalar(
@@ -53,6 +55,7 @@ def renew_lease(
     lease_token: str,
     lease_seconds: int,
 ) -> dict:
+    ensure_orchestrator_schema(db)
     now = utcnow()
     updated = (
         db.query(CalyxJob)
@@ -169,6 +172,7 @@ def _engineering_program_status(db: Session, *, owner: str) -> dict:
 
 
 def operational_status(db: Session, *, owner: str) -> dict:
+    ensure_orchestrator_schema(db)
     base = CalyxOrchestrator(db).status(owner=owner)
     provider = task_provider_status()
     queued_priorities = [
