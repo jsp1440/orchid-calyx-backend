@@ -13,9 +13,15 @@ from app.vision_lexicon.contracts import (
     VisionReviewState,
 )
 from runtime.matrix_identification import Candidate
-from runtime.matrix_identification_registry import RegistryCharacter, create_registry_version
+from runtime.matrix_identification_registry import (
+    RegistryCharacter,
+    create_registry_version,
+)
 from runtime.matrix_identification_session import create_session, get_session
-from runtime.matrix_identification_vision import attach_vision_analysis, review_vision_suggestion
+from runtime.matrix_identification_vision import (
+    attach_vision_analysis,
+    review_vision_suggestion,
+)
 
 
 class FakeVisionService:
