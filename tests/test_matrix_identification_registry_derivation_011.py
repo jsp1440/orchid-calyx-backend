@@ -138,15 +138,15 @@ def test_derivation_rejects_invalid_concept_uuid(tmp_path: Path):
 
 def test_derivation_is_immutable_and_idempotent_for_same_review_packet(tmp_path: Path):
     _source(tmp_path)
-    kwargs = dict(
-        registry_id="angraecum-reviewed",
-        source_version="1",
-        new_version="2",
-        concept_mappings={"flower_color": CONCEPT_A},
-        actor="reviewer-a",
-        mapping_provenance={"reviewer": "reviewer-a"},
-        root=tmp_path,
-    )
+    kwargs = {
+        "registry_id": "angraecum-reviewed",
+        "source_version": "1",
+        "new_version": "2",
+        "concept_mappings": {"flower_color": CONCEPT_A},
+        "actor": "reviewer-a",
+        "mapping_provenance": {"reviewer": "reviewer-a"},
+        "root": tmp_path,
+    }
     first = derive_registry_version_with_concept_mappings(**kwargs)
     second = derive_registry_version_with_concept_mappings(**kwargs)
     assert first["created"] is True
