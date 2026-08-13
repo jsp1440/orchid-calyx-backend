@@ -44,7 +44,9 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
         authors = str(record.get("authorString") or "").strip()
         journal = str(record.get("journalTitle") or "").strip()
         publication_date = str(
-            record.get("firstPublicationDate") or record.get("journalInfo", {}).get("printPublicationDate") or ""
+            record.get("firstPublicationDate")
+            or record.get("journalInfo", {}).get("printPublicationDate")
+            or ""
         ).strip()
         doi = str(record.get("doi") or "").strip() or None
         pmid = str(record.get("pmid") or record.get("id") or "").strip() or None
@@ -88,10 +90,13 @@ def augment_retrieval_with_external_literature(
 
     The local evidence index remains authoritative. External records are placed in a
     separate field so callers cannot accidentally describe them as indexed evidence.
+    The original local retrieval status is preserved when the local index is degraded
+    or unavailable, even if external discovery succeeds.
     """
 
     result = dict(retrieval)
     local_results = result.get("results") or []
+    original_status = str(result.get("status") or "available")
     force = os.getenv("CALYX_EXTERNAL_LITERATURE_ALWAYS", "").strip().casefold() in {
         "1",
         "true",
@@ -128,6 +133,10 @@ def augment_retrieval_with_external_literature(
             "knowledge_graph_mutation": False,
         }
     result["external_literature"] = external
-    if external.get("results") and not local_results:
+    if (
+        external.get("results")
+        and not local_results
+        and original_status not in {"unavailable", "degraded", "error"}
+    ):
         result["status"] = "local_empty_external_literature_available"
     return result
