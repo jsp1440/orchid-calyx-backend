@@ -79,12 +79,18 @@ def apply_migrations(dsn: str) -> list[dict[str, Any]]:
 
 def deployment_plan() -> dict[str, Any]:
     dsn = os.getenv("DATABASE_URL", "").strip()
-    readiness = matrix_durability_readiness()
+    try:
+        readiness = matrix_durability_readiness()
+        readiness_error = None
+    except Exception as exc:  # read-only probe must not prevent dry-run inventory
+        readiness = None
+        readiness_error = type(exc).__name__
     return {
         "mode": "dry_run",
         "database_url_configured": bool(dsn),
         "migrations": migration_inventory(),
         "integrated_readiness": readiness,
+        "integrated_readiness_error": readiness_error,
         "apply_would_perform": [
             "apply migration 612",
             "apply migration 613",
@@ -105,6 +111,21 @@ def deployment_plan() -> dict[str, Any]:
     }
 
 
+def _failure(plan: dict[str, Any], code: str, *, error: Exception | None = None, **extra: Any) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        **plan,
+        "mode": "apply",
+        "applied": False,
+        "blockers": [code],
+        "activation_flags_changed": False,
+        **extra,
+    }
+    if error is not None:
+        result["error_type"] = type(error).__name__
+        result["error"] = str(error)
+    return result
+
+
 def execute_deployment(*, apply: bool = False, source_root: Path | None = None) -> dict[str, Any]:
     plan = deployment_plan()
     if not apply:
@@ -112,28 +133,39 @@ def execute_deployment(*, apply: bool = False, source_root: Path | None = None) 
 
     dsn = os.getenv("DATABASE_URL", "").strip()
     if not dsn:
-        return {
-            **plan,
-            "mode": "apply",
-            "applied": False,
-            "blockers": ["DATABASE_URL_NOT_CONFIGURED"],
-        }
+        return _failure(plan, "DATABASE_URL_NOT_CONFIGURED")
     missing_migrations = [item for item in plan["migrations"] if not item["exists"]]
     if missing_migrations:
-        return {
-            **plan,
-            "mode": "apply",
-            "applied": False,
-            "blockers": ["MATRIX_MIGRATION_FILE_MISSING"],
-            "missing_migrations": missing_migrations,
-        }
+        return _failure(
+            plan,
+            "MATRIX_MIGRATION_FILE_MISSING",
+            missing_migrations=missing_migrations,
+        )
 
-    receipts = apply_migrations(dsn)
-    source = FileMatrixRegistryStore(source_root or default_registry_root())
-    destination = PostgresMatrixRegistryStore(dsn)
-    migration_result = execute_registry_migration(source=source, destination=destination, apply=True)
+    try:
+        receipts = apply_migrations(dsn)
+    except Exception as exc:
+        return _failure(plan, "MATRIX_MIGRATION_APPLY_FAILED", error=exc)
+
+    try:
+        source = FileMatrixRegistryStore(source_root or default_registry_root())
+        destination = PostgresMatrixRegistryStore(dsn)
+        migration_result = execute_registry_migration(
+            source=source,
+            destination=destination,
+            apply=True,
+        )
+    except Exception as exc:
+        return _failure(
+            plan,
+            "MATRIX_REGISTRY_COPY_EXECUTION_FAILED",
+            error=exc,
+            migration_receipts=receipts,
+        )
+
     if migration_result.get("blockers") or not migration_result.get("applied"):
         return {
+            **plan,
             "mode": "apply",
             "applied": False,
             "migration_receipts": receipts,
@@ -142,7 +174,17 @@ def execute_deployment(*, apply: bool = False, source_root: Path | None = None) 
             "activation_flags_changed": False,
         }
 
-    readiness = matrix_durability_readiness()
+    try:
+        readiness = matrix_durability_readiness()
+    except Exception as exc:
+        return _failure(
+            plan,
+            "MATRIX_POST_APPLY_READINESS_FAILED",
+            error=exc,
+            migration_receipts=receipts,
+            registry_copy=migration_result,
+        )
+
     components = readiness.get("components") or {}
     registry_preflight = (components.get("registry") or {}).get("preflight") or {}
     session_preflight = (components.get("session") or {}).get("preflight") or {}
