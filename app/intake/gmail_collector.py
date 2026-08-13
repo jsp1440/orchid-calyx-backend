@@ -12,12 +12,12 @@ import base64
 from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parseaddr, parsedate_to_datetime
-from html.parser import HTMLParser
 import json
 import os
 from typing import Any, Protocol
 
 from .email_service import ingest_external_intelligence_email
+from .html_links import merge_plain_with_html_links
 
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 DEFAULT_TWIN_SENDER = "twin@twin-mail.com"
@@ -39,20 +39,6 @@ class GmailIntelligenceMessage:
 class GmailGateway(Protocol):
     def search(self, query: str, limit: int) -> list[str]: ...
     def get(self, message_id: str) -> dict[str, Any]: ...
-
-
-class _TextExtractor(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.parts: list[str] = []
-
-    def handle_data(self, data: str) -> None:
-        text = data.strip()
-        if text:
-            self.parts.append(text)
-
-    def text(self) -> str:
-        return "\n".join(self.parts)
 
 
 def _decode(data: str | None) -> str:
@@ -92,12 +78,9 @@ def parse_gmail_message(message: dict[str, Any]) -> GmailIntelligenceMessage:
     payload = message.get("payload") or {}
     headers = _headers(payload)
     plain, html = _body_parts(payload)
-    if plain:
-        body = "\n\n".join(value.strip() for value in plain if value.strip()).strip()
-    else:
-        parser = _TextExtractor()
-        parser.feed("\n".join(html))
-        body = parser.text().strip()
+    plain_text = "\n\n".join(value.strip() for value in plain if value.strip()).strip()
+    html_text = "\n".join(value for value in html if value.strip())
+    body = merge_plain_with_html_links(plain_text, html_text).strip()
     if not body:
         body = str(message.get("snippet") or "").strip()
 
