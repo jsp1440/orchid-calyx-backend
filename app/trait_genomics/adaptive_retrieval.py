@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from .molecular_harvester import EUROPE_PMC_SEARCH_BASE, MOLECULAR_QUERY, EuropePMCClient
+from .molecular_harvester import (
+    EUROPE_PMC_SEARCH_BASE,
+    MOLECULAR_QUERY,
+    EuropePMCClient,
+)
 
 
 class AdaptiveEuropePMCClient(EuropePMCClient):
