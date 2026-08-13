@@ -14,7 +14,7 @@ on:
       - 'tests/test_calyx_auto_001_receipt_binding.py'
       - '.github/workflows/calyx-auto-001.yml'
   push:
-    branches: [main]
+    branches: [main, feature/calyx-auto-001-current-main-r3]
     paths:
       - 'app/calyx_orchestrator/auto_mission.py'
       - 'app/calyx_orchestrator/auto_mission_models.py'
