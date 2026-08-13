@@ -10,7 +10,7 @@ on:
       - "tests/test_occurrence_taxonomy_guard.py"
       - "docs/brain/CALYX-CORE-OCCURRENCE-CONSOLIDATION.md"
       - ".github/workflows/calyx-occurrence-consolidated-validation.yml"
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 jobs:
   occurrence-consolidated:
@@ -22,19 +22,19 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
           POSTGRES_DB: orchid_test
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
-          - 5432:5432
+          - "5432:5432"
         options: >-
           --health-cmd "pg_isready -U test -d orchid_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
     env:
-      PYTHONPATH: .
-      TEST_DATABASE_URL: ******localhost:5432/orchid_test
-      DATABASE_URL: ******localhost:5432/orchid_test
+      PYTHONPATH: "."
+      DATABASE_URL: "dbname=orchid_test user=test host=127.0.0.1 port=5432"
+      TEST_DATABASE_URL: "dbname=orchid_test user=test host=127.0.0.1 port=5432"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
