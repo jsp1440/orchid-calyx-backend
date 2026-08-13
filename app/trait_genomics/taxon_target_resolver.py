@@ -40,6 +40,10 @@ def _normalize_scientific_name(value: str) -> str | None:
     return normalized
 
 
+def _comparison_text(value: str) -> str:
+    return " ".join((value or "").replace("_", " ").split()).casefold()
+
+
 @dataclass(frozen=True)
 class TaxonTargetResolution:
     status: ResolutionStatus
@@ -63,12 +67,14 @@ class TaxonTargetResolution:
 
 
 class CanonicalTaxonTargetResolver:
-    """Resolve exact orchid names to canonical operational taxon identifiers.
+    """Resolve orchid names to canonical operational taxon identifiers.
 
     The operational species surfaces use ``public.orchid_taxonomy.id`` as the
-    canonical taxon identifier. Resolution is deliberately fail-closed: exact
-    normalized binomial/infraspecific identity is required and more than one
-    canonical row is returned as ambiguous rather than guessed.
+    canonical taxon identifier. Resolution is fail-closed. Rows must share the
+    same normalized binomial/infraspecific identity. If duplicate rows differ
+    only because one carries authorship/trailing annotation, a single row whose
+    stored scientific-name text exactly matches the submitted query is preferred.
+    Otherwise duplicate normalized identities remain ambiguous.
     """
 
     def __init__(
@@ -95,6 +101,13 @@ class CanonicalTaxonTargetResolver:
             "canonical_taxon_id": str(row["id"]),
             "scientific_name": str(row["scientific_name"]),
         }
+
+    @staticmethod
+    def _target_from_row(row: dict[str, Any], normalized: str) -> MolecularHarvestTarget:
+        return MolecularHarvestTarget(
+            canonical_taxon_id=str(row["id"]),
+            scientific_name=normalized,
+        )
 
     def resolve(self, scientific_name: str) -> TaxonTargetResolution:
         query_name = " ".join((scientific_name or "").split())
@@ -143,31 +156,44 @@ class CanonicalTaxonTargetResolver:
                     "No synonym or fuzzy substitution was attempted."
                 ),
             )
-        if len(matches) > 1:
-            return TaxonTargetResolution(
-                status="ambiguous",
-                query_name=query_name,
-                normalized_name=normalized,
-                target=None,
-                candidates=tuple(self._candidate(row) for row in matches),
-                explanation=(
-                    "Multiple canonical rows share the normalized scientific name; explicit human "
-                    "selection is required before literature harvesting."
-                ),
-            )
 
-        row = matches[0]
-        target = MolecularHarvestTarget(
-            canonical_taxon_id=str(row["id"]),
-            scientific_name=normalized,
-        )
+        selected = matches[0] if len(matches) == 1 else None
+        explanation = "Resolved by exact normalized name against public.orchid_taxonomy."
+        if len(matches) > 1:
+            query_text = _comparison_text(query_name)
+            exact_text_matches = [
+                row
+                for row in matches
+                if _comparison_text(str(row.get("scientific_name") or "")) == query_text
+            ]
+            if len(exact_text_matches) == 1:
+                selected = exact_text_matches[0]
+                explanation = (
+                    "Multiple rows share the normalized taxon identity; selected the sole row whose "
+                    "stored scientific-name text exactly matches the submitted query."
+                )
+            else:
+                return TaxonTargetResolution(
+                    status="ambiguous",
+                    query_name=query_name,
+                    normalized_name=normalized,
+                    target=None,
+                    candidates=tuple(self._candidate(row) for row in matches),
+                    explanation=(
+                        "Multiple canonical rows share the normalized scientific name and no unique "
+                        "exact-text row disambiguates the query; explicit human selection is required "
+                        "before literature harvesting."
+                    ),
+                )
+
+        assert selected is not None
         return TaxonTargetResolution(
             status="resolved",
             query_name=query_name,
             normalized_name=normalized,
-            target=target,
-            candidates=(self._candidate(row),),
-            explanation="Resolved by exact normalized name against public.orchid_taxonomy.",
+            target=self._target_from_row(selected, normalized),
+            candidates=tuple(self._candidate(row) for row in matches),
+            explanation=explanation,
         )
 
     def resolve_or_raise(self, scientific_name: str) -> MolecularHarvestTarget:

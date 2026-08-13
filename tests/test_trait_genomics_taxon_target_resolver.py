@@ -74,6 +74,29 @@ def test_exact_normalized_name_resolves_operational_taxon_id():
     assert connection.cursor_instance.executed[-1][1][0] == "Dendrobium"
 
 
+def test_unique_exact_text_breaks_authorship_only_duplicate_tie():
+    service, _ = resolver(
+        [
+            {
+                "id": 17235,
+                "scientific_name": "Dendrobium cuthbertsonii F.Muell.",
+                "genus": "Dendrobium",
+            },
+            {
+                "id": 52090,
+                "scientific_name": "Dendrobium cuthbertsonii",
+                "genus": "Dendrobium",
+            },
+        ]
+    )
+    result = service.resolve("Dendrobium cuthbertsonii")
+    assert result.status == "resolved"
+    assert result.target is not None
+    assert result.target.canonical_taxon_id == "52090"
+    assert [item["canonical_taxon_id"] for item in result.candidates] == ["17235", "52090"]
+    assert "sole row" in result.explanation
+
+
 def test_infraspecific_name_does_not_collapse_to_species():
     service, _ = resolver(
         [
@@ -100,6 +123,18 @@ def test_duplicate_canonical_rows_fail_closed_as_ambiguous():
     assert result.status == "ambiguous"
     assert result.target is None
     assert [item["canonical_taxon_id"] for item in result.candidates] == ["10", "11"]
+
+
+def test_duplicate_exact_text_rows_remain_ambiguous():
+    service, _ = resolver(
+        [
+            {"id": 10, "scientific_name": "Example orchid", "genus": "Example"},
+            {"id": 11, "scientific_name": "Example orchid", "genus": "Example"},
+        ]
+    )
+    result = service.resolve("Example orchid")
+    assert result.status == "ambiguous"
+    assert result.target is None
 
 
 def test_non_binomial_input_is_invalid_without_database_lookup():
