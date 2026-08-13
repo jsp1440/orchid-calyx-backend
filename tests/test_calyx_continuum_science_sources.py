@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from app.calyx_conversation import climate_context, external_literature, provider
+from app.calyx_conversation.literature_ingest import document_from_external_record
+from app.calyx_conversation.provider_runtime import (
+    OpenAIRuntimeResponsesProvider,
+    configured_runtime_provider,
+    runtime_provider_configuration,
+)
 from scripts.calyx_literature_backfill import _document
 
 
@@ -14,7 +20,28 @@ def test_long_orchid_prompt_is_decomposed_into_targeted_literature_queries():
     assert queries[0].startswith('"Dendrobium"')
     assert any(query.startswith('"Sarcochilus"') for query in queries)
     assert any("flower" in query.casefold() for query in queries)
+    assert any("temperature" in query.casefold() for query in queries)
     assert all(len(query) < 500 for query in queries)
+
+
+def test_physiology_relevance_ranking_demotes_scent_and_color_distractors():
+    question = (
+        "Dendrobium winter rest cold temperature floral induction drought keiki hormone"
+    )
+    relevant = {
+        "title": "Low temperature controls floral induction in Dendrobium",
+        "abstract": (
+            "Cold treatment and water deficit altered flower bud differentiation and "
+            "subsequent vegetative growth."
+        ),
+    }
+    distractor = {
+        "title": "Floral volatile and scent profiling in Dendrobium",
+        "abstract": "Volatile terpenoids changed during open flower development.",
+    }
+    assert external_literature._relevance_score(
+        relevant, question
+    ) > external_literature._relevance_score(distractor, question)
 
 
 def test_climate_summary_prefers_forecast_sentences_over_navigation():
@@ -45,6 +72,39 @@ def test_speak_reuses_existing_calyx_agent_openai_configuration(monkeypatch):
     assert configured.model == "test-model"
 
 
+def test_runtime_provider_autodetects_existing_openai_key_and_generic_model(monkeypatch):
+    monkeypatch.delenv("CALYX_CHAT_COMPLETIONS_URL", raising=False)
+    monkeypatch.delenv("CALYX_CHAT_MODEL", raising=False)
+    monkeypatch.delenv("CALYX_AGENT_PROVIDER", raising=False)
+    monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_MODEL", "test-runtime-model")
+
+    configured = configured_runtime_provider()
+    status = runtime_provider_configuration()
+
+    assert isinstance(configured, OpenAIRuntimeResponsesProvider)
+    assert configured.model == "test-runtime-model"
+    assert status["generative_ready"] is True
+    assert status["selected"] == "openai-runtime-autodetect"
+    assert status["secrets_exposed"] is False
+
+
+def test_runtime_provider_diagnoses_missing_model_without_exposing_secret(monkeypatch):
+    monkeypatch.delenv("CALYX_CHAT_COMPLETIONS_URL", raising=False)
+    monkeypatch.delenv("CALYX_CHAT_MODEL", raising=False)
+    monkeypatch.delenv("CALYX_AGENT_PROVIDER", raising=False)
+    monkeypatch.delenv("CALYX_AGENT_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-value")
+
+    status = runtime_provider_configuration()
+
+    assert status["generative_ready"] is False
+    assert "CALYX_AGENT_MODEL or OPENAI_MODEL" in status["missing_configuration"]
+    assert "secret-value" not in repr(status)
+
+
 def test_literature_backfill_has_exact_anchor_and_bounded_preview():
     record = {
         "title": "Temperature and flowering in Dendrobium",
@@ -63,3 +123,27 @@ def test_literature_backfill_has_exact_anchor_and_bounded_preview():
     assert isinstance(document.metadata["locator"], dict)
     anchor = str(document.source_anchor_ids[0])
     assert document.metadata["anchor_locators"][anchor] == document.metadata["locator"]
+
+
+def test_live_research_bridge_document_is_brain_eligible_but_review_bound():
+    record = {
+        "title": "Cold treatment and flower bud differentiation in Dendrobium",
+        "abstract": "Low temperature altered subsequent flower bud differentiation.",
+        "authors": "Example A",
+        "publication_date": "2022-01-01",
+        "doi": "10.0000/brain-example",
+        "pmid": "67890",
+        "pmcid": None,
+        "matched_query": '"Dendrobium" AND "low temperature"',
+        "relevance_score": 18.0,
+    }
+    document = document_from_external_record(
+        record, query="Dendrobium winter flowering"
+    )
+    assert document is not None
+    assert "BRAIN" in document.intended_consumers
+    assert document.verification_state == "UNVERIFIED"
+    assert document.display_policy == "LIMITED_PREVIEW_ONLY"
+    assert document.source_anchor_ids
+    assert document.metadata["scientific_review_required"] is True
+    assert document.metadata["relevance_score"] == 18.0
