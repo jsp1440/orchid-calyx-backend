@@ -27,7 +27,7 @@ jobs:
       - name: Compile Calyx conversation integration
         run: python -m compileall -q app/calyx_conversation
       - name: Ruff
-        run: ruff check app/calyx_conversation/continuum_context.py app/calyx_conversation/provider.py app/calyx_conversation/speak_routes.py tests/test_calyx_continuum_context.py tests/test_calyx_continuum_environment.py
+        run: ruff check --output-format=github app/calyx_conversation/continuum_context.py app/calyx_conversation/provider.py app/calyx_conversation/speak_routes.py tests/test_calyx_continuum_context.py tests/test_calyx_continuum_environment.py
       - name: Targeted tests
         env:
           DATABASE_URL: ''
