@@ -21,7 +21,7 @@ def candidate_phrases(text: str, *, max_words: int = 4, max_phrases: int = 96) -
     phrases: list[str] = []
     seen: set[str] = set()
     for width in range(min(max_words, len(words)), 0, -1):
-        for start in range(0, len(words) - width + 1):
+        for start in range(len(words) - width + 1):
             phrase = " ".join(words[start : start + width])
             if phrase in seen:
                 continue
@@ -32,39 +32,8 @@ def candidate_phrases(text: str, *, max_words: int = 4, max_phrases: int = 96) -
     return phrases
 
 
-def linkify_text(text: str, links: list[dict[str, Any]]) -> str:
-    """Link the first natural occurrence of each approved term in Markdown text.
-
-    Terms are processed longest-first. Existing Markdown links for the same term are
-    left untouched. This is presentation-only and does not alter canonical concepts.
-    """
-    output = text
-    ordered = sorted(
-        (item for item in links if item.get("term") and item.get("href")),
-        key=lambda item: len(str(item["term"])),
-        reverse=True,
-    )
-    for item in ordered:
-        term = str(item["term"]).strip()
-        href = str(item["href"]).strip()
-        if not term or not href:
-            continue
-        if re.search(rf"\[{re.escape(term)}\]\(", output, flags=re.IGNORECASE):
-            continue
-        pattern = re.compile(
-            rf"(?<![\w-]){re.escape(term)}(?![\w-])",
-            flags=re.IGNORECASE,
-        )
-        output = pattern.sub(lambda match: f"[{match.group(0)}]({href})", output, count=1)
-    return output
-
-
 def build_semantic_context(text: str, *, limit: int = 12) -> dict[str, Any]:
-    """Resolve text against ACTIVE + APPROVED Orchid Continuum concepts.
-
-    This is a read-only projection for Calyx conversation. It does not create,
-    promote, revise, or publish concepts.
-    """
+    """Resolve text against ACTIVE + APPROVED Orchid Continuum concepts."""
     candidates = candidate_phrases(text)
     if not candidates:
         return {
@@ -80,23 +49,18 @@ def build_semantic_context(text: str, *, limit: int = 12) -> dict[str, Any]:
         with _connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT
-                    c.concept_id,
-                    c.concept_uri,
-                    l.label,
-                    l.normalized_label,
-                    l.label_type
+                SELECT c.concept_id, c.concept_uri, l.label,
+                       l.normalized_label, l.label_type
                 FROM oc_concepts.concept_labels l
                 JOIN oc_concepts.concepts c ON c.concept_id = l.concept_id
                 WHERE c.status='ACTIVE'
                   AND c.review_state='APPROVED'
                   AND l.review_state='APPROVED'
                   AND l.normalized_label = ANY(%s)
-                ORDER BY
-                    CASE l.label_type WHEN 'PREFERRED' THEN 0 ELSE 1 END,
-                    length(l.normalized_label) DESC,
-                    l.normalized_label,
-                    c.concept_id
+                ORDER BY CASE l.label_type WHEN 'PREFERRED' THEN 0 ELSE 1 END,
+                         length(l.normalized_label) DESC,
+                         l.normalized_label,
+                         c.concept_id
                 LIMIT %s
                 """,
                 (candidates, resolved_limit * 4),
@@ -131,9 +95,10 @@ def build_semantic_context(text: str, *, limit: int = 12) -> dict[str, Any]:
                 (concept_ids,),
             )
             definitions: dict[Any, str] = {}
-            for row in cur.fetchall():
-                if row["concept_id"] not in definitions and row.get("text"):
-                    definitions[row["concept_id"]] = str(row["text"]).strip()
+            for definition_row in cur.fetchall():
+                concept_id = definition_row["concept_id"]
+                if concept_id not in definitions and definition_row.get("text"):
+                    definitions[concept_id] = str(definition_row["text"]).strip()
     except (RuntimeError, psycopg.Error) as exc:
         return {
             "status": "unavailable",
