@@ -23,18 +23,8 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt pytest ruff
-      - name: TIG archive focused tests
-        run: |
-          pytest -q \
-            tests/test_trait_genomics_discovery.py \
-            tests/test_trait_genomics_hardening.py \
-            tests/test_trait_genomics_zenodo_archive.py \
-            tests/test_trait_genomics_release_service.py \
-            tests/test_trait_genomics_live_sources.py \
-            tests/test_trait_genomics_molecular_evidence.py \
-            tests/test_trait_genomics_molecular_harvester.py \
-            tests/test_trait_genomics_molecular_review_queue.py \
-            tests/test_trait_genomics_taxon_target_resolver.py
+      - name: TIG focused regression tests
+        run: pytest -q tests/test_trait_genomics_*.py
       - name: Compile TIG subsystem
         run: python -m compileall -q app/trait_genomics tests/test_trait_genomics_*.py
       - name: Ruff TIG subsystem
