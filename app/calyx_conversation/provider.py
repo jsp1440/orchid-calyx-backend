@@ -73,9 +73,7 @@ class DeterministicGovernedReplyProvider:
                     for item in supporting[:5]
                 )
             )
-            lines.append(
-                f"Supporting evidence count: {len(supporting)}."
-            )
+            lines.append(f"Supporting evidence count: {len(supporting)}.")
         else:
             lines.append(
                 "Evidence summary: the mission did not surface any supporting evidence records that could justify a conclusion."
@@ -122,6 +120,27 @@ class DeterministicGovernedReplyProvider:
         )
         lines.append(
             "Relevant terminology: supporting evidence, contradicting evidence, missing evidence, provisional synthesis, human review required."
+        )
+        return lines
+
+    @staticmethod
+    def _format_continuum_context(context: dict[str, Any]) -> list[str]:
+        taxa = context.get("taxa") or []
+        if not taxa:
+            return []
+        lines = [
+            "Orchid Continuum context: canonical Knowledge Graph taxa were resolved automatically for this question."
+        ]
+        for item in taxa[:12]:
+            genus = str(item.get("genus") or "unknown taxon")
+            graph = item.get("knowledge_graph") or {}
+            brain = item.get("brain_graph") or {}
+            lines.append(
+                f"- {genus}: Knowledge Graph nodes={len(graph.get('nodes') or [])}, "
+                f"edges={len(graph.get('edges') or [])}; Brain graph nodes={len(brain.get('nodes') or [])}."
+            )
+        lines.append(
+            "Graph context is read-only supporting context; it does not by itself establish a literature-backed horticultural conclusion."
         )
         return lines
 
@@ -182,6 +201,7 @@ class DeterministicGovernedReplyProvider:
         payload = {"messages": messages, "governed_context": governed_context}
         mission = governed_context.get("mission")
         retrieval = governed_context.get("retrieval") or {}
+        continuum = governed_context.get("continuum") or {}
         question = next(
             (item["content"] for item in reversed(messages) if item.get("role") == "user"),
             "",
@@ -194,6 +214,7 @@ class DeterministicGovernedReplyProvider:
             )
         elif mission:
             lines.extend(self._format_mission_answer(mission))
+            lines.extend(self._format_continuum_context(continuum))
             lines.append("This answer remains review-bound and is not automatically published knowledge.")
         elif governed_context.get("mission_error"):
             lines.append(
@@ -204,6 +225,7 @@ class DeterministicGovernedReplyProvider:
                 lines.append(
                     f"I did retrieve {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible evidence objects that can be inspected while the mission gap is repaired."
                 )
+            lines.extend(self._format_continuum_context(continuum))
         elif retrieval.get("results"):
             lines.append(
                 f"I found {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible Orchid Continuum evidence objects relevant to your question."
@@ -212,7 +234,13 @@ class DeterministicGovernedReplyProvider:
                 excerpt = str(result.get("authorized_excerpt") or "").strip().replace("\n", " ")
                 title = result.get("title") or result.get("object_type") or f"Evidence {index}"
                 lines.append(f"{index}. {title}" + (f": {excerpt[:360]}" if excerpt else ""))
+            lines.extend(self._format_continuum_context(continuum))
             lines.append("I have not promoted these retrieved records into published knowledge.")
+        elif continuum.get("taxa"):
+            lines.extend(self._format_continuum_context(continuum))
+            lines.append(
+                "I resolved relevant Continuum graph context, but I do not yet have sufficient governed evidence to make the requested scientific conclusion without guessing."
+            )
         else:
             lines.append(
                 "I do not yet have enough governed Orchid Continuum evidence to answer that substantively without guessing."
@@ -249,7 +277,8 @@ class OpenAICompatibleReplyProvider:
         system = (
             "You are Calyx, the Orchid Continuum's governed scientific collaborator. "
             "Use only the supplied conversation and governed context for factual scientific claims. "
-            "Explicitly distinguish direct evidence, inference, missing evidence, and proposed design ideas. "
+            "The governed context may contain literature/evidence retrieval, Brain mission output, and canonical read-only Knowledge Graph/Brain graph context. "
+            "Integrate those sources when relevant and explicitly distinguish direct evidence, graph facts, inference, missing evidence, and proposed design ideas. "
             "Never claim an Orchid Continuum capability is implemented unless the governed context says it is. "
             "For casual conversation, be natural and concise. For scientific questions, explain what is supported and what remains uncertain. "
             "Do not publish, promote Candidate Knowledge, or mutate the Knowledge Graph."
