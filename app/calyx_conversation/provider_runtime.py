@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
 
@@ -15,6 +16,8 @@ from .provider import (
     configured_reply_provider,
 )
 
+LOGGER = logging.getLogger(__name__)
+
 
 def _runtime_model() -> str:
     return (
@@ -28,6 +31,30 @@ def _runtime_model() -> str:
     )
 
 
+def _provider_http_error(response: requests.Response) -> RuntimeError:
+    """Return a useful provider error without ever exposing the API key."""
+
+    request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
+    detail = ""
+    try:
+        body = response.json()
+        if isinstance(body, dict):
+            error = body.get("error")
+            if isinstance(error, dict):
+                detail = str(error.get("message") or error.get("code") or "")
+            elif error:
+                detail = str(error)
+    except ValueError:
+        detail = response.text
+    detail = " ".join(detail.split())[:600]
+    message = f"OPENAI_RESPONSES_HTTP_{response.status_code}"
+    if request_id:
+        message += f" request_id={request_id}"
+    if detail:
+        message += f" detail={detail}"
+    return RuntimeError(message)
+
+
 class OpenAIRuntimeResponsesProvider:
     """Use an existing OpenAI key/model even when Calyx-specific selector vars are absent."""
 
@@ -35,6 +62,7 @@ class OpenAIRuntimeResponsesProvider:
 
     def __init__(self, *, model: str, api_key: str) -> None:
         self.model = model.strip()
+        self.model_name = self.model
         self.api_key = api_key.strip()
         self.base_url = os.getenv(
             "CALYX_AGENT_BASE_URL", os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
@@ -106,20 +134,49 @@ class OpenAIRuntimeResponsesProvider:
             ],
             "max_output_tokens": self.max_tokens,
         }
-        response = requests.post(
-            f"{self.base_url}/responses",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-        body = response.json()
+        try:
+            response = requests.post(
+                f"{self.base_url}/responses",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=self.timeout,
+            )
+        except requests.RequestException as exc:
+            LOGGER.exception(
+                "Calyx OpenAI Responses request failed before an HTTP response model=%s error=%s",
+                self.model,
+                type(exc).__name__,
+            )
+            raise RuntimeError(f"OPENAI_RESPONSES_REQUEST_FAILED:{type(exc).__name__}") from exc
+        if not response.ok:
+            error = _provider_http_error(response)
+            LOGGER.error("Calyx OpenAI provider fallback: model=%s %s", self.model, error)
+            raise error
+        try:
+            body = response.json()
+        except ValueError as exc:
+            LOGGER.error(
+                "Calyx OpenAI provider returned non-JSON content model=%s status=%s",
+                self.model,
+                response.status_code,
+            )
+            raise RuntimeError("OPENAI_RESPONSES_INVALID_JSON") from exc
         text = self._extract_text(body)
         if not text:
-            raise RuntimeError("CALYX_CHAT_PROVIDER_EMPTY_RESPONSE")
+            status = str(body.get("status") or "unknown")
+            incomplete = body.get("incomplete_details")
+            LOGGER.error(
+                "Calyx OpenAI provider returned no text model=%s response_status=%s incomplete=%s",
+                self.model,
+                status,
+                incomplete,
+            )
+            raise RuntimeError(
+                f"CALYX_CHAT_PROVIDER_EMPTY_RESPONSE status={status} incomplete={incomplete}"
+            )
         return GeneratedReply(
             text=text,
             provider=self.provider_name,
