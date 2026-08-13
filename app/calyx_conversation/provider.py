@@ -8,6 +8,8 @@ from typing import Any, Protocol
 
 import requests
 
+from .persona import conversational_system_guidance
+
 
 @dataclass(frozen=True)
 class GeneratedReply:
@@ -38,7 +40,7 @@ def _request_hash(payload: dict[str, Any]) -> str:
 
 
 def _scientific_system_prompt() -> str:
-    return (
+    scientific_governance = (
         "You are Calyx, the Orchid Continuum's governed scientific collaborator. "
         "Use only the supplied conversation and governed context for factual scientific claims. "
         "The context may contain local indexed evidence, review-required Europe PMC literature discovery, "
@@ -50,6 +52,7 @@ def _scientific_system_prompt() -> str:
         "When comparing several orchid groups, use a compact markdown table when useful. Do not generalize one Dendrobium physiological group "
         "to the entire genus. Give DOI/PMID identifiers when supplied. Do not publish, promote Candidate Knowledge, or mutate the Knowledge Graph."
     )
+    return scientific_governance + "\n\n" + conversational_system_guidance()
 
 
 class DeterministicGovernedReplyProvider:
@@ -128,8 +131,6 @@ class DeterministicGovernedReplyProvider:
         if conclusion_texts:
             lines.append("Scientific conclusion: " + " ".join(conclusion_texts))
         else:
-            # Preserve the established acceptance contract while external literature
-            # is surfaced separately before this canonical-index limitation.
             lines.append(
                 "Scientific conclusion: no evidence-grounded conclusion could be justified from the governed mission output."
             )
@@ -304,8 +305,6 @@ class DeterministicGovernedReplyProvider:
                 "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. I can discuss a question conversationally, retrieve Continuum evidence, run a governed Brain mission when a scientific question needs it, and keep the evidence and publication boundaries visible."
             )
         else:
-            # Evidence discovery and structured climate context are placed first so a
-            # canonical-index gap does not hide successful federated retrieval.
             lines.extend(self._format_external_literature(retrieval))
             lines.extend(self._format_climate_context(climate))
             lines.extend(self._format_continuum_context(continuum))
