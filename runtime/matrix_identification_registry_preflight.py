@@ -9,7 +9,6 @@ from typing import Any
 
 from runtime.matrix_identification_registry import compute_registry_record_checksum
 from runtime.matrix_identification_registry_store import (
-    FileMatrixRegistryStore,
     PostgresMatrixRegistryStore,
     default_registry_root,
     registry_durable_requested,
@@ -154,7 +153,7 @@ def matrix_registry_persistence_preflight() -> dict[str, Any]:
 
     try:
         database_records = postgres_store.list_records()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - preflight converts every inspection failure to a blocker
         base["blockers"] = ["MATRIX_REGISTRY_COPY_VERIFICATION_FAILED"]
         base["error_type"] = type(exc).__name__
         return base
