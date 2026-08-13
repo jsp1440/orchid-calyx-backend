@@ -9,6 +9,7 @@ on:
       - 'tests/test_calyx_continuum_context.py'
       - 'tests/test_calyx_continuum_environment.py'
       - 'tests/test_calyx_federated_science_context.py'
+      - 'tests/test_calyx_continuum_science_sources.py'
       - '.github/workflows/calyx-continuum-integration.yml'
   workflow_dispatch:
 
@@ -29,8 +30,8 @@ jobs:
       - name: Compile Calyx conversation integration
         run: python -m compileall -q app/calyx_conversation scripts/calyx_literature_backfill.py
       - name: Ruff
-        run: ruff check --output-format=github app/calyx_conversation/continuum_context.py app/calyx_conversation/climate_context.py app/calyx_conversation/external_literature.py app/calyx_conversation/provider.py app/calyx_conversation/speak_routes.py scripts/calyx_literature_backfill.py tests/test_calyx_continuum_context.py tests/test_calyx_continuum_environment.py tests/test_calyx_federated_science_context.py
+        run: ruff check --output-format=github app/calyx_conversation/continuum_context.py app/calyx_conversation/climate_context.py app/calyx_conversation/external_literature.py app/calyx_conversation/provider.py app/calyx_conversation/speak_routes.py scripts/calyx_literature_backfill.py tests/test_calyx_continuum_context.py tests/test_calyx_continuum_environment.py tests/test_calyx_federated_science_context.py tests/test_calyx_continuum_science_sources.py
       - name: Targeted tests
         env:
           DATABASE_URL: ''
-        run: python -m pytest -q tests/test_calyx_speak_002.py tests/test_calyx_continuum_context.py tests/test_calyx_continuum_environment.py tests/test_calyx_federated_science_context.py
+        run: python -m pytest -q tests/test_calyx_speak_002.py tests/test_calyx_continuum_context.py tests/test_calyx_continuum_environment.py tests/test_calyx_federated_science_context.py tests/test_calyx_continuum_science_sources.py
