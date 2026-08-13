@@ -294,7 +294,7 @@ class OpenAIRuntimeResponsesProvider:
 
         try:
             body = response.json()
-        except ValueError as exc:
+        except ValueError:
             primary_error = RuntimeError("OPENAI_RESPONSES_INVALID_JSON")
             LOGGER.error(
                 "Calyx OpenAI provider returned non-JSON content model=%s status=%s",
