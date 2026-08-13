@@ -39,6 +39,7 @@ jobs:
         run: pip install -r requirements.txt
       - name: Apply intelligence migrations
         run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/070_knowledge_intake.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/076a_universal_intake.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/108_intelligence_assimilation_ledger.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/109_intelligence_verification_routing.sql
