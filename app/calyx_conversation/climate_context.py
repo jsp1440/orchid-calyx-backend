@@ -84,7 +84,11 @@ def _sentences(text: str) -> list[str]:
     compact = re.sub(r"\s+", " ", text).strip()
     if not compact:
         return []
-    return [item.strip() for item in re.split(r"(?<=[.!?])\s+", compact) if item.strip()]
+    return [
+        item.strip()
+        for item in re.split(r"(?<=[.!?])\s+", compact)
+        if item.strip()
+    ]
 
 
 def _summary_points(text: str, *, limit: int = 10) -> list[str]:
@@ -98,14 +102,25 @@ def _summary_points(text: str, *, limit: int = 10) -> list[str]:
         hits = sum(term in normalized for term in _SUMMARY_TERMS)
         if hits == 0:
             continue
-        # Prefer sentences that combine a geography/season with a forecast variable.
-        has_region = any(term in normalized for term in ("california", "west coast", "southwest"))
-        has_variable = any(term in normalized for term in ("precipitation", "temperature", "enso", "el nino", "el niño", "la nina", "la niña"))
+        has_region = any(
+            term in normalized for term in ("california", "west coast", "southwest")
+        )
+        has_variable = any(
+            term in normalized
+            for term in (
+                "precipitation",
+                "temperature",
+                "enso",
+                "el nino",
+                "el niño",
+                "la nina",
+                "la niña",
+            )
+        )
         score = hits + (2 if has_region and has_variable else 0)
         ranked.append((-score, index, sentence[:900]))
 
     selected = sorted(ranked)[:limit]
-    # Restore source order after ranking selection so the resulting summary reads coherently.
     return [sentence for _, _, sentence in sorted(selected, key=lambda item: item[1])]
 
 
@@ -128,18 +143,20 @@ def _fetch_product(url: str, *, timeout: float) -> dict[str, Any]:
         headers={"User-Agent": "OrchidContinuum-Calyx/1.0"},
     )
     response.raise_for_status()
-    text = _html_to_text(response.text)
-    points = _summary_points(text)
+    raw_text = _html_to_text(response.text)
+    points = _summary_points(raw_text)
+    summary_text = " ".join(points)[:7000]
     return {
         "source": "NOAA/NWS Climate Prediction Center",
         "url": url,
         "retrieved_at": datetime.now(UTC).isoformat(),
-        "issued_text": _extract_issue_time(text),
+        "issued_text": _extract_issue_time(raw_text),
         "summary_points": points,
-        "summary_text": " ".join(points)[:7000],
-        # Keep a bounded raw excerpt for audit/debugging, but providers should prefer
-        # summary_points/summary_text so navigation text never dominates the answer.
-        "raw_text_excerpt": text[:5000],
+        "summary_text": summary_text,
+        # Compatibility field retained for existing Calyx consumers/tests. It is now
+        # the structured forecast summary rather than raw page navigation chrome.
+        "text": summary_text or raw_text[:5000],
+        "raw_text_excerpt": raw_text[:5000],
         "external": True,
         "time_sensitive": True,
         "canonical_orchid_evidence": False,
