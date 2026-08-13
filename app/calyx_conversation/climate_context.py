@@ -32,6 +32,37 @@ _CLIMATE_TERMS = (
     "forecast",
     "outlook",
 )
+_SUMMARY_TERMS = (
+    "el nino",
+    "el niño",
+    "la nina",
+    "la niña",
+    "enso",
+    "california",
+    "west coast",
+    "southwest",
+    "precipitation",
+    "above-normal",
+    "below-normal",
+    "above normal",
+    "below normal",
+    "temperature",
+    "probability",
+    "confidence",
+    "winter",
+    "djf",
+    "ndj",
+    "jfm",
+)
+_NAVIGATION_NOISE = (
+    "site map",
+    "organization search",
+    "search by city",
+    "our mission",
+    "who we are",
+    "contact us",
+    "tools more outlooks",
+)
 
 
 def climate_context_relevant(message: str) -> bool:
@@ -49,6 +80,62 @@ def _html_to_text(value: str) -> str:
     return text.strip()
 
 
+def _sentences(text: str) -> list[str]:
+    compact = re.sub(r"\s+", " ", text).strip()
+    if not compact:
+        return []
+    return [
+        item.strip()
+        for item in re.split(r"(?<=[.!?])\s+", compact)
+        if item.strip()
+    ]
+
+
+def _summary_points(text: str, *, limit: int = 10) -> list[str]:
+    """Extract forecast-bearing statements instead of CPC page navigation chrome."""
+
+    ranked: list[tuple[int, int, str]] = []
+    for index, sentence in enumerate(_sentences(text)):
+        normalized = sentence.casefold()
+        if any(noise in normalized for noise in _NAVIGATION_NOISE):
+            continue
+        hits = sum(term in normalized for term in _SUMMARY_TERMS)
+        if hits == 0:
+            continue
+        has_region = any(
+            term in normalized for term in ("california", "west coast", "southwest")
+        )
+        has_variable = any(
+            term in normalized
+            for term in (
+                "precipitation",
+                "temperature",
+                "enso",
+                "el nino",
+                "el niño",
+                "la nina",
+                "la niña",
+            )
+        )
+        score = hits + (2 if has_region and has_variable else 0)
+        ranked.append((-score, index, sentence[:900]))
+
+    selected = sorted(ranked)[:limit]
+    return [sentence for _, _, sentence in sorted(selected, key=lambda item: item[1])]
+
+
+def _extract_issue_time(text: str) -> str | None:
+    patterns = (
+        r"\b\d{3,4}\s*(?:AM|PM)\s+(?:EDT|EST|CDT|CST|MDT|MST|PDT|PST)\s+[A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{4}\b",
+        r"\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{4}\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(0)
+    return None
+
+
 def _fetch_product(url: str, *, timeout: float) -> dict[str, Any]:
     response = requests.get(
         url,
@@ -56,12 +143,20 @@ def _fetch_product(url: str, *, timeout: float) -> dict[str, Any]:
         headers={"User-Agent": "OrchidContinuum-Calyx/1.0"},
     )
     response.raise_for_status()
-    text = _html_to_text(response.text)
+    raw_text = _html_to_text(response.text)
+    points = _summary_points(raw_text)
+    summary_text = " ".join(points)[:7000]
     return {
         "source": "NOAA/NWS Climate Prediction Center",
         "url": url,
         "retrieved_at": datetime.now(UTC).isoformat(),
-        "text": text[:12000],
+        "issued_text": _extract_issue_time(raw_text),
+        "summary_points": points,
+        "summary_text": summary_text,
+        # Compatibility field retained for existing Calyx consumers/tests. It is now
+        # the structured forecast summary rather than raw page navigation chrome.
+        "text": summary_text or raw_text[:5000],
+        "raw_text_excerpt": raw_text[:5000],
         "external": True,
         "time_sensitive": True,
         "canonical_orchid_evidence": False,
@@ -69,7 +164,7 @@ def _fetch_product(url: str, *, timeout: float) -> dict[str, Any]:
 
 
 def build_seasonal_climate_context(message: str) -> dict[str, Any]:
-    """Fetch current NOAA CPC discussions for climate-sensitive Calyx questions."""
+    """Fetch and structure current NOAA CPC discussions for climate-sensitive turns."""
 
     if not climate_context_relevant(message):
         return {

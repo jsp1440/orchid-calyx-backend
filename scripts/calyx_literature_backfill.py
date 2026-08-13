@@ -31,8 +31,17 @@ def _document(record: dict[str, Any], *, query: str) -> IndexDocument | None:
         + str(record.get("publication_date") or "unknown")
     )
     extraction_run_id = _stable_id("europe-pmc-query:" + query)
+    anchor_id = _stable_id("europe-pmc-anchor:" + identifier + ":title-abstract")
     authors = str(record.get("authors") or "").strip()
     text = title + "\n\n" + abstract
+    locator = {
+        "source": "Europe PMC",
+        "identifier": identifier,
+        "section": "title_and_abstract",
+        "doi": record.get("doi"),
+        "pmid": record.get("pmid"),
+        "pmcid": record.get("pmcid"),
+    }
     return IndexDocument(
         source_object_type="LITERATURE_RECORD",
         source_object_id=source_object_id,
@@ -41,6 +50,7 @@ def _document(record: dict[str, Any], *, query: str) -> IndexDocument | None:
         text=text,
         collections=("LITERATURE", "ORCHID_SCIENCE", "GENERAL_BRAIN"),
         title=title,
+        source_anchor_ids=(anchor_id,),
         document_class="SCIENTIFIC_LITERATURE",
         language="en",
         intended_consumers=("CALYX", "BRAIN", "RESEARCH_STATION"),
@@ -48,7 +58,9 @@ def _document(record: dict[str, Any], *, query: str) -> IndexDocument | None:
         verification_state="UNVERIFIED",
         review_state="CLEAR",
         internal_indexing_permission=True,
-        display_policy="INTERNAL_RESEARCH_ONLY",
+        # A bounded preview is deliberately available to the Brain mission so it can
+        # extract candidate claims without granting unrestricted full-text display.
+        display_policy="LIMITED_PREVIEW_ONLY",
         metadata={
             "title": title,
             "document_title": title,
@@ -63,8 +75,10 @@ def _document(record: dict[str, Any], *, query: str) -> IndexDocument | None:
                 "pmcid": record.get("pmcid"),
             },
             "collections": ["LITERATURE", "ORCHID_SCIENCE", "GENERAL_BRAIN"],
-            "display_policy": "INTERNAL_RESEARCH_ONLY",
-            "internal_access_allowed": True,
+            "display_policy": "LIMITED_PREVIEW_ONLY",
+            "excerpt_limit": 700,
+            "locator": locator,
+            "anchor_locators": {str(anchor_id): locator},
             "scientific_review_required": True,
             "external_discovery_provider": "Europe PMC",
             "harvest_query": query,
@@ -89,6 +103,7 @@ def backfill(query: str, *, limit: int, dry_run: bool) -> dict[str, Any]:
     if dry_run:
         return {
             "query": query,
+            "query_plan": discovery.get("query_plan", []),
             "discovered": discovery.get("result_count", 0),
             "indexable": len(documents),
             "dry_run": True,
@@ -98,6 +113,7 @@ def backfill(query: str, *, limit: int, dry_run: bool) -> dict[str, Any]:
                     "title": item.title,
                     "verification_state": item.verification_state,
                     "display_policy": item.display_policy,
+                    "source_anchor_ids": list(item.source_anchor_ids),
                 }
                 for item in documents
             ],
@@ -105,6 +121,7 @@ def backfill(query: str, *, limit: int, dry_run: bool) -> dict[str, Any]:
     if not documents:
         return {
             "query": query,
+            "query_plan": discovery.get("query_plan", []),
             "discovered": discovery.get("result_count", 0),
             "indexable": 0,
             "dry_run": False,
@@ -119,6 +136,7 @@ def backfill(query: str, *, limit: int, dry_run: bool) -> dict[str, Any]:
                 "source": "Europe PMC",
                 "query": query,
                 "purpose": "Calyx literature coverage backfill",
+                "provenance_contract": "exact-anchor-limited-preview-v1",
             },
         )
     )
@@ -128,6 +146,7 @@ def backfill(query: str, *, limit: int, dry_run: bool) -> dict[str, Any]:
         repository.refresh_for_read()
     return {
         "query": query,
+        "query_plan": discovery.get("query_plan", []),
         "discovered": discovery.get("result_count", 0),
         "indexable": len(documents),
         "dry_run": False,
@@ -140,14 +159,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Backfill orchid literature from Europe PMC into the Calyx semantic index. "
-            "Imported records remain unverified/internal and require scientific review."
+            "Imported records remain unverified and require scientific review."
         )
     )
     parser.add_argument(
         "--query",
         action="append",
         required=True,
-        help="Repeatable Europe PMC search query.",
+        help="Repeatable scientific research question or Europe PMC query.",
     )
     parser.add_argument("--limit", type=int, default=25)
     parser.add_argument("--dry-run", action="store_true")
