@@ -13,7 +13,9 @@ from runtime.matrix_identification_vision import (
     list_vision_suggestions,
     review_vision_suggestion,
 )
-from runtime.matrix_identification_vision_discovery import list_vision_analyses_for_image
+from runtime.matrix_identification_vision_discovery import (
+    list_vision_analyses_for_image,
+)
 
 router = APIRouter(
     prefix="/api/matrix-identification/sessions",
