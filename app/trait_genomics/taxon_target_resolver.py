@@ -70,10 +70,12 @@ class CanonicalTaxonTargetResolver:
     """Resolve orchid names to canonical operational taxon identifiers.
 
     The operational species surfaces use ``public.orchid_taxonomy.id`` as the
-    canonical taxon identifier. Resolution is fail-closed. Rows must share the
-    same normalized binomial/infraspecific identity. If duplicate rows differ
-    only because one carries authorship/trailing annotation, a single row whose
-    stored scientific-name text exactly matches the submitted query is preferred.
+    canonical taxon identifier. Resolution is fail-closed. Candidate retrieval is
+    bounded by the normalized scientific-name prefix rather than by an arbitrary
+    first page of a large genus. Rows must still normalize to the exact submitted
+    binomial/infraspecific identity. If duplicate rows differ only because one
+    carries authorship/trailing annotation, a single row whose stored
+    scientific-name text exactly matches the submitted query is preferred.
     Otherwise duplicate normalized identities remain ambiguous.
     """
 
@@ -121,7 +123,6 @@ class CanonicalTaxonTargetResolver:
                 explanation="A binomial or supported infraspecific scientific name is required.",
             )
 
-        genus = normalized.split()[0]
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT to_regclass('public.orchid_taxonomy') IS NOT NULL AS present")
             present = cur.fetchone()
@@ -131,12 +132,11 @@ class CanonicalTaxonTargetResolver:
                 """
                 SELECT id, scientific_name, genus
                 FROM public.orchid_taxonomy
-                WHERE lower(genus) = lower(%s)
-                  AND lower(scientific_name) LIKE lower(%s)
+                WHERE lower(scientific_name) LIKE lower(%s)
                 ORDER BY id
                 LIMIT 100
                 """,
-                (genus, f"{genus} %"),
+                (f"{normalized}%",),
             )
             rows = [dict(row) for row in cur.fetchall()]
 
