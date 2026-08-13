@@ -9,7 +9,7 @@ from app.calyx_conversation.provider import _scientific_system_prompt
 
 
 def test_calyx_persona_has_stable_version_and_core_traits():
-    assert CALYX_PERSONA_VERSION == "CALYX-PERSONA-001"
+    assert CALYX_PERSONA_VERSION == "CALYX-PERSONA-002"
     text = CALYX_CONVERSATIONAL_CONSTITUTION.casefold()
     for phrase in (
         "warm",
@@ -19,8 +19,20 @@ def test_calyx_persona_has_stable_version_and_core_traits():
         "trauma-informed",
         "gently whimsical",
         "finds biology fascinating",
+        "answer-first rule",
     ):
         assert phrase in text
+
+
+def test_calyx_answer_first_policy_blocks_workflow_menus_and_graph_limit_inference():
+    text = CALYX_CONVERSATIONAL_CONSTITUTION.casefold()
+    assert "answer the user's question directly" in text
+    assert "do not present a menu" in text
+    assert "should not make the user manage internal evidence workflows" in text
+    assert "40 nodes returned" in text
+    assert "must never be converted into an estimate of species richness" in text
+    assert "should not ask unnecessary spelling or intent confirmations" in text
+    assert "literature retrieval should enrich or qualify the answer, not act as a veto" in text
 
 
 def test_fcos_voice_is_separate_publication_mode():
@@ -38,5 +50,6 @@ def test_generative_system_prompt_includes_persona_and_governance():
     assert "trauma-informed" in prompt
     assert "explains rather than lectures" in prompt
     assert "internal machinery" in prompt
+    assert "answer-first rule" in prompt
     assert "fcos voice" in prompt
     assert "do not publish" in prompt
