@@ -4,10 +4,16 @@ from fastapi.responses import Response
 from app.security import verify_owner_or_api_key
 from app.routers.health import add_mission_control_cors_headers
 from .extractor import content_hash, extract
+from .intelligence import (
+    assimilation_summary,
+    canonical_email_text,
+    intelligence_tasks,
+    parse_external_intelligence,
+)
 from app.storage import LocalImmutableStorage
 from .repository import (add_document, create_batch, create_source, decide, finalize_batch,
                          get_batch, get_source, list_batches, list_review, mark_published, review_document)
-from .schemas import DocumentReview, ReviewDecision, TextIntakeRequest, UrlIntakeRequest
+from .schemas import DocumentReview, EmailIntakeRequest, ReviewDecision, TextIntakeRequest, UrlIntakeRequest
 from .universal import CLASSIFICATIONS, classify, extract_safe_text, validate_file
 
 router = APIRouter(
@@ -43,6 +49,48 @@ def ingest_url(payload: UrlIntakeRequest):
         imported_by=payload.imported_by,
         extraction=result,
     )
+
+
+@router.post("/email", status_code=201)
+def ingest_email(payload: EmailIntakeRequest):
+    """Preserve an external-intelligence email and stage bounded follow-up work.
+
+    The email body is never treated as primary scientific evidence.  Parsed
+    items begin in DISCOVERED/UNASSESSED state and are routed to review tasks;
+    this endpoint performs no URL fetching, external contact, publication, or
+    canonical graph mutation.
+    """
+    canonical_content = canonical_email_text(
+        sender=payload.sender,
+        subject=payload.subject,
+        body=payload.body,
+        message_id=payload.message_id,
+        received_at=payload.received_at,
+    )
+    items = parse_external_intelligence(
+        payload.body,
+        sender=payload.sender,
+        message_id=payload.message_id or "",
+    )
+    result = extract(canonical_content)
+    result.tasks.extend(intelligence_tasks(items))
+    source = create_source(
+        source_type="email",
+        title=payload.subject,
+        content=canonical_content,
+        content_hash=content_hash(canonical_content),
+        source_url=None,
+        imported_by=payload.imported_by or "external-intelligence-email",
+        extraction=result,
+    )
+    return {
+        **source,
+        "intelligence": assimilation_summary(items),
+        "intelligence_items": items,
+        "external_contacted": False,
+        "canonical_graph_mutated": False,
+        "publication_performed": False,
+    }
 
 
 @router.get("/review")

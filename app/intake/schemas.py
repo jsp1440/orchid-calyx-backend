@@ -34,6 +34,15 @@ class UrlIntakeRequest(BaseModel):
     imported_by: Optional[str] = Field(default=None, max_length=200)
 
 
+class EmailIntakeRequest(BaseModel):
+    subject: str = Field(min_length=1, max_length=500)
+    body: str = Field(min_length=1)
+    sender: str = Field(min_length=3, max_length=320)
+    message_id: Optional[str] = Field(default=None, max_length=500)
+    received_at: Optional[str] = Field(default=None, max_length=100)
+    imported_by: Optional[str] = Field(default=None, max_length=200)
+
+
 class ReviewDecision(BaseModel):
     notes: Optional[str] = None
 

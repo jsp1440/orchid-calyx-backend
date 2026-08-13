@@ -7,6 +7,7 @@ on:
       - "app/routers/health.py"
       - "migrations/070_knowledge_intake.sql"
       - "tests/test_build_070_intake_extractor.py"
+      - "tests/test_intelligence_assimilation.py"
       - ".github/workflows/build-070-validation.yml"
   push:
     branches:
@@ -17,6 +18,7 @@ on:
       - "app/routers/health.py"
       - "migrations/070_knowledge_intake.sql"
       - "tests/test_build_070_intake_extractor.py"
+      - "tests/test_intelligence_assimilation.py"
       - ".github/workflows/build-070-validation.yml"
   workflow_dispatch:
 
@@ -28,8 +30,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install focused dependency
-        run: pip install "pydantic>=2,<3"
+      - name: Install focused dependencies
+        run: pip install "pydantic>=2,<3" pytest
       - name: Run standalone BUILD-070 smoke test
         env:
           PYTHONPATH: .
@@ -69,6 +71,10 @@ jobs:
           assert "WHERE content_hash = %s" in repository
           print("BUILD-070 focused validation passed")
           PY
+      - name: Run intelligence assimilation regressions
+        env:
+          PYTHONPATH: .
+        run: pytest -q tests/test_intelligence_assimilation.py
       - name: Compile intake package
         run: python -m compileall -q app/intake
 
