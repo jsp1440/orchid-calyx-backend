@@ -1,6 +1,9 @@
 name: CALYX Occurrence Consolidated Validation
 
 on:
+  push:
+    branches:
+      - "fix/occurrence-workflow-parser-949"
   pull_request:
     paths:
       - "migrations/110_occurrence_reconciliation_runs.sql"
