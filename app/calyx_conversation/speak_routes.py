@@ -84,15 +84,20 @@ def _is_casual(message: str) -> bool:
 
 
 def _mission_question(history: str, message: str) -> str:
-    if not history:
-        return message[:1000]
-    text = (
-        "Use this conversation context only to resolve references; do not treat prior assistant text as scientific evidence.\n"
-        + history[-650:]
-        + "\nCurrent question: "
-        + message
-    )
-    return text[-1000:]
+    """Preserve the scientific subject of long turns instead of only their tail."""
+
+    current = " ".join(message.split())
+    if len(current) > 900:
+        current = current[:650] + " … " + current[-240:]
+    if not history or len(message) > 700:
+        return current[:1000]
+    context = " ".join(history.split())[-350:]
+    return (
+        "Conversation context for reference resolution only, not scientific evidence: "
+        + context
+        + " Current question: "
+        + current
+    )[:1000]
 
 
 def _safe_retrieval(message: str, retrieval_limit: int) -> dict[str, Any]:
@@ -192,8 +197,20 @@ def _run_governed_turn(
     climate = _safe_climate_context(message)
     mission: dict[str, Any] | None = None
     mission_error: str | None = None
+
+    local_results = retrieval.get("results") or []
+    external_records = (retrieval.get("external_literature") or {}).get("results") or []
+    external_only = bool(external_records) and not bool(local_results)
+    if external_only:
+        retrieval["conversation_synthesis_mode"] = "external_review_literature"
+        retrieval["canonical_mission_deferred"] = research_mode == "auto"
+        retrieval["canonical_mission_deferred_reason"] = (
+            "No canonical retrieval evidence was available for this turn; review-required "
+            "external literature remains available to the generative conversational synthesis."
+        )
+
     should_run_mission = research_mode == "always" or (
-        research_mode == "auto" and len(message.split()) >= 5
+        research_mode == "auto" and len(message.split()) >= 5 and not external_only
     )
     if should_run_mission:
         history = STORE.history_text(
@@ -231,7 +248,7 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
     provider_configuration = runtime_provider_configuration()
     return {
         "release": "CALYX-SPEAK-004-CONTEXT",
-        "integration_release": "CALYX-SPEAK-007-EVIDENCE-BRIDGE",
+        "integration_release": "CALYX-SPEAK-009-EXTERNAL-SYNTHESIS",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
         "provider": {
@@ -250,6 +267,7 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
             "external_literature_provider": "Europe PMC",
             "external_literature_relevance_ranking": True,
             "research_index_evidence_bridge": True,
+            "external_review_synthesis_without_canonical_mission": True,
         },
         "interaction_context": {
             "supported": True,
@@ -364,7 +382,7 @@ def append_turn(
         STORE.append(
             conversation_id,
             "tool",
-            f"Governed Brain mission {mission.get('mission_id', 'unknown')} completed for this turn.",
+            f"Governed Brain mission {mission.get('mission_id', 'unknown')} finished with state {mission.get('state', 'unknown')}.",
             {
                 "tool": "brain_mission",
                 "mission_id": mission.get("mission_id"),
@@ -401,6 +419,12 @@ def append_turn(
                 "provider": "Europe PMC",
                 "review_required": True,
                 "canonical_evidence": False,
+                "conversation_synthesis_mode": retrieval.get(
+                    "conversation_synthesis_mode"
+                ),
+                "canonical_mission_deferred": retrieval.get(
+                    "canonical_mission_deferred", False
+                ),
                 "research_index_ingest": retrieval.get("research_index_ingest"),
             },
             owner=owner,
@@ -436,6 +460,7 @@ def append_turn(
             "provider_memory_is_evidence": False,
             "interaction_context_is_evidence": False,
             "external_literature_requires_review": True,
+            "external_literature_may_support_provisional_conversational_synthesis": True,
             "external_literature_may_enter_research_index_unverified": True,
             "climate_products_are_time_sensitive_external_context": True,
             "conversation_does_not_publish_knowledge": True,
@@ -476,6 +501,10 @@ def append_turn(
             "retrieval_eligible_results": retrieval.get("total_eligible_results"),
             "retrieval_status": retrieval.get("status"),
             "retrieval_error": retrieval.get("error"),
+            "conversation_synthesis_mode": retrieval.get("conversation_synthesis_mode"),
+            "canonical_mission_deferred": retrieval.get(
+                "canonical_mission_deferred", False
+            ),
             "external_literature_count": external_literature.get("result_count", 0),
             "external_literature_status": external_literature.get("status"),
             "research_index_ingest": retrieval.get("research_index_ingest"),
