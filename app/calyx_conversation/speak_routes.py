@@ -20,6 +20,9 @@ from .provider_runtime import (
 )
 from .routes import STORE, _retrieval
 
+# Backward-compatible injection seam used by existing Speak tests and local tooling.
+configured_reply_provider = configured_runtime_provider
+
 AuthDependency = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
 router = APIRouter(prefix="/calyx/speak", tags=["calyx-speak"])
 
@@ -185,10 +188,6 @@ def _run_governed_turn(
             "time_sensitive": True,
         }, None, None, True
 
-    # Retrieval first: if local coverage is empty, the external-literature bridge
-    # discovers, relevance-ranks, and indexes bounded review-required abstracts.
-    # The Brain mission that follows can therefore retrieve those newly indexed
-    # records in the same scientific turn without promoting them to canonical KG facts.
     retrieval = _safe_retrieval(message, retrieval_limit)
     continuum = _safe_continuum_context(message)
     climate = _safe_climate_context(message)
@@ -222,7 +221,7 @@ def _run_governed_turn(
 @router.get("/status")
 def speak_status(auth: AuthDependency) -> dict[str, Any]:
     _subject(auth)
-    provider = configured_runtime_provider()
+    provider = configured_reply_provider()
     provider_configuration = runtime_provider_configuration()
     return {
         "release": "CALYX-SPEAK-004-CONTEXT",
@@ -439,7 +438,7 @@ def append_turn(
         },
     }
     messages = STORE.provider_messages(conversation_id, owner=owner, turns=8)
-    provider = configured_runtime_provider()
+    provider = configured_reply_provider()
     provider_error: str | None = None
     try:
         reply = provider.generate(
