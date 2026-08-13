@@ -281,9 +281,6 @@ class OpenAIRuntimeResponsesProvider:
         if not response.ok:
             primary_error = _provider_http_error(response, endpoint="responses")
             LOGGER.error("Calyx OpenAI Responses path failed model=%s %s", self.model, primary_error)
-            # Retry only when the model/API accepted authentication but the endpoint or
-            # request shape may be incompatible. Authentication/quota failures should
-            # remain explicit rather than doubling a doomed provider request.
             if response.status_code in {400, 404, 405, 409, 415, 422}:
                 return self._chat_completion_fallback(
                     messages=messages,
@@ -353,7 +350,7 @@ def runtime_provider_configuration() -> dict[str, Any]:
     if chat_url and chat_model:
         selected = "chat-completions"
     elif agent_provider == "openai" and agent_model and openai_key:
-        selected = "calyx-agent-openai"
+        selected = "calyx-agent-openai-hardened"
     elif runtime_model and openai_key:
         selected = "openai-runtime-autodetect"
     else:
@@ -377,12 +374,23 @@ def runtime_provider_configuration() -> dict[str, Any]:
 
 
 def configured_runtime_provider() -> CalyxReplyProvider:
-    legacy = configured_reply_provider()
-    if not isinstance(legacy, DeterministicGovernedReplyProvider):
-        return legacy
+    """Select Speak's provider with hardened OpenAI precedence.
+
+    Explicit CALYX_CHAT_* configuration remains authoritative. Otherwise an
+    available OPENAI_API_KEY plus resolved runtime model must use the hardened
+    Responses provider, including when CALYX_AGENT_PROVIDER=openai. This avoids
+    silently routing Speak through the older agent provider and bypassing
+    runtime diagnostics/fallback behavior.
+    """
+
+    chat_url = os.getenv("CALYX_CHAT_COMPLETIONS_URL", "").strip()
+    chat_model = os.getenv("CALYX_CHAT_MODEL", "").strip()
+    if chat_url and chat_model:
+        return configured_reply_provider()
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     model = _runtime_model()
     if api_key and model:
         return OpenAIRuntimeResponsesProvider(model=model, api_key=api_key)
-    return legacy
+
+    return configured_reply_provider()
