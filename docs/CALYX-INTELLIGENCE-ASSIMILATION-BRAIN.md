@@ -1,6 +1,6 @@
 # Calyx Intelligence Assimilation — Brain Record
 
-Status: implemented through CALYX-INTEL-006A in production; CALYX-INTEL-007 adds autonomous internal execution.
+Status: production ledger and verification/routing active; CALYX-INTEL-007/007A provide autonomous internal comparison and routing through the live RuntimeEngine callback path.
 Last updated: 2026-08-13.
 
 ## Purpose
@@ -16,7 +16,8 @@ Calyx Intelligence Assimilation converts externally discovered information into 
 5. Primary-source verification records source identity, resolved URL, DOI/title/date metadata when available, authority metadata, evidence hash, and verifier version.
 6. Source confirmation does not mark the scientific claim as verified.
 7. Confirmed-source items can be routed to governed internal destinations such as OREP, Atlas, taxonomy reconciliation, pollinator network, mycorrhizal network, TraitBank, Conservation Platform, Orchid Connect, grant intelligence, and Source Registry.
-8. CALYX-INTEL-007 connects comparison and post-verification routing to the existing autonomous runtime queue so eligible internal work advances without operator button-pushing.
+8. CALYX-INTEL-007 makes comparison and post-verification routing executable by the autonomous runtime queue.
+9. CALYX-INTEL-007A places intelligence job discovery in `enqueue_default_jobs()`, the callback actually invoked by production `RuntimeEngine`, so normal live cycles discover newly eligible intelligence work before executing queued jobs.
 
 ## Production state
 
@@ -39,6 +40,8 @@ The autonomous runtime now has a dedicated intelligence execution boundary. It d
 - `calyx_intelligence_route_<item_id>`
 
 These jobs invoke the real knowledge-delta comparison and governed internal routing services instead of falling through the legacy unknown-job acknowledgement path.
+
+The production wiring is explicit: `app/main.py` supplies `enqueue_default_jobs` and `execute_next_job` to `RuntimeEngine`. CALYX-INTEL-007A therefore performs state-driven intelligence discovery inside `enqueue_default_jobs`, ensuring the enabled runtime loop can discover new eligible intelligence items during ordinary worker cycles rather than relying on the manual `execute_all_pending_jobs()` helper.
 
 External retrieval is intentionally excluded from this runtime executor. Retrieval remains the responsibility of governed harvesters/retrievers, which can hand retrieved evidence snapshots into the verification layer. This separation prevents the autonomous queue from becoming an unrestricted network client.
 
@@ -73,7 +76,9 @@ CALYX-INTEL-006 dedicated PostgreSQL validation exercised a synthetic authoritat
 
 CALYX-INTEL-006A production activation applied migrations 108 and 109 transactionally and verified all six durable intelligence tables and governance defaults.
 
-CALYX-INTEL-007 dedicated PostgreSQL validation exercises state-driven job enqueueing, knowledge comparison, confirmed-source routing, runtime persistence, and governance invariants. Failures discovered during validation were treated as implementation defects and corrected before merge rather than bypassed.
+CALYX-INTEL-007 dedicated PostgreSQL validation exercised state-driven job enqueueing, knowledge comparison, confirmed-source routing, runtime persistence, and governance invariants. Two real defects found by CI—a dict-row lookup error and non-JSON-serializable database timestamps—were corrected before merge rather than bypassed.
+
+CALYX-INTEL-007A strengthened validation to instantiate the same `RuntimeEngine` callback wiring used by production. Normal runtime cycles successfully discovered and executed both comparison and source-confirmed routing jobs, including READY Atlas and Source Registry routes, while external retrieval, external contact, and canonical graph mutation remained false.
 
 ## Architectural rule for future work
 
