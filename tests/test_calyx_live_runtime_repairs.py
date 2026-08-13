@@ -26,8 +26,11 @@ class _FakeResponse:
         return self._body
 
 
-def test_conversation_store_returns_latest_memory_messages() -> None:
-    store = ConversationStore(dsn=None)
+def test_conversation_store_returns_latest_memory_messages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    store = ConversationStore()
     cid = store.create_or_touch(None, title=None, context={}, owner="owner")
     for index in range(12):
         store.append(cid, "operator", f"message-{index}", owner="owner")
