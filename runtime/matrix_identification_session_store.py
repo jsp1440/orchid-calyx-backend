@@ -27,11 +27,26 @@ class MatrixSessionPersistenceError(RuntimeError):
 class MatrixSessionStore(Protocol):
     mode: str
 
-    def get(self, session_id: str, *, access_actor: str | None = None) -> dict[str, Any] | None: ...
+    def get(
+        self, session_id: str, *, access_actor: str | None = None
+    ) -> dict[str, Any] | None: ...
 
     def save(self, record: dict[str, Any]) -> dict[str, Any]: ...
 
     def status(self) -> dict[str, Any]: ...
+
+
+def _persistence_version(record: dict[str, Any]) -> int:
+    value = record.get("persistence_version", 0)
+    try:
+        version = int(value)
+    except (TypeError, ValueError) as exc:
+        raise MatrixSessionPersistenceError(
+            "MATRIX_SESSION_INVALID_PERSISTENCE_VERSION"
+        ) from exc
+    if version < 0:
+        raise MatrixSessionPersistenceError("MATRIX_SESSION_INVALID_PERSISTENCE_VERSION")
+    return version
 
 
 class FileMatrixSessionStore:
@@ -49,25 +64,45 @@ class FileMatrixSessionStore:
     def _path(self, session_id: str) -> Path:
         return self.root / f"{self._safe_session_id(session_id)}.json"
 
-    def get(self, session_id: str, *, access_actor: str | None = None) -> dict[str, Any] | None:
+    def get(
+        self, session_id: str, *, access_actor: str | None = None
+    ) -> dict[str, Any] | None:
         path = self._path(session_id)
         if not path.exists():
             return None
         record = json.loads(path.read_text(encoding="utf-8"))
-        if access_actor is not None and str(record.get("actor") or "") != str(access_actor):
+        if access_actor is not None and str(record.get("actor") or "") != str(
+            access_actor
+        ):
             return None
         return record
 
     def save(self, record: dict[str, Any]) -> dict[str, Any]:
         path = self._path(str(record["session_id"]))
+        expected_version = _persistence_version(record)
         if path.exists():
             existing = json.loads(path.read_text(encoding="utf-8"))
+            existing_version = _persistence_version(existing)
+            if expected_version != existing_version:
+                raise MatrixSessionPersistenceError(
+                    "MATRIX_SESSION_WRITE_CONFLICT: stale persistence version"
+                )
             if int(record.get("revision", 0)) < int(existing.get("revision", 0)):
                 raise MatrixSessionPersistenceError("MATRIX_SESSION_STALE_REVISION")
+        elif expected_version != 0:
+            raise MatrixSessionPersistenceError(
+                "MATRIX_SESSION_WRITE_CONFLICT: missing record for nonzero persistence version"
+            )
+
+        saved_record = dict(record)
+        saved_record["persistence_version"] = expected_version + 1
         path.parent.mkdir(parents=True, exist_ok=True)
         temp = path.with_suffix(".json.tmp")
-        temp.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temp.write_text(
+            json.dumps(saved_record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         temp.replace(path)
+        record["persistence_version"] = saved_record["persistence_version"]
         return record
 
     def status(self) -> dict[str, Any]:
@@ -76,6 +111,7 @@ class FileMatrixSessionStore:
             "durable": False,
             "ready": True,
             "root": str(self.root),
+            "optimistic_concurrency": True,
             "warning": "File-backed Matrix sessions are not restart-durable on ephemeral hosts.",
         }
 
@@ -89,8 +125,6 @@ class PostgresMatrixSessionStore:
             raise MatrixSessionPersistenceError("MATRIX_SESSION_DATABASE_URL_REQUIRED")
 
     def schema_inspection(self) -> dict[str, Any]:
-        # Local import avoids module-import recursion while allowing the durable
-        # enforcement path and read-only preflight to share one schema contract.
         from runtime.matrix_identification_persistence_preflight import (
             inspect_matrix_session_database,
         )
@@ -110,9 +144,13 @@ class PostgresMatrixSessionStore:
                 + "; apply/repair governed migration 612 before enabling durable persistence"
             )
 
-    def get(self, session_id: str, *, access_actor: str | None = None) -> dict[str, Any] | None:
+    def get(
+        self, session_id: str, *, access_actor: str | None = None
+    ) -> dict[str, Any] | None:
         self._require_schema()
-        with psycopg.connect(self.dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
+        with psycopg.connect(
+            self.dsn, row_factory=dict_row
+        ) as conn, conn.cursor() as cur:
             if access_actor is None:
                 cur.execute(
                     f"SELECT record FROM {MATRIX_SESSION_TABLE} WHERE session_id=%s::uuid",
@@ -135,48 +173,93 @@ class PostgresMatrixSessionStore:
         registry = record.get("registry") or {}
         if not session_id or not owner:
             raise ValueError("session_id and actor are required for durable Matrix persistence")
+
+        expected_version = _persistence_version(record)
+        saved_record = dict(record)
+        saved_record["persistence_version"] = expected_version + 1
+        revision = int(record.get("revision", 0))
+        status = str(record.get("status") or "active")
+
         with psycopg.connect(self.dsn) as conn, conn.cursor() as cur:
-            cur.execute(
-                f"""
-                INSERT INTO {MATRIX_SESSION_TABLE}(
-                    session_id, owner, schema_version, registry_id, registry_version,
-                    registry_checksum_sha256, revision, status, record, created_at, updated_at
-                ) VALUES (
-                    %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s,
-                    COALESCE(%s::timestamptz, now()), COALESCE(%s::timestamptz, now())
+            if expected_version == 0:
+                cur.execute(
+                    f"""
+                    INSERT INTO {MATRIX_SESSION_TABLE}(
+                        session_id, owner, schema_version, registry_id, registry_version,
+                        registry_checksum_sha256, revision, status, record, created_at, updated_at
+                    ) VALUES (
+                        %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s,
+                        COALESCE(%s::timestamptz, now()), COALESCE(%s::timestamptz, now())
+                    )
+                    ON CONFLICT (session_id) DO UPDATE SET
+                        revision=EXCLUDED.revision,
+                        status=EXCLUDED.status,
+                        record=EXCLUDED.record,
+                        updated_at=EXCLUDED.updated_at
+                    WHERE {MATRIX_SESSION_TABLE}.owner=EXCLUDED.owner
+                      AND {MATRIX_SESSION_TABLE}.registry_id=EXCLUDED.registry_id
+                      AND {MATRIX_SESSION_TABLE}.registry_version=EXCLUDED.registry_version
+                      AND {MATRIX_SESSION_TABLE}.registry_checksum_sha256=EXCLUDED.registry_checksum_sha256
+                      AND {MATRIX_SESSION_TABLE}.revision <= EXCLUDED.revision
+                      AND COALESCE(
+                            ({MATRIX_SESSION_TABLE}.record->>'persistence_version')::bigint,
+                            0
+                          )=0
+                    RETURNING session_id
+                    """,
+                    (
+                        session_id,
+                        owner,
+                        record.get("schema_version"),
+                        registry.get("registry_id"),
+                        registry.get("version"),
+                        registry.get("checksum_sha256"),
+                        revision,
+                        status,
+                        Jsonb(saved_record),
+                        record.get("created_at"),
+                        record.get("updated_at"),
+                    ),
                 )
-                ON CONFLICT (session_id) DO UPDATE SET
-                    revision=EXCLUDED.revision,
-                    status=EXCLUDED.status,
-                    record=EXCLUDED.record,
-                    updated_at=EXCLUDED.updated_at
-                WHERE {MATRIX_SESSION_TABLE}.owner=EXCLUDED.owner
-                  AND {MATRIX_SESSION_TABLE}.registry_id=EXCLUDED.registry_id
-                  AND {MATRIX_SESSION_TABLE}.registry_version=EXCLUDED.registry_version
-                  AND {MATRIX_SESSION_TABLE}.registry_checksum_sha256=EXCLUDED.registry_checksum_sha256
-                  AND {MATRIX_SESSION_TABLE}.revision <= EXCLUDED.revision
-                RETURNING session_id
-                """,
-                (
-                    session_id,
-                    owner,
-                    record.get("schema_version"),
-                    registry.get("registry_id"),
-                    registry.get("version"),
-                    registry.get("checksum_sha256"),
-                    int(record.get("revision", 0)),
-                    str(record.get("status") or "active"),
-                    Jsonb(record),
-                    record.get("created_at"),
-                    record.get("updated_at"),
-                ),
-            )
+            else:
+                cur.execute(
+                    f"""
+                    UPDATE {MATRIX_SESSION_TABLE}
+                    SET revision=%s,
+                        status=%s,
+                        record=%s,
+                        updated_at=COALESCE(%s::timestamptz, now())
+                    WHERE session_id=%s::uuid
+                      AND owner=%s
+                      AND registry_id=%s
+                      AND registry_version=%s
+                      AND registry_checksum_sha256=%s
+                      AND revision <= %s
+                      AND COALESCE((record->>'persistence_version')::bigint, 0)=%s
+                    RETURNING session_id
+                    """,
+                    (
+                        revision,
+                        status,
+                        Jsonb(saved_record),
+                        record.get("updated_at"),
+                        session_id,
+                        owner,
+                        registry.get("registry_id"),
+                        registry.get("version"),
+                        registry.get("checksum_sha256"),
+                        revision,
+                        expected_version,
+                    ),
+                )
             row = cur.fetchone()
             if row is None:
                 raise MatrixSessionPersistenceError(
-                    "MATRIX_SESSION_WRITE_CONFLICT: immutable identity changed or stale revision attempted"
+                    "MATRIX_SESSION_WRITE_CONFLICT: immutable identity, stale revision, or stale persistence version"
                 )
             conn.commit()
+
+        record["persistence_version"] = saved_record["persistence_version"]
         return record
 
     def status(self) -> dict[str, Any]:
@@ -188,6 +271,8 @@ class PostgresMatrixSessionStore:
             "ready": ready,
             "schema": MATRIX_SESSION_TABLE,
             "schema_contract": inspection,
+            "optimistic_concurrency": True,
+            "legacy_zero_version_adoption": True,
             "error": None if ready else "MATRIX_SESSION_SCHEMA_NOT_READY",
         }
 
@@ -225,6 +310,8 @@ def matrix_session_persistence_status() -> dict[str, Any]:
             "mode": "postgres" if requested else "unavailable",
             "durable": requested,
             "ready": False,
+            "optimistic_concurrency": True,
+            "legacy_zero_version_adoption": True,
             "error": str(exc),
         }
     status["durable_requested"] = requested
