@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from .executor import ExecutionReceipt, ExecutionState
 from .program_models import CalyxProgramJob
@@ -121,9 +122,8 @@ def _normalized_actions(value: Any) -> set[str]:
                 "requested_capabilities",
                 "capabilities",
                 "actions",
-            }:
-                if isinstance(item, Sequence) and not isinstance(item, (str, bytes)):
-                    actions.update(_action_token(entry) for entry in item)
+            } and isinstance(item, Sequence) and not isinstance(item, (str, bytes)):
+                actions.update(_action_token(entry) for entry in item)
             actions.update(_normalized_actions(item))
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         for item in value:
@@ -146,11 +146,12 @@ def _direct_requested_action_flags(value: Any) -> set[str]:
     if isinstance(value, Mapping):
         for key, item in value.items():
             normalized_key = _action_token(key)
-            if normalized_key in recognized:
-                if item is True:
-                    requested.add(normalized_key)
-                elif isinstance(item, str) and item.strip().casefold() in _TRUE_ACTION_FLAGS:
-                    requested.add(normalized_key)
+            if normalized_key in recognized and (
+                item is True
+                or isinstance(item, str)
+                and item.strip().casefold() in _TRUE_ACTION_FLAGS
+            ):
+                requested.add(normalized_key)
             requested.update(_direct_requested_action_flags(item))
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         for item in value:
@@ -165,7 +166,7 @@ class GovernanceAwarePrioritySelector:
         inputs = _inputs(job)
         raw_priority = inputs.get("priority", 100)
         if isinstance(raw_priority, bool) or not isinstance(raw_priority, int):
-            raise ValueError("MISSION_PRIORITY_INTEGER_REQUIRED")
+            raise TypeError("MISSION_PRIORITY_INTEGER_REQUIRED")
         priority = max(0, min(1000, raw_priority))
         governance = inputs.get("governance") or {}
         if governance and not isinstance(governance, Mapping):
