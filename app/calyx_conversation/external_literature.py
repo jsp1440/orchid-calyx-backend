@@ -48,7 +48,11 @@ _DISTRACTOR_TERMS = (
 
 def _mentioned_genera(question: str) -> list[str]:
     normalized = question.casefold()
-    return [genus for genus in _ORCHID_GENERA if genus.casefold() in normalized]
+    return [
+        genus
+        for genus in _ORCHID_GENERA
+        if re.search(rf"\b{re.escape(genus.casefold())}\b", normalized)
+    ]
 
 
 def _active_clusters(question: str) -> list[tuple[str, tuple[str, ...]]]:
