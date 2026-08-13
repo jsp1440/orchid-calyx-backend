@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from runtime.matrix_identification_persistence_preflight import matrix_session_persistence_preflight
-from runtime.matrix_identification_registry_preflight import matrix_registry_persistence_preflight
-from runtime.matrix_identification_registry_store import matrix_registry_persistence_status
-from runtime.matrix_identification_session_store import matrix_session_persistence_status
+from runtime.matrix_identification_persistence_preflight import (
+    matrix_session_persistence_preflight,
+)
+from runtime.matrix_identification_registry_preflight import (
+    matrix_registry_persistence_preflight,
+)
+from runtime.matrix_identification_registry_store import (
+    matrix_registry_persistence_status,
+)
+from runtime.matrix_identification_session_store import (
+    matrix_session_persistence_status,
+)
 
 READINESS_SCHEMA_VERSION = "matrix-identification-durability-readiness/v1"
 

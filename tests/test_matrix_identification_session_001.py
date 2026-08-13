@@ -3,7 +3,10 @@ from pathlib import Path
 import pytest
 
 from runtime.matrix_identification import Candidate
-from runtime.matrix_identification_registry import RegistryCharacter, create_registry_version
+from runtime.matrix_identification_registry import (
+    RegistryCharacter,
+    create_registry_version,
+)
 from runtime.matrix_identification_session import (
     add_observation,
     create_session,

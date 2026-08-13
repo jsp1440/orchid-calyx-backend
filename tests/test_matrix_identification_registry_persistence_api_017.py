@@ -1,5 +1,5 @@
-from fastapi import HTTPException
 import pytest
+from fastapi import HTTPException
 
 import app.routers.matrix_identification_registry as registry_router
 

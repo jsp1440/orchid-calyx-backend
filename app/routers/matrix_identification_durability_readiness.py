@@ -7,7 +7,9 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from app.security import verify_owner_or_api_key
-from runtime.matrix_identification_durability_readiness import matrix_durability_readiness
+from runtime.matrix_identification_durability_readiness import (
+    matrix_durability_readiness,
+)
 
 router = APIRouter(
     prefix="/api/matrix-identification",
