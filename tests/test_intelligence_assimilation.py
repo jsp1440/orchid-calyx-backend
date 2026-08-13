@@ -3,6 +3,7 @@ from app.intake.intelligence import (
     assimilation_summary,
     canonical_email_text,
     intelligence_tasks,
+    knowledge_fingerprint,
     parse_external_intelligence,
 )
 
@@ -36,12 +37,7 @@ View Source →
 
 
 def test_twin_briefing_is_decomposed_once_per_canonical_section():
-    items = parse_external_intelligence(
-        TWIN_BRIEFING,
-        sender="twin@twin-mail.com",
-        message_id="twin-2026-08-13",
-    )
-
+    items = parse_external_intelligence(TWIN_BRIEFING, sender="twin@twin-mail.com", message_id="twin-2026-08-13")
     assert len(items) == 3
     assert [item["domain"] for item in items] == ["research", "technology", "funding"]
     assert items[0]["title"] == "Floral morphology changes behaviour of a shared orchid pollinator"
@@ -50,12 +46,29 @@ def test_twin_briefing_is_decomposed_once_per_canonical_section():
     assert all(item["lifecycle"] == "DISCOVERED" for item in items)
     assert all(item["knowledge_delta"] == "UNASSESSED" for item in items)
     assert all(item["verification_required"] is True for item in items)
+    assert all(item["knowledge_fingerprint"] for item in items)
+
+
+def test_repeated_daily_observations_share_knowledge_identity_but_not_observation_identity():
+    first = parse_external_intelligence(TWIN_BRIEFING, sender="twin@twin-mail.com", message_id="day-1")
+    second = parse_external_intelligence(TWIN_BRIEFING, sender="twin@twin-mail.com", message_id="day-2")
+    first_earth = next(item for item in first if "Earth Engine" in item["title"])
+    second_earth = next(item for item in second if "Earth Engine" in item["title"])
+
+    assert first_earth["knowledge_fingerprint"] == second_earth["knowledge_fingerprint"]
+    assert first_earth["intelligence_id"] != second_earth["intelligence_id"]
+
+
+def test_doi_provides_stable_canonical_identity_when_briefing_title_changes():
+    doi = "10.1234/example.2026.1"
+    assert knowledge_fingerprint("research", "First wording", [doi]) == knowledge_fingerprint(
+        "research", "Updated wording", [doi]
+    )
 
 
 def test_domain_routing_connects_earth_engine_to_atlas_without_replacing_atlas():
     items = parse_external_intelligence(TWIN_BRIEFING)
     earth_engine = next(item for item in items if "Earth Engine" in item["title"])
-
     assert "atlas" in earth_engine["canonical_destinations"]
     assert "source_registry" in earth_engine["canonical_destinations"]
     assert "EVALUATE_ATLAS_PROVIDER" in earth_engine["follow_up_tasks"]
@@ -67,7 +80,6 @@ def test_domain_routing_connects_earth_engine_to_atlas_without_replacing_atlas()
 def test_research_item_routes_pollinator_and_trait_evidence_to_canonical_domains():
     items = parse_external_intelligence(TWIN_BRIEFING)
     research = next(item for item in items if item["domain"] == "research")
-
     assert "orep" in research["canonical_destinations"]
     assert "pollinator_network" in research["canonical_destinations"]
     assert "traitbank" in research["canonical_destinations"]
@@ -77,7 +89,6 @@ def test_research_item_routes_pollinator_and_trait_evidence_to_canonical_domains
 def test_funding_item_opens_eligibility_work_but_not_submission_or_outreach():
     items = parse_external_intelligence(TWIN_BRIEFING)
     funding = next(item for item in items if item["domain"] == "funding")
-
     assert funding["canonical_destinations"] == ["grant_intelligence"]
     assert "CHECK_GRANT_ELIGIBILITY" in funding["follow_up_tasks"]
     assert "grant_submission" in funding["approval_required_for"]
@@ -93,7 +104,6 @@ def test_email_provenance_is_part_of_canonical_content_and_hashable_identity():
         message_id="abc123",
         received_at="2026-08-13T00:04:00-07:00",
     )
-
     assert "From: twin@twin-mail.com" in canonical
     assert "Message-ID: abc123" in canonical
     assert "Received-At: 2026-08-13T00:04:00-07:00" in canonical
@@ -104,7 +114,6 @@ def test_follow_up_tasks_use_existing_intake_task_contract_and_fail_closed():
     items = parse_external_intelligence(TWIN_BRIEFING)
     tasks = intelligence_tasks(items)
     summary = assimilation_summary(items)
-
     assert tasks
     assert any(task.task_type == "verify_primary_source" for task in tasks)
     assert any(task.task_type == "compare_existing_knowledge" for task in tasks)

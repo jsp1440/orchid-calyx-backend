@@ -14,7 +14,7 @@ from typing import Iterable
 
 from .schemas import IntakeTask
 
-INTELLIGENCE_PARSER_VERSION = "calyx-intelligence-intake-v1"
+INTELLIGENCE_PARSER_VERSION = "calyx-intelligence-intake-v2"
 
 SECTION_DOMAINS = {
     "Funding and Grants": "funding",
@@ -58,10 +58,7 @@ def canonical_email_text(
     received_at: str | None = None,
 ) -> str:
     """Return a stable email representation so provenance participates in hashing."""
-    headers = [
-        f"From: {sender.strip()}",
-        f"Subject: {subject.strip()}",
-    ]
+    headers = [f"From: {sender.strip()}", f"Subject: {subject.strip()}"]
     if message_id:
         headers.append(f"Message-ID: {message_id.strip()}")
     if received_at:
@@ -73,7 +70,6 @@ def canonical_email_text(
 def _destinations(domain: str, text: str) -> list[str]:
     lower = text.lower()
     destinations: set[str] = set()
-
     if domain == "funding":
         destinations.add("grant_intelligence")
     elif domain == "research":
@@ -97,14 +93,12 @@ def _destinations(domain: str, text: str) -> list[str]:
         destinations.add("traitbank")
     if any(marker in lower for marker in ("api", "dataset", "data source", "platform", "open-source", "open source")):
         destinations.add("source_registry")
-
     return sorted(destinations)
 
 
 def _follow_up_tasks(domain: str, text: str) -> list[str]:
     lower = text.lower()
     tasks = ["VERIFY_PRIMARY_SOURCE", "COMPARE_EXISTING_KNOWLEDGE"]
-
     if domain == "funding":
         tasks.append("CHECK_GRANT_ELIGIBILITY")
     if domain == "taxonomy":
@@ -117,13 +111,29 @@ def _follow_up_tasks(domain: str, text: str) -> list[str]:
         tasks.append("EVALUATE_ATLAS_PROVIDER")
     if any(marker in lower for marker in ("pollinator", "pollination", "mycorrhiz", "fungal", "fungus", "fungi")):
         tasks.append("EVALUATE_RELATIONSHIP_EVIDENCE")
-
     return list(dict.fromkeys(tasks))
 
 
+def _normalize(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip()).lower()
+
+
 def _fingerprint(*parts: str) -> str:
-    normalized = "\x1f".join(re.sub(r"\s+", " ", part.strip()).lower() for part in parts)
+    normalized = "\x1f".join(_normalize(part) for part in parts)
     return sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def knowledge_fingerprint(domain: str, title: str, dois: list[str] | None = None) -> str:
+    """Stable identity across repeated observations of the same intelligence item.
+
+    DOI is preferred when present because descriptive briefing text can change.
+    Otherwise the normalized canonical domain + title provide conservative
+    deduplication without conflating unrelated items merely because details share
+    keywords.
+    """
+    normalized_dois = sorted({_normalize(doi) for doi in (dois or []) if doi.strip()})
+    identity = "|".join(normalized_dois) if normalized_dois else _normalize(title)
+    return _fingerprint(domain, identity)
 
 
 def parse_external_intelligence(
@@ -132,11 +142,7 @@ def parse_external_intelligence(
     sender: str = "",
     message_id: str = "",
 ) -> list[dict[str, object]]:
-    """Parse a sectioned briefing into deterministic candidate intelligence items.
-
-    The parser intentionally ignores Executive Summary priority repetition and
-    only starts collecting items after a recognized canonical section heading.
-    """
+    """Parse a sectioned briefing into deterministic candidate intelligence items."""
     lines = [line.strip() for line in body.splitlines()]
     items: list[dict[str, object]] = []
     current_domain: str | None = None
@@ -158,15 +164,18 @@ def parse_external_intelligence(
         dois = sorted(set(match.group(0).rstrip(".,;") for match in DOI_RE.finditer(full_text)))
         destinations = _destinations(current_domain, full_text)
         follow_up = _follow_up_tasks(current_domain, full_text)
-        item_id = _fingerprint(sender, message_id, current_domain, current_title, detail)
+        observation_id = _fingerprint(sender, message_id, current_domain, current_title, detail)
+        canonical_id = knowledge_fingerprint(current_domain, current_title, dois)
 
         items.append(
             {
-                "intelligence_id": item_id,
+                "intelligence_id": observation_id,
+                "knowledge_fingerprint": canonical_id,
                 "lifecycle": "DISCOVERED",
                 "knowledge_delta": "UNASSESSED",
                 "domain": current_domain,
                 "title": current_title,
+                "normalized_title": _normalize(current_title),
                 "priority": (current_priority or "MEDIUM").upper(),
                 "detail": detail,
                 "source_urls": urls,
@@ -192,14 +201,12 @@ def parse_external_intelligence(
             continue
         if current_domain is None:
             continue
-
         priority_match = PRIORITY_RE.search(line)
         if priority_match:
             flush()
             current_priority = priority_match.group(1)
             current_title = PRIORITY_RE.sub("", line).strip()
             continue
-
         if current_title is not None:
             buffer.append(line)
 
@@ -235,16 +242,8 @@ def intelligence_tasks(items: Iterable[dict[str, object]]) -> list[IntakeTask]:
 
 
 def assimilation_summary(items: list[dict[str, object]]) -> dict[str, object]:
-    destinations = sorted(
-        {
-            str(destination)
-            for item in items
-            for destination in item.get("canonical_destinations", [])
-        }
-    )
-    task_types = sorted(
-        {str(task) for item in items for task in item.get("follow_up_tasks", [])}
-    )
+    destinations = sorted({str(destination) for item in items for destination in item.get("canonical_destinations", [])})
+    task_types = sorted({str(task) for item in items for task in item.get("follow_up_tasks", [])})
     return {
         "parser_version": INTELLIGENCE_PARSER_VERSION,
         "items_discovered": len(items),
