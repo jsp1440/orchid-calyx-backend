@@ -1,0 +1,184 @@
+name: Calyx Intelligence Production Activation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "migrations/108_intelligence_assimilation_ledger.sql"
+      - "app/intake/intelligence.py"
+      - "app/intake/intelligence_repository.py"
+      - "app/intake/routes.py"
+      - ".github/workflows/calyx-intelligence-production-activation.yml"
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Recovery runs only: type APPLY CALYX INTELLIGENCE MIGRATION"
+        required: true
+        type: string
+      run_smoke_test:
+        description: "Verify protected intelligence endpoint after deployment"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calyx-intelligence-production-activation
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply intelligence ledger migration
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Validate invocation policy
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$CONFIRMATION" != "APPLY CALYX INTELLIGENCE MIGRATION" ]]; then
+            echo "Manual recovery runs require the exact confirmation phrase."
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            echo "Automatic safe-path activation triggered by an approved change merged to main."
+          fi
+
+      - name: Check required database secret
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          test -n "$DATABASE_URL" || { echo "DATABASE_URL secret is not configured"; exit 1; }
+
+      - name: Check out triggering main revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Apply intelligence ledger migration transactionally
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          psql "$DATABASE_URL" \
+            --set=ON_ERROR_STOP=1 \
+            --single-transaction \
+            --file=migrations/108_intelligence_assimilation_ledger.sql
+
+      - name: Verify intelligence tables and governance defaults
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          actual=$(psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --tuples-only --no-align <<'SQL'
+          SELECT count(*)
+          FROM information_schema.tables
+          WHERE table_schema = 'oc_intake'
+            AND table_name IN (
+              'intelligence_items',
+              'intelligence_observations',
+              'intelligence_events'
+            );
+          SQL
+          )
+          test "$actual" = "3" || { echo "Expected 3 intelligence tables; found $actual"; exit 1; }
+
+          defaults=$(psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --tuples-only --no-align <<'SQL'
+          SELECT count(*)
+          FROM information_schema.columns
+          WHERE table_schema='oc_intake'
+            AND table_name='intelligence_items'
+            AND column_name IN ('canonical_promotion_prohibited','external_contact_prohibited')
+            AND column_default = 'true';
+          SQL
+          )
+          test "$defaults" = "2" || { echo "Intelligence governance defaults are not fail-closed"; exit 1; }
+
+      - name: Record migration result
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Calyx Intelligence Assimilation"
+            echo "- Event: ${{ github.event_name }}"
+            echo "- Revision: \`${{ github.sha }}\`"
+            echo "- Ledger migration: transactional and idempotent"
+            echo "- Canonical promotion: prohibited by default"
+            echo "- External contact: prohibited by default"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  smoke:
+    name: Verify deployed intelligence endpoint
+    if: ${{ github.event_name == 'push' || inputs.run_smoke_test }}
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check required endpoint secrets
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+          CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
+        run: |
+          test -n "$CALYX_BACKEND_URL" || { echo "CALYX_BACKEND_URL secret is not configured"; exit 1; }
+          test -n "$CALYX_API_KEY" || { echo "CALYX_API_KEY secret is not configured"; exit 1; }
+
+      - name: Wait for deployed main to become healthy
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+        run: |
+          base="${CALYX_BACKEND_URL%/}"
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "$base/" >/dev/null; then
+              exit 0
+            fi
+            echo "Backend not ready yet (attempt $attempt/30)"
+            sleep 10
+          done
+          echo "Backend did not become healthy in time"
+          exit 1
+
+      - name: Verify protected intelligence index read-only
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+          CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
+        run: |
+          base="${CALYX_BACKEND_URL%/}"
+          curl --fail --silent --show-error \
+            -H "X-API-Key: $CALYX_API_KEY" \
+            "$base/api/intake/intelligence?limit=1" \
+            | tee /tmp/intelligence.json \
+            | python -m json.tool
+          python - <<'PY'
+          import json
+          payload = json.load(open('/tmp/intelligence.json'))
+          assert payload['canonical_graph_mutated'] is False
+          assert payload['external_contacted'] is False
+          assert isinstance(payload['items'], list)
+          PY
+
+      - name: Record terminal outcome
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## DELIVERED"
+            echo "- Intelligence ledger tables verified"
+            echo "- Protected intelligence endpoint verified read-only"
+            echo "- No external intelligence email was fabricated or ingested by this activation"
+            echo "- No graph mutation, outreach, grant submission, taxonomy change, or publication occurred"
+          } >> "$GITHUB_STEP_SUMMARY"
