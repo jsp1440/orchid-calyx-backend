@@ -88,11 +88,12 @@ def enqueue_due_intelligence_jobs(limit: int = 50) -> dict[str, Any]:
                     SELECT EXISTS(
                         SELECT 1 FROM oc_intake.intelligence_verifications
                         WHERE intelligence_item_id=%s AND outcome='SOURCE_CONFIRMED'
-                    )
+                    ) AS source_confirmed
                     """,
                     (item_id,),
                 )
-                if bool(cur.fetchone()[0]) and item["lifecycle"] != "ROUTED":
+                existence = cur.fetchone()
+                if bool(existence["source_confirmed"]) and item["lifecycle"] != "ROUTED":
                     name = f"calyx_intelligence_route_{item_id}"
                     if _insert(cur, name=name, dedup=f"intel:route:{item_id}", item_id=item_id, stage="route"):
                         created.append(name)
