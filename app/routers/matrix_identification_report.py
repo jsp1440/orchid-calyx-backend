@@ -8,7 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
-from runtime.matrix_identification_report import finalize_report, get_report, list_reports
+from runtime.matrix_identification_report import (
+    finalize_report,
+    get_report,
+    list_reports,
+)
 
 router = APIRouter(
     prefix="/api/matrix-identification/sessions",
