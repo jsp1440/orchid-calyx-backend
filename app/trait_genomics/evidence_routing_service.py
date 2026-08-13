@@ -245,6 +245,8 @@ class LiteratureEvidenceRoutingService:
                         "gene_annotation_count": len(annotations),
                         "strict_molecular_candidate_count": strict_count,
                         "open_access": article.get("isOpenAccess"),
+                        "secondary_routes": list(classification.secondary_routes),
+                        "primary_route_title_aware": True,
                     },
                 }
                 routed_rows.append(row)
@@ -267,8 +269,9 @@ class LiteratureEvidenceRoutingService:
             "review_required": True,
             "policy": (
                 "Routing preserves useful literature in evidence-specific review channels. "
-                "A route is descriptive only and never upgrades a paper to accepted molecular "
-                "association evidence or a causal claim."
+                "Primary routes are title-aware and secondary evidence domains are preserved "
+                "in provenance. No route upgrades a paper to accepted molecular association "
+                "evidence or a causal claim."
             ),
         }
         if hasattr(self.client, "retrieval_diagnostics"):
