@@ -1,4 +1,6 @@
-from runtime.matrix_identification_durability_readiness import compose_matrix_durability_readiness
+from runtime.matrix_identification_durability_readiness import (
+    compose_matrix_durability_readiness,
+)
 
 
 def _session_preflight(*, ready: bool, blockers=None):
