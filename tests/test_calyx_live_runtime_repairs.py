@@ -3,7 +3,8 @@ from __future__ import annotations
 import inspect
 
 import pytest
-from sqlalchemy import create_engine, inspect as sqlalchemy_inspect
+from sqlalchemy import create_engine
+from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import Session
 
 from app.calyx_conversation.provider_runtime import OpenAIRuntimeResponsesProvider
