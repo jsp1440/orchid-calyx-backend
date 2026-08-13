@@ -11,7 +11,10 @@ from psycopg.types.json import Jsonb
 
 from .adaptive_retrieval import AdaptiveEuropePMCClient
 from .evidence_router import ScientificEvidenceRouter
-from .molecular_harvester import EuropePMCMolecularHarvester, MolecularHarvestTarget
+from .molecular_harvester import (
+    EuropePMCMolecularHarvester,
+    MolecularHarvestTarget,
+)
 
 
 ROUTING_DDL = """
