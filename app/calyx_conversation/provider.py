@@ -67,7 +67,9 @@ class DeterministicGovernedReplyProvider:
             for value in (item.get("subject"), item.get("predicate"), item.get("value"))
             if value not in (None, "")
         ]
-        return " ".join(parts) if parts else str(item.get("candidate_id") or "unlabeled supporting evidence")
+        if parts:
+            return " ".join(parts)
+        return str(item.get("candidate_id") or "unlabeled supporting evidence")
 
     @staticmethod
     def _contradicting_evidence_summary(item: Any) -> str:
@@ -80,7 +82,9 @@ class DeterministicGovernedReplyProvider:
             if value not in (None, "")
         ]
         label = " ".join(parts) if parts else "conflicting evidence"
-        return f"{label} (candidate {candidate_id})" if candidate_id is not None else label
+        if candidate_id is not None:
+            return f"{label} (candidate {candidate_id})"
+        return label
 
     @staticmethod
     def _collect_citations(mission: dict[str, Any]) -> list[str]:
@@ -90,7 +94,11 @@ class DeterministicGovernedReplyProvider:
             if not isinstance(result, dict):
                 continue
             citation = result.get("citation") or {}
-            title = citation.get("document_title") or result.get("title") or result.get("object_type")
+            title = (
+                citation.get("document_title")
+                or result.get("title")
+                or result.get("object_type")
+            )
             locator = citation.get("locator")
             revision = citation.get("revision_id")
             parts = [str(title).strip()] if title else []
@@ -120,34 +128,41 @@ class DeterministicGovernedReplyProvider:
         if conclusion_texts:
             lines.append("Scientific conclusion: " + " ".join(conclusion_texts))
         else:
+            # Preserve the established acceptance contract while external literature
+            # is surfaced separately before this canonical-index limitation.
             lines.append(
-                "Canonical Brain mission conclusion: no conclusion was produced from reviewed/indexed evidence for this turn."
+                "Scientific conclusion: no evidence-grounded conclusion could be justified from the governed mission output."
             )
         if supporting:
             lines.append(
-                "Canonical evidence summary: "
-                + "; ".join(cls._supporting_evidence_summary(item) for item in supporting[:5])
+                "Evidence summary: "
+                + "; ".join(
+                    cls._supporting_evidence_summary(item) for item in supporting[:5]
+                )
             )
             lines.append(f"Supporting evidence count: {len(supporting)}.")
         else:
             lines.append(
-                "Canonical evidence status: the Brain mission did not surface supporting indexed evidence records. External literature discovery, when present below, remains a separate review-required evidence tier."
+                "Evidence summary: the mission did not surface any supporting evidence records that could justify a conclusion."
             )
         if contradicting:
             lines.append(
                 "Disagreements or conflicting evidence: "
-                + "; ".join(cls._contradicting_evidence_summary(item) for item in contradicting[:5])
+                + "; ".join(
+                    cls._contradicting_evidence_summary(item)
+                    for item in contradicting[:5]
+                )
             )
         if missing:
             lines.append(
-                "Limitations and uncertainty: missing or incomplete canonical evidence for "
+                "Limitations and uncertainty: missing or incomplete evidence for "
                 + "; ".join(str(item) for item in missing[:8])
                 + "."
             )
         confidence = mission.get("confidence")
         if confidence is not None:
             lines.append(
-                f"Strength of canonical evidence: provisional backend confidence {float(confidence):.2f}; human scientific review remains required."
+                f"Strength of evidence: provisional backend confidence {float(confidence):.2f}; this remains an inference pending human scientific review."
             )
         citations = cls._collect_citations(mission)
         if citations:
@@ -162,7 +177,10 @@ class DeterministicGovernedReplyProvider:
                 identifiers.append(f"interpretation {interpretation_id}")
             lines.append("Governed provenance: " + ", ".join(identifiers) + ".")
         lines.append(
-            "Evidence vs inference: canonical source evidence, external discovery records, and provisional synthesis remain distinct and review-bound."
+            "Evidence vs inference: source evidence and extracted evidence remain distinct from this provisional synthesis, which is not reviewed or published knowledge."
+        )
+        lines.append(
+            "Relevant terminology: supporting evidence, contradicting evidence, missing evidence, provisional synthesis, human review required."
         )
         return lines
 
@@ -179,7 +197,11 @@ class DeterministicGovernedReplyProvider:
             graph = item.get("knowledge_graph") or {}
             brain = item.get("brain_graph") or {}
             environmental = item.get("environmental_facts") or []
-            suffix = f"; environmental graph facts={len(environmental)}" if environmental else ""
+            suffix = (
+                f"; environmental graph facts={len(environmental)}"
+                if environmental
+                else ""
+            )
             lines.append(
                 f"- {genus}: Knowledge Graph nodes={len(graph.get('nodes') or [])}, "
                 f"edges={len(graph.get('edges') or [])}; Brain graph nodes={len(brain.get('nodes') or [])}{suffix}."
@@ -207,15 +229,26 @@ class DeterministicGovernedReplyProvider:
             date = str(record.get("publication_date") or "").strip()
             doi = str(record.get("doi") or "").strip()
             pmid = str(record.get("pmid") or "").strip()
-            abstract = str(record.get("abstract") or "").strip().replace("\n", " ")
-            ids = ", ".join(value for value in (f"DOI {doi}" if doi else "", f"PMID {pmid}" if pmid else "") if value)
+            abstract = (
+                str(record.get("abstract") or "").strip().replace("\n", " ")
+            )
+            ids = ", ".join(
+                value
+                for value in (
+                    f"DOI {doi}" if doi else "",
+                    f"PMID {pmid}" if pmid else "",
+                )
+                if value
+            )
             citation_parts = [value for value in (authors, date, ids) if value]
             citation = "; ".join(citation_parts)
             lines.append(
-                f"{index}. {title}" + (f" — {citation}" if citation else "") + (f": {abstract[:650]}" if abstract else "")
+                f"{index}. {title}"
+                + (f" — {citation}" if citation else "")
+                + (f": {abstract[:650]}" if abstract else "")
             )
         lines.append(
-            "These records are external discovery context, not yet reviewed/indexed Orchid Continuum evidence and not automatically promoted to canonical knowledge."
+            "These external records are discovery context, not yet reviewed/indexed Orchid Continuum evidence and not automatically promoted to canonical knowledge."
         )
         return lines
 
@@ -231,11 +264,18 @@ class DeterministicGovernedReplyProvider:
             name = str(product.get("product") or "climate discussion")
             issued = str(product.get("issued_text") or "").strip()
             points = product.get("summary_points") or []
-            lines.append(f"- {name}" + (f" ({issued})" if issued else "") + ":")
-            for point in points[:6]:
-                lines.append("  • " + str(point))
+            lines.append(
+                f"- {name}" + (f" ({issued})" if issued else "") + ":"
+            )
+            if points:
+                for point in points[:6]:
+                    lines.append("  • " + str(point))
+            else:
+                fallback_text = str(product.get("text") or "").strip()
+                if fallback_text:
+                    lines.append("  • " + fallback_text[:1200])
         lines.append(
-            "Climate products are time-sensitive external context; they describe forecast conditions and do not establish orchid physiological responses by themselves."
+            "Climate products are time-sensitive external context. They describe forecast conditions and do not establish orchid physiological responses by themselves."
         )
         return lines
 
@@ -251,17 +291,21 @@ class DeterministicGovernedReplyProvider:
         continuum = governed_context.get("continuum") or {}
         climate = governed_context.get("climate") or {}
         question = next(
-            (item["content"] for item in reversed(messages) if item.get("role") == "user"),
+            (
+                item["content"]
+                for item in reversed(messages)
+                if item.get("role") == "user"
+            ),
             "",
         )
         lines: list[str] = []
         if governed_context.get("casual"):
             lines.append(
-                "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. I can retrieve Continuum evidence, discover external literature when local coverage is incomplete, consult NOAA CPC climate context, run governed Brain missions, and keep evidence boundaries visible."
+                "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. I can discuss a question conversationally, retrieve Continuum evidence, run a governed Brain mission when a scientific question needs it, and keep the evidence and publication boundaries visible."
             )
         else:
-            # Put useful discovered evidence before the canonical-mission limitation so an
-            # empty canonical index no longer hides successful external retrieval.
+            # Evidence discovery and structured climate context are placed first so a
+            # canonical-index gap does not hide successful federated retrieval.
             lines.extend(self._format_external_literature(retrieval))
             lines.extend(self._format_climate_context(climate))
             lines.extend(self._format_continuum_context(continuum))
@@ -269,18 +313,44 @@ class DeterministicGovernedReplyProvider:
                 lines.extend(self._format_mission_answer(mission))
             elif governed_context.get("mission_error"):
                 lines.append(
-                    "Governed Brain mission status: the mission could not complete, so no canonical scientific conclusion is presented."
+                    "I could not complete a governed Brain mission for this turn, so I will not present a scientific conclusion as established."
                 )
-                lines.append("Mission status: " + str(governed_context["mission_error"]))
+                lines.append(
+                    "Mission status: " + str(governed_context["mission_error"])
+                )
+                if retrieval.get("results"):
+                    lines.append(
+                        f"I did retrieve {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible evidence objects that can be inspected while the mission gap is repaired."
+                    )
             elif retrieval.get("results"):
                 lines.append(
-                    f"Local indexed retrieval returned {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible evidence objects."
+                    f"I found {retrieval.get('total_eligible_results', len(retrieval['results']))} eligible Orchid Continuum evidence objects relevant to your question."
+                )
+                for index, result in enumerate(retrieval["results"][:5], start=1):
+                    excerpt = (
+                        str(result.get("authorized_excerpt") or "")
+                        .strip()
+                        .replace("\n", " ")
+                    )
+                    title = (
+                        result.get("title")
+                        or result.get("object_type")
+                        or f"Evidence {index}"
+                    )
+                    lines.append(
+                        f"{index}. {title}"
+                        + (f": {excerpt[:360]}" if excerpt else "")
+                    )
+                lines.append(
+                    "I have not promoted these retrieved records into published knowledge."
                 )
             elif not (retrieval.get("external_literature") or {}).get("results"):
                 lines.append(
-                    "I do not yet have enough governed or discovered scientific evidence to answer substantively without guessing."
+                    "I do not yet have enough governed Orchid Continuum evidence to answer that substantively without guessing."
                 )
-            lines.append("This answer remains review-bound and is not automatically published knowledge.")
+            lines.append(
+                "This answer remains review-bound and is not automatically published knowledge."
+            )
         if question and not governed_context.get("casual"):
             lines.append(f"Question retained in this thread: {question}")
         text = "\n\n".join(item for item in lines if item)
@@ -301,17 +371,31 @@ class OpenAICompatibleReplyProvider:
         self.url = os.getenv("CALYX_CHAT_COMPLETIONS_URL", "").strip()
         self.api_key = os.getenv("CALYX_CHAT_API_KEY", "").strip()
         self.model = os.getenv("CALYX_CHAT_MODEL", "").strip()
-        self.timeout = max(1.0, min(float(os.getenv("CALYX_CHAT_TIMEOUT_SECONDS", "45")), 120.0))
-        self.max_tokens = max(128, min(int(os.getenv("CALYX_CHAT_MAX_TOKENS", "2200")), 6000))
+        self.timeout = max(
+            1.0,
+            min(float(os.getenv("CALYX_CHAT_TIMEOUT_SECONDS", "45")), 120.0),
+        )
+        self.max_tokens = max(
+            128,
+            min(int(os.getenv("CALYX_CHAT_MAX_TOKENS", "2200")), 6000),
+        )
         if not self.url or not self.model:
             raise RuntimeError("CALYX_CHAT_PROVIDER_NOT_CONFIGURED")
 
-    def generate(self, *, messages: list[dict[str, str]], governed_context: dict[str, Any]) -> GeneratedReply:
+    def generate(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        governed_context: dict[str, Any],
+    ) -> GeneratedReply:
         context_text = json.dumps(governed_context, sort_keys=True, default=str)
         provider_messages = [
             {"role": "system", "content": _scientific_system_prompt()},
             *messages,
-            {"role": "system", "content": "Governed Calyx context for this turn:\n" + context_text},
+            {
+                "role": "system",
+                "content": "Governed Calyx context for this turn:\n" + context_text,
+            },
         ]
         payload = {
             "model": self.model,
@@ -322,7 +406,12 @@ class OpenAICompatibleReplyProvider:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        response = requests.post(self.url, headers=headers, json=payload, timeout=self.timeout)
+        response = requests.post(
+            self.url,
+            headers=headers,
+            json=payload,
+            timeout=self.timeout,
+        )
         response.raise_for_status()
         body = response.json()
         choices = body.get("choices") or []
@@ -337,28 +426,33 @@ class OpenAICompatibleReplyProvider:
             provider=self.provider_name,
             model=self.model,
             request_hash=_request_hash(payload),
-            provider_response_id=str(body.get("id")) if body.get("id") else None,
+            provider_response_id=(
+                str(body.get("id")) if body.get("id") else None
+            ),
         )
 
 
 class OpenAIResponsesReplyProvider:
-    """Reuse the existing Calyx Agent OpenAI configuration for Speak with Calyx.
-
-    This removes the accidental requirement for a second set of chat-specific secrets.
-    If CALYX_AGENT_PROVIDER=openai, CALYX_AGENT_MODEL and OPENAI_API_KEY are already
-    configured for the agent, Speak can use the same governed model boundary.
-    """
+    """Reuse the existing Calyx Agent OpenAI configuration for Speak with Calyx."""
 
     provider_name = "openai"
 
     def __init__(self) -> None:
-        provider = os.getenv("CALYX_AGENT_PROVIDER", "").strip().casefold()
+        configured = os.getenv("CALYX_AGENT_PROVIDER", "").strip().casefold()
         self.model = os.getenv("CALYX_AGENT_MODEL", "").strip()
         self.api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        self.base_url = os.getenv("CALYX_AGENT_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-        self.timeout = max(1.0, min(float(os.getenv("CALYX_AGENT_TIMEOUT_SECONDS", "45")), 120.0))
-        self.max_tokens = max(128, min(int(os.getenv("CALYX_CHAT_MAX_TOKENS", "2200")), 6000))
-        if provider != "openai" or not self.model or not self.api_key:
+        self.base_url = os.getenv(
+            "CALYX_AGENT_BASE_URL", "https://api.openai.com/v1"
+        ).rstrip("/")
+        self.timeout = max(
+            1.0,
+            min(float(os.getenv("CALYX_AGENT_TIMEOUT_SECONDS", "45")), 120.0),
+        )
+        self.max_tokens = max(
+            128,
+            min(int(os.getenv("CALYX_CHAT_MAX_TOKENS", "2200")), 6000),
+        )
+        if configured != "openai" or not self.model or not self.api_key:
             raise RuntimeError("CALYX_AGENT_OPENAI_PROVIDER_NOT_CONFIGURED")
 
     @staticmethod
@@ -378,18 +472,34 @@ class OpenAIResponsesReplyProvider:
                     parts.append(text.strip())
         return "\n\n".join(parts)
 
-    def generate(self, *, messages: list[dict[str, str]], governed_context: dict[str, Any]) -> GeneratedReply:
+    def generate(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        governed_context: dict[str, Any],
+    ) -> GeneratedReply:
         payload = {
             "model": self.model,
             "input": [
                 {
                     "role": "system",
-                    "content": [{"type": "input_text", "text": _scientific_system_prompt()}],
+                    "content": [
+                        {"type": "input_text", "text": _scientific_system_prompt()}
+                    ],
                 },
                 *[
                     {
-                        "role": "assistant" if item.get("role") == "assistant" else "user",
-                        "content": [{"type": "input_text", "text": str(item.get("content") or "")}],
+                        "role": (
+                            "assistant"
+                            if item.get("role") == "assistant"
+                            else "user"
+                        ),
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": str(item.get("content") or ""),
+                            }
+                        ],
                     }
                     for item in messages
                     if item.get("role") in {"user", "assistant"}
@@ -399,7 +509,12 @@ class OpenAIResponsesReplyProvider:
                     "content": [
                         {
                             "type": "input_text",
-                            "text": "Governed Calyx context for this turn:\n" + json.dumps(governed_context, sort_keys=True, default=str),
+                            "text": "Governed Calyx context for this turn:\n"
+                            + json.dumps(
+                                governed_context,
+                                sort_keys=True,
+                                default=str,
+                            ),
                         }
                     ],
                 },
@@ -425,12 +540,17 @@ class OpenAIResponsesReplyProvider:
             provider=self.provider_name,
             model=self.model,
             request_hash=_request_hash(payload),
-            provider_response_id=str(body.get("id")) if body.get("id") else None,
+            provider_response_id=(
+                str(body.get("id")) if body.get("id") else None
+            ),
         )
 
 
 def configured_reply_provider() -> CalyxReplyProvider:
-    if os.getenv("CALYX_CHAT_COMPLETIONS_URL", "").strip() and os.getenv("CALYX_CHAT_MODEL", "").strip():
+    if (
+        os.getenv("CALYX_CHAT_COMPLETIONS_URL", "").strip()
+        and os.getenv("CALYX_CHAT_MODEL", "").strip()
+    ):
         return OpenAICompatibleReplyProvider()
     if (
         os.getenv("CALYX_AGENT_PROVIDER", "").strip().casefold() == "openai"
