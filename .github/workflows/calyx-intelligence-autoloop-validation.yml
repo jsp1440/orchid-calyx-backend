@@ -5,6 +5,7 @@ on:
     paths:
       - "app/intake/intelligence_autonomy.py"
       - "runtime/autonomous_runner.py"
+      - "runtime/runtime_engine.py"
       - ".github/workflows/calyx-intelligence-autoloop-validation.yml"
   workflow_dispatch:
 
@@ -42,12 +43,13 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/076a_universal_intake.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/108_intelligence_assimilation_ledger.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/109_intelligence_verification_routing.sql
-      - name: Exercise intelligence autoloop
+      - name: Exercise production RuntimeEngine intelligence path
         run: |
           python - <<'PY'
           import os
           import psycopg
-          from runtime.autonomous_runner import execute_all_pending_jobs
+          from runtime.autonomous_runner import enqueue_default_jobs, execute_next_job
+          from runtime.runtime_engine import RuntimeEngine
 
           db = os.environ['DATABASE_URL']
           with psycopg.connect(db) as conn:
@@ -74,11 +76,31 @@ jobs:
                             'SOURCE_CONFIRMED',200,'AUTHORITATIVE',%s,'{\"claim_verified\":false}'::jsonb,'test')
                   """, (route_id, 'a'*64))
 
-          result = execute_all_pending_jobs(max_jobs=10)
-          assert result['failed'] == 0, result
-          names = [row.get('job_name') for row in result['results']]
-          assert f'calyx_intelligence_compare_{compare_id}' in names, names
-          assert f'calyx_intelligence_route_{route_id}' in names, names
+          engine = RuntimeEngine(
+              heartbeat=lambda: {'overall_status': 'ok'},
+              enqueue_jobs=enqueue_default_jobs,
+              execute_jobs=execute_next_job,
+              enabled=True,
+              interval_seconds=5,
+          )
+
+          seen = []
+          for _ in range(10):
+              cycle = engine.run_cycle()
+              assert cycle['status'] == 'completed', cycle
+              enqueue = cycle['enqueue']
+              intel = enqueue.get('intelligence_enqueue', {})
+              assert intel.get('external_retrieval_performed') is False
+              assert intel.get('external_contacted') is False
+              assert intel.get('canonical_graph_mutated') is False
+              executed = cycle['execute']
+              if executed.get('job_name'):
+                  seen.append(executed['job_name'])
+              if f'calyx_intelligence_compare_{compare_id}' in seen and f'calyx_intelligence_route_{route_id}' in seen:
+                  break
+
+          assert f'calyx_intelligence_compare_{compare_id}' in seen, seen
+          assert f'calyx_intelligence_route_{route_id}' in seen, seen
 
           with psycopg.connect(db) as conn:
               with conn.cursor() as cur:
