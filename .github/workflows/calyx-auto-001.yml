@@ -6,6 +6,8 @@ on:
       - 'app/calyx_orchestrator/auto_mission.py'
       - 'app/calyx_orchestrator/auto_mission_models.py'
       - 'app/calyx_orchestrator/auto_mission_service.py'
+      - 'app/calyx_orchestrator/program_models.py'
+      - 'app/calyx_orchestrator/program_repository.py'
       - 'runtime/calyx_auto_worker.py'
       - 'migrations/20260811_calyx_auto_001.sql'
       - 'tests/test_calyx_auto_001.py'
@@ -14,11 +16,13 @@ on:
       - 'tests/test_calyx_auto_001_receipt_binding.py'
       - '.github/workflows/calyx-auto-001.yml'
   push:
-    branches: [main, feature/calyx-auto-001-current-main-r3]
+    branches: [main]
     paths:
       - 'app/calyx_orchestrator/auto_mission.py'
       - 'app/calyx_orchestrator/auto_mission_models.py'
       - 'app/calyx_orchestrator/auto_mission_service.py'
+      - 'app/calyx_orchestrator/program_models.py'
+      - 'app/calyx_orchestrator/program_repository.py'
       - 'runtime/calyx_auto_worker.py'
       - 'migrations/20260811_calyx_auto_001.sql'
       - 'tests/test_calyx_auto_001.py'
@@ -66,6 +70,8 @@ jobs:
           app/calyx_orchestrator/auto_mission.py
           app/calyx_orchestrator/auto_mission_models.py
           app/calyx_orchestrator/auto_mission_service.py
+          app/calyx_orchestrator/program_models.py
+          app/calyx_orchestrator/program_repository.py
           runtime/calyx_auto_worker.py
           tests/test_calyx_auto_001.py
           tests/test_calyx_auto_001_unsupported_role.py
@@ -82,27 +88,33 @@ jobs:
           tests/test_calyx_engineering_program_worker.py
           tests/test_calyx_engineering_program_persistence.py
       - name: Ruff
+        if: ${{ always() }}
         run: >-
           ruff check
           app/calyx_orchestrator/auto_mission.py
           app/calyx_orchestrator/auto_mission_models.py
           app/calyx_orchestrator/auto_mission_service.py
+          app/calyx_orchestrator/program_models.py
+          app/calyx_orchestrator/program_repository.py
           runtime/calyx_auto_worker.py
           tests/test_calyx_auto_001.py
           tests/test_calyx_auto_001_unsupported_role.py
           tests/test_calyx_auto_001_action_aliases.py
           tests/test_calyx_auto_001_receipt_binding.py
       - name: Migration invariants
+        if: ${{ always() }}
         run: |
           grep -q 'calyx_program_validation_events' migrations/20260811_calyx_auto_001.sql
           grep -q 'calyx_brain_completion_writebacks' migrations/20260811_calyx_auto_001.sql
           grep -q 'uq_calyx_brain_writeback_program_job' migrations/20260811_calyx_auto_001.sql
           grep -q 'ON DELETE CASCADE' migrations/20260811_calyx_auto_001.sql
       - name: Permanent non-authority
+        if: ${{ always() }}
         run: |
           grep -q '"automatic_merge": False' app/calyx_orchestrator/auto_mission_service.py
           grep -q '"automatic_deployment": False' app/calyx_orchestrator/auto_mission_service.py
           grep -q '"automatic_publication": False' app/calyx_orchestrator/auto_mission_service.py
           grep -q '"production_knowledge_graph_mutation": False' app/calyx_orchestrator/auto_mission_service.py
       - name: Diff hygiene
+        if: ${{ always() }}
         run: git diff --check HEAD^ HEAD
