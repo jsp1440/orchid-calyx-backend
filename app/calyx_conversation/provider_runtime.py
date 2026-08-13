@@ -9,7 +9,6 @@ import requests
 
 from .provider import (
     CalyxReplyProvider,
-    DeterministicGovernedReplyProvider,
     GeneratedReply,
     _request_hash,
     _scientific_system_prompt,
