@@ -9,6 +9,7 @@ from .routes import (
     run_brain_query,
     run_graph_context,
 )
+from .semantic_context import build_semantic_context
 
 # Conservative stop-list for sentence-initial/common capitalized words that are not botanical genera.
 _NON_GENUS_TOKENS = {
@@ -112,16 +113,26 @@ def _environmental_facts(graph: dict[str, Any], *, limit: int = 20) -> list[dict
 
 
 def build_continuum_context(message: str, *, max_genera: int = 12) -> dict[str, Any]:
-    """Resolve taxa mentioned in a Calyx turn and attach read-only Continuum context.
+    """Attach read-only graph, Brain, environment, and semantic concept context.
 
     Failure of one source never blocks the turn. The returned object is safe to place
-    directly in governed_context: it contains only canonical graph/Brain reads plus
-    explicit diagnostics. No mutation or publication occurs here.
+    directly in governed_context. Approved Lexicon concepts are a semantic projection
+    only; this function never creates, promotes, revises, publishes, or mutates them.
     """
 
+    semantic = build_semantic_context(message)
     candidates = candidate_genera(message, limit=max_genera * 2)
     resolved: list[dict[str, Any]] = []
     diagnostics: list[dict[str, str]] = []
+    for diagnostic in semantic.get("diagnostics") or []:
+        if isinstance(diagnostic, dict):
+            diagnostics.append(
+                {
+                    "source": str(diagnostic.get("source") or "semantic_context"),
+                    "query": message[:120],
+                    "error": str(diagnostic.get("error") or "unavailable"),
+                }
+            )
 
     for genus in candidates:
         if len(resolved) >= max_genera:
@@ -163,6 +174,8 @@ def build_continuum_context(message: str, *, max_genera: int = 12) -> dict[str, 
         "candidate_genera": candidates,
         "resolved_genera": [item["genus"] for item in resolved],
         "taxa": resolved,
+        "semantic_context": semantic,
+        "semantic_links": semantic.get("links") or [],
         "diagnostics": diagnostics,
         "read_only": True,
         "automatic_publication": False,
