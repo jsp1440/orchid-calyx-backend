@@ -31,6 +31,19 @@ _NON_GENUS_TOKENS = {
     "Which",
     "Winter",
 }
+_ENVIRONMENT_TERMS = (
+    "rain",
+    "precip",
+    "climate",
+    "temperature",
+    "temp_",
+    "humidity",
+    "elevation",
+    "altitude",
+    "bioclim",
+    "seasonality",
+    "moisture",
+)
 
 
 def candidate_genera(message: str, *, limit: int = 16) -> list[str]:
@@ -52,6 +65,45 @@ def candidate_genera(message: str, *, limit: int = 16) -> list[str]:
         if len(output) >= limit:
             break
     return output
+
+
+def _environmental_facts(graph: dict[str, Any], *, limit: int = 20) -> list[dict[str, Any]]:
+    """Extract already-canonical environmental fields from graph nodes/edges.
+
+    This does not calculate a climate envelope or call an external weather service. It
+    only makes climate-related facts already present in canonical graph records visible
+    to the conversational provider with their graph location.
+    """
+
+    facts: list[dict[str, Any]] = []
+    for collection_name in ("nodes", "edges"):
+        for item in graph.get(collection_name) or []:
+            if not isinstance(item, dict):
+                continue
+            mappings: list[tuple[str, dict[str, Any]]] = [("record", item)]
+            properties = item.get("properties")
+            if isinstance(properties, dict):
+                mappings.append(("properties", properties))
+            for location, mapping in mappings:
+                for key, value in mapping.items():
+                    key_text = str(key).casefold()
+                    if not any(term in key_text for term in _ENVIRONMENT_TERMS):
+                        continue
+                    if isinstance(value, (dict, list, tuple, set)):
+                        value = str(value)[:500]
+                    facts.append(
+                        {
+                            "collection": collection_name,
+                            "location": location,
+                            "key": str(key),
+                            "value": value,
+                            "canonical_key": item.get("canonical_key"),
+                            "edge_type": item.get("edge_type"),
+                        }
+                    )
+                    if len(facts) >= limit:
+                        return facts
+    return facts
 
 
 def build_continuum_context(message: str, *, max_genera: int = 12) -> dict[str, Any]:
@@ -98,6 +150,7 @@ def build_continuum_context(message: str, *, max_genera: int = 12) -> dict[str, 
                 "genus": genus,
                 "knowledge_graph": graph,
                 "brain_graph": brain,
+                "environmental_facts": _environmental_facts(graph),
             }
         )
 
