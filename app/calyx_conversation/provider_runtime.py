@@ -17,6 +17,10 @@ from .provider import (
 
 LOGGER = logging.getLogger(__name__)
 
+_MAX_CONTEXT_CHARS = 30000
+_MAX_MESSAGE_CHARS = 2600
+_MAX_HISTORY_CHARS = 12000
+
 
 def _runtime_model() -> str:
     return (
@@ -52,6 +56,85 @@ def _provider_http_error(response: requests.Response, *, endpoint: str) -> Runti
     if detail:
         message += f" detail={detail}"
     return RuntimeError(message)
+
+
+def _compact_value(value: Any, *, depth: int = 0) -> Any:
+    """Bound retrieved scientific context without changing its epistemic labels."""
+
+    if depth >= 6:
+        if isinstance(value, (dict, list, tuple)):
+            return "[nested context omitted]"
+        return value
+    if isinstance(value, str):
+        text = " ".join(value.split())
+        return text if len(text) <= 1400 else text[:1400] + "…"
+    if isinstance(value, dict):
+        compact: dict[str, Any] = {}
+        for index, (key, item) in enumerate(value.items()):
+            if index >= 24:
+                compact["_additional_fields_omitted"] = len(value) - 24
+                break
+            compact[str(key)] = _compact_value(item, depth=depth + 1)
+        return compact
+    if isinstance(value, (list, tuple)):
+        items = list(value)
+        compact_items = [_compact_value(item, depth=depth + 1) for item in items[:8]]
+        if len(items) > 8:
+            compact_items.append({"_additional_items_omitted": len(items) - 8})
+        return compact_items
+    return value
+
+
+def compact_governed_context(governed_context: dict[str, Any]) -> dict[str, Any]:
+    """Create the model-facing context while retaining source/governance boundaries.
+
+    The full governed objects remain available server-side and in research details.
+    The model receives a bounded representation so a large mission, climate product,
+    or literature result set cannot knock the generative provider offline.
+    """
+
+    preferred_keys = (
+        "casual",
+        "conversation_id",
+        "project_id",
+        "interaction_context",
+        "retrieval",
+        "continuum",
+        "climate",
+        "mission",
+        "mission_error",
+        "provider_configuration",
+        "epistemic_policy",
+    )
+    selected = {
+        key: governed_context[key]
+        for key in preferred_keys
+        if key in governed_context
+    }
+    return _compact_value(selected)
+
+
+def _compact_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Keep recent conversational continuity without replaying huge prior turns."""
+
+    compact: list[dict[str, str]] = []
+    remaining = _MAX_HISTORY_CHARS
+    for item in reversed(messages):
+        role = item.get("role")
+        if role not in {"user", "assistant"}:
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        clipped = content[-_MAX_MESSAGE_CHARS:]
+        if len(clipped) > remaining:
+            clipped = clipped[-remaining:]
+        compact.append({"role": role, "content": clipped})
+        remaining -= len(clipped)
+        if remaining <= 0:
+            break
+    compact.reverse()
+    return compact
 
 
 class OpenAIRuntimeResponsesProvider:
@@ -124,9 +207,16 @@ class OpenAIRuntimeResponsesProvider:
         return ""
 
     def _governed_context_text(self, governed_context: dict[str, Any]) -> str:
-        return "Governed Calyx context for this turn:\n" + json.dumps(
-            governed_context, sort_keys=True, default=str
-        )
+        compact = compact_governed_context(governed_context)
+        text = json.dumps(compact, sort_keys=True, default=str)
+        if len(text) > _MAX_CONTEXT_CHARS:
+            LOGGER.warning(
+                "Calyx governed context exceeded model budget; truncating chars=%s limit=%s",
+                len(text),
+                _MAX_CONTEXT_CHARS,
+            )
+            text = text[:_MAX_CONTEXT_CHARS] + "\n[additional governed context omitted; full provenance remains server-side]"
+        return "Governed Calyx context for this turn:\n" + text
 
     def _responses_payload(
         self,
@@ -134,6 +224,7 @@ class OpenAIRuntimeResponsesProvider:
         messages: list[dict[str, str]],
         governed_context: dict[str, Any],
     ) -> dict[str, Any]:
+        model_messages = _compact_messages(messages)
         return {
             "model": self.model,
             "input": [
@@ -143,16 +234,10 @@ class OpenAIRuntimeResponsesProvider:
                 },
                 *[
                     {
-                        "role": "assistant" if item.get("role") == "assistant" else "user",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": str(item.get("content") or ""),
-                            }
-                        ],
+                        "role": item["role"],
+                        "content": [{"type": "input_text", "text": item["content"]}],
                     }
-                    for item in messages
-                    if item.get("role") in {"user", "assistant"}
+                    for item in model_messages
                 ],
                 {
                     "role": "user",
@@ -175,14 +260,7 @@ class OpenAIRuntimeResponsesProvider:
     ) -> dict[str, Any]:
         chat_messages = [
             {"role": "system", "content": _scientific_system_prompt()},
-            *[
-                {
-                    "role": "assistant" if item.get("role") == "assistant" else "user",
-                    "content": str(item.get("content") or ""),
-                }
-                for item in messages
-                if item.get("role") in {"user", "assistant"}
-            ],
+            *_compact_messages(messages),
             {"role": "user", "content": self._governed_context_text(governed_context)},
         ]
         return {
@@ -367,6 +445,9 @@ def runtime_provider_configuration() -> dict[str, Any]:
         "resolved_model": runtime_model or None,
         "responses_primary": True,
         "chat_completions_fallback": True,
+        "model_context_compaction": True,
+        "max_governed_context_chars": _MAX_CONTEXT_CHARS,
+        "max_conversation_history_chars": _MAX_HISTORY_CHARS,
         "missing_configuration": missing,
         "secrets_exposed": False,
     }
