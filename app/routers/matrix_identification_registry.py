@@ -235,14 +235,20 @@ def derive_concept_mappings(
     auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     actor = _actor(auth)
-    mapping_by_character: dict[str, str] = {}
-    approved_concepts: list[dict[str, Any]] = []
+
+    # Validate deterministic request-shape errors before any Lexicon/database access.
+    seen_characters: set[str] = set()
     for mapping in payload.mappings:
-        if mapping.character in mapping_by_character:
+        if mapping.character in seen_characters:
             raise HTTPException(
                 status_code=422,
                 detail=f"duplicate concept mapping for character: {mapping.character}",
             )
+        seen_characters.add(mapping.character)
+
+    mapping_by_character: dict[str, str] = {}
+    approved_concepts: list[dict[str, Any]] = []
+    for mapping in payload.mappings:
         try:
             concept_uuid = UUID(mapping.concept_id)
         except ValueError as exc:
