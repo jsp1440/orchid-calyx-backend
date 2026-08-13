@@ -22,7 +22,7 @@ def test_complete_migration_612_schema_is_activation_ready_snapshot():
 
 def test_missing_index_blocks_schema_readiness():
     indexes = set(REQUIRED_INDEXES)
-    removed = sorted(indexes)[0]
+    removed = min(indexes)
     indexes.remove(removed)
 
     result = assess_matrix_session_schema(
