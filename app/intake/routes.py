@@ -10,6 +10,11 @@ from .intelligence import (
     intelligence_tasks,
     parse_external_intelligence,
 )
+from .intelligence_repository import (
+    get_intelligence_item,
+    list_intelligence_items,
+    record_intelligence_items,
+)
 from app.storage import LocalImmutableStorage
 from .repository import (add_document, create_batch, create_source, decide, finalize_batch,
                          get_batch, get_source, list_batches, list_review, mark_published, review_document)
@@ -53,13 +58,7 @@ def ingest_url(payload: UrlIntakeRequest):
 
 @router.post("/email", status_code=201)
 def ingest_email(payload: EmailIntakeRequest):
-    """Preserve an external-intelligence email and stage bounded follow-up work.
-
-    The email body is never treated as primary scientific evidence.  Parsed
-    items begin in DISCOVERED/UNASSESSED state and are routed to review tasks;
-    this endpoint performs no URL fetching, external contact, publication, or
-    canonical graph mutation.
-    """
+    """Preserve an external-intelligence email and stage bounded follow-up work."""
     canonical_content = canonical_email_text(
         sender=payload.sender,
         subject=payload.subject,
@@ -83,14 +82,37 @@ def ingest_email(payload: EmailIntakeRequest):
         imported_by=payload.imported_by or "external-intelligence-email",
         extraction=result,
     )
+    persisted = record_intelligence_items(
+        source_id=source["id"],
+        items=items,
+        sender=payload.sender,
+        message_id=payload.message_id,
+    )
     return {
         **source,
         "intelligence": assimilation_summary(items),
-        "intelligence_items": items,
+        "intelligence_items": persisted,
         "external_contacted": False,
         "canonical_graph_mutated": False,
         "publication_performed": False,
     }
+
+
+@router.get("/intelligence")
+def intelligence_index(limit: int = Query(default=100, ge=1, le=500)):
+    return {
+        "items": list_intelligence_items(limit),
+        "canonical_graph_mutated": False,
+        "external_contacted": False,
+    }
+
+
+@router.get("/intelligence/{item_id}")
+def intelligence_detail(item_id: int):
+    result = get_intelligence_item(item_id)
+    if not result:
+        raise HTTPException(status_code=404, detail={"code": "INTELLIGENCE_ITEM_NOT_FOUND"})
+    return result
 
 
 @router.get("/review")
