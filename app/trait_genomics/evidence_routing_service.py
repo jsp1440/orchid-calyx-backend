@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -152,7 +151,7 @@ class LiteratureEvidenceRoutingService:
 
     @staticmethod
     def _route_id(canonical_taxon_id: str, source_id: str, route: str) -> str:
-        payload = f"{canonical_taxon_id}|{source_id}|{route}".encode("utf-8")
+        payload = f"{canonical_taxon_id}|{source_id}|{route}".encode()
         return f"tig-route:{hashlib.sha256(payload).hexdigest()[:24]}"
 
     def _strict_candidate_count(
