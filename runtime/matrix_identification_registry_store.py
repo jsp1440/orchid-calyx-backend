@@ -145,11 +145,20 @@ class PostgresMatrixRegistryStore:
             raise MatrixRegistryPersistenceError("MATRIX_REGISTRY_DATABASE_URL_REQUIRED")
 
     def schema_inspection(self) -> dict[str, Any]:
-        base: dict[str, Any] = {"connectivity": False, "table_exists": False, "migration_613_schema_ready": False}
+        base: dict[str, Any] = {
+            "connectivity": False,
+            "table_exists": False,
+            "migration_613_schema_ready": False,
+        }
         try:
-            with psycopg.connect(self.dsn, connect_timeout=5, row_factory=dict_row) as conn, conn.cursor() as cur:
+            with psycopg.connect(
+                self.dsn, connect_timeout=5, row_factory=dict_row
+            ) as conn, conn.cursor() as cur:
                 base["connectivity"] = True
-                cur.execute("SELECT to_regclass(%s) AS table_name", (f"public.{MATRIX_REGISTRY_TABLE}",))
+                cur.execute(
+                    "SELECT to_regclass(%s) AS table_name",
+                    (f"public.{MATRIX_REGISTRY_TABLE}",),
+                )
                 row = cur.fetchone()
                 if not row or not row["table_name"]:
                     base["blockers"] = ["MATRIX_REGISTRY_TABLE_NOT_FOUND"]
@@ -164,7 +173,10 @@ class PostgresMatrixRegistryStore:
                     """,
                     (MATRIX_REGISTRY_TABLE,),
                 )
-                columns = {str(item["column_name"]): str(item["data_type"]) for item in cur.fetchall()}
+                columns = {
+                    str(item["column_name"]): str(item["data_type"])
+                    for item in cur.fetchall()
+                }
                 cur.execute(
                     """
                     SELECT a.attname AS column_name
@@ -178,13 +190,15 @@ class PostgresMatrixRegistryStore:
                     """,
                     (MATRIX_REGISTRY_TABLE,),
                 )
-                primary_key_columns = [str(item["column_name"]) for item in cur.fetchall()]
+                primary_key_columns = [
+                    str(item["column_name"]) for item in cur.fetchall()
+                ]
                 cur.execute(
                     "SELECT indexname FROM pg_indexes WHERE schemaname='public' AND tablename=%s",
                     (MATRIX_REGISTRY_TABLE,),
                 )
                 indexes = {str(item["indexname"]) for item in cur.fetchall()}
-        except Exception as exc:
+        except (psycopg.Error, OSError, ValueError, TypeError, KeyError) as exc:
             base["blockers"] = ["DATABASE_CONNECTIVITY_OR_INSPECTION_FAILED"]
             base["error_type"] = type(exc).__name__
             return base
@@ -294,7 +308,12 @@ class PostgresMatrixRegistryStore:
 
 
 def registry_durable_requested() -> bool:
-    return os.getenv("CALYX_MATRIX_REGISTRY_DURABLE_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+    return os.getenv("CALYX_MATRIX_REGISTRY_DURABLE_ENABLED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def configured_matrix_registry_store(*, root: Path | None = None) -> MatrixRegistryStore:
