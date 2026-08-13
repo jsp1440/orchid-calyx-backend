@@ -5,10 +5,13 @@ on:
     paths:
       - "app/intake/intelligence.py"
       - "app/intake/intelligence_repository.py"
+      - "app/intake/knowledge_delta.py"
+      - "app/intake/knowledge_delta_repository.py"
       - "app/intake/routes.py"
       - "migrations/108_intelligence_assimilation_ledger.sql"
       - "tests/test_intelligence_assimilation.py"
       - "tests/test_intelligence_ledger_postgres.py"
+      - "tests/test_intelligence_knowledge_delta_postgres.py"
       - ".github/workflows/calyx-intelligence-ledger-validation.yml"
   workflow_dispatch:
 
@@ -46,5 +49,16 @@ jobs:
           PYTHONPATH: .
           INTELLIGENCE_LEDGER_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_intelligence_test
         run: pytest -q tests/test_intelligence_ledger_postgres.py
+      - name: Reset PostgreSQL for knowledge-delta tests
+        env:
+          PGPASSWORD: postgres
+        run: |
+          dropdb -h localhost -U postgres --if-exists orchid_intelligence_delta_test
+          createdb -h localhost -U postgres orchid_intelligence_delta_test
+      - name: Run PostgreSQL knowledge-delta tests
+        env:
+          PYTHONPATH: .
+          INTELLIGENCE_DELTA_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_intelligence_delta_test
+        run: pytest -q tests/test_intelligence_knowledge_delta_postgres.py
       - name: Compile intake package
         run: python -m compileall -q app/intake
