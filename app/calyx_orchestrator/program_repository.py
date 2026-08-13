@@ -77,7 +77,7 @@ class PersistentProgramRepository:
         title: str,
         objective: str,
         jobs: Iterable[ProgramJobSpec],
-        dependencies: Iterable[tuple[str, str]],
+        dependencies: Iterable[tuple[str, str]] = (),
         max_active_jobs: int = 6,
     ) -> CalyxProgram:
         specs = list(jobs)
