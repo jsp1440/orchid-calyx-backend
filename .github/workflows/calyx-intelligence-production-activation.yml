@@ -6,8 +6,11 @@ on:
       - main
     paths:
       - "migrations/108_intelligence_assimilation_ledger.sql"
+      - "migrations/109_intelligence_verification_routing.sql"
       - "app/intake/intelligence.py"
       - "app/intake/intelligence_repository.py"
+      - "app/intake/intelligence_verification.py"
+      - "app/intake/primary_source.py"
       - "app/intake/routes.py"
       - ".github/workflows/calyx-intelligence-production-activation.yml"
   workflow_dispatch:
@@ -31,7 +34,7 @@ concurrency:
 
 jobs:
   migrate:
-    name: Apply intelligence ledger migration
+    name: Apply intelligence migrations
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -67,7 +70,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Apply intelligence ledger migration transactionally
+      - name: Apply intelligence migrations transactionally
         shell: bash
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -76,6 +79,10 @@ jobs:
             --set=ON_ERROR_STOP=1 \
             --single-transaction \
             --file=migrations/108_intelligence_assimilation_ledger.sql
+          psql "$DATABASE_URL" \
+            --set=ON_ERROR_STOP=1 \
+            --single-transaction \
+            --file=migrations/109_intelligence_verification_routing.sql
 
       - name: Verify intelligence tables and governance defaults
         shell: bash
@@ -89,11 +96,14 @@ jobs:
             AND table_name IN (
               'intelligence_items',
               'intelligence_observations',
-              'intelligence_events'
+              'intelligence_events',
+              'intelligence_verifications',
+              'intelligence_routes',
+              'intelligence_actions'
             );
           SQL
           )
-          test "$actual" = "3" || { echo "Expected 3 intelligence tables; found $actual"; exit 1; }
+          test "$actual" = "6" || { echo "Expected 6 intelligence tables; found $actual"; exit 1; }
 
           defaults=$(psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --tuples-only --no-align <<'SQL'
           SELECT count(*)
@@ -106,6 +116,19 @@ jobs:
           )
           test "$defaults" = "2" || { echo "Intelligence governance defaults are not fail-closed"; exit 1; }
 
+          side_effect_defaults=$(psql "$DATABASE_URL" --set=ON_ERROR_STOP=1 --tuples-only --no-align <<'SQL'
+          SELECT count(*)
+          FROM information_schema.columns
+          WHERE table_schema='oc_intake'
+            AND (
+              (table_name='intelligence_verifications' AND column_name IN ('canonical_promotion_performed','external_contact_performed')) OR
+              (table_name='intelligence_routes' AND column_name IN ('canonical_mutation_performed','external_contact_performed'))
+            )
+            AND column_default = 'false';
+          SQL
+          )
+          test "$side_effect_defaults" = "4" || { echo "Verification/routing side-effect defaults are not fail-closed"; exit 1; }
+
       - name: Record migration result
         if: always()
         shell: bash
@@ -114,7 +137,7 @@ jobs:
             echo "## Calyx Intelligence Assimilation"
             echo "- Event: ${{ github.event_name }}"
             echo "- Revision: \`${{ github.sha }}\`"
-            echo "- Ledger migration: transactional and idempotent"
+            echo "- Intake + verification migrations: transactional and idempotent"
             echo "- Canonical promotion: prohibited by default"
             echo "- External contact: prohibited by default"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -187,7 +210,7 @@ jobs:
         run: |
           {
             echo "## Intelligence production activation"
-            echo "- Intelligence ledger migration: verified by preceding job"
+            echo "- Intelligence intake and verification ledger migrations: verified by preceding job"
             if [[ "$ENDPOINT_AVAILABLE" == "true" ]]; then
               echo "- Protected intelligence endpoint: verification attempted in this job"
             else
