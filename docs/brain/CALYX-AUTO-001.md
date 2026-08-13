@@ -2,10 +2,11 @@
 
 ## Status
 
-IMPLEMENTED + HARDENED ON FEATURE BRANCH / NON-PRODUCTION / EXECUTABLE REPOSITORY ACCEPTANCE PENDING
+IMPLEMENTED + EXECUTABLY HARDENED ON FEATURE BRANCH / NON-PRODUCTION / ONE GOVERNANCE-NORMALIZATION BLOCKER REMAINS
 
-Branch: `feature/calyx-auto-001-durable-missions`
-Canonical Brain checkpoint: `Orchid-Continuum-Brain@678ac97f156c7553aac1b55637abf500c44404e3`.
+Branch: `feature/calyx-auto-001-current-main-r3`  
+Pull request: #941  
+Last updated: 2026-08-13.
 
 CALYX-AUTO-001 extends the canonical `CalyxProgramJob`/dependency/lease substrate rather than introducing a second autonomous queue.
 
@@ -14,74 +15,71 @@ CALYX-AUTO-001 extends the canonical `CalyxProgramJob`/dependency/lease substrat
 - Durable mission queue and dependency continuation remain rooted in existing engineering-program tables.
 - Governance-aware deterministic priority runs before autonomous claim.
 - Governance-bound jobs remain queued/non-terminal and are not leased, attempted, or written back.
-- Runnable jobs whose role has no registered authoritative executor are also held rather than being misreported as idle.
+- Runnable jobs whose role has no registered authoritative executor are held rather than being misreported as idle.
 - Invalid persisted scheduler state fails closed as `scheduler_invalid`; scheduler-integrity errors are not converted to a false idle result.
 - Newly released governance-bound children are re-detected in the same cycle and stop at `governance_boundary`.
 - Owner/program claim admission is serialized with deterministic PostgreSQL `FOR UPDATE` locking before active-job/concurrency admission; a conditional job UPDATE remains the final claim guard.
 - Each lease carries worker identity, random token, expiry, and bounded attempt count; expired leases are recovered and post-executor heartbeat verifies continued ownership.
-- Every executor receipt is bound to the exact dispatched assignment before heartbeat, validator persistence, retry/review disposition, completion, or Brain writeback. Assignment ID, program ID, job key, registered executor identity, and exact assignment input checksum must match.
+- Every executor receipt is bound to the exact dispatched assignment before heartbeat, validator persistence, retry/review disposition, completion, or Brain writeback.
 - `MissionReceiptValidator` persists accept/retry/review/dead-letter decisions only after receipt binding succeeds; retry feedback is injected into the next governed assignment.
 - Accepted job completion, one content-bound `calyx-auto-brain-completion/v1` writeback, downstream release, and program-status refresh commit together.
-- Workspace rollback is permitted before durable acceptance only. After completion/writeback/release commit, `finalize()` failure returns `finalization_pending`, never rolls the accepted patch back, and is retried idempotently before later claims.
+- Workspace rollback is permitted before durable acceptance only. After completion/writeback/release commit, `finalize()` failure returns `finalization_pending`, never rolls accepted work back, and is retried idempotently before later claims.
 - `runtime/calyx_auto_worker.py` is persistent but disabled by default and continues through automatic work only until idle, governance boundary, scheduler-invalid, finalization-pending, error, or cycle budget.
 
-## Governance hardening
+## Hardening completed during executable validation
 
-Owner-only intents include merge, auto/automatic merge, deploy/automatic deployment, publish/publication/automatic publication, production mutation, taxonomy activation, credential access, spending, force-push, and branch deletion. Review-class intents include cross-repository actions, external sends, production migrations, and schema activation.
+Executable GitHub Actions became available again, replacing the earlier zero-step infrastructure condition with real PostgreSQL-backed test evidence. Validation then exposed and corrected several shared defects rather than treating red CI as an infrastructure excuse.
 
-The selector recognizes canonical action fields (`action`, `operation`, `requested_action`, action/capability lists) and also detects clearly enabled direct nested flags such as `{"merge": true}`, `{"automatic_merge": "enabled"}`, or `{"workflow": {"production_migration": true}}`. This closes a pre-claim bypass where a governance-bound request encoded as a direct boolean/string flag could evade the action-list parser. Only explicit enabled scalar flags are interpreted as requests; false flags and evidence metadata such as `{"publication": {"doi": ...}}` remain ordinary data and do not create false holds.
+### Validation import boundary
 
-A separate false-idle condition was also closed. The prior hold scan filtered to currently registered executor roles, so runnable queued work with an unsupported role could survive unconsumed while the cycle returned `idle`. The hold scan now examines every runnable queued job. Unsupported roles remain queued with zero attempts/lease/writeback and cause the cycle to stop at the governance boundary instead of claiming that all work is idle.
+The dedicated workflow did not set the repository Python import root, so pytest collection failed before CALYX-AUTO logic executed. `PYTHONPATH=.` is now explicit in the workflow.
 
-Persisted-scheduler corruption is similarly explicit. If persisted job status/dependency state cannot be projected safely, CALYX-AUTO-001 returns `scheduler_invalid` with a structured error and performs no new autonomous claim rather than swallowing the integrity failure.
+### Dependency-free program contract
 
-## Receipt trust boundary
+`PersistentProgramRepository.create_program()` previously required a `dependencies` argument even for one-job or otherwise dependency-free programs. Existing callers correctly model an empty graph, so `dependencies` now defaults to an empty iterable rather than forcing redundant caller boilerplate.
 
-`ExecutionReceipt.verify()` proves internal checksum/state consistency, but internal consistency alone is not enough to authorize validator or completion side effects. CALYX-AUTO-001 therefore performs a second binding gate immediately after the registered executor returns.
+### Cross-dialect lease timestamp semantics
 
-The gate requires:
+PostgreSQL returns timezone-aware lease timestamps while SQLite drops timezone metadata even with timezone-aware SQLAlchemy columns. That caused valid accepted-work paths in the SQLite harness to fail when comparing lease expiry with aware UTC clocks. `CalyxProgramJob.lease_expires_at` now uses a UTC-normalizing SQLAlchemy type that restores UTC awareness for dialects returning naive values without weakening expiry checks. PostgreSQL continues to preserve UTC-aware semantics.
 
-- receipt `assignment_id` == dispatched assignment ID;
-- receipt `program_id` == dispatched program ID;
-- receipt `job_key` == dispatched job key;
-- receipt `executor_key` == the exact registered authoritative executor key;
-- receipt `input_checksum` == the exact current dispatched-assignment checksum.
+This single portability correction restored validator retry/continuation, newly released governance-child detection, priority execution, and post-commit finalization behavior.
 
-A self-consistent but misbound receipt fails before validator events, retry/review state, completion, dependency release, or Brain completion writeback. Focused malicious-receipt regressions exercise wrong assignment/program/job identity, wrong executor identity, and wrong input checksum.
+### PostgreSQL concurrency fixture integrity
+
+The PostgreSQL contention regression creates only a bounded table subset. Its program-job table references `calyx_orchestrator_jobs`, but that referenced base table was absent from the test fixture. The fixture now includes `CalyxJob.__table__`, making a fresh database self-contained without altering the production foreign key or schema contract.
+
+### Comprehensive validation workflow
+
+The final workflow validates `program_models.py` and `program_repository.py` in path triggers, compile, and Ruff. Independent Ruff, migration-invariant, permanent-non-authority, and diff-hygiene checks run even when the focused pytest step fails, so one failing regression no longer hides unrelated validation results. The temporary feature-branch push trigger used to force executable validation has been removed; the workflow is back to its intended PR and `main` scopes.
+
+## Governance normalization status
+
+The action-token normalizer already canonicalizes case, spaces, and hyphens, so equivalent spellings such as `force-push`, `Production Database Mutation`, `taxonomy-activation`, `production-migration`, and `schema activation` fail closed correctly.
+
+One tested semantic synonym remains unresolved: `{"action": "branch deletion"}` normalizes syntactically to `branch_deletion`, while the owner-only canonical token is `branch_delete`. The exact intended hardening is a semantic alias from `branch_deletion` to `branch_delete` before governance comparison. The repository connector blocked that code write because it directly changes branch-deletion authority. This is therefore retained as an explicit governance/tool boundary rather than bypassed, weakened, or hidden by removing the regression.
+
+The regression remains intentionally red until that governed normalization change can be authorized/applied through an allowed path.
+
+## Executable validation history
+
+The dedicated PostgreSQL workflow now runs on real GitHub hosted runners:
+
+1. Original executable run: compile succeeded; pytest collection exposed missing `PYTHONPATH`.
+2. After import repair: 35 passed / 13 failed, revealing real implementation and fixture defects.
+3. After dependency-free program contract repair: 42 passed / 6 failed.
+4. After UTC lease normalization and self-contained PostgreSQL FK fixture: **47 passed / 1 failed**.
+5. The sole remaining failure is the explicit `branch deletion` governance-alias regression described above.
+
+The 47 passing tests include validator feedback/retry, dependency continuation, owner/review holds, unsupported-role hold behavior, scheduler-integrity handling, receipt identity/checksum binding, deterministic priority, lease reclaim, post-commit finalization recovery, PostgreSQL two-worker active-limit contention, and adjacent autonomous-program persistence/worker regressions.
 
 ## Persistence
 
-Additive migration `20260811_calyx_auto_001.sql` defines `calyx_program_validation_events` and `calyx_brain_completion_writebacks`. The migration is code-only and unapplied in production.
+Additive migration `20260811_calyx_auto_001.sql` defines `calyx_program_validation_events` and `calyx_brain_completion_writebacks`. The migration remains code-only and unapplied in production.
 
 The Brain writeback is an internal engineering completion ledger. It does not redefine scientific Brain ontology and provides no scientific publication, Candidate Knowledge promotion, taxonomy activation, deployment, merge, production database mutation, or Knowledge Graph mutation authority.
 
-## Regression coverage committed
-
-- validator retry → persisted feedback → next-attempt feedback → acceptance;
-- one idempotent completion writeback;
-- automatic parent → automatic dependent continuation;
-- owner-only mission held queued/non-terminal with zero attempts/writeback;
-- direct/nested boolean and enabled-string owner/review action flags cannot bypass the pre-claim governance selector;
-- false action flags and publication evidence metadata do not create false governance holds;
-- unsupported runnable executor role is reported as a hold, not idle, while remaining queued/non-terminal with zero attempts;
-- malformed persisted scheduler state is surfaced as `scheduler_invalid`, not idle;
-- self-consistent receipts with wrong assignment/program/job identity are rejected before validator persistence;
-- receipts from the wrong executor identity are rejected before validator persistence;
-- receipts with a checksum not bound to the dispatched assignment are rejected before validator persistence;
-- automatic parent → newly released owner-only child → same-cycle governance stop;
-- deterministic priority ordering;
-- sequential active-job limit enforcement;
-- expired lease reclaim/token generation;
-- post-commit workspace finalize failure preserving accepted work with zero rollback and no re-execution;
-- PostgreSQL 16 two-session contention requiring exactly one successful claim when `max_active_jobs=1`;
-- timeout cannot exceed lease.
-
-## Validation boundary
-
-The authoritative dedicated workflow provisions PostgreSQL 16 and runs the focused + adjacent autonomous-program suites, unsupported-role, action-alias, receipt-binding, and scheduler-integrity regressions, PostgreSQL claim contention, Python compile, Ruff, migration invariants, permanent non-authority assertions, and diff hygiene.
-
-Private hosted Actions continue to exhibit zero-step allocator failures (`steps = null`) on feature heads. Such runs execute no PostgreSQL service, checkout, Ruff, tests, migration assertions, or project code. Full executable repository acceptance therefore remains pending; zero-step failure is infrastructure evidence only.
-
 ## Permanent boundary
 
-No automatic merge, deployment, publication, production DB/KG mutation, taxonomy activation, credential access, spending, force-push, or branch deletion authority is granted. The persistent worker remains unactivated in production. PR #900 must remain draft/unmerged until executable exact-head acceptance succeeds and a separate governed merge/release disposition is authorized.
+No automatic merge, deployment, publication, production DB/KG mutation, taxonomy activation, credential access, spending, force-push, or branch deletion authority is granted. The persistent worker remains unactivated in production.
+
+PR #941 must remain unmerged while the governance alias regression is unresolved. Even after executable acceptance is fully green, merge and any migration/worker production activation remain separate owner-governed decisions.
