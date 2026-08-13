@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from enum import Enum
 from typing import Any, Optional
+from uuid import UUID
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -25,6 +28,31 @@ def ensure_database_url() -> str:
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not configured")
     return DATABASE_URL
+
+
+def json_safe(value: Any) -> Any:
+    """Return a deterministic JSON-compatible representation of runtime results.
+
+    Database-backed services commonly return timezone-aware datetimes and other
+    scalar types that psycopg's JSON encoder does not serialize automatically.
+    Normalizing at the runtime boundary keeps job persistence generic instead of
+    forcing every downstream service to know about the queue's storage format.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, Enum):
+        return json_safe(value.value)
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [json_safe(item) for item in value]
+    return str(value)
 
 
 def table_exists(cur, fq_table: str) -> bool:
@@ -76,7 +104,7 @@ def insert_job_if_missing(
         ON CONFLICT DO NOTHING
         RETURNING id
         """,
-        (job_name, dedup_key, Jsonb(details or {})),
+        (job_name, dedup_key, Jsonb(json_safe(details or {}))),
     )
     return cur.fetchone() is not None
 
@@ -212,6 +240,7 @@ def execute_next_job() -> dict[str, Any]:
 
             try:
                 result = run_job_logic(job_name)
+                safe_result = json_safe(result)
                 cur.execute(
                     """
                     UPDATE oc_admin.ocp_execution_jobs
@@ -222,14 +251,14 @@ def execute_next_job() -> dict[str, Any]:
                         error_text = NULL
                     WHERE id = %s
                     """,
-                    (Jsonb(result), job_id),
+                    (Jsonb(safe_result), job_id),
                 )
                 conn.commit()
                 return {
                     "status": "completed",
                     "job_id": job_id,
                     "job_name": job_name,
-                    "result": result,
+                    "result": safe_result,
                 }
             except Exception as exc:
                 cur.execute(
