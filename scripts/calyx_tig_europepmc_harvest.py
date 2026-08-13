@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
+from app.trait_genomics.adaptive_retrieval import AdaptiveEuropePMCClient
 from app.trait_genomics.molecular_harvester import (
     EuropePMCHarvestRequest,
     EuropePMCMolecularHarvester,
@@ -113,12 +114,14 @@ def main() -> int:
         page_size=args.page_size,
         persist=not args.dry_run,
     )
-    result = EuropePMCMolecularHarvester().harvest(
+    client = AdaptiveEuropePMCClient()
+    result = EuropePMCMolecularHarvester(client=client).harvest(
         request.targets,
         page_size=request.page_size,
         persist=request.persist,
     )
     result["target_resolutions"] = resolutions
+    result["retrieval_diagnostics"] = client.retrieval_diagnostics()
     print(json.dumps(result, indent=2, sort_keys=True, default=str))
     return 0
 
