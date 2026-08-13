@@ -3,7 +3,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .routes import BrainQueryRequest, GraphContextRequest, run_brain_query, run_graph_context
+from .routes import (
+    BrainQueryRequest,
+    GraphContextRequest,
+    run_brain_query,
+    run_graph_context,
+)
 
 # Conservative stop-list for sentence-initial/common capitalized words that are not botanical genera.
 _NON_GENUS_TOKENS = {
@@ -125,7 +130,7 @@ def build_continuum_context(message: str, *, max_genera: int = 12) -> dict[str, 
             graph = run_graph_context(
                 GraphContextRequest(genus=genus, depth=1, limit=40)
             )
-        except Exception as exc:  # source degradation must not fail conversation
+        except (RuntimeError, TypeError, ValueError) as exc:
             diagnostics.append(
                 {"source": "knowledge_graph", "query": genus, "error": str(exc)}
             )
@@ -140,7 +145,7 @@ def build_continuum_context(message: str, *, max_genera: int = 12) -> dict[str, 
         brain: dict[str, Any] | None = None
         try:
             brain = run_brain_query(BrainQueryRequest(text=genus, limit=40))
-        except Exception as exc:  # graph context is still useful if Brain query degrades
+        except (RuntimeError, TypeError, ValueError) as exc:
             diagnostics.append(
                 {"source": "brain_graph", "query": genus, "error": str(exc)}
             )
