@@ -27,7 +27,7 @@ from app.calyx_orchestrator.executor_registry import (
     AUTONOMY_PROBE_ROLE,
     RegisteredExecutor,
 )
-from app.calyx_orchestrator.models import utcnow
+from app.calyx_orchestrator.models import CalyxJob, utcnow
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
     CalyxProgramDependency,
@@ -428,6 +428,7 @@ def test_post_commit_finalize_failure_never_rolls_back_accepted_workspace():
 def test_postgres_concurrent_workers_cannot_exceed_active_job_limit():
     engine = create_engine(os.environ["CALYX_AUTO_TEST_DATABASE_URL"])
     tables = [
+        CalyxJob.__table__,
         CalyxProgram.__table__,
         CalyxProgramJob.__table__,
         CalyxProgramDependency.__table__,
