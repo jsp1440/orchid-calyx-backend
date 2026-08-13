@@ -16,6 +16,7 @@ from .operations import operational_status, renew_lease, seed_approved_tasks
 from .portfolio_routes import router as portfolio_router
 from .program_routes import router as program_router
 from .sandbox_supervisor_routes import router as sandbox_supervisor_router
+from .schema import ensure_orchestrator_schema
 from .service import (
     AUTONOMY_POLICY_CLASSES,
     READ_ONLY_JOB_TYPES,
@@ -95,6 +96,7 @@ def heartbeat(
 
 @router.post("/jobs", status_code=201)
 def create_job(payload: JobRequest, auth: AuthDependency, db: DbDependency) -> dict:
+    ensure_orchestrator_schema(db)
     if payload.job_type not in READ_ONLY_JOB_TYPES:
         raise HTTPException(422, detail={"code": "JOB_TYPE_NOT_ALLOWED"})
     if payload.policy_class not in AUTONOMY_POLICY_CLASSES:
@@ -125,6 +127,7 @@ def create_job(payload: JobRequest, auth: AuthDependency, db: DbDependency) -> d
 
 @router.post("/jobs/{job_id}/cancel")
 def cancel_job(job_id: str, auth: AuthDependency, db: DbDependency) -> dict:
+    ensure_orchestrator_schema(db)
     job = db.get(CalyxJob, job_id)
     if job is None or job.owner != _owner(auth):
         raise HTTPException(404, detail={"code": "JOB_NOT_FOUND"})
@@ -139,6 +142,7 @@ def cancel_job(job_id: str, auth: AuthDependency, db: DbDependency) -> dict:
 
 @router.post("/jobs/{job_id}/requeue")
 def requeue_dead_letter(job_id: str, auth: AuthDependency, db: DbDependency) -> dict:
+    ensure_orchestrator_schema(db)
     try:
         job = CalyxOrchestrator(db).requeue_dead_letter(owner=_owner(auth), job_id=job_id)
     except LookupError as exc:
