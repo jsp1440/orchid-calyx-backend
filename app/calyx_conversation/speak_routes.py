@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.brain_mission.routes import SERVICE as BRAIN_MISSION_SERVICE
 from app.security import verify_owner_or_api_key
 
+from .continuum_context import build_continuum_context
 from .interaction_context import sanitize_interaction_context
 from .provider import DeterministicGovernedReplyProvider, configured_reply_provider
 from .routes import STORE, _retrieval
@@ -101,6 +102,23 @@ def _safe_retrieval(message: str, retrieval_limit: int) -> dict[str, Any]:
         }
 
 
+def _safe_continuum_context(message: str) -> dict[str, Any]:
+    try:
+        return build_continuum_context(message)
+    except Exception as exc:  # noqa: BLE001 - source degradation cannot fail a turn
+        return {
+            "candidate_genera": [],
+            "resolved_genera": [],
+            "taxa": [],
+            "diagnostics": [
+                {"source": "continuum_context", "query": message[:120], "error": str(exc)}
+            ],
+            "read_only": True,
+            "automatic_publication": False,
+            "knowledge_graph_mutation": False,
+        }
+
+
 def _run_governed_turn(
     *,
     owner: str,
@@ -109,7 +127,7 @@ def _run_governed_turn(
     message: str,
     research_mode: str,
     retrieval_limit: int,
-) -> tuple[dict[str, Any], dict[str, Any] | None, str | None, bool]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None, str | None, bool]:
     casual = _is_casual(message) and research_mode != "always"
     if casual:
         return {
@@ -117,9 +135,18 @@ def _run_governed_turn(
             "total_eligible_results": 0,
             "retrieval_mode": "HYBRID",
             "status": "not_requested",
+        }, {
+            "candidate_genera": [],
+            "resolved_genera": [],
+            "taxa": [],
+            "diagnostics": [],
+            "read_only": True,
+            "automatic_publication": False,
+            "knowledge_graph_mutation": False,
         }, None, None, True
 
     retrieval = _safe_retrieval(message, retrieval_limit)
+    continuum = _safe_continuum_context(message)
     mission: dict[str, Any] | None = None
     mission_error: str | None = None
     should_run_mission = research_mode == "always" or (
@@ -144,16 +171,28 @@ def _run_governed_turn(
             )
         except (ValueError, RuntimeError) as exc:
             mission_error = str(exc)
-    return retrieval, mission, mission_error, False
+    return retrieval, continuum, mission, mission_error, False
 
 
 @router.get("/status")
 def speak_status(auth: AuthDependency) -> dict[str, Any]:
     _subject(auth)
+    provider = configured_reply_provider()
     return {
-        "release": "CALYX-SPEAK-004-CONTEXT",
+        "release": "CALYX-SPEAK-005-CONTINUUM-INTEGRATION",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
+        "provider": {
+            "name": getattr(provider, "provider_name", "openai-compatible"),
+            "model": getattr(provider, "model_name", getattr(provider, "model", "unknown")),
+            "generative": not isinstance(provider, DeterministicGovernedReplyProvider),
+        },
+        "continuum_context": {
+            "automatic_taxon_resolution": True,
+            "knowledge_graph_read": True,
+            "brain_graph_read": True,
+            "climate_provider": False,
+        },
         "interaction_context": {
             "supported": True,
             "evidence": False,
@@ -254,7 +293,7 @@ def append_turn(
         owner=owner,
     )
 
-    retrieval, mission, mission_error, casual = _run_governed_turn(
+    retrieval, continuum, mission, mission_error, casual = _run_governed_turn(
         owner=owner,
         conversation_id=conversation_id,
         project_id=project_id,
@@ -278,12 +317,28 @@ def append_turn(
             owner=owner,
         )
 
+    if continuum.get("resolved_genera"):
+        STORE.append(
+            conversation_id,
+            "tool",
+            "Canonical Continuum graph context resolved for: "
+            + ", ".join(continuum["resolved_genera"]),
+            {
+                "tool": "continuum_context",
+                "resolved_genera": continuum.get("resolved_genera"),
+                "read_only": True,
+                "knowledge_graph_mutation": False,
+            },
+            owner=owner,
+        )
+
     governed_context = {
         "casual": casual,
         "conversation_id": conversation_id,
         "project_id": project_id,
         "interaction_context": interaction_context,
         "retrieval": retrieval,
+        "continuum": continuum,
         "mission": mission,
         "mission_error": mission_error,
         "epistemic_policy": {
@@ -327,6 +382,8 @@ def append_turn(
             "retrieval_eligible_results": retrieval.get("total_eligible_results"),
             "retrieval_status": retrieval.get("status"),
             "retrieval_error": retrieval.get("error"),
+            "continuum_resolved_genera": continuum.get("resolved_genera"),
+            "continuum_diagnostics": continuum.get("diagnostics"),
             "interaction_context": interaction_context,
             "research_mode": payload.research_mode,
             "publication_boundary": (
@@ -353,6 +410,7 @@ def append_turn(
             "mission": mission,
             "mission_error": mission_error,
             "retrieval": retrieval,
+            "continuum": continuum,
         },
         "persistence_mode": STORE.persistence_mode,
         "epistemic_policy": governed_context["epistemic_policy"],
