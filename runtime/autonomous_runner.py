@@ -110,7 +110,13 @@ def insert_job_if_missing(
 
 
 def enqueue_default_jobs() -> dict[str, Any]:
-    """Ensure the core optimization jobs exist without duplicating them."""
+    """Seed core maintenance and state-driven intelligence work idempotently.
+
+    RuntimeEngine calls this function once per live worker cycle. Intelligence
+    discovery therefore belongs here rather than only in the manual full-queue
+    drain helper; otherwise the background autoloop can execute intelligence jobs
+    that already exist but never discovers newly eligible ones.
+    """
     jobs = [
         "optimize_calyx_core",
         "optimize_health",
@@ -136,10 +142,12 @@ def enqueue_default_jobs() -> dict[str, Any]:
                     skipped.append(job)
         conn.commit()
 
+    intelligence_enqueue = enqueue_due_intelligence_jobs(limit=100)
     return {
         "status": "ok",
         "jobs_created": created,
         "jobs_skipped_as_duplicates": skipped,
+        "intelligence_enqueue": intelligence_enqueue,
     }
 
 
