@@ -25,8 +25,8 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
           POSTGRES_DB: orchid_test
-          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - "5432:5432"
         options: >-
@@ -36,14 +36,34 @@ jobs:
           --health-retries 10
     env:
       PYTHONPATH: "."
-      DATABASE_URL: "dbname=orchid_test user=test host=127.0.0.1 port=5432"
-      TEST_DATABASE_URL: "dbname=orchid_test user=test host=127.0.0.1 port=5432"
+      PGUSER: test
+      PGPASSWORD: test
+      PGDATABASE: orchid_test
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt pytest ruff
+      - name: Configure SQLAlchemy occurrence test URL
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import os
+          from sqlalchemy import URL
+          value = URL.create(
+              "postgresql+psycopg",
+              username=os.environ["PGUSER"],
+              password=os.environ["PGPASSWORD"],
+              host=os.environ["PGHOST"],
+              port=int(os.environ["PGPORT"]),
+              database=os.environ["PGDATABASE"],
+          ).render_as_string(hide_password=False)
+          print(f"DATABASE_URL={value}")
+          print(f"TEST_DATABASE_URL={value}")
+          PY
       - name: Compile consolidated occurrence surface
         run: >-
           python -m py_compile
