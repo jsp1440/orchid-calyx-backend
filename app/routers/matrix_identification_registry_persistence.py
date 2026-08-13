@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends
 
 from app.security import verify_owner_or_api_key
 from runtime.matrix_identification_registry import registry_persistence_status
-from runtime.matrix_identification_registry_preflight import matrix_registry_persistence_preflight
+from runtime.matrix_identification_registry_preflight import (
+    matrix_registry_persistence_preflight,
+)
 
 router = APIRouter(
     prefix="/api/matrix-identification/registry",
