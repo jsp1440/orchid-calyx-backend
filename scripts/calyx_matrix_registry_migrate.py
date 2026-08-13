@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Governed file→PostgreSQL migration utility for immutable Matrix registries.
 
 Dry-run is the default. `--apply` is required to write missing immutable registry
