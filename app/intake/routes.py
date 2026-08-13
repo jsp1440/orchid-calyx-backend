@@ -15,6 +15,8 @@ from .intelligence_repository import (
     list_intelligence_items,
     record_intelligence_items,
 )
+from .knowledge_delta import assess_item
+from .knowledge_delta_repository import record_comparison
 from app.storage import LocalImmutableStorage
 from .repository import (add_document, create_batch, create_source, decide, finalize_batch,
                          get_batch, get_source, list_batches, list_review, mark_published, review_document)
@@ -105,6 +107,18 @@ def intelligence_index(limit: int = Query(default=100, ge=1, le=500)):
         "canonical_graph_mutated": False,
         "external_contacted": False,
     }
+
+
+@router.post("/intelligence/{item_id}/compare")
+def intelligence_compare(item_id: int):
+    """Compare against current Continuum stores without claiming unverified novelty."""
+    try:
+        assessment = assess_item(item_id)
+        return record_comparison(assessment)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"code": str(exc).strip("'")}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
 
 
 @router.get("/intelligence/{item_id}")
