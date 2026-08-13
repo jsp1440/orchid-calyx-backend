@@ -71,7 +71,9 @@ def test_exact_normalized_name_resolves_operational_taxon_id():
     assert result.target.canonical_taxon_id == "123"
     assert result.target.scientific_name == "Dendrobium cuthbertsonii"
     assert result.as_dict()["canonical_source"] == "public.orchid_taxonomy"
-    assert connection.cursor_instance.executed[-1][1][0] == "Dendrobium"
+    query, params = connection.cursor_instance.executed[-1]
+    assert "lower(scientific_name) LIKE lower(%s)" in query
+    assert params == ("Dendrobium cuthbertsonii%",)
 
 
 def test_unique_exact_text_breaks_authorship_only_duplicate_tie():
@@ -98,7 +100,7 @@ def test_unique_exact_text_breaks_authorship_only_duplicate_tie():
 
 
 def test_infraspecific_name_does_not_collapse_to_species():
-    service, _ = resolver(
+    service, connection = resolver(
         [
             {
                 "id": 123,
@@ -110,6 +112,7 @@ def test_infraspecific_name_does_not_collapse_to_species():
     result = service.resolve("Example orchid var. alba")
     assert result.status == "unresolved"
     assert result.target is None
+    assert connection.cursor_instance.executed[-1][1] == ("Example orchid var. alba%",)
 
 
 def test_duplicate_canonical_rows_fail_closed_as_ambiguous():
