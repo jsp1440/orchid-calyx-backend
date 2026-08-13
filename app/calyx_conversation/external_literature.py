@@ -24,78 +24,12 @@ _ORCHID_GENERA = (
 )
 
 _PHYSIOLOGY_CLUSTERS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (
-        "seasonal_flowering",
-        (
-            "flowering",
-            "floral induction",
-            "flower induction",
-            "flower bud",
-            "floral bud",
-            "dormancy",
-            "winter rest",
-        ),
-    ),
-    (
-        "temperature",
-        (
-            "temperature",
-            "low temperature",
-            "cool temperature",
-            "cold treatment",
-            "chilling",
-            "night temperature",
-            "thermoperiod",
-        ),
-    ),
-    (
-        "water_rest",
-        (
-            "drought",
-            "water deficit",
-            "water stress",
-            "dry season",
-            "dry rest",
-            "watering",
-            "moisture",
-        ),
-    ),
-    (
-        "developmental_fate",
-        (
-            "keiki",
-            "vegetative propagation",
-            "axillary bud",
-            "adventitious shoot",
-            "vegetative growth",
-        ),
-    ),
-    (
-        "regulation",
-        (
-            "hormone",
-            "gibberellin",
-            "cytokinin",
-            "auxin",
-            "abscisic acid",
-            "photoperiod",
-            "carbohydrate",
-            "flowering gene",
-        ),
-    ),
-    (
-        "wetness_pathology",
-        (
-            "root rot",
-            "black rot",
-            "Phytophthora",
-            "Pythium",
-            "soft rot",
-            "waterlogging",
-            "hypoxia",
-            "anoxia",
-        ),
-    ),
+    ("seasonal_flowering", ("flowering", "floral induction", "flower induction", "flower bud", "floral bud", "dormancy", "winter rest")),
+    ("temperature", ("temperature", "low temperature", "cool temperature", "cold treatment", "chilling", "night temperature", "thermoperiod")),
+    ("water_rest", ("drought", "water deficit", "water stress", "dry season", "dry rest", "watering", "moisture")),
+    ("developmental_fate", ("keiki", "vegetative propagation", "axillary bud", "adventitious shoot", "vegetative growth")),
+    ("regulation", ("hormone", "gibberellin", "cytokinin", "auxin", "abscisic acid", "photoperiod", "carbohydrate", "flowering gene")),
+    ("wetness_pathology", ("root rot", "black rot", "Phytophthora", "Pythium", "soft rot", "waterlogging", "hypoxia", "anoxia")),
 )
 
 _DISTRACTOR_TERMS = (
@@ -134,20 +68,13 @@ def _epmc_or(terms: tuple[str, ...], *, limit: int = 5) -> str:
 
 
 def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
-    """Build focused Europe PMC searches from a natural-language Calyx question.
-
-    Diagnostic taxa named by the user are searched against separate physiological
-    clusters so broad flowering papers do not crowd out winter-rest evidence.
-    """
+    """Build focused Europe PMC searches from a natural-language Calyx question."""
 
     genera = _mentioned_genera(question)
     clusters = _active_clusters(question)
     ordered_genera = sorted(
         genera,
-        key=lambda value: (
-            value not in {"Dendrobium", "Sarcochilus"},
-            genera.index(value),
-        ),
+        key=lambda value: (value not in {"Dendrobium", "Sarcochilus"}, genera.index(value)),
     )
     queries: list[str] = []
 
@@ -160,10 +87,7 @@ def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
             break
 
     if len(queries) < max_queries and ordered_genera:
-        regulation = next(
-            (terms for name, terms in clusters if name == "regulation"),
-            _PHYSIOLOGY_CLUSTERS[4][1],
-        )
+        regulation = next((terms for name, terms in clusters if name == "regulation"), _PHYSIOLOGY_CLUSTERS[4][1])
         for genus in ordered_genera[:2]:
             queries.append(f'"{genus}" AND ({_epmc_or(regulation)})')
             if len(queries) >= max_queries:
@@ -174,9 +98,7 @@ def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
         for _, terms in clusters[:3]:
             combined_terms.extend(terms[:2])
         if combined_terms:
-            expr = " OR ".join(
-                f'"{term}"' if " " in term else term for term in combined_terms[:6]
-            )
+            expr = " OR ".join(f'"{term}"' if " " in term else term for term in combined_terms[:6])
             queries.append(f'(orchid OR Orchidaceae) AND ({expr})')
 
     deduplicated: list[str] = []
@@ -197,14 +119,8 @@ def _record_from_europe_pmc(record: dict[str, Any], *, query: str) -> dict[str, 
     abstract = str(record.get("abstractText") or "").strip()
     authors = str(record.get("authorString") or "").strip()
     journal = str(record.get("journalTitle") or "").strip()
-    journal_info = (
-        record.get("journalInfo") if isinstance(record.get("journalInfo"), dict) else {}
-    )
-    publication_date = str(
-        record.get("firstPublicationDate")
-        or journal_info.get("printPublicationDate")
-        or ""
-    ).strip()
+    journal_info = record.get("journalInfo") if isinstance(record.get("journalInfo"), dict) else {}
+    publication_date = str(record.get("firstPublicationDate") or journal_info.get("printPublicationDate") or "").strip()
     doi = str(record.get("doi") or "").strip() or None
     pmid = str(record.get("pmid") or record.get("id") or "").strip() or None
     pmcid = str(record.get("pmcid") or "").strip() or None
@@ -259,19 +175,9 @@ def _relevance_score(record: dict[str, Any], question: str) -> float:
             score += 2.0
 
     diagnostic_phrases = (
-        "floral induction",
-        "flower induction",
-        "low temperature",
-        "cold treatment",
-        "night temperature",
-        "winter rest",
-        "dry season",
-        "water deficit",
-        "dormancy",
-        "keiki",
-        "axillary bud",
-        "flower bud differentiation",
-        "flower bud formation",
+        "floral induction", "flower induction", "low temperature", "cold treatment",
+        "night temperature", "winter rest", "dry season", "water deficit", "dormancy",
+        "keiki", "axillary bud", "flower bud differentiation", "flower bud formation",
     )
     score += 2.5 * sum(phrase in text for phrase in diagnostic_phrases)
 
@@ -289,10 +195,7 @@ def _relevance_score(record: dict[str, Any], question: str) -> float:
 def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
     """Discover and relevance-rank external literature for a Calyx research turn."""
 
-    timeout = max(
-        1.0,
-        min(float(os.getenv("CALYX_EXTERNAL_LITERATURE_TIMEOUT_SECONDS", "12")), 30.0),
-    )
+    timeout = max(1.0, min(float(os.getenv("CALYX_EXTERNAL_LITERATURE_TIMEOUT_SECONDS", "12")), 30.0))
     result_limit = max(1, min(int(limit), 25))
     query_plan = _query_plan(query)
     candidates: list[dict[str, Any]] = []
@@ -304,12 +207,7 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
         try:
             response = requests.get(
                 EUROPE_PMC_SEARCH_URL,
-                params={
-                    "query": planned_query,
-                    "resultType": "core",
-                    "pageSize": page_size,
-                    "format": "json",
-                },
+                params={"query": planned_query, "resultType": "core", "pageSize": page_size, "format": "json"},
                 timeout=timeout,
                 headers={"User-Agent": "OrchidContinuum-Calyx/1.0"},
             )
@@ -324,9 +222,7 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
             if not isinstance(raw, dict):
                 continue
             record = _record_from_europe_pmc(raw, query=planned_query)
-            identity = str(
-                record.get("doi") or record.get("pmid") or record.get("title") or ""
-            ).casefold()
+            identity = str(record.get("doi") or record.get("pmid") or record.get("title") or "").casefold()
             if not identity or identity in seen:
                 continue
             seen.add(identity)
@@ -340,8 +236,6 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
             str(item.get("title") or ""),
         )
     )
-    # Keep low-scoring records only when coverage is otherwise sparse. This prevents
-    # scent/color papers from filling a winter-physiology result set.
     strong = [item for item in candidates if float(item.get("relevance_score") or 0) >= 4.0]
     results = (strong if strong else candidates)[:result_limit]
 
@@ -366,17 +260,12 @@ def augment_retrieval_with_external_literature(
     *,
     limit: int = 8,
 ) -> dict[str, Any]:
-    """Attach Europe PMC discovery when local retrieval cannot answer."""
+    """Attach discovery and bridge it into the review-bound Brain research index."""
 
     result = dict(retrieval)
     local_results = result.get("results") or []
     original_status = str(result.get("status") or "available")
-    force = os.getenv("CALYX_EXTERNAL_LITERATURE_ALWAYS", "").strip().casefold() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    force = os.getenv("CALYX_EXTERNAL_LITERATURE_ALWAYS", "").strip().casefold() in {"1", "true", "yes", "on"}
     if local_results and not force:
         result.setdefault(
             "external_literature",
@@ -407,10 +296,24 @@ def augment_retrieval_with_external_literature(
             "knowledge_graph_mutation": False,
         }
     result["external_literature"] = external
-    if (
-        external.get("results")
-        and not local_results
-        and original_status not in {"unavailable", "degraded", "error"}
-    ):
+
+    records = external.get("results") or []
+    if records:
+        try:
+            from .literature_ingest import ingest_external_literature_for_research
+
+            result["research_index_ingest"] = ingest_external_literature_for_research(
+                records, query=query
+            )
+        except Exception as exc:  # noqa: BLE001 - ingestion degradation cannot hide discovery
+            result["research_index_ingest"] = {
+                "status": "failed",
+                "error": str(exc),
+                "review_required": True,
+                "automatic_publication": False,
+                "knowledge_graph_mutation": False,
+            }
+
+    if records and not local_results and original_status not in {"unavailable", "degraded", "error"}:
         result["status"] = "local_empty_external_literature_available"
     return result
