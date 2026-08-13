@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -16,6 +18,7 @@ EUROPE_PMC_SEARCH_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest/searc
 EUROPE_PMC_ANNOTATIONS_BASE = (
     "https://www.ebi.ac.uk/europepmc/annotations_api/annotationsByArticleIds"
 )
+EUROPE_PMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 
 MOLECULAR_QUERY = (
     '(gene OR genes OR transcriptome OR transcriptomic OR expression OR locus OR loci '
@@ -93,10 +96,13 @@ class HarvestDiagnostics:
     skipped_no_abstract: int
     skipped_no_gene_annotation: int
     skipped_no_trait_relation: int
+    full_text_attempted: int
+    full_text_available: int
+    full_text_candidates: int
 
 
 class EuropePMCClient:
-    """Small dependency-free client for Europe PMC search and annotation APIs."""
+    """Small dependency-free client for Europe PMC search, annotations, and OA XML."""
 
     def __init__(self, *, timeout: int = 30) -> None:
         self.timeout = timeout
@@ -137,14 +143,56 @@ class EuropePMCClient:
         article = payload[0] if isinstance(payload, list) else payload
         return list(article.get("annotations", []) or [])
 
+    def full_text_sections(self, pmcid: str) -> list[dict[str, str]]:
+        """Return bounded textual paragraphs from Europe PMC's OA fullTextXML endpoint.
+
+        Europe PMC exposes fullTextXML only for its Open Access subset. Unavailable,
+        restricted, malformed, or transient responses fail closed to an empty list.
+        """
+
+        clean_pmcid = str(pmcid or "").strip()
+        if not clean_pmcid:
+            return []
+        request = urllib.request.Request(
+            f"{EUROPE_PMC_REST_BASE}/{urllib.parse.quote(clean_pmcid, safe='')}/fullTextXML",
+            headers={"Accept": "application/xml", "User-Agent": "OrchidContinuum-Calyx/1.0"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                payload = response.read()
+            root = ET.fromstring(payload)
+        except (urllib.error.HTTPError, urllib.error.URLError, ET.ParseError, TimeoutError):
+            return []
+
+        rows: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        body = root.find(".//body")
+        if body is None:
+            return []
+        for section in body.findall(".//sec"):
+            title_node = section.find("title")
+            section_title = " ".join("".join(title_node.itertext()).split()) if title_node is not None else "full_text"
+            for paragraph in section.findall(".//p"):
+                text = " ".join("".join(paragraph.itertext()).split())
+                key = (section_title, text)
+                if not text or key in seen:
+                    continue
+                seen.add(key)
+                rows.append({"section": section_title, "text": text})
+                if len(rows) >= 500:
+                    return rows
+        return rows
+
 
 class EuropePMCMolecularHarvester:
     """Generate review-only molecular candidates from explicit literature statements.
 
-    The harvester deliberately requires all of the following before proposing a
-    candidate: an exact configured taxon target, an abstract sentence containing
-    a Europe PMC gene/protein annotation, a controlled orchid trait phrase, and a
-    relation phrase. Mere co-occurrence at article level is never enough.
+    Candidate acceptance requires an exact configured taxon target plus a single
+    sentence containing a Europe PMC gene/protein annotation, a controlled orchid
+    trait phrase, and an explicit relation phrase. Abstracts are checked first.
+    If no abstract candidate is found and an OA PMC full text is available, Calyx
+    may inspect full-text paragraphs that explicitly mention the target taxon.
+    Mere article-level co-occurrence is never enough.
     """
 
     def __init__(
@@ -210,8 +258,8 @@ class EuropePMCMolecularHarvester:
         return {"protein_id": None, "gene_id": None, "marker_name": name}
 
     @staticmethod
-    def _sentences(abstract: str) -> list[str]:
-        return [part.strip() for part in _SENTENCE_BOUNDARY.split(abstract) if part.strip()]
+    def _sentences(text: str) -> list[str]:
+        return [part.strip() for part in _SENTENCE_BOUNDARY.split(text) if part.strip()]
 
     @staticmethod
     def _trait(sentence: str) -> tuple[str, str] | None:
@@ -236,35 +284,35 @@ class EuropePMCMolecularHarvester:
             return "selection_association"
         return "genetic_association"
 
-    @staticmethod
-    def _sentence_for_gene(abstract: str, gene_name: str) -> str | None:
+    @classmethod
+    def _qualifying_sentence_for_gene(cls, text: str, gene_name: str) -> tuple[str, tuple[str, str], str] | None:
         needle = gene_name.casefold()
-        for sentence in EuropePMCMolecularHarvester._sentences(abstract):
-            if needle in sentence.casefold():
-                return sentence
+        for sentence in cls._sentences(text):
+            if needle not in sentence.casefold():
+                continue
+            trait = cls._trait(sentence)
+            relation = cls._relation(sentence)
+            if trait is not None and relation is not None:
+                return sentence, trait, relation
         return None
 
-    def _candidate_from_annotation(
+    def _candidate_from_text(
         self,
         *,
         target: MolecularHarvestTarget,
         article: dict[str, Any],
         annotation: dict[str, Any],
+        text: str,
+        evidence_scope: str,
+        evidence_section: str | None = None,
     ) -> MolecularEvidenceCandidate | None:
-        abstract = str(article.get("abstractText") or "").strip()
-        if not abstract:
-            return None
         gene_name = self._annotation_name(annotation)
         if not gene_name:
             return None
-        sentence = self._sentence_for_gene(abstract, gene_name)
-        if not sentence:
+        qualification = self._qualifying_sentence_for_gene(text, gene_name)
+        if qualification is None:
             return None
-        trait = self._trait(sentence)
-        relation = self._relation(sentence)
-        if trait is None or relation is None:
-            return None
-
+        sentence, trait, relation = qualification
         trait_predicate, matched_trait_term = trait
         evidence_kind = self._kind(sentence)
         source_id, doi, pmid, pmcid = self._source_identity(article)
@@ -280,7 +328,7 @@ class EuropePMCMolecularHarvester:
             source_uri = f"https://europepmc.org/article/DOI/{urllib.parse.quote(doi, safe='')}"
 
         confidence = 0.5
-        if target.scientific_name.casefold() in abstract.casefold():
+        if target.scientific_name.casefold() in text.casefold():
             confidence += 0.05
         if annotation_uri:
             confidence += 0.05
@@ -313,12 +361,46 @@ class EuropePMCMolecularHarvester:
                 "annotation_exact": gene_name,
                 "annotation_uri": annotation_uri,
                 "annotation_section": annotation.get("section"),
+                "evidence_scope": evidence_scope,
+                "evidence_section": evidence_section,
                 "matched_trait_term": matched_trait_term,
                 "matched_relation_term": relation,
                 "candidate_policy": "machine_detected_requires_human_review",
                 "causal_claim": False,
             },
         )
+
+    def _full_text_candidates(
+        self,
+        *,
+        target: MolecularHarvestTarget,
+        article: dict[str, Any],
+        annotations: list[dict[str, Any]],
+    ) -> list[MolecularEvidenceCandidate]:
+        pmcid = str(article.get("pmcid") or "").strip()
+        if not pmcid or not hasattr(self.client, "full_text_sections"):
+            return []
+        sections = self.client.full_text_sections(pmcid)
+        if not sections:
+            return []
+        target_name = target.scientific_name.casefold()
+        candidates: dict[str, MolecularEvidenceCandidate] = {}
+        for row in sections:
+            text = str(row.get("text") or "").strip()
+            if target_name not in text.casefold():
+                continue
+            for annotation in annotations:
+                candidate = self._candidate_from_text(
+                    target=target,
+                    article=article,
+                    annotation=annotation,
+                    text=text,
+                    evidence_scope="open_access_full_text",
+                    evidence_section=str(row.get("section") or "full_text"),
+                )
+                if candidate is not None:
+                    candidates[candidate.stable_id()] = candidate
+        return list(candidates.values())
 
     def harvest(
         self,
@@ -338,6 +420,9 @@ class EuropePMCMolecularHarvester:
         skipped_no_abstract = 0
         skipped_no_gene_annotation = 0
         skipped_no_trait_relation = 0
+        full_text_attempted = 0
+        full_text_available = 0
+        full_text_candidates = 0
 
         for target in target_list:
             articles = self.client.search(target.scientific_name, page_size=page_size)
@@ -346,7 +431,6 @@ class EuropePMCMolecularHarvester:
                 abstract = str(article.get("abstractText") or "").strip()
                 if not abstract:
                     skipped_no_abstract += 1
-                    continue
                 article_id = self._article_id(article)
                 if not article_id:
                     skipped_no_gene_annotation += 1
@@ -358,16 +442,48 @@ class EuropePMCMolecularHarvester:
                 annotated_publications += 1
                 annotation_mentions += len(annotations)
                 produced = 0
-                for annotation in annotations:
-                    candidate = self._candidate_from_annotation(
-                        target=target,
-                        article=article,
-                        annotation=annotation,
-                    )
-                    if candidate is None:
-                        continue
-                    candidates[candidate.stable_id()] = candidate
-                    produced += 1
+                if abstract:
+                    for annotation in annotations:
+                        candidate = self._candidate_from_text(
+                            target=target,
+                            article=article,
+                            annotation=annotation,
+                            text=abstract,
+                            evidence_scope="abstract",
+                            evidence_section="Abstract",
+                        )
+                        if candidate is None:
+                            continue
+                        candidates[candidate.stable_id()] = candidate
+                        produced += 1
+
+                pmcid = str(article.get("pmcid") or "").strip()
+                if produced == 0 and pmcid and hasattr(self.client, "full_text_sections"):
+                    full_text_attempted += 1
+                    sections = self.client.full_text_sections(pmcid)
+                    if sections:
+                        full_text_available += 1
+                        target_name = target.scientific_name.casefold()
+                        for row in sections:
+                            text = str(row.get("text") or "").strip()
+                            if target_name not in text.casefold():
+                                continue
+                            for annotation in annotations:
+                                candidate = self._candidate_from_text(
+                                    target=target,
+                                    article=article,
+                                    annotation=annotation,
+                                    text=text,
+                                    evidence_scope="open_access_full_text",
+                                    evidence_section=str(row.get("section") or "full_text"),
+                                )
+                                if candidate is None:
+                                    continue
+                                candidate_id = candidate.stable_id()
+                                if candidate_id not in candidates:
+                                    full_text_candidates += 1
+                                candidates[candidate_id] = candidate
+                                produced += 1
                 if produced == 0:
                     skipped_no_trait_relation += 1
 
@@ -386,6 +502,9 @@ class EuropePMCMolecularHarvester:
             skipped_no_abstract=skipped_no_abstract,
             skipped_no_gene_annotation=skipped_no_gene_annotation,
             skipped_no_trait_relation=skipped_no_trait_relation,
+            full_text_attempted=full_text_attempted,
+            full_text_available=full_text_available,
+            full_text_candidates=full_text_candidates,
         )
         return {
             "diagnostics": diagnostics.__dict__,
@@ -398,8 +517,10 @@ class EuropePMCMolecularHarvester:
             "live_tig_eligible": False,
             "review_required": True,
             "scientific_boundary": (
-                "The harvester proposes candidates only when one abstract sentence contains a Europe PMC "
+                "The harvester proposes candidates only when one sentence contains a Europe PMC "
                 "gene/protein annotation, a controlled orchid trait term, and an explicit relation term. "
-                "All harvested records remain excluded from live TIG until human acceptance."
+                "Abstracts are checked first; OA full-text fallback additionally requires the target taxon "
+                "name in the same paragraph. All harvested records remain excluded from live TIG until "
+                "human acceptance."
             ),
         }
