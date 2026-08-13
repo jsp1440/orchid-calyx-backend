@@ -13,7 +13,10 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
-from runtime.matrix_identification_session_store import MATRIX_SESSION_TABLE, durable_requested
+from runtime.matrix_identification_session_store import (
+    MATRIX_SESSION_TABLE,
+    durable_requested,
+)
 
 PREFLIGHT_SCHEMA_VERSION = "matrix-identification-persistence-preflight/v1"
 
@@ -124,7 +127,7 @@ def inspect_matrix_session_database(dsn: str) -> dict[str, Any]:
                 (MATRIX_SESSION_TABLE,),
             )
             indexes = {str(item["indexname"]) for item in cur.fetchall()}
-    except Exception as exc:
+    except psycopg.Error as exc:
         base["blockers"] = ["DATABASE_CONNECTIVITY_OR_INSPECTION_FAILED"]
         base["error_type"] = type(exc).__name__
         return base
