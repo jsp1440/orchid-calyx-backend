@@ -32,6 +32,33 @@ def candidate_phrases(text: str, *, max_words: int = 4, max_phrases: int = 96) -
     return phrases
 
 
+def linkify_text(text: str, links: list[dict[str, Any]]) -> str:
+    """Link the first natural occurrence of each approved term in Markdown text.
+
+    Terms are processed longest-first. Existing Markdown links for the same term are
+    left untouched. This is presentation-only and does not alter canonical concepts.
+    """
+    output = text
+    ordered = sorted(
+        (item for item in links if item.get("term") and item.get("href")),
+        key=lambda item: len(str(item["term"])),
+        reverse=True,
+    )
+    for item in ordered:
+        term = str(item["term"]).strip()
+        href = str(item["href"]).strip()
+        if not term or not href:
+            continue
+        if re.search(rf"\[{re.escape(term)}\]\(", output, flags=re.IGNORECASE):
+            continue
+        pattern = re.compile(
+            rf"(?<![\w-]){re.escape(term)}(?![\w-])",
+            flags=re.IGNORECASE,
+        )
+        output = pattern.sub(lambda match: f"[{match.group(0)}]({href})", output, count=1)
+    return output
+
+
 def build_semantic_context(text: str, *, limit: int = 12) -> dict[str, Any]:
     """Resolve text against ACTIVE + APPROVED Orchid Continuum concepts.
 
