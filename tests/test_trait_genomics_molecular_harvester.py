@@ -22,6 +22,17 @@ class FakeClient:
         return list(self.annotation_rows)
 
 
+class FullTextFakeClient(FakeClient):
+    def __init__(self, articles, annotations, sections):
+        super().__init__(articles, annotations)
+        self.sections = sections
+        self.full_text_calls = []
+
+    def full_text_sections(self, pmcid: str):
+        self.full_text_calls.append(pmcid)
+        return list(self.sections)
+
+
 class FakeRepository:
     def __init__(self):
         self.rows = []
@@ -162,3 +173,69 @@ def test_harvest_is_deterministic_for_same_source_evidence():
     first = harvester.harvest([target()], persist=False)
     second = harvester.harvest([target()], persist=False)
     assert first["candidate_ids"] == second["candidate_ids"]
+
+
+def test_later_gene_sentence_can_satisfy_same_sentence_gate():
+    client = FakeClient(
+        [
+            article(
+                "MYB1 was sequenced in Example orchid. "
+                "Expression of MYB1 was associated with floral scent intensity in Example orchid."
+            )
+        ],
+        [annotation()],
+    )
+    result = EuropePMCMolecularHarvester(client=client, repository=FakeRepository()).harvest(
+        [target()], persist=False
+    )
+    assert result["diagnostics"]["candidates"] == 1
+    assert result["candidates"][0]["evidence_text"].startswith("Expression of MYB1")
+    assert result["candidates"][0]["provenance"]["evidence_scope"] == "abstract"
+
+
+def test_open_access_full_text_fallback_preserves_sentence_gate_and_taxon_context():
+    client = FullTextFakeClient(
+        [article("MYB1 was sequenced in Example orchid without a reported floral association.")],
+        [annotation()],
+        [
+            {
+                "section": "Results",
+                "text": (
+                    "In Example orchid, expression of MYB1 was associated with flower color intensity. "
+                    "Replicate measurements supported the pattern."
+                ),
+            }
+        ],
+    )
+    result = EuropePMCMolecularHarvester(client=client, repository=FakeRepository()).harvest(
+        [target()], persist=False
+    )
+    assert client.full_text_calls == ["PMC1234567"]
+    assert result["diagnostics"]["full_text_attempted"] == 1
+    assert result["diagnostics"]["full_text_available"] == 1
+    assert result["diagnostics"]["full_text_candidates"] == 1
+    assert result["diagnostics"]["candidates"] == 1
+    candidate = result["candidates"][0]
+    assert candidate["trait_predicate"] == "flower_color"
+    assert candidate["provenance"]["evidence_scope"] == "open_access_full_text"
+    assert candidate["provenance"]["evidence_section"] == "Results"
+
+
+def test_full_text_fallback_does_not_assign_other_taxon_evidence_to_target():
+    client = FullTextFakeClient(
+        [article("MYB1 was sequenced in Example orchid without a reported floral association.")],
+        [annotation()],
+        [
+            {
+                "section": "Results",
+                "text": "Expression of MYB1 was associated with flower color intensity in Another orchid.",
+            }
+        ],
+    )
+    result = EuropePMCMolecularHarvester(client=client, repository=FakeRepository()).harvest(
+        [target()], persist=False
+    )
+    assert result["diagnostics"]["full_text_attempted"] == 1
+    assert result["diagnostics"]["full_text_available"] == 1
+    assert result["diagnostics"]["full_text_candidates"] == 0
+    assert result["diagnostics"]["candidates"] == 0
