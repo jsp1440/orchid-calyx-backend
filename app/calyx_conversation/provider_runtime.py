@@ -31,7 +31,7 @@ def _runtime_model() -> str:
     )
 
 
-def _provider_http_error(response: requests.Response) -> RuntimeError:
+def _provider_http_error(response: requests.Response, *, endpoint: str) -> RuntimeError:
     """Return a useful provider error without ever exposing the API key."""
 
     request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
@@ -47,7 +47,7 @@ def _provider_http_error(response: requests.Response) -> RuntimeError:
     except ValueError:
         detail = response.text
     detail = " ".join(detail.split())[:600]
-    message = f"OPENAI_RESPONSES_HTTP_{response.status_code}"
+    message = f"OPENAI_{endpoint.upper()}_HTTP_{response.status_code}"
     if request_id:
         message += f" request_id={request_id}"
     if detail:
@@ -78,6 +78,13 @@ class OpenAIRuntimeResponsesProvider:
         if not self.model or not self.api_key:
             raise RuntimeError("CALYX_RUNTIME_OPENAI_PROVIDER_NOT_CONFIGURED")
 
+    @property
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
     @staticmethod
     def _extract_text(body: dict[str, Any]) -> str:
         direct = body.get("output_text")
@@ -95,13 +102,40 @@ class OpenAIRuntimeResponsesProvider:
                     parts.append(text.strip())
         return "\n\n".join(parts)
 
-    def generate(
+    @staticmethod
+    def _extract_chat_text(body: dict[str, Any]) -> str:
+        choices = body.get("choices") or []
+        if not choices or not isinstance(choices[0], dict):
+            return ""
+        message = choices[0].get("message") or {}
+        if not isinstance(message, dict):
+            return ""
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+            return "\n\n".join(parts)
+        return ""
+
+    def _governed_context_text(self, governed_context: dict[str, Any]) -> str:
+        return "Governed Calyx context for this turn:\n" + json.dumps(
+            governed_context, sort_keys=True, default=str
+        )
+
+    def _responses_payload(
         self,
         *,
         messages: list[dict[str, str]],
         governed_context: dict[str, Any],
-    ) -> GeneratedReply:
-        payload = {
+    ) -> dict[str, Any]:
+        return {
             "model": self.model,
             "input": [
                 {
@@ -126,21 +160,108 @@ class OpenAIRuntimeResponsesProvider:
                     "content": [
                         {
                             "type": "input_text",
-                            "text": "Governed Calyx context for this turn:\n"
-                            + json.dumps(governed_context, sort_keys=True, default=str),
+                            "text": self._governed_context_text(governed_context),
                         }
                     ],
                 },
             ],
             "max_output_tokens": self.max_tokens,
         }
+
+    def _chat_payload(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        governed_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        chat_messages = [
+            {"role": "system", "content": _scientific_system_prompt()},
+            *[
+                {
+                    "role": "assistant" if item.get("role") == "assistant" else "user",
+                    "content": str(item.get("content") or ""),
+                }
+                for item in messages
+                if item.get("role") in {"user", "assistant"}
+            ],
+            {"role": "user", "content": self._governed_context_text(governed_context)},
+        ]
+        return {
+            "model": self.model,
+            "messages": chat_messages,
+            "max_completion_tokens": self.max_tokens,
+        }
+
+    def _chat_completion_fallback(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        governed_context: dict[str, Any],
+        primary_error: Exception,
+    ) -> GeneratedReply:
+        payload = self._chat_payload(messages=messages, governed_context=governed_context)
+        LOGGER.warning(
+            "Calyx OpenAI Responses path failed; trying Chat Completions with the same model=%s primary_error=%s",
+            self.model,
+            primary_error,
+        )
+        try:
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=self._headers,
+                json=payload,
+                timeout=self.timeout,
+            )
+        except requests.RequestException as exc:
+            LOGGER.exception(
+                "Calyx OpenAI Chat Completions fallback failed before an HTTP response model=%s error=%s",
+                self.model,
+                type(exc).__name__,
+            )
+            raise RuntimeError(
+                f"OPENAI_GENERATIVE_PATHS_FAILED primary={primary_error} chat={type(exc).__name__}"
+            ) from exc
+        if not response.ok:
+            chat_error = _provider_http_error(response, endpoint="chat_completions")
+            LOGGER.error(
+                "Calyx OpenAI Chat Completions fallback failed model=%s primary=%s chat=%s",
+                self.model,
+                primary_error,
+                chat_error,
+            )
+            raise RuntimeError(
+                f"OPENAI_GENERATIVE_PATHS_FAILED primary={primary_error} chat={chat_error}"
+            )
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise RuntimeError(
+                f"OPENAI_GENERATIVE_PATHS_FAILED primary={primary_error} chat=INVALID_JSON"
+            ) from exc
+        text = self._extract_chat_text(body)
+        if not text:
+            raise RuntimeError(
+                f"OPENAI_GENERATIVE_PATHS_FAILED primary={primary_error} chat=EMPTY_RESPONSE"
+            )
+        return GeneratedReply(
+            text=text,
+            provider="openai-chat-fallback",
+            model=self.model,
+            request_hash=_request_hash(payload),
+            provider_response_id=str(body.get("id")) if body.get("id") else None,
+        )
+
+    def generate(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        governed_context: dict[str, Any],
+    ) -> GeneratedReply:
+        payload = self._responses_payload(messages=messages, governed_context=governed_context)
         try:
             response = requests.post(
                 f"{self.base_url}/responses",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=self._headers,
                 json=payload,
                 timeout=self.timeout,
             )
@@ -150,33 +271,61 @@ class OpenAIRuntimeResponsesProvider:
                 self.model,
                 type(exc).__name__,
             )
-            raise RuntimeError(f"OPENAI_RESPONSES_REQUEST_FAILED:{type(exc).__name__}") from exc
+            primary_error = RuntimeError(f"OPENAI_RESPONSES_REQUEST_FAILED:{type(exc).__name__}")
+            return self._chat_completion_fallback(
+                messages=messages,
+                governed_context=governed_context,
+                primary_error=primary_error,
+            )
+
         if not response.ok:
-            error = _provider_http_error(response)
-            LOGGER.error("Calyx OpenAI provider fallback: model=%s %s", self.model, error)
-            raise error
+            primary_error = _provider_http_error(response, endpoint="responses")
+            LOGGER.error("Calyx OpenAI Responses path failed model=%s %s", self.model, primary_error)
+            # Retry only when the model/API accepted authentication but the endpoint or
+            # request shape may be incompatible. Authentication/quota failures should
+            # remain explicit rather than doubling a doomed provider request.
+            if response.status_code in {400, 404, 405, 409, 415, 422}:
+                return self._chat_completion_fallback(
+                    messages=messages,
+                    governed_context=governed_context,
+                    primary_error=primary_error,
+                )
+            raise primary_error
+
         try:
             body = response.json()
         except ValueError as exc:
+            primary_error = RuntimeError("OPENAI_RESPONSES_INVALID_JSON")
             LOGGER.error(
                 "Calyx OpenAI provider returned non-JSON content model=%s status=%s",
                 self.model,
                 response.status_code,
             )
-            raise RuntimeError("OPENAI_RESPONSES_INVALID_JSON") from exc
+            return self._chat_completion_fallback(
+                messages=messages,
+                governed_context=governed_context,
+                primary_error=primary_error,
+            )
+
         text = self._extract_text(body)
         if not text:
             status = str(body.get("status") or "unknown")
             incomplete = body.get("incomplete_details")
+            primary_error = RuntimeError(
+                f"CALYX_CHAT_PROVIDER_EMPTY_RESPONSE status={status} incomplete={incomplete}"
+            )
             LOGGER.error(
                 "Calyx OpenAI provider returned no text model=%s response_status=%s incomplete=%s",
                 self.model,
                 status,
                 incomplete,
             )
-            raise RuntimeError(
-                f"CALYX_CHAT_PROVIDER_EMPTY_RESPONSE status={status} incomplete={incomplete}"
+            return self._chat_completion_fallback(
+                messages=messages,
+                governed_context=governed_context,
+                primary_error=primary_error,
             )
+
         return GeneratedReply(
             text=text,
             provider=self.provider_name,
@@ -220,6 +369,8 @@ def runtime_provider_configuration() -> dict[str, Any]:
         "chat_url_present": chat_url,
         "chat_model_present": chat_model,
         "resolved_model": runtime_model or None,
+        "responses_primary": True,
+        "chat_completions_fallback": True,
         "missing_configuration": missing,
         "secrets_exposed": False,
     }
