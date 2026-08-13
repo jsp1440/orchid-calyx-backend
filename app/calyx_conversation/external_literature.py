@@ -24,12 +24,80 @@ _ORCHID_GENERA = (
 )
 
 _PHYSIOLOGY_CLUSTERS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("seasonal_flowering", ("flowering", "floral induction", "flower induction", "flower bud", "floral bud", "dormancy", "winter rest")),
-    ("temperature", ("temperature", "low temperature", "cool temperature", "cold treatment", "chilling", "night temperature", "thermoperiod")),
-    ("water_rest", ("drought", "water deficit", "water stress", "dry season", "dry rest", "watering", "moisture")),
-    ("developmental_fate", ("keiki", "vegetative propagation", "axillary bud", "adventitious shoot", "vegetative growth")),
-    ("regulation", ("hormone", "gibberellin", "cytokinin", "auxin", "abscisic acid", "photoperiod", "carbohydrate", "flowering gene")),
-    ("wetness_pathology", ("root rot", "black rot", "Phytophthora", "Pythium", "soft rot", "waterlogging", "hypoxia", "anoxia")),
+    (
+        "seasonal_flowering",
+        (
+            "flowering",
+            "floral induction",
+            "flower induction",
+            "flower bud",
+            "floral bud",
+            "dormancy",
+            "winter rest",
+        ),
+    ),
+    (
+        "temperature",
+        (
+            "temperature",
+            "low temperature",
+            "cool temperature",
+            "cold treatment",
+            "chilling",
+            "night temperature",
+            "thermoperiod",
+        ),
+    ),
+    (
+        "water_rest",
+        (
+            "drought",
+            "water deficit",
+            "water stress",
+            "dry season",
+            "dry rest",
+            "watering",
+            "moisture",
+        ),
+    ),
+    (
+        "developmental_fate",
+        (
+            "keiki",
+            "vegetative propagation",
+            "axillary bud",
+            "adventitious shoot",
+            "vegetative growth",
+        ),
+    ),
+    (
+        "regulation",
+        (
+            "hormone",
+            "gibberellin",
+            "cytokinin",
+            "auxin",
+            "abscisic acid",
+            "photoperiod",
+            "carbohydrate",
+            "flowering gene",
+        ),
+    ),
+    (
+        "wetness_pathology",
+        (
+            "root rot",
+            "black rot",
+            "Phytophthora",
+            "Pythium",
+            "soft rot",
+            "waterlogging",
+            "hypoxia",
+            "anoxia",
+            "leaf wetness",
+            "crown rot",
+        ),
+    ),
 )
 
 _DISTRACTOR_TERMS = (
@@ -45,6 +113,35 @@ _DISTRACTOR_TERMS = (
     "pollination",
 )
 
+_WET_WINTER_TERMS = (
+    "wet winter",
+    "very wet winter",
+    "winter rain",
+    "rainfall",
+    "rain",
+    "prolonged wet",
+    "persistent moisture",
+    "root-zone moisture",
+    "waterlogging",
+    "saturated",
+    "saturation",
+    "root rot",
+    "crown wetness",
+    "leaf wetness",
+    "el niño",
+    "el nino",
+)
+
+_FLOWERING_TERMS = (
+    "flower",
+    "flowering",
+    "bloom",
+    "floral induction",
+    "keiki",
+    "winter rest",
+    "dormancy",
+)
+
 
 def _mentioned_genera(question: str) -> list[str]:
     normalized = question.casefold()
@@ -55,14 +152,52 @@ def _mentioned_genera(question: str) -> list[str]:
     ]
 
 
+def _wet_winter_intent(question: str) -> bool:
+    normalized = " ".join(question.casefold().split())
+    return any(term in normalized for term in _WET_WINTER_TERMS)
+
+
+def _flowering_intent(question: str) -> bool:
+    normalized = " ".join(question.casefold().split())
+    return any(term in normalized for term in _FLOWERING_TERMS)
+
+
+def _cluster(name: str) -> tuple[str, tuple[str, ...]]:
+    return next(item for item in _PHYSIOLOGY_CLUSTERS if item[0] == name)
+
+
 def _active_clusters(question: str) -> list[tuple[str, tuple[str, ...]]]:
     normalized = question.casefold()
     active: list[tuple[str, tuple[str, ...]]] = []
     for name, terms in _PHYSIOLOGY_CLUSTERS:
         if any(term.casefold() in normalized for term in terms):
             active.append((name, terms))
-    if not active and any(word in normalized for word in ("winter", "flower", "bloom")):
-        active.extend(_PHYSIOLOGY_CLUSTERS[:3])
+
+    if _wet_winter_intent(question):
+        preferred = (
+            _cluster("wetness_pathology"),
+            _cluster("temperature"),
+            _cluster("water_rest"),
+        )
+        for item in reversed(preferred):
+            if item in active:
+                active.remove(item)
+            active.insert(0, item)
+
+    if _flowering_intent(question):
+        for name in ("seasonal_flowering", "developmental_fate", "regulation"):
+            item = _cluster(name)
+            if item not in active:
+                active.append(item)
+
+    if not active and "winter" in normalized:
+        active.extend(
+            (
+                _cluster("temperature"),
+                _cluster("water_rest"),
+                _cluster("wetness_pathology"),
+            )
+        )
     return active
 
 
@@ -76,22 +211,37 @@ def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
 
     genera = _mentioned_genera(question)
     clusters = _active_clusters(question)
+    wet_winter = _wet_winter_intent(question)
     ordered_genera = sorted(
         genera,
-        key=lambda value: (value not in {"Dendrobium", "Sarcochilus"}, genera.index(value)),
+        key=lambda value: (
+            value not in {"Dendrobium", "Sarcochilus", "Cymbidium", "Laelia"},
+            genera.index(value),
+        ),
     )
     queries: list[str] = []
 
-    for genus in ordered_genera[:4]:
-        for _, terms in clusters[:3]:
+    genus_budget = 5 if wet_winter else 4
+    cluster_budget = 2 if wet_winter else 3
+    for genus in ordered_genera[:genus_budget]:
+        for _, terms in clusters[:cluster_budget]:
             queries.append(f'"{genus}" AND ({_epmc_or(terms)})')
             if len(queries) >= max_queries:
                 break
         if len(queries) >= max_queries:
             break
 
-    if len(queries) < max_queries and ordered_genera:
-        regulation = next((terms for name, terms in clusters if name == "regulation"), _PHYSIOLOGY_CLUSTERS[4][1])
+    if wet_winter and len(queries) < max_queries:
+        queries.append(
+            '(orchid OR Orchidaceae) AND '
+            '(waterlogging OR "root rot" OR Phytophthora OR Pythium OR "leaf wetness" OR hypoxia)'
+        )
+
+    if len(queries) < max_queries and ordered_genera and _flowering_intent(question):
+        regulation = next(
+            (terms for name, terms in clusters if name == "regulation"),
+            _PHYSIOLOGY_CLUSTERS[4][1],
+        )
         for genus in ordered_genera[:2]:
             queries.append(f'"{genus}" AND ({_epmc_or(regulation)})')
             if len(queries) >= max_queries:
@@ -102,7 +252,9 @@ def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
         for _, terms in clusters[:3]:
             combined_terms.extend(terms[:2])
         if combined_terms:
-            expr = " OR ".join(f'"{term}"' if " " in term else term for term in combined_terms[:6])
+            expr = " OR ".join(
+                f'"{term}"' if " " in term else term for term in combined_terms[:6]
+            )
             queries.append(f'(orchid OR Orchidaceae) AND ({expr})')
 
     deduplicated: list[str] = []
@@ -123,8 +275,14 @@ def _record_from_europe_pmc(record: dict[str, Any], *, query: str) -> dict[str, 
     abstract = str(record.get("abstractText") or "").strip()
     authors = str(record.get("authorString") or "").strip()
     journal = str(record.get("journalTitle") or "").strip()
-    journal_info = record.get("journalInfo") if isinstance(record.get("journalInfo"), dict) else {}
-    publication_date = str(record.get("firstPublicationDate") or journal_info.get("printPublicationDate") or "").strip()
+    journal_info = (
+        record.get("journalInfo") if isinstance(record.get("journalInfo"), dict) else {}
+    )
+    publication_date = str(
+        record.get("firstPublicationDate")
+        or journal_info.get("printPublicationDate")
+        or ""
+    ).strip()
     doi = str(record.get("doi") or "").strip() or None
     pmid = str(record.get("pmid") or record.get("id") or "").strip() or None
     pmcid = str(record.get("pmcid") or "").strip() or None
@@ -155,6 +313,7 @@ def _relevance_score(record: dict[str, Any], question: str) -> float:
     text = title + " " + abstract
     mentioned = _mentioned_genera(question)
     active = _active_clusters(question)
+    wet_winter = _wet_winter_intent(question)
 
     score = 0.0
     matched_genera = [genus for genus in mentioned if genus.casefold() in text]
@@ -179,9 +338,26 @@ def _relevance_score(record: dict[str, Any], question: str) -> float:
             score += 2.0
 
     diagnostic_phrases = (
-        "floral induction", "flower induction", "low temperature", "cold treatment",
-        "night temperature", "winter rest", "dry season", "water deficit", "dormancy",
-        "keiki", "axillary bud", "flower bud differentiation", "flower bud formation",
+        "floral induction",
+        "flower induction",
+        "low temperature",
+        "cold treatment",
+        "night temperature",
+        "winter rest",
+        "dry season",
+        "water deficit",
+        "dormancy",
+        "keiki",
+        "axillary bud",
+        "flower bud differentiation",
+        "flower bud formation",
+        "waterlogging",
+        "root rot",
+        "phytophthora",
+        "pythium",
+        "hypoxia",
+        "leaf wetness",
+        "crown rot",
     )
     score += 2.5 * sum(phrase in text for phrase in diagnostic_phrases)
 
@@ -191,6 +367,26 @@ def _relevance_score(record: dict[str, Any], question: str) -> float:
         elif distractor in abstract and distractor not in question_cf:
             score -= 1.0
 
+    if wet_winter and not _flowering_intent(question):
+        wet_hits = sum(
+            term in text
+            for term in (
+                "waterlogging",
+                "root rot",
+                "phytophthora",
+                "pythium",
+                "hypoxia",
+                "leaf wetness",
+                "crown rot",
+                "moisture",
+                "rain",
+            )
+        )
+        if wet_hits == 0 and any(
+            term in title for term in ("flower", "floral", "reflowering", "pollination")
+        ):
+            score -= 6.0
+
     if not abstract.strip():
         score -= 2.0
     return round(score, 3)
@@ -199,7 +395,10 @@ def _relevance_score(record: dict[str, Any], question: str) -> float:
 def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
     """Discover and relevance-rank external literature for a Calyx research turn."""
 
-    timeout = max(1.0, min(float(os.getenv("CALYX_EXTERNAL_LITERATURE_TIMEOUT_SECONDS", "12")), 30.0))
+    timeout = max(
+        1.0,
+        min(float(os.getenv("CALYX_EXTERNAL_LITERATURE_TIMEOUT_SECONDS", "12")), 30.0),
+    )
     result_limit = max(1, min(int(limit), 25))
     query_plan = _query_plan(query)
     candidates: list[dict[str, Any]] = []
@@ -211,7 +410,12 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
         try:
             response = requests.get(
                 EUROPE_PMC_SEARCH_URL,
-                params={"query": planned_query, "resultType": "core", "pageSize": page_size, "format": "json"},
+                params={
+                    "query": planned_query,
+                    "resultType": "core",
+                    "pageSize": page_size,
+                    "format": "json",
+                },
                 timeout=timeout,
                 headers={"User-Agent": "OrchidContinuum-Calyx/1.0"},
             )
@@ -226,7 +430,9 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
             if not isinstance(raw, dict):
                 continue
             record = _record_from_europe_pmc(raw, query=planned_query)
-            identity = str(record.get("doi") or record.get("pmid") or record.get("title") or "").casefold()
+            identity = str(
+                record.get("doi") or record.get("pmid") or record.get("title") or ""
+            ).casefold()
             if not identity or identity in seen:
                 continue
             seen.add(identity)
@@ -240,7 +446,9 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
             str(item.get("title") or ""),
         )
     )
-    strong = [item for item in candidates if float(item.get("relevance_score") or 0) >= 4.0]
+    strong = [
+        item for item in candidates if float(item.get("relevance_score") or 0) >= 4.0
+    ]
     results = (strong if strong else candidates)[:result_limit]
 
     return {
@@ -269,7 +477,12 @@ def augment_retrieval_with_external_literature(
     result = dict(retrieval)
     local_results = result.get("results") or []
     original_status = str(result.get("status") or "available")
-    force = os.getenv("CALYX_EXTERNAL_LITERATURE_ALWAYS", "").strip().casefold() in {"1", "true", "yes", "on"}
+    force = os.getenv("CALYX_EXTERNAL_LITERATURE_ALWAYS", "").strip().casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     if local_results and not force:
         result.setdefault(
             "external_literature",
@@ -318,6 +531,10 @@ def augment_retrieval_with_external_literature(
                 "knowledge_graph_mutation": False,
             }
 
-    if records and not local_results and original_status not in {"unavailable", "degraded", "error"}:
+    if (
+        records
+        and not local_results
+        and original_status not in {"unavailable", "degraded", "error"}
+    ):
         result["status"] = "local_empty_external_literature_available"
     return result
