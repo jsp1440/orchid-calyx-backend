@@ -12,15 +12,17 @@ def _stable_id(value: str) -> int:
     return int(digest[:15], 16)
 
 
+def _evidence_set_id(documents: list[IndexDocument]) -> str | None:
+    if not documents:
+        return None
+    payload = ",".join(str(item.revision_id) for item in sorted(documents, key=lambda item: item.revision_id))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
+
+
 def document_from_external_record(
     record: dict[str, Any], *, query: str
 ) -> IndexDocument | None:
-    """Translate a discovered literature record into review-bound research evidence.
-
-    This does not make the record canonical knowledge. It creates a bounded,
-    exactly anchored semantic-index document that the Brain may inspect as
-    unverified research evidence while preserving the review boundary.
-    """
+    """Translate a discovered literature record into review-bound research evidence."""
 
     abstract = str(record.get("abstract") or "").strip()
     title = str(record.get("title") or "").strip()
@@ -111,11 +113,11 @@ def document_from_external_record(
 def ingest_external_literature_for_research(
     records: list[dict[str, Any]], *, query: str
 ) -> dict[str, Any]:
-    """Index newly discovered abstracts for governed Brain research use.
+    """Index discovered abstracts for governed Brain research use.
 
-    Stable identities make repeat discovery idempotent. Records remain unverified,
-    limited-preview, review-required evidence and are never promoted to the
-    Knowledge Graph by this operation.
+    Stable identities make repeat discovery idempotent. The evidence-set identifier
+    lets a repeated scientific question be re-run when its retrieved evidence changes
+    without sacrificing idempotency for an unchanged evidence set.
     """
 
     documents = [
@@ -123,12 +125,14 @@ def ingest_external_literature_for_research(
         for record in records
         if (document := document_from_external_record(record, query=query)) is not None
     ]
+    evidence_set_id = _evidence_set_id(documents)
     if not documents:
         return {
             "status": "nothing_indexable",
             "discovered": len(records),
             "indexable": 0,
             "indexed": 0,
+            "evidence_set_id": evidence_set_id,
             "review_required": True,
         }
 
@@ -154,6 +158,7 @@ def ingest_external_literature_for_research(
             "discovered": len(records),
             "indexable": len(documents),
             "indexed": 0,
+            "evidence_set_id": evidence_set_id,
             "review_required": True,
         }
 
@@ -165,6 +170,7 @@ def ingest_external_literature_for_research(
                 "query": query,
                 "purpose": "Calyx live research evidence bridge",
                 "provenance_contract": "exact-anchor-limited-preview-v2",
+                "evidence_set_id": evidence_set_id,
                 "automatic_publication": False,
                 "knowledge_graph_mutation": False,
             },
@@ -182,6 +188,7 @@ def ingest_external_literature_for_research(
         "discovered": len(records),
         "indexable": len(documents),
         "indexed": len(new_documents),
+        "evidence_set_id": evidence_set_id,
         "index_run_id": run_id,
         "execution_state": execution.get("state"),
         "review_required": True,
