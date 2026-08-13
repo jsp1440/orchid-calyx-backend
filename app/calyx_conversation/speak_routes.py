@@ -20,7 +20,6 @@ from .provider_runtime import (
 )
 from .routes import STORE, _retrieval
 
-# Backward-compatible injection seam used by existing Speak tests and local tooling.
 configured_reply_provider = configured_runtime_provider
 
 AuthDependency = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
@@ -203,9 +202,16 @@ def _run_governed_turn(
             turns=6,
             max_chars=1800,
         )
+        mission_question = _mission_question(history, message)
+        evidence_set_id = str(
+            (retrieval.get("research_index_ingest") or {}).get("evidence_set_id")
+            or ""
+        ).strip()
+        if evidence_set_id:
+            mission_question += f"\nGoverned research evidence set: {evidence_set_id}"
         try:
             mission = BRAIN_MISSION_SERVICE.start(
-                question=_mission_question(history, message),
+                question=mission_question,
                 tenant_id=owner,
                 project_id=project_id,
                 actor=owner,
