@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import scripts.calyx_matrix_durability_run as launcher
@@ -64,3 +66,15 @@ def test_launcher_without_custom_root_does_not_mutate_registry_environment(monke
 
 def test_launcher_bootstraps_repository_root_for_direct_execution():
     assert str(launcher.ROOT) in launcher.sys.path
+
+
+def test_direct_command_help_succeeds_from_repository_checkout():
+    completed = subprocess.run(
+        [sys.executable, "scripts/calyx_matrix_durability_run.py", "--help"],
+        cwd=launcher.ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "Matrix durability deployment launcher" in completed.stdout
