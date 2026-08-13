@@ -9,6 +9,11 @@ from typing import Any, Optional
 import psycopg
 from psycopg.types.json import Jsonb
 
+from app.intake.intelligence_autonomy import (
+    enqueue_due_intelligence_jobs,
+    execute_internal_intelligence_job,
+)
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 
@@ -111,6 +116,10 @@ def enqueue_default_jobs() -> dict[str, Any]:
 
 
 def run_job_logic(job_name: str) -> dict[str, Any]:
+    intelligence_result = execute_internal_intelligence_job(job_name)
+    if intelligence_result is not None:
+        return intelligence_result
+
     with psycopg.connect(ensure_database_url()) as conn:
         with conn.cursor() as cur:
             if job_name == "optimize_calyx_core":
@@ -246,6 +255,7 @@ def execute_next_job() -> dict[str, Any]:
 
 def execute_all_pending_jobs(max_jobs: int = 10) -> dict[str, Any]:
     """Drain a bounded number of pending jobs each engine cycle."""
+    intelligence_enqueue = enqueue_due_intelligence_jobs(limit=max(10, max_jobs * 2))
     completed = 0
     failed = 0
     results: list[dict[str, Any]] = []
@@ -259,6 +269,7 @@ def execute_all_pending_jobs(max_jobs: int = 10) -> dict[str, Any]:
                 "status": "queue_empty",
                 "completed": completed,
                 "failed": failed,
+                "intelligence_enqueue": intelligence_enqueue,
                 "results": results,
             }
         if status == "completed":
@@ -271,6 +282,7 @@ def execute_all_pending_jobs(max_jobs: int = 10) -> dict[str, Any]:
             "status": "stopped",
             "completed": completed,
             "failed": failed,
+            "intelligence_enqueue": intelligence_enqueue,
             "results": results,
         }
 
@@ -278,5 +290,6 @@ def execute_all_pending_jobs(max_jobs: int = 10) -> dict[str, Any]:
         "status": "cycle_limit_reached",
         "completed": completed,
         "failed": failed,
+        "intelligence_enqueue": intelligence_enqueue,
         "results": results,
     }
