@@ -179,7 +179,8 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
     _subject(auth)
     provider = configured_reply_provider()
     return {
-        "release": "CALYX-SPEAK-005-CONTINUUM-INTEGRATION",
+        "release": "CALYX-SPEAK-004-CONTEXT",
+        "integration_release": "CALYX-SPEAK-005-CONTINUUM-INTEGRATION",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
         "provider": {
