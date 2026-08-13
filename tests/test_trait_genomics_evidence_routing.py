@@ -71,6 +71,25 @@ def test_router_classifies_trait_morphology_without_promoting_molecular_associat
     assert "gene_annotations_present_but_no_strict_association" in routed.reasons
 
 
+def test_title_level_micromorphology_beats_secondary_phylogenetic_method_context():
+    routed = ScientificEvidenceRouter().route(
+        {
+            "title": "Micromorphology of Labellum in Selected Dendrobium spp.",
+            "abstractText": (
+                "Labellum micromorphology was compared among selected species, and nuclear ITS "
+                "sequences were used to provide phylogenetic context."
+            ),
+        },
+        has_gene_annotations=False,
+        molecular_candidate_count=0,
+        full_text_available=True,
+    )
+    assert routed.route == "trait_morphology_evidence"
+    assert routed.confidence == 0.9
+    assert "title_level_morphology_signal" in routed.reasons
+    assert "phylogenetic_sequence_context" in routed.secondary_routes
+
+
 def test_router_prioritizes_strict_molecular_candidate():
     routed = ScientificEvidenceRouter().route(
         {
@@ -115,6 +134,30 @@ def test_routing_service_is_read_only_by_default_and_preserves_routes():
     assert result["diagnostics"]["phylogenetic_sequence_context"] == 1
     assert result["diagnostics"]["trait_morphology_evidence"] == 1
     assert repository.rows == []
+
+
+def test_service_preserves_secondary_phylogenetic_route_in_provenance():
+    article = {
+        "pmid": "36706796",
+        "pmcid": "PMC9455781",
+        "title": "Micromorphology of Labellum in Selected Dendrobium spp.",
+        "abstractText": (
+            "Labellum micromorphology was studied across species while ITS sequence data "
+            "provided phylogenetic context."
+        ),
+        "isOpenAccess": "Y",
+        "_calyx_retrieval_strategy": "exact_taxon_any",
+        "_calyx_retrieval_query": '"Dendrobium cuthbertsonii"',
+    }
+    result = LiteratureEvidenceRoutingService(
+        client=FakeClient([article]),
+        repository=FakeRepository(),
+    ).route([target()], persist=False)
+
+    row = result["routes"][0]
+    assert row["route"] == "trait_morphology_evidence"
+    assert "phylogenetic_sequence_context" in row["provenance"]["secondary_routes"]
+    assert row["provenance"]["primary_route_title_aware"] is True
 
 
 def test_routing_service_persistence_is_idempotent_by_stable_route_id():
