@@ -35,6 +35,10 @@ def job_with_inputs(inputs: dict) -> CalyxProgramJob:
         ({"actions": ["taxonomy-activation"]}, "OWNER_ONLY_ACTION:taxonomy_activation"),
         ({"workflow": {"production-migration": True}}, "REVIEW_REQUIRED_ACTION:production_migration"),
         ({"workflow": {"schema activation": "enabled"}}, "REVIEW_REQUIRED_ACTION:schema_activation"),
+        ({"action": "create branch"}, "REVIEW_REQUIRED_ACTION:create_branch"),
+        ({"actions": ["create-commit"]}, "REVIEW_REQUIRED_ACTION:create_commit"),
+        ({"workflow": {"push branch": True}}, "REVIEW_REQUIRED_ACTION:push_branch"),
+        ({"requested_action": "Open Pull Request"}, "REVIEW_REQUIRED_ACTION:open_pull_request"),
         ({"governance": {"class": "owner-only"}}, "EXPLICIT_OWNER_ONLY"),
         ({"governance": {"class": "review required"}}, "EXPLICIT_REVIEW_REQUIRED"),
     ],
@@ -52,6 +56,7 @@ def test_metadata_mapping_is_not_promoted_to_action_request():
                 "publication": {"doi": "10.0000/example"},
                 "force-push": False,
                 "production migration": "disabled",
+                "open pull request": {"status": "historical_evidence_only"},
             }
         )
     )
