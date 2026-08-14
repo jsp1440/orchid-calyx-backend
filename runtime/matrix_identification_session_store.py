@@ -130,7 +130,7 @@ class PostgresMatrixSessionStore:
                 cur.execute("SELECT to_regclass(%s)", (f"public.{MATRIX_SESSION_TABLE}",))
                 row = cur.fetchone()
                 return bool(row and row[0])
-        except Exception:
+        except psycopg.Error:
             return False
 
     def _require_schema(self) -> None:
