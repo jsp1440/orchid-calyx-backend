@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'app/mission_control_briefing/proposal_executor_status.py'
+      - 'app/mission_control_briefing/proposal_execution_status.py'
       - 'app/mission_control_briefing/routes.py'
       - 'tests/test_calyx_mission_control_proposal_executor_status_114u.py'
       - '.github/workflows/calyx-mission-control-proposal-executor-status.yml'
@@ -34,23 +35,27 @@ jobs:
         run: |
           python -m compileall -q \
             app/mission_control_briefing/proposal_executor_status.py \
+            app/mission_control_briefing/proposal_execution_status.py \
             app/mission_control_briefing/routes.py \
             tests/test_calyx_mission_control_proposal_executor_status_114u.py
       - name: Ruff
         run: |
           ruff check --ignore B008 \
             app/mission_control_briefing/proposal_executor_status.py \
+            app/mission_control_briefing/proposal_execution_status.py \
             app/mission_control_briefing/routes.py \
             tests/test_calyx_mission_control_proposal_executor_status_114u.py
           ruff format --check \
             app/mission_control_briefing/proposal_executor_status.py \
+            app/mission_control_briefing/proposal_execution_status.py \
             app/mission_control_briefing/routes.py \
             tests/test_calyx_mission_control_proposal_executor_status_114u.py
       - name: Focused Mission Control regressions
         run: |
           python -m pytest -q \
             tests/test_calyx_mission_control_proposal_executor_status_114u.py \
-            tests/test_calyx_github_proposal_executor_policy_114u.py
+            tests/test_calyx_github_proposal_executor_policy_114u.py \
+            tests/test_calyx_git_proposal_mutation_journal_114t.py
       - name: Read-only authority boundary
         run: |
           python - <<'PY'
