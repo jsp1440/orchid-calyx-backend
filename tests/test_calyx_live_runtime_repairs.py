@@ -57,12 +57,12 @@ def test_postgres_store_query_limits_newest_rows_before_reordering() -> None:
     assert "reversed(rows)" in source
 
 
-def test_long_research_turn_contract_accepts_30000_characters() -> None:
-    payload = ConversationTurnRequest(message="x" * 30000)
-    assert len(payload.message) == 30000
+def test_long_research_turn_contract_accepts_100000_characters() -> None:
+    payload = ConversationTurnRequest(message="x" * 100000)
+    assert len(payload.message) == 100000
 
     with pytest.raises(ValueError):
-        ConversationTurnRequest(message="x" * 30001)
+        ConversationTurnRequest(message="x" * 100001)
 
 
 def test_compaction_preserves_current_long_research_prompt() -> None:
