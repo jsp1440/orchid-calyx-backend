@@ -7,13 +7,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.git_proposal_execution_plan import ACTION_ORDER
+from app.calyx_orchestrator.git_proposal_mutation_executor import (
+    GitProposalMutationReceipt,
+)
 from app.calyx_orchestrator.git_proposal_mutation_journal import (
     FINAL_STATUSES,
     DurableGitProposalMutationJournal,
     GitProposalMutationJournalEventRecord,
-)
-from app.calyx_orchestrator.git_proposal_mutation_executor import (
-    GitProposalMutationReceipt,
 )
 
 STATUS_SCHEMA = "calyx-mission-control-proposal-execution-status-v1"
