@@ -105,9 +105,7 @@ def observe_target(database_url: str, *, source: str) -> TargetObservation:
             server_port=int(row[4]) if row[4] is not None else None,
             current_user=str(row[5]),
             species_relation_oid=str(row[6]) if row[6] is not None else None,
-            research_station_projects_oid=(
-                str(row[7]) if row[7] is not None else None
-            ),
+            research_station_projects_oid=(str(row[7]) if row[7] is not None else None),
             system_identifier=_system_identifier(connection),
             transaction_read_only=str(transaction_read_only),
         )
