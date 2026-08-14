@@ -1,6 +1,6 @@
 # BUILD-BRAIN-114U — Governed proposal CI repair loop
 
-**Date:** 2026-08-13  
+**Date:** 2026-08-13
 **Status:** implementation candidate; production persistence activation and live CI/GitHub registration are not performed.
 
 ## Purpose
@@ -33,11 +33,11 @@ Repeated evaluation of identical failure evidence is idempotent. Changed evidenc
 - failure/cancelled check → `repair_required` plus deterministic governed corrective assignment;
 - stale/moved head or identity mismatch → `blocked`.
 
-Revalidation evidence requires an advanced head SHA and a SHA-256 digest of the authoritative corrective receipt. This module records that proof but does not manufacture or execute the correction itself.
+Revalidation evidence requires an advanced head SHA, all corrected checks green/safely skipped, and a SHA-256 digest of the authoritative corrective receipt. This module records that proof but does not manufacture or execute the correction itself.
 
 ## Durability
 
-`calyx_git_proposal_ci_repair_events` is an append-only evidence table with unique `(repair_key, event_kind)` and event digest constraints. The migration is additive and code-only in this candidate. Production migration application is separately governed.
+`calyx_git_proposal_ci_repair_events` is an append-only evidence table with unique `(repair_key, event_kind)` and event digest constraints. Concurrent exact replays converge on the persisted winner; conflicting evidence fails closed rather than overwriting durable history. The migration is additive and code-only in this candidate. Production migration application is separately governed.
 
 ## Permanent non-authority
 
@@ -52,4 +52,4 @@ This slice does **not** authorize or perform:
 
 ## Validation target
 
-The focused suite covers green/no-mutation behavior, pending checks, deterministic failure assignments, durable replay idempotency, stale-head blocking, PR/repository mismatch blocking, incomplete proposal receipts, advanced-head revalidation, authoritative receipt-digest requirements, and immutable evidence conflicts. Adjacent 114U mutation-executor and GitHub-adapter regressions run in the same hosted workflow.
+The focused suite covers green/no-mutation behavior, pending checks, deterministic failure assignments, durable replay idempotency, stale-head blocking, PR/repository mismatch blocking, incomplete proposal receipts, advanced-head revalidation, rejection of non-green revalidation, authoritative receipt-digest requirements, and immutable evidence conflicts. Adjacent 114S mutation-executor and 114U GitHub-adapter regressions run in the same hosted workflow.
