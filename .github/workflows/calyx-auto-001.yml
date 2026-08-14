@@ -57,6 +57,8 @@ jobs:
       CALYX_AUTO_TEST_DATABASE_URL: postgresql+psycopg://calyx:calyx@localhost:5432/calyx_auto_test
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -89,18 +91,20 @@ jobs:
           tests/test_calyx_engineering_program_persistence.py
       - name: Ruff
         if: ${{ always() }}
-        run: >-
-          ruff check
-          app/calyx_orchestrator/auto_mission.py
-          app/calyx_orchestrator/auto_mission_models.py
-          app/calyx_orchestrator/auto_mission_service.py
-          app/calyx_orchestrator/program_models.py
-          app/calyx_orchestrator/program_repository.py
-          runtime/calyx_auto_worker.py
-          tests/test_calyx_auto_001.py
-          tests/test_calyx_auto_001_unsupported_role.py
-          tests/test_calyx_auto_001_action_aliases.py
-          tests/test_calyx_auto_001_receipt_binding.py
+        run: |
+          ruff check \
+            app/calyx_orchestrator/auto_mission.py \
+            app/calyx_orchestrator/auto_mission_models.py \
+            app/calyx_orchestrator/auto_mission_service.py \
+            app/calyx_orchestrator/program_models.py \
+            app/calyx_orchestrator/program_repository.py \
+            runtime/calyx_auto_worker.py \
+            tests/test_calyx_auto_001_unsupported_role.py \
+            tests/test_calyx_auto_001_action_aliases.py \
+            tests/test_calyx_auto_001_receipt_binding.py
+          # The contention helper intentionally records every BaseException raised by a
+          # worker thread so the parent test can surface assertion/system failures.
+          ruff check --ignore BLE001 tests/test_calyx_auto_001.py
       - name: Migration invariants
         if: ${{ always() }}
         run: |
