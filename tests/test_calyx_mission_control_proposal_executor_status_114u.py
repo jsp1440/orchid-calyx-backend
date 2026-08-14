@@ -14,6 +14,8 @@ from app.calyx_orchestrator.git_proposal_mutation_journal import (
 from app.calyx_orchestrator.sandbox_supervisor_evidence import canonical_sha256
 from app.database import Base
 from app.mission_control_briefing.proposal_execution_status import (
+    MAX_ACTIVE_SCAN_PLANS,
+    MAX_RECENT_PLANS,
     proposal_execution_mission_control_status,
 )
 from app.mission_control_briefing.proposal_executor_status import (
@@ -48,8 +50,14 @@ def _evidence(action: str, payload: dict[str, object]) -> GitProposalOperationEv
     )
 
 
-def _active_receipt() -> GitProposalMutationReceipt:
-    branch = "autonomy/proposal/status-fixture"
+def _active_receipt(
+    *,
+    plan_digest: str = PLAN_A,
+    patch_job: str = "patch-active",
+    status: str = "in_progress",
+    failure_code: str | None = None,
+) -> GitProposalMutationReceipt:
+    branch = f"autonomy/proposal/status-{plan_digest[:8]}"
     branch_payload = {
         "action": "create_branch",
         "status": "created",
@@ -64,29 +72,33 @@ def _active_receipt() -> GitProposalMutationReceipt:
         "branch": branch,
         "parent_commit_sha": BASE_SHA,
         "commit_sha": COMMIT_SHA,
-        "patch_program_job_id": "patch-active",
+        "patch_program_job_id": patch_job,
         "change_hashes": [],
         "tree_sha": "3" * 40,
     }
     return GitProposalMutationReceipt(
-        plan_digest=PLAN_A,
-        patch_program_job_id="patch-active",
+        plan_digest=plan_digest,
+        patch_program_job_id=patch_job,
         repository=REPOSITORY,
         proposed_branch=branch,
         base_commit_sha=BASE_SHA,
         base_ref="main",
-        status="in_progress",
+        status=status,
         completed_actions=("create_branch", "create_commit"),
         operation_evidence=(
             _evidence("create_branch", branch_payload),
             _evidence("create_commit", commit_payload),
         ),
-        failure_code=None,
+        failure_code=failure_code,
     )
 
 
-def _completed_receipt() -> GitProposalMutationReceipt:
-    branch = "autonomy/proposal/completed-fixture"
+def _completed_receipt(
+    *,
+    plan_digest: str = PLAN_B,
+    patch_job: str = "patch-completed",
+) -> GitProposalMutationReceipt:
+    branch = f"autonomy/proposal/completed-{plan_digest[:8]}"
     payloads = (
         {
             "action": "create_branch",
@@ -102,7 +114,7 @@ def _completed_receipt() -> GitProposalMutationReceipt:
             "branch": branch,
             "parent_commit_sha": BASE_SHA,
             "commit_sha": COMMIT_SHA,
-            "patch_program_job_id": "patch-completed",
+            "patch_program_job_id": patch_job,
             "change_hashes": [],
             "tree_sha": "3" * 40,
         },
@@ -128,8 +140,8 @@ def _completed_receipt() -> GitProposalMutationReceipt:
         },
     )
     return GitProposalMutationReceipt(
-        plan_digest=PLAN_B,
-        patch_program_job_id="patch-completed",
+        plan_digest=plan_digest,
+        patch_program_job_id=patch_job,
         repository=REPOSITORY,
         proposed_branch=branch,
         base_commit_sha=BASE_SHA,
@@ -146,6 +158,10 @@ def _completed_receipt() -> GitProposalMutationReceipt:
         ),
         failure_code=None,
     )
+
+
+def _digest(number: int) -> str:
+    return f"{number:064x}"
 
 
 def test_mission_control_status_is_read_only_and_blocked_by_default() -> None:
@@ -225,12 +241,13 @@ def test_execution_status_fails_closed_when_journal_table_is_unavailable() -> No
     assert status["journal_available"] is False
     assert status["journal_error"] == "durable_mutation_journal_table_unavailable"
     assert status["active_execution"] is None
+    assert status["active_execution_known"] is False
     assert status["read_only"] is True
     assert status["mutation_performed_by_status_read"] is False
     assert status["secret_material_exposed"] is False
 
 
-def test_execution_status_surfaces_active_operation_and_exact_provenance() -> None:
+def test_in_progress_subset_boundary_does_not_invent_next_authorized_action() -> None:
     with _db() as session:
         DurableGitProposalMutationJournal(session).record(
             _active_receipt(), event_index=1
@@ -246,9 +263,29 @@ def test_execution_status_surfaces_active_operation_and_exact_provenance() -> No
     assert active["base_commit_sha"] == BASE_SHA
     assert active["commit_sha"] == COMMIT_SHA
     assert active["completed_actions"] == ["create_branch", "create_commit"]
-    assert active["current_remote_operation"] == "push_branch"
+    assert active["current_remote_operation"] is None
+    assert active["current_remote_operation_state"] == "authorization_boundary_unknown"
     assert active["terminal"] is False
     assert active["remote_side_effects_recorded"] is True
+
+
+def test_failure_receipt_proves_attempted_next_action_was_authorized() -> None:
+    with _db() as session:
+        DurableGitProposalMutationJournal(session).record(
+            _active_receipt(
+                status="partial_failure",
+                failure_code="synthetic_push_failure",
+            ),
+            event_index=1,
+        )
+        status = proposal_execution_mission_control_status(session)
+    active = status["active_execution"]
+    assert active is not None
+    assert active["current_remote_operation"] == "push_branch"
+    assert (
+        active["current_remote_operation_state"]
+        == "authorized_by_failed_attempt"
+    )
 
 
 def test_execution_status_surfaces_completed_draft_pr_without_secret_or_write() -> None:
@@ -261,6 +298,7 @@ def test_execution_status_surfaces_completed_draft_pr_without_secret_or_write() 
     assert latest is not None
     assert latest["status"] == "completed"
     assert latest["current_remote_operation"] is None
+    assert latest["current_remote_operation_state"] == "terminal"
     assert latest["terminal"] is True
     assert latest["draft_pull_request"] == {
         "number": 1234,
@@ -268,6 +306,8 @@ def test_execution_status_surfaces_completed_draft_pr_without_secret_or_write() 
         "draft": True,
     }
     assert status["active_execution"] is None
+    assert status["active_execution_known"] is True
+    assert status["active_execution_state"] == "none"
     assert status["mutation_performed_by_status_read"] is False
     assert status["secret_material_exposed"] is False
 
@@ -283,10 +323,79 @@ def test_execution_status_prefers_newest_active_plan_but_preserves_recent_histor
     assert status["recent_execution_count"] == 2
     assert status["latest_execution"]["plan_digest"] == PLAN_A
     assert status["active_execution"]["plan_digest"] == PLAN_A
+    assert status["active_execution_known"] is True
     assert [item["plan_digest"] for item in status["recent_executions"]] == [
         PLAN_A,
         PLAN_B,
     ]
+
+
+def test_active_execution_is_found_outside_recent_history_window() -> None:
+    with _db() as session:
+        journal = DurableGitProposalMutationJournal(session)
+        older_active = _active_receipt(
+            plan_digest=_digest(1),
+            patch_job="patch-older-active",
+        )
+        journal.record(older_active, event_index=1)
+        for number in range(2, MAX_RECENT_PLANS + 3):
+            journal.record(
+                _completed_receipt(
+                    plan_digest=_digest(number),
+                    patch_job=f"patch-complete-{number}",
+                ),
+                event_index=1,
+            )
+        status = proposal_execution_mission_control_status(session)
+    assert status["recent_execution_count"] == MAX_RECENT_PLANS
+    assert all(
+        item["plan_digest"] != older_active.plan_digest
+        for item in status["recent_executions"]
+    )
+    assert status["active_execution_known"] is True
+    assert status["active_execution_state"] == "active_found"
+    assert status["active_execution"]["plan_digest"] == older_active.plan_digest
+
+
+def test_active_execution_reports_unknown_when_bounded_scan_is_exhausted() -> None:
+    with _db() as session:
+        journal = DurableGitProposalMutationJournal(session)
+        journal.record(
+            _active_receipt(
+                plan_digest=_digest(1),
+                patch_job="patch-too-old-active",
+            ),
+            event_index=1,
+        )
+        for number in range(2, MAX_ACTIVE_SCAN_PLANS + 3):
+            journal.record(
+                _completed_receipt(
+                    plan_digest=_digest(number),
+                    patch_job=f"patch-complete-{number}",
+                ),
+                event_index=1,
+            )
+        status = proposal_execution_mission_control_status(session)
+    assert status["active_execution"] is None
+    assert status["active_execution_known"] is False
+    assert status["active_execution_state"] == "unknown_beyond_bounded_scan"
+    assert status["bounded_active_scan_limit"] == MAX_ACTIVE_SCAN_PLANS
+
+
+def test_checkpoint_status_detects_event_index_gap_without_full_history_decode() -> None:
+    with _db() as session:
+        journal = DurableGitProposalMutationJournal(session)
+        first = _active_receipt(
+            plan_digest=_digest(900),
+            patch_job="patch-gap",
+        )
+        journal.record(first, event_index=1)
+        row = session.query(GitProposalMutationJournalEventRecord).one()
+        row.event_index = 2
+        session.commit()
+        status = proposal_execution_mission_control_status(session)
+    assert status["journal_available"] is False
+    assert status["journal_error"] == "GIT_PROPOSAL_JOURNAL_HISTORY_GAP"
 
 
 def test_authenticated_briefing_router_exposes_proposal_executor_route() -> None:
