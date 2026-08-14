@@ -157,7 +157,9 @@ def test_pending_ci_waits_without_repair_assignment() -> None:
     assert decision.assignment is None
 
 
-def test_failed_ci_creates_deterministic_governed_assignment_and_durable_evidence() -> None:
+def test_failed_ci_creates_deterministic_governed_assignment_and_durable_evidence() -> (
+    None
+):
     db, journal = _journal()
     try:
         observation = _observation(CiConclusion.FAILURE, CiConclusion.SUCCESS)
@@ -285,7 +287,9 @@ def test_revalidation_requires_advanced_head_and_authoritative_receipt_digest() 
 
 
 @pytest.mark.parametrize("conclusion", [CiConclusion.PENDING, CiConclusion.FAILURE])
-def test_revalidation_refuses_non_green_corrected_head(conclusion: CiConclusion) -> None:
+def test_revalidation_refuses_non_green_corrected_head(
+    conclusion: CiConclusion,
+) -> None:
     db, journal = _journal()
     try:
         failed = GitProposalCiRepairCoordinator().evaluate(
@@ -305,7 +309,9 @@ def test_revalidation_refuses_non_green_corrected_head(conclusion: CiConclusion)
         db.close()
 
 
-def test_changed_revalidation_evidence_conflicts_instead_of_overwriting_history() -> None:
+def test_changed_revalidation_evidence_conflicts_instead_of_overwriting_history() -> (
+    None
+):
     db, journal = _journal()
     try:
         failed = GitProposalCiRepairCoordinator().evaluate(
