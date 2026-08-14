@@ -12,7 +12,8 @@ The in-process Calyx harvester executes a bounded literature task before the ada
 
 1. Literature lane (guaranteed first)
    - Europe PMC discovery every cycle
-   - maximum 5 modern literature records per default cycle
+   - Crossref DOI/scholarly metadata discovery every second cycle
+   - maximum 5 records from each due provider per default cycle
    - periodic Biodiversity Heritage Library discovery when `BHL_API_KEY` is configured
    - stable/idempotent research indexing
    - review-bound evidence only
@@ -48,6 +49,12 @@ The modern literature lane rotates across Orchidaceae-specific and general plant
 
 At the default 15-minute harvest interval the full 16-topic modern corpus rotates approximately every four hours. Topic selection is deterministic by time bucket, so restarts do not require another state table.
 
+## Scholarly metadata and DOI reconciliation
+
+Crossref is now a second modern literature provider. It runs every second normal harvest cycle and searches a bibliographic topic rotation aligned with the Europe PMC corpus. Crossref work records are staged as `SCIENTIFIC_LITERATURE_METADATA` with stable DOI-centered identities, authors, container/journal title, publication date, subjects, URL, work type, reference count, and citation count when supplied by Crossref.
+
+Crossref records are metadata evidence rather than article full text. They are review-bound and cannot mutate the canonical knowledge graph automatically. `CROSSREF_MAILTO` is optional and, when configured, is sent with API requests and identified in the user agent.
+
 ## Historical books and monographs
 
 BHL is now connected as a periodic historical-literature discovery lane. It uses the current BHL API v3 `PublicationSearch` operation with catalog + full-text search and stages bibliographic records into the semantic research index as `HISTORICAL_BOTANICAL_LITERATURE`.
@@ -75,7 +82,7 @@ GBIF's synchronous occurrence search has a documented hard limit of 100,000 reco
 
 ## Evidence governance
 
-Discovered literature is staged as scientific literature evidence for Calyx, Brain, and Research Station consumers. Imported abstracts and historical bibliographic records remain unverified research evidence and retain source identifiers/provenance. They are not promoted automatically to canonical scientific claims.
+Discovered literature is staged as scientific literature evidence for Calyx, Brain, and Research Station consumers. Imported abstracts, scholarly metadata, and historical bibliographic records remain unverified research evidence and retain source identifiers/provenance. They are not promoted automatically to canonical scientific claims.
 
 This preserves the core rule:
 
@@ -87,20 +94,26 @@ GBIF and other biodiversity backfills can remain productive for months or years.
 
 ## Implemented components
 
-- `runtime/literature_harvester.py` — bounded rotating Europe PMC corpus harvester plus periodic BHL discovery
+- `runtime/literature_harvester.py` — bounded rotating Europe PMC corpus harvester, Crossref metadata lane, and periodic BHL discovery
+- `app/calyx_conversation/literature_ingest.py` — governed Europe PMC abstract indexing
+- `app/calyx_conversation/scholarly_metadata_ingest.py` — governed Crossref DOI/scholarly metadata indexing
 - `app/calyx_conversation/historical_literature_ingest.py` — governed BHL metadata indexing
 - `adaptive_harvest_worker.py` — two-lane scheduler with literature first and global GBIF fallback
 - `harvesters/gbif_global_api.py` — unfiltered global Orchidaceae occurrence/media stream with a separate checkpoint
 - `app/routers/harvesters.py` — read-only `/api/harvesters/runtime-status` production observability endpoint
-- `tests/test_literature_harvest_lane.py` — rotation, BHL gating, ordering, failure isolation, and GBIF fall-through tests
+- `tests/test_literature_harvest_lane.py` — rotation, Crossref/BHL gating, ordering, failure isolation, and GBIF fall-through tests
+
+## Validation
+
+GitHub Actions completed both `BUILD-091 Validation` and `CALYX Certification Hardening 002` successfully for the first Crossref-enabled implementation commit (`c7956b24b4534ecb945ea59f7fee9cf7cc1f966a`). Additional focused Crossref mocked-network tests were subsequently added and are expected to run through the same push validations.
 
 ## Remaining high-priority work
 
 1. Configure `BHL_API_KEY` in production if it is not already present, then verify live historical-book discovery.
 2. Add bounded BHL OCR/page-text acquisition for reviewed historical works, including Darwin's orchid books.
-3. Add Crossref DOI/metadata reconciliation to strengthen publication identity and citation provenance.
-4. Implement authenticated GBIF bulk Download API acquisition once credentials are supplied; this is required for complete historical GBIF coverage beyond 100,000 records.
-5. Route reviewed pollination/mycorrhizal evidence into candidate graph relationships with source anchors.
-6. Add complementary biodiversity publishers not fully represented in the GBIF aggregate.
+3. Implement authenticated GBIF bulk Download API acquisition once credentials are supplied; this is required for complete historical GBIF coverage beyond 100,000 records.
+4. Route reviewed pollination/mycorrhizal evidence into candidate graph relationships with source anchors.
+5. Add complementary biodiversity publishers not fully represented in the GBIF aggregate.
+6. Apply the existing BUILD-105 harvester-safety migration through an authorized database migration path so production safety snapshots stop reporting the missing-table warning.
 
 The scheduler must preserve lane fairness as new source adapters are added; adding a high-volume source must never make literature optional or unreachable.
