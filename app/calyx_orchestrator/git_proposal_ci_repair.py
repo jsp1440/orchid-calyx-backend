@@ -219,9 +219,7 @@ class CiRepairDecision:
 
 
 class CorrectiveMutationReceiptResolver(Protocol):
-    def resolve(
-        self, *, receipt_digest: str
-    ) -> GitProposalMutationReceipt | None: ...
+    def resolve(self, *, receipt_digest: str) -> GitProposalMutationReceipt | None: ...
 
 
 class DurableCorrectiveMutationReceiptResolver:
