@@ -16,8 +16,9 @@ from app.calyx_orchestrator.git_proposal_mutation_journal import (
     GitProposalMutationJournalEventRecord,
 )
 
-STATUS_SCHEMA = "calyx-mission-control-proposal-execution-status-v1"
+STATUS_SCHEMA = "calyx-mission-control-proposal-execution-status-v2"
 MAX_RECENT_PLANS = 25
+MAX_ACTIVE_SCAN_PLANS = 100
 
 
 def _operation_payload(
@@ -30,11 +31,27 @@ def _operation_payload(
     return dict(matches[0].payload)
 
 
+def _current_operation(receipt: GitProposalMutationReceipt) -> tuple[str | None, str]:
+    """Return only an operation that is provably inside the authorized plan boundary."""
+
+    completed = tuple(receipt.completed_actions)
+    if receipt.status in FINAL_STATUSES:
+        return None, "terminal"
+    if len(completed) >= len(ACTION_ORDER):
+        return None, "action_order_exhausted"
+    if receipt.status in {"partial_failure", "failed"}:
+        # A failure receipt exists only because the executor entered the next operation in
+        # the reviewed plan. Therefore the next prefix action is known to be authorized.
+        return ACTION_ORDER[len(completed)], "authorized_by_failed_attempt"
+    # An in-progress receipt is committed after every successful operation. It may be the
+    # last operation of a dependency-closed subset plan, so the global action order alone
+    # cannot prove that another remote operation was authorized.
+    return None, "authorization_boundary_unknown"
+
+
 def _receipt_snapshot(receipt: GitProposalMutationReceipt) -> dict[str, Any]:
     completed = tuple(receipt.completed_actions)
-    next_action = None
-    if receipt.status not in FINAL_STATUSES and len(completed) < len(ACTION_ORDER):
-        next_action = ACTION_ORDER[len(completed)]
+    current_operation, operation_state = _current_operation(receipt)
 
     commit = _operation_payload(receipt, "create_commit") or {}
     pull_request = _operation_payload(receipt, "open_pull_request") or {}
@@ -52,7 +69,8 @@ def _receipt_snapshot(receipt: GitProposalMutationReceipt) -> dict[str, Any]:
         "proposed_branch": receipt.proposed_branch,
         "status": receipt.status,
         "completed_actions": list(completed),
-        "current_remote_operation": next_action,
+        "current_remote_operation": current_operation,
+        "current_remote_operation_state": operation_state,
         "failure_code": receipt.failure_code,
         "receipt_digest": receipt.receipt_digest,
         "commit_sha": str(commit.get("commit_sha") or "").strip() or None,
@@ -72,6 +90,8 @@ def _blocked_status(code: str) -> dict[str, Any]:
         "journal_available": False,
         "journal_error": code,
         "active_execution": None,
+        "active_execution_known": False,
+        "active_execution_state": "blocked",
         "latest_execution": None,
         "recent_executions": [],
         "recent_execution_count": 0,
@@ -79,11 +99,13 @@ def _blocked_status(code: str) -> dict[str, Any]:
         "mutation_performed_by_status_read": False,
         "secret_material_exposed": False,
         "bounded_recent_plan_limit": MAX_RECENT_PLANS,
+        "bounded_active_scan_limit": MAX_ACTIVE_SCAN_PLANS,
+        "checkpoint_validation": "latest_receipt_plus_event_index_continuity",
     }
 
 
 def proposal_execution_mission_control_status(db: Session) -> dict[str, Any]:
-    """Read durable proposal-operation evidence without performing remote mutation."""
+    """Read bounded durable proposal-operation evidence without remote mutation."""
 
     try:
         bind = db.get_bind()
@@ -92,25 +114,55 @@ def proposal_execution_mission_control_status(db: Session) -> dict[str, Any]:
         ):
             return _blocked_status("durable_mutation_journal_table_unavailable")
 
-        latest_event = func.max(GitProposalMutationJournalEventRecord.event_id).label(
-            "latest_event"
+        latest_event_id = func.max(
+            GitProposalMutationJournalEventRecord.event_id
+        ).label("latest_event_id")
+        latest_event_index = func.max(
+            GitProposalMutationJournalEventRecord.event_index
+        ).label("latest_event_index")
+        event_count = func.count(GitProposalMutationJournalEventRecord.event_id).label(
+            "event_count"
+        )
+        latest_by_plan = (
+            select(
+                GitProposalMutationJournalEventRecord.plan_digest.label("plan_digest"),
+                latest_event_id,
+                latest_event_index,
+                event_count,
+            )
+            .group_by(GitProposalMutationJournalEventRecord.plan_digest)
+            .subquery()
         )
         rows = db.execute(
             select(
-                GitProposalMutationJournalEventRecord.plan_digest,
-                latest_event,
+                GitProposalMutationJournalEventRecord,
+                latest_by_plan.c.latest_event_index,
+                latest_by_plan.c.event_count,
             )
-            .group_by(GitProposalMutationJournalEventRecord.plan_digest)
-            .order_by(latest_event.desc())
-            .limit(MAX_RECENT_PLANS)
+            .join(
+                latest_by_plan,
+                GitProposalMutationJournalEventRecord.event_id
+                == latest_by_plan.c.latest_event_id,
+            )
+            .order_by(GitProposalMutationJournalEventRecord.event_id.desc())
+            .limit(MAX_ACTIVE_SCAN_PLANS + 1)
         ).all()
-        journal = DurableGitProposalMutationJournal(db)
+
+        scan_truncated = len(rows) > MAX_ACTIVE_SCAN_PLANS
+        scan_rows = rows[:MAX_ACTIVE_SCAN_PLANS]
         snapshots: list[dict[str, Any]] = []
-        for plan_digest, _ in rows:
-            receipt = journal.latest(plan_digest=str(plan_digest))
-            if receipt is None:
-                continue
-            snapshots.append(_receipt_snapshot(receipt))
+        active: dict[str, Any] | None = None
+
+        for row, max_event_index, count_events in scan_rows:
+            if max_event_index != count_events:
+                raise PermissionError("GIT_PROPOSAL_JOURNAL_HISTORY_GAP")
+            receipt = DurableGitProposalMutationJournal.validate_checkpoint_receipt(row)
+            snapshot = _receipt_snapshot(receipt)
+            if len(snapshots) < MAX_RECENT_PLANS:
+                snapshots.append(snapshot)
+            if active is None and not snapshot["terminal"]:
+                active = snapshot
+
     except (
         SQLAlchemyError,
         LookupError,
@@ -121,13 +173,24 @@ def proposal_execution_mission_control_status(db: Session) -> dict[str, Any]:
         db.rollback()
         return _blocked_status(str(exc) or type(exc).__name__)
 
-    active = next((item for item in snapshots if not item["terminal"]), None)
     latest = snapshots[0] if snapshots else None
+    if active is not None:
+        active_known = True
+        active_state = "active_found"
+    elif scan_truncated:
+        active_known = False
+        active_state = "unknown_beyond_bounded_scan"
+    else:
+        active_known = True
+        active_state = "none"
+
     return {
         "schema": STATUS_SCHEMA,
         "journal_available": True,
         "journal_error": None,
         "active_execution": active,
+        "active_execution_known": active_known,
+        "active_execution_state": active_state,
         "latest_execution": latest,
         "recent_executions": snapshots,
         "recent_execution_count": len(snapshots),
@@ -135,4 +198,6 @@ def proposal_execution_mission_control_status(db: Session) -> dict[str, Any]:
         "mutation_performed_by_status_read": False,
         "secret_material_exposed": False,
         "bounded_recent_plan_limit": MAX_RECENT_PLANS,
+        "bounded_active_scan_limit": MAX_ACTIVE_SCAN_PLANS,
+        "checkpoint_validation": "latest_receipt_plus_event_index_continuity",
     }
