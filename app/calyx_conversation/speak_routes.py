@@ -14,7 +14,10 @@ from .continuum_context import build_continuum_context
 from .external_literature import augment_retrieval_with_external_literature
 from .interaction_context import sanitize_interaction_context
 from .provider import DeterministicGovernedReplyProvider
-from .provider_runtime import configured_runtime_provider, runtime_provider_configuration
+from .provider_runtime import (
+    configured_runtime_provider,
+    runtime_provider_configuration,
+)
 from .routes import STORE, _retrieval
 
 configured_reply_provider = configured_runtime_provider
@@ -174,13 +177,16 @@ def _deliverable_capabilities() -> dict[str, Any]:
         "chart_specification": True,
         "map_ready_occurrence_data": True,
         "image_media_provenance": True,
-        "native_chart_rendering_from_answer": False,
-        "native_map_rendering_from_answer": False,
+        "native_chart_rendering_from_answer": True,
+        "native_map_rendering_from_answer": True,
+        "map_rendering_mode": "latitude_longitude_occurrence_plot",
+        "sourced_image_rendering_from_answer": True,
         "native_image_generation": False,
+        "artifact_block_formats": ["calyx-chart", "calyx-map", "calyx-image"],
         "rule": (
-            "Never claim a chart, map, photograph, or generated image was created unless the runtime "
-            "actually produced it. When rendering is unavailable, return provenance-preserving data/specifications "
-            "that the workspace can export or render later."
+            "The workspace can render chart blocks, latitude/longitude occurrence plots, and sourced HTTPS images. "
+            "Never claim a generated photograph or basemap was created unless a runtime capability actually produced it. "
+            "All rendered research media must preserve the supplied data or provenance."
         ),
     }
 
