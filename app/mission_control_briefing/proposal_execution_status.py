@@ -87,7 +87,9 @@ def proposal_execution_mission_control_status(db: Session) -> dict[str, Any]:
 
     try:
         bind = db.get_bind()
-        if not inspect(bind).has_table(GitProposalMutationJournalEventRecord.__tablename__):
+        if not inspect(bind).has_table(
+            GitProposalMutationJournalEventRecord.__tablename__
+        ):
             return _blocked_status("durable_mutation_journal_table_unavailable")
 
         latest_event = func.max(GitProposalMutationJournalEventRecord.event_id).label(
@@ -109,7 +111,13 @@ def proposal_execution_mission_control_status(db: Session) -> dict[str, Any]:
             if receipt is None:
                 continue
             snapshots.append(_receipt_snapshot(receipt))
-    except (SQLAlchemyError, LookupError, PermissionError, TypeError, ValueError) as exc:
+    except (
+        SQLAlchemyError,
+        LookupError,
+        PermissionError,
+        TypeError,
+        ValueError,
+    ) as exc:
         db.rollback()
         return _blocked_status(str(exc) or type(exc).__name__)
 
