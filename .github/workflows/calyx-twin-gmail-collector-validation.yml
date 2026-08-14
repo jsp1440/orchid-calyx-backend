@@ -1,0 +1,36 @@
+name: Calyx Twin Gmail Collector Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/intake/email_service.py"
+      - "app/intake/gmail_collector.py"
+      - "app/intake/routes.py"
+      - "tests/test_twin_gmail_collector.py"
+      - ".github/workflows/calyx-twin-gmail-collector-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Run Gmail collector regressions
+        env:
+          PYTHONPATH: .
+        run: pytest -q tests/test_twin_gmail_collector.py tests/test_intelligence_assimilation.py
+      - name: Compile intake package
+        run: python -m compileall -q app/intake
+      - name: Import FastAPI application
+        env:
+          PYTHONPATH: .
+        run: python -c "import app.main; print('app-import-ok')"
