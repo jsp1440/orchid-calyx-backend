@@ -14,8 +14,12 @@ from app.calyx_conversation.historical_literature_ingest import (
     ingest_bhl_publications_for_research,
 )
 from app.calyx_conversation.literature_ingest import ingest_external_literature_for_research
+from app.calyx_conversation.scholarly_metadata_ingest import (
+    ingest_crossref_works_for_research,
+)
 
 BHL_API_URL = "https://www.biodiversitylibrary.org/api3"
+CROSSREF_WORKS_URL = "https://api.crossref.org/works"
 
 # Rotating corpus deliberately mixes Orchidaceae-specific evidence with the
 # foundational plant sciences Calyx needs for mechanistic reasoning. Literature
@@ -88,6 +92,27 @@ LITERATURE_TOPICS: tuple[tuple[str, str], ...] = (
     ),
 )
 
+# Plain-language bibliographic searches complement Europe PMC's life-science
+# corpus with DOI-centered metadata from the broader Crossref registry.
+CROSSREF_TOPICS: tuple[str, ...] = (
+    "orchid pollination floral morphology",
+    "orchid mycorrhiza fungal symbiosis",
+    "Orchidaceae traits ecology",
+    "plant respiration photosynthesis physiology",
+    "plant water relations stomatal physiology",
+    "plant mineral nutrition physiology",
+    "plant hormone signaling development",
+    "plant genetics genomics transcriptomics",
+    "plant cell molecular biology",
+    "plant biochemistry metabolomics",
+    "plant anthocyanin flavonoid pigments",
+    "plant reproductive biology pollen fertilization",
+    "plant fungal interactions mycorrhiza",
+    "plant evolution ecology adaptation phylogeny",
+    "plant conservation restoration reintroduction",
+    "plant chromatography spectroscopy analytical methods",
+)
+
 # Historical searches are intentionally botanical rather than merely taxonomic.
 # Darwin is explicit because his orchid-pollination books are foundational to
 # the relationship/evolution knowledge Calyx is intended to reason over.
@@ -146,6 +171,53 @@ def _direct_search(query: str, *, limit: int) -> list[dict[str, Any]]:
         record["relevance_score"] = None
         records.append(record)
     return records
+
+
+def _harvest_crossref_once(*, bucket: int, limit: int) -> dict[str, Any]:
+    # Crossref runs every second cycle: frequent enough to fill DOI/metadata
+    # gaps without doubling external traffic on every literature pass.
+    if bucket % 2 != 0:
+        return {"status": "not_due", "provider": "Crossref", "indexed": 0}
+
+    query = CROSSREF_TOPICS[(bucket // 2) % len(CROSSREF_TOPICS)]
+    timeout = max(
+        1.0,
+        min(float(os.getenv("CALYX_CROSSREF_TIMEOUT_SECONDS", "12")), 30.0),
+    )
+    page_size = max(1, min(int(limit), 5))
+    mailto = os.getenv("CROSSREF_MAILTO", "").strip()
+    params: dict[str, Any] = {
+        "query.bibliographic": query,
+        "rows": page_size,
+    }
+    if mailto:
+        params["mailto"] = mailto
+    user_agent = "OrchidContinuum-Calyx/1.0"
+    if mailto:
+        user_agent += f" (mailto:{mailto})"
+    response = requests.get(
+        CROSSREF_WORKS_URL,
+        params=params,
+        timeout=timeout,
+        headers={"User-Agent": user_agent, "Accept": "application/json"},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    message = payload.get("message") if isinstance(payload, dict) else {}
+    raw_items = message.get("items") if isinstance(message, dict) else []
+    records = [item for item in (raw_items or []) if isinstance(item, dict)][:page_size]
+    ingest = ingest_crossref_works_for_research(records, query=query)
+    return {
+        "status": ingest.get("status", "completed"),
+        "provider": "Crossref",
+        "query": query,
+        "discovered": len(records),
+        "indexed": int(ingest.get("indexed") or 0),
+        "review_required": True,
+        "automatic_publication": False,
+        "knowledge_graph_mutation": False,
+        "ingest": ingest,
+    }
 
 
 def _harvest_bhl_once(*, bucket: int, limit: int) -> dict[str, Any]:
@@ -209,12 +281,22 @@ def _harvest_bhl_once(*, bucket: int, limit: int) -> dict[str, Any]:
 
 
 def harvest_literature_once(*, limit: int = 5, now: float | None = None) -> dict[str, Any]:
-    """Harvest one bounded modern topic plus a periodic historical-books lane."""
+    """Harvest modern evidence plus scholarly metadata and historical books."""
 
     bucket = _bucket_for_time(now)
     topic, query = _topic_for_time(now)
     records = _direct_search(query, limit=max(1, min(int(limit), 10)))
     ingest = ingest_external_literature_for_research(records, query=query)
+
+    try:
+        crossref = _harvest_crossref_once(bucket=bucket, limit=limit)
+    except Exception as exc:
+        crossref = {
+            "status": "failed",
+            "provider": "Crossref",
+            "error": f"{type(exc).__name__}: {exc}",
+            "indexed": 0,
+        }
 
     try:
         historical = _harvest_bhl_once(bucket=bucket, limit=limit)
@@ -237,6 +319,7 @@ def harvest_literature_once(*, limit: int = 5, now: float | None = None) -> dict
         "review_required": True,
         "automatic_publication": False,
         "knowledge_graph_mutation": False,
+        "scholarly_metadata": crossref,
         "historical_books": historical,
         "ingest": ingest,
     }
