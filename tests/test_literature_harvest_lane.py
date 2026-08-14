@@ -4,6 +4,10 @@ import adaptive_harvest_worker as worker
 import runtime.literature_harvester as literature
 
 
+def _no_due_interactions(*, limit: int):
+    return {"status": "not_due", "provider": "Global Biotic Interactions", "indexed": 0}
+
+
 def test_topic_rotation_is_deterministic() -> None:
     first = literature._topic_for_time(0)
     second = literature._topic_for_time(900)
@@ -74,7 +78,7 @@ def test_crossref_lane_harvests_metadata_when_due(monkeypatch) -> None:
     assert captured["records"][0]["DOI"] == "10.1234/orchid.test"
 
 
-def test_literature_runs_before_biodiversity(monkeypatch) -> None:
+def test_literature_and_interactions_run_before_biodiversity(monkeypatch) -> None:
     order: list[str] = []
 
     def fake_literature(*, limit: int):
@@ -86,17 +90,23 @@ def test_literature_runs_before_biodiversity(monkeypatch) -> None:
             "indexed": 2,
         }
 
+    def fake_interactions(*, limit: int):
+        order.append("interactions")
+        return {"status": "not_due", "provider": "Global Biotic Interactions", "indexed": 0}
+
     def fake_harvester(source: str, *, limit: int):
         order.append(source)
         return {"records_examined": 1, "inserted": 1}
 
     monkeypatch.setattr(worker, "harvest_literature_once", fake_literature)
+    monkeypatch.setattr(worker, "harvest_interactions_once", fake_interactions)
     monkeypatch.setattr(worker, "run_harvester", fake_harvester)
 
     result = worker.run_once(limit=10)
 
-    assert order == ["literature", "inaturalist"]
+    assert order == ["literature", "interactions", "inaturalist"]
     assert result["literature"]["status"] == "completed"
+    assert result["interactions"]["status"] == "completed"
     assert result["biodiversity"]["selected_source"] == "inaturalist"
 
 
@@ -108,11 +118,34 @@ def test_literature_failure_does_not_block_biodiversity(monkeypatch) -> None:
         return {"records_examined": 1, "inserted": 0}
 
     monkeypatch.setattr(worker, "harvest_literature_once", failed_literature)
+    monkeypatch.setattr(worker, "harvest_interactions_once", _no_due_interactions)
     monkeypatch.setattr(worker, "run_harvester", fake_harvester)
 
     result = worker.run_once(limit=10)
 
     assert result["literature"]["status"] == "failed"
+    assert result["biodiversity"]["status"] == "worked"
+
+
+def test_interaction_failure_does_not_block_biodiversity(monkeypatch) -> None:
+    monkeypatch.setattr(
+        worker,
+        "harvest_literature_once",
+        lambda *, limit: {"status": "already_indexed", "topic": "x", "discovered": 1, "indexed": 0},
+    )
+    monkeypatch.setattr(
+        worker,
+        "harvest_interactions_once",
+        lambda *, limit: (_ for _ in ()).throw(RuntimeError("temporary GloBI failure")),
+    )
+    monkeypatch.setattr(
+        worker,
+        "run_harvester",
+        lambda source, *, limit: {"records_examined": 1, "inserted": 1},
+    )
+
+    result = worker.run_once(limit=10)
+    assert result["interactions"]["status"] == "failed"
     assert result["biodiversity"]["status"] == "worked"
 
 
@@ -124,6 +157,7 @@ def test_biodiversity_falls_through_to_global_gbif(monkeypatch) -> None:
         "harvest_literature_once",
         lambda *, limit: {"status": "already_indexed", "topic": "x", "discovered": 1, "indexed": 0},
     )
+    monkeypatch.setattr(worker, "harvest_interactions_once", _no_due_interactions)
 
     def fake_harvester(source: str, *, limit: int):
         calls.append(source)
