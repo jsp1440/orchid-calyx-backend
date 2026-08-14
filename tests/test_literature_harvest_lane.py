@@ -24,6 +24,56 @@ def test_bhl_lane_skips_when_not_due(monkeypatch) -> None:
     assert result["status"] == "not_due"
 
 
+def test_crossref_lane_skips_when_not_due(monkeypatch) -> None:
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("Crossref network must not be called when lane is not due")
+
+    monkeypatch.setattr(literature.requests, "get", fail_if_called)
+    result = literature._harvest_crossref_once(bucket=1, limit=5)
+    assert result["status"] == "not_due"
+
+
+def test_crossref_lane_harvests_metadata_when_due(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return {
+                "message": {
+                    "items": [
+                        {
+                            "DOI": "10.1234/orchid.test",
+                            "title": ["Orchid pollination test"],
+                            "author": [{"given": "A", "family": "Botanist"}],
+                        }
+                    ]
+                }
+            }
+
+    def fake_get(url, *, params, timeout, headers):
+        assert url == literature.CROSSREF_WORKS_URL
+        assert params["rows"] == 5
+        assert "query.bibliographic" in params
+        return FakeResponse()
+
+    captured: dict[str, object] = {}
+
+    def fake_ingest(records, *, query):
+        captured["records"] = records
+        captured["query"] = query
+        return {"status": "indexed_for_research", "indexed": 1}
+
+    monkeypatch.setattr(literature.requests, "get", fake_get)
+    monkeypatch.setattr(literature, "ingest_crossref_works_for_research", fake_ingest)
+    result = literature._harvest_crossref_once(bucket=0, limit=5)
+
+    assert result["status"] == "indexed_for_research"
+    assert result["discovered"] == 1
+    assert result["indexed"] == 1
+    assert captured["records"][0]["DOI"] == "10.1234/orchid.test"
+
+
 def test_literature_runs_before_biodiversity(monkeypatch) -> None:
     order: list[str] = []
 
