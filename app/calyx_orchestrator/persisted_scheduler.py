@@ -30,7 +30,9 @@ class PersistedSchedule:
 
     @property
     def runnable_program_job_ids(self) -> tuple[str, ...]:
-        return tuple(self.job_ids_by_schedule_key[key] for key in self.snapshot.runnable_order)
+        return tuple(
+            self.job_ids_by_schedule_key[key] for key in self.snapshot.runnable_order
+        )
 
 
 def _schedule_key(job: CalyxProgramJob) -> str:
@@ -44,11 +46,32 @@ def _scheduled_state(status: str) -> ScheduledState:
         raise ValueError(f"UNSUPPORTED_PERSISTED_JOB_STATUS:{status}") from exc
 
 
-def project_persisted_schedule(db: Session, *, owner: str | None = None) -> PersistedSchedule:
-    program_query = select(CalyxProgram).where(CalyxProgram.status == "running", CalyxProgram.paused.is_(False))
+def project_persisted_schedule(
+    db: Session,
+    *,
+    owner: str | None = None,
+    candidate_program_job_ids: frozenset[str] | None = None,
+) -> PersistedSchedule:
+    """Project durable dependency/capacity state.
+
+    ``candidate_program_job_ids`` limits only provisional admission of otherwise
+    ready queued jobs. All persisted jobs remain present for dependency evaluation,
+    and already-running jobs still consume capacity. This permits an upstream
+    governance layer to remove held work before capacity is allocated without
+    treating held prerequisites as successful.
+    """
+    program_query = select(CalyxProgram).where(
+        CalyxProgram.status == "running",
+        CalyxProgram.paused.is_(False),
+    )
     if owner is not None:
         program_query = program_query.where(CalyxProgram.owner == owner)
-    programs = db.scalars(program_query.order_by(CalyxProgram.created_at.asc(), CalyxProgram.program_id.asc())).all()
+    programs = db.scalars(
+        program_query.order_by(
+            CalyxProgram.created_at.asc(),
+            CalyxProgram.program_id.asc(),
+        )
+    ).all()
     if not programs:
         empty = DependencyScheduler().project(jobs=(), dependencies=())
         return PersistedSchedule(empty, {}, {}, {}, {})
@@ -67,10 +90,18 @@ def project_persisted_schedule(db: Session, *, owner: str | None = None) -> Pers
     dependencies = db.scalars(
         select(CalyxProgramDependency)
         .where(CalyxProgramDependency.program_id.in_(program_ids))
-        .order_by(CalyxProgramDependency.created_at.asc(), CalyxProgramDependency.dependency_id.asc())
+        .order_by(
+            CalyxProgramDependency.created_at.asc(),
+            CalyxProgramDependency.dependency_id.asc(),
+        )
     ).all()
 
     job_by_id = {job.program_job_id: job for job in jobs}
+    if candidate_program_job_ids is not None:
+        unknown = candidate_program_job_ids - job_by_id.keys()
+        if unknown:
+            raise ValueError("PERSISTED_SCHEDULE_CANDIDATE_JOB_NOT_FOUND")
+
     schedule_jobs: list[ScheduledJob] = []
     ids_by_key: dict[str, str] = {}
     keys_by_id: dict[str, str] = {}
@@ -102,21 +133,38 @@ def project_persisted_schedule(db: Session, *, owner: str | None = None) -> Pers
         downstream = job_by_id.get(dependency.downstream_program_job_id)
         if upstream is None or downstream is None:
             raise ValueError("PERSISTED_SCHEDULE_DEPENDENCY_JOB_NOT_FOUND")
-        if upstream.program_id != dependency.program_id or downstream.program_id != dependency.program_id:
+        if (
+            upstream.program_id != dependency.program_id
+            or downstream.program_id != dependency.program_id
+        ):
             raise ValueError("PERSISTED_SCHEDULE_DEPENDENCY_PROGRAM_MISMATCH")
-        schedule_dependencies.append((_schedule_key(upstream), _schedule_key(downstream)))
+        schedule_dependencies.append(
+            (_schedule_key(upstream), _schedule_key(downstream))
+        )
 
     limits = SchedulerLimits(
         max_global_running=GLOBAL_PROGRAM_JOB_LIMIT,
         max_architecture_running=GLOBAL_PROGRAM_JOB_LIMIT,
         max_role_running=ROLE_PROGRAM_JOB_LIMIT,
         max_repository_running=REPOSITORY_PROGRAM_JOB_LIMIT,
-        architecture_limits={program_id: program.max_active_jobs for program_id, program in program_by_id.items()},
+        architecture_limits={
+            program_id: program.max_active_jobs
+            for program_id, program in program_by_id.items()
+        },
+    )
+    candidate_keys = (
+        None
+        if candidate_program_job_ids is None
+        else frozenset(
+            keys_by_id[program_job_id]
+            for program_job_id in candidate_program_job_ids
+        )
     )
     snapshot = DependencyScheduler().project(
         jobs=tuple(schedule_jobs),
         dependencies=tuple(schedule_dependencies),
         limits=limits,
+        candidate_keys=candidate_keys,
     )
     return PersistedSchedule(
         snapshot=snapshot,
@@ -138,7 +186,10 @@ def persisted_schedule_status(db: Session, *, owner: str) -> dict[str, object]:
             "decisions": [],
         }
 
-    decisions = [_decision_payload(schedule, decision) for decision in schedule.snapshot.decisions]
+    decisions = [
+        _decision_payload(schedule, decision)
+        for decision in schedule.snapshot.decisions
+    ]
     return {
         "ready": True,
         "error": None,
@@ -157,7 +208,10 @@ def persisted_schedule_status(db: Session, *, owner: str) -> dict[str, object]:
     }
 
 
-def _decision_payload(schedule: PersistedSchedule, decision: ScheduledDecision) -> dict[str, object]:
+def _decision_payload(
+    schedule: PersistedSchedule,
+    decision: ScheduledDecision,
+) -> dict[str, object]:
     key = decision.job_key
     return {
         "program_job_id": schedule.job_ids_by_schedule_key[key],
@@ -166,6 +220,9 @@ def _decision_payload(schedule: PersistedSchedule, decision: ScheduledDecision) 
         "runnable": decision.runnable,
         "rank": decision.rank,
         "critical_path_depth": decision.critical_path_depth,
-        "blocked_by": [schedule.job_keys_by_schedule_key[parent] for parent in decision.blocked_by],
+        "blocked_by": [
+            schedule.job_keys_by_schedule_key[parent]
+            for parent in decision.blocked_by
+        ],
         "code": decision.code,
     }

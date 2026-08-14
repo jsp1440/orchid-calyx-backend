@@ -1,0 +1,137 @@
+name: CALYX-AUTO-001 Durable Missions
+
+on:
+  pull_request:
+    paths:
+      - 'app/calyx_orchestrator/auto_mission.py'
+      - 'app/calyx_orchestrator/auto_mission_models.py'
+      - 'app/calyx_orchestrator/auto_mission_service.py'
+      - 'app/calyx_orchestrator/persisted_scheduler.py'
+      - 'app/calyx_orchestrator/scheduler.py'
+      - 'app/calyx_orchestrator/program_models.py'
+      - 'app/calyx_orchestrator/program_repository.py'
+      - 'runtime/calyx_auto_worker.py'
+      - 'migrations/20260811_calyx_auto_001.sql'
+      - 'tests/test_calyx_auto_001.py'
+      - 'tests/test_calyx_auto_001_unsupported_role.py'
+      - 'tests/test_calyx_auto_001_action_aliases.py'
+      - 'tests/test_calyx_auto_001_receipt_binding.py'
+      - 'tests/test_calyx_auto_001_recovery.py'
+      - '.github/workflows/calyx-auto-001.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/calyx_orchestrator/auto_mission.py'
+      - 'app/calyx_orchestrator/auto_mission_models.py'
+      - 'app/calyx_orchestrator/auto_mission_service.py'
+      - 'app/calyx_orchestrator/persisted_scheduler.py'
+      - 'app/calyx_orchestrator/scheduler.py'
+      - 'app/calyx_orchestrator/program_models.py'
+      - 'app/calyx_orchestrator/program_repository.py'
+      - 'runtime/calyx_auto_worker.py'
+      - 'migrations/20260811_calyx_auto_001.sql'
+      - 'tests/test_calyx_auto_001.py'
+      - 'tests/test_calyx_auto_001_unsupported_role.py'
+      - 'tests/test_calyx_auto_001_action_aliases.py'
+      - 'tests/test_calyx_auto_001_receipt_binding.py'
+      - 'tests/test_calyx_auto_001_recovery.py'
+      - '.github/workflows/calyx-auto-001.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: calyx
+          POSTGRES_PASSWORD: calyx
+          POSTGRES_DB: calyx_auto_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U calyx -d calyx_auto_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PYTHONPATH: .
+      CALYX_AUTO_TEST_DATABASE_URL: postgresql+psycopg://calyx:calyx@localhost:5432/calyx_auto_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install 'psycopg[binary]' pytest ruff
+      - name: Compile CALYX-AUTO-001
+        run: >-
+          python -m py_compile
+          app/calyx_orchestrator/auto_mission.py
+          app/calyx_orchestrator/auto_mission_models.py
+          app/calyx_orchestrator/auto_mission_service.py
+          app/calyx_orchestrator/persisted_scheduler.py
+          app/calyx_orchestrator/scheduler.py
+          app/calyx_orchestrator/program_models.py
+          app/calyx_orchestrator/program_repository.py
+          runtime/calyx_auto_worker.py
+          tests/test_calyx_auto_001.py
+          tests/test_calyx_auto_001_unsupported_role.py
+          tests/test_calyx_auto_001_action_aliases.py
+          tests/test_calyx_auto_001_receipt_binding.py
+          tests/test_calyx_auto_001_recovery.py
+      - name: Focused and adjacent regressions
+        run: >-
+          pytest -q
+          tests/test_calyx_auto_001.py
+          tests/test_calyx_auto_001_unsupported_role.py
+          tests/test_calyx_auto_001_action_aliases.py
+          tests/test_calyx_auto_001_receipt_binding.py
+          tests/test_calyx_auto_001_recovery.py
+          tests/test_calyx_autonomous_program_cycle.py
+          tests/test_calyx_engineering_program_worker.py
+          tests/test_calyx_engineering_program_persistence.py
+      - name: Ruff
+        if: ${{ always() }}
+        run: |
+          ruff check \
+            app/calyx_orchestrator/auto_mission.py \
+            app/calyx_orchestrator/auto_mission_models.py \
+            app/calyx_orchestrator/auto_mission_service.py \
+            app/calyx_orchestrator/persisted_scheduler.py \
+            app/calyx_orchestrator/scheduler.py \
+            app/calyx_orchestrator/program_models.py \
+            app/calyx_orchestrator/program_repository.py \
+            runtime/calyx_auto_worker.py \
+            tests/test_calyx_auto_001_unsupported_role.py \
+            tests/test_calyx_auto_001_action_aliases.py \
+            tests/test_calyx_auto_001_receipt_binding.py \
+            tests/test_calyx_auto_001_recovery.py
+          # The contention helper intentionally records every BaseException raised by a
+          # worker thread so the parent test can surface assertion/system failures.
+          ruff check --ignore BLE001 tests/test_calyx_auto_001.py
+      - name: Migration invariants
+        if: ${{ always() }}
+        run: |
+          grep -q 'calyx_program_validation_events' migrations/20260811_calyx_auto_001.sql
+          grep -q 'calyx_brain_completion_writebacks' migrations/20260811_calyx_auto_001.sql
+          grep -q 'uq_calyx_brain_writeback_program_job' migrations/20260811_calyx_auto_001.sql
+          grep -q 'ON DELETE CASCADE' migrations/20260811_calyx_auto_001.sql
+      - name: Permanent non-authority
+        if: ${{ always() }}
+        run: |
+          grep -q '"automatic_merge": False' app/calyx_orchestrator/auto_mission_service.py
+          grep -q '"automatic_deployment": False' app/calyx_orchestrator/auto_mission_service.py
+          grep -q '"automatic_publication": False' app/calyx_orchestrator/auto_mission_service.py
+          grep -q '"production_knowledge_graph_mutation": False' app/calyx_orchestrator/auto_mission_service.py
+      - name: Diff hygiene
+        if: ${{ always() }}
+        run: git diff --check HEAD^ HEAD
