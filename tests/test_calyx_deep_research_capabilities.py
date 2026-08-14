@@ -74,9 +74,12 @@ def test_deliverable_contract_is_truthful_about_rendering():
     assert capabilities["structured_citations"] is True
     assert capabilities["chart_ready_tables"] is True
     assert capabilities["map_ready_occurrence_data"] is True
-    assert capabilities["native_chart_rendering_from_answer"] is False
-    assert capabilities["native_map_rendering_from_answer"] is False
+    assert capabilities["native_chart_rendering_from_answer"] is True
+    assert capabilities["native_map_rendering_from_answer"] is True
+    assert capabilities["map_rendering_mode"] == "latitude_longitude_occurrence_plot"
+    assert capabilities["sourced_image_rendering_from_answer"] is True
     assert capabilities["native_image_generation"] is False
+    assert capabilities["artifact_block_formats"] == ["calyx-chart", "calyx-map", "calyx-image"]
 
 
 def test_output_budget_is_large_and_configurable(monkeypatch):
