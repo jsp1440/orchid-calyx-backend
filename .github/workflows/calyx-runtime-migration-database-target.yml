@@ -1,0 +1,105 @@
+name: CALYX Runtime Migration Database Target
+
+on:
+  pull_request:
+    paths:
+      - 'app/database.py'
+      - 'scripts/verify_calyx_runtime_migration_database_target.py'
+      - 'tests/test_calyx_runtime_migration_database_target.py'
+      - '.github/workflows/calyx-runtime-migration-database-target.yml'
+      - 'docs/brain/CALYX-RUNTIME-MIGRATION-DATABASE-TARGET.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-target-equivalence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: calyx
+          POSTGRES_PASSWORD: calyx
+          POSTGRES_DB: calyx_target
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U calyx -d calyx_target"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PYTHONPATH: .
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: calyx
+      PGPASSWORD: calyx
+      PGDATABASE: calyx_target
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install validation dependencies
+        run: python -m pip install 'psycopg[binary]' sqlalchemy pytest ruff
+
+      - name: Compile lint and format
+        run: |
+          python -m py_compile scripts/verify_calyx_runtime_migration_database_target.py tests/test_calyx_runtime_migration_database_target.py
+          python -m ruff check scripts/verify_calyx_runtime_migration_database_target.py tests/test_calyx_runtime_migration_database_target.py
+          python -m ruff format --check scripts/verify_calyx_runtime_migration_database_target.py tests/test_calyx_runtime_migration_database_target.py
+
+      - name: Unit contract tests
+        run: pytest -q tests/test_calyx_runtime_migration_database_target.py
+
+      - name: Create deliberately different disposable database
+        env:
+          PGPASSWORD: calyx
+        run: psql -h localhost -U calyx -d calyx_target -v ON_ERROR_STOP=1 -c 'CREATE DATABASE calyx_other'
+
+      - name: Same runtime and migration target passes read-only preflight
+        env:
+          DATABASE_URL: postgresql://calyx:calyx@localhost:5432/calyx_target
+          CALYX_DB_TARGET_EVIDENCE_PATH: artifacts/db-target-same.json
+        run: python scripts/verify_calyx_runtime_migration_database_target.py
+
+      - name: Different runtime and migration database fails closed
+        env:
+          DATABASE_URL: postgresql://calyx:calyx@localhost:5432/calyx_other
+          CALYX_DB_TARGET_EVIDENCE_PATH: artifacts/db-target-mismatch.json
+        run: |
+          set +e
+          python scripts/verify_calyx_runtime_migration_database_target.py
+          rc=$?
+          set -e
+          test "$rc" -eq 2
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          receipt = json.loads(Path('artifacts/db-target-mismatch.json').read_text())
+          assert receipt['status'] == 'blocked'
+          assert receipt['comparison']['same_target'] is False
+          assert 'RUNTIME_MIGRATION_DATABASE_TARGET_NOT_PROVEN_EQUAL' in receipt['blockers']
+          PY
+
+      - name: DATABASE_URL fallback selects the migration target exactly
+        env:
+          DATABASE_URL: postgresql://calyx:calyx@localhost:5432/calyx_target
+          CALYX_DB_TARGET_EVIDENCE_PATH: artifacts/db-target-database-url-fallback.json
+          PGHOST: ''
+        run: python scripts/verify_calyx_runtime_migration_database_target.py
+
+      - name: Upload read-only target evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-runtime-migration-database-target
+          path: artifacts/db-target-*.json
