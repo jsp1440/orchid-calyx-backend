@@ -77,7 +77,13 @@ def _run_source(source: str, *, limit: int) -> dict[str, Any]:
     if source != "gbif":
         return run_harvester(source, limit=limit)
 
-    raw = run_global_gbif(max_pages=max(1, min(int(limit), 10)))
+    # Keep GBIF deliberately short on the shared Render web instance. The
+    # harvester checkpoints every successful page, so a later cycle can resume
+    # without replaying completed work if a deployment interrupts execution.
+    raw = run_global_gbif(
+        max_pages=max(1, min(int(limit), 10)),
+        max_runtime_seconds=120.0,
+    )
     inserted = int(raw.get("occurrences_added") or 0) + int(raw.get("images_added") or 0)
     return {
         "starting_checkpoint": None,
@@ -89,6 +95,7 @@ def _run_source(source: str, *, limit: int) -> dict[str, Any]:
             "harvester": "harvesters.gbif_global_api.run",
             "global_occurrence_stream": True,
             "media_filter": None,
+            "shared_web_runtime_budget_seconds": 120.0,
         },
     }
 
