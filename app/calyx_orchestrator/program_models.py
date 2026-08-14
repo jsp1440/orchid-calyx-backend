@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -13,10 +13,39 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
 
 from app.database import Base
 
 from .models import utcnow
+
+
+class UTCDateTime(TypeDecorator[datetime]):
+    """Preserve UTC awareness when a dialect returns naive datetime objects.
+
+    PostgreSQL round-trips ``TIMESTAMP WITH TIME ZONE`` values as aware datetimes,
+    while SQLite drops timezone metadata even when SQLAlchemy is configured with
+    ``timezone=True``. Lease validation compares persisted values with aware UTC
+    clocks, so restoring UTC awareness at the model boundary keeps those semantics
+    identical across both dialects rather than weakening or bypassing expiry checks.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
 
 class CalyxProgram(Base):
@@ -64,7 +93,7 @@ class CalyxProgramJob(Base):
     human_action: Mapped[str | None] = mapped_column(Text, nullable=True)
     lease_owner: Mapped[str | None] = mapped_column(String(240), nullable=True, index=True)
     lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
