@@ -28,7 +28,7 @@ from .executor_registry import AuthoritativeExecutorRegistry, RegisteredExecutor
 from .models import utcnow
 from .persisted_scheduler import project_persisted_schedule
 from .program_models import CalyxProgram, CalyxProgramJob
-from .program_repository import PersistentProgramRepository, SUCCESSFUL_OUTCOMES
+from .program_repository import SUCCESSFUL_OUTCOMES, PersistentProgramRepository
 from .program_worker import PersistentProgramWorker
 
 
