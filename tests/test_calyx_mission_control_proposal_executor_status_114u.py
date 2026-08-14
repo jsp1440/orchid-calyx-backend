@@ -141,7 +141,9 @@ def _completed_receipt() -> GitProposalMutationReceipt:
             "push_branch",
             "open_pull_request",
         ),
-        operation_evidence=tuple(_evidence(str(item["action"]), item) for item in payloads),
+        operation_evidence=tuple(
+            _evidence(str(item["action"]), item) for item in payloads
+        ),
         failure_code=None,
     )
 
@@ -174,7 +176,9 @@ def test_enabled_configuration_remains_blocked_without_credential_readiness() ->
     assert "credential_not_ready" in status["policy"]["blockers"]
 
 
-def test_status_never_widens_authority_even_when_all_readiness_inputs_are_true() -> None:
+def test_status_never_widens_authority_even_when_all_readiness_inputs_are_true() -> (
+    None
+):
     status = proposal_executor_mission_control_status(
         {
             "CALYX_GITHUB_PROPOSAL_EXECUTOR_ENABLED": "true",
@@ -228,7 +232,9 @@ def test_execution_status_fails_closed_when_journal_table_is_unavailable() -> No
 
 def test_execution_status_surfaces_active_operation_and_exact_provenance() -> None:
     with _db() as session:
-        DurableGitProposalMutationJournal(session).record(_active_receipt(), event_index=1)
+        DurableGitProposalMutationJournal(session).record(
+            _active_receipt(), event_index=1
+        )
         status = proposal_execution_mission_control_status(session)
     active = status["active_execution"]
     assert status["journal_available"] is True
@@ -247,7 +253,9 @@ def test_execution_status_surfaces_active_operation_and_exact_provenance() -> No
 
 def test_execution_status_surfaces_completed_draft_pr_without_secret_or_write() -> None:
     with _db() as session:
-        DurableGitProposalMutationJournal(session).record(_completed_receipt(), event_index=1)
+        DurableGitProposalMutationJournal(session).record(
+            _completed_receipt(), event_index=1
+        )
         status = proposal_execution_mission_control_status(session)
     latest = status["latest_execution"]
     assert latest is not None
@@ -264,7 +272,9 @@ def test_execution_status_surfaces_completed_draft_pr_without_secret_or_write() 
     assert status["secret_material_exposed"] is False
 
 
-def test_execution_status_prefers_newest_active_plan_but_preserves_recent_history() -> None:
+def test_execution_status_prefers_newest_active_plan_but_preserves_recent_history() -> (
+    None
+):
     with _db() as session:
         journal = DurableGitProposalMutationJournal(session)
         journal.record(_completed_receipt(), event_index=1)
