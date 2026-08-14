@@ -14,7 +14,6 @@ from app.calyx_orchestrator.executor import (
 from app.calyx_orchestrator.github_agent_dispatch_cycle import (
     EXECUTE_CONFIRMATION,
     ClaimedGitHubCodingJob,
-    DispatchCycleResult,
     GitHubCodingAgentDispatchCycle,
     GitHubCodingRuntimePolicy,
 )
