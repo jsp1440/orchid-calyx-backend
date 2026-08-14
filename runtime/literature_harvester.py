@@ -10,8 +10,12 @@ from app.calyx_conversation.external_literature import (
     EUROPE_PMC_SEARCH_URL,
     _record_from_europe_pmc,
 )
+from app.calyx_conversation.historical_literature_ingest import (
+    ingest_bhl_publications_for_research,
+)
 from app.calyx_conversation.literature_ingest import ingest_external_literature_for_research
 
+BHL_API_URL = "https://www.biodiversitylibrary.org/api3"
 
 # Rotating corpus deliberately mixes Orchidaceae-specific evidence with the
 # foundational plant sciences Calyx needs for mechanistic reasoning. Literature
@@ -84,13 +88,31 @@ LITERATURE_TOPICS: tuple[tuple[str, str], ...] = (
     ),
 )
 
+# Historical searches are intentionally botanical rather than merely taxonomic.
+# Darwin is explicit because his orchid-pollination books are foundational to
+# the relationship/evolution knowledge Calyx is intended to reason over.
+BHL_TOPICS: tuple[str, ...] = (
+    "Charles Darwin orchids fertilisation",
+    "orchid pollination",
+    "Orchidaceae",
+    "orchid mycorrhiza",
+    "orchid physiology",
+    "plant physiology",
+    "botanical morphology",
+    "orchid monograph",
+)
+
+
+def _bucket_for_time(now: float | None = None) -> int:
+    timestamp = time.time() if now is None else now
+    return int(timestamp // 900)
+
 
 def _topic_for_time(now: float | None = None) -> tuple[str, str]:
     # One deterministic topic per 15-minute bucket. This survives restarts
     # without requiring another scheduler/state table and rotates through the
     # full corpus every four hours at the default cadence.
-    timestamp = time.time() if now is None else now
-    bucket = int(timestamp // 900)
+    bucket = _bucket_for_time(now)
     return LITERATURE_TOPICS[bucket % len(LITERATURE_TOPICS)]
 
 
@@ -126,12 +148,84 @@ def _direct_search(query: str, *, limit: int) -> list[dict[str, Any]]:
     return records
 
 
-def harvest_literature_once(*, limit: int = 5, now: float | None = None) -> dict[str, Any]:
-    """Harvest one bounded literature topic into the governed research index."""
+def _harvest_bhl_once(*, bucket: int, limit: int) -> dict[str, Any]:
+    api_key = os.getenv("BHL_API_KEY", "").strip()
+    if not api_key:
+        return {
+            "status": "not_configured",
+            "provider": "Biodiversity Heritage Library",
+            "required_environment": "BHL_API_KEY",
+            "indexed": 0,
+        }
 
+    # BHL runs every fourth normal harvest cycle to keep historical discovery
+    # continuous without dominating API/DB work on the web instance.
+    if bucket % 4 != 0:
+        return {
+            "status": "not_due",
+            "provider": "Biodiversity Heritage Library",
+            "indexed": 0,
+        }
+
+    query = BHL_TOPICS[(bucket // 4) % len(BHL_TOPICS)]
+    timeout = max(
+        1.0,
+        min(float(os.getenv("CALYX_BHL_TIMEOUT_SECONDS", "15")), 30.0),
+    )
+    page_size = max(1, min(int(limit), 5))
+    response = requests.get(
+        BHL_API_URL,
+        params={
+            "op": "PublicationSearch",
+            "searchterm": query,
+            "searchtype": "F",
+            "page": 1,
+            "pageSize": page_size,
+            "format": "json",
+            "apikey": api_key,
+        },
+        timeout=timeout,
+        headers={"User-Agent": "OrchidContinuum-Calyx/1.0"},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    status = str(payload.get("Status") or "ok").casefold()
+    if status not in {"ok", "success"}:
+        raise RuntimeError(str(payload.get("ErrorMessage") or "BHL API error"))
+    raw_records = payload.get("Result") or []
+    records = [item for item in raw_records if isinstance(item, dict)][:page_size]
+    ingest = ingest_bhl_publications_for_research(records, query=query)
+    return {
+        "status": ingest.get("status", "completed"),
+        "provider": "Biodiversity Heritage Library",
+        "query": query,
+        "discovered": len(records),
+        "indexed": int(ingest.get("indexed") or 0),
+        "review_required": True,
+        "automatic_publication": False,
+        "knowledge_graph_mutation": False,
+        "ingest": ingest,
+    }
+
+
+def harvest_literature_once(*, limit: int = 5, now: float | None = None) -> dict[str, Any]:
+    """Harvest one bounded modern topic plus a periodic historical-books lane."""
+
+    bucket = _bucket_for_time(now)
     topic, query = _topic_for_time(now)
     records = _direct_search(query, limit=max(1, min(int(limit), 10)))
     ingest = ingest_external_literature_for_research(records, query=query)
+
+    try:
+        historical = _harvest_bhl_once(bucket=bucket, limit=limit)
+    except Exception as exc:
+        historical = {
+            "status": "failed",
+            "provider": "Biodiversity Heritage Library",
+            "error": f"{type(exc).__name__}: {exc}",
+            "indexed": 0,
+        }
+
     return {
         "status": ingest.get("status", "completed"),
         "topic": topic,
@@ -143,5 +237,6 @@ def harvest_literature_once(*, limit: int = 5, now: float | None = None) -> dict
         "review_required": True,
         "automatic_publication": False,
         "knowledge_graph_mutation": False,
+        "historical_books": historical,
         "ingest": ingest,
     }
