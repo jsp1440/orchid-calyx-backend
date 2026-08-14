@@ -19,6 +19,7 @@ LOGGER = logging.getLogger(__name__)
 
 _MAX_CONTEXT_CHARS = 30000
 _MAX_MESSAGE_CHARS = 2600
+_MAX_CURRENT_MESSAGE_CHARS = 30000
 _MAX_HISTORY_CHARS = 12000
 
 
@@ -115,25 +116,39 @@ def compact_governed_context(governed_context: dict[str, Any]) -> dict[str, Any]
 
 
 def _compact_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
-    """Keep recent conversational continuity without replaying huge prior turns."""
+    """Keep the current research prompt intact while bounding older conversation history."""
+
+    eligible = [
+        item
+        for item in messages
+        if item.get("role") in {"user", "assistant"}
+        and str(item.get("content") or "").strip()
+    ]
+    if not eligible:
+        return []
 
     compact: list[dict[str, str]] = []
+    current = eligible[-1]
+    current_content = str(current.get("content") or "").strip()
+    if len(current_content) > _MAX_CURRENT_MESSAGE_CHARS:
+        current_content = current_content[:_MAX_CURRENT_MESSAGE_CHARS]
+
     remaining = _MAX_HISTORY_CHARS
-    for item in reversed(messages):
-        role = item.get("role")
-        if role not in {"user", "assistant"}:
-            continue
+    history: list[dict[str, str]] = []
+    for item in reversed(eligible[:-1]):
+        role = str(item.get("role"))
         content = str(item.get("content") or "").strip()
-        if not content:
-            continue
         clipped = content[-_MAX_MESSAGE_CHARS:]
         if len(clipped) > remaining:
             clipped = clipped[-remaining:]
-        compact.append({"role": role, "content": clipped})
-        remaining -= len(clipped)
+        if clipped:
+            history.append({"role": role, "content": clipped})
+            remaining -= len(clipped)
         if remaining <= 0:
             break
-    compact.reverse()
+    history.reverse()
+    compact.extend(history)
+    compact.append({"role": str(current.get("role")), "content": current_content})
     return compact
 
 
@@ -225,6 +240,16 @@ class OpenAIRuntimeResponsesProvider:
         governed_context: dict[str, Any],
     ) -> dict[str, Any]:
         model_messages = _compact_messages(messages)
+        response_messages = []
+        for item in model_messages:
+            role = item["role"]
+            content_type = "output_text" if role == "assistant" else "input_text"
+            response_messages.append(
+                {
+                    "role": role,
+                    "content": [{"type": content_type, "text": item["content"]}],
+                }
+            )
         return {
             "model": self.model,
             "input": [
@@ -232,13 +257,7 @@ class OpenAIRuntimeResponsesProvider:
                     "role": "system",
                     "content": [{"type": "input_text", "text": _scientific_system_prompt()}],
                 },
-                *[
-                    {
-                        "role": item["role"],
-                        "content": [{"type": "input_text", "text": item["content"]}],
-                    }
-                    for item in model_messages
-                ],
+                *response_messages,
                 {
                     "role": "user",
                     "content": [
@@ -447,6 +466,7 @@ def runtime_provider_configuration() -> dict[str, Any]:
         "chat_completions_fallback": True,
         "model_context_compaction": True,
         "max_governed_context_chars": _MAX_CONTEXT_CHARS,
+        "max_current_message_chars": _MAX_CURRENT_MESSAGE_CHARS,
         "max_conversation_history_chars": _MAX_HISTORY_CHARS,
         "missing_configuration": missing,
         "secrets_exposed": False,
