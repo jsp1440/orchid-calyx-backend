@@ -1,0 +1,102 @@
+name: WORLD-PLANTS Pipeline Suite
+
+# Consolidates the 7 former per-stage WORLD-PLANTS-*-001 validation
+# workflows (delta, impact, ingest, rollback, staging-readiness, synonyms,
+# upload) into one workflow. Trigger paths are the exact union of what the
+# 7 predecessor workflows watched. Within the job, only the stage(s) whose
+# files actually changed in the PR are ruff-checked, format-checked,
+# pytest-run and compiled, so a single-stage PR pays the same cost as
+# before, while a PR touching several stages now shares one
+# checkout/setup/install instead of paying for it N times.
+
+on:
+  pull_request:
+    paths:
+      - "runtime/world_plants_delta.py"
+      - "tests/test_world_plants_delta_001.py"
+      - "runtime/world_plants_impact.py"
+      - "tests/test_world_plants_impact_001.py"
+      - "runtime/world_plants_ingest.py"
+      - "tests/test_world_plants_ingest_001.py"
+      - "docs/WORLD-PLANTS-INGEST-001.md"
+      - "runtime/world_plants_rollback.py"
+      - "tests/test_world_plants_rollback_001.py"
+      - "migrations/WORLD-PLANTS-STAGING-001.sql"
+      - "runtime/world_plants_upload_readiness.py"
+      - "tests/test_world_plants_upload_readiness.py"
+      - "runtime/world_plants_synonyms.py"
+      - "tests/test_world_plants_synonyms_001.py"
+      - "runtime/world_plants_release_store.py"
+      - "app/routers/taxonomy_releases.py"
+      - "app/routers/health.py"
+      - "tests/test_world_plants_upload_001.py"
+      - ".github/workflows/world-plants-suite.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pytest ruff httpx
+      - name: Determine changed files
+        id: changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+              --paginate --jq '.[].filename' > changed_files.txt
+          else
+            echo "__RUN_ALL__" > changed_files.txt
+          fi
+          echo "Changed files considered for this run:"
+          cat changed_files.txt
+      - name: Run changed WORLD-PLANTS stages
+        run: |
+          set -euo pipefail
+          run_all=false
+          if grep -qx "__RUN_ALL__" changed_files.txt; then run_all=true; fi
+          ran_any=false
+          run_stage() {
+            local stage="$1"; shift
+            local trigger_files="$1"; shift
+            local check_files="$1"; shift
+            local test_files="$1"; shift
+            local compile_files="$1"; shift
+            local hit=false
+            if [ "$run_all" = true ]; then hit=true; fi
+            for f in $trigger_files; do
+              if grep -qxF "$f" changed_files.txt; then hit=true; fi
+            done
+            if [ "$hit" = true ]; then
+              ran_any=true
+              echo "::group::WORLD-PLANTS $stage"
+              python -m ruff check $check_files
+              python -m ruff format --check $check_files
+              python -m pytest -q $test_files
+              python -m compileall -q $compile_files
+              echo "::endgroup::"
+            fi
+          }
+          run_stage "delta" "runtime/world_plants_delta.py tests/test_world_plants_delta_001.py" "runtime/world_plants_delta.py tests/test_world_plants_delta_001.py" "tests/test_world_plants_delta_001.py" "runtime/world_plants_delta.py"
+          run_stage "impact" "runtime/world_plants_impact.py tests/test_world_plants_impact_001.py" "runtime/world_plants_impact.py tests/test_world_plants_impact_001.py" "tests/test_world_plants_impact_001.py" "runtime/world_plants_impact.py"
+          run_stage "ingest" "runtime/world_plants_ingest.py tests/test_world_plants_ingest_001.py docs/WORLD-PLANTS-INGEST-001.md" "runtime/world_plants_ingest.py tests/test_world_plants_ingest_001.py" "tests/test_world_plants_ingest_001.py" "runtime/world_plants_ingest.py"
+          run_stage "rollback" "runtime/world_plants_rollback.py tests/test_world_plants_rollback_001.py" "runtime/world_plants_rollback.py tests/test_world_plants_rollback_001.py" "tests/test_world_plants_rollback_001.py" "runtime/world_plants_rollback.py"
+          run_stage "staging-readiness" "migrations/WORLD-PLANTS-STAGING-001.sql runtime/world_plants_upload_readiness.py tests/test_world_plants_upload_readiness.py" "runtime/world_plants_upload_readiness.py tests/test_world_plants_upload_readiness.py" "tests/test_world_plants_upload_readiness.py" "runtime/world_plants_upload_readiness.py"
+          run_stage "synonyms" "runtime/world_plants_synonyms.py tests/test_world_plants_synonyms_001.py" "runtime/world_plants_synonyms.py tests/test_world_plants_synonyms_001.py" "tests/test_world_plants_synonyms_001.py" "runtime/world_plants_synonyms.py"
+          run_stage "upload" "runtime/world_plants_release_store.py app/routers/taxonomy_releases.py app/routers/health.py tests/test_world_plants_upload_001.py" "runtime/world_plants_release_store.py app/routers/taxonomy_releases.py tests/test_world_plants_upload_001.py" "tests/test_world_plants_upload_001.py" "runtime/world_plants_release_store.py app/routers/taxonomy_releases.py"
+          if [ "$ran_any" = false ]; then
+            echo "No WORLD-PLANTS stage matched the changed files; nothing to run."
+          fi
+      - name: Hygiene (no trailing whitespace diff)
+        run: git diff --check
