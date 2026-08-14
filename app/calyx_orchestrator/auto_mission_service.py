@@ -145,6 +145,10 @@ class GovernedAutoMissionWorker:
         remains visible as a governance boundary without consuming the capacity used
         to choose automatically admissible work in ``claim``.
         """
+        # Always validate the complete persisted scheduler state before narrowing
+        # candidates. Otherwise a corrupt non-queued row can disappear from the
+        # partition query and make a damaged program look truthfully idle.
+        project_persisted_schedule(self.db, owner=owner)
         _, held_ids = self._queued_partition(owner=owner, roles=roles)
         if not held_ids:
             return []
@@ -184,6 +188,10 @@ class GovernedAutoMissionWorker:
             self.db.rollback()
             return None
         try:
+            # Revalidate after taking the owner claim lock so corruption introduced
+            # between the preflight hold check and claim cannot be hidden by the
+            # automatic-candidate partition.
+            project_persisted_schedule(self.db, owner=owner)
             automatic_ids, _ = self._queued_partition(
                 owner=owner,
                 roles=roles,
