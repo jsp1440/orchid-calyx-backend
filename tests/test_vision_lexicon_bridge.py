@@ -46,6 +46,7 @@ from app.vision_lexicon.contracts import (
 )
 from app.vision_lexicon.persistence import MemoryVisionLexiconRepository
 from app.vision_lexicon.resupination import (
+    FIXTURE_ANALYSIS_ID,
     LABELLUM_CONCEPT_ID,
     RESUPINATION_CONCEPT_ID,
     ResupinationCharacters,
@@ -97,6 +98,66 @@ def test_resupination_state_observation_links_to_concept_id():
     assert resup_obs.concept_id == RESUPINATION_CONCEPT_ID
     assert resup_obs.character_id == ResupinationCharacters.CHARACTER_RESUPINATION_STATE
     assert resup_obs.character_state_id == ResupinationCharacters.STATE_RESUPINATE
+
+
+# ---------------------------------------------------------------------------
+# 1b. Region geometry persistence (CALYX-MATRIX-UI-002 dependency)
+# ---------------------------------------------------------------------------
+
+
+def test_record_region_persists_bounding_box_and_landmarks(service):
+    region = service.record_region(
+        analysis_id=FIXTURE_ANALYSIS_ID,
+        concept_id=LABELLUM_CONCEPT_ID,
+        label="Labellum",
+        bounding_box={"x": 120, "y": 200, "width": 80, "height": 60},
+        segmentation_ref=None,
+        landmarks=[{"name": "labellum_apex", "x": 160, "y": 260}],
+        confidence=0.88,
+        provenance={"model": "fixture-model"},
+    )
+    fetched = service.get_region(region.region_id)
+    assert fetched is not None
+    assert fetched.bounding_box == {"x": 120, "y": 200, "width": 80, "height": 60}
+    assert fetched.landmarks == [{"name": "labellum_apex", "x": 160, "y": 260}]
+    assert fetched.review_state == VisionReviewState.MACHINE_GENERATED
+
+
+def test_get_region_returns_none_for_unknown_id(service):
+    assert service.get_region(uuid4()) is None
+
+
+def test_list_regions_for_analysis_returns_only_matching_regions(service):
+    for region in fixture_vision_regions():
+        service._repo.save_region(region)
+    other_analysis_region = service.record_region(
+        analysis_id=uuid4(),
+        concept_id=None,
+        label="Unrelated",
+        bounding_box=None,
+        segmentation_ref=None,
+        landmarks=None,
+        confidence=None,
+        provenance={},
+    )
+    regions = service.list_regions_for_analysis(FIXTURE_ANALYSIS_ID)
+    assert len(regions) == len(fixture_vision_regions())
+    assert all(r.analysis_id == FIXTURE_ANALYSIS_ID for r in regions)
+    assert other_analysis_region.region_id not in {r.region_id for r in regions}
+
+
+def test_region_requires_non_empty_label(service):
+    with pytest.raises(ValueError, match="REGION_LABEL_REQUIRED"):
+        service.record_region(
+            analysis_id=FIXTURE_ANALYSIS_ID,
+            concept_id=None,
+            label="   ",
+            bounding_box=None,
+            segmentation_ref=None,
+            landmarks=None,
+            confidence=None,
+            provenance={},
+        )
 
 
 # ---------------------------------------------------------------------------

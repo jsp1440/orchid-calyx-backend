@@ -224,6 +224,8 @@ class VisionRegionResponse(BaseModel):
     concept_id: str | None
     label: str
     bounding_box: dict[str, Any] | None
+    segmentation_ref: str | None
+    landmarks: list[dict[str, Any]] | None
     confidence: float | None
     review_state: str
 
