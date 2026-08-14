@@ -22,6 +22,14 @@ def _first_text(value: Any) -> str:
     return _text(value)
 
 
+def _canonical_publication_key(doi: str, title: str) -> str:
+    normalized_doi = doi.strip().casefold().removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+    if normalized_doi:
+        return "doi:" + normalized_doi
+    normalized_title = " ".join(title.casefold().split())
+    return "title-sha256:" + hashlib.sha256(normalized_title.encode("utf-8")).hexdigest()
+
+
 def _authors(record: dict[str, Any]) -> list[str]:
     result: list[str] = []
     for author in record.get("author") or []:
@@ -42,8 +50,7 @@ def _publication_date(record: dict[str, Any]) -> str | None:
             continue
         parts = value.get("date-parts")
         if isinstance(parts, list) and parts and isinstance(parts[0], list) and parts[0]:
-            values = [str(item) for item in parts[0][:3]]
-            return "-".join(values)
+            return "-".join(str(item) for item in parts[0][:3])
         if key == "created":
             date_time = _text(value.get("date-time"))
             if date_time:
@@ -57,6 +64,7 @@ def document_from_crossref_work(record: dict[str, Any], *, query: str) -> IndexD
     if not title:
         return None
     identifier = doi or _text(record.get("URL")) or title
+    canonical_publication_key = _canonical_publication_key(doi, title)
     authors = _authors(record)
     container = _first_text(record.get("container-title"))
     publication_date = _publication_date(record)
@@ -83,12 +91,7 @@ def document_from_crossref_work(record: dict[str, Any], *, query: str) -> IndexD
     if doi:
         text_parts.append("DOI: " + doi)
 
-    locator = {
-        "source": "Crossref",
-        "identifier": identifier,
-        "doi": doi or None,
-        "url": url or None,
-    }
+    locator = {"source": "Crossref", "identifier": identifier, "doi": doi or None, "url": url or None}
 
     return IndexDocument(
         source_object_type="SCHOLARLY_METADATA_RECORD",
@@ -116,6 +119,7 @@ def document_from_crossref_work(record: dict[str, Any], *, query: str) -> IndexD
             "source_type": "CROSSREF",
             "document_class": "SCIENTIFIC_LITERATURE_METADATA",
             "source_document_id": identifier,
+            "canonical_publication_key": canonical_publication_key,
             "doi": doi or None,
             "url": url or None,
             "work_type": work_type or None,
@@ -137,26 +141,24 @@ def document_from_crossref_work(record: dict[str, Any], *, query: str) -> IndexD
             "verification_state": "UNVERIFIED",
             "automatic_publication": False,
             "knowledge_graph_mutation": False,
+            "provenance": {
+                "provider": "Crossref",
+                "identifier": identifier,
+                "canonical_publication_key": canonical_publication_key,
+                "review_required": True,
+            },
         },
     )
 
 
-def ingest_crossref_works_for_research(
-    records: list[dict[str, Any]], *, query: str
-) -> dict[str, Any]:
+def ingest_crossref_works_for_research(records: list[dict[str, Any]], *, query: str) -> dict[str, Any]:
     documents = [
         document
         for record in records
         if (document := document_from_crossref_work(record, query=query)) is not None
     ]
     if not documents:
-        return {
-            "status": "nothing_indexable",
-            "discovered": len(records),
-            "indexable": 0,
-            "indexed": 0,
-            "review_required": True,
-        }
+        return {"status": "nothing_indexable", "discovered": len(records), "indexable": 0, "indexed": 0, "review_required": True}
 
     repository, service = semantic_index_routes._ensure_repository()
     if hasattr(repository, "refresh_for_read"):
@@ -169,19 +171,9 @@ def ingest_crossref_works_for_research(
         for item in getattr(repository, "documents", [])
         if item.get("active", False)
     }
-    new_documents = [
-        item
-        for item in documents
-        if (item.source_object_type, item.revision_id) not in existing
-    ]
+    new_documents = [item for item in documents if (item.source_object_type, item.revision_id) not in existing]
     if not new_documents:
-        return {
-            "status": "already_indexed",
-            "discovered": len(records),
-            "indexable": len(documents),
-            "indexed": 0,
-            "review_required": True,
-        }
+        return {"status": "already_indexed", "discovered": len(records), "indexable": len(documents), "indexed": 0, "review_required": True}
 
     preview = semantic_index_routes._write(
         lambda: service.preview(
@@ -190,7 +182,7 @@ def ingest_crossref_works_for_research(
                 "source": "Crossref",
                 "query": query,
                 "purpose": "Calyx scholarly metadata discovery and DOI reconciliation",
-                "provenance_contract": "crossref-metadata-review-bound-v1",
+                "provenance_contract": "crossref-metadata-review-bound-v2-canonical-publication-key",
                 "automatic_publication": False,
                 "knowledge_graph_mutation": False,
             },
