@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.database import Base
@@ -87,6 +88,13 @@ class CiObservation:
     @property
     def observation_digest(self) -> str:
         return canonical_sha256(self.snapshot(include_digest=False))
+
+    @property
+    def all_green(self) -> bool:
+        return all(
+            check.conclusion in {CiConclusion.SUCCESS, CiConclusion.SKIPPED}
+            for check in self.checks
+        )
 
     def snapshot(self, *, include_digest: bool = True) -> dict[str, Any]:
         payload = {
@@ -213,11 +221,17 @@ class DurableGitProposalCiRepairJournal:
             raise PermissionError("CI_REPAIR_REVALIDATION_PULL_REQUEST_MISMATCH")
         if observation.head_sha == assignment.failed_head_sha:
             raise PermissionError("CI_REPAIR_REVALIDATION_HEAD_NOT_ADVANCED")
+        if not observation.all_green:
+            raise PermissionError("CI_REPAIR_REVALIDATION_CHECKS_NOT_GREEN")
         payload = {
             "schema": JOURNAL_SCHEMA,
             "repair_key": assignment.repair_key,
             "observation": observation.snapshot(),
-            "authoritative_corrective_receipt_digest": authoritative_corrective_receipt_digest,
+            "authoritative_corrective_receipt_digest": (
+                authoritative_corrective_receipt_digest
+            ),
+            "owner_merge_ready": True,
+            "merge_performed": False,
         }
         return self._record(
             repair_key=assignment.repair_key,
@@ -252,7 +266,9 @@ class DurableGitProposalCiRepairJournal:
         head_sha: str,
         payload: Mapping[str, Any],
     ) -> GitProposalCiRepairEventRecord:
-        canonical_payload = json.dumps(dict(payload), sort_keys=True, separators=(",", ":"))
+        canonical_payload = json.dumps(
+            dict(payload), sort_keys=True, separators=(",", ":")
+        )
         event_digest = canonical_sha256(
             {
                 "repair_key": repair_key,
@@ -260,16 +276,13 @@ class DurableGitProposalCiRepairJournal:
                 "payload": dict(payload),
             }
         )
-        existing = self.db.scalar(
-            select(GitProposalCiRepairEventRecord).where(
-                GitProposalCiRepairEventRecord.repair_key == repair_key,
-                GitProposalCiRepairEventRecord.event_kind == event_kind,
-            )
-        )
+        existing = self._existing(repair_key=repair_key, event_kind=event_kind)
         if existing is not None:
-            if existing.event_digest != event_digest or existing.payload_json != canonical_payload:
-                raise PermissionError("CI_REPAIR_JOURNAL_IDEMPOTENCY_CONFLICT")
-            return existing
+            return self._verify_exact_replay(
+                existing,
+                event_digest=event_digest,
+                canonical_payload=canonical_payload,
+            )
         record = GitProposalCiRepairEventRecord(
             repair_key=repair_key,
             event_kind=event_kind,
@@ -283,8 +296,43 @@ class DurableGitProposalCiRepairJournal:
             event_digest=event_digest,
         )
         self.db.add(record)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            winner = self._existing(repair_key=repair_key, event_kind=event_kind)
+            if winner is None:
+                raise
+            return self._verify_exact_replay(
+                winner,
+                event_digest=event_digest,
+                canonical_payload=canonical_payload,
+            )
         self.db.refresh(record)
+        return record
+
+    def _existing(
+        self,
+        *,
+        repair_key: str,
+        event_kind: str,
+    ) -> GitProposalCiRepairEventRecord | None:
+        return self.db.scalar(
+            select(GitProposalCiRepairEventRecord).where(
+                GitProposalCiRepairEventRecord.repair_key == repair_key,
+                GitProposalCiRepairEventRecord.event_kind == event_kind,
+            )
+        )
+
+    @staticmethod
+    def _verify_exact_replay(
+        record: GitProposalCiRepairEventRecord,
+        *,
+        event_digest: str,
+        canonical_payload: str,
+    ) -> GitProposalCiRepairEventRecord:
+        if record.event_digest != event_digest or record.payload_json != canonical_payload:
+            raise PermissionError("CI_REPAIR_JOURNAL_IDEMPOTENCY_CONFLICT")
         return record
 
 
@@ -305,16 +353,30 @@ class GitProposalCiRepairCoordinator:
     ) -> CiRepairDecision:
         expected = _proposal_identity(mutation_receipt)
         if expected is None:
-            return self._blocked(mutation_receipt, observation, "CI_REPAIR_DRAFT_PR_EVIDENCE_REQUIRED")
+            return self._blocked(
+                mutation_receipt,
+                observation,
+                "CI_REPAIR_DRAFT_PR_EVIDENCE_REQUIRED",
+            )
         expected_pr, expected_head = expected
         if observation.repository != mutation_receipt.repository:
-            return self._blocked(mutation_receipt, observation, "CI_REPAIR_REPOSITORY_MISMATCH")
+            return self._blocked(
+                mutation_receipt, observation, "CI_REPAIR_REPOSITORY_MISMATCH"
+            )
         if observation.pull_request_number != expected_pr:
-            return self._blocked(mutation_receipt, observation, "CI_REPAIR_PULL_REQUEST_MISMATCH")
+            return self._blocked(
+                mutation_receipt, observation, "CI_REPAIR_PULL_REQUEST_MISMATCH"
+            )
         if observation.head_sha != expected_head:
-            return self._blocked(mutation_receipt, observation, "CI_REPAIR_STALE_OR_MOVED_HEAD")
+            return self._blocked(
+                mutation_receipt, observation, "CI_REPAIR_STALE_OR_MOVED_HEAD"
+            )
 
-        pending = [check for check in observation.checks if check.conclusion == CiConclusion.PENDING]
+        pending = [
+            check
+            for check in observation.checks
+            if check.conclusion == CiConclusion.PENDING
+        ]
         failed = [
             check
             for check in observation.checks
@@ -369,12 +431,14 @@ def _proposal_identity(receipt: GitProposalMutationReceipt) -> tuple[int, str] |
     pr_payloads = [
         dict(item.payload)
         for item in receipt.operation_evidence
-        if item.action == "open_pull_request" and item.status in {"completed", "already_exists_exact"}
+        if item.action == "open_pull_request"
+        and item.status in {"created", "already_exists_exact"}
     ]
     commit_payloads = [
         dict(item.payload)
         for item in receipt.operation_evidence
-        if item.action == "create_commit" and item.status in {"completed", "already_exists_exact"}
+        if item.action == "create_commit"
+        and item.status in {"created", "already_exists_exact"}
     ]
     if len(pr_payloads) != 1 or len(commit_payloads) != 1:
         return None
@@ -384,6 +448,10 @@ def _proposal_identity(receipt: GitProposalMutationReceipt) -> tuple[int, str] |
         return None
     if pr_payloads[0].get("draft") is not True:
         return None
+    if str(pr_payloads[0].get("head_commit_sha") or "").strip() != head_sha:
+        return None
+    if str(pr_payloads[0].get("head_branch") or "").strip() != receipt.proposed_branch:
+        return None
     return pr_number, head_sha
 
 
@@ -392,7 +460,9 @@ def _repair_assignment(
     observation: CiObservation,
     failed: Sequence[CiCheck],
 ) -> CiRepairAssignment:
-    failed_checks = tuple(check.snapshot() for check in sorted(failed, key=lambda item: item.check_id))
+    failed_checks = tuple(
+        check.snapshot() for check in sorted(failed, key=lambda item: item.check_id)
+    )
     material = {
         "source_plan_digest": receipt.plan_digest,
         "source_mutation_receipt_digest": receipt.receipt_digest,
@@ -418,8 +488,12 @@ def _repair_assignment(
 
 
 def _is_git_sha(value: str) -> bool:
-    return len(value) == 40 and all(character in "0123456789abcdef" for character in value)
+    return len(value) == 40 and all(
+        character in "0123456789abcdef" for character in value
+    )
 
 
 def _is_sha256(value: str) -> bool:
-    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+    return len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
