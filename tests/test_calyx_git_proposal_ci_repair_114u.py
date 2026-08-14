@@ -11,6 +11,7 @@ from app.calyx_orchestrator.git_proposal_ci_repair import (
     CiConclusion,
     CiObservation,
     CiRepairDisposition,
+    CiRequiredCheckRoster,
     DurableGitProposalCiRepairJournal,
     GitProposalCiRepairCoordinator,
     GitProposalCiRepairEventRecord,
@@ -126,6 +127,22 @@ def _observation(
     )
 
 
+def _roster(
+    *check_ids: str,
+    head_sha: str = HEAD_SHA,
+    repository: str = REPOSITORY,
+    pr_number: int = PR_NUMBER,
+) -> CiRequiredCheckRoster:
+    return CiRequiredCheckRoster(
+        repository=repository,
+        pull_request_number=pr_number,
+        head_sha=head_sha,
+        check_ids=check_ids or ("check-1",),
+        source="github_rulesets",
+        observed_at=NOW,
+    )
+
+
 def _journal() -> tuple[Session, DurableGitProposalCiRepairJournal]:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     GitProposalCiRepairEventRecord.__table__.create(engine)
@@ -133,10 +150,72 @@ def _journal() -> tuple[Session, DurableGitProposalCiRepairJournal]:
     return db, DurableGitProposalCiRepairJournal(db)
 
 
+class _Resolver:
+    def __init__(self, receipt: GitProposalMutationReceipt | None) -> None:
+        self.receipt = receipt
+
+    def resolve(self, *, receipt_digest: str) -> GitProposalMutationReceipt | None:
+        if self.receipt is None or self.receipt.receipt_digest != receipt_digest:
+            return None
+        return self.receipt
+
+
+def _corrective_receipt(repair_key: str) -> GitProposalMutationReceipt:
+    branch = {
+        "action": "create_branch",
+        "status": "already_exists_exact",
+        "repository": REPOSITORY,
+        "branch": BRANCH,
+        "base_commit_sha": HEAD_SHA,
+    }
+    commit = {
+        "action": "create_commit",
+        "status": "created",
+        "repository": REPOSITORY,
+        "branch": BRANCH,
+        "parent_commit_sha": HEAD_SHA,
+        "commit_sha": CORRECTED_SHA,
+        "patch_program_job_id": "corrective-job",
+        "change_hashes": [],
+        "repair_key": repair_key,
+    }
+    push = {
+        "action": "push_branch",
+        "status": "created",
+        "repository": REPOSITORY,
+        "branch": BRANCH,
+        "commit_sha": CORRECTED_SHA,
+        "repair_key": repair_key,
+    }
+    return GitProposalMutationReceipt(
+        plan_digest="c" * 64,
+        patch_program_job_id="corrective-job",
+        repository=REPOSITORY,
+        proposed_branch=BRANCH,
+        base_commit_sha=HEAD_SHA,
+        base_ref="main",
+        status="completed_subset",
+        completed_actions=("create_branch", "create_commit", "push_branch"),
+        operation_evidence=(
+            GitProposalOperationEvidence(
+                action="create_branch",
+                status="already_exists_exact",
+                evidence_digest=canonical_sha256(branch),
+                payload=branch,
+            ),
+            _evidence("create_commit", commit),
+            _evidence("push_branch", push),
+        ),
+        failure_code=None,
+    )
+
+
 def test_green_ci_is_owner_merge_ready_without_mutation() -> None:
+    observation = _observation(CiConclusion.SUCCESS, CiConclusion.SKIPPED)
     decision = GitProposalCiRepairCoordinator().evaluate(
         mutation_receipt=_receipt(),
-        observation=_observation(CiConclusion.SUCCESS, CiConclusion.SKIPPED),
+        observation=observation,
+        required_checks=_roster("check-1", "check-2"),
     )
 
     assert decision.disposition == CiRepairDisposition.READY_FOR_OWNER_MERGE
@@ -146,10 +225,35 @@ def test_green_ci_is_owner_merge_ready_without_mutation() -> None:
     assert snapshot["remote_git_mutation_performed"] is False
 
 
+def test_green_subset_without_complete_required_roster_fails_closed() -> None:
+    observation = _observation(CiConclusion.SUCCESS)
+    decision = GitProposalCiRepairCoordinator().evaluate(
+        mutation_receipt=_receipt(),
+        observation=observation,
+        required_checks=_roster("check-1", "check-2"),
+    )
+
+    assert decision.disposition == CiRepairDisposition.BLOCKED
+    assert decision.code == "CI_REPAIR_REQUIRED_CHECKS_INCOMPLETE"
+
+
+def test_required_roster_is_bound_to_exact_pr_and_head() -> None:
+    observation = _observation(CiConclusion.SUCCESS)
+    decision = GitProposalCiRepairCoordinator().evaluate(
+        mutation_receipt=_receipt(),
+        observation=observation,
+        required_checks=_roster("check-1", head_sha="9" * 40),
+    )
+
+    assert decision.disposition == CiRepairDisposition.BLOCKED
+    assert decision.code == "CI_REPAIR_REQUIRED_ROSTER_MISMATCH"
+
+
 def test_pending_ci_waits_without_repair_assignment() -> None:
     decision = GitProposalCiRepairCoordinator().evaluate(
         mutation_receipt=_receipt(),
         observation=_observation(CiConclusion.SUCCESS, CiConclusion.PENDING),
+        required_checks=_roster("check-1", "check-2"),
     )
 
     assert decision.disposition == CiRepairDisposition.WAITING
@@ -157,19 +261,24 @@ def test_pending_ci_waits_without_repair_assignment() -> None:
     assert decision.assignment is None
 
 
-def test_failed_ci_creates_deterministic_governed_assignment_and_durable_evidence() -> (
-    None
-):
+def test_failed_ci_creates_deterministic_governed_assignment_and_durable_evidence() -> None:
     db, journal = _journal()
     try:
         observation = _observation(CiConclusion.FAILURE, CiConclusion.SUCCESS)
+        roster = _roster("check-1", "check-2")
         coordinator = GitProposalCiRepairCoordinator()
 
         first = coordinator.evaluate(
-            mutation_receipt=_receipt(), observation=observation, journal=journal
+            mutation_receipt=_receipt(),
+            observation=observation,
+            required_checks=roster,
+            journal=journal,
         )
         second = coordinator.evaluate(
-            mutation_receipt=_receipt(), observation=observation, journal=journal
+            mutation_receipt=_receipt(),
+            observation=observation,
+            required_checks=roster,
+            journal=journal,
         )
 
         assert first.disposition == CiRepairDisposition.REPAIR_REQUIRED
@@ -179,6 +288,7 @@ def test_failed_ci_creates_deterministic_governed_assignment_and_durable_evidenc
         assert len(records) == 1
         assignment = first.assignment.snapshot()
         assert assignment["assignment_kind"] == "governed_corrective_engineering"
+        assert assignment["required_check_roster_digest"] == roster.roster_digest
         assert assignment["requires_authoritative_coding_executor"] is True
         assert assignment["requires_fresh_validation_receipts"] is True
         assert assignment["requires_fresh_owner_authorization_for_git_mutation"] is True
@@ -191,6 +301,7 @@ def test_stale_or_moved_head_fails_closed_before_assignment() -> None:
     decision = GitProposalCiRepairCoordinator().evaluate(
         mutation_receipt=_receipt(),
         observation=_observation(CiConclusion.FAILURE, head_sha="9" * 40),
+        required_checks=_roster("check-1", head_sha="9" * 40),
     )
 
     assert decision.disposition == CiRepairDisposition.BLOCKED
@@ -212,6 +323,9 @@ def test_observation_identity_mismatch_fails_closed(
         mutation_receipt=_receipt(),
         observation=_observation(
             CiConclusion.FAILURE, repository=repository, pr_number=pr_number
+        ),
+        required_checks=_roster(
+            "check-1", repository=repository, pr_number=pr_number
         ),
     )
 
@@ -237,51 +351,122 @@ def test_non_draft_or_incomplete_proposal_receipt_cannot_enter_ci_loop() -> None
     decision = GitProposalCiRepairCoordinator().evaluate(
         mutation_receipt=incomplete,
         observation=_observation(CiConclusion.FAILURE),
+        required_checks=_roster("check-1"),
     )
 
     assert decision.disposition == CiRepairDisposition.BLOCKED
     assert decision.code == "CI_REPAIR_DRAFT_PR_EVIDENCE_REQUIRED"
 
 
-def test_revalidation_requires_advanced_head_and_authoritative_receipt_digest() -> None:
+def _failed_assignment(
+    journal: DurableGitProposalCiRepairJournal,
+) -> tuple[object, CiRequiredCheckRoster]:
+    roster = _roster("check-1")
+    failed = GitProposalCiRepairCoordinator().evaluate(
+        mutation_receipt=_receipt(),
+        observation=_observation(CiConclusion.FAILURE),
+        required_checks=roster,
+        journal=journal,
+    )
+    assert failed.assignment is not None
+    return failed.assignment, roster
+
+
+def test_revalidation_requires_advanced_head_and_resolved_authoritative_receipt() -> None:
     db, journal = _journal()
     try:
-        failed = GitProposalCiRepairCoordinator().evaluate(
-            mutation_receipt=_receipt(),
-            observation=_observation(CiConclusion.FAILURE),
-            journal=journal,
-        )
-        assert failed.assignment is not None
+        assignment, roster = _failed_assignment(journal)
+        corrective = _corrective_receipt(assignment.repair_key)
+        resolver = _Resolver(corrective)
 
         with pytest.raises(PermissionError, match="HEAD_NOT_ADVANCED"):
             journal.record_revalidation(
-                assignment=failed.assignment,
+                assignment=assignment,
                 observation=_observation(CiConclusion.SUCCESS),
-                authoritative_corrective_receipt_digest="b" * 64,
+                required_checks=roster,
+                authoritative_corrective_receipt_digest=corrective.receipt_digest,
+                corrective_receipts=resolver,
             )
         with pytest.raises(ValueError, match="CORRECTIVE_RECEIPT_DIGEST_INVALID"):
             journal.record_revalidation(
+                assignment=assignment,
+                observation=_observation(CiConclusion.SUCCESS, head_sha=CORRECTED_SHA),
+                required_checks=_roster("check-1", head_sha=CORRECTED_SHA),
+                authoritative_corrective_receipt_digest="bad",
+                corrective_receipts=resolver,
+            )
+        with pytest.raises(PermissionError, match="CORRECTIVE_RECEIPT_NOT_FOUND"):
+            journal.record_revalidation(
+                assignment=assignment,
+                observation=_observation(CiConclusion.SUCCESS, head_sha=CORRECTED_SHA),
+                required_checks=_roster("check-1", head_sha=CORRECTED_SHA),
+                authoritative_corrective_receipt_digest="d" * 64,
+                corrective_receipts=_Resolver(None),
+            )
+    finally:
+        db.close()
+
+
+def test_revalidation_refuses_fabricated_digest_even_when_shape_is_valid() -> None:
+    db, journal = _journal()
+    try:
+        assignment, _ = _failed_assignment(journal)
+        with pytest.raises(PermissionError, match="CORRECTIVE_RECEIPT_NOT_FOUND"):
+            journal.record_revalidation(
+                assignment=assignment,
+                observation=_observation(CiConclusion.SUCCESS, head_sha=CORRECTED_SHA),
+                required_checks=_roster("check-1", head_sha=CORRECTED_SHA),
+                authoritative_corrective_receipt_digest="b" * 64,
+                corrective_receipts=_Resolver(None),
+            )
+    finally:
+        db.close()
+
+
+def test_revalidation_requires_corrective_receipt_bound_to_assignment_and_head() -> None:
+    db, journal = _journal()
+    try:
+        assignment, _ = _failed_assignment(journal)
+        wrong = _corrective_receipt("f" * 64)
+        with pytest.raises(PermissionError, match="ASSIGNMENT_MISMATCH"):
+            journal.record_revalidation(
+                assignment=assignment,
+                observation=_observation(CiConclusion.SUCCESS, head_sha=CORRECTED_SHA),
+                required_checks=_roster("check-1", head_sha=CORRECTED_SHA),
+                authoritative_corrective_receipt_digest=wrong.receipt_digest,
+                corrective_receipts=_Resolver(wrong),
+            )
+    finally:
+        db.close()
+
+
+def test_revalidation_refuses_incomplete_required_check_observation() -> None:
+    db, journal = _journal()
+    try:
+        roster = _roster("check-1", "check-2")
+        failed = GitProposalCiRepairCoordinator().evaluate(
+            mutation_receipt=_receipt(),
+            observation=_observation(CiConclusion.FAILURE, CiConclusion.SUCCESS),
+            required_checks=roster,
+            journal=journal,
+        )
+        assert failed.assignment is not None
+        corrective = _corrective_receipt(failed.assignment.repair_key)
+        with pytest.raises(PermissionError, match="REQUIRED_CHECKS_INCOMPLETE"):
+            journal.record_revalidation(
                 assignment=failed.assignment,
                 observation=_observation(CiConclusion.SUCCESS, head_sha=CORRECTED_SHA),
-                authoritative_corrective_receipt_digest="bad",
+                required_checks=CiRequiredCheckRoster(
+                    repository=REPOSITORY,
+                    pull_request_number=PR_NUMBER,
+                    head_sha=CORRECTED_SHA,
+                    check_ids=("check-1", "check-2"),
+                    source=roster.source,
+                    observed_at=roster.observed_at,
+                ),
+                authoritative_corrective_receipt_digest=corrective.receipt_digest,
+                corrective_receipts=_Resolver(corrective),
             )
-
-        corrected = _observation(CiConclusion.SUCCESS, head_sha=CORRECTED_SHA)
-        event = journal.record_revalidation(
-            assignment=failed.assignment,
-            observation=corrected,
-            authoritative_corrective_receipt_digest="b" * 64,
-        )
-        replay = journal.record_revalidation(
-            assignment=failed.assignment,
-            observation=corrected,
-            authoritative_corrective_receipt_digest="b" * 64,
-        )
-        assert replay.event_id == event.event_id
-        assert event.event_kind == "revalidation"
-        assert event.head_sha == CORRECTED_SHA
-        assert '"owner_merge_ready":true' in event.payload_json
-        assert '"merge_performed":false' in event.payload_json
     finally:
         db.close()
 
@@ -292,46 +477,87 @@ def test_revalidation_refuses_non_green_corrected_head(
 ) -> None:
     db, journal = _journal()
     try:
-        failed = GitProposalCiRepairCoordinator().evaluate(
-            mutation_receipt=_receipt(),
-            observation=_observation(CiConclusion.FAILURE),
-            journal=journal,
-        )
-        assert failed.assignment is not None
-
+        assignment, _ = _failed_assignment(journal)
+        corrective = _corrective_receipt(assignment.repair_key)
         with pytest.raises(PermissionError, match="REVALIDATION_CHECKS_NOT_GREEN"):
             journal.record_revalidation(
-                assignment=failed.assignment,
+                assignment=assignment,
                 observation=_observation(conclusion, head_sha=CORRECTED_SHA),
-                authoritative_corrective_receipt_digest="b" * 64,
+                required_checks=_roster("check-1", head_sha=CORRECTED_SHA),
+                authoritative_corrective_receipt_digest=corrective.receipt_digest,
+                corrective_receipts=_Resolver(corrective),
             )
     finally:
         db.close()
 
 
-def test_changed_revalidation_evidence_conflicts_instead_of_overwriting_history() -> (
-    None
-):
+def test_valid_revalidation_records_bound_corrective_provenance_idempotently() -> None:
     db, journal = _journal()
     try:
-        failed = GitProposalCiRepairCoordinator().evaluate(
-            mutation_receipt=_receipt(),
-            observation=_observation(CiConclusion.FAILURE),
-            journal=journal,
-        )
-        assert failed.assignment is not None
+        assignment, _ = _failed_assignment(journal)
         corrected = _observation(CiConclusion.SUCCESS, head_sha=CORRECTED_SHA)
-        journal.record_revalidation(
-            assignment=failed.assignment,
+        corrected_roster = _roster("check-1", head_sha=CORRECTED_SHA)
+        corrective = _corrective_receipt(assignment.repair_key)
+        resolver = _Resolver(corrective)
+
+        event = journal.record_revalidation(
+            assignment=assignment,
             observation=corrected,
-            authoritative_corrective_receipt_digest="b" * 64,
+            required_checks=corrected_roster,
+            authoritative_corrective_receipt_digest=corrective.receipt_digest,
+            corrective_receipts=resolver,
+        )
+        replay = journal.record_revalidation(
+            assignment=assignment,
+            observation=corrected,
+            required_checks=corrected_roster,
+            authoritative_corrective_receipt_digest=corrective.receipt_digest,
+            corrective_receipts=resolver,
+        )
+        assert replay.event_id == event.event_id
+        assert event.event_kind == "revalidation"
+        assert event.head_sha == CORRECTED_SHA
+        assert f'"corrective_plan_digest":"{corrective.plan_digest}"' in event.payload_json
+        assert '"owner_merge_ready":true' in event.payload_json
+        assert '"merge_performed":false' in event.payload_json
+    finally:
+        db.close()
+
+
+def test_changed_revalidation_evidence_conflicts_instead_of_overwriting_history() -> None:
+    db, journal = _journal()
+    try:
+        assignment, _ = _failed_assignment(journal)
+        corrected = _observation(CiConclusion.SUCCESS, head_sha=CORRECTED_SHA)
+        corrected_roster = _roster("check-1", head_sha=CORRECTED_SHA)
+        corrective = _corrective_receipt(assignment.repair_key)
+        journal.record_revalidation(
+            assignment=assignment,
+            observation=corrected,
+            required_checks=corrected_roster,
+            authoritative_corrective_receipt_digest=corrective.receipt_digest,
+            corrective_receipts=_Resolver(corrective),
         )
 
+        different = GitProposalMutationReceipt(
+            plan_digest="e" * 64,
+            patch_program_job_id=corrective.patch_program_job_id,
+            repository=corrective.repository,
+            proposed_branch=corrective.proposed_branch,
+            base_commit_sha=corrective.base_commit_sha,
+            base_ref=corrective.base_ref,
+            status=corrective.status,
+            completed_actions=corrective.completed_actions,
+            operation_evidence=corrective.operation_evidence,
+            failure_code=None,
+        )
         with pytest.raises(PermissionError, match="IDEMPOTENCY_CONFLICT"):
             journal.record_revalidation(
-                assignment=failed.assignment,
+                assignment=assignment,
                 observation=corrected,
-                authoritative_corrective_receipt_digest="c" * 64,
+                required_checks=corrected_roster,
+                authoritative_corrective_receipt_digest=different.receipt_digest,
+                corrective_receipts=_Resolver(different),
             )
     finally:
         db.close()
