@@ -90,7 +90,9 @@ def _entry_payload(
         "provenance": {
             "source": "Orchid Continuum Core Concept Registry",
             "source_record_id": str(concept["concept_id"]),
-            "validation_status": str(concept.get("review_state") or "PENDING").casefold(),
+            "validation_status": str(
+                concept.get("review_state") or "PENDING"
+            ).casefold(),
         },
         "relationships": [],
         "assets": [],
@@ -134,7 +136,7 @@ def _load_entries(*, q: str | None = None, limit: int = 500) -> list[dict[str, A
                 f"""
                 SELECT c.*
                 FROM oc_concepts.concepts c
-                WHERE {' AND '.join(where)}
+                WHERE {" AND ".join(where)}
                 ORDER BY c.revised_at DESC, c.created_at DESC, c.concept_id
                 LIMIT %s
                 """,
@@ -171,10 +173,14 @@ def _load_entries(*, q: str | None = None, limit: int = 500) -> list[dict[str, A
             for row in cur.fetchall():
                 defs_by[row["concept_id"]].append(dict(row))
     except (RuntimeError, psycopg.Error) as exc:
-        raise HTTPException(status_code=503, detail={"code": "LEXICON_DATABASE_UNAVAILABLE"}) from exc
+        raise HTTPException(
+            status_code=503, detail={"code": "LEXICON_DATABASE_UNAVAILABLE"}
+        ) from exc
 
     return [
-        _entry_payload(concept, labels_by[concept["concept_id"]], defs_by[concept["concept_id"]])
+        _entry_payload(
+            concept, labels_by[concept["concept_id"]], defs_by[concept["concept_id"]]
+        )
         for concept in concepts
         if labels_by[concept["concept_id"]]
     ]
@@ -215,7 +221,9 @@ def _load_entry_by_concept_id(concept_id: UUID) -> dict[str, Any] | None:
             )
             definitions = [dict(row) for row in cur.fetchall()]
     except (RuntimeError, psycopg.Error) as exc:
-        raise HTTPException(status_code=503, detail={"code": "LEXICON_DATABASE_UNAVAILABLE"}) from exc
+        raise HTTPException(
+            status_code=503, detail={"code": "LEXICON_DATABASE_UNAVAILABLE"}
+        ) from exc
     return _entry_payload(concept, labels, definitions)
 
 
@@ -244,7 +252,9 @@ def _find_approved_concept_id_by_slug(slug: str) -> UUID | None:
             )
             rows = cur.fetchall()
     except (RuntimeError, psycopg.Error) as exc:
-        raise HTTPException(status_code=503, detail={"code": "LEXICON_DATABASE_UNAVAILABLE"}) from exc
+        raise HTTPException(
+            status_code=503, detail={"code": "LEXICON_DATABASE_UNAVAILABLE"}
+        ) from exc
     if len(rows) > 1:
         raise HTTPException(
             status_code=409,
@@ -333,7 +343,9 @@ def search_entries(
 def analyze_lexicon_language(term: str) -> dict[str, Any]:
     concept_service = _load_concept_service()
     service = BotanicalLanguageService(
-        (lambda value: _concept_search(concept_service, value)) if concept_service else None
+        (lambda value: _concept_search(concept_service, value))
+        if concept_service
+        else None
     )
     result = service.analyze_term(term)
     result.update(
