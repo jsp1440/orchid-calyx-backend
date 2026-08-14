@@ -96,29 +96,15 @@ class GovernedAutoMissionWorker:
             job.status,
         )
 
-    def hold_governance_bound(
+    def _queued_partition(
         self,
         *,
         owner: str,
         roles: frozenset[str],
-    ) -> list[str]:
-        """Report runnable work that cannot be claimed automatically.
-
-        Governance-bound jobs and jobs without a registered authoritative executor
-        remain queued/non-terminal. Treating unsupported roles as holds prevents a
-        cycle from reporting ``idle`` while runnable work is actually blocked on an
-        executor/governance decision. Invalid persisted scheduler state is allowed
-        to propagate so the coordinator can report a truthful scheduler error.
-        """
-        runnable = set(
-            project_persisted_schedule(
-                self.db,
-                owner=owner,
-            ).runnable_program_job_ids
-        )
-        if not runnable:
-            return []
-        jobs = self.db.scalars(
+        program_ids: tuple[str, ...] | None = None,
+    ) -> tuple[frozenset[str], frozenset[str]]:
+        """Partition claimable queued work before provisional capacity is allocated."""
+        query = (
             select(CalyxProgramJob)
             .join(CalyxProgram)
             .where(
@@ -127,17 +113,47 @@ class GovernedAutoMissionWorker:
                 CalyxProgram.paused.is_(False),
                 CalyxProgramJob.status == "queued",
                 CalyxProgramJob.outcome.is_(None),
-                CalyxProgramJob.program_job_id.in_(tuple(runnable)),
+                CalyxProgramJob.attempt_count < CalyxProgramJob.max_attempts,
             )
-        ).all()
-        held = [
-            job.program_job_id
-            for job in jobs
-            if job.role_key not in roles
-            or self.selector.decision(job).disposition
-            != GovernanceDisposition.AUTOMATIC
-        ]
-        return sorted(held)
+        )
+        if program_ids is not None:
+            if not program_ids:
+                return frozenset(), frozenset()
+            query = query.where(CalyxProgram.program_id.in_(program_ids))
+        automatic: set[str] = set()
+        held: set[str] = set()
+        for job in self.db.scalars(query).all():
+            if (
+                job.role_key in roles
+                and self.selector.decision(job).disposition
+                == GovernanceDisposition.AUTOMATIC
+            ):
+                automatic.add(job.program_job_id)
+            else:
+                held.add(job.program_job_id)
+        return frozenset(automatic), frozenset(held)
+
+    def hold_governance_bound(
+        self,
+        *,
+        owner: str,
+        roles: frozenset[str],
+    ) -> list[str]:
+        """Report dependency-ready work that cannot be claimed automatically.
+
+        Held work is projected as the only provisional candidate set. It therefore
+        remains visible as a governance boundary without consuming the capacity used
+        to choose automatically admissible work in ``claim``.
+        """
+        _, held_ids = self._queued_partition(owner=owner, roles=roles)
+        if not held_ids:
+            return []
+        schedule = project_persisted_schedule(
+            self.db,
+            owner=owner,
+            candidate_program_job_ids=held_ids,
+        )
+        return sorted(schedule.runnable_program_job_ids)
 
     def _lock_owner_claim_scope(self, owner: str) -> tuple[str, ...]:
         """Serialize owner-level admission decisions until the claim transaction commits."""
@@ -168,7 +184,19 @@ class GovernedAutoMissionWorker:
             self.db.rollback()
             return None
         try:
-            schedule = project_persisted_schedule(self.db, owner=owner)
+            automatic_ids, _ = self._queued_partition(
+                owner=owner,
+                roles=roles,
+                program_ids=locked_program_ids,
+            )
+            if not automatic_ids:
+                self.db.rollback()
+                return None
+            schedule = project_persisted_schedule(
+                self.db,
+                owner=owner,
+                candidate_program_job_ids=automatic_ids,
+            )
         except (TypeError, ValueError):
             self.db.rollback()
             raise
@@ -293,6 +321,68 @@ class GovernedAutoMissionWorker:
                     CalyxProgramJob.blocker: decision.code,
                     CalyxProgramJob.human_action: (
                         "Apply validator feedback on the next autonomous attempt."
+                    ),
+                },
+                synchronize_session=False,
+            )
+        )
+        if not updated:
+            self.db.rollback()
+            raise PermissionError("STALE_PROGRAM_JOB_LEASE")
+        self.db.commit()
+        current = self.db.get(CalyxProgramJob, job.program_job_id)
+        if current is None:
+            raise LookupError("PROGRAM_JOB_NOT_FOUND")
+        self.db.refresh(current)
+        return current
+
+    def fail_execution(
+        self,
+        *,
+        job: CalyxProgramJob,
+        worker_id: str,
+        token: str,
+        exc: Exception,
+    ) -> CalyxProgramJob:
+        """Release an expected executor failure without waiting for lease expiry."""
+        code = f"EXECUTOR_EXCEPTION:{type(exc).__name__}"
+        if job.attempt_count >= job.max_attempts:
+            return self.base.complete(
+                program_job_id=job.program_job_id,
+                worker_id=worker_id,
+                lease_token=token,
+                outcome=TerminalOutcome.DEAD_LETTER.value,
+                evidence={
+                    "execution_exception_type": type(exc).__name__,
+                    "attempt_count": job.attempt_count,
+                    "receipt_recorded": False,
+                },
+                blocker="EXECUTION_ATTEMPTS_EXHAUSTED",
+                human_action=(
+                    "Inspect the mission input/executor failure and create a governed retry revision."
+                ),
+            )
+        now = utcnow()
+        updated = (
+            self.db.query(CalyxProgramJob)
+            .filter(
+                CalyxProgramJob.program_job_id == job.program_job_id,
+                CalyxProgramJob.status == "running",
+                CalyxProgramJob.outcome.is_(None),
+                CalyxProgramJob.lease_owner == worker_id,
+                CalyxProgramJob.lease_token == token,
+                CalyxProgramJob.lease_expires_at.is_not(None),
+                CalyxProgramJob.lease_expires_at > now,
+            )
+            .update(
+                {
+                    CalyxProgramJob.status: "queued",
+                    CalyxProgramJob.lease_owner: None,
+                    CalyxProgramJob.lease_token: None,
+                    CalyxProgramJob.lease_expires_at: None,
+                    CalyxProgramJob.blocker: code,
+                    CalyxProgramJob.human_action: (
+                        "Retry is permitted; inspect mission input if the executor failure repeats."
                     ),
                 },
                 synchronize_session=False,
@@ -887,12 +977,60 @@ class AutoMissionCoordinator:
                             "program_job_id": job.program_job_id,
                         },
                     )
-            except (LookupError, PermissionError, RuntimeError, TypeError, ValueError) as exc:
+            except (
+                LookupError,
+                PermissionError,
+                RuntimeError,
+                OSError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                rollback_error: Exception | None = None
                 try:
                     if assignment is not None:
                         self._rollback(registered, assignment.assignment_id)
+                except (LookupError, PermissionError, RuntimeError, OSError, ValueError) as cleanup_exc:
+                    rollback_error = cleanup_exc
                 finally:
                     self.db.rollback()
+
+                release_error: Exception | None = None
+                released_job: CalyxProgramJob | None = None
+                try:
+                    released_job = self.worker.fail_execution(
+                        job=job,
+                        worker_id=worker_id,
+                        token=token,
+                        exc=exc,
+                    )
+                except (
+                    LookupError,
+                    PermissionError,
+                    RuntimeError,
+                    OSError,
+                    TypeError,
+                    ValueError,
+                ) as cleanup_exc:
+                    self.db.rollback()
+                    release_error = cleanup_exc
+
+                error: dict[str, Any] = {
+                    "code": str(exc) or type(exc).__name__,
+                    "exception_type": type(exc).__name__,
+                    "program_job_id": job.program_job_id,
+                    "lease_released": released_job is not None,
+                }
+                if released_job is not None:
+                    error["job_status"] = released_job.status
+                    error["retry_scheduled"] = released_job.status == "queued"
+                if rollback_error is not None:
+                    error["rollback_error"] = (
+                        str(rollback_error) or type(rollback_error).__name__
+                    )
+                if release_error is not None:
+                    error["lease_release_error"] = (
+                        str(release_error) or type(release_error).__name__
+                    )
                 return AutoMissionCycleResult(
                     owner,
                     worker_id,
@@ -902,11 +1040,7 @@ class AutoMissionCoordinator:
                     len(held),
                     "error",
                     tuple(results),
-                    {
-                        "code": str(exc) or type(exc).__name__,
-                        "exception_type": type(exc).__name__,
-                        "program_job_id": job.program_job_id,
-                    },
+                    error,
                 )
         return AutoMissionCycleResult(
             owner,
