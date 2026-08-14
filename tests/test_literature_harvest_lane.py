@@ -11,6 +11,19 @@ def test_topic_rotation_is_deterministic() -> None:
     assert second == literature.LITERATURE_TOPICS[1]
 
 
+def test_bhl_lane_reports_missing_key(monkeypatch) -> None:
+    monkeypatch.delenv("BHL_API_KEY", raising=False)
+    result = literature._harvest_bhl_once(bucket=0, limit=5)
+    assert result["status"] == "not_configured"
+    assert result["required_environment"] == "BHL_API_KEY"
+
+
+def test_bhl_lane_skips_when_not_due(monkeypatch) -> None:
+    monkeypatch.setenv("BHL_API_KEY", "test-key")
+    result = literature._harvest_bhl_once(bucket=1, limit=5)
+    assert result["status"] == "not_due"
+
+
 def test_literature_runs_before_biodiversity(monkeypatch) -> None:
     order: list[str] = []
 
