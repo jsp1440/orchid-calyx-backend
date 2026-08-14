@@ -5,8 +5,10 @@ on:
     paths:
       - 'app/calyx_orchestrator/github_coding_executor.py'
       - 'app/calyx_orchestrator/github_copilot_cloud_provider.py'
+      - 'app/calyx_orchestrator/github_repository_inspector.py'
       - 'tests/test_phase_2_github_coding_executor.py'
       - 'tests/test_phase_2_github_copilot_cloud_provider.py'
+      - 'tests/test_phase_2_github_repository_inspector.py'
       - '.github/workflows/phase-2-github-executor-validation.yml'
   workflow_dispatch:
 
@@ -23,13 +25,17 @@ jobs:
           python -m pytest -q
           tests/test_phase_2_github_coding_executor.py
           tests/test_phase_2_github_copilot_cloud_provider.py
+          tests/test_phase_2_github_repository_inspector.py
       - run: >-
           python -m compileall -q
           app/calyx_orchestrator/github_coding_executor.py
           app/calyx_orchestrator/github_copilot_cloud_provider.py
+          app/calyx_orchestrator/github_repository_inspector.py
       - run: >-
           ruff check
           app/calyx_orchestrator/github_coding_executor.py
           app/calyx_orchestrator/github_copilot_cloud_provider.py
+          app/calyx_orchestrator/github_repository_inspector.py
           tests/test_phase_2_github_coding_executor.py
           tests/test_phase_2_github_copilot_cloud_provider.py
+          tests/test_phase_2_github_repository_inspector.py
