@@ -11,8 +11,9 @@ from typing import Any
 
 import psycopg
 
+from app.multimodal_intelligence.vision_provider_registry import provider_readiness
+
 from . import activation
-from .service import vision_lexicon_capability_status
 
 
 def _build_preflight(
@@ -24,11 +25,12 @@ def _build_preflight(
     provider_status: str,
     live_inference_enabled: bool,
     inspection_error: str | None = None,
+    provider_details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     schema_ready = connectivity and schema_problem is None and inspection_error is None
     persistence_activation_ready = database_url_configured and connectivity and schema_ready
     persistence_active = durable_requested and persistence_activation_ready
-    provider_ready = provider_status not in {"", "PROVIDER_NOT_CONFIGURED", "PERSISTENCE_NOT_READY"}
+    provider_ready = provider_status == "READY"
     live_inference_activation_ready = persistence_active and provider_ready and live_inference_enabled
 
     blockers: list[str] = []
@@ -46,11 +48,17 @@ def _build_preflight(
         blockers.append("VISION_PROVIDER_NOT_CONFIGURED")
     elif provider_status == "PERSISTENCE_NOT_READY":
         blockers.append("VISION_PROVIDER_PERSISTENCE_NOT_READY")
+    elif provider_status != "READY":
+        blockers.append(f"VISION_{provider_status}")
     if not live_inference_enabled:
         blockers.append("VISION_LIVE_INFERENCE_DISABLED")
 
+    provider = dict(provider_details or {})
+    provider.pop("live_inference_enabled", None)
+    provider.pop("provider_status", None)
+
     return {
-        "schema_version": "vision-activation-preflight/v1",
+        "schema_version": "vision-activation-preflight/v2",
         "read_only": True,
         "mutations_performed": False,
         "database_url_configured": database_url_configured,
@@ -63,13 +71,15 @@ def _build_preflight(
         "persistence_active": persistence_active,
         "provider_status": provider_status,
         "provider_ready": provider_ready,
+        "provider": provider,
         "live_inference_enabled": live_inference_enabled,
         "live_inference_activation_ready": live_inference_activation_ready,
         "blockers": blockers,
         "activation_order": [
             "activate and verify oc_vision schema",
             "enable governed durable Vision persistence",
-            "configure and verify a governed image-inference provider",
+            "select an explicitly registered canonical VisionProvider adapter",
+            "verify that adapter with a side-effect-free readiness probe",
             "enable live inference only after provider validation",
             "retain human review before Matrix scoring or knowledge promotion",
         ],
@@ -78,10 +88,17 @@ def _build_preflight(
 
 def vision_activation_preflight() -> dict[str, Any]:
     """Inspect Vision activation prerequisites without changing runtime state."""
-    base = vision_lexicon_capability_status()
     durable = activation.durable_requested()
-    provider_status = str(base.get("provider_status") or "PROVIDER_NOT_CONFIGURED")
-    live_inference = bool(base.get("live_inference_enabled"))
+    provider = provider_readiness()
+    provider_status = str(provider.get("provider_status") or "PROVIDER_NOT_CONFIGURED")
+    live_inference = bool(provider.get("live_inference_enabled"))
+
+    common = {
+        "durable_requested": durable,
+        "provider_status": provider_status,
+        "live_inference_enabled": live_inference,
+        "provider_details": provider,
+    }
 
     try:
         database_url = activation._postgres_url()
@@ -90,10 +107,8 @@ def vision_activation_preflight() -> dict[str, Any]:
             database_url_configured=False,
             connectivity=False,
             schema_problem=None,
-            durable_requested=durable,
-            provider_status=provider_status,
-            live_inference_enabled=live_inference,
             inspection_error=str(exc),
+            **common,
         )
 
     try:
@@ -106,10 +121,8 @@ def vision_activation_preflight() -> dict[str, Any]:
             database_url_configured=True,
             connectivity=False,
             schema_problem=None,
-            durable_requested=durable,
-            provider_status=provider_status,
-            live_inference_enabled=live_inference,
             inspection_error=str(exc),
+            **common,
         )
 
     try:
@@ -120,17 +133,13 @@ def vision_activation_preflight() -> dict[str, Any]:
             database_url_configured=True,
             connectivity=True,
             schema_problem=None,
-            durable_requested=durable,
-            provider_status=provider_status,
-            live_inference_enabled=live_inference,
             inspection_error=str(exc),
+            **common,
         )
 
     return _build_preflight(
         database_url_configured=True,
         connectivity=True,
         schema_problem=problem,
-        durable_requested=durable,
-        provider_status=provider_status,
-        live_inference_enabled=live_inference,
+        **common,
     )
