@@ -33,7 +33,7 @@ class ConversationCreateRequest(BaseModel):
 
 
 class ConversationTurnRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=5000)
+    message: str = Field(min_length=1, max_length=30000)
     project_id: str | None = Field(default=None, max_length=200)
     context: dict[str, Any] = Field(default_factory=dict)
     research_mode: Literal["auto", "always", "never"] = "auto"
@@ -255,7 +255,7 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
     provider_configuration = runtime_provider_configuration()
     return {
         "release": "CALYX-SPEAK-004-CONTEXT",
-        "integration_release": "CALYX-SPEAK-010-DEFER-EMPTY-CANONICAL-MISSION",
+        "integration_release": "CALYX-SPEAK-011-LONG-RESEARCH-TURNS",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
         "provider": {
@@ -276,6 +276,7 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
             "research_index_evidence_bridge": True,
             "external_review_synthesis_without_canonical_mission": True,
             "empty_canonical_retrieval_defers_auto_mission": True,
+            "max_user_turn_chars": 30000,
         },
         "interaction_context": {
             "supported": True,
