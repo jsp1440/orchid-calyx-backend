@@ -149,11 +149,15 @@ def _assert_rejected_without_validator_side_effects(mutation: str, expected_code
             .filter(CalyxProgramJob.program_id == item.program_id)
             .one()
         )
-        assert job.status == "running"
+        # Receipt-integrity failures are executor failures, so the durable lease is
+        # released immediately instead of leaving the worker stuck until expiry.
+        assert job.status == "queued"
         assert job.outcome is None
         assert job.attempt_count == 1
-        assert job.lease_owner == "worker"
-        assert job.lease_token is not None
+        assert job.lease_owner is None
+        assert job.lease_token is None
+        assert job.lease_expires_at is None
+        assert job.blocker == "EXECUTOR_EXCEPTION:ValueError"
 
 
 def test_wrong_assignment_id_is_rejected_before_validator_state_mutation():
