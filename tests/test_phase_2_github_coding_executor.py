@@ -20,9 +20,11 @@ from app.calyx_orchestrator.github_coding_executor import (
 class Inspector:
     snapshot: RepositorySnapshot
     calls: int = 0
+    last_mission_id: str | None = None
 
-    def inspect(self, *, repository: str, objective: str) -> RepositorySnapshot:
+    def inspect(self, *, repository: str, objective: str, mission_id: str) -> RepositorySnapshot:
         self.calls += 1
+        self.last_mission_id = mission_id
         return self.snapshot
 
 
@@ -103,6 +105,7 @@ def test_already_done_never_dispatches_or_creates_branch() -> None:
     inspector = Inspector(snapshot(implementation_complete=True, overlapping_pr_numbers=(900,)))
     provider = Provider(result())
     receipt = GitHubCodingAgentExecutor(inspector=inspector, provider=provider).execute(assignment(job()))
+    assert inspector.last_mission_id == "MISSION-1"
     assert receipt.output["convergence_class"] == "ALREADY_DONE"
     assert receipt.output["branch_created"] is False
     assert receipt.output["pull_request_created"] is False
