@@ -77,7 +77,13 @@ class DispatchResult:
 
 
 class RepositoryInspectionGateway(Protocol):
-    def inspect(self, *, repository: str, objective: str) -> RepositorySnapshot: ...
+    def inspect(
+        self,
+        *,
+        repository: str,
+        objective: str,
+        mission_id: str,
+    ) -> RepositorySnapshot: ...
 
 
 class CodingAgentProvider(Protocol):
@@ -104,8 +110,7 @@ def _tuple_of_strings(value: object, field: str) -> tuple[str, ...]:
         return ()
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise TypeError(f"{field}_MUST_BE_SEQUENCE")
-    normalized = tuple(str(item).strip() for item in value if str(item).strip())
-    return normalized
+    return tuple(str(item).strip() for item in value if str(item).strip())
 
 
 def _parse_budget(value: object) -> BudgetClass:
@@ -129,14 +134,10 @@ def _nonnegative_retry_count(value: object) -> int:
 class GitHubCodingAgentExecutor:
     """Provider-neutral dispatcher for governed GitHub coding-agent work.
 
-    This executor deliberately does not embed a model or GitHub credential. The
-    repository inspector and coding-agent provider are injected adapters. Mission
-    identity stays in Calyx/Brain; provider identity is receipt metadata only.
-
-    The executor can create engineering side effects only through the injected
-    provider. It grants no merge, deployment, production mutation, publication,
-    taxonomy activation, credential, spending, force-push, branch-deletion, or
-    repository-deletion authority.
+    Mission identity stays in Calyx/Brain; provider identity is receipt metadata.
+    Credentials live only behind injected adapters. This executor grants no merge,
+    deployment, production mutation, publication, taxonomy activation, credential,
+    spending, force-push, branch-deletion, or repository-deletion authority.
     """
 
     executor_key = "github_coding_agent_v1"
@@ -191,7 +192,11 @@ class GitHubCodingAgentExecutor:
                 },
             )
 
-        snapshot = self.inspector.inspect(repository=repository, objective=objective)
+        snapshot = self.inspector.inspect(
+            repository=repository,
+            objective=objective,
+            mission_id=mission_id,
+        )
         if snapshot.repository != repository:
             raise PermissionError("GITHUB_CODING_INSPECTION_REPOSITORY_MISMATCH")
         if not snapshot.base_sha or len(snapshot.base_sha) != 40:
