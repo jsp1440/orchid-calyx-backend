@@ -132,6 +132,22 @@ class DurableGitProposalMutationJournal:
         history = self._validated_history(digest)
         return None if not history else history[-1][1]
 
+    @classmethod
+    def validate_checkpoint_receipt(
+        cls,
+        row: GitProposalMutationJournalEventRecord,
+    ) -> GitProposalMutationReceipt:
+        """Validate one self-contained cumulative receipt without scanning full history.
+
+        Proposal receipts carry the full completed-action/evidence prefix and a canonical
+        receipt digest. Callers that also verify event-index continuity with aggregate
+        metadata can therefore build bounded read-only status views while preserving the
+        latest durable evidence checkpoint. Recovery and mutation paths continue to use
+        ``_validated_history`` and retain full-history transition validation.
+        """
+
+        return cls._decode(row)
+
     def recovery_state(
         self,
         plan: GitProposalExecutionPlan,
