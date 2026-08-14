@@ -42,6 +42,9 @@ REVIEW_REQUIRED_ACTIONS = frozenset(
     }
 )
 _TRUE_ACTION_FLAGS = frozenset({"1", "true", "yes", "on", "requested", "enabled"})
+_ACTION_TOKEN_ALIASES = {
+    "branch_deletion": "branch_delete",
+}
 
 
 class GovernanceDisposition(StrEnum):
@@ -101,8 +104,8 @@ def _action_token(value: Any) -> str:
 
     token = str(value).strip().casefold()
     token = re.sub(r"[\s\-]+", "_", token)
-    token = re.sub(r"_+", "_", token)
-    return token.strip("_")
+    token = re.sub(r"_+", "_", token).strip("_")
+    return _ACTION_TOKEN_ALIASES.get(token, token)
 
 
 def _normalized_actions(value: Any) -> set[str]:
