@@ -35,7 +35,11 @@ jobs:
           app/calyx_orchestrator/git_proposal_ci_repair.py
           tests/test_calyx_git_proposal_ci_repair_114u.py
       - name: Focused regressions
-        run: pytest -q tests/test_calyx_git_proposal_ci_repair_114u.py tests/test_calyx_git_proposal_mutation_executor_114u.py tests/test_calyx_github_proposal_mutation_adapter_114u.py
+        run: >-
+          pytest -q
+          tests/test_calyx_git_proposal_ci_repair_114u.py
+          tests/test_calyx_git_proposal_mutation_executor_114s.py
+          tests/test_calyx_github_proposal_mutation_adapter_114u.py
       - name: Ruff
         if: ${{ always() }}
         run: |
