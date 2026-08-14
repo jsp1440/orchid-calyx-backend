@@ -1,0 +1,51 @@
+name: CALYX Vision Readiness Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/vision_lexicon/**"
+      - "app/routers/vision_activation_preflight.py"
+      - "app/routers/reference_docs.py"
+      - "tests/test_vision_lexicon_*.py"
+      - ".github/workflows/calyx-vision-readiness-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vision-readiness:
+    name: Vision readiness contract
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest ruff
+      - name: Vision activation and governance regressions
+        run: |
+          pytest -q \
+            tests/test_vision_lexicon_activation_status.py \
+            tests/test_vision_lexicon_activation_preflight.py \
+            tests/test_vision_lexicon_bridge.py
+      - name: Compile Vision readiness implementation
+        run: |
+          python -m compileall -q \
+            app/vision_lexicon/activation.py \
+            app/vision_lexicon/preflight.py \
+            app/routers/vision_activation_preflight.py
+      - name: Ruff Vision readiness implementation
+        run: |
+          python -m ruff check \
+            app/vision_lexicon/activation.py \
+            app/vision_lexicon/preflight.py \
+            app/routers/vision_activation_preflight.py \
+            tests/test_vision_lexicon_activation_status.py \
+            tests/test_vision_lexicon_activation_preflight.py \
+            tests/test_vision_lexicon_bridge.py
