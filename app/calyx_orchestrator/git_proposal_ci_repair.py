@@ -165,7 +165,9 @@ class CiRepairDecision:
 class GitProposalCiRepairEventRecord(Base):
     __tablename__ = "calyx_git_proposal_ci_repair_events"
     __table_args__ = (
-        UniqueConstraint("repair_key", "event_kind", name="uq_calyx_ci_repair_key_kind"),
+        UniqueConstraint(
+            "repair_key", "event_kind", name="uq_calyx_ci_repair_key_kind"
+        ),
         UniqueConstraint("event_digest", name="uq_calyx_ci_repair_event_digest"),
     )
 
@@ -180,7 +182,9 @@ class GitProposalCiRepairEventRecord(Base):
     head_sha: Mapped[str] = mapped_column(String(40), index=True)
     payload_json: Mapped[str] = mapped_column(Text)
     event_digest: Mapped[str] = mapped_column(String(64), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
 
 
 class DurableGitProposalCiRepairJournal:
@@ -331,7 +335,10 @@ class DurableGitProposalCiRepairJournal:
         event_digest: str,
         canonical_payload: str,
     ) -> GitProposalCiRepairEventRecord:
-        if record.event_digest != event_digest or record.payload_json != canonical_payload:
+        if (
+            record.event_digest != event_digest
+            or record.payload_json != canonical_payload
+        ):
             raise PermissionError("CI_REPAIR_JOURNAL_IDEMPOTENCY_CONFLICT")
         return record
 
@@ -426,7 +433,10 @@ class GitProposalCiRepairCoordinator:
 
 
 def _proposal_identity(receipt: GitProposalMutationReceipt) -> tuple[int, str] | None:
-    if receipt.status not in FINAL_STATUSES or FINAL_ACTION not in receipt.completed_actions:
+    if (
+        receipt.status not in FINAL_STATUSES
+        or FINAL_ACTION not in receipt.completed_actions
+    ):
         return None
     pr_payloads = [
         dict(item.payload)
