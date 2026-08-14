@@ -66,7 +66,7 @@ def test_literature_failure_does_not_block_biodiversity(monkeypatch) -> None:
     assert result["biodiversity"]["status"] == "worked"
 
 
-def test_biodiversity_falls_through_when_source_is_idle(monkeypatch) -> None:
+def test_biodiversity_falls_through_to_global_gbif(monkeypatch) -> None:
     calls: list[str] = []
 
     monkeypatch.setattr(
@@ -77,12 +77,25 @@ def test_biodiversity_falls_through_when_source_is_idle(monkeypatch) -> None:
 
     def fake_harvester(source: str, *, limit: int):
         calls.append(source)
-        if source == "inaturalist":
-            return {"records_examined": 0, "inserted": 0}
-        return {"records_examined": 2, "inserted": 1}
+        return {"records_examined": 0, "inserted": 0}
+
+    def fake_global_gbif(*, max_pages: int):
+        calls.append("gbif")
+        return {
+            "occurrences_added": 1,
+            "images_added": 1,
+            "records_examined": 300,
+            "next_offset": 300,
+            "pages": 1,
+            "bulk_download_required": False,
+        }
 
     monkeypatch.setattr(worker, "run_harvester", fake_harvester)
+    monkeypatch.setattr(worker, "run_global_gbif", fake_global_gbif)
     result = worker.run_once(limit=10)
 
     assert calls == ["inaturalist", "gbif"]
     assert result["biodiversity"]["selected_source"] == "gbif"
+    metadata = result["biodiversity"]["attempts"][-1]["result"]["source_response_metadata"]
+    assert metadata["global_occurrence_stream"] is True
+    assert metadata["media_filter"] is None
