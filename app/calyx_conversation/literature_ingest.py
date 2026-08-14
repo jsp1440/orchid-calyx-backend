@@ -12,6 +12,20 @@ def _stable_id(value: str) -> int:
     return int(digest[:15], 16)
 
 
+def _canonical_publication_key(record: dict[str, Any], title: str) -> str:
+    doi = str(record.get("doi") or "").strip().casefold()
+    if doi:
+        return "doi:" + doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+    pmid = str(record.get("pmid") or "").strip()
+    if pmid:
+        return "pmid:" + pmid
+    pmcid = str(record.get("pmcid") or "").strip().casefold()
+    if pmcid:
+        return "pmcid:" + pmcid
+    normalized_title = " ".join(title.casefold().split())
+    return "title-sha256:" + hashlib.sha256(normalized_title.encode("utf-8")).hexdigest()
+
+
 def _evidence_set_id(documents: list[IndexDocument]) -> str | None:
     if not documents:
         return None
@@ -29,15 +43,11 @@ def document_from_external_record(
     if not abstract or not title:
         return None
 
-    identifier = str(
-        record.get("doi") or record.get("pmid") or record.get("pmcid") or title
-    ).strip()
+    identifier = str(record.get("doi") or record.get("pmid") or record.get("pmcid") or title).strip()
+    canonical_publication_key = _canonical_publication_key(record, title)
     source_object_id = _stable_id("europe-pmc:" + identifier)
     revision_id = _stable_id(
-        "europe-pmc-revision:"
-        + identifier
-        + ":"
-        + str(record.get("publication_date") or "unknown")
+        "europe-pmc-revision:" + identifier + ":" + str(record.get("publication_date") or "unknown")
     )
     extraction_run_id = _stable_id("europe-pmc-query:" + query)
     anchor_id = _stable_id("europe-pmc-anchor:" + identifier + ":title-abstract")
@@ -76,6 +86,7 @@ def document_from_external_record(
             "source_type": "EUROPE_PMC",
             "document_class": "SCIENTIFIC_LITERATURE",
             "source_document_id": identifier,
+            "canonical_publication_key": canonical_publication_key,
             "identifier": {
                 "doi": record.get("doi"),
                 "pmid": record.get("pmid"),
@@ -104,6 +115,7 @@ def document_from_external_record(
             "provenance": {
                 "provider": "Europe PMC",
                 "identifier": identifier,
+                "canonical_publication_key": canonical_publication_key,
                 "review_required": True,
             },
         },
@@ -113,12 +125,7 @@ def document_from_external_record(
 def ingest_external_literature_for_research(
     records: list[dict[str, Any]], *, query: str
 ) -> dict[str, Any]:
-    """Index discovered abstracts for governed Brain research use.
-
-    Stable identities make repeat discovery idempotent. The evidence-set identifier
-    lets a repeated scientific question be re-run when its retrieved evidence changes
-    without sacrificing idempotency for an unchanged evidence set.
-    """
+    """Index discovered abstracts for governed Brain research use."""
 
     documents = [
         document
@@ -148,9 +155,7 @@ def ingest_external_literature_for_research(
         if item.get("active", False)
     }
     new_documents = [
-        item
-        for item in documents
-        if (item.source_object_type, item.revision_id) not in existing
+        item for item in documents if (item.source_object_type, item.revision_id) not in existing
     ]
     if not new_documents:
         return {
@@ -169,7 +174,7 @@ def ingest_external_literature_for_research(
                 "source": "Europe PMC",
                 "query": query,
                 "purpose": "Calyx live research evidence bridge",
-                "provenance_contract": "exact-anchor-limited-preview-v2",
+                "provenance_contract": "exact-anchor-limited-preview-v3-canonical-publication-key",
                 "evidence_set_id": evidence_set_id,
                 "automatic_publication": False,
                 "knowledge_graph_mutation": False,
