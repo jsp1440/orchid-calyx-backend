@@ -94,7 +94,12 @@ def run(
 ) -> dict[str, Any]:
     """Harvest global Orchidaceae occurrences plus any attached media.
 
-    This search-mode worker intentionally stops at GBIF's 100k search ceiling.
+    Progress is checkpointed after every successfully persisted GBIF page. This
+    matters on Render because a deploy can terminate the in-process harvesting
+    thread mid-cycle; page-level checkpoints prevent the next deployment from
+    replaying several minutes of already-processed GBIF pages.
+
+    Search-mode harvesting intentionally stops at GBIF's 100k search ceiling.
     Full historical retrieval beyond that boundary must move to the authenticated
     asynchronous GBIF Download API rather than attempting to evade the limit.
     """
@@ -152,16 +157,22 @@ def run(
             total_img += new_img
             pages += 1
             offset += len(items)
+
+            # Commit the cursor and per-page insert count immediately. If Render
+            # deploys while this cycle is still running, the replacement process
+            # resumes from this page boundary rather than the cycle's start.
+            _save_state(conn, offset=offset, total_delta=new_occ + new_img)
+
             log.info(
-                "GBIF global offset %s: occurrences +%s, images +%s, page_items=%s",
+                "GBIF global offset %s: occurrences +%s, images +%s, page_items=%s checkpoint=%s",
                 offset - len(items),
                 new_occ,
                 new_img,
                 len(items),
+                offset,
             )
             time.sleep(SLEEP_SECONDS)
 
-        _save_state(conn, offset=offset, total_delta=total_occ + total_img)
         bulk_required = offset >= SEARCH_HARD_LIMIT and not end
         return {
             "occurrences_added": total_occ,
