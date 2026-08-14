@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Adaptive Orchid Continuum harvest worker.
 
-Each cycle has two independent scientific lanes:
-1. a guaranteed literature lane that runs first so GBIF/image backfills can
-   never starve the Brain of scientific evidence;
-2. a biodiversity lane that falls through iNaturalist -> global GBIF ->
-   EOL TraitBank until it finds useful work.
+Each cycle has independent scientific lanes:
+1. guaranteed literature acquisition;
+2. periodic review-bound interaction discovery;
+3. biodiversity acquisition with iNaturalist -> global GBIF -> EOL TraitBank
+   fall-through.
+
+High-volume occurrence/image work therefore cannot starve literature or
+interaction discovery.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from typing import Any
 
 from harvesters.execution import run_harvester
 from harvesters.gbif_global_api import run as run_global_gbif
+from runtime.interaction_harvester import harvest_interactions_once
 from runtime.literature_harvester import harvest_literature_once
 
 log = logging.getLogger("adaptive_harvest_worker")
@@ -34,20 +38,38 @@ def _run_literature_lane(limit: int) -> dict[str, Any]:
     try:
         result = harvest_literature_once(limit=literature_limit)
         historical = result.get("historical_books") or {}
+        historical_fulltext = result.get("historical_fulltext") or {}
+        crossref = result.get("scholarly_metadata") or {}
         log.info(
-            "literature topic=%s discovered=%s indexed=%s status=%s bhl_status=%s bhl_indexed=%s",
+            "literature topic=%s discovered=%s indexed=%s status=%s crossref=%s bhl=%s bhl_ocr=%s",
             result.get("topic"),
             result.get("discovered"),
             result.get("indexed"),
             result.get("status"),
+            crossref.get("status"),
             historical.get("status"),
-            historical.get("indexed"),
+            historical_fulltext.get("status"),
         )
         return {"status": "completed", "result": result}
     except Exception as exc:
-        # Literature failure must not prevent occurrence/trait work, and
-        # biodiversity failure must never be able to suppress literature.
-        log.exception("literature lane failed; continuing biodiversity lane")
+        log.exception("literature lane failed; continuing other lanes")
+        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _run_interaction_lane(limit: int) -> dict[str, Any]:
+    try:
+        result = harvest_interactions_once(limit=max(1, min(limit, 25)))
+        log.info(
+            "interactions provider=%s role=%s discovered=%s indexed=%s status=%s",
+            result.get("provider"),
+            result.get("query_role"),
+            result.get("discovered"),
+            result.get("indexed"),
+            result.get("status"),
+        )
+        return {"status": "completed", "result": result}
+    except Exception as exc:
+        log.exception("interaction discovery lane failed; continuing biodiversity lane")
         return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
 
 
@@ -55,10 +77,6 @@ def _run_source(source: str, *, limit: int) -> dict[str, Any]:
     if source != "gbif":
         return run_harvester(source, limit=limit)
 
-    # The legacy GBIF worker filtered to records containing still images. The
-    # global worker deliberately removes that filter, so occurrence-only records
-    # are harvested too. It uses a new checkpoint key to avoid reusing the old
-    # filtered-stream offset.
     raw = run_global_gbif(max_pages=max(1, min(int(limit), 10)))
     inserted = int(raw.get("occurrences_added") or 0) + int(raw.get("images_added") or 0)
     return {
@@ -92,11 +110,7 @@ def _run_biodiversity_lane(limit: int) -> dict[str, Any]:
                 metadata.get("bulk_download_required", False),
             )
             if _useful(result):
-                return {
-                    "status": "worked",
-                    "selected_source": source,
-                    "attempts": attempts,
-                }
+                return {"status": "worked", "selected_source": source, "attempts": attempts}
         except Exception as exc:
             log.exception("source=%s failed; falling through", source)
             attempts.append({"source": source, "error": f"{type(exc).__name__}: {exc}"})
@@ -107,11 +121,17 @@ def _run_biodiversity_lane(limit: int) -> dict[str, Any]:
 def run_once(limit: int = 10) -> dict[str, Any]:
     bounded_limit = max(1, int(limit))
     literature = _run_literature_lane(bounded_limit)
+    interactions = _run_interaction_lane(bounded_limit)
     biodiversity = _run_biodiversity_lane(bounded_limit)
-    worked = literature.get("status") == "completed" or biodiversity.get("status") == "worked"
+    worked = (
+        literature.get("status") == "completed"
+        or interactions.get("status") == "completed"
+        or biodiversity.get("status") == "worked"
+    )
     return {
         "status": "worked" if worked else "idle",
         "literature": literature,
+        "interactions": interactions,
         "biodiversity": biodiversity,
     }
 
