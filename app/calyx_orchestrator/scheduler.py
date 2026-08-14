@@ -80,12 +80,23 @@ class DependencyScheduler:
         jobs: tuple[ScheduledJob, ...],
         dependencies: tuple[tuple[str, str], ...],
         limits: SchedulerLimits | None = None,
+        candidate_keys: frozenset[str] | None = None,
     ) -> SchedulerSnapshot:
+        """Project dependency/capacity state for an optional queued candidate subset.
+
+        All jobs remain in the dependency graph and all already-running jobs continue
+        to consume capacity. ``candidate_keys`` only controls which otherwise-ready
+        queued/waiting jobs may enter provisional capacity admission. This lets a
+        governance layer exclude held work before capacity projection without
+        pretending that held prerequisites have completed.
+        """
         limits = limits or SchedulerLimits()
         limits.validate()
         by_key = {job.job_key: job for job in jobs}
         if len(by_key) != len(jobs):
             raise ValueError("DUPLICATE_SCHEDULE_JOB_KEY")
+        if candidate_keys is not None and not candidate_keys.issubset(by_key):
+            raise ValueError("SCHEDULE_CANDIDATE_JOB_NOT_FOUND")
 
         parents: dict[str, set[str]] = {key: set() for key in by_key}
         children: dict[str, set[str]] = {key: set() for key in by_key}
@@ -119,8 +130,15 @@ class DependencyScheduler:
                     if by_key[parent].outcome not in SUCCESSFUL_OUTCOMES
                 )
             )
-            failed_parent = any(by_key[parent].outcome in FAILED_OUTCOMES for parent in parents[job.job_key])
-            if job.state in {ScheduledState.COMPLETED, ScheduledState.BLOCKED, ScheduledState.CANCELLED}:
+            failed_parent = any(
+                by_key[parent].outcome in FAILED_OUTCOMES
+                for parent in parents[job.job_key]
+            )
+            if job.state in {
+                ScheduledState.COMPLETED,
+                ScheduledState.BLOCKED,
+                ScheduledState.CANCELLED,
+            }:
                 preliminary[job.job_key] = ScheduledDecision(
                     job_key=job.job_key,
                     runnable=False,
@@ -156,6 +174,15 @@ class DependencyScheduler:
                     blocked_by=blocked_by,
                     code="WAITING_FOR_PREREQUISITES",
                 )
+            elif candidate_keys is not None and job.job_key not in candidate_keys:
+                preliminary[job.job_key] = ScheduledDecision(
+                    job_key=job.job_key,
+                    runnable=False,
+                    rank=None,
+                    critical_path_depth=depths[job.job_key],
+                    blocked_by=(),
+                    code="NOT_CANDIDATE",
+                )
             else:
                 candidates.append(job)
 
@@ -177,7 +204,9 @@ class DependencyScheduler:
             if global_count >= limits.max_global_running:
                 runnable = False
                 code = "GLOBAL_CAPACITY_REACHED"
-            elif architecture_counts.get(job.architecture, 0) >= limits.architecture_limit(job.architecture):
+            elif architecture_counts.get(
+                job.architecture, 0
+            ) >= limits.architecture_limit(job.architecture):
                 runnable = False
                 code = "ARCHITECTURE_CAPACITY_REACHED"
             elif role_counts.get(job.role_key, 0) >= limits.max_role_running:
@@ -192,9 +221,13 @@ class DependencyScheduler:
 
             if runnable:
                 global_count += 1
-                architecture_counts[job.architecture] = architecture_counts.get(job.architecture, 0) + 1
+                architecture_counts[job.architecture] = (
+                    architecture_counts.get(job.architecture, 0) + 1
+                )
                 role_counts[job.role_key] = role_counts.get(job.role_key, 0) + 1
-                repository_counts[job.repository] = repository_counts.get(job.repository, 0) + 1
+                repository_counts[job.repository] = (
+                    repository_counts.get(job.repository, 0) + 1
+                )
                 if job.mutating and job.branch:
                     mutating_branches.add(branch_key)
                 admitted.append(job.job_key)
@@ -216,7 +249,10 @@ class DependencyScheduler:
                 "architecture": self._count(running, "architecture"),
                 "role": self._count(running, "role_key"),
                 "repository": self._count(running, "repository"),
-                "mutating_branches": sorted(f"{repository}:{branch}" for repository, branch in mutating_branches),
+                "mutating_branches": sorted(
+                    f"{repository}:{branch}"
+                    for repository, branch in mutating_branches
+                ),
             },
         )
 
@@ -253,7 +289,9 @@ class DependencyScheduler:
 
         def depth(key: str) -> int:
             if key not in memo:
-                memo[key] = 0 if not children[key] else 1 + max(depth(child) for child in children[key])
+                memo[key] = (
+                    0 if not children[key] else 1 + max(depth(child) for child in children[key])
+                )
             return memo[key]
 
         return {key: depth(key) for key in children}
