@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.calyx_orchestrator.github_proposal_mutation_adapter import GitHubTransportResponse
-from app.calyx_orchestrator.github_repository_inspector import GitHubRepositoryConvergenceInspector
+from app.calyx_orchestrator.github_proposal_mutation_adapter import (
+    GitHubTransportResponse,
+)
+from app.calyx_orchestrator.github_repository_inspector import (
+    GitHubRepositoryConvergenceInspector,
+)
 
 
 @dataclass

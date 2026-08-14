@@ -146,13 +146,7 @@ class GitHubCopilotCloudProvider:
 
     @classmethod
     def _issue_body(cls, request: DispatchRequest) -> str:
-        authority_boundary = " ".join(
-            (
-                "Draft PR only. No merge/auto-merge, deployment, production migration/DB/KG mutation,",
-                "taxonomy activation, scientific publication, credential creation/disclosure, spending,",
-                "force-push, branch deletion, or repository deletion.",
-            )
-        )
+        authority_boundary = "Draft PR only. No merge/auto-merge, deployment, production migration/DB/KG mutation, taxonomy activation, scientific publication, credential creation/disclosure, spending, force-push, branch deletion, or repository deletion."
         lines = [
             "## Governed Calyx engineering mission",
             f"Mission: `{request.mission_id}`",

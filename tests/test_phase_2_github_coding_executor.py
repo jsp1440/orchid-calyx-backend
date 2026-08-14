@@ -55,27 +55,27 @@ def assignment(job: dict) -> GovernedAssignment:
 
 
 def snapshot(**kwargs) -> RepositorySnapshot:
-    defaults = dict(
-        repository="jsp1440/orchid-calyx-backend",
-        base_ref="main",
-        base_sha="a" * 40,
-    )
+    defaults = {
+        "repository": "jsp1440/orchid-calyx-backend",
+        "base_ref": "main",
+        "base_sha": "a" * 40,
+    }
     defaults.update(kwargs)
     return RepositorySnapshot(**defaults)
 
 
 def result(**kwargs) -> DispatchResult:
-    defaults = dict(
-        provider="copilot",
-        executor_class="cloud_coding_agent",
-        repository="jsp1440/orchid-calyx-backend",
-        base_sha="a" * 40,
-        branch="agent/mission-1",
-        issue_number=973,
-        pull_request_number=1000,
-        pull_request_url="https://github.com/jsp1440/orchid-calyx-backend/pull/1000",
-        draft=True,
-    )
+    defaults = {
+        "provider": "copilot",
+        "executor_class": "cloud_coding_agent",
+        "repository": "jsp1440/orchid-calyx-backend",
+        "base_sha": "a" * 40,
+        "branch": "agent/mission-1",
+        "issue_number": 973,
+        "pull_request_number": 1000,
+        "pull_request_url": "https://github.com/jsp1440/orchid-calyx-backend/pull/1000",
+        "draft": True,
+    }
     defaults.update(kwargs)
     return DispatchResult(**defaults)
 

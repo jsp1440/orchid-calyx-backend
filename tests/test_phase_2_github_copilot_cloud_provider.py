@@ -13,7 +13,9 @@ from app.calyx_orchestrator.github_copilot_cloud_provider import (
     COPILOT_ASSIGNEE,
     GitHubCopilotCloudProvider,
 )
-from app.calyx_orchestrator.github_proposal_mutation_adapter import GitHubTransportResponse
+from app.calyx_orchestrator.github_proposal_mutation_adapter import (
+    GitHubTransportResponse,
+)
 
 
 @dataclass
@@ -30,23 +32,23 @@ class Transport:
 
 
 def request(convergence: ConvergenceClass = ConvergenceClass.NEW, **kwargs) -> DispatchRequest:
-    values = dict(
-        mission_id="MISSION-1",
-        repository="jsp1440/orchid-calyx-backend",
-        objective="Implement the GitHub coding-agent bridge",
-        acceptance_criteria=("preserve durable mission identity",),
-        validation_commands=("pytest -q",),
-        budget_class=BudgetClass.NORMAL,
-        convergence_class=convergence,
-        base_ref="main",
-        base_sha="a" * 40,
-        related_issue_numbers=(973,),
-        overlapping_pr_numbers=(),
-        continuation_pr_numbers=(),
-        convergence_pr_numbers=(),
-        superseded_pr_numbers=(),
-        retry_count=0,
-    )
+    values = {
+        "mission_id": "MISSION-1",
+        "repository": "jsp1440/orchid-calyx-backend",
+        "objective": "Implement the GitHub coding-agent bridge",
+        "acceptance_criteria": ("preserve durable mission identity",),
+        "validation_commands": ("pytest -q",),
+        "budget_class": BudgetClass.NORMAL,
+        "convergence_class": convergence,
+        "base_ref": "main",
+        "base_sha": "a" * 40,
+        "related_issue_numbers": (973,),
+        "overlapping_pr_numbers": (),
+        "continuation_pr_numbers": (),
+        "convergence_pr_numbers": (),
+        "superseded_pr_numbers": (),
+        "retry_count": 0,
+    }
     values.update(kwargs)
     return DispatchRequest(**values)
 
