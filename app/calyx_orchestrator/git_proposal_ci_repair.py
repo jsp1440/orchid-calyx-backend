@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint, select
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +17,10 @@ from .git_proposal_mutation_executor import (
     FINAL_ACTION,
     FINAL_STATUSES,
     GitProposalMutationReceipt,
+)
+from .git_proposal_mutation_journal import (
+    DurableGitProposalMutationJournal,
+    GitProposalMutationJournalEventRecord,
 )
 from .models import utcnow
 from .sandbox_supervisor_evidence import canonical_sha256
@@ -89,13 +93,6 @@ class CiObservation:
     def observation_digest(self) -> str:
         return canonical_sha256(self.snapshot(include_digest=False))
 
-    @property
-    def all_green(self) -> bool:
-        return all(
-            check.conclusion in {CiConclusion.SUCCESS, CiConclusion.SKIPPED}
-            for check in self.checks
-        )
-
     def snapshot(self, *, include_digest: bool = True) -> dict[str, Any]:
         payload = {
             "repository": self.repository,
@@ -106,6 +103,52 @@ class CiObservation:
         }
         if include_digest:
             payload["observation_digest"] = canonical_sha256(payload)
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class CiRequiredCheckRoster:
+    """Authoritative required-check identity captured from GitHub rules/protection."""
+
+    repository: str
+    pull_request_number: int
+    head_sha: str
+    check_ids: tuple[str, ...]
+    source: str
+    observed_at: str
+
+    def __post_init__(self) -> None:
+        if not self.repository.strip():
+            raise ValueError("CI_REQUIRED_CHECK_ROSTER_REPOSITORY_REQUIRED")
+        if type(self.pull_request_number) is not int or self.pull_request_number <= 0:
+            raise ValueError("CI_REQUIRED_CHECK_ROSTER_PULL_REQUEST_NUMBER_INVALID")
+        if not _is_git_sha(self.head_sha):
+            raise ValueError("CI_REQUIRED_CHECK_ROSTER_HEAD_SHA_INVALID")
+        normalized = tuple(item.strip() for item in self.check_ids if item.strip())
+        if not normalized:
+            raise ValueError("CI_REQUIRED_CHECK_ROSTER_EMPTY")
+        if len(normalized) != len(set(normalized)) or normalized != self.check_ids:
+            raise ValueError("CI_REQUIRED_CHECK_ROSTER_CHECK_IDS_INVALID")
+        if self.source not in {"github_branch_protection", "github_rulesets"}:
+            raise ValueError("CI_REQUIRED_CHECK_ROSTER_SOURCE_INVALID")
+        if not self.observed_at.strip():
+            raise ValueError("CI_REQUIRED_CHECK_ROSTER_TIMESTAMP_REQUIRED")
+
+    @property
+    def roster_digest(self) -> str:
+        return canonical_sha256(self.snapshot(include_digest=False))
+
+    def snapshot(self, *, include_digest: bool = True) -> dict[str, Any]:
+        payload = {
+            "repository": self.repository,
+            "pull_request_number": self.pull_request_number,
+            "head_sha": self.head_sha,
+            "check_ids": list(self.check_ids),
+            "source": self.source,
+            "observed_at": self.observed_at,
+        }
+        if include_digest:
+            payload["roster_digest"] = canonical_sha256(payload)
         return payload
 
 
@@ -121,6 +164,7 @@ class CiRepairAssignment:
     failed_head_sha: str
     failed_checks: tuple[Mapping[str, Any], ...]
     observation_digest: str
+    required_check_roster_digest: str
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -160,6 +204,36 @@ class CiRepairDecision:
             "merge_performed": False,
             "remote_git_mutation_performed": False,
         }
+
+
+class CorrectiveMutationReceiptResolver(Protocol):
+    def resolve(
+        self, *, receipt_digest: str
+    ) -> GitProposalMutationReceipt | None: ...
+
+
+class DurableCorrectiveMutationReceiptResolver:
+    """Resolve an exact mutation receipt from the tamper-checked durable journal."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def resolve(self, *, receipt_digest: str) -> GitProposalMutationReceipt | None:
+        digest = receipt_digest.strip().lower()
+        if not _is_sha256(digest):
+            raise ValueError("CI_REPAIR_CORRECTIVE_RECEIPT_DIGEST_INVALID")
+        rows = list(
+            self.db.scalars(
+                select(GitProposalMutationJournalEventRecord)
+                .where(GitProposalMutationJournalEventRecord.receipt_digest == digest)
+                .limit(2)
+            ).all()
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise PermissionError("CI_REPAIR_CORRECTIVE_RECEIPT_AMBIGUOUS")
+        return DurableGitProposalMutationJournal._decode(rows[0])
 
 
 class GitProposalCiRepairEventRecord(Base):
@@ -215,9 +289,12 @@ class DurableGitProposalCiRepairJournal:
         *,
         assignment: CiRepairAssignment,
         observation: CiObservation,
+        required_checks: CiRequiredCheckRoster,
         authoritative_corrective_receipt_digest: str,
+        corrective_receipts: CorrectiveMutationReceiptResolver,
     ) -> GitProposalCiRepairEventRecord:
-        if not _is_sha256(authoritative_corrective_receipt_digest):
+        digest = authoritative_corrective_receipt_digest.strip().lower()
+        if not _is_sha256(digest):
             raise ValueError("CI_REPAIR_CORRECTIVE_RECEIPT_DIGEST_INVALID")
         if observation.repository != assignment.repository:
             raise PermissionError("CI_REPAIR_REVALIDATION_REPOSITORY_MISMATCH")
@@ -225,15 +302,32 @@ class DurableGitProposalCiRepairJournal:
             raise PermissionError("CI_REPAIR_REVALIDATION_PULL_REQUEST_MISMATCH")
         if observation.head_sha == assignment.failed_head_sha:
             raise PermissionError("CI_REPAIR_REVALIDATION_HEAD_NOT_ADVANCED")
-        if not observation.all_green:
+        required_state = _required_check_state(observation, required_checks)
+        if required_state == "identity_mismatch":
+            raise PermissionError("CI_REPAIR_REVALIDATION_REQUIRED_ROSTER_MISMATCH")
+        if required_state == "incomplete":
+            raise PermissionError("CI_REPAIR_REVALIDATION_REQUIRED_CHECKS_INCOMPLETE")
+        if required_state != "green":
             raise PermissionError("CI_REPAIR_REVALIDATION_CHECKS_NOT_GREEN")
+        if required_checks.roster_digest != assignment.required_check_roster_digest:
+            raise PermissionError("CI_REPAIR_REVALIDATION_REQUIRED_ROSTER_CHANGED")
+
+        corrective_receipt = corrective_receipts.resolve(receipt_digest=digest)
+        if corrective_receipt is None:
+            raise PermissionError("CI_REPAIR_CORRECTIVE_RECEIPT_NOT_FOUND")
+        _verify_corrective_receipt(
+            assignment=assignment,
+            observation=observation,
+            corrective_receipt=corrective_receipt,
+            expected_digest=digest,
+        )
         payload = {
             "schema": JOURNAL_SCHEMA,
             "repair_key": assignment.repair_key,
             "observation": observation.snapshot(),
-            "authoritative_corrective_receipt_digest": (
-                authoritative_corrective_receipt_digest
-            ),
+            "required_checks": required_checks.snapshot(),
+            "authoritative_corrective_receipt_digest": digest,
+            "corrective_plan_digest": corrective_receipt.plan_digest,
             "owner_merge_ready": True,
             "merge_performed": False,
         }
@@ -344,18 +438,14 @@ class DurableGitProposalCiRepairJournal:
 
 
 class GitProposalCiRepairCoordinator:
-    """Turn exact draft-PR CI evidence into bounded governed repair assignments.
-
-    This class never calls GitHub and never edits code. A failed observation can only
-    produce a deterministic assignment for the existing authoritative coding/validation
-    chain. A successful observation can only report an owner-merge-ready status.
-    """
+    """Turn exact draft-PR CI evidence into bounded governed repair assignments."""
 
     def evaluate(
         self,
         *,
         mutation_receipt: GitProposalMutationReceipt,
         observation: CiObservation,
+        required_checks: CiRequiredCheckRoster,
         journal: DurableGitProposalCiRepairJournal | None = None,
     ) -> CiRepairDecision:
         expected = _proposal_identity(mutation_receipt)
@@ -379,14 +469,24 @@ class GitProposalCiRepairCoordinator:
                 mutation_receipt, observation, "CI_REPAIR_STALE_OR_MOVED_HEAD"
             )
 
+        required_state = _required_check_state(observation, required_checks)
+        if required_state == "identity_mismatch":
+            return self._blocked(
+                mutation_receipt, observation, "CI_REPAIR_REQUIRED_ROSTER_MISMATCH"
+            )
+        if required_state == "incomplete":
+            return self._blocked(
+                mutation_receipt, observation, "CI_REPAIR_REQUIRED_CHECKS_INCOMPLETE"
+            )
+
+        checks_by_id = {check.check_id: check for check in observation.checks}
+        required = [checks_by_id[check_id] for check_id in required_checks.check_ids]
         pending = [
-            check
-            for check in observation.checks
-            if check.conclusion == CiConclusion.PENDING
+            check for check in required if check.conclusion == CiConclusion.PENDING
         ]
         failed = [
             check
-            for check in observation.checks
+            for check in required
             if check.conclusion in {CiConclusion.FAILURE, CiConclusion.CANCELLED}
         ]
         if pending:
@@ -406,7 +506,9 @@ class GitProposalCiRepairCoordinator:
                 mutation_receipt.receipt_digest,
             )
 
-        assignment = _repair_assignment(mutation_receipt, observation, failed)
+        assignment = _repair_assignment(
+            mutation_receipt, observation, required_checks, failed
+        )
         if journal is not None:
             journal.record_assignment(assignment)
         return CiRepairDecision(
@@ -430,6 +532,75 @@ class GitProposalCiRepairCoordinator:
             observation.observation_digest,
             receipt.receipt_digest,
         )
+
+
+def _required_check_state(
+    observation: CiObservation,
+    roster: CiRequiredCheckRoster,
+) -> str:
+    if (
+        roster.repository != observation.repository
+        or roster.pull_request_number != observation.pull_request_number
+        or roster.head_sha != observation.head_sha
+    ):
+        return "identity_mismatch"
+    checks_by_id = {check.check_id: check for check in observation.checks}
+    if any(check_id not in checks_by_id for check_id in roster.check_ids):
+        return "incomplete"
+    required = [checks_by_id[check_id] for check_id in roster.check_ids]
+    if any(check.conclusion == CiConclusion.PENDING for check in required):
+        return "pending"
+    if any(
+        check.conclusion in {CiConclusion.FAILURE, CiConclusion.CANCELLED}
+        for check in required
+    ):
+        return "failed"
+    return "green"
+
+
+def _verify_corrective_receipt(
+    *,
+    assignment: CiRepairAssignment,
+    observation: CiObservation,
+    corrective_receipt: GitProposalMutationReceipt,
+    expected_digest: str,
+) -> None:
+    if corrective_receipt.receipt_digest != expected_digest:
+        raise PermissionError("CI_REPAIR_CORRECTIVE_RECEIPT_DIGEST_MISMATCH")
+    if expected_digest == assignment.source_mutation_receipt_digest:
+        raise PermissionError("CI_REPAIR_CORRECTIVE_RECEIPT_NOT_FRESH")
+    if corrective_receipt.status not in FINAL_STATUSES:
+        raise PermissionError("CI_REPAIR_CORRECTIVE_RECEIPT_NOT_FINAL")
+    if corrective_receipt.repository != assignment.repository:
+        raise PermissionError("CI_REPAIR_CORRECTIVE_RECEIPT_REPOSITORY_MISMATCH")
+    if corrective_receipt.proposed_branch != assignment.proposed_branch:
+        raise PermissionError("CI_REPAIR_CORRECTIVE_RECEIPT_BRANCH_MISMATCH")
+    commit_payloads = [
+        dict(item.payload)
+        for item in corrective_receipt.operation_evidence
+        if item.action == "create_commit"
+        and item.status in {"created", "already_exists_exact"}
+    ]
+    push_payloads = [
+        dict(item.payload)
+        for item in corrective_receipt.operation_evidence
+        if item.action == "push_branch"
+        and item.status in {"created", "already_exists_exact"}
+    ]
+    if len(commit_payloads) != 1 or len(push_payloads) != 1:
+        raise PermissionError("CI_REPAIR_CORRECTIVE_RECEIPT_PUSH_EVIDENCE_REQUIRED")
+    commit = commit_payloads[0]
+    push = push_payloads[0]
+    if (
+        str(commit.get("commit_sha") or "") != observation.head_sha
+        or str(push.get("commit_sha") or "") != observation.head_sha
+    ):
+        raise PermissionError("CI_REPAIR_CORRECTIVE_RECEIPT_HEAD_MISMATCH")
+    if (
+        str(commit.get("repair_key") or "") != assignment.repair_key
+        or str(push.get("repair_key") or "") != assignment.repair_key
+    ):
+        raise PermissionError("CI_REPAIR_CORRECTIVE_RECEIPT_ASSIGNMENT_MISMATCH")
 
 
 def _proposal_identity(receipt: GitProposalMutationReceipt) -> tuple[int, str] | None:
@@ -468,6 +639,7 @@ def _proposal_identity(receipt: GitProposalMutationReceipt) -> tuple[int, str] |
 def _repair_assignment(
     receipt: GitProposalMutationReceipt,
     observation: CiObservation,
+    required_checks: CiRequiredCheckRoster,
     failed: Sequence[CiCheck],
 ) -> CiRepairAssignment:
     failed_checks = tuple(
@@ -482,6 +654,7 @@ def _repair_assignment(
         "failed_head_sha": observation.head_sha,
         "failed_checks": list(failed_checks),
         "observation_digest": observation.observation_digest,
+        "required_check_roster_digest": required_checks.roster_digest,
     }
     return CiRepairAssignment(
         repair_key=canonical_sha256(material),
@@ -494,6 +667,7 @@ def _repair_assignment(
         failed_head_sha=observation.head_sha,
         failed_checks=failed_checks,
         observation_digest=observation.observation_digest,
+        required_check_roster_digest=required_checks.roster_digest,
     )
 
 
