@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.git_proposal_ci_repair import (
@@ -173,7 +173,8 @@ def test_failed_ci_creates_deterministic_governed_assignment_and_durable_evidenc
         assert first.disposition == CiRepairDisposition.REPAIR_REQUIRED
         assert first.assignment is not None
         assert second.assignment == first.assignment
-        assert len(db.scalars(GitProposalCiRepairEventRecord.__table__.select()).all()) == 1
+        records = db.scalars(select(GitProposalCiRepairEventRecord)).all()
+        assert len(records) == 1
         assignment = first.assignment.snapshot()
         assert assignment["assignment_kind"] == "governed_corrective_engineering"
         assert assignment["requires_authoritative_coding_executor"] is True
@@ -277,6 +278,29 @@ def test_revalidation_requires_advanced_head_and_authoritative_receipt_digest() 
         assert replay.event_id == event.event_id
         assert event.event_kind == "revalidation"
         assert event.head_sha == CORRECTED_SHA
+        assert '"owner_merge_ready":true' in event.payload_json
+        assert '"merge_performed":false' in event.payload_json
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("conclusion", [CiConclusion.PENDING, CiConclusion.FAILURE])
+def test_revalidation_refuses_non_green_corrected_head(conclusion: CiConclusion) -> None:
+    db, journal = _journal()
+    try:
+        failed = GitProposalCiRepairCoordinator().evaluate(
+            mutation_receipt=_receipt(),
+            observation=_observation(CiConclusion.FAILURE),
+            journal=journal,
+        )
+        assert failed.assignment is not None
+
+        with pytest.raises(PermissionError, match="REVALIDATION_CHECKS_NOT_GREEN"):
+            journal.record_revalidation(
+                assignment=failed.assignment,
+                observation=_observation(conclusion, head_sha=CORRECTED_SHA),
+                authoritative_corrective_receipt_digest="b" * 64,
+            )
     finally:
         db.close()
 
