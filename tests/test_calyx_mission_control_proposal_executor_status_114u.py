@@ -282,10 +282,7 @@ def test_failure_receipt_proves_attempted_next_action_was_authorized() -> None:
     active = status["active_execution"]
     assert active is not None
     assert active["current_remote_operation"] == "push_branch"
-    assert (
-        active["current_remote_operation_state"]
-        == "authorized_by_failed_attempt"
-    )
+    assert active["current_remote_operation_state"] == "authorized_by_failed_attempt"
 
 
 def test_execution_status_surfaces_completed_draft_pr_without_secret_or_write() -> None:
@@ -382,7 +379,9 @@ def test_active_execution_reports_unknown_when_bounded_scan_is_exhausted() -> No
     assert status["bounded_active_scan_limit"] == MAX_ACTIVE_SCAN_PLANS
 
 
-def test_checkpoint_status_detects_event_index_gap_without_full_history_decode() -> None:
+def test_checkpoint_status_detects_event_index_gap_without_full_history_decode() -> (
+    None
+):
     with _db() as session:
         journal = DurableGitProposalMutationJournal(session)
         first = _active_receipt(
