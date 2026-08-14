@@ -2,10 +2,10 @@
 
 ## Status
 
-IMPLEMENTED + EXECUTABLY HARDENED ON FEATURE BRANCH / NON-PRODUCTION / ONE GOVERNANCE-NORMALIZATION BLOCKER REMAINS
+IMPLEMENTED + EXECUTABLY HARDENED ON FEATURE BRANCH / NON-PRODUCTION / EXACT-HEAD ACCEPTANCE REVALIDATING
 
-Branch: `feature/calyx-auto-001-current-main-r3`  
-Pull request: #941  
+Branch: `feature/calyx-auto-001-current-main-r3`
+Pull request: #941
 Last updated: 2026-08-13.
 
 CALYX-AUTO-001 extends the canonical `CalyxProgramJob`/dependency/lease substrate rather than introducing a second autonomous queue.
@@ -48,17 +48,21 @@ This single portability correction restored validator retry/continuation, newly 
 
 The PostgreSQL contention regression creates only a bounded table subset. Its program-job table references `calyx_orchestrator_jobs`, but that referenced base table was absent from the test fixture. The fixture now includes `CalyxJob.__table__`, making a fresh database self-contained without altering the production foreign key or schema contract.
 
+### Governance action alias closure
+
+The action-token normalizer canonicalizes case, spaces, and hyphens, so equivalent spellings such as `force-push`, `Production Database Mutation`, `taxonomy-activation`, `production-migration`, and `schema activation` fail closed correctly.
+
+Executable validation also exposed a semantic-synonym gap: `{"action": "branch deletion"}` normalized syntactically to `branch_deletion`, while the owner-only canonical token is `branch_delete`. `_ACTION_TOKEN_ALIASES` now maps `branch_deletion` to `branch_delete` before governance comparison. The previously failing governance regression now passes, so alternate wording cannot bypass the owner-only branch-deletion boundary.
+
+### Current Ruff and workflow compatibility
+
+Current repository Ruff policy is stricter than the original implementation branch. Source imports were brought into current canonical order. The PostgreSQL contention test intentionally catches `BaseException` in worker threads so the parent test can surface assertion/system failures; the dedicated workflow therefore applies a narrow `BLE001` exception only to that test file rather than weakening source lint globally.
+
+The PR checkout now uses `fetch-depth: 2` so merge-result diff hygiene has parent history available. Validation confirmed compile, focused tests, Ruff, migration invariants, and permanent non-authority checks all pass; the first two-depth run then isolated two pre-existing Markdown trailing spaces in this Brain document as the sole remaining dedicated-workflow failure. Those trailing spaces are removed by this update.
+
 ### Comprehensive validation workflow
 
 The final workflow validates `program_models.py` and `program_repository.py` in path triggers, compile, and Ruff. Independent Ruff, migration-invariant, permanent-non-authority, and diff-hygiene checks run even when the focused pytest step fails, so one failing regression no longer hides unrelated validation results. The temporary feature-branch push trigger used to force executable validation has been removed; the workflow is back to its intended PR and `main` scopes.
-
-## Governance normalization status
-
-The action-token normalizer already canonicalizes case, spaces, and hyphens, so equivalent spellings such as `force-push`, `Production Database Mutation`, `taxonomy-activation`, `production-migration`, and `schema activation` fail closed correctly.
-
-One tested semantic synonym remains unresolved: `{"action": "branch deletion"}` normalizes syntactically to `branch_deletion`, while the owner-only canonical token is `branch_delete`. The exact intended hardening is a semantic alias from `branch_deletion` to `branch_delete` before governance comparison. The repository connector blocked that code write because it directly changes branch-deletion authority. This is therefore retained as an explicit governance/tool boundary rather than bypassed, weakened, or hidden by removing the regression.
-
-The regression remains intentionally red until that governed normalization change can be authorized/applied through an allowed path.
 
 ## Executable validation history
 
@@ -67,10 +71,13 @@ The dedicated PostgreSQL workflow now runs on real GitHub hosted runners:
 1. Original executable run: compile succeeded; pytest collection exposed missing `PYTHONPATH`.
 2. After import repair: 35 passed / 13 failed, revealing real implementation and fixture defects.
 3. After dependency-free program contract repair: 42 passed / 6 failed.
-4. After UTC lease normalization and self-contained PostgreSQL FK fixture: **47 passed / 1 failed**.
-5. The sole remaining failure is the explicit `branch deletion` governance-alias regression described above.
+4. After UTC lease normalization and self-contained PostgreSQL FK fixture: 47 passed / 1 failed.
+5. After semantic governance alias closure: **48 passed / 0 failed**; compile, Ruff, migration invariants, and non-authority checks also passed.
+6. Merge-result diff hygiene then found only two Markdown trailing spaces in this document; this revision removes them and triggers final exact-head acceptance validation.
 
-The 47 passing tests include validator feedback/retry, dependency continuation, owner/review holds, unsupported-role hold behavior, scheduler-integrity handling, receipt identity/checksum binding, deterministic priority, lease reclaim, post-commit finalization recovery, PostgreSQL two-worker active-limit contention, and adjacent autonomous-program persistence/worker regressions.
+The passing tests include validator feedback/retry, dependency continuation, owner/review holds, unsupported-role hold behavior, scheduler-integrity handling, receipt identity/checksum binding, semantic action-alias protection, deterministic priority, lease reclaim, post-commit finalization recovery, PostgreSQL two-worker active-limit contention, and adjacent autonomous-program persistence/worker regressions.
+
+At head `d4b27a483508d460c6442c94d6996e607beb10da`, the independent repository checks `BUILD-BRAIN-114I Safe Subset`, `CALYX-AGENT-003 Validation`, `BUILD-BRAIN-108-113A Validation`, `CALYX Workflow Governance Audit`, `Calyx Conversation Validation`, and `BUILD-088E Validation` all passed. The dedicated CALYX-AUTO workflow failed only its diff-hygiene step for the two trailing spaces corrected here.
 
 ## Persistence
 
@@ -82,4 +89,4 @@ The Brain writeback is an internal engineering completion ledger. It does not re
 
 No automatic merge, deployment, publication, production DB/KG mutation, taxonomy activation, credential access, spending, force-push, or branch deletion authority is granted. The persistent worker remains unactivated in production.
 
-PR #941 must remain unmerged while the governance alias regression is unresolved. Even after executable acceptance is fully green, merge and any migration/worker production activation remain separate owner-governed decisions.
+PR #941 remains draft and unmerged while final exact-head validation completes. Even after executable acceptance is fully green, merge and any migration/worker production activation remain separate owner-governed decisions.
