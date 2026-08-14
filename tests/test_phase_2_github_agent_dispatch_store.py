@@ -3,7 +3,6 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.database import Base
 from app.calyx_orchestrator.github_agent_dispatch_store import (
     DurableGitHubAgentDispatchStore,
     GitHubAgentDispatchRecordRow,
