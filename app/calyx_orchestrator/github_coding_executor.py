@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping, Protocol, Sequence
+from typing import Protocol
 
 from .engineering_core import TerminalOutcome
-from .executor import ExecutionReceipt, ExecutionState, GovernedAssignment, canonical_checksum
+from .executor import (
+    ExecutionReceipt,
+    ExecutionState,
+    GovernedAssignment,
+    canonical_checksum,
+)
 
 GITHUB_CODING_ROLE = "github_coding_agent"
 MAX_SAME_FAILURE_RETRIES = 3
@@ -224,8 +230,12 @@ class GitHubCodingAgentExecutor:
             mission_id=mission_id,
             repository=repository,
             objective=objective,
-            acceptance_criteria=_tuple_of_strings(job.get("acceptance_criteria"), "ACCEPTANCE_CRITERIA"),
-            validation_commands=_tuple_of_strings(job.get("validation_commands"), "VALIDATION_COMMANDS"),
+            acceptance_criteria=_tuple_of_strings(
+                job.get("acceptance_criteria"), "ACCEPTANCE_CRITERIA"
+            ),
+            validation_commands=_tuple_of_strings(
+                job.get("validation_commands"), "VALIDATION_COMMANDS"
+            ),
             budget_class=_parse_budget(job.get("budget_class")),
             convergence_class=convergence,
             base_ref=snapshot.base_ref,
