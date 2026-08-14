@@ -3,13 +3,13 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.calyx_orchestrator.git_proposal_mutation_journal import (
-    DurableGitProposalMutationJournal,
-    GitProposalMutationJournalEventRecord,
-)
 from app.calyx_orchestrator.git_proposal_mutation_executor import (
     GitProposalMutationReceipt,
     GitProposalOperationEvidence,
+)
+from app.calyx_orchestrator.git_proposal_mutation_journal import (
+    DurableGitProposalMutationJournal,
+    GitProposalMutationJournalEventRecord,
 )
 from app.calyx_orchestrator.sandbox_supervisor_evidence import canonical_sha256
 from app.database import Base
