@@ -39,6 +39,10 @@ REVIEW_REQUIRED_ACTIONS = frozenset(
         "external_send",
         "production_migration",
         "schema_activation",
+        "create_branch",
+        "create_commit",
+        "push_branch",
+        "open_pull_request",
     }
 )
 _TRUE_ACTION_FLAGS = frozenset({"1", "true", "yes", "on", "requested", "enabled"})
