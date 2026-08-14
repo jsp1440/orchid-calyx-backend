@@ -40,7 +40,9 @@ class GitHubCopilotCloudProvider:
         repository_allowlist: Sequence[str],
         options: CopilotAssignmentOptions | None = None,
     ) -> None:
-        allowlist = frozenset(item.strip() for item in repository_allowlist if item.strip())
+        allowlist = frozenset(
+            item.strip() for item in repository_allowlist if item.strip()
+        )
         if not allowlist:
             raise ValueError("COPILOT_PROVIDER_REPOSITORY_ALLOWLIST_REQUIRED")
         self._transport = transport
@@ -111,7 +113,9 @@ class GitHubCopilotCloudProvider:
         )
         self._require_status(response, {201}, "COPILOT_PROVIDER_ISSUE_ASSIGNMENT_FAILED")
         body = self._mapping(response.payload)
-        issue_number = self._positive_int(body.get("number"), "COPILOT_PROVIDER_ISSUE_NUMBER_INVALID")
+        issue_number = self._positive_int(
+            body.get("number"), "COPILOT_PROVIDER_ISSUE_NUMBER_INVALID"
+        )
         return DispatchResult(
             provider=self.provider_name,
             executor_class=self.executor_class,
@@ -142,6 +146,13 @@ class GitHubCopilotCloudProvider:
 
     @classmethod
     def _issue_body(cls, request: DispatchRequest) -> str:
+        authority_boundary = " ".join(
+            (
+                "Draft PR only. No merge/auto-merge, deployment, production migration/DB/KG mutation,",
+                "taxonomy activation, scientific publication, credential creation/disclosure, spending,",
+                "force-push, branch deletion, or repository deletion.",
+            )
+        )
         lines = [
             "## Governed Calyx engineering mission",
             f"Mission: `{request.mission_id}`",
@@ -164,15 +175,7 @@ class GitHubCopilotCloudProvider:
         lines.append(f"- Continue: {list(request.continuation_pr_numbers)}")
         lines.append(f"- Converge: {list(request.convergence_pr_numbers)}")
         lines.append(f"- Supersede: {list(request.superseded_pr_numbers)}")
-        lines.extend(
-            [
-                "",
-                "## Permanent authority boundary",
-                "Draft PR only. No merge/auto-merge, deployment, production migration/DB/KG mutation, "
-                "taxonomy activation, scientific publication, credential creation/disclosure, spending, "
-                "force-push, branch deletion, or repository deletion.",
-            ]
-        )
+        lines.extend(["", "## Permanent authority boundary", authority_boundary])
         return "\n".join(lines)
 
     @staticmethod
@@ -192,7 +195,7 @@ class GitHubCopilotCloudProvider:
     @staticmethod
     def _mapping(value: object) -> Mapping[str, Any]:
         if not isinstance(value, Mapping):
-            raise RuntimeError("COPILOT_PROVIDER_RESPONSE_INVALID")
+            raise TypeError("COPILOT_PROVIDER_RESPONSE_INVALID")
         return value
 
     @staticmethod
