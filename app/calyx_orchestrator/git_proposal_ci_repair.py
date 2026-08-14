@@ -138,6 +138,17 @@ class CiRequiredCheckRoster:
     def roster_digest(self) -> str:
         return canonical_sha256(self.snapshot(include_digest=False))
 
+    @property
+    def policy_digest(self) -> str:
+        return canonical_sha256(
+            {
+                "repository": self.repository,
+                "pull_request_number": self.pull_request_number,
+                "check_ids": list(self.check_ids),
+                "source": self.source,
+            }
+        )
+
     def snapshot(self, *, include_digest: bool = True) -> dict[str, Any]:
         payload = {
             "repository": self.repository,
@@ -149,6 +160,7 @@ class CiRequiredCheckRoster:
         }
         if include_digest:
             payload["roster_digest"] = canonical_sha256(payload)
+            payload["policy_digest"] = self.policy_digest
         return payload
 
 
@@ -164,7 +176,7 @@ class CiRepairAssignment:
     failed_head_sha: str
     failed_checks: tuple[Mapping[str, Any], ...]
     observation_digest: str
-    required_check_roster_digest: str
+    required_check_policy_digest: str
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -309,8 +321,8 @@ class DurableGitProposalCiRepairJournal:
             raise PermissionError("CI_REPAIR_REVALIDATION_REQUIRED_CHECKS_INCOMPLETE")
         if required_state != "green":
             raise PermissionError("CI_REPAIR_REVALIDATION_CHECKS_NOT_GREEN")
-        if required_checks.roster_digest != assignment.required_check_roster_digest:
-            raise PermissionError("CI_REPAIR_REVALIDATION_REQUIRED_ROSTER_CHANGED")
+        if required_checks.policy_digest != assignment.required_check_policy_digest:
+            raise PermissionError("CI_REPAIR_REVALIDATION_REQUIRED_POLICY_CHANGED")
 
         corrective_receipt = corrective_receipts.resolve(receipt_digest=digest)
         if corrective_receipt is None:
@@ -654,7 +666,7 @@ def _repair_assignment(
         "failed_head_sha": observation.head_sha,
         "failed_checks": list(failed_checks),
         "observation_digest": observation.observation_digest,
-        "required_check_roster_digest": required_checks.roster_digest,
+        "required_check_policy_digest": required_checks.policy_digest,
     }
     return CiRepairAssignment(
         repair_key=canonical_sha256(material),
@@ -667,7 +679,7 @@ def _repair_assignment(
         failed_head_sha=observation.head_sha,
         failed_checks=failed_checks,
         observation_digest=observation.observation_digest,
-        required_check_roster_digest=required_checks.roster_digest,
+        required_check_policy_digest=required_checks.policy_digest,
     )
 
 
