@@ -200,17 +200,24 @@ def _run_governed_turn(
 
     local_results = retrieval.get("results") or []
     external_records = (retrieval.get("external_literature") or {}).get("results") or []
-    external_only = bool(external_records) and not bool(local_results)
-    if external_only:
-        retrieval["conversation_synthesis_mode"] = "external_review_literature"
+    canonical_empty = not bool(local_results)
+    external_only = bool(external_records) and canonical_empty
+    if canonical_empty:
+        retrieval["conversation_synthesis_mode"] = (
+            "external_review_literature"
+            if external_only
+            else "general_knowledge_with_retrieval_gap"
+        )
         retrieval["canonical_mission_deferred"] = research_mode == "auto"
         retrieval["canonical_mission_deferred_reason"] = (
-            "No canonical retrieval evidence was available for this turn; review-required "
-            "external literature remains available to the generative conversational synthesis."
+            "No canonical retrieval evidence was available for this turn. In automatic mode, "
+            "Calyx must not launch a canonical Brain mission that can only block with zero sources. "
+            "The conversational synthesis may use review-required external literature when present "
+            "and otherwise must disclose the retrieval gap."
         )
 
     should_run_mission = research_mode == "always" or (
-        research_mode == "auto" and len(message.split()) >= 5 and not external_only
+        research_mode == "auto" and len(message.split()) >= 5 and not canonical_empty
     )
     if should_run_mission:
         history = STORE.history_text(
@@ -248,7 +255,7 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
     provider_configuration = runtime_provider_configuration()
     return {
         "release": "CALYX-SPEAK-004-CONTEXT",
-        "integration_release": "CALYX-SPEAK-009-EXTERNAL-SYNTHESIS",
+        "integration_release": "CALYX-SPEAK-010-DEFER-EMPTY-CANONICAL-MISSION",
         "conversation_persistence": STORE.persistence_mode,
         "semantic_retrieval_degraded_mode": True,
         "provider": {
@@ -268,6 +275,7 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
             "external_literature_relevance_ranking": True,
             "research_index_evidence_bridge": True,
             "external_review_synthesis_without_canonical_mission": True,
+            "empty_canonical_retrieval_defers_auto_mission": True,
         },
         "interaction_context": {
             "supported": True,
