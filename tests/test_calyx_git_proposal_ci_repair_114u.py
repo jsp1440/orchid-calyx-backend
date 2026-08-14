@@ -261,7 +261,9 @@ def test_pending_ci_waits_without_repair_assignment() -> None:
     assert decision.assignment is None
 
 
-def test_failed_ci_creates_deterministic_governed_assignment_and_durable_evidence() -> None:
+def test_failed_ci_creates_deterministic_governed_assignment_and_durable_evidence() -> (
+    None
+):
     db, journal = _journal()
     try:
         observation = _observation(CiConclusion.FAILURE, CiConclusion.SUCCESS)
@@ -288,7 +290,7 @@ def test_failed_ci_creates_deterministic_governed_assignment_and_durable_evidenc
         assert len(records) == 1
         assignment = first.assignment.snapshot()
         assert assignment["assignment_kind"] == "governed_corrective_engineering"
-        assert assignment["required_check_roster_digest"] == roster.roster_digest
+        assert assignment["required_check_policy_digest"] == roster.policy_digest
         assert assignment["requires_authoritative_coding_executor"] is True
         assert assignment["requires_fresh_validation_receipts"] is True
         assert assignment["requires_fresh_owner_authorization_for_git_mutation"] is True
@@ -324,9 +326,7 @@ def test_observation_identity_mismatch_fails_closed(
         observation=_observation(
             CiConclusion.FAILURE, repository=repository, pr_number=pr_number
         ),
-        required_checks=_roster(
-            "check-1", repository=repository, pr_number=pr_number
-        ),
+        required_checks=_roster("check-1", repository=repository, pr_number=pr_number),
     )
 
     assert decision.disposition == CiRepairDisposition.BLOCKED
@@ -372,7 +372,9 @@ def _failed_assignment(
     return failed.assignment, roster
 
 
-def test_revalidation_requires_advanced_head_and_resolved_authoritative_receipt() -> None:
+def test_revalidation_requires_advanced_head_and_resolved_authoritative_receipt() -> (
+    None
+):
     db, journal = _journal()
     try:
         assignment, roster = _failed_assignment(journal)
@@ -423,7 +425,9 @@ def test_revalidation_refuses_fabricated_digest_even_when_shape_is_valid() -> No
         db.close()
 
 
-def test_revalidation_requires_corrective_receipt_bound_to_assignment_and_head() -> None:
+def test_revalidation_requires_corrective_receipt_bound_to_assignment_and_head() -> (
+    None
+):
     db, journal = _journal()
     try:
         assignment, _ = _failed_assignment(journal)
@@ -517,14 +521,18 @@ def test_valid_revalidation_records_bound_corrective_provenance_idempotently() -
         assert replay.event_id == event.event_id
         assert event.event_kind == "revalidation"
         assert event.head_sha == CORRECTED_SHA
-        assert f'"corrective_plan_digest":"{corrective.plan_digest}"' in event.payload_json
+        assert (
+            f'"corrective_plan_digest":"{corrective.plan_digest}"' in event.payload_json
+        )
         assert '"owner_merge_ready":true' in event.payload_json
         assert '"merge_performed":false' in event.payload_json
     finally:
         db.close()
 
 
-def test_changed_revalidation_evidence_conflicts_instead_of_overwriting_history() -> None:
+def test_changed_revalidation_evidence_conflicts_instead_of_overwriting_history() -> (
+    None
+):
     db, journal = _journal()
     try:
         assignment, _ = _failed_assignment(journal)
