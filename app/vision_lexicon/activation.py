@@ -123,7 +123,7 @@ def schema_ready() -> bool:
             _postgres_url(), connect_timeout=_SCHEMA_PROBE_CONNECT_TIMEOUT_SECONDS
         ) as conn, conn.cursor() as cur:
             return _schema_problem(cur) is None
-    except Exception:
+    except (psycopg.Error, RuntimeError, ValueError, OSError):
         return False
 
 
@@ -137,7 +137,7 @@ def _guarded_connection() -> Any:
             if problem:
                 raise RuntimeError(problem)
         return conn
-    except Exception:
+    except (psycopg.Error, RuntimeError, ValueError, OSError):
         conn.close()
         raise
 
