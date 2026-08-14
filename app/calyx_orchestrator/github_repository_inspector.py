@@ -24,7 +24,9 @@ class GitHubRepositoryConvergenceInspector:
         repository_allowlist: Sequence[str],
         base_ref: str = "main",
     ) -> None:
-        allowlist = frozenset(item.strip() for item in repository_allowlist if item.strip())
+        allowlist = frozenset(
+            item.strip() for item in repository_allowlist if item.strip()
+        )
         if not allowlist:
             raise ValueError("GITHUB_INSPECTOR_REPOSITORY_ALLOWLIST_REQUIRED")
         if base_ref != "main":
@@ -66,11 +68,13 @@ class GitHubRepositoryConvergenceInspector:
                 continue
             number = self._number(item)
             text = self._text(item)
-            if normalized_mission in text.casefold() or self._objective_overlap(objective, text):
+            if normalized_mission in text.casefold() or self._objective_overlap(
+                objective, text
+            ):
                 related_issues.append(number)
 
         exact = tuple(sorted(set(exact_prs)))
-        overlaps = tuple(sorted(set((*exact_prs, *overlap_prs))))
+        overlaps = tuple(sorted({*exact_prs, *overlap_prs}))
         continuation = exact if len(exact) == 1 else ()
         convergence = exact if len(exact) > 1 else ()
         return RepositorySnapshot(
@@ -93,7 +97,9 @@ class GitHubRepositoryConvergenceInspector:
         payload = self._mapping(response.payload)
         obj = self._mapping(payload.get("object"))
         sha = str(obj.get("sha") or "").strip().lower()
-        if len(sha) != 40 or any(character not in "0123456789abcdef" for character in sha):
+        if len(sha) != 40 or any(
+            character not in "0123456789abcdef" for character in sha
+        ):
             raise RuntimeError("GITHUB_INSPECTOR_BASE_SHA_INVALID")
         return sha
 
@@ -101,7 +107,7 @@ class GitHubRepositoryConvergenceInspector:
         response = self._transport.request("GET", f"/repos/{repository}/{suffix}")
         self._require_status(response, {200}, "GITHUB_INSPECTOR_LIST_FAILED")
         if not isinstance(response.payload, list):
-            raise RuntimeError("GITHUB_INSPECTOR_LIST_RESPONSE_INVALID")
+            raise TypeError("GITHUB_INSPECTOR_LIST_RESPONSE_INVALID")
         return [self._mapping(item) for item in response.payload]
 
     @staticmethod
@@ -134,7 +140,7 @@ class GitHubRepositoryConvergenceInspector:
     @staticmethod
     def _mapping(value: object) -> Mapping[str, object]:
         if not isinstance(value, Mapping):
-            raise RuntimeError("GITHUB_INSPECTOR_MAPPING_REQUIRED")
+            raise TypeError("GITHUB_INSPECTOR_MAPPING_REQUIRED")
         return value
 
     @staticmethod
