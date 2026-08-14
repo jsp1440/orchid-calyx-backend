@@ -67,32 +67,147 @@ STRICT_CHECK_GROUPS_140: dict[str, tuple[tuple[str, ...], ...]] = {
     ),
 }
 
+INDEX_SPECS_101: dict[str, dict[str, Any]] = {
+    "idx_rs_projects_owner_archive_updated": {
+        "table": "projects",
+        "unique": False,
+        "keys": ("owner_subject", "archived_at", "updated_at DESC"),
+        "predicate": None,
+    },
+    "idx_rs_projects_owner_status": {
+        "table": "projects",
+        "unique": False,
+        "keys": ("owner_subject", "status"),
+        "predicate": None,
+    },
+    "uq_rs_saved_search_name": {
+        "table": "saved_searches",
+        "unique": True,
+        "keys": ("project_id", "lower(name)"),
+        "predicate": "(archived_at IS NULL)",
+    },
+    "idx_rs_notes_project_updated": {
+        "table": "notes",
+        "unique": False,
+        "keys": ("project_id", "archived_at", "updated_at DESC"),
+        "predicate": None,
+    },
+    "idx_rs_project_taxa_id": {
+        "table": "project_taxa",
+        "unique": False,
+        "keys": ("taxon_id",),
+        "predicate": None,
+    },
+    "idx_rs_project_documents_id": {
+        "table": "project_documents",
+        "unique": False,
+        "keys": ("document_id",),
+        "predicate": None,
+    },
+    "idx_rs_project_evidence_id": {
+        "table": "project_evidence",
+        "unique": False,
+        "keys": ("evidence_kind", "evidence_id"),
+        "predicate": None,
+    },
+    "idx_rs_audit_project_time": {
+        "table": "audit_events",
+        "unique": False,
+        "keys": ("project_id", "occurred_at DESC", "event_id"),
+        "predicate": None,
+    },
+}
+
+INDEX_SPECS_140: dict[str, dict[str, Any]] = {
+    "idx_rs_conversation_owner_project_updated": {
+        "table": "conversation_sessions",
+        "unique": False,
+        "keys": ("owner_subject", "project_id", "updated_at DESC"),
+        "predicate": None,
+    },
+    "idx_rs_conversation_messages_session_time": {
+        "table": "conversation_messages",
+        "unique": False,
+        "keys": ("conversation_id", "created_at", "message_id"),
+        "predicate": None,
+    },
+}
+
 
 def _normalize(value: str) -> str:
     return " ".join(value.lower().split())
 
 
-def _compact_index(value: str) -> str:
-    """Normalize PostgreSQL's presentation-only index rendering differences."""
-    normalized = value.lower().replace("research_station.", "")
-    normalized = normalized.replace(" using btree ", " ")
-    return "".join(normalized.split())
+def _normalize_index_expression(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return "".join(value.lower().split())
+
+
+def _index_contracts(connection: psycopg.Connection) -> dict[str, dict[str, Any]]:
+    rows = connection.execute(
+        """
+        SELECT
+            i.relname,
+            t.relname,
+            ix.indisunique,
+            ARRAY(
+                SELECT pg_get_indexdef(ix.indexrelid, key_position, true)
+                FROM generate_series(1, ix.indnkeyatts) AS key_position
+                ORDER BY key_position
+            ),
+            pg_get_expr(ix.indpred, ix.indrelid)
+        FROM pg_index ix
+        JOIN pg_class i ON i.oid = ix.indexrelid
+        JOIN pg_class t ON t.oid = ix.indrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'research_station'
+        """
+    ).fetchall()
+    return {
+        row[0]: {
+            "table": row[1],
+            "unique": bool(row[2]),
+            "keys": tuple(row[3]),
+            "predicate": row[4],
+        }
+        for row in rows
+    }
+
+
+def _missing_or_mismatched_indexes(
+    connection: psycopg.Connection,
+    specs: dict[str, dict[str, Any]],
+) -> list[str]:
+    actual = _index_contracts(connection)
+    failures: list[str] = []
+    for name, expected in specs.items():
+        observed = actual.get(name)
+        if observed is None:
+            failures.append(name)
+            continue
+        expected_keys = tuple(
+            _normalize_index_expression(value) for value in expected["keys"]
+        )
+        observed_keys = tuple(
+            _normalize_index_expression(value) for value in observed["keys"]
+        )
+        if (
+            observed["table"] != expected["table"]
+            or observed["unique"] is not expected["unique"]
+            or observed_keys != expected_keys
+            or _normalize_index_expression(observed["predicate"])
+            != _normalize_index_expression(expected["predicate"])
+        ):
+            failures.append(name)
+    return sorted(failures)
 
 
 def _strict_index_blockers(
     connection: psycopg.Connection,
 ) -> tuple[list[str], list[str], list[str]]:
-    definitions = base._index_defs(connection)
-    missing_101 = sorted(
-        name
-        for name, fragment in base.INDEX_DEF_FRAGMENTS_101.items()
-        if _compact_index(fragment) not in _compact_index(definitions.get(name, ""))
-    )
-    missing_140 = sorted(
-        name
-        for name, fragment in base.INDEX_DEF_FRAGMENTS_140.items()
-        if _compact_index(fragment) not in _compact_index(definitions.get(name, ""))
-    )
+    missing_101 = _missing_or_mismatched_indexes(connection, INDEX_SPECS_101)
+    missing_140 = _missing_or_mismatched_indexes(connection, INDEX_SPECS_140)
     blockers: list[str] = []
     if missing_101:
         blockers.append("MIGRATION_101_REQUIRED_INDEX_MISSING")
