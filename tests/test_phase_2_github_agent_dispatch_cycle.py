@@ -23,6 +23,7 @@ from app.calyx_orchestrator.github_agent_lifecycle import (
     PullRequestObservation,
 )
 from app.calyx_orchestrator.github_coding_executor import BudgetClass
+from app.calyx_orchestrator.program_worker import ClaimDiagnostic
 
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 
@@ -71,6 +72,9 @@ def claim() -> ClaimedGitHubCodingJob:
 @dataclass
 class Leases:
     next_claim: ClaimedGitHubCodingJob | None = field(default_factory=claim)
+    next_diagnostic: ClaimDiagnostic = field(
+        default_factory=lambda: ClaimDiagnostic(outcome="IDLE_NO_CANDIDATE")
+    )
     claim_calls: int = 0
     released: int = 0
     completions: list[tuple[TerminalOutcome, dict[str, object], str | None]] = field(
@@ -80,6 +84,9 @@ class Leases:
     def claim(self, *, owner: str) -> ClaimedGitHubCodingJob | None:
         self.claim_calls += 1
         return self.next_claim
+
+    def diagnose(self, *, owner: str) -> ClaimDiagnostic:
+        return self.next_diagnostic
 
     def release_preflight(self, claimed: ClaimedGitHubCodingJob) -> None:
         assert claimed.program_job_id == "job-1"

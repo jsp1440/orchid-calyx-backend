@@ -6,11 +6,18 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.database import Base
 from app.calyx_orchestrator.models import utcnow
-from app.calyx_orchestrator.program_models import CalyxProgram, CalyxProgramDependency, CalyxProgramJob
-from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
+from app.calyx_orchestrator.program_models import (
+    CalyxProgram,
+    CalyxProgramDependency,
+    CalyxProgramJob,
+)
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
+from app.database import Base
 
 
 @pytest.fixture()
@@ -136,4 +143,70 @@ def test_exhausted_expired_lease_dead_letters_once(db: Session) -> None:
     db.refresh(claimed)
     assert claimed.outcome == "DEAD_LETTER"
     assert claimed.status == "blocked"
+
+
+def test_diagnose_reports_idle_no_candidate_when_nothing_exists(db: Session) -> None:
+    worker = PersistentProgramWorker(db)
+    diagnostic = worker.diagnose()
+    assert diagnostic.outcome == "IDLE_NO_CANDIDATE"
+    assert diagnostic.program_job_id is None
+    assert diagnostic.reason_code is None
+
+
+def test_diagnose_reports_idle_no_candidate_when_role_filter_matches_nothing(db: Session) -> None:
+    _start(db, [ProgramJobSpec("one", "backend_engineer", "one", "repo-a", "branch", True)])
+    worker = PersistentProgramWorker(db)
+    diagnostic = worker.diagnose(allowed_role_keys=frozenset({"github_coding_agent"}))
+    assert diagnostic.outcome == "IDLE_NO_CANDIDATE"
+
+
+def test_diagnose_surfaces_the_real_admission_rejection_reason(db: Session) -> None:
+    """The exact previously-silent case: a mutating job with no branch is
+    rejected by EngineeringAdmissionPolicy, and diagnose() must say so."""
+    program = _start(
+        db,
+        [ProgramJobSpec("one", "github_coding_agent", "one", "repo-a", None, True)],
+    )
+    worker = PersistentProgramWorker(db)
+    assert worker.claim(worker_id="w1", allowed_role_keys=frozenset({"github_coding_agent"})) is None
+
+    diagnostic = worker.diagnose(allowed_role_keys=frozenset({"github_coding_agent"}))
+
+    assert diagnostic.outcome == "REJECTED_ADMISSION"
+    assert diagnostic.reason_code == "MUTATING_JOB_REQUIRES_BRANCH"
+    assert diagnostic.reason_message
+    jobs = db.scalars(select(CalyxProgramJob).where(CalyxProgramJob.program_id == program.program_id)).all()
+    assert diagnostic.program_job_id == jobs[0].program_job_id
+
+
+def test_diagnose_never_takes_a_lease_or_mutates_state(db: Session) -> None:
+    """diagnose() must be safe to call repeatedly with zero side effects -
+    it is meant to be called after every unsuccessful claim() without
+    changing what a subsequent claim() attempt would see."""
+    _start(db, [ProgramJobSpec("one", "github_coding_agent", "one", "repo-a", None, True)])
+    worker = PersistentProgramWorker(db)
+
+    before = db.scalars(select(CalyxProgramJob)).one()
+    assert before.status == "queued"
+    assert before.lease_owner is None
+
+    worker.diagnose(allowed_role_keys=frozenset({"github_coding_agent"}))
+    worker.diagnose(allowed_role_keys=frozenset({"github_coding_agent"}))
+
+    db.expire_all()
+    after = db.scalars(select(CalyxProgramJob)).one()
+    assert after.status == "queued"
+    assert after.lease_owner is None
+    assert after.attempt_count == 0
+
+
+def test_diagnose_reports_idle_when_claim_would_actually_succeed(db: Session) -> None:
+    """If diagnose() is (unusually) called for a candidate that would
+    actually be admitted, it must not falsely report a rejection."""
+    _start(db, [ProgramJobSpec("one", "github_coding_agent", "one", "repo-a", "branch-1", True)])
+    worker = PersistentProgramWorker(db)
+
+    diagnostic = worker.diagnose(allowed_role_keys=frozenset({"github_coding_agent"}))
+
+    assert diagnostic.outcome == "IDLE_NO_CANDIDATE"
     assert worker.recover_expired_leases() == 0

@@ -22,7 +22,7 @@ from .github_coding_executor import (
     BudgetClass,
     GitHubCodingAgentExecutor,
 )
-from .program_worker import PersistentProgramWorker
+from .program_worker import ClaimDiagnostic, PersistentProgramWorker
 
 EXECUTE_CONFIRMATION = "DISPATCH_GITHUB_CODING_AGENT"
 _BUDGET_RANK = {
@@ -80,6 +80,8 @@ class ClaimedGitHubCodingJob:
 
 class CodingJobLeaseGateway(Protocol):
     def claim(self, *, owner: str) -> ClaimedGitHubCodingJob | None: ...
+
+    def diagnose(self, *, owner: str) -> ClaimDiagnostic: ...
 
     def release_preflight(self, claim: ClaimedGitHubCodingJob) -> None: ...
 
@@ -165,6 +167,12 @@ class SqlAlchemyCodingJobLeaseGateway:
             assignment=assignment,
         )
 
+    def diagnose(self, *, owner: str) -> ClaimDiagnostic:
+        return self.worker.diagnose(
+            owner=owner,
+            allowed_role_keys=frozenset({GITHUB_CODING_ROLE}),
+        )
+
     def release_preflight(self, claim: ClaimedGitHubCodingJob) -> None:
         self.worker.release_preflight(
             program_job_id=claim.program_job_id,
@@ -230,7 +238,14 @@ class GitHubCodingAgentDispatchCycle:
         self.policy.require_execute_confirmation(execute=execute, confirmation=confirmation)
         claim = self.leases.claim(owner=owner)
         if claim is None:
-            return DispatchCycleResult(state="idle")
+            diagnostic = self.leases.diagnose(owner=owner)
+            if diagnostic.outcome == "REJECTED_ADMISSION":
+                return DispatchCycleResult(
+                    state="rejected_admission",
+                    program_job_id=diagnostic.program_job_id,
+                    reason=diagnostic.reason_code,
+                )
+            return DispatchCycleResult(state="idle_no_candidate")
 
         try:
             budget = self.policy.validate_assignment(claim.assignment)

@@ -134,6 +134,79 @@ def test_disabled_policy_rejects_the_same_real_job(db: Session) -> None:
         cycle.run_once(owner=OWNER, execute=False)
 
 
+def test_no_queued_candidate_is_honest_idle(db: Session) -> None:
+    """No job of any kind exists. The cycle must report the genuinely-empty
+    case distinctly from a rejected-candidate case (see the next test) -
+    that distinction is the entire point of this hardening pass."""
+    policy = GitHubCodingRuntimePolicy(
+        enabled=True,
+        owner_allowlist=frozenset({OWNER}),
+        repository_allowlist=frozenset({REPOSITORY}),
+    )
+    cycle = GitHubCodingAgentDispatchCycle(
+        policy=policy,
+        leases=SqlAlchemyCodingJobLeaseGateway(db),
+        store=_NullDispatchStore(),
+        executor=None,  # type: ignore[arg-type]
+        observer=None,  # type: ignore[arg-type]
+        repairer=None,  # type: ignore[arg-type]
+    )
+
+    result = cycle.run_once(owner=OWNER, execute=False)
+
+    assert result.state == "idle_no_candidate"
+    assert result.reason is None
+    assert result.program_job_id is None
+
+
+def test_mutating_candidate_without_branch_is_an_explicit_diagnostic_rejection(
+    db: Session,
+) -> None:
+    """This is the exact previously-silent bug: a real mutating job created
+    with branch=None used to make the dispatch cycle report a bare "idle"
+    with zero explanation. It must now surface the real admission-policy
+    rejection reason instead."""
+    repo = PersistentProgramRepository(db)
+    program = repo.create_program(
+        owner=OWNER,
+        title="Mission missing its authoritative branch",
+        objective="Prove the previously-silent admission rejection is now explicit",
+        jobs=[
+            ProgramJobSpec(
+                job_key="github-coding-mission-no-branch",
+                role_key="github_coding_agent",
+                title="Missing branch",
+                repository=REPOSITORY,
+                branch=None,  # the exact trigger for MUTATING_JOB_REQUIRES_BRANCH
+                mutating=True,
+                inputs={"budget_class": "TINY", "mission_id": "github-coding-mission-no-branch"},
+            )
+        ],
+        dependencies=[],
+    )
+    repo.start(owner=OWNER, program_id=program.program_id)
+
+    policy = GitHubCodingRuntimePolicy(
+        enabled=True,
+        owner_allowlist=frozenset({OWNER}),
+        repository_allowlist=frozenset({REPOSITORY}),
+    )
+    cycle = GitHubCodingAgentDispatchCycle(
+        policy=policy,
+        leases=SqlAlchemyCodingJobLeaseGateway(db),
+        store=_NullDispatchStore(),
+        executor=None,  # type: ignore[arg-type]
+        observer=None,  # type: ignore[arg-type]
+        repairer=None,  # type: ignore[arg-type]
+    )
+
+    result = cycle.run_once(owner=OWNER, execute=False)
+
+    assert result.state == "rejected_admission"
+    assert result.reason == "MUTATING_JOB_REQUIRES_BRANCH"
+    assert result.program_job_id is not None
+
+
 def test_execute_mode_still_requires_exact_confirmation_against_real_job(db: Session) -> None:
     _enqueue_github_coding_mission(db)
 

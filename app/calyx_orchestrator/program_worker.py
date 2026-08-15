@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import timedelta
 from uuid import uuid4
 
@@ -12,6 +13,21 @@ from .models import utcnow
 from .persisted_scheduler import project_persisted_schedule
 from .program_models import CalyxProgram, CalyxProgramJob
 from .program_repository import PersistentProgramRepository
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimDiagnostic:
+    """Read-only explanation for why claim() returned (or would return) None.
+
+    outcome is one of "IDLE_NO_CANDIDATE" (no runnable job matched the
+    filters at all) or "REJECTED_ADMISSION" (a runnable job existed but
+    every candidate failed EngineeringAdmissionPolicy.evaluate()).
+    """
+
+    outcome: str
+    program_job_id: str | None = None
+    reason_code: str | None = None
+    reason_message: str | None = None
 
 
 class PersistentProgramWorker:
@@ -110,6 +126,84 @@ class PersistentProgramWorker:
                 return claimed
             self.db.rollback()
         return None
+
+    def diagnose(
+        self,
+        *,
+        owner: str | None = None,
+        allowed_role_keys: frozenset[str] | None = None,
+    ) -> ClaimDiagnostic:
+        """Explain why claim() with the same arguments would return None.
+
+        Read-only: takes no lease, commits nothing, recovers no expired
+        leases. Mirrors claim()'s own candidate-selection query exactly so
+        the explanation is truthful to what claim() actually evaluated, not
+        a separate approximation of it. Intended to be called only after a
+        real claim() attempt has already returned None, so callers get an
+        honest reason instead of a bare "idle" result that can't distinguish
+        "there is genuinely no work" from "a candidate was rejected."
+        """
+        try:
+            persisted_schedule = project_persisted_schedule(self.db, owner=owner)
+        except ValueError:
+            return ClaimDiagnostic(outcome="IDLE_NO_CANDIDATE")
+        runnable_rank = {
+            program_job_id: rank
+            for rank, program_job_id in enumerate(persisted_schedule.runnable_program_job_ids)
+        }
+        if not runnable_rank:
+            return ClaimDiagnostic(outcome="IDLE_NO_CANDIDATE")
+
+        query = (
+            select(CalyxProgramJob)
+            .join(CalyxProgram, CalyxProgram.program_id == CalyxProgramJob.program_id)
+            .where(
+                CalyxProgram.status == "running",
+                CalyxProgram.paused.is_(False),
+                CalyxProgramJob.status == "queued",
+                CalyxProgramJob.outcome.is_(None),
+                CalyxProgramJob.attempt_count < CalyxProgramJob.max_attempts,
+                CalyxProgramJob.program_job_id.in_(tuple(runnable_rank)),
+            )
+            .limit(50)
+        )
+        if owner is not None:
+            query = query.where(CalyxProgram.owner == owner)
+        if allowed_role_keys is not None:
+            if not allowed_role_keys:
+                return ClaimDiagnostic(outcome="IDLE_NO_CANDIDATE")
+            query = query.where(CalyxProgramJob.role_key.in_(tuple(sorted(allowed_role_keys))))
+        candidates = self.db.scalars(query).all()
+        if not candidates:
+            return ClaimDiagnostic(outcome="IDLE_NO_CANDIDATE")
+        candidates.sort(key=lambda item: runnable_rank[item.program_job_id])
+
+        active_query = select(CalyxProgramJob).join(
+            CalyxProgram, CalyxProgram.program_id == CalyxProgramJob.program_id
+        ).where(CalyxProgramJob.status == "running")
+        if owner is not None:
+            active_query = active_query.where(CalyxProgram.owner == owner)
+        active_rows = self.db.scalars(active_query).all()
+        active = [self._identity(item) for item in active_rows]
+
+        last_rejection: tuple[CalyxProgramJob, object] | None = None
+        for candidate in candidates:
+            decision = self.policy.evaluate(self._identity(candidate), active)
+            if decision.admitted:
+                # A real claim() with these same arguments would have
+                # succeeded on this candidate - report honestly rather than
+                # claiming rejection where none occurred.
+                return ClaimDiagnostic(outcome="IDLE_NO_CANDIDATE")
+            last_rejection = (candidate, decision)
+
+        assert last_rejection is not None
+        rejected_job, decision = last_rejection
+        return ClaimDiagnostic(
+            outcome="REJECTED_ADMISSION",
+            program_job_id=rejected_job.program_job_id,
+            reason_code=decision.code,
+            reason_message=decision.message,
+        )
 
     def heartbeat(
         self,
