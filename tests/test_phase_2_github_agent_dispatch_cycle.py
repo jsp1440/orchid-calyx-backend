@@ -28,7 +28,7 @@ from app.calyx_orchestrator.program_worker import ClaimDiagnostic
 REPOSITORY = "jsp1440/orchid-calyx-backend"
 
 
-def assignment(*, budget: str = "NORMAL") -> GovernedAssignment:
+def assignment(*, budget: str = "NORMAL", branch: str | None = None) -> GovernedAssignment:
     inputs = {
         "program": {"program_id": "program-1"},
         "job": {
@@ -37,7 +37,7 @@ def assignment(*, budget: str = "NORMAL") -> GovernedAssignment:
             "role_key": "github_coding_agent",
             "title": "Implement mission",
             "repository": REPOSITORY,
-            "branch": None,
+            "branch": branch,
             "mutating_intent": True,
             "attempt_count": 1,
             "mission_id": "MISSION-1",
@@ -60,12 +60,12 @@ def assignment(*, budget: str = "NORMAL") -> GovernedAssignment:
     )
 
 
-def claim() -> ClaimedGitHubCodingJob:
+def claim(*, branch: str | None = None) -> ClaimedGitHubCodingJob:
     return ClaimedGitHubCodingJob(
         program_job_id="job-1",
         worker_id="worker-1",
         lease_token="lease-1",
-        assignment=assignment(),
+        assignment=assignment(branch=branch),
     )
 
 
@@ -272,6 +272,25 @@ def test_first_execute_dispatches_once_persists_and_releases_job() -> None:
     assert result.issue_number == 1001
     assert executor.calls == 1
     assert executor.saw_authorization is True
+
+
+def test_dispatch_creation_persists_the_job_s_reserved_branch() -> None:
+    """The mission's admission-reserved branch (CalyxProgramJob.branch, not
+    anything the provider itself reports - see github_copilot_cloud_provider,
+    which always returns branch=None) must be durably persisted onto the
+    dispatch record at creation time."""
+    leases = Leases(next_claim=claim(branch="agent/mission-001"))
+    store = Store()
+    executor = Executor()
+
+    cycle(leases=leases, store=store, executor=executor).run_once(
+        owner="owner-1",
+        execute=True,
+        confirmation=EXECUTE_CONFIRMATION,
+    )
+
+    assert store.current is not None
+    assert store.current.branch == "agent/mission-001"
     assert store.current is not None
     assert store.current.state == AgentLifecycleState.AGENT_ASSIGNED
     assert leases.released == 1

@@ -300,6 +300,7 @@ class GitHubCodingAgentDispatchCycle:
             if issue_number <= 0:
                 self.leases.release_preflight(claim)
                 raise ValueError("GITHUB_CODING_DISPATCH_ISSUE_REQUIRED")
+            reserved_branch = self._job(claim.assignment).get("branch")
             dispatch = GitHubAgentDispatchRecord(
                 program_job_id=claim.program_job_id,
                 mission_id=str(receipt.output.get("mission_id") or claim.assignment.job_key),
@@ -308,6 +309,7 @@ class GitHubCodingAgentDispatchCycle:
                 provider=str(receipt.output.get("provider") or ""),
                 issue_number=issue_number,
                 state=AgentLifecycleState.AGENT_ASSIGNED,
+                branch=str(reserved_branch) if reserved_branch else None,
             )
             persisted = self.store.record(dispatch)
             self.leases.release_preflight(claim)
