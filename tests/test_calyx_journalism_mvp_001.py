@@ -344,7 +344,24 @@ def test_markdown_omits_project_table_when_no_verified_projects() -> None:
 # ---------------------------------------------------------------------------
 # 13–19. HTTP contract via TestClient
 # ---------------------------------------------------------------------------
+#
+# Per docs/brain/CI-BASELINE-001-JOURNALISM-CONTRACT.md: current `main`
+# intentionally mounts Journalism under the authenticated Brain surface
+# (`/brain/journalism/*`, canonically tested by
+# tests/test_calyx_journalism_brain_routes.py). These tests target the
+# retired `/api/calyx-journalism/*` route family, which is deliberately not
+# mounted — reintroducing it would duplicate governed functionality. CI
+# already excludes this file's HTTP section from broad diagnostics
+# (`-k 'not http'` / `--ignore=tests/test_calyx_journalism_mvp_001.py`);
+# these markers make that exclusion explicit in any plain `pytest` run
+# rather than only in out-of-band CI flags.
+_HTTP_CONTRACT_RETIRED = pytest.mark.skip(
+    reason="retired /api/calyx-journalism/* surface; see docs/brain/CI-BASELINE-001-JOURNALISM-CONTRACT.md "
+    "and tests/test_calyx_journalism_brain_routes.py for the canonical /brain/journalism/* contract"
+)
 
+
+@_HTTP_CONTRACT_RETIRED
 def test_http_brief_requires_auth() -> None:
     # No dependency override — raw auth check
     with TestClient(app, raise_server_exceptions=False) as client:
@@ -365,6 +382,7 @@ def test_http_brief_requires_auth() -> None:
     assert response.status_code == 401
 
 
+@_HTTP_CONTRACT_RETIRED
 def test_http_brief_accepted_with_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CALYX_API_KEY", API_KEY)
     with TestClient(app, raise_server_exceptions=True) as client:
@@ -391,6 +409,7 @@ def test_http_brief_accepted_with_api_key(monkeypatch: pytest.MonkeyPatch) -> No
     assert data["brief"]["title"] == "Global Survey"
 
 
+@_HTTP_CONTRACT_RETIRED
 def test_http_presets_lists_fcos() -> None:
     client = _client()
     response = client.get("/api/calyx-journalism/presets")
@@ -401,6 +420,7 @@ def test_http_presets_lists_fcos() -> None:
     assert "fcos" in preset_ids
 
 
+@_HTTP_CONTRACT_RETIRED
 def test_http_preset_unknown_returns_404() -> None:
     client = _client()
     response = client.get("/api/calyx-journalism/presets/does-not-exist")
@@ -408,6 +428,7 @@ def test_http_preset_unknown_returns_404() -> None:
     assert response.json()["detail"]["code"] == "PRESET_NOT_FOUND"
 
 
+@_HTTP_CONTRACT_RETIRED
 def test_http_evidence_preview_returns_packet() -> None:
     client = _client()
     response = client.post(
@@ -427,6 +448,7 @@ def test_http_evidence_preview_returns_packet() -> None:
     assert data["verified_projects"][0]["project_name"] == "EDGE Orchids"
 
 
+@_HTTP_CONTRACT_RETIRED
 def test_http_generate_then_export_round_trip() -> None:
     client = _client()
 
@@ -479,6 +501,7 @@ def test_http_generate_then_export_round_trip() -> None:
     assert "Unavailable Dependencies" in export_data["content"]
 
 
+@_HTTP_CONTRACT_RETIRED
 def test_http_export_unknown_article_returns_404() -> None:
     client = _client()
     response = client.post(
@@ -698,6 +721,7 @@ def test_preview_returns_packet_id() -> None:
 # New: end-to-end HTTP tests (evidence_packet_id flow)
 # ---------------------------------------------------------------------------
 
+@_HTTP_CONTRACT_RETIRED
 def test_http_preview_stores_packet_with_id() -> None:
     """POST /evidence-preview must return a non-empty packet_id."""
     client = _client()
@@ -715,6 +739,7 @@ def test_http_preview_stores_packet_with_id() -> None:
     assert data.get("packet_id"), "Expected a non-empty packet_id in the preview response"
 
 
+@_HTTP_CONTRACT_RETIRED
 def test_http_generate_with_evidence_packet_id_e2e() -> None:
     """Full end-to-end: preview → packet_id → generate → export with verified projects."""
     client = _client()
@@ -823,6 +848,7 @@ def test_http_generate_with_evidence_packet_id_e2e() -> None:
     assert "EDGE Annual Report 2024" in md
 
 
+@_HTTP_CONTRACT_RETIRED
 def test_http_generate_unknown_packet_id_returns_404() -> None:
     """Referencing a non-existent packet_id must return 404."""
     client = _client()
@@ -843,6 +869,7 @@ def test_http_generate_unknown_packet_id_returns_404() -> None:
     assert resp.json()["detail"]["code"] == "EVIDENCE_PACKET_NOT_FOUND"
 
 
+@_HTTP_CONTRACT_RETIRED
 def test_http_insufficient_evidence_flagged_in_response() -> None:
     """Generate without evidence should return insufficient_evidence=True."""
     client = _client()
