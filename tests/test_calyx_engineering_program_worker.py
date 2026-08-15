@@ -6,6 +6,11 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app.calyx_orchestrator.engineering_core import (
+    AgentRole,
+    EngineeringAdmissionPolicy,
+    EngineeringWorkIdentity,
+)
 from app.calyx_orchestrator.models import utcnow
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
@@ -210,3 +215,117 @@ def test_diagnose_reports_idle_when_claim_would_actually_succeed(db: Session) ->
 
     assert diagnostic.outcome == "IDLE_NO_CANDIDATE"
     assert worker.recover_expired_leases() == 0
+
+
+def test_diagnose_surfaces_repository_capacity_reached() -> None:
+    """diagnose() must generalize to every EngineeringAdmissionPolicy
+    rejection code, not just the one bug (MUTATING_JOB_REQUIRES_BRANCH)
+    that originally motivated it. The scheduler layer (persisted_scheduler.py)
+    independently caps runnable candidates per repository at 2 - the same
+    as EngineeringAdmissionPolicy's own default - so a policy with a
+    *tighter* limit than the scheduler's is required to prove the admission
+    check itself still fires correctly, rather than always being preempted
+    by the scheduler's own pre-filtering."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[CalyxProgram.__table__, CalyxProgramJob.__table__, CalyxProgramDependency.__table__],
+    )
+    with Session(engine) as db:
+        _start(
+            db,
+            [
+                ProgramJobSpec("one", "role-a", "one", "repo-a", "branch-1", True),
+                ProgramJobSpec("two", "role-b", "two", "repo-a", "branch-2", True),
+            ],
+        )
+        worker = PersistentProgramWorker(db, policy=EngineeringAdmissionPolicy(max_repository_active=1))
+        assert worker.claim(worker_id="w1") is not None
+
+        diagnostic = worker.diagnose()
+
+        assert diagnostic.outcome == "REJECTED_ADMISSION"
+        assert diagnostic.reason_code == "REPOSITORY_CAPACITY_REACHED"
+        assert diagnostic.reason_message
+
+
+def test_diagnose_surfaces_global_capacity_reached() -> None:
+    """Same reasoning as the repository-capacity test above: the scheduler's
+    own GLOBAL_PROGRAM_JOB_LIMIT (6) matches the admission policy's default,
+    so a tighter injected policy is needed to prove the admission check
+    itself, not the scheduler's pre-filter."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[CalyxProgram.__table__, CalyxProgramJob.__table__, CalyxProgramDependency.__table__],
+    )
+    with Session(engine) as db:
+        _start(
+            db,
+            [
+                ProgramJobSpec("one", "role-a", "one", "repo-a", "branch-1", True),
+                ProgramJobSpec("two", "role-b", "two", "repo-b", "branch-2", True),
+            ],
+        )
+        worker = PersistentProgramWorker(db, policy=EngineeringAdmissionPolicy(max_global_active=1))
+        assert worker.claim(worker_id="w1") is not None
+
+        diagnostic = worker.diagnose()
+
+        assert diagnostic.outcome == "REJECTED_ADMISSION"
+        assert diagnostic.reason_code == "GLOBAL_CAPACITY_REACHED"
+        assert diagnostic.reason_message
+
+
+def test_branch_mutation_locked_is_unreachable_through_diagnose_by_scheduler_design() -> None:
+    """Genuine architectural finding, recorded as a test rather than left as
+    a comment: unlike the capacity checks above, BRANCH_MUTATION_LOCKED
+    cannot be reached through claim()/diagnose() at all, regardless of the
+    injected admission policy. persisted_scheduler.py's DependencyScheduler
+    independently tracks "mutating_branches" and excludes a second
+    same-branch mutator from ever being runnable - a hardcoded mechanism,
+    not configurable via EngineeringAdmissionPolicy. So the admission
+    policy's own BRANCH_MUTATION_LOCKED check is real defense-in-depth
+    (protects against a scheduler bug), not dead code - but it is not
+    exercisable via the integrated worker/scheduler path. Proven directly
+    against the policy instead, and the scheduler's independent
+    unreachability documented by the first half of this test."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[CalyxProgram.__table__, CalyxProgramJob.__table__, CalyxProgramDependency.__table__],
+    )
+    with Session(engine) as db:
+        _start(
+            db,
+            [
+                ProgramJobSpec("one", "role-a", "one", "repo-a", "shared", True),
+                ProgramJobSpec("two", "role-b", "two", "repo-a", "shared", True),
+            ],
+        )
+        worker = PersistentProgramWorker(db)
+        first = worker.claim(worker_id="w1")
+        assert first is not None and first.branch == "shared"
+
+        diagnostic = worker.diagnose()
+        assert diagnostic.outcome == "IDLE_NO_CANDIDATE", (
+            "the scheduler's own branch-lock excluded the second mutator "
+            "before the admission policy ever saw it - not a rejection"
+        )
+
+    # The admission-policy check itself, proven directly and in isolation:
+    policy = EngineeringAdmissionPolicy()
+    locked_candidate = EngineeringWorkIdentity(
+        job_id="two", role=AgentRole.BACKEND_ENGINEER, repository="repo-a", branch="shared", mutates_code=True
+    )
+    already_active = EngineeringWorkIdentity(
+        job_id="one",
+        role=AgentRole.BACKEND_ENGINEER,
+        repository="repo-a",
+        branch="shared",
+        mutates_code=True,
+        status="running",
+    )
+    decision = policy.evaluate(locked_candidate, [already_active])
+    assert decision.admitted is False
+    assert decision.code == "BRANCH_MUTATION_LOCKED"
