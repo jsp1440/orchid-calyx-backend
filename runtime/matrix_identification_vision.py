@@ -210,6 +210,61 @@ def list_vision_suggestions(
     }
 
 
+def get_vision_region_for_suggestion(
+    session_id: str,
+    suggestion_id: str,
+    *,
+    access_actor: str | None = None,
+    root=None,
+    vision_service=None,
+) -> dict[str, Any]:
+    """Return governed region geometry for one attached Vision suggestion.
+
+    Only returns a region already referenced by a suggestion attached to this
+    session — this is a read within the same governed boundary as the
+    suggestion review queue, not a general-purpose region lookup. Absence of
+    geometry is returned as an explicit ``region: None`` rather than an
+    error, since most suggestions today carry no region reference and that
+    is a truthful state, not a failure.
+    """
+    session = get_session(session_id, root=root, access_actor=access_actor)
+    suggestion = next(
+        (
+            item
+            for item in session.get("vision_suggestions", [])
+            if item.get("suggestion_id") == suggestion_id
+        ),
+        None,
+    )
+    if suggestion is None:
+        raise FileNotFoundError(f"vision suggestion not found: {suggestion_id}")
+
+    region_id = suggestion.get("region_id")
+    if not region_id:
+        return {"session_id": session_id, "suggestion_id": suggestion_id, "region": None}
+
+    service = vision_service or build_vision_lexicon_service()
+    region = service.get_region(UUID(region_id))
+    if region is None or str(region.analysis_id) != str(suggestion.get("analysis_id")):
+        return {"session_id": session_id, "suggestion_id": suggestion_id, "region": None}
+
+    return {
+        "session_id": session_id,
+        "suggestion_id": suggestion_id,
+        "region": {
+            "region_id": str(region.region_id),
+            "analysis_id": str(region.analysis_id),
+            "concept_id": str(region.concept_id) if region.concept_id else None,
+            "label": region.label,
+            "bounding_box": region.bounding_box,
+            "segmentation_ref": region.segmentation_ref,
+            "landmarks": region.landmarks,
+            "confidence": region.confidence,
+            "review_state": str(region.review_state),
+        },
+    }
+
+
 def review_vision_suggestion(
     session_id: str,
     suggestion_id: str,
