@@ -1,11 +1,38 @@
 from __future__ import annotations
 
 import os
+import socket
+from urllib.parse import urlparse
 
 import psycopg
 import pytest
 
 from scripts import research_station_conversation_activation as activation
+
+
+def _postgres_reachable(dsn: str | None, timeout: float = 0.5) -> bool:
+    """True only if something is actually listening at the DSN's host:port.
+
+    ``tests/conftest.py`` sets a placeholder ``DATABASE_URL`` so unrelated
+    modules can import cleanly without a real database. This module reads a
+    different, unset-by-default variable (``TEST_DATABASE_URL``), so the
+    previous code failed with a raw ``KeyError`` rather than skipping when no
+    real database was configured at all.
+    """
+    if not dsn:
+        return False
+    try:
+        parsed = urlparse(dsn)
+        with socket.create_connection((parsed.hostname or "localhost", parsed.port or 5432), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _postgres_reachable(os.environ.get("TEST_DATABASE_URL")),
+    reason="no reachable PostgreSQL test database (set TEST_DATABASE_URL)",
+)
 
 
 def _dsn() -> str:

@@ -127,6 +127,13 @@ class _FakeCursor:
 
     def execute(self, query: str, params=None):
         normalized = " ".join(query.split())
+        if normalized.startswith("SELECT to_regclass("):
+            # Bootstrap-if-missing check: this fake store's schema is always
+            # already "provisioned" for these tests, so report the table as
+            # already existing and let the repository skip straight past
+            # CREATE SCHEMA/CREATE TABLE, which this fake does not model.
+            self._row = {"relation": "oc_candidate_knowledge.runtime_repository_snapshots"}
+            return
         if "SELECT pg_advisory_xact_lock" in normalized:
             self._row = {"acquired": True}
             return
