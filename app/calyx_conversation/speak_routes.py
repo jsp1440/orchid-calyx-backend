@@ -191,6 +191,119 @@ def _deliverable_capabilities() -> dict[str, Any]:
     }
 
 
+def _workspace_outputs(
+    *,
+    mission: dict[str, Any] | None,
+    citations: list[dict[str, Any]],
+    calyx_message: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Server-derived workspace outputs, grounded only in this turn's actual
+    retrieval/mission evidence - never fabricated. Only ``table``/``text``
+    kinds are produced here: nothing available at this point in a turn is
+    verified chart or image data, and CALYX-MULTIMODAL-WORKSPACE-001
+    requires outputs be "derived only from actual tool/module results," not
+    invented to fill a visual slot. Shape matches the frontend's
+    ``WorkspaceOutput`` contract (workspaceOutputBus.ts) field-for-field so
+    no client-side reshaping is required.
+    """
+    outputs: list[dict[str, Any]] = []
+    message_id = str(calyx_message.get("message_id") or "")
+    created_at = str(calyx_message.get("created_at") or "")
+
+    sources = (mission or {}).get("sources") or []
+    if sources:
+        outputs.append({
+            "id": f"{message_id}:mission-sources",
+            "kind": "table",
+            "title": "Retrieved canonical sources",
+            "subtitle": (
+                f"{len(sources)} source(s) from governed Brain mission "
+                f"{(mission or {}).get('mission_id', 'unknown')}"
+            ),
+            "provenance": {
+                "source_module": "brain_mission",
+                "source_id": (mission or {}).get("mission_id"),
+                "generated": False,
+                # These are the actual canonical sources the mission retrieved
+                # and used as evidence, not an inference over them.
+                "evidence_status": "evidence",
+            },
+            "payload": {
+                "columns": [
+                    {"key": "title", "label": "Title"},
+                    {"key": "object_type", "label": "Type"},
+                    {"key": "excerpt", "label": "Excerpt"},
+                ],
+                "rows": [
+                    {
+                        "title": str(source.get("title") or "Untitled source"),
+                        "object_type": str(source.get("object_type") or ""),
+                        "excerpt": str(source.get("authorized_excerpt") or ""),
+                    }
+                    for source in sources
+                ],
+            },
+            "created_at": created_at,
+        })
+
+    missing_evidence = (mission or {}).get("missing_evidence") or []
+    if missing_evidence:
+        outputs.append({
+            "id": f"{message_id}:missing-evidence",
+            "kind": "text",
+            "title": "Evidence gaps for this turn",
+            "subtitle": None,
+            "provenance": {
+                "source_module": "brain_mission",
+                "source_id": (mission or {}).get("mission_id"),
+                "generated": False,
+                # Explicit missing-evidence output: this is neither evidence
+                # nor a derived claim - it is a disclosed gap.
+                "evidence_status": "unknown",
+            },
+            "payload": {"body": "\n".join(f"- {item}" for item in missing_evidence)},
+            "created_at": created_at,
+        })
+
+    if citations:
+        outputs.append({
+            "id": f"{message_id}:external-citations",
+            "kind": "table",
+            "title": "External literature citations",
+            "subtitle": f"{len(citations)} review-required record(s) from Europe PMC",
+            "provenance": {
+                "source_module": "external_literature",
+                "source_id": None,
+                "generated": False,
+                # Real bibliographic records, but not canonical Orchid
+                # Continuum evidence until reviewed (see epistemic_policy's
+                # external_literature_requires_review) - "derived" rather
+                # than "evidence" reflects that honestly.
+                "evidence_status": "derived",
+            },
+            "payload": {
+                "columns": [
+                    {"key": "title", "label": "Title"},
+                    {"key": "authors", "label": "Authors"},
+                    {"key": "journal", "label": "Journal"},
+                    {"key": "doi", "label": "DOI"},
+                ],
+                "rows": [
+                    {
+                        "title": str(citation.get("title") or ""),
+                        "authors": str(citation.get("authors") or ""),
+                        "journal": str(citation.get("journal") or ""),
+                        "doi": str(citation.get("doi") or ""),
+                    }
+                    for citation in citations
+                ],
+            },
+            "created_at": created_at,
+        })
+
+    return outputs
+
+
 def _run_governed_turn(
     *, owner: str, conversation_id: str, project_id: str, message: str,
     research_mode: str, retrieval_limit: int,
@@ -444,6 +557,9 @@ def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: Au
             "retrieval": retrieval, "continuum": continuum, "climate": climate,
             "citations": citations,
         },
+        "workspace_outputs": _workspace_outputs(
+            mission=mission, citations=citations, calyx_message=calyx_message,
+        ),
         "deliverables": _deliverable_capabilities(),
         "persistence_mode": STORE.persistence_mode,
         "epistemic_policy": governed_context["epistemic_policy"],
