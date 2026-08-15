@@ -23,7 +23,9 @@ def _postgres_reachable(dsn: str | None, timeout: float = 0.5) -> bool:
         return False
     try:
         parsed = urlparse(dsn)
-        with socket.create_connection((parsed.hostname or "localhost", parsed.port or 5432), timeout=timeout):
+        with socket.create_connection(
+            (parsed.hostname or "localhost", parsed.port or 5432), timeout=timeout
+        ):
             return True
     except OSError:
         return False
