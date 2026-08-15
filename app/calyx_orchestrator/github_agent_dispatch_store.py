@@ -28,6 +28,7 @@ class GitHubAgentDispatchRecordRow(Base):
     provider: Mapped[str] = mapped_column(String(128))
     issue_number: Mapped[int] = mapped_column(Integer)
     state: Mapped[str] = mapped_column(String(64), index=True)
+    branch: Mapped[str | None] = mapped_column(String(240), nullable=True)
     pull_request_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pull_request_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     head_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -135,6 +136,7 @@ class DurableGitHubAgentDispatchStore:
             or existing.base_sha != current.base_sha
             or existing.provider != current.provider
             or existing.issue_number != current.issue_number
+            or existing.branch != current.branch
         ):
             raise PermissionError("GITHUB_AGENT_DISPATCH_DURABLE_IDENTITY_CHANGED")
         if (
@@ -170,6 +172,7 @@ class DurableGitHubAgentDispatchStore:
             "provider": dispatch.provider,
             "issue_number": dispatch.issue_number,
             "state": dispatch.state.value,
+            "branch": dispatch.branch,
             "pull_request_number": dispatch.pull_request_number,
             "pull_request_url": dispatch.pull_request_url,
             "head_sha": dispatch.head_sha,
@@ -188,6 +191,7 @@ class DurableGitHubAgentDispatchStore:
             "provider": dispatch.provider,
             "issue_number": dispatch.issue_number,
             "state": dispatch.state.value,
+            "branch": dispatch.branch,
             "pull_request_number": dispatch.pull_request_number,
             "pull_request_url": dispatch.pull_request_url,
             "head_sha": dispatch.head_sha,
@@ -211,6 +215,7 @@ class DurableGitHubAgentDispatchStore:
             provider=str(payload.get("provider") or ""),
             issue_number=int(payload.get("issue_number") or 0),
             state=AgentLifecycleState(str(payload.get("state") or "")),
+            branch=None if payload.get("branch") is None else str(payload["branch"]),
             pull_request_number=(
                 None
                 if payload.get("pull_request_number") is None

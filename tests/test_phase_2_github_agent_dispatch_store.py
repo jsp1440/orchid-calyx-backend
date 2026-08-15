@@ -105,6 +105,42 @@ def test_repair_count_cannot_regress_or_jump() -> None:
         session.close()
 
 
+def test_branch_identity_round_trips_and_is_immutable() -> None:
+    session, store = make_store()
+    try:
+        created = store.record(record(branch="agent/mission-001"))
+        assert created.branch == "agent/mission-001"
+        fetched = store.get(program_job_id="job-1")
+        assert fetched is not None
+        assert fetched.branch == "agent/mission-001"
+
+        try:
+            store.record(
+                record(
+                    state=AgentLifecycleState.AWAITING_PR,
+                    branch="agent/a-different-branch",
+                )
+            )
+        except PermissionError as exc:
+            assert str(exc) == "GITHUB_AGENT_DISPATCH_DURABLE_IDENTITY_CHANGED"
+        else:
+            raise AssertionError("branch identity drift must fail closed")
+    finally:
+        session.close()
+
+
+def test_branch_is_optional_and_defaults_to_none() -> None:
+    session, store = make_store()
+    try:
+        created = store.record(record())
+        assert created.branch is None
+        fetched = store.get(program_job_id="job-1")
+        assert fetched is not None
+        assert fetched.branch is None
+    finally:
+        session.close()
+
+
 def test_merged_record_is_immutable() -> None:
     session, store = make_store()
     try:

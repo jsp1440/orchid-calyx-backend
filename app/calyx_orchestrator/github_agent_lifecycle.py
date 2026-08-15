@@ -26,6 +26,17 @@ class LifecycleAction(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class GitHubAgentDispatchRecord:
+    """branch is the authoritative branch identity reserved for this mission
+    at admission time (CalyxProgramJob.branch / EngineeringAdmissionPolicy's
+    per-branch mutation lock) - it is set once, at dispatch creation, and is
+    immutable thereafter (see DurableGitHubAgentDispatchStore._validate_identity).
+    It is NOT necessarily the same string as whatever branch the coding-agent
+    provider actually creates once assigned; head_sha is the durable pointer
+    to the real, observed commit once a PR exists. branch answers "what was
+    this mission's exclusivity lock," head_sha answers "what did the agent
+    actually produce" - they are deliberately two different questions.
+    """
+
     program_job_id: str
     mission_id: str
     repository: str
@@ -33,6 +44,7 @@ class GitHubAgentDispatchRecord:
     provider: str
     issue_number: int
     state: AgentLifecycleState = AgentLifecycleState.AGENT_ASSIGNED
+    branch: str | None = None
     pull_request_number: int | None = None
     pull_request_url: str | None = None
     head_sha: str | None = None
@@ -42,6 +54,8 @@ class GitHubAgentDispatchRecord:
     def verify(self) -> None:
         if not self.program_job_id or not self.mission_id or not self.repository:
             raise ValueError("GITHUB_AGENT_DISPATCH_IDENTITY_REQUIRED")
+        if self.branch is not None and not self.branch.strip():
+            raise ValueError("GITHUB_AGENT_DISPATCH_BRANCH_INVALID")
         if len(self.base_sha) != 40:
             raise ValueError("GITHUB_AGENT_DISPATCH_BASE_SHA_INVALID")
         if self.issue_number <= 0:

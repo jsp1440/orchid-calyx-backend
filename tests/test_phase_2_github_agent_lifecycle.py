@@ -34,6 +34,34 @@ def observation(**kwargs) -> PullRequestObservation:
     return PullRequestObservation(**values)
 
 
+def test_blank_branch_fails_verification() -> None:
+    with pytest.raises(ValueError, match="GITHUB_AGENT_DISPATCH_BRANCH_INVALID"):
+        record(branch="   ").verify()
+
+
+def test_branch_defaults_to_none_and_survives_lifecycle_transitions() -> None:
+    """branch is set once at dispatch creation and must be preserved across
+    every subsequent lifecycle transition, exactly like repository/base_sha -
+    it is an identity field, not observation-driven state."""
+    dispatch = record(branch="agent/mission-001")
+    assert dispatch.branch == "agent/mission-001"
+
+    decision = reconcile_agent_lifecycle(dispatch, observation())
+    assert decision.record.branch == "agent/mission-001"
+
+    with_pr = reconcile_agent_lifecycle(
+        decision.record,
+        observation(
+            pull_request_number=1002,
+            pull_request_url="https://github.com/jsp1440/orchid-calyx-backend/pull/1002",
+            draft=True,
+            head_sha="b" * 40,
+            required_checks_known=True,
+        ),
+    )
+    assert with_pr.record.branch == "agent/mission-001"
+
+
 def test_assignment_waits_without_pr_and_never_releases_dependencies() -> None:
     decision = reconcile_agent_lifecycle(record(), observation())
     assert decision.record.state == AgentLifecycleState.AWAITING_PR
