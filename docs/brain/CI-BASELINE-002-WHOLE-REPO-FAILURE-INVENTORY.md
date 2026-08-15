@@ -191,17 +191,37 @@ Root cause, confirmed by direct source inspection:
   test_execute_next_uses_skip_locked_for_duplicate_job_prevention` expects to
   monkeypatch directly on the `app.main` module.
 
-**Why not fixed here:** these are owner-gated, state-changing autonomous
-execution triggers (BUILD-055's own doc: `/execute-all` requires "owner
-session or API key plus constitutional review"). Wiring a previously-dead
-execution surface into the live application is a real engineering decision
-with security/governance weight, not a test-hygiene fix — it needs deliberate
-design (does it belong in `app.main` directly, matching what
-`test_execute_next_...` expects, or should `mycorrhiza.py` be refactored to a
-proper `APIRouter` and included?) rather than a quick patch made while doing
-baseline classification. Flagging this to the Brain as a concrete, scoped,
-real defect for dedicated engineering review is the appropriate next step,
-not a silent fix bundled into a test-baseline pass.
+**Why not fixed here:** these are documented as owner-gated, state-changing
+autonomous execution triggers (BUILD-055's own doc: `/execute-all` requires
+"owner session or API key plus constitutional review") — but as *currently
+written*, `app/routers/mycorrhiza.py` has **zero auth on any route**: no
+`Depends(verify_owner_or_api_key)` or equivalent anywhere in the file.
+Every one of `run-once`, `execute-next`, `execute-all` (which spawns
+job-execution logic against the production database in a loop),
+`health`, and `summary` is completely unauthenticated as written. Naively
+connecting this module's routes to the live app — even just fixing the
+"wrong `FastAPI()` instance" bug — would expose unauthenticated, state-
+changing, database-writing autonomous execution endpoints to the public
+internet. That is a security regression risk, not a fix, and is exactly the
+kind of change this session should not make unreviewed.
+
+The correct repair needs, at minimum: (1) add proper owner-or-API-key auth
+dependencies to every route in this file, matching BUILD-055's documented
+matrix; (2) decide whether the fix is "connect this file's routes as-is
+(after adding auth) via a proper `APIRouter` + `app.include_router(...)`" or
+"move the logic into `app.main` directly" (the latter matches what
+`test_execute_next_uses_skip_locked_for_duplicate_job_prevention` expects,
+monkeypatching `app.main.execute_next` directly); (3) decide how
+`/api/runner/autonomous-cycle`, `/start`, `/stop`, `/restart` should be
+implemented — `runtime/runtime_engine.py`'s `RuntimeEngine` class already
+has working `start()`/`stop()`/`restart()` methods, so this is route-layer
+work, not new autonomous-execution logic, but `execute-all`-class operations
+are documented as needing the `constitutional_orchestrator.evaluate_action(...)`
+governance gate already used elsewhere in this codebase
+(`app/routers/owner_operations.py`'s `/commands` endpoint), which the
+existing `mycorrhiza.py` logic does not call at all. This is scoped,
+concrete, real work — but it is a security-and-governance design task for
+dedicated review, not a test-baseline fix.
 
 ### `/api/executive/*` unexpectedly requires auth — 1 test, REAL PRODUCT DEFECT or spec drift, NEEDS INVESTIGATION
 
