@@ -6,9 +6,14 @@ on:
       - 'app/calyx_orchestrator/github_coding_executor.py'
       - 'app/calyx_orchestrator/github_copilot_cloud_provider.py'
       - 'app/calyx_orchestrator/github_repository_inspector.py'
+      - 'app/calyx_orchestrator/github_agent_lifecycle.py'
+      - 'app/calyx_orchestrator/github_agent_dispatch_store.py'
+      - 'migrations/20260814_phase_2_github_agent_dispatch.sql'
       - 'tests/test_phase_2_github_coding_executor.py'
       - 'tests/test_phase_2_github_copilot_cloud_provider.py'
       - 'tests/test_phase_2_github_repository_inspector.py'
+      - 'tests/test_phase_2_github_agent_lifecycle.py'
+      - 'tests/test_phase_2_github_agent_dispatch_store.py'
       - '.github/workflows/phase-2-github-executor-validation.yml'
   workflow_dispatch:
 
@@ -29,16 +34,24 @@ jobs:
           tests/test_phase_2_github_coding_executor.py
           tests/test_phase_2_github_copilot_cloud_provider.py
           tests/test_phase_2_github_repository_inspector.py
+          tests/test_phase_2_github_agent_lifecycle.py
+          tests/test_phase_2_github_agent_dispatch_store.py
       - run: >-
           python -m compileall -q
           app/calyx_orchestrator/github_coding_executor.py
           app/calyx_orchestrator/github_copilot_cloud_provider.py
           app/calyx_orchestrator/github_repository_inspector.py
+          app/calyx_orchestrator/github_agent_lifecycle.py
+          app/calyx_orchestrator/github_agent_dispatch_store.py
       - run: >-
           ruff check
           app/calyx_orchestrator/github_coding_executor.py
           app/calyx_orchestrator/github_copilot_cloud_provider.py
           app/calyx_orchestrator/github_repository_inspector.py
+          app/calyx_orchestrator/github_agent_lifecycle.py
+          app/calyx_orchestrator/github_agent_dispatch_store.py
           tests/test_phase_2_github_coding_executor.py
           tests/test_phase_2_github_copilot_cloud_provider.py
           tests/test_phase_2_github_repository_inspector.py
+          tests/test_phase_2_github_agent_lifecycle.py
+          tests/test_phase_2_github_agent_dispatch_store.py
