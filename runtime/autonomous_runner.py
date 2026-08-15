@@ -215,7 +215,14 @@ def run_job_logic(job_name: str) -> dict[str, Any]:
 
 
 def execute_next_job() -> dict[str, Any]:
-    """Execute the oldest pending job. Legacy null-name rows are ignored."""
+    """Execute the oldest pending job. Legacy null-name rows are ignored.
+
+    Callers now include both the in-process RuntimeEngine background loop
+    and, once wired to app.main's owner-gated HTTP routes, direct manual
+    invocation. FOR UPDATE SKIP LOCKED prevents two concurrent callers
+    (an overlapping background cycle and a manual API call, or two manual
+    calls) from selecting and executing the same pending row.
+    """
     with psycopg.connect(ensure_database_url()) as conn:
         with conn.cursor() as cur:
             ensure_execution_jobs_table(cur)
@@ -226,6 +233,7 @@ def execute_next_job() -> dict[str, Any]:
                 WHERE status = 'pending'
                   AND job_name IS NOT NULL
                 ORDER BY id ASC
+                FOR UPDATE SKIP LOCKED
                 LIMIT 1
                 """
             )
