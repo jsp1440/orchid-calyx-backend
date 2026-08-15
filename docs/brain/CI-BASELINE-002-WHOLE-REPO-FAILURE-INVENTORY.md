@@ -256,3 +256,59 @@ automatic merge behavior is introduced. All changes are test-file skip
 conditions/mocks or a two-function bug fix in a context-compaction utility
 with no external side effects (pure functions, no I/O, no schema, no auth
 change). Draft PR only.
+
+## Update: the "remaining 14" security/governance review has happened
+
+All three items in "Remaining 14" above were exactly the security-and-
+governance-design work this document explicitly deferred, not something this
+pass could safely resolve on its own. That review is done, in
+[PR #981](https://github.com/jsp1440/orchid-calyx-backend/pull/981)
+(`agent/mission-control-runner-auth-001`):
+
+- **`/api/runner/*` autonomous runtime control surface (9 tests).** Traced
+  the Brain-governed auth model first (Mission Control, admin, owner/operator,
+  and runtime-execution routes all converge on
+  `Depends(verify_owner_or_api_key)`), then deleted
+  `app/routers/mycorrhiza.py` outright and implemented `run-once`,
+  `execute-next`, `execute-all`, `autonomous-cycle`, `start`, `stop`, and
+  `restart` directly on `app.main`'s canonical `app`, all gated by that same
+  dependency, reusing `runtime.autonomous_runner`'s existing job-queue
+  implementation rather than a second copy. `execute-all`/`start`/`stop`/
+  `restart` additionally require `confirm=true` and are evaluated by
+  `constitutional_orchestrator` at `AutonomyLevel.OWNER_APPROVAL_REQUIRED` —
+  which always resolves to `review_required` at that level, so those four
+  stay deterministically blocked pending an actual Brain/owner governance
+  decision. No route was connected without auth; no security posture was
+  weakened to make a route reachable.
+- **`/api/executive/*` auth-contract question (1 test).** Root cause found:
+  two routers claimed the same prefix. `app/routers/executive.py` (this
+  doc's suspect) had no auth; `app/executive_telemetry/routes.py` (owner/
+  API-key gated) happened to shadow it for `/state` only, leaving
+  `/summary`, `/priorities`, `/recommendations`, `/changes`, `/dependencies`,
+  and `/briefing` genuinely live and unauthenticated — a real defect this
+  document's original pass didn't have visibility into. Deleted the
+  insecure router; the authenticated one is now the only implementation.
+- **Audit generation 503s (3 tests).** Confirmed: not environment-only after
+  all, but the same test-infrastructure defect as elsewhere in this repo —
+  these three tests were missing the `monkeypatch.setenv("DATABASE_URL",
+  "")` their own sibling tests in the same file already used to force
+  in-memory mode. Added it.
+
+**Verification note:** re-running the "Remaining 14"/"Before → after" table
+above against this repo's actual `build-087b-validation.yml` CI database
+(`build087`/`build087_validation`, with its documented schema/migration
+provisioning) instead of the sandbox's placeholder `DATABASE_URL` shows a
+different true baseline underneath the 14: several of what this document
+called ENVIRONMENT-ONLY were artifacts of the sandbox connecting to a
+non-existent placeholder database rather than a real reachability gap (e.g.
+`test_build_086c_final_validation.py`, `test_build_086d_review_readiness.py`
+pass cleanly against the real CI database). The remaining true baseline,
+confirmed identical on a clean `main` checkout and on PR #981's branch (zero
+regressions either way): 7 failed / 9 errored, all requiring
+`TEST_DATABASE_URL` specifically or real-Postgres-behavior fixtures that the
+Repository-wide backend suite step deliberately excludes via
+`env -u TEST_DATABASE_URL` — unrelated to any of the three items above.
+
+PR #981 also removes the 9 `--deselect` entries this repository-wide suite
+step carried for these tests, since they now pass for real rather than
+needing to be hidden.
