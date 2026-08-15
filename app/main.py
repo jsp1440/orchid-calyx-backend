@@ -25,6 +25,7 @@ from app.source_registry.routes import router as source_registry_router
 from app.document_import.routes import router as document_import_router
 from app.document_intelligence.routes import router as document_intelligence_router
 from app.semantic_index.routes import router as semantic_index_router
+from app.interaction_discovery.routes import router as interaction_discovery_router
 from app.evidence_retrieval.routes import router as evidence_retrieval_router
 from app.candidate_knowledge.routes import router as candidate_knowledge_router
 from app.evidence_aggregation.routes import router as evidence_aggregation_router
@@ -534,6 +535,7 @@ app.include_router(source_registry_router)
 app.include_router(document_import_router)
 app.include_router(document_intelligence_router)
 app.include_router(semantic_index_router)
+app.include_router(interaction_discovery_router)
 app.include_router(evidence_retrieval_router)
 app.include_router(candidate_knowledge_router)
 app.include_router(evidence_aggregation_router)
