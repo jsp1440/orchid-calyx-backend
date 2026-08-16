@@ -20,7 +20,6 @@ on:
       - "runtime/research_station.py"
       - "app/scientific_inference/**"
       - "app/routers/scientific_analysis.py"
-      - "app/routers/research_station.py"
       - "app/routers/live_mission_control.py"
       - "tests/test_scientific_inference.py"
       - "tests/test_scientific_inference_resolver.py"
@@ -37,7 +36,6 @@ on:
       - "tests/test_calyx_scientific_diagnostics_617.py"
       - "tests/test_calyx_scientific_comparison_617.py"
       - "tests/test_calyx_scientific_result_artifacts_617.py"
-      - "tests/test_calyx_research_station_453.py"
       - "requirements-scientific.txt"
       - "docs/brain/CALYX-SCIENTIFIC-ANALYSIS-617.md"
       - ".github/workflows/calyx-scientific-analysis-617.yml"
@@ -88,7 +86,6 @@ jobs:
           app/scientific_inference/service.py
           app/scientific_inference/canonical_resolver.py
           app/routers/scientific_analysis.py
-          app/routers/research_station.py
           app/routers/live_mission_control.py
           tests/test_scientific_inference.py
           tests/test_scientific_inference_resolver.py
@@ -123,7 +120,6 @@ jobs:
           tests/test_calyx_scientific_diagnostics_617.py
           tests/test_calyx_scientific_comparison_617.py
           tests/test_calyx_scientific_result_artifacts_617.py
-          tests/test_calyx_research_station_453.py
       - name: Permanent scientific-analysis non-authority assertions
         run: |
           python - <<'PY'
