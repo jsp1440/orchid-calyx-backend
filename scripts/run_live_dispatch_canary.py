@@ -29,10 +29,18 @@ GitHub's own issues for this repository (using the same already-loaded
 credential) and refuses if any existing, open or closed, issue title already
 matches `live-dispatch-canary-002` - a real, durable, GitHub-side marker, not
 a database-only one. This deliberately uses the plain repository issues-list
-endpoint rather than the Search API: GitHub's Search API has a known
-compatibility gap with fine-grained personal access tokens scoped to a
-single repository (it can return 422 for such tokens even with correct
-permissions), while the issues-list endpoint does not have this limitation.
+endpoint rather than the Search API: a live run of this workflow (run
+31939565523, 2026-08-16) observed the Search API (`GET /search/issues`)
+return HTTP 422 for this repository's coding-agent credential - that HTTP
+422 is an observed fact from that run's logs. The credential in use was a
+fine-grained personal access token scoped to a single private repository,
+and GitHub has a documented history of Search API incompatibilities with
+that token type; that specific mechanism is the leading hypothesis for the
+422, not a confirmed root cause - it has not been independently reproduced
+or isolated against the Search API in controlled conditions. The fix does
+not depend on which explanation is correct: the issues-list endpoint used
+here does not exhibit the failure observed in that run, regardless of its
+ultimate cause.
 """
 from __future__ import annotations
 

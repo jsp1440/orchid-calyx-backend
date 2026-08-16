@@ -271,10 +271,11 @@ def test_duplicate_check_refuses_closed_when_the_issue_list_call_itself_fails(
     monkeypatch: pytest.MonkeyPatch, prepared_engine, throwaway_database_url: str, capsys
 ) -> None:
     """An inconclusive answer from GitHub (e.g. a transient 5xx, or the
-    known 422 a fine-grained PAT can get from a mismatched endpoint) must
-    not be treated as "no duplicate" - it must refuse just as firmly as a
-    real duplicate would, since proceeding on an uncertain answer is exactly
-    the failure mode this guard exists to prevent."""
+    HTTP 422 actually observed from the Search API in run 31939565523 - see
+    the module docstring for what is fact versus hypothesis about that
+    422's cause) must not be treated as "no duplicate" - it must refuse just
+    as firmly as a real duplicate would, since proceeding on an uncertain
+    answer is exactly the failure mode this guard exists to prevent."""
     inconclusive_transport = FakeTransport([GitHubTransportResponse(502, {"message": "server error"})])
 
     _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
