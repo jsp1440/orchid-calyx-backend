@@ -21,6 +21,13 @@ Credential: read exactly once, only in the execute=true path, only via
 - which itself reads only `CALYX_GITHUB_CODING_AGENT_TOKEN` and fails
 closed with no fallback to any other credential name. This script never
 reads a GitHub token itself and never logs, prints, or serializes one.
+
+Cross-run duplicate protection: the throwaway database is fresh on every
+workflow run, so it cannot remember an earlier live dispatch. Before ever
+creating the canary issue, `_refuse_if_canary_already_dispatched` searches
+GitHub itself (using the same already-loaded credential) for an existing
+`live-dispatch-canary-002` issue, open or closed, and refuses if one is
+found - a real, durable, GitHub-side marker, not a database-only one.
 """
 from __future__ import annotations
 
@@ -78,6 +85,38 @@ MIGRATIONS = [
     REPO_ROOT / "migrations" / "20260814_phase_2_github_agent_dispatch.sql",
     REPO_ROOT / "migrations" / "20260815_phase_2_github_agent_dispatch_branch.sql",
 ]
+
+
+class CanaryAlreadyDispatchedError(RuntimeError):
+    """Raised when GitHub itself already shows evidence of a prior
+    live-dispatch-canary-002 execution. A fresh throwaway database has no
+    memory of an earlier workflow run, so the durable, cross-run duplicate
+    check has to live on GitHub's own side, not in the database."""
+
+
+def _refuse_if_canary_already_dispatched(transport) -> None:
+    """The real GitHub issue this mission creates is always titled
+    f"{mission_id} - {objective[:160]}" (see
+    GitHubCopilotCloudProvider._assign_issue), and mission_id is always
+    exactly JOB_KEY for this canary - so a title search for JOB_KEY is an
+    exact, durable, GitHub-side marker of a prior real dispatch. Checked
+    with state=all so a since-closed canary issue still blocks a repeat.
+    Called before any mutating call in the execute path; any non-200
+    response from this check itself is treated as inconclusive and also
+    refuses, rather than assuming "no duplicate" on an uncertain answer."""
+    query = f'repo:{REPOSITORY} is:issue "{JOB_KEY}" in:title'
+    response = transport.request("GET", "/search/issues", params={"q": query})
+    if response.status_code != 200:
+        raise CanaryAlreadyDispatchedError(
+            f"CANARY_DUPLICATE_CHECK_INCONCLUSIVE:http_{response.status_code}"
+        )
+    payload = response.payload if isinstance(response.payload, dict) else {}
+    total = payload.get("total_count", 0)
+    if total:
+        raise CanaryAlreadyDispatchedError(
+            f"CANARY_ALREADY_DISPATCHED:{total} existing GitHub issue(s) already "
+            f"match {JOB_KEY!r} - refusing to create a second one"
+        )
 
 
 class _NeverCalledTransport:
@@ -205,6 +244,12 @@ def main() -> int:
         try:
             transport = load_coding_agent_transport()
         except GitHubCodingAgentCredentialError as exc:
+            print(f"REFUSED (fail-closed): {exc}", file=sys.stderr)
+            return 1
+
+        try:
+            _refuse_if_canary_already_dispatched(transport)
+        except CanaryAlreadyDispatchedError as exc:
             print(f"REFUSED (fail-closed): {exc}", file=sys.stderr)
             return 1
 

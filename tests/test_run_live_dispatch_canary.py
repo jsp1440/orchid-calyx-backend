@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import subprocess
 import uuid
+from dataclasses import dataclass, field
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -20,9 +21,22 @@ from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.github_proposal_mutation_adapter import (
     GitHubTransportResponse,
+    RequestsGitHubTransport,
 )
 from app.database import Base
 from scripts import run_live_dispatch_canary as canary
+
+NO_DUPLICATE_FOUND = GitHubTransportResponse(200, {"total_count": 0, "items": []})
+
+
+@dataclass
+class FakeTransport:
+    responses: list
+    calls: list = field(default_factory=list)
+
+    def request(self, method, path, *, json_body=None, params=None):
+        self.calls.append((method, path))
+        return self.responses.pop(0)
 
 
 def _create_throwaway_database() -> str:
@@ -51,15 +65,14 @@ def throwaway_database_url():
     _drop_database(url)
 
 
-@pytest.fixture()
-def prepared_engine(throwaway_database_url):
+def _prepare(database_url: str):
     for migration in canary.MIGRATIONS:
         sql = migration.read_text(encoding="utf-8")
-        engine = create_engine(throwaway_database_url)
+        engine = create_engine(database_url)
         with engine.begin() as conn:
             conn.execute(text(sql))
         engine.dispose()
-    engine = create_engine(throwaway_database_url)
+    engine = create_engine(database_url)
     # This throwaway database only needs the default ("public") schema
     # tables the orchestrator itself uses - not the handful of unrelated
     # business-domain tables mapped onto their own dedicated Postgres
@@ -67,9 +80,26 @@ def prepared_engine(throwaway_database_url):
     # CREATE SCHEMA step this test has no reason to replicate.
     public_schema_tables = [table for table in Base.metadata.sorted_tables if table.schema is None]
     Base.metadata.create_all(engine, tables=public_schema_tables, checkfirst=True)
+    return engine
+
+
+@pytest.fixture()
+def prepared_engine(throwaway_database_url):
+    engine = _prepare(throwaway_database_url)
     yield engine
     engine.dispose()
 
+
+def _set_execute_env(monkeypatch: pytest.MonkeyPatch, database_url: str, *, confirmation: str) -> None:
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("CALYX_LIVE_DISPATCH_EXECUTE", "true")
+    monkeypatch.setenv("CALYX_LIVE_DISPATCH_CONFIRMATION", confirmation)
+    monkeypatch.setattr(canary, "_apply_migrations", lambda database_url: None)
+
+
+# ---------------------------------------------------------------------------
+# Enqueue / preflight basics
+# ---------------------------------------------------------------------------
 
 def test_enqueue_mission_selects_exactly_one_candidate_and_is_idempotent(prepared_engine) -> None:
     with Session(prepared_engine) as db:
@@ -119,6 +149,44 @@ def test_dry_run_preflight_never_touches_the_network(prepared_engine) -> None:
     assert result.state == "preflight_ready"
 
 
+# ---------------------------------------------------------------------------
+# A. execute=false never receives or reads the coding-agent secret
+# ---------------------------------------------------------------------------
+
+def test_preflight_path_never_calls_the_credential_loader(
+    monkeypatch: pytest.MonkeyPatch, prepared_engine, throwaway_database_url: str
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", throwaway_database_url)
+    monkeypatch.setenv("CALYX_LIVE_DISPATCH_EXECUTE", "false")
+    monkeypatch.setenv("CALYX_LIVE_DISPATCH_CONFIRMATION", "")
+    monkeypatch.delenv("CALYX_GITHUB_CODING_AGENT_TOKEN", raising=False)
+    monkeypatch.setattr(canary, "_apply_migrations", lambda database_url: None)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("execute=false must never call the credential loader")
+
+    monkeypatch.setattr(canary, "load_coding_agent_transport", fail_if_called)
+
+    assert canary.main() == 0
+
+
+# ---------------------------------------------------------------------------
+# B. missing secret fails closed before any mutating GitHub request
+# ---------------------------------------------------------------------------
+
+def test_main_execute_refuses_without_coding_agent_credential(
+    monkeypatch: pytest.MonkeyPatch, prepared_engine, throwaway_database_url: str
+) -> None:
+    _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
+    monkeypatch.delenv("CALYX_GITHUB_CODING_AGENT_TOKEN", raising=False)
+    # Even a broad/generic token present must not be picked up as a
+    # substitute credential by the real load_coding_agent_transport().
+    monkeypatch.setenv("GITHUB_TOKEN", "should-never-be-used-for-this-path")
+    monkeypatch.setenv("GH_TOKEN", "also-should-never-be-used")
+
+    assert canary.main() == 1
+
+
 def test_main_refuses_execute_without_exact_confirmation_before_any_migration(
     monkeypatch: pytest.MonkeyPatch, throwaway_database_url: str
 ) -> None:
@@ -134,42 +202,21 @@ def test_main_refuses_execute_without_exact_confirmation_before_any_migration(
     assert canary.main() == 1
 
 
-def test_main_execute_refuses_without_coding_agent_credential(
-    monkeypatch: pytest.MonkeyPatch, prepared_engine, throwaway_database_url: str
-) -> None:
-    monkeypatch.setenv("DATABASE_URL", throwaway_database_url)
-    monkeypatch.setenv("CALYX_LIVE_DISPATCH_EXECUTE", "true")
-    monkeypatch.setenv("CALYX_LIVE_DISPATCH_CONFIRMATION", canary.EXECUTE_CONFIRMATION)
-    monkeypatch.delenv("CALYX_GITHUB_CODING_AGENT_TOKEN", raising=False)
-    # Even a broad/generic token present must not be picked up as a
-    # substitute credential by the real load_coding_agent_transport().
-    monkeypatch.setenv("GITHUB_TOKEN", "should-never-be-used-for-this-path")
-    monkeypatch.setattr(canary, "_apply_migrations", lambda database_url: None)
-
-    assert canary.main() == 1
-
+# ---------------------------------------------------------------------------
+# C. a first simulated execution creates the intended single canary mutation
+# ---------------------------------------------------------------------------
 
 def test_main_execute_runs_the_real_dispatch_against_a_fake_transport_only(
     monkeypatch: pytest.MonkeyPatch, prepared_engine, throwaway_database_url: str, capsys
 ) -> None:
-    """Proves the full driver path - enqueue, credential load (faked),
-    execute_one_shot_mission, real convergence-inspection call sequence -
-    reaches a live dispatch shape with zero real network access. Mirrors
-    the fake-transport response sequence already established in
-    test_github_agent_one_shot_operator.py's happy path."""
-    from dataclasses import dataclass, field
-
-    @dataclass
-    class FakeTransport:
-        responses: list
-        calls: list = field(default_factory=list)
-
-        def request(self, method, path, *, json_body=None, params=None):
-            self.calls.append((method, path))
-            return self.responses.pop(0)
-
+    """Proves the full driver path - duplicate check, enqueue, credential
+    load (faked), execute_one_shot_mission, real convergence-inspection
+    call sequence - reaches a live dispatch shape with zero real network
+    access. Mirrors the fake-transport response sequence already
+    established in test_github_agent_one_shot_operator.py's happy path."""
     fake_transport = FakeTransport(
         [
+            NO_DUPLICATE_FOUND,
             GitHubTransportResponse(200, {"object": {"sha": "a" * 40}}),
             GitHubTransportResponse(200, []),
             GitHubTransportResponse(200, []),
@@ -177,17 +224,124 @@ def test_main_execute_runs_the_real_dispatch_against_a_fake_transport_only(
         ]
     )
 
-    monkeypatch.setenv("DATABASE_URL", throwaway_database_url)
-    monkeypatch.setenv("CALYX_LIVE_DISPATCH_EXECUTE", "true")
-    monkeypatch.setenv("CALYX_LIVE_DISPATCH_CONFIRMATION", canary.EXECUTE_CONFIRMATION)
-    monkeypatch.setattr(canary, "_apply_migrations", lambda database_url: None)
+    _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
     monkeypatch.setattr(canary, "load_coding_agent_transport", lambda: fake_transport)
 
     assert canary.main() == 0
     output = capsys.readouterr().out
     assert '"state": "agent_assigned"' in output
+    assert fake_transport.calls[0] == ("GET", "/search/issues")
     assert fake_transport.calls[-1] == ("POST", f"/repos/{canary.REPOSITORY}/issues")
 
+
+# ---------------------------------------------------------------------------
+# D. a second execution against a FRESH EMPTY database, with GitHub remote
+#    state already showing the first canary, is refused before a second
+#    issue is created
+# ---------------------------------------------------------------------------
+
+def test_second_execution_against_a_fresh_database_is_refused_when_github_already_shows_the_canary(
+    monkeypatch: pytest.MonkeyPatch, throwaway_database_url: str, capsys
+) -> None:
+    """Simulates exactly the scenario a second, independent workflow_dispatch
+    trigger produces: a brand-new throwaway database with no memory of the
+    first run, but GitHub itself already has the canary issue from that
+    first run. The durable, GitHub-side duplicate check must catch this
+    even though the local database has no idea a first run ever happened."""
+    engine = _prepare(throwaway_database_url)
+    engine.dispose()
+
+    already_exists_transport = FakeTransport(
+        [GitHubTransportResponse(200, {"total_count": 1, "items": [{"number": 4242, "title": "live-dispatch-canary-002 - ..."}]})]
+    )
+
+    _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
+    monkeypatch.setattr(canary, "load_coding_agent_transport", lambda: already_exists_transport)
+
+    assert canary.main() == 1
+    stderr = capsys.readouterr().err
+    assert "CANARY_ALREADY_DISPATCHED" in stderr
+    # The refusal happened on the duplicate-check GET alone - no POST to
+    # /issues was ever attempted.
+    assert ("POST", f"/repos/{canary.REPOSITORY}/issues") not in already_exists_transport.calls
+    assert already_exists_transport.calls == [("GET", "/search/issues")]
+
+
+def test_duplicate_check_refuses_closed_when_the_search_call_itself_fails(
+    monkeypatch: pytest.MonkeyPatch, prepared_engine, throwaway_database_url: str, capsys
+) -> None:
+    """An inconclusive answer from GitHub (e.g. a transient 5xx) must not be
+    treated as "no duplicate" - it must refuse just as firmly as a real
+    duplicate would, since proceeding on an uncertain answer is exactly the
+    failure mode this guard exists to prevent."""
+    inconclusive_transport = FakeTransport([GitHubTransportResponse(502, {"message": "server error"})])
+
+    _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
+    monkeypatch.setattr(canary, "load_coding_agent_transport", lambda: inconclusive_transport)
+
+    assert canary.main() == 1
+    stderr = capsys.readouterr().err
+    assert "CANARY_DUPLICATE_CHECK_INCONCLUSIVE" in stderr
+    assert ("POST", f"/repos/{canary.REPOSITORY}/issues") not in inconclusive_transport.calls
+
+
+# ---------------------------------------------------------------------------
+# E. simultaneous-run protection is represented correctly in workflow config
+#    (governance/static checks on the YAML and script live in
+#    test_live_dispatch_canary_workflow_governance.py)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# F. generic GITHUB_TOKEN/GH_TOKEN cannot substitute
+#    (covered directly in tests/test_github_agent_credential.py; re-asserted
+#    end-to-end here via test_main_execute_refuses_without_coding_agent_credential)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# G. token values never appear in repr, stdout, stderr, or exceptions
+# ---------------------------------------------------------------------------
+
+def test_real_transport_repr_never_contains_the_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    distinctive_token = "distinctive-marker-9988776655-should-never-leak"
+    monkeypatch.setenv("CALYX_GITHUB_CODING_AGENT_TOKEN", distinctive_token)
+    transport = canary.load_coding_agent_transport()
+    assert isinstance(transport, RequestsGitHubTransport)
+    assert distinctive_token not in repr(transport)
+    assert distinctive_token not in str(transport)
+
+
+def test_no_secret_shaped_content_in_stdout_or_stderr_across_a_full_execute_run(
+    monkeypatch: pytest.MonkeyPatch, prepared_engine, throwaway_database_url: str, capsys
+) -> None:
+    distinctive_token = "distinctive-marker-1122334455-should-never-leak"
+    monkeypatch.setenv("CALYX_GITHUB_CODING_AGENT_TOKEN", distinctive_token)
+    fake_transport = FakeTransport(
+        [
+            NO_DUPLICATE_FOUND,
+            GitHubTransportResponse(200, {"object": {"sha": "a" * 40}}),
+            GitHubTransportResponse(200, []),
+            GitHubTransportResponse(200, []),
+            GitHubTransportResponse(201, {"number": 5555}),
+        ]
+    )
+    _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
+    # Use the REAL load_coding_agent_transport (reads the env var above) but
+    # swap the transport it returns for the fake one, so the credential is
+    # genuinely loaded through the real code path while no real network call
+    # happens.
+    real_loader = canary.load_coding_agent_transport
+    monkeypatch.setattr(canary, "load_coding_agent_transport", lambda: (real_loader(), fake_transport)[1])
+
+    canary.main()
+    captured = capsys.readouterr()
+    assert distinctive_token not in captured.out
+    assert distinctive_token not in captured.err
+
+
+# ---------------------------------------------------------------------------
+# H. automatic merge, deployment, publication, and production KG mutation
+#    remain impossible
+# ---------------------------------------------------------------------------
 
 def test_script_source_contains_no_merge_deploy_or_publication_call() -> None:
     """Static guard on the driver script itself: no code path in it may
@@ -223,36 +377,15 @@ def test_only_run_once_returns_agent_assigned_never_a_merged_or_deployed_state(
     already exercises, that the terminal state the script can print for a
     fresh dispatch is agent_assigned - never anything implying a merge,
     deployment, or publication occurred - and that running main() a second
-    time against the SAME already-consumed program_job_id (simulating a
-    stale rerun instead of a fresh workflow_dispatch) reconciles/observes
-    the existing dispatch rather than ever creating a SECOND GitHub issue.
-    This is the real, documented behavior of GitHubCodingAgentDispatchCycle:
-    once a dispatch record exists, run_once always calls observer.observe()
-    regardless of the execute flag - a second call is not refused outright,
-    but it is structurally incapable of assigning a second issue, because
-    the executor's assignment path is only reached when no dispatch record
-    exists yet. The real, cross-run protection against ever getting a
-    duplicate ephemeral database to retry against comes from the workflow
-    architecture itself (a brand-new throwaway database per
-    workflow_dispatch trigger), not from an in-process refusal."""
-    from dataclasses import dataclass, field
-
-    @dataclass
-    class FakeTransport:
-        responses: list
-        calls: list = field(default_factory=list)
-
-        def request(self, method, path, *, json_body=None, params=None):
-            self.calls.append((method, path))
-            return self.responses.pop(0)
-
-    monkeypatch.setenv("DATABASE_URL", throwaway_database_url)
-    monkeypatch.setenv("CALYX_LIVE_DISPATCH_EXECUTE", "true")
-    monkeypatch.setenv("CALYX_LIVE_DISPATCH_CONFIRMATION", canary.EXECUTE_CONFIRMATION)
-    monkeypatch.setattr(canary, "_apply_migrations", lambda database_url: None)
+    time against the SAME already-consumed program_job_id and dispatch
+    record (simulating a stale rerun instead of a fresh workflow_dispatch)
+    is refused by the duplicate check itself before ever reaching the
+    observe/assignment branches again."""
+    _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
 
     first_transport = FakeTransport(
         [
+            NO_DUPLICATE_FOUND,
             GitHubTransportResponse(200, {"object": {"sha": "a" * 40}}),
             GitHubTransportResponse(200, []),
             GitHubTransportResponse(200, []),
@@ -266,13 +399,14 @@ def test_only_run_once_returns_agent_assigned_never_a_merged_or_deployed_state(
     assert "merged" not in first_output.lower()
     assert "deployed" not in first_output.lower()
 
-    # A second main() call reuses _enqueue_mission's idempotent lookup and
-    # finds the SAME program_job_id and the SAME dispatch record. run_once
-    # takes the observe() branch this time (a GET on the issue timeline),
-    # never the assignment branch again - so whatever it does, it must not
-    # contain a second POST to /issues.
-    second_transport = FakeTransport([GitHubTransportResponse(200, [])])
+    # A second main() call against the SAME database: the duplicate check
+    # this time reports the canary already exists (as it genuinely would,
+    # since the first call really did create it above), so this refuses
+    # before ever reaching a second POST to /issues.
+    second_transport = FakeTransport(
+        [GitHubTransportResponse(200, {"total_count": 1, "items": [{"number": 4242}]})]
+    )
     monkeypatch.setattr(canary, "load_coding_agent_transport", lambda: second_transport)
-    canary.main()
+    assert canary.main() == 1
     issue_creation_calls = [call for call in second_transport.calls if call == ("POST", f"/repos/{canary.REPOSITORY}/issues")]
     assert issue_creation_calls == []
