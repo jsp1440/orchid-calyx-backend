@@ -7,6 +7,13 @@ exposed here.
 """
 
 from .adapters import DOMAIN_ADAPTERS, adapters_by_domain
+from .analytics import (
+    ANALYTICS_ENGINE_VERSION,
+    bounded_snapshot,
+    connected_components,
+    degree,
+    shortest_path,
+)
 from .canonical_taxonomy import (
     ACTIVATED_DOMAINS,
     AUTHORITY_SOURCES,
@@ -91,4 +98,6 @@ __all__ = [
     "build_canonical_registry", "select_canonical_release",
     "classify_mapping", "classify_crosswalk", "detect_conflicts",
     "domain_coverage_report", "graph_completeness_report", "review_queues",
+    "bounded_snapshot", "connected_components", "degree", "shortest_path",
+    "ANALYTICS_ENGINE_VERSION",
 ]
