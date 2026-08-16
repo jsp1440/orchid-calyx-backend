@@ -26,7 +26,7 @@ from app.calyx_orchestrator.github_proposal_mutation_adapter import (
 from app.database import Base
 from scripts import run_live_dispatch_canary as canary
 
-NO_DUPLICATE_FOUND = GitHubTransportResponse(200, {"total_count": 0, "items": []})
+NO_DUPLICATE_FOUND = GitHubTransportResponse(200, [])
 
 
 @dataclass
@@ -230,7 +230,7 @@ def test_main_execute_runs_the_real_dispatch_against_a_fake_transport_only(
     assert canary.main() == 0
     output = capsys.readouterr().out
     assert '"state": "agent_assigned"' in output
-    assert fake_transport.calls[0] == ("GET", "/search/issues")
+    assert fake_transport.calls[0] == ("GET", f"/repos/{canary.REPOSITORY}/issues")
     assert fake_transport.calls[-1] == ("POST", f"/repos/{canary.REPOSITORY}/issues")
 
 
@@ -252,7 +252,7 @@ def test_second_execution_against_a_fresh_database_is_refused_when_github_alread
     engine.dispose()
 
     already_exists_transport = FakeTransport(
-        [GitHubTransportResponse(200, {"total_count": 1, "items": [{"number": 4242, "title": "live-dispatch-canary-002 - ..."}]})]
+        [GitHubTransportResponse(200, [{"number": 4242, "title": "live-dispatch-canary-002 - ..."}])]
     )
 
     _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
@@ -264,16 +264,18 @@ def test_second_execution_against_a_fresh_database_is_refused_when_github_alread
     # The refusal happened on the duplicate-check GET alone - no POST to
     # /issues was ever attempted.
     assert ("POST", f"/repos/{canary.REPOSITORY}/issues") not in already_exists_transport.calls
-    assert already_exists_transport.calls == [("GET", "/search/issues")]
+    assert already_exists_transport.calls == [("GET", f"/repos/{canary.REPOSITORY}/issues")]
 
 
-def test_duplicate_check_refuses_closed_when_the_search_call_itself_fails(
+def test_duplicate_check_refuses_closed_when_the_issue_list_call_itself_fails(
     monkeypatch: pytest.MonkeyPatch, prepared_engine, throwaway_database_url: str, capsys
 ) -> None:
-    """An inconclusive answer from GitHub (e.g. a transient 5xx) must not be
-    treated as "no duplicate" - it must refuse just as firmly as a real
-    duplicate would, since proceeding on an uncertain answer is exactly the
-    failure mode this guard exists to prevent."""
+    """An inconclusive answer from GitHub (e.g. a transient 5xx, or the
+    HTTP 422 actually observed from the Search API in run 31939565523 - see
+    the module docstring for what is fact versus hypothesis about that
+    422's cause) must not be treated as "no duplicate" - it must refuse just
+    as firmly as a real duplicate would, since proceeding on an uncertain
+    answer is exactly the failure mode this guard exists to prevent."""
     inconclusive_transport = FakeTransport([GitHubTransportResponse(502, {"message": "server error"})])
 
     _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
@@ -283,6 +285,67 @@ def test_duplicate_check_refuses_closed_when_the_search_call_itself_fails(
     stderr = capsys.readouterr().err
     assert "CANARY_DUPLICATE_CHECK_INCONCLUSIVE" in stderr
     assert ("POST", f"/repos/{canary.REPOSITORY}/issues") not in inconclusive_transport.calls
+
+
+def test_duplicate_check_paginates_past_a_full_first_page_before_concluding_no_duplicate(
+    monkeypatch: pytest.MonkeyPatch, prepared_engine, throwaway_database_url: str
+) -> None:
+    """A full first page (100 items, none matching) must not be mistaken
+    for the end of the list - the check has to keep paging until a
+    short/empty page proves there is nothing left."""
+    full_page = [{"number": n, "title": f"unrelated issue {n}"} for n in range(100)]
+    short_page = [{"number": 9999, "title": "also unrelated"}]
+    paginating_transport = FakeTransport(
+        [
+            GitHubTransportResponse(200, full_page),
+            GitHubTransportResponse(200, short_page),
+            GitHubTransportResponse(200, {"object": {"sha": "a" * 40}}),
+            GitHubTransportResponse(200, []),
+            GitHubTransportResponse(200, []),
+            GitHubTransportResponse(201, {"number": 9001}),
+        ]
+    )
+    _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
+    monkeypatch.setattr(canary, "load_coding_agent_transport", lambda: paginating_transport)
+
+    assert canary.main() == 0
+    issue_list_calls = [call for call in paginating_transport.calls if call == ("GET", f"/repos/{canary.REPOSITORY}/issues")]
+    assert len(issue_list_calls) == 2
+
+
+def test_duplicate_check_refuses_closed_when_the_page_cap_is_exceeded(
+    monkeypatch: pytest.MonkeyPatch, prepared_engine, throwaway_database_url: str, capsys
+) -> None:
+    """A repository with an implausibly long, always-full issue history
+    must not be paged through forever - and must not be treated as "no
+    duplicate" just because the cap was hit without a match. Refusing is
+    the safe outcome for an inconclusive scan."""
+    full_page = [{"number": n, "title": f"unrelated issue {n}"} for n in range(100)]
+    never_ending_transport = FakeTransport([GitHubTransportResponse(200, full_page)] * canary._DUPLICATE_CHECK_MAX_PAGES)
+
+    _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
+    monkeypatch.setattr(canary, "load_coding_agent_transport", lambda: never_ending_transport)
+
+    assert canary.main() == 1
+    stderr = capsys.readouterr().err
+    assert "CANARY_DUPLICATE_CHECK_INCONCLUSIVE" in stderr
+    assert len(never_ending_transport.calls) == canary._DUPLICATE_CHECK_MAX_PAGES
+
+
+def test_duplicate_check_refuses_closed_on_unexpected_response_shape(
+    monkeypatch: pytest.MonkeyPatch, prepared_engine, throwaway_database_url: str, capsys
+) -> None:
+    """A 200 response whose payload is not a list (e.g. an error body
+    GitHub still returned with a 200 status, or a totally different
+    endpoint shape) must not be treated as an empty list of issues."""
+    malformed_transport = FakeTransport([GitHubTransportResponse(200, {"message": "not a list"})])
+
+    _set_execute_env(monkeypatch, throwaway_database_url, confirmation=canary.EXECUTE_CONFIRMATION)
+    monkeypatch.setattr(canary, "load_coding_agent_transport", lambda: malformed_transport)
+
+    assert canary.main() == 1
+    stderr = capsys.readouterr().err
+    assert "CANARY_DUPLICATE_CHECK_INCONCLUSIVE" in stderr
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +467,7 @@ def test_only_run_once_returns_agent_assigned_never_a_merged_or_deployed_state(
     # since the first call really did create it above), so this refuses
     # before ever reaching a second POST to /issues.
     second_transport = FakeTransport(
-        [GitHubTransportResponse(200, {"total_count": 1, "items": [{"number": 4242}]})]
+        [GitHubTransportResponse(200, [{"number": 4242, "title": "live-dispatch-canary-002 - ..."}])]
     )
     monkeypatch.setattr(canary, "load_coding_agent_transport", lambda: second_transport)
     assert canary.main() == 1
