@@ -5,15 +5,22 @@ enqueue/preflight/execute chain against a real local Postgres database
 with the GitHub transport faked - the same evidence tier established by
 test_github_agent_zero_credential_live_shape_proof.py.
 
-Requires a local PostgreSQL reachable at localhost:5432 with a postgres/
-postgres superuser - the same instance every other canonical test in this
-repository already assumes.
+Requires a local PostgreSQL reachable via the DATABASE_URL already set for
+this test run (tests/conftest.py defaults it to postgresql://test:test@
+localhost:5432/test when unset) - the same connection every other canonical
+test in this repository already assumes. The admin/superuser role and
+password are whatever DATABASE_URL's own credentials are; this module never
+hardcodes a role name, since CI providers name their Postgres superuser
+differently (e.g. BUILD-087B's service container uses "build087", not
+"postgres").
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import uuid
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -39,20 +46,32 @@ class FakeTransport:
         return self.responses.pop(0)
 
 
+def _admin_database_url() -> str:
+    """The already-provisioned connection, repointed at the "postgres"
+    maintenance database every Postgres cluster has by default - reusing
+    whichever role this CI/dev environment actually configured rather than
+    assuming a "postgres" superuser exists under that literal name."""
+    base = os.environ.get("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
+    scheme, netloc, _path, query, fragment = urlsplit(base)
+    return urlunsplit((scheme, netloc, "/postgres", query, fragment))
+
+
 def _create_throwaway_database() -> str:
     name = f"calyx_canary_test_{uuid.uuid4().hex[:12]}"
+    admin_url = _admin_database_url()
     subprocess.run(
-        ["psql", "postgresql://postgres:postgres@localhost:5432/postgres", "-c", f"CREATE DATABASE {name};"],
+        ["psql", admin_url, "-c", f"CREATE DATABASE {name};"],
         check=True,
         capture_output=True,
     )
-    return f"postgresql://postgres:postgres@localhost:5432/{name}"
+    scheme, netloc, _path, query, fragment = urlsplit(admin_url)
+    return urlunsplit((scheme, netloc, f"/{name}", query, fragment))
 
 
 def _drop_database(database_url: str) -> None:
-    name = database_url.rsplit("/", 1)[-1]
+    name = urlsplit(database_url).path.lstrip("/")
     subprocess.run(
-        ["psql", "postgresql://postgres:postgres@localhost:5432/postgres", "-c", f"DROP DATABASE IF EXISTS {name};"],
+        ["psql", _admin_database_url(), "-c", f"DROP DATABASE IF EXISTS {name};"],
         check=False,
         capture_output=True,
     )
