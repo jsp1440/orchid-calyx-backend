@@ -197,6 +197,24 @@ def run_job_logic(job_name: str) -> dict[str, Any]:
                     "message": "Mycorrhiza endpoint cache checked.",
                     "timestamp": utc_now(),
                 }
+            if job_name.startswith("graph_analysis:"):
+                cur.execute(
+                    """
+                    SELECT details FROM oc_admin.ocp_execution_jobs
+                    WHERE job_name = %s
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (job_name,),
+                )
+                row = cur.fetchone()
+                stored_details = row[0] if row and row[0] else {}
+                return {
+                    "module": "graph_analysis",
+                    "job_name": job_name,
+                    "status": "recorded",
+                    **stored_details,
+                    "timestamp": utc_now(),
+                }
             if job_name.startswith("job_"):
                 return {
                     "module": "downstream_executor",
