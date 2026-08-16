@@ -1,0 +1,219 @@
+name: CALYX Scientific Analysis 617
+
+on:
+  pull_request:
+    paths:
+      - "runtime/scientific_analysis.py"
+      - "runtime/scientific_analysis_history.py"
+      - "runtime/scientific_export_bundle.py"
+      - "runtime/scientific_export_history.py"
+      - "runtime/scientific_uncertainty.py"
+      - "runtime/scientific_uncertainty_artifacts.py"
+      - "runtime/scientific_runtime_readiness.py"
+      - "runtime/research_analysis_workflow.py"
+      - "runtime/scientific_transforms.py"
+      - "runtime/scientific_filters.py"
+      - "runtime/scientific_dataset_snapshots.py"
+      - "runtime/scientific_diagnostics.py"
+      - "runtime/scientific_comparison.py"
+      - "runtime/scientific_result_artifacts.py"
+      - "runtime/research_station.py"
+      - "app/scientific_inference/**"
+      - "app/routers/scientific_analysis.py"
+      - "app/routers/research_station.py"
+      - "app/routers/live_mission_control.py"
+      - "tests/test_scientific_inference.py"
+      - "tests/test_scientific_inference_resolver.py"
+      - "tests/test_calyx_scientific_analysis_617.py"
+      - "tests/test_calyx_scientific_analysis_history_617.py"
+      - "tests/test_calyx_scientific_export_bundle_617.py"
+      - "tests/test_calyx_scientific_export_history_617.py"
+      - "tests/test_calyx_scientific_export_routes_617.py"
+      - "tests/test_calyx_scientific_uncertainty_617.py"
+      - "tests/test_calyx_scientific_uncertainty_artifacts_617.py"
+      - "tests/test_calyx_scientific_runtime_readiness_617.py"
+      - "tests/test_calyx_analysis_plan_workflow_617.py"
+      - "tests/test_calyx_scientific_dataset_snapshots_617.py"
+      - "tests/test_calyx_scientific_diagnostics_617.py"
+      - "tests/test_calyx_scientific_comparison_617.py"
+      - "tests/test_calyx_scientific_result_artifacts_617.py"
+      - "tests/test_calyx_research_station_453.py"
+      - "requirements-scientific.txt"
+      - "docs/brain/CALYX-SCIENTIFIC-ANALYSIS-617.md"
+      - ".github/workflows/calyx-scientific-analysis-617.yml"
+  workflow_dispatch:
+
+jobs:
+  scientific-analysis:
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install base plus isolated Scientific Computing dependencies
+        run: pip install -r requirements-scientific.txt pytest httpx ruff
+      - name: Verify Scientific Computing dependency contract
+        run: |
+          python - <<'PY'
+          from importlib.metadata import version
+          from pathlib import Path
+          scientific = Path('requirements-scientific.txt').read_text()
+          assert '-r requirements.txt' in scientific
+          assert 'scipy==1.18.0' in scientific
+          assert version('scipy') == '1.18.0'
+          PY
+      - name: Compile analysis, inference, and Research Station surfaces
+        run: >-
+          python -m py_compile
+          runtime/scientific_analysis.py
+          runtime/scientific_analysis_history.py
+          runtime/scientific_export_bundle.py
+          runtime/scientific_export_history.py
+          runtime/scientific_uncertainty.py
+          runtime/scientific_uncertainty_artifacts.py
+          runtime/scientific_runtime_readiness.py
+          runtime/research_analysis_workflow.py
+          runtime/scientific_transforms.py
+          runtime/scientific_filters.py
+          runtime/scientific_dataset_snapshots.py
+          runtime/scientific_diagnostics.py
+          runtime/scientific_comparison.py
+          runtime/scientific_result_artifacts.py
+          runtime/research_station.py
+          app/scientific_inference/__init__.py
+          app/scientific_inference/models.py
+          app/scientific_inference/service.py
+          app/scientific_inference/canonical_resolver.py
+          app/routers/scientific_analysis.py
+          app/routers/research_station.py
+          app/routers/live_mission_control.py
+          tests/test_scientific_inference.py
+          tests/test_scientific_inference_resolver.py
+          tests/test_calyx_scientific_analysis_617.py
+          tests/test_calyx_scientific_analysis_history_617.py
+          tests/test_calyx_scientific_export_bundle_617.py
+          tests/test_calyx_scientific_export_history_617.py
+          tests/test_calyx_scientific_export_routes_617.py
+          tests/test_calyx_scientific_uncertainty_617.py
+          tests/test_calyx_scientific_uncertainty_artifacts_617.py
+          tests/test_calyx_scientific_runtime_readiness_617.py
+          tests/test_calyx_analysis_plan_workflow_617.py
+          tests/test_calyx_scientific_dataset_snapshots_617.py
+          tests/test_calyx_scientific_diagnostics_617.py
+          tests/test_calyx_scientific_comparison_617.py
+          tests/test_calyx_scientific_result_artifacts_617.py
+      - name: Deterministic analysis, inference, and Research Station regressions
+        run: >-
+          python -m pytest -q
+          tests/test_scientific_inference.py
+          tests/test_scientific_inference_resolver.py
+          tests/test_calyx_scientific_analysis_617.py
+          tests/test_calyx_scientific_analysis_history_617.py
+          tests/test_calyx_scientific_export_bundle_617.py
+          tests/test_calyx_scientific_export_history_617.py
+          tests/test_calyx_scientific_export_routes_617.py
+          tests/test_calyx_scientific_uncertainty_617.py
+          tests/test_calyx_scientific_uncertainty_artifacts_617.py
+          tests/test_calyx_scientific_runtime_readiness_617.py
+          tests/test_calyx_analysis_plan_workflow_617.py
+          tests/test_calyx_scientific_dataset_snapshots_617.py
+          tests/test_calyx_scientific_diagnostics_617.py
+          tests/test_calyx_scientific_comparison_617.py
+          tests/test_calyx_scientific_result_artifacts_617.py
+          tests/test_calyx_research_station_453.py
+      - name: Permanent scientific-analysis non-authority assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          analysis = Path('runtime/scientific_analysis.py').read_text()
+          history = Path('runtime/scientific_analysis_history.py').read_text()
+          exports = Path('runtime/scientific_export_bundle.py').read_text()
+          export_history = Path('runtime/scientific_export_history.py').read_text()
+          uncertainty = Path('runtime/scientific_uncertainty.py').read_text()
+          uncertainty_artifacts = Path('runtime/scientific_uncertainty_artifacts.py').read_text()
+          runtime_readiness = Path('runtime/scientific_runtime_readiness.py').read_text()
+          workflow = Path('runtime/research_analysis_workflow.py').read_text()
+          transforms = Path('runtime/scientific_transforms.py').read_text()
+          filters = Path('runtime/scientific_filters.py').read_text()
+          snapshots = Path('runtime/scientific_dataset_snapshots.py').read_text()
+          diagnostics = Path('runtime/scientific_diagnostics.py').read_text()
+          comparison = Path('runtime/scientific_comparison.py').read_text()
+          result_artifacts = Path('runtime/scientific_result_artifacts.py').read_text()
+          inference_models = Path('app/scientific_inference/models.py').read_text()
+          inference_service = Path('app/scientific_inference/service.py').read_text()
+          inference_resolver = Path('app/scientific_inference/canonical_resolver.py').read_text()
+          text = '\n'.join((analysis, history, exports, export_history, uncertainty, uncertainty_artifacts, runtime_readiness, workflow, transforms, filters, snapshots, diagnostics, comparison, result_artifacts, inference_models, inference_service, inference_resolver))
+          required = (
+              '"arbitrary_code_execution": False',
+              '"autonomous_scientific_publication": False',
+              '"knowledge_graph_mutation_authorized": False',
+              '"interpretation_generated": False',
+              '"human_review_required_for_scientific_conclusion": True',
+              '"scientific_publication_authorized": False',
+              '"method_auto_selected": False',
+              '"exact_raw_dataset_checksum_required": True',
+              '"derived_variable_units_required": True',
+              '"governed_transform_execution_enabled": True',
+              '"governed_row_filter_execution_enabled": True',
+              '"freeform_filter_expression_allowed": False',
+              '"implicit_outlier_removal_allowed": False',
+              '"excluded_row_identity_required": True',
+              '"filter_reason_code_required": True',
+              '"registered_dataset_checksum_required": True',
+              '"private_snapshot_storage": True',
+              '"diagnostics_are_descriptive_not_inferential": True',
+              '"model_quality_judgment_generated": False',
+              '"comparison_is_descriptive_not_model_selection": True',
+              '"scientific_superiority_determined": False',
+              '"figure_specs_are_rendering_instructions_not_interpretation": True',
+              '"scientific_interpretation_generated": False',
+              '"p_value_generated": False',
+              '"analysis_plan_method_registered": False',
+              '"mean_ci_live_method_registered": False',
+              '"readiness_is_dependency_state_not_publication_authority": True',
+              '"method_registered": False',
+              '"significance_coloring_allowed": False',
+              '"chronology_inferred": False',
+              '"results_included": False',
+              '"mutation_authorized": False',
+              '"deletion_authorized": False',
+              '"preferred_analysis": None',
+              '"raw_dataset_rows_included": False',
+              '"diagnostic_payload_included": False',
+              '"private_research_artifact": True',
+              '"export_is_not_publication": True',
+              '"bundle_payloads_included": False',
+              '"public_sharing_authorized": False',
+              '"integrity_verified": True',
+              'reviewed_conclusion: bool = False',
+              'published: bool = False',
+              'scientific_publication_authorized: bool = False',
+              'knowledge_graph_mutation_authorized: bool = False',
+              'confidence_is_probability: bool = False',
+              'confidence_calibrated: bool = False',
+              '"confidence_is_probability": False',
+              '"confidence_calibrated": False',
+              'HEURISTIC_EVIDENCE_SUPPORT_INDEX',
+              '"inference_is_not_source_evidence": True',
+              'oc_candidate_knowledge.aggregate_versions',
+              'oc_candidate_knowledge.aggregate_confidence_assessments',
+              'oc_candidate_knowledge.aggregate_evidence_links',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'missing scientific analysis governance assertion(s): {missing}')
+          forbidden = (
+              'subprocess.', 'os.system(', 'eval(', 'exec(',
+              'INSERT INTO oc_graph', 'UPDATE oc_graph', 'DELETE FROM oc_graph', 'TRUNCATE oc_graph',
+          )
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise SystemExit(f'forbidden analysis execution/mutation surface present: {present}')
+          PY
+      - name: Changed-surface Ruff and diff hygiene
+        run: |
+          python -m ruff check --ignore UP037 runtime/scientific_analysis.py runtime/scientific_analysis_history.py runtime/scientific_export_bundle.py runtime/scientific_export_history.py runtime/scientific_uncertainty.py runtime/scientific_uncertainty_artifacts.py runtime/scientific_runtime_readiness.py runtime/research_analysis_workflow.py runtime/scientific_transforms.py runtime/scientific_filters.py runtime/scientific_dataset_snapshots.py runtime/scientific_diagnostics.py runtime/scientific_comparison.py runtime/scientific_result_artifacts.py app/scientific_inference/__init__.py app/scientific_inference/models.py app/scientific_inference/service.py app/scientific_inference/canonical_resolver.py app/routers/scientific_analysis.py tests/test_scientific_inference.py tests/test_scientific_inference_resolver.py tests/test_calyx_scientific_analysis_617.py tests/test_calyx_scientific_analysis_history_617.py tests/test_calyx_scientific_export_bundle_617.py tests/test_calyx_scientific_export_history_617.py tests/test_calyx_scientific_export_routes_617.py tests/test_calyx_scientific_uncertainty_617.py tests/test_calyx_scientific_uncertainty_artifacts_617.py tests/test_calyx_scientific_runtime_readiness_617.py tests/test_calyx_analysis_plan_workflow_617.py tests/test_calyx_scientific_dataset_snapshots_617.py tests/test_calyx_scientific_diagnostics_617.py tests/test_calyx_scientific_comparison_617.py tests/test_calyx_scientific_result_artifacts_617.py
+          git diff --check
