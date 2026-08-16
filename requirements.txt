@@ -16,3 +16,4 @@ requests
 certifi
 cryptography>=44,<46
 httpx
+PyYAML>=6
