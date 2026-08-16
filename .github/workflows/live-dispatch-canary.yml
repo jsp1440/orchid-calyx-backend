@@ -1,0 +1,61 @@
+name: Live Dispatch Canary (manual, one-shot)
+
+# workflow_dispatch ONLY - no schedule, no push/pull_request trigger, no
+# other automatic entry point of any kind. This workflow exists to run the
+# single live-dispatch-canary-002 mission defined in Orchid-Continuum-Brain
+# OPS-0012, exactly once per explicit manual trigger, never automatically.
+#
+# Two modes, both selected by hand at trigger time:
+#   execute=false (default) - preflight only. Enqueues the mission, runs the
+#     real admission/preflight chain, and stops. The GitHub transport passed
+#     in this mode raises if it is ever called - proof, not just a claim,
+#     that a dry run cannot reach the network.
+#   execute=true - the real dispatch, gated by the exact confirmation input
+#     matching EXECUTE_CONFIRMATION AND the CALYX_GITHUB_CODING_AGENT_TOKEN
+#     repository secret being configured. Missing either one fails the run
+#     closed before any database or GitHub API call.
+#
+# Every run provisions its own throwaway PostgreSQL database local to the
+# runner (destroyed with the runner at job end) and applies only the two
+# named dispatch-table migrations to it - never a persistent or production
+# database. A second dispatch requires a second, separate, explicit manual
+# trigger - this workflow never loops and never retries automatically.
+
+on:
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: "true = run the real dispatch. false (default) = preflight only, network calls forbidden."
+        type: boolean
+        default: false
+      confirmation:
+        description: "Required only when execute=true. Must exactly equal DISPATCH_GITHUB_CODING_AGENT."
+        type: string
+        default: ""
+
+jobs:
+  live-dispatch-canary:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/calyx_live_dispatch_canary
+      PYTHONPATH: .
+      CALYX_LIVE_DISPATCH_EXECUTE: ${{ inputs.execute }}
+      CALYX_LIVE_DISPATCH_CONFIRMATION: ${{ inputs.confirmation }}
+      # Empty/unset when the secret does not exist - the driver script and
+      # the credential loader both fail closed on that, by design, rather
+      # than falling back to any other credential.
+      CALYX_GITHUB_CODING_AGENT_TOKEN: ${{ secrets.CALYX_GITHUB_CODING_AGENT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Start a throwaway local PostgreSQL and create the database
+        run: |
+          sudo systemctl start postgresql.service
+          sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+          sudo -u postgres createdb calyx_live_dispatch_canary
+      - run: pip install -r requirements.txt
+      - name: Run the one-shot canary driver (preflight or execute, per input)
+        run: python scripts/run_live_dispatch_canary.py
