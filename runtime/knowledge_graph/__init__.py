@@ -7,6 +7,11 @@ exposed here.
 """
 
 from .adapters import DOMAIN_ADAPTERS, adapters_by_domain
+from .analysis_runs import (
+    GRAPH_ANALYSIS_JOB_PREFIX,
+    graph_analysis_dedup_key,
+    record_graph_analysis_run,
+)
 from .analytics import (
     ANALYTICS_ENGINE_VERSION,
     bounded_snapshot,
@@ -100,4 +105,5 @@ __all__ = [
     "domain_coverage_report", "graph_completeness_report", "review_queues",
     "bounded_snapshot", "connected_components", "degree", "shortest_path",
     "ANALYTICS_ENGINE_VERSION",
+    "record_graph_analysis_run", "graph_analysis_dedup_key", "GRAPH_ANALYSIS_JOB_PREFIX",
 ]
