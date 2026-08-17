@@ -198,6 +198,7 @@ def genus_media(
 
     items: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
+    seen_species: set[str] = set()
     for row in rows:
         text_fields = " ".join(
             str(row.get(key) or "")
@@ -218,7 +219,12 @@ def genus_media(
             continue
         if url in seen_urls:
             continue
+        species_key = str(row.get("scientific_name") or "").strip().lower()
+        if species_key and species_key in seen_species:
+            continue
         seen_urls.add(url)
+        if species_key:
+            seen_species.add(species_key)
 
         source_name = str(row.get("image_source") or "").strip()
         items.append(
