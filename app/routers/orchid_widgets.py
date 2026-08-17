@@ -31,10 +31,19 @@ BLOCKED_MEDIA_RE = re.compile(
 
 
 def _allow_frontend_origin(request: Request, response: Response) -> None:
-    """Allow the public Orchid Continuum frontend to read this JSON response."""
+    """Allow the public Orchid Continuum frontend to read this JSON response.
+
+    The frontend's shared fetch transport sends every request to a Calyx
+    origin with `credentials: 'include'` (needed elsewhere for the owner
+    session cookie), even to these public, unauthenticated read endpoints.
+    Per the Fetch/CORS spec, a credentialed request's response must declare
+    Access-Control-Allow-Credentials: true or the browser discards it
+    entirely, regardless of Access-Control-Allow-Origin being correct.
+    """
     origin = request.headers.get("origin")
     if origin in _ALLOWED_MEDIA_ORIGINS:
         response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Vary"] = "Origin"
 
 
