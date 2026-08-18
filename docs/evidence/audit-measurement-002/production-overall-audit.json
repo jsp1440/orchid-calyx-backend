@@ -1,6 +1,6 @@
 {
   "contract": "OCU-PRODUCTION-OVERALL-AUDIT-EVIDENCE-001",
-  "captured_at": "2026-08-18T20:16:28.549930+00:00",
+  "captured_at": "2026-08-18T20:18:36.146103+00:00",
   "target": "\r\nhttps://orchid-calyx-backend.onrender.com",
   "expected_commit": "34352e392df8c5c55c47a6145f7ba580de7e9db6",
   "steps": [
@@ -356,7 +356,7 @@
         "source_warnings": []
       }
     },
-    "generated_at": "2026-08-18T20:16:30.476584+00:00"
+    "generated_at": "2026-08-18T20:18:37.765659+00:00"
   },
   "metric_summary": {
     "taxonomy": {
@@ -618,8 +618,8 @@
   },
   "audit": {
     "status": 200,
-    "audit_id": "AUD-84413E5E9BF2",
-    "generated_at": "2026-08-18T20:16:36.508698+00:00",
+    "audit_id": "AUD-35C886574426",
+    "generated_at": "2026-08-18T20:18:42.978796+00:00",
     "confidence": "medium",
     "data_freshness": "live_query",
     "record_counts": {
@@ -751,6 +751,6 @@
     "measured-present": 2,
     "unmeasured": 8
   },
-  "completed_at": "2026-08-18T20:16:36.618803+00:00",
+  "completed_at": "2026-08-18T20:18:43.102617+00:00",
   "failures": []
 }

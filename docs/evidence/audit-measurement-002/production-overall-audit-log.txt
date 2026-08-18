@@ -4,7 +4,7 @@ served commit     : 34352e392df8c5c55c47a6145f7ba580de7e9db6
 expected commit   : 34352e392df8c5c55c47a6145f7ba580de7e9db6
 release match     : True
 corrected logic   : serving_corrected_logic
-audit id          : AUD-84413E5E9BF2
+audit id          : AUD-35C886574426
 
 relationship states:
   taxonomy_to_images                     measured-present   (was: missing)

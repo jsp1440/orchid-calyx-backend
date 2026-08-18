@@ -1,7 +1,7 @@
 {
   "contract": "OCU-PRODUCTION-RELATIONSHIP-MEASUREMENT-001",
-  "captured_at": "2026-08-18T20:16:36.923388+00:00",
-  "completed_at": "2026-08-18T20:16:48.969883+00:00",
+  "captured_at": "2026-08-18T20:18:43.726325+00:00",
+  "completed_at": "2026-08-18T20:18:55.773754+00:00",
   "access": "read_only_transaction_rolled_back",
   "note": "Executed against the production database using the measurement paths added in this branch. The deployed release does not yet carry them; this records what the audit would report once it does.",
   "relationships": {
@@ -207,9 +207,23 @@
     },
     "taxonomy_to_literature": {
       "relationship": "taxonomy_to_literature",
-      "state": "unavailable",
-      "detail": "oc_taxonomy.taxa and oc_graph.taxon_literature_edges exist but share no join this audit recognises: no taxon id foreign key and no scientific-name column pair.",
-      "interpretation": "This audit could not measure the relationship. State is unknown; this is not a finding that the relationship is absent.",
+      "state": "present",
+      "measurement": "relational_linkage_by_name",
+      "taxonomy_table": "oc_taxonomy.taxa",
+      "object_table": "oc_graph.taxon_literature_edges",
+      "join": "oc_graph.taxon_literature_edges.scientific_name -> oc_taxonomy.taxa.canonical_name",
+      "value_column": null,
+      "total_taxa": 31840,
+      "total_object_rows": 35,
+      "rows_carrying_relationship": 35,
+      "rows_matching_taxonomy": 29,
+      "broken_taxonomy_targets": 6,
+      "taxa_reached": 15,
+      "taxa_reached_percentage": 0.0471,
+      "source_warnings": [
+        "oc_literature.papers exists with approximately 408 row(s), far more than the measured source (35 row(s)); this relationship measurement may be reading a non-authoritative relation.",
+        "public.research_documents exists with approximately 6,725 row(s), far more than the measured source (35 row(s)); this relationship measurement may be reading a non-authoritative relation."
+      ],
       "discovery": {
         "taxonomy_candidates": [
           {
@@ -276,47 +290,24 @@
           }
         ]
       },
-      "taxonomy_table": "oc_taxonomy.taxa",
-      "object_table": "oc_graph.taxon_literature_edges",
-      "taxonomy_columns": [
-        "accepted_taxon_id",
-        "canonical_name",
-        "created_at",
-        "family",
-        "genus",
-        "infraspecific_epithet",
-        "ingest_run_id",
-        "normalized_name",
-        "raw_payload",
-        "source_name",
-        "source_record_id",
-        "species",
-        "taxon_id",
-        "taxon_rank",
-        "taxonomic_status",
-        "updated_at"
-      ],
-      "object_columns": [
-        "citation_hash",
-        "created_at",
-        "doi",
-        "edge_strength",
-        "publication_year",
-        "scientific_name",
-        "taxon_edge_id",
-        "title",
-        "trust_score"
-      ],
-      "taxonomy_key_found": "taxon_id",
-      "taxonomy_name_column_found": null,
-      "object_key_found": null,
-      "object_name_column_found": "scientific_name"
+      "interpretation": "Relational linkage only. A populated join column is not the same fact as a published Knowledge Graph edge, and neither is a claim about whether the underlying biology has been studied."
     },
     "taxonomy_to_pollinators": {
       "relationship": "taxonomy_to_pollinators",
-      "state": "unavailable",
-      "detail": "oc_taxonomy.taxa and oc_interactions.orchid_interaction_edges exist but share no join this audit recognises: no taxon id foreign key and no scientific-name column pair.",
-      "interpretation": "This audit could not measure the relationship. State is unknown; this is not a finding that the relationship is absent.",
+      "state": "absent",
+      "measurement": "relational_linkage_by_id",
+      "taxonomy_table": "oc_taxonomy.taxa",
+      "object_table": "oc_interactions.orchid_interaction_edges",
+      "join": "oc_interactions.orchid_interaction_edges.orchid_taxonomy_id -> oc_taxonomy.taxa.taxon_id",
+      "value_column": null,
+      "total_taxa": 31840,
+      "total_object_rows": 23,
+      "rows_carrying_relationship": 23,
+      "rows_matching_taxonomy": 0,
+      "broken_taxonomy_targets": 23,
+      "taxa_reached": 0,
+      "taxa_reached_percentage": 0.0,
+      "source_warnings": [],
       "discovery": {
         "taxonomy_candidates": [
           {
@@ -365,54 +356,24 @@
           }
         ]
       },
-      "taxonomy_table": "oc_taxonomy.taxa",
-      "object_table": "oc_interactions.orchid_interaction_edges",
-      "taxonomy_columns": [
-        "accepted_taxon_id",
-        "canonical_name",
-        "created_at",
-        "family",
-        "genus",
-        "infraspecific_epithet",
-        "ingest_run_id",
-        "normalized_name",
-        "raw_payload",
-        "source_name",
-        "source_record_id",
-        "species",
-        "taxon_id",
-        "taxon_rank",
-        "taxonomic_status",
-        "updated_at"
-      ],
-      "object_columns": [
-        "confidence_score",
-        "created_at",
-        "edge_id",
-        "evidence_citation",
-        "evidence_json",
-        "evidence_source",
-        "interaction_focus",
-        "interaction_group",
-        "interaction_type",
-        "orchid_scientific_name",
-        "orchid_taxonomy_id",
-        "partner_kingdom_guess",
-        "partner_taxon_id",
-        "partner_taxon_name",
-        "queue_id",
-        "raw_result_id"
-      ],
-      "taxonomy_key_found": "taxon_id",
-      "taxonomy_name_column_found": null,
-      "object_key_found": null,
-      "object_name_column_found": "orchid_scientific_name"
+      "interpretation": "Relational linkage only. A populated join column is not the same fact as a published Knowledge Graph edge, and neither is a claim about whether the underlying biology has been studied."
     },
     "taxonomy_to_mycorrhiza": {
       "relationship": "taxonomy_to_mycorrhiza",
-      "state": "unavailable",
-      "detail": "oc_taxonomy.taxa and oc_mycorrhiza.orchid_fungal_associations exist but share no join this audit recognises: no taxon id foreign key and no scientific-name column pair.",
-      "interpretation": "This audit could not measure the relationship. State is unknown; this is not a finding that the relationship is absent.",
+      "state": "absent",
+      "measurement": "relational_linkage_by_id",
+      "taxonomy_table": "oc_taxonomy.taxa",
+      "object_table": "oc_mycorrhiza.orchid_fungal_associations",
+      "join": "oc_mycorrhiza.orchid_fungal_associations.orchid_taxonomy_id -> oc_taxonomy.taxa.taxon_id",
+      "value_column": null,
+      "total_taxa": 31840,
+      "total_object_rows": 462,
+      "rows_carrying_relationship": 2,
+      "rows_matching_taxonomy": 0,
+      "broken_taxonomy_targets": 2,
+      "taxa_reached": 0,
+      "taxa_reached_percentage": 0.0,
+      "source_warnings": [],
       "discovery": {
         "taxonomy_candidates": [
           {
@@ -467,68 +428,7 @@
           }
         ]
       },
-      "taxonomy_table": "oc_taxonomy.taxa",
-      "object_table": "oc_mycorrhiza.orchid_fungal_associations",
-      "taxonomy_columns": [
-        "accepted_taxon_id",
-        "canonical_name",
-        "created_at",
-        "family",
-        "genus",
-        "infraspecific_epithet",
-        "ingest_run_id",
-        "normalized_name",
-        "raw_payload",
-        "source_name",
-        "source_record_id",
-        "species",
-        "taxon_id",
-        "taxon_rank",
-        "taxonomic_status",
-        "updated_at"
-      ],
-      "object_columns": [
-        "adult_root_confirmed",
-        "association_id",
-        "association_type",
-        "citation",
-        "confidence_band",
-        "confidence_score",
-        "created_at",
-        "detection_method",
-        "document_id",
-        "doi",
-        "eco_evidence_code",
-        "evidence_count",
-        "evidence_source",
-        "evidence_type",
-        "fungal_name",
-        "fungal_taxon_id",
-        "geographic_context",
-        "germination_confirmed",
-        "life_stage",
-        "notes",
-        "orchid_genus",
-        "orchid_scientific_name",
-        "orchid_species",
-        "orchid_taxonomy_id",
-        "peloton_stage",
-        "promoted_at",
-        "promotion_method",
-        "protocorm_confirmed",
-        "reviewed",
-        "source_reference",
-        "source_staging_id",
-        "specificity",
-        "updated_at",
-        "valid_from",
-        "valid_to",
-        "verified_by"
-      ],
-      "taxonomy_key_found": "taxon_id",
-      "taxonomy_name_column_found": null,
-      "object_key_found": null,
-      "object_name_column_found": "orchid_scientific_name"
+      "interpretation": "Relational linkage only. A populated join column is not the same fact as a published Knowledge Graph edge, and neither is a claim about whether the underlying biology has been studied."
     },
     "taxonomy_to_habitat": {
       "relationship": "taxonomy_to_habitat",
@@ -658,14 +558,21 @@
     }
   },
   "state_totals": {
-    "present": 4,
-    "absent": 1,
-    "unavailable": 3
+    "present": 5,
+    "absent": 3
   },
   "source_warnings": [
     {
       "relationship": "taxonomy_to_occurrences",
       "warning": "public.orchid_occurrence exists with approximately 580,612 row(s), far more than the measured source (26 row(s)); this relationship measurement may be reading a non-authoritative relation."
+    },
+    {
+      "relationship": "taxonomy_to_literature",
+      "warning": "oc_literature.papers exists with approximately 408 row(s), far more than the measured source (35 row(s)); this relationship measurement may be reading a non-authoritative relation."
+    },
+    {
+      "relationship": "taxonomy_to_literature",
+      "warning": "public.research_documents exists with approximately 6,725 row(s), far more than the measured source (35 row(s)); this relationship measurement may be reading a non-authoritative relation."
     }
   ]
 }
