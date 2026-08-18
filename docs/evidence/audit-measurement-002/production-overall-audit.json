@@ -1,6 +1,6 @@
 {
   "contract": "OCU-PRODUCTION-OVERALL-AUDIT-EVIDENCE-001",
-  "captured_at": "2026-08-18T20:05:01.497164+00:00",
+  "captured_at": "2026-08-18T20:12:27.456362+00:00",
   "target": "\r\nhttps://orchid-calyx-backend.onrender.com",
   "expected_commit": "34352e392df8c5c55c47a6145f7ba580de7e9db6",
   "steps": [
@@ -321,7 +321,7 @@
       },
       "runtime_jobs": {
         "table": "oc_admin.ocp_execution_jobs",
-        "count": 12192,
+        "count": 12194,
         "available": true,
         "checked": [
           "oc_admin.ocp_execution_jobs"
@@ -356,7 +356,7 @@
         "source_warnings": []
       }
     },
-    "generated_at": "2026-08-18T20:05:07.276874+00:00"
+    "generated_at": "2026-08-18T20:12:33.109760+00:00"
   },
   "metric_summary": {
     "taxonomy": {
@@ -575,7 +575,7 @@
     },
     "runtime_jobs": {
       "selected_source": "oc_admin.ocp_execution_jobs",
-      "count": 12192,
+      "count": 12194,
       "available": true,
       "candidates_probed": [
         {
@@ -618,8 +618,8 @@
   },
   "audit": {
     "status": 200,
-    "audit_id": "AUD-7DD6BBD3CD36",
-    "generated_at": "2026-08-18T20:05:14.288618+00:00",
+    "audit_id": "AUD-9FE579807B2D",
+    "generated_at": "2026-08-18T20:12:51.176344+00:00",
     "confidence": "medium",
     "data_freshness": "live_query",
     "record_counts": {
@@ -629,7 +629,7 @@
       "literature": 408,
       "relationships": 70609,
       "mycorrhiza": 1,
-      "runtime_jobs": 12192,
+      "runtime_jobs": 12194,
       "runtime_actions": 668
     },
     "metric_source_warnings": [
@@ -751,6 +751,6 @@
     "measured-present": 2,
     "unmeasured": 8
   },
-  "completed_at": "2026-08-18T20:05:14.416542+00:00",
+  "completed_at": "2026-08-18T20:12:51.328383+00:00",
   "failures": []
 }

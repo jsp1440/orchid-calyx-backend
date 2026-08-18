@@ -1,0 +1,538 @@
+{
+  "contract": "OCU-PRODUCTION-RELATIONSHIP-MEASUREMENT-001",
+  "captured_at": "2026-08-18T20:12:51.658180+00:00",
+  "completed_at": "2026-08-18T20:13:03.545069+00:00",
+  "access": "read_only_transaction_rolled_back",
+  "note": "Executed against the production database using the measurement paths added in this branch. The deployed release does not yet carry them; this records what the audit would report once it does.",
+  "relationships": {
+    "taxonomy_to_occurrences": {
+      "relationship": "taxonomy_to_occurrences",
+      "state": "present",
+      "measurement": "relational_linkage_by_id",
+      "taxonomy_table": "oc_taxonomy.taxa",
+      "object_table": "oc_atlas.occurrences",
+      "join": "oc_atlas.occurrences.taxon_id -> oc_taxonomy.taxa.taxon_id",
+      "value_column": null,
+      "total_taxa": 31840,
+      "total_object_rows": 26,
+      "rows_carrying_relationship": 26,
+      "rows_matching_taxonomy": 26,
+      "broken_taxonomy_targets": 0,
+      "taxa_reached": 20,
+      "taxa_reached_percentage": 0.0628,
+      "source_warnings": [
+        "public.orchid_occurrence exists with approximately 580,612 row(s), far more than the measured source (26 row(s)); this relationship measurement may be reading a non-authoritative relation."
+      ],
+      "discovery": {
+        "taxonomy_candidates": [
+          {
+            "table": "oc_taxonomy.taxa",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 31712
+          },
+          {
+            "table": "public.orchid_taxonomy",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": 72304
+          },
+          {
+            "table": "oc_core.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ],
+        "object_candidates": [
+          {
+            "table": "oc_atlas.occurrences",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_views.occurrences_enriched",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.orchid_occurrence",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": 580612
+          },
+          {
+            "table": "public.orchid_occurrences",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.occurrences",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ]
+      },
+      "interpretation": "Relational linkage only. A populated join column is not the same fact as a published Knowledge Graph edge, and neither is a claim about whether the underlying biology has been studied."
+    },
+    "taxonomy_to_elevation": {
+      "relationship": "taxonomy_to_elevation",
+      "state": "absent",
+      "measurement": "relational_linkage_by_id",
+      "taxonomy_table": "oc_taxonomy.taxa",
+      "object_table": "oc_env_intel.species_environment_profile",
+      "join": "oc_env_intel.species_environment_profile.taxonomy_id -> oc_taxonomy.taxa.taxon_id",
+      "value_column": "avg_elevation_m",
+      "total_taxa": 31840,
+      "total_object_rows": 26788,
+      "rows_carrying_relationship": 0,
+      "rows_matching_taxonomy": 0,
+      "broken_taxonomy_targets": 0,
+      "taxa_reached": 0,
+      "taxa_reached_percentage": 0.0,
+      "source_warnings": [],
+      "discovery": {
+        "taxonomy_candidates": [
+          {
+            "table": "oc_taxonomy.taxa",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 31712
+          },
+          {
+            "table": "public.orchid_taxonomy",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": 72304
+          },
+          {
+            "table": "oc_core.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ],
+        "object_candidates": [
+          {
+            "table": "oc_env.taxon_elevation_profiles",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_env_intel.species_environment_profile",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 26788
+          },
+          {
+            "table": "oc_atlas.occurrences",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ]
+      },
+      "interpretation": "Relational linkage only. A populated join column is not the same fact as a published Knowledge Graph edge, and neither is a claim about whether the underlying biology has been studied."
+    },
+    "taxonomy_to_climate": {
+      "relationship": "taxonomy_to_climate",
+      "state": "present",
+      "measurement": "relational_linkage_by_id",
+      "taxonomy_table": "oc_taxonomy.taxa",
+      "object_table": "oc_env_intel.species_environment_profile",
+      "join": "oc_env_intel.species_environment_profile.taxonomy_id -> oc_taxonomy.taxa.taxon_id",
+      "value_column": "climate_proxy_zones",
+      "total_taxa": 31840,
+      "total_object_rows": 26788,
+      "rows_carrying_relationship": 26788,
+      "rows_matching_taxonomy": 18621,
+      "broken_taxonomy_targets": 8167,
+      "taxa_reached": 18621,
+      "taxa_reached_percentage": 58.483,
+      "source_warnings": [],
+      "discovery": {
+        "taxonomy_candidates": [
+          {
+            "table": "oc_taxonomy.taxa",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 31712
+          },
+          {
+            "table": "public.orchid_taxonomy",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": 72304
+          },
+          {
+            "table": "oc_core.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ],
+        "object_candidates": [
+          {
+            "table": "oc_env_intel.species_environment_profile",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 26788
+          }
+        ]
+      },
+      "interpretation": "Relational linkage only. A populated join column is not the same fact as a published Knowledge Graph edge, and neither is a claim about whether the underlying biology has been studied."
+    },
+    "taxonomy_to_literature": {
+      "relationship": "taxonomy_to_literature",
+      "state": "unavailable",
+      "detail": "oc_taxonomy.taxa and oc_graph.taxon_literature_edges exist but share no join this audit recognises: no taxon id foreign key and no scientific-name column pair.",
+      "interpretation": "This audit could not measure the relationship. State is unknown; this is not a finding that the relationship is absent.",
+      "discovery": {
+        "taxonomy_candidates": [
+          {
+            "table": "oc_taxonomy.taxa",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 31712
+          },
+          {
+            "table": "public.orchid_taxonomy",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": 72304
+          },
+          {
+            "table": "oc_core.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ],
+        "object_candidates": [
+          {
+            "table": "oc_graph.taxon_literature_edges",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_literature.papers",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": 408
+          },
+          {
+            "table": "oc_literature.documents",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_literature.literature_documents",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.literature_documents",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.research_documents",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": 6725
+          }
+        ]
+      },
+      "taxonomy_table": "oc_taxonomy.taxa",
+      "object_table": "oc_graph.taxon_literature_edges"
+    },
+    "taxonomy_to_pollinators": {
+      "relationship": "taxonomy_to_pollinators",
+      "state": "unavailable",
+      "detail": "oc_taxonomy.taxa and oc_interactions.orchid_interaction_edges exist but share no join this audit recognises: no taxon id foreign key and no scientific-name column pair.",
+      "interpretation": "This audit could not measure the relationship. State is unknown; this is not a finding that the relationship is absent.",
+      "discovery": {
+        "taxonomy_candidates": [
+          {
+            "table": "oc_taxonomy.taxa",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 31712
+          },
+          {
+            "table": "public.orchid_taxonomy",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": 72304
+          },
+          {
+            "table": "oc_core.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ],
+        "object_candidates": [
+          {
+            "table": "oc_interactions.orchid_interaction_edges",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_interactions.relationships",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.pollinator_relationships",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ]
+      },
+      "taxonomy_table": "oc_taxonomy.taxa",
+      "object_table": "oc_interactions.orchid_interaction_edges"
+    },
+    "taxonomy_to_mycorrhiza": {
+      "relationship": "taxonomy_to_mycorrhiza",
+      "state": "unavailable",
+      "detail": "oc_taxonomy.taxa and oc_mycorrhiza.orchid_fungal_associations exist but share no join this audit recognises: no taxon id foreign key and no scientific-name column pair.",
+      "interpretation": "This audit could not measure the relationship. State is unknown; this is not a finding that the relationship is absent.",
+      "discovery": {
+        "taxonomy_candidates": [
+          {
+            "table": "oc_taxonomy.taxa",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 31712
+          },
+          {
+            "table": "public.orchid_taxonomy",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": 72304
+          },
+          {
+            "table": "oc_core.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ],
+        "object_candidates": [
+          {
+            "table": "oc_mycorrhiza.orchid_fungal_associations",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 462
+          },
+          {
+            "table": "oc_mycorrhiza.relationships",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.mycorrhiza_relationships",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ]
+      },
+      "taxonomy_table": "oc_taxonomy.taxa",
+      "object_table": "oc_mycorrhiza.orchid_fungal_associations"
+    },
+    "taxonomy_to_habitat": {
+      "relationship": "taxonomy_to_habitat",
+      "state": "present",
+      "measurement": "relational_linkage_by_id",
+      "taxonomy_table": "oc_taxonomy.taxa",
+      "object_table": "public.oc_species_habitat_claims",
+      "join": "public.oc_species_habitat_claims.taxonomy_id -> oc_taxonomy.taxa.taxon_id",
+      "value_column": null,
+      "total_taxa": 31840,
+      "total_object_rows": 695,
+      "rows_carrying_relationship": 695,
+      "rows_matching_taxonomy": 2,
+      "broken_taxonomy_targets": 693,
+      "taxa_reached": 2,
+      "taxa_reached_percentage": 0.0063,
+      "source_warnings": [],
+      "discovery": {
+        "taxonomy_candidates": [
+          {
+            "table": "oc_taxonomy.taxa",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 31712
+          },
+          {
+            "table": "public.orchid_taxonomy",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": 72304
+          },
+          {
+            "table": "oc_core.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ],
+        "object_candidates": [
+          {
+            "table": "oc_habitat.taxon_habitats",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.oc_species_habitat_claims",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 695
+          },
+          {
+            "table": "oc_habitat.habitat_claims",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ]
+      },
+      "interpretation": "Relational linkage only. A populated join column is not the same fact as a published Knowledge Graph edge, and neither is a claim about whether the underlying biology has been studied."
+    },
+    "taxonomy_to_conservation": {
+      "relationship": "taxonomy_to_conservation",
+      "state": "present",
+      "measurement": "relational_linkage_by_id",
+      "taxonomy_table": "oc_taxonomy.taxa",
+      "object_table": "oc_conservation.conservation_records",
+      "join": "oc_conservation.conservation_records.taxon_id -> oc_taxonomy.taxa.taxon_id",
+      "value_column": null,
+      "total_taxa": 31840,
+      "total_object_rows": 2,
+      "rows_carrying_relationship": 2,
+      "rows_matching_taxonomy": 2,
+      "broken_taxonomy_targets": 0,
+      "taxa_reached": 2,
+      "taxa_reached_percentage": 0.0063,
+      "source_warnings": [],
+      "discovery": {
+        "taxonomy_candidates": [
+          {
+            "table": "oc_taxonomy.taxa",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": 31712
+          },
+          {
+            "table": "public.orchid_taxonomy",
+            "exists": true,
+            "selected": false,
+            "approximate_rows": 72304
+          },
+          {
+            "table": "oc_core.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.taxonomy",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ],
+        "object_candidates": [
+          {
+            "table": "oc_conservation.conservation_records",
+            "exists": true,
+            "selected": true,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.conservation_records",
+            "exists": false,
+            "selected": false,
+            "approximate_rows": null
+          }
+        ]
+      },
+      "interpretation": "Relational linkage only. A populated join column is not the same fact as a published Knowledge Graph edge, and neither is a claim about whether the underlying biology has been studied."
+    }
+  },
+  "state_totals": {
+    "present": 4,
+    "absent": 1,
+    "unavailable": 3
+  },
+  "source_warnings": [
+    {
+      "relationship": "taxonomy_to_occurrences",
+      "warning": "public.orchid_occurrence exists with approximately 580,612 row(s), far more than the measured source (26 row(s)); this relationship measurement may be reading a non-authoritative relation."
+    }
+  ]
+}

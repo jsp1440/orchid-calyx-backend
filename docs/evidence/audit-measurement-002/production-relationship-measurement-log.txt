@@ -1,0 +1,12 @@
+  taxonomy_to_occurrences          present      oc_atlas.occurrences  rows=26  taxa=20  via=relational_linkage_by_id
+  taxonomy_to_elevation            absent       oc_env_intel.species_environment_profile  rows=0  taxa=0  via=relational_linkage_by_id
+  taxonomy_to_climate              present      oc_env_intel.species_environment_profile  rows=18,621  taxa=18,621  via=relational_linkage_by_id
+  taxonomy_to_literature           unavailable  oc_taxonomy.taxa and oc_graph.taxon_literature_edges exist but share no join this audit recognises: no taxon i
+  taxonomy_to_pollinators          unavailable  oc_taxonomy.taxa and oc_interactions.orchid_interaction_edges exist but share no join this audit recognises: n
+  taxonomy_to_mycorrhiza           unavailable  oc_taxonomy.taxa and oc_mycorrhiza.orchid_fungal_associations exist but share no join this audit recognises: n
+  taxonomy_to_habitat              present      public.oc_species_habitat_claims  rows=2  taxa=2  via=relational_linkage_by_id
+  taxonomy_to_conservation         present      oc_conservation.conservation_records  rows=2  taxa=2  via=relational_linkage_by_id
+
+state totals: {'present': 4, 'absent': 1, 'unavailable': 3}
+  WARNING [taxonomy_to_occurrences] public.orchid_occurrence exists with approximately 580,612 row(s), far more than the measured source (26 row(s)); this relationship measurement may be reading a non-authoritative relation.
+evidence written: docs/evidence/audit-measurement-002/production-relationship-measurement.json
