@@ -1,0 +1,37 @@
+target            : 
+https://orchid-calyx-backend.onrender.com
+served commit     : 34352e392df8c5c55c47a6145f7ba580de7e9db6
+expected commit   : 34352e392df8c5c55c47a6145f7ba580de7e9db6
+release match     : True
+corrected logic   : serving_corrected_logic
+audit id          : AUD-7DD6BBD3CD36
+
+relationship states:
+  taxonomy_to_images                     measured-present   (was: missing)
+  taxonomy_to_occurrences                unmeasured         (was: missing)
+  taxonomy_to_elevation                  unmeasured         (was: missing)
+  taxonomy_to_climate                    unmeasured         (was: missing)
+  taxonomy_to_literature                 unmeasured         (was: missing)
+  taxonomy_to_pollinators                unmeasured         (was: missing)
+  taxonomy_to_mycorrhiza                 unmeasured         (was: missing)
+  taxonomy_to_habitat                    unmeasured         (was: missing)
+  taxonomy_to_conservation               unmeasured         (was: missing)
+  knowledge_graph_node_edge_integrity    measured-present   (was: missing)
+
+state totals      : {'measured-present': 2, 'unmeasured': 8}
+
+metric sources:
+  taxonomy         oc_taxonomy.taxa                                           31840
+  occurrences      oc_atlas.occurrences                                       26
+  images           public.orchid_images_linked_v2                             5071287
+  literature       oc_literature.papers                                       408
+  relationships    oc_graph.kg_edges                                          70609
+  mycorrhiza       oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache    1
+  runtime_jobs     oc_admin.ocp_execution_jobs                                12192
+  runtime_actions  oc_admin.ocp_runtime_actions                               668
+
+masking warnings:
+  [occurrences] public.orchid_occurrence exists with approximately 580,612 row(s), far more than the selected source oc_atlas.occurrences (26 row(s)); metric source selection may be masking the authoritative corpus.
+  [literature] public.research_documents exists with approximately 6,725 row(s), far more than the selected source oc_literature.papers (408 row(s)); metric source selection may be masking the authoritative corpus.
+
+evidence written  : docs/evidence/audit-measurement-002/production-overall-audit.json
