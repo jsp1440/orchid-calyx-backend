@@ -566,3 +566,25 @@ def test_blocked_domains_state_the_relation_is_absent_not_merely_unverified():
         entry = next(q for q in sr.SOURCE_QUERIES if q.domain == domain)
         assert entry.enabled is False, "these domains must stay fail-closed"
         assert "does not exist in production" in (entry.blocked_reason or "")
+
+
+def test_the_mixed_ingest_spine_is_never_promoted_over_a_real_occurrence_table():
+    """public.records is 5,006,022 rows, and most of them are not occurrences.
+
+    Its record_type breakdown includes 96,832 media_record, 64,764
+    taxon_profile, 23,692 video and 10,066 vendor_listing alongside 2,776,500
+    typed occurrence. Promoting it on size would report videos as orchid
+    occurrences. It is listed so the masking check reports it, and measured
+    last so it can never be selected while a real occurrence relation exists.
+    """
+    from app.routers.mission_control import METRIC_CANDIDATES
+
+    spec = next(s for s in rm.RELATIONSHIP_SPECS if s["name"] == "taxonomy_to_occurrences")
+    tables = list(spec["object_tables"])
+    assert tables[0] == "public.orchid_occurrence"
+    assert "public.records" in tables
+    assert tables.index("public.records") > tables.index("public.orchid_occurrence")
+
+    metric = METRIC_CANDIDATES["occurrences"]
+    assert metric[0] == "public.orchid_occurrence"
+    assert metric.index("public.records") > metric.index("public.orchid_occurrence")

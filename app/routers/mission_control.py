@@ -94,15 +94,24 @@ METRIC_CANDIDATES = {
         "public.occurrences",
         "public.orchid_occurrences",
         "public.map_data",
-        # Listed, not promoted, and for the same reason public.orchid_occurrence
-        # was once listed last. public.records holds 5,006,022 rows with
-        # gbif_occurrence_key, coordinates, event dates and 2,934,913 elevation
-        # values -- occurrence-shaped, and larger than everything above it. But
-        # its taxon id column is entirely unpopulated, it joins to taxonomy only
-        # by name, and it carries a record_type suggesting a universal ingest
-        # spine rather than an occurrence table. Adopting it silently could
-        # count non-occurrence records as occurrences. Listing it makes the
-        # masking check state the discrepancy so the owner decides.
+        # Listed, not promoted, and the record_type breakdown says why. Of its
+        # 5,006,022 rows: 2,776,500 typed occurrence, 927,446 observation,
+        # 621,526 occurrence_stub, 139,330 specimen -- but also 96,832
+        # media_record, 69,575 media_observation, 64,764 taxon_profile, 53,998
+        # observation_photo, 33,650 species_profile, 23,692 video and 10,066
+        # vendor_listing. It is a universal ingest spine, not an occurrence
+        # table, and counting it whole would report videos and vendor listings
+        # as orchid occurrences. Its taxon id column is also entirely
+        # unpopulated; it reaches taxonomy only by name (847,517 rows via
+        # scientific_binomial).
+        #
+        # There is a real and much larger occurrence corpus inside it, and
+        # deciding which record_type values constitute an occurrence is a
+        # curatorial call for the owner, not one a row count can make --
+        # occurrence_stub alone is 621,526 rows of unclear standing, and
+        # observation, OBSERVATION and HUMAN_OBSERVATION appear as three
+        # separate values. Listing the relation makes the masking check state
+        # the discrepancy on every audit until that call is made.
         "public.records",
         "public.v_orchid_records",
     ],
