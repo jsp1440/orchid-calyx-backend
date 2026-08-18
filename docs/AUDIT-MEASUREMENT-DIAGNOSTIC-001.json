@@ -1,0 +1,228 @@
+{
+  "diagnostic_id": "AUDIT-MEASUREMENT-DIAGNOSTIC-001",
+  "generated_at": "2026-08-18T11:30:03Z",
+  "purpose": "Determine, for each count and each reported missing relationship in the executive Overall Audit, whether the audit queried the right source and whether its finding is a measurement or an artifact.",
+  "evidence_basis": {
+    "live_endpoints_queried": [
+      "https://orchid-calyx-backend.onrender.com/api/mission-control/metrics",
+      "https://orchid-calyx-backend.onrender.com/api/mission-control/completeness",
+      "https://orchid-calyx-backend.onrender.com/api/mission-control/audit",
+      "https://orchid-calyx-backend.onrender.com/openapi.json"
+    ],
+    "access_limitations": [
+      "No DATABASE_URL, psql client, or Python interpreter is available in this environment.",
+      "All database-level facts below are derived from the deployed backend's own read-only telemetry endpoints, not from direct SQL.",
+      "Row counts attributed to public.orchid_occurrence and public.research_documents are reported by PR #901's live-schema verification and are NOT independently confirmed here."
+    ],
+    "backend_build": "BUILD-065",
+    "database_connected": true
+  },
+  "root_causes": [
+    {
+      "id": "RC-1",
+      "severity": "critical",
+      "title": "The ten reported missing relationships are a hardcoded constant, not a measurement",
+      "location": "app/routers/owner_operations.py :: live_audit_payload",
+      "mechanism": "A literal list of all ten relationship names was emitted whenever the expression `missing` was non-empty. `missing` is the set of subsystem completeness rows whose status is warning/stub/error/unknown -- a subsystem health signal with no relationship semantics. No relationship, edge, or join was ever queried to produce this field.",
+      "proof": "In the same live payload, the images metric scores healthy on 5,071,287 rows and oc_graph.kg_edges reports 70,609 edges, while taxonomy_to_images and knowledge_graph_node_edge_integrity are both listed as missing. The report contradicts its own measured inputs.",
+      "consequence": "All ten 'missing relationships' are unproven. The audit could not have distinguished a present relationship from an absent one because it never looked at either.",
+      "disposition": "repaired_in_this_branch"
+    },
+    {
+      "id": "RC-2",
+      "severity": "high",
+      "title": "Metric source selection is first-existing-wins and silently masks larger corpora",
+      "location": "app/routers/mission_control.py :: first_available_count / METRIC_CANDIDATES",
+      "mechanism": "Candidates are probed in order and the first relation that exists is selected; remaining candidates are never examined. A small legacy, staging, or cache relation appearing earlier in the list therefore hides any larger corpus behind it, and the `checked` array records that no further candidate was even considered.",
+      "proof": "Live telemetry returns occurrences.checked == ['oc_atlas.occurrences'] (count 26) and mycorrhiza.checked == ['oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache'] (count 1). Both stopped at the first candidate.",
+      "consequence": "Two of the audit's most alarming numbers are reading the wrong relation.",
+      "disposition": "repaired_in_this_branch"
+    },
+    {
+      "id": "RC-3",
+      "severity": "high",
+      "title": "The audit's 'immediate next actions' are a hardcoded constant",
+      "location": "app/routers/owner_operations.py :: live_audit_payload",
+      "mechanism": "recommended_next_actions was the fixed list ['Apply BUILD-051 migration.', 'Deploy owner-session backend.', 'Run smoke tests.'] returned on every audit regardless of system state.",
+      "proof": "The owner-session backend is already deployed: all 27 /api/mission-control/owner/* routes are present in the live OpenAPI schema, and POST /owner/session issues a working session against production.",
+      "consequence": "The audit's action list is not a finding and must not be treated as evidence that these actions are outstanding.",
+      "disposition": "repaired_in_this_branch"
+    },
+    {
+      "id": "RC-4",
+      "severity": "medium",
+      "title": "The audit's 'medium confidence' label carries no confidence semantics",
+      "location": "app/routers/owner_operations.py :: live_audit_payload",
+      "mechanism": "confidence is `'medium' if metrics.get('database_connected') else 'low'`. It reports whether a TCP connection succeeded, nothing about measurement quality or coverage.",
+      "consequence": "'Medium confidence' should not be read as a graded assessment of the audit's findings.",
+      "disposition": "documented_not_changed"
+    },
+    {
+      "id": "RC-5",
+      "severity": "high",
+      "title": "The deployed owner-backend smoke test uses a credential transport the backend no longer serves",
+      "location": "scripts/smoke_owner_backend.py",
+      "mechanism": "POST /owner/session delivers the signed session as an HttpOnly cookie and returns the literal string 'cookie' in the JSON token field. The script treated that literal as a bearer token.",
+      "proof": "Reproduced without credentials: GET /owner/session with 'Authorization: Bearer cookie' returns HTTP 200 {\"authenticated\": false}; GET /owner/permissions with the same header returns HTTP 401 {\"detail\": \"Invalid owner session\"}. Workflow run 32132141402 shows exactly this sequence: PASS owner_session, PASS owner_session_validate, then FAIL 401.",
+      "consequence": "Two checks were false passes and the reported failure was an artifact of the test, not a backend defect. The unauthenticated GET /owner/session returns 200, so a status-code-only assertion passes with no credential at all.",
+      "disposition": "repaired_in_this_branch"
+    },
+    {
+      "id": "RC-6",
+      "severity": "medium",
+      "title": "No CI workflow covers the audit measurement or reporting path",
+      "location": ".github/workflows/",
+      "mechanism": "All 207 workflows are path-filtered and none list app/routers/mission_control.py, app/routers/owner_operations.py, or scripts/smoke_owner_backend.py. scripts/smoke_owner_backend.py had no test file at all.",
+      "consequence": "The transport drift in RC-5 and the fabricated reporting in RC-1 could persist indefinitely without a failing check.",
+      "disposition": "repaired_in_this_branch"
+    }
+  ],
+  "metric_dispositions": [
+    {
+      "metric": "taxonomy",
+      "audit_value": 31840,
+      "live_value": 31840,
+      "selected_relation": "oc_taxonomy.taxa",
+      "candidates_checked": ["oc_taxonomy.taxa"],
+      "verdict": "confirmed_accurate",
+      "note": "Independently corroborated by docs/BUILD-064-01-identifier-crosswalk-report.md."
+    },
+    {
+      "metric": "occurrences",
+      "audit_value": 26,
+      "live_value": 26,
+      "selected_relation": "oc_atlas.occurrences",
+      "candidates_checked": ["oc_atlas.occurrences"],
+      "verdict": "wrong_source_suspected",
+      "note": "PR #901 live-schema verification reports public.orchid_occurrence at approximately 580,612 rows. That relation was not in the candidate list and was never probed. 26 is not evidence of data loss.",
+      "confidence": "high_that_26_is_unrepresentative; unverified_that_580612_is_exact"
+    },
+    {
+      "metric": "images",
+      "audit_value": 5071287,
+      "live_value": 5071287,
+      "selected_relation": "public.orchid_images_linked_v2",
+      "verdict": "confirmed_accurate",
+      "note": "The relation name itself ('linked_v2') indicates taxonomy linkage exists, directly contradicting the reported taxonomy_to_images gap."
+    },
+    {
+      "metric": "literature",
+      "audit_value": 408,
+      "live_value": 408,
+      "selected_relation": "oc_literature.papers",
+      "candidates_checked": ["oc_literature.documents", "oc_literature.literature_documents", "oc_literature.papers"],
+      "verdict": "wrong_source_suspected",
+      "note": "PR #901 reports public.research_documents at approximately 6,725 rows; not in the candidate list."
+    },
+    {
+      "metric": "relationships",
+      "audit_value": 70609,
+      "live_value": 70609,
+      "selected_relation": "oc_graph.kg_edges",
+      "verdict": "confirmed_accurate",
+      "note": "70,609 persisted graph edges exist, which contradicts a blanket knowledge_graph_node_edge_integrity failure."
+    },
+    {
+      "metric": "mycorrhiza",
+      "audit_value": 1,
+      "live_value": 1,
+      "selected_relation": "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache",
+      "candidates_checked": ["oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache"],
+      "verdict": "wrong_source_confirmed",
+      "note": "The selected relation is an endpoint response cache, not a mycorrhizal relationship corpus. oc_mycorrhiza.relationships is listed as the next candidate and was never probed. The count of 1 is one cached response and carries no biological meaning whatsoever."
+    },
+    {
+      "metric": "runtime_jobs",
+      "audit_value": 12079,
+      "live_value": 12085,
+      "selected_relation": "oc_admin.ocp_execution_jobs",
+      "verdict": "confirmed_accurate",
+      "note": "Value advanced between the owner's audit and this run, confirming the metric is live rather than cached."
+    },
+    {
+      "metric": "runtime_actions",
+      "audit_value": 668,
+      "live_value": 668,
+      "selected_relation": "oc_admin.ocp_runtime_actions",
+      "verdict": "confirmed_accurate"
+    }
+  ],
+  "relationship_dispositions": [
+    {
+      "relationship": "taxonomy_to_images",
+      "audit_claim": "missing",
+      "verdict": "audit_was_wrong",
+      "basis": "Emitted by RC-1's hardcoded list. The image relation is named orchid_images_linked_v2 and the images metric scores healthy. app/readiness/live_graph_audit.py already implements a real relational measurement for exactly this relationship and is now wired into the audit payload.",
+      "measured_state_after_fix": "measured_at_runtime"
+    },
+    {
+      "relationship": "knowledge_graph_node_edge_integrity",
+      "audit_claim": "missing",
+      "verdict": "audit_was_wrong",
+      "basis": "Emitted by RC-1's hardcoded list while 70,609 edges were measured in the same payload. Real integrity measurement (null endpoints, duplicate edges) is now wired in from live_graph_audit.",
+      "measured_state_after_fix": "measured_at_runtime"
+    },
+    {
+      "relationship": "taxonomy_to_occurrences",
+      "audit_claim": "missing",
+      "verdict": "unproven_by_audit",
+      "basis": "Emitted by RC-1's hardcoded list. Compounded by RC-2: the occurrence corpus itself was being read from a 26-row relation.",
+      "measured_state_after_fix": "unmeasured"
+    },
+    {
+      "relationship": "taxonomy_to_mycorrhiza",
+      "audit_claim": "missing",
+      "verdict": "unproven_by_audit",
+      "basis": "Emitted by RC-1's hardcoded list. Compounded by RC-2: the mycorrhiza metric reads a response cache. No conclusion about mycorrhizal data presence or absence is supportable from this audit.",
+      "measured_state_after_fix": "unmeasured"
+    },
+    {
+      "relationship": "taxonomy_to_literature",
+      "audit_claim": "missing",
+      "verdict": "unproven_by_audit",
+      "basis": "Emitted by RC-1's hardcoded list. Compounded by RC-2.",
+      "measured_state_after_fix": "unmeasured"
+    },
+    {
+      "relationship": "taxonomy_to_elevation",
+      "audit_claim": "missing",
+      "verdict": "unproven_by_audit",
+      "basis": "Emitted by RC-1's hardcoded list. No measurement path implemented.",
+      "measured_state_after_fix": "unmeasured"
+    },
+    {
+      "relationship": "taxonomy_to_climate",
+      "audit_claim": "missing",
+      "verdict": "unproven_by_audit",
+      "basis": "Emitted by RC-1's hardcoded list. No measurement path implemented.",
+      "measured_state_after_fix": "unmeasured"
+    },
+    {
+      "relationship": "taxonomy_to_pollinators",
+      "audit_claim": "missing",
+      "verdict": "unproven_by_audit",
+      "basis": "Emitted by RC-1's hardcoded list. app/interaction_discovery/ is documented in AUDIT-0002 as live with GloBI ingestion, so absence is specifically not established.",
+      "measured_state_after_fix": "unmeasured"
+    },
+    {
+      "relationship": "taxonomy_to_habitat",
+      "audit_claim": "missing",
+      "verdict": "unproven_by_audit",
+      "basis": "Emitted by RC-1's hardcoded list. oc_species_habitat_claims exists in the database table inventory.",
+      "measured_state_after_fix": "unmeasured"
+    },
+    {
+      "relationship": "taxonomy_to_conservation",
+      "audit_claim": "missing",
+      "verdict": "unproven_by_audit",
+      "basis": "Emitted by RC-1's hardcoded list. AUDIT-0002 independently records no dedicated conservation subsystem, so this one may well be a genuine gap -- but the executive audit did not establish it.",
+      "measured_state_after_fix": "unmeasured"
+    }
+  ],
+  "safety_invariants_asserted": [
+    "No missing-data state was converted into biological absence: unmeasured is a distinct reported state from absent, enforced by test_unmeasured_relationships_are_never_reported_as_missing.",
+    "No scientific relationship was fabricated, inferred from taxonomy, or promoted from genus to species level by this work.",
+    "Headline metric selection semantics were left unchanged; newly identified candidate relations were appended, not promoted, so no metric definition was silently altered to improve a result.",
+    "No production data was mutated. All database facts were obtained from read-only telemetry endpoints."
+  ]
+}
