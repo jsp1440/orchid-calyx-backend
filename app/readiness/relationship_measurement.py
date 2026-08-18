@@ -221,6 +221,7 @@ def measure_link_relationship(
             discovery=discovery,
             taxonomy_table=taxonomy_table,
             object_table=object_table,
+            object_columns=sorted(obj_cols),
         )
 
     tax_pk = next((c for c in taxonomy_keys if c in tax_cols), None)
@@ -235,6 +236,10 @@ def measure_link_relationship(
         mode = "relational_linkage_by_name"
         left, right = tax_name, obj_name
     else:
+        # Report the columns each side actually has. An "unavailable" that only
+        # says "no join recognised" leaves the reader to go and look; one that
+        # names the available columns tells them exactly which candidate to add,
+        # turning a dead end into a one-line fix.
         return _unavailable(
             name,
             f"{taxonomy_table} and {object_table} exist but share no join this audit recognises: no taxon id "
@@ -242,6 +247,12 @@ def measure_link_relationship(
             discovery=discovery,
             taxonomy_table=taxonomy_table,
             object_table=object_table,
+            taxonomy_columns=sorted(tax_cols),
+            object_columns=sorted(obj_cols),
+            taxonomy_key_found=tax_pk,
+            taxonomy_name_column_found=tax_name,
+            object_key_found=obj_fk,
+            object_name_column_found=obj_name,
         )
 
     t, o = _safe(taxonomy_table), _safe(object_table)

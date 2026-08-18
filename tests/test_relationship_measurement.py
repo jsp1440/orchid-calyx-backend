@@ -234,3 +234,37 @@ def test_no_spec_can_produce_absence_without_a_join(spec):
         required_value_columns=spec.get("required_value_columns", ()),
     )
     assert result["state"] != "absent"
+
+
+def test_join_failure_names_the_columns_each_side_actually_has():
+    """An unavailable must be actionable, not just a dead end.
+
+    Production returned three of these against real tables. Reporting only "no
+    join recognised" would leave the reader to go and inspect the schema by
+    hand; naming the columns turns it into a one-line candidate-list fix.
+    """
+    cur = FakeCursor(
+        {**TAX, "oc_mycorrhiza.orchid_fungal_associations": {"assoc_id", "fungal_name", "orchid_name"}},
+        rows={"oc_taxonomy.taxa": 31840, "oc_mycorrhiza.orchid_fungal_associations": 1200},
+    )
+    result = measure(cur, object_tables=("oc_mycorrhiza.orchid_fungal_associations",))
+    assert result["state"] == "unavailable"
+    assert result["object_columns"] == ["assoc_id", "fungal_name", "orchid_name"]
+    assert result["taxonomy_columns"] == ["scientific_name", "taxon_id"]
+    # The taxonomy side did have a key; the object side is what failed.
+    assert result["taxonomy_key_found"] == "taxon_id"
+    assert result["object_key_found"] is None
+
+
+def test_missing_value_column_names_what_the_relation_does_carry():
+    cur = FakeCursor(
+        {**TAX, "oc_atlas.occurrences": {"taxon_id", "latitude", "longitude"}},
+        rows={"oc_taxonomy.taxa": 31840, "oc_atlas.occurrences": 26},
+    )
+    result = measure(
+        cur,
+        object_tables=("oc_atlas.occurrences",),
+        required_value_columns=("elevation_m",),
+    )
+    assert result["state"] == "unavailable"
+    assert result["object_columns"] == ["latitude", "longitude", "taxon_id"]
