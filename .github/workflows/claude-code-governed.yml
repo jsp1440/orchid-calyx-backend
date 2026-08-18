@@ -42,6 +42,7 @@ jobs:
           additional_permissions: |
             actions: read
           claude_args: |
+            --model claude-sonnet-5
             --max-turns 10
             --allowedTools "Edit,Read,Write,Bash(git diff --check),Bash(git status),Bash(git diff)"
             --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative; model output is not project state. Reuse existing authoritative work. For implementation missions, run focused validation and required CI, commit and push the work, and create or update exactly one DRAFT pull request. Never merge or auto-merge, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create or disclose credentials, spend funds, force-push, or delete branches/repositories. Stop after three unsuccessful repair attempts on the same deterministic failure class and report the blocker."
@@ -69,6 +70,7 @@ jobs:
           additional_permissions: |
             actions: read
           claude_args: |
+            --model claude-sonnet-5
             --max-turns 10
             --allowedTools "Edit,Read,Write,Bash(git diff --check),Bash(git status),Bash(git diff)"
             --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative; model output is not project state. Reuse existing authoritative work. For implementation missions, run focused validation and required CI, commit and push the work, and create or update exactly one DRAFT pull request. Never merge or auto-merge, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create or disclose credentials, spend funds, force-push, or delete branches/repositories. Stop after three unsuccessful repair attempts on the same deterministic failure class and report the blocker."
@@ -94,6 +96,7 @@ jobs:
           additional_permissions: |
             actions: read
           claude_args: |
+            --model claude-sonnet-5
             --max-turns 10
             --allowedTools "Edit,Read,Write,Bash(git diff --check),Bash(git status),Bash(git diff)"
             --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative; model output is not project state. Reuse existing authoritative work. For implementation missions, run focused validation and required CI, commit and push the work, and create or update exactly one DRAFT pull request. Never merge or auto-merge, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create or disclose credentials, spend funds, force-push, or delete branches/repositories. Stop after three unsuccessful repair attempts on the same deterministic failure class and report the blocker."
