@@ -324,7 +324,17 @@ TAXONOMY_TABLES = (
     "public.taxonomy",
 )
 TAXONOMY_KEYS = ("taxon_id", "id", "taxonomy_id")
-TAXONOMY_NAME_COLUMNS = ("scientific_name", "accepted_name", "taxon_name", "name")
+# canonical_name first: it is what oc_taxonomy.taxa actually calls its name
+# column, and its absence from this list is why three relationships came back
+# unavailable on the first production run.
+TAXONOMY_NAME_COLUMNS = (
+    "canonical_name",
+    "scientific_name",
+    "normalized_name",
+    "accepted_name",
+    "taxon_name",
+    "name",
+)
 
 # Name columns used by corpora ingested against names rather than taxon ids --
 # the mycorrhiza source registry joins on orchid_scientific_name, for one.
@@ -335,7 +345,21 @@ OBJECT_NAME_COLUMNS = (
     "accepted_name",
     "species_name",
 )
-OBJECT_TAXON_KEYS = ("taxon_id", "taxon_pk", "taxonomy_id", "accepted_taxon_id", "species_id")
+# Order matters, and it is a correctness question rather than a preference.
+# oc_interactions.orchid_interaction_edges carries both orchid_taxonomy_id and
+# partner_taxon_id; oc_mycorrhiza.orchid_fungal_associations carries both
+# orchid_taxonomy_id and fungal_taxon_id. The orchid-side key is named first so
+# a relationship to orchids can never be measured through the partner or the
+# fungus. Matching is exact, so a generic "taxon_id" cannot pick up
+# "partner_taxon_id" by accident either.
+OBJECT_TAXON_KEYS = (
+    "orchid_taxonomy_id",
+    "taxon_id",
+    "taxon_pk",
+    "taxonomy_id",
+    "accepted_taxon_id",
+    "species_id",
+)
 
 RELATIONSHIP_SPECS: tuple[dict[str, Any], ...] = (
     {

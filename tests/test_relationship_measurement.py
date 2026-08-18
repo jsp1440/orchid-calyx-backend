@@ -268,3 +268,61 @@ def test_missing_value_column_names_what_the_relation_does_carry():
     )
     assert result["state"] == "unavailable"
     assert result["object_columns"] == ["latitude", "longitude", "taxon_id"]
+
+
+def test_orchid_side_key_wins_over_partner_side_key():
+    """The pollinator edge table keys both ends. Measuring the wrong one counts insects as orchids.
+
+    oc_interactions.orchid_interaction_edges carries orchid_taxonomy_id and
+    partner_taxon_id. A relationship *to orchids* must join the orchid end.
+    """
+    cur = FakeCursor(
+        {
+            **TAX,
+            "oc_interactions.orchid_interaction_edges": {
+                "orchid_taxonomy_id",
+                "partner_taxon_id",
+                "partner_taxon_name",
+            },
+        },
+        rows={"oc_taxonomy.taxa": 31840, "oc_interactions.orchid_interaction_edges": 900},
+        joins={"carrying": 900, "matched": 880, "taxa_reached": 400},
+    )
+    result = measure(cur, object_tables=("oc_interactions.orchid_interaction_edges",))
+    assert result["state"] == "present"
+    assert result["join"].startswith("oc_interactions.orchid_interaction_edges.orchid_taxonomy_id")
+    assert "partner_taxon_id" not in result["join"]
+
+
+def test_fungal_taxon_id_is_never_used_as_the_orchid_key():
+    cur = FakeCursor(
+        {
+            **TAX,
+            "oc_mycorrhiza.orchid_fungal_associations": {
+                "orchid_taxonomy_id",
+                "fungal_taxon_id",
+                "fungal_name",
+            },
+        },
+        rows={"oc_taxonomy.taxa": 31840, "oc_mycorrhiza.orchid_fungal_associations": 1200},
+        joins={"carrying": 1200, "matched": 1100, "taxa_reached": 350},
+    )
+    result = measure(cur, object_tables=("oc_mycorrhiza.orchid_fungal_associations",))
+    assert "fungal_taxon_id" not in result["join"]
+    assert "orchid_taxonomy_id" in result["join"]
+
+
+def test_canonical_name_is_recognised_as_the_taxonomy_name_column():
+    """oc_taxonomy.taxa names its name column canonical_name, not scientific_name."""
+    cur = FakeCursor(
+        {
+            "oc_taxonomy.taxa": {"taxon_id", "canonical_name"},
+            "oc_graph.taxon_literature_edges": {"scientific_name", "title", "doi"},
+        },
+        rows={"oc_taxonomy.taxa": 31840, "oc_graph.taxon_literature_edges": 5000},
+        joins={"carrying": 5000, "matched": 4800, "taxa_reached": 2000},
+    )
+    result = measure(cur, object_tables=("oc_graph.taxon_literature_edges",))
+    assert result["state"] == "present"
+    assert result["measurement"] == "relational_linkage_by_name"
+    assert "canonical_name" in result["join"]
