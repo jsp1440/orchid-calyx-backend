@@ -1,0 +1,77 @@
+name: Production Overall Audit
+
+# The development sandbox has no egress to the deployed backend (the network
+# policy rejects CONNECT to onrender.com), so an audit of production can only be
+# taken from a runner. Push-triggered as well as dispatchable because
+# workflow_dispatch only registers from the default branch.
+on:
+  push:
+    branches: [claude/audit-measurement-002]
+    paths:
+      - 'scripts/production_overall_audit.py'
+      - '.github/workflows/production-overall-audit.yml'
+      - 'app/routers/owner_operations.py'
+      - 'app/readiness/live_graph_audit.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+      CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
+      CALYX_EXPECTED_COMMIT: 34352e392df8c5c55c47a6145f7ba580de7e9db6
+      AUDIT_EVIDENCE_PATH: docs/evidence/audit-measurement-002/production-overall-audit.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Validate required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CALYX_BACKEND_URL:?Repository variable CALYX_BACKEND_URL is required}"
+          : "${CALYX_OWNER_ACCESS_CODE:?Repository secret CALYX_OWNER_ACCESS_CODE is required}"
+
+      - name: Capture the production Overall Audit
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p docs/evidence/audit-measurement-002
+          python scripts/production_overall_audit.py 2>&1 | tee production-overall-audit.log
+
+      - name: Commit evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p docs/evidence/audit-measurement-002
+          # *.log is gitignored in this repo; keep the transcript under a tracked name.
+          cp production-overall-audit.log docs/evidence/audit-measurement-002/production-overall-audit-log.txt || true
+          git add docs/evidence/audit-measurement-002
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence(audit): capture production Overall Audit from CI [skip ci]"
+          git fetch origin ${{ github.ref_name }}
+          git rebase origin/${{ github.ref_name }} || git rebase --abort
+          git push origin HEAD:${{ github.ref_name }} || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-overall-audit-${{ github.sha }}
+          path: |
+            docs/evidence/audit-measurement-002/
+            production-overall-audit.log
+          if-no-files-found: warn
+          retention-days: 30
