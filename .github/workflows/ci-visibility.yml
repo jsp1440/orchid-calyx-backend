@@ -75,6 +75,14 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           mkdir -p docs/evidence/audit-measurement-002
           cp 114q-results.txt docs/evidence/audit-measurement-002/114q-results.txt || true
+          # Strip trailing whitespace before committing. Captured console output
+          # carries it routinely, and this repo gates every PR on
+          # `git diff --check origin/<base>...HEAD` -- so evidence files were
+          # failing BUILD-BRAIN-114Q's diff-hygiene step. Only invisible trailing
+          # spaces are removed; no recorded content changes.
+          for f in docs/evidence/audit-measurement-002/*.txt; do
+            [ -e "$f" ] && sed -i 's/[[:space:]]*$//' "$f"
+          done
           git add docs/evidence/audit-measurement-002
           git diff --cached --quiet && exit 0
           git commit -m "evidence(ci): record BUILD-BRAIN-114Q step results"
@@ -175,6 +183,14 @@ jobs:
           cp repo-wide-tail.txt docs/evidence/audit-measurement-002/repo-wide-tail.txt || true
           cp focused-results.txt docs/evidence/audit-measurement-002/focused-results.txt || true
           cp hygiene-results.txt docs/evidence/audit-measurement-002/hygiene-results.txt || true
+          # Strip trailing whitespace before committing. Captured console output
+          # carries it routinely, and this repo gates every PR on
+          # `git diff --check origin/<base>...HEAD` -- so evidence files were
+          # failing BUILD-BRAIN-114Q's diff-hygiene step. Only invisible trailing
+          # spaces are removed; no recorded content changes.
+          for f in docs/evidence/audit-measurement-002/*.txt; do
+            [ -e "$f" ] && sed -i 's/[[:space:]]*$//' "$f"
+          done
           git add docs/evidence/audit-measurement-002
           git diff --cached --quiet && exit 0
           git commit -m "evidence(ci): record repository-wide suite failures"

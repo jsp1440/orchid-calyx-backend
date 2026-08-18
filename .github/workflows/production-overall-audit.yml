@@ -84,6 +84,14 @@ jobs:
           # *.log is gitignored in this repo; keep the transcript under a tracked name.
           cp production-overall-audit.log docs/evidence/audit-measurement-002/production-overall-audit-log.txt || true
           cp production-relationship-measurement.log docs/evidence/audit-measurement-002/production-relationship-measurement-log.txt || true
+          # Strip trailing whitespace before committing. Captured console output
+          # carries it routinely, and this repo gates every PR on
+          # `git diff --check origin/<base>...HEAD` -- so evidence files were
+          # failing BUILD-BRAIN-114Q's diff-hygiene step. Only invisible trailing
+          # spaces are removed; no recorded content changes.
+          for f in docs/evidence/audit-measurement-002/*.txt; do
+            [ -e "$f" ] && sed -i 's/[[:space:]]*$//' "$f"
+          done
           git add docs/evidence/audit-measurement-002
           git diff --cached --quiet && exit 0
           # Two things are needed for the PR head to be testable, and this
