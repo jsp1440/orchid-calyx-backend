@@ -463,6 +463,9 @@ RELATIONSHIP_SPECS: tuple[dict[str, Any], ...] = (
             "oc_views.occurrences_enriched",
             "public.orchid_occurrences",
             "public.occurrences",
+            # Measured last so the masking check reports it. See the metric
+            # candidate list in mission_control for why it is not promoted.
+            "public.records",
         ),
     },
     {

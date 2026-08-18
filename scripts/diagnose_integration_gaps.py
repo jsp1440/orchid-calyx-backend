@@ -266,6 +266,40 @@ def main() -> int:
                 name_res[f"{table}.{column}"] = entry
             out["name_key_resolution"] = name_res
 
+            # --- 2c. What kind of records are in public.records? -------
+            # It has gbif_occurrence_key, latitude, longitude, event_date and no
+            # media columns, which is occurrence-shaped. It also has record_type,
+            # and 5,006,022 rows sits suspiciously close to the 5,071,287 the
+            # images metric counts. Whether this is the occurrence corpus or a
+            # universal ingest spine decides whether it may be measured as
+            # occurrences at all, so ask it directly. Aggregates only.
+            kinds = {}
+            for relation, column in (
+                ("public.records", "record_type"),
+                ("public.records", "source"),
+                ("public.orchid_occurrence", "record_type_standardized"),
+            ):
+                cols, _ = columns_with_types(cur, relation)
+                if column not in cols:
+                    kinds[f"{relation}.{column}"] = {"column_present": False}
+                    continue
+                rows_, err = q(
+                    cur,
+                    f"""
+                    SELECT {column}::text AS value, COUNT(*) AS n
+                    FROM {relation}
+                    GROUP BY 1 ORDER BY 2 DESC LIMIT 15
+                    """,
+                )
+                kinds[f"{relation}.{column}"] = {
+                    "column_present": True,
+                    "top_values": [
+                        {"value": r["value"], "rows": r["n"]} for r in (rows_ or [])
+                    ],
+                    "error": err,
+                }
+            out["record_kind_breakdown"] = kinds
+
             # --- 3. Habitat claims -------------------------------------
             hab = relation_info(cur, "public.oc_species_habitat_claims")
             if hab.get("exists"):
@@ -353,6 +387,15 @@ def main() -> int:
             continue
         hits = {t: r.get("matched") for t, r in v["resolves_against"].items() if r.get("matched")}
         print(f"  {k:60s} type={v['data_type']} non_null={v['non_null']} -> {hits or 'NOTHING MATCHES'}")
+    print()
+    print("=== record kind breakdown ===")
+    for k, v in (out.get("record_kind_breakdown") or {}).items():
+        if not v.get("column_present"):
+            print(f"  {k:46s} column absent")
+            continue
+        print(f"  {k}:")
+        for e in v["top_values"]:
+            print(f"      {str(e['value'])[:44]:46s} {e['rows']:,}")
     print()
     print("=== name key resolution ===")
     for k, v in (out.get("name_key_resolution") or {}).items():

@@ -94,6 +94,17 @@ METRIC_CANDIDATES = {
         "public.occurrences",
         "public.orchid_occurrences",
         "public.map_data",
+        # Listed, not promoted, and for the same reason public.orchid_occurrence
+        # was once listed last. public.records holds 5,006,022 rows with
+        # gbif_occurrence_key, coordinates, event dates and 2,934,913 elevation
+        # values -- occurrence-shaped, and larger than everything above it. But
+        # its taxon id column is entirely unpopulated, it joins to taxonomy only
+        # by name, and it carries a record_type suggesting a universal ingest
+        # spine rather than an occurrence table. Adopting it silently could
+        # count non-occurrence records as occurrences. Listing it makes the
+        # masking check state the discrepancy so the owner decides.
+        "public.records",
+        "public.v_orchid_records",
     ],
     "images": [
         "public.orchid_images_linked_v2",
