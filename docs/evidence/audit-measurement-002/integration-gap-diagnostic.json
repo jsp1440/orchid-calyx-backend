@@ -1,6 +1,6 @@
 {
   "contract": "OCU-INTEGRATION-GAP-DIAGNOSTIC-001",
-  "captured_at": "2026-08-18T21:11:52.893597+00:00",
+  "captured_at": "2026-08-18T21:27:18.952729+00:00",
   "access": "read_only_transaction_rolled_back",
   "occurrence_candidates": {
     "oc_atlas.occurrences": {
@@ -109,6 +109,159 @@
     "public.occurrences": {
       "exists": false,
       "error": null
+    },
+    "public.records": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": 4911886,
+      "exact_rows": 5006022,
+      "columns": {
+        "record_id": "character varying",
+        "source": "text",
+        "source_record_id": "text",
+        "record_type": "text",
+        "scientific_name_raw": "text",
+        "taxon_id_matched": "text",
+        "genus": "text",
+        "species": "text",
+        "infraspecific": "text",
+        "latitude": "double precision",
+        "longitude": "double precision",
+        "country": "text",
+        "state_province": "text",
+        "locality": "text",
+        "event_date": "timestamp without time zone",
+        "observer_or_collector": "text",
+        "dataset_or_source_title": "text",
+        "citation": "text",
+        "record_json": "jsonb",
+        "created_at": "timestamp without time zone",
+        "updated_at": "timestamp without time zone",
+        "gbif_occurrence_key": "bigint",
+        "elevation_m": "numeric",
+        "elevation_min_m": "double precision",
+        "elevation_max_m": "double precision",
+        "elevation_as_stated": "text",
+        "geom": "USER-DEFINED",
+        "elevation_source": "text",
+        "elevation_method": "text",
+        "elevation_model": "text",
+        "elevation_resolution_m": "integer",
+        "elevation_confidence": "numeric",
+        "elevation_updated_at": "timestamp with time zone",
+        "elevation_dem_m": "numeric",
+        "elevation_dem_source": "text",
+        "elevation_dem_method": "text",
+        "elevation_dem_model": "text",
+        "elevation_dem_confidence": "numeric",
+        "elevation_dem_lat": "double precision",
+        "elevation_dem_lon": "double precision",
+        "elevation_dem_updated_at": "timestamp with time zone",
+        "elevation_effective_m": "numeric",
+        "accepted_taxon_id": "bigint",
+        "scientific_name_clean": "text",
+        "eol_page_id": "bigint",
+        "name_source": "text",
+        "scientific_binomial": "text",
+        "is_orchid": "boolean",
+        "record_classification": "text"
+      }
+    },
+    "public.oc_occurrences": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": 114517,
+      "exact_rows": 114517,
+      "columns": {
+        "occurrence_id": "bigint",
+        "species_id": "bigint",
+        "genus_id": "bigint",
+        "decimal_latitude": "double precision",
+        "decimal_longitude": "double precision",
+        "elevation_m": "double precision",
+        "country": "text",
+        "source": "text",
+        "raw_json": "jsonb",
+        "created_at": "timestamp without time zone"
+      }
+    },
+    "public.v_orchid_records": {
+      "exists": true,
+      "relkind": "v",
+      "approximate_rows": -1,
+      "exact_rows": 930658,
+      "columns": {
+        "record_id": "character varying",
+        "source": "text",
+        "source_record_id": "text",
+        "record_type": "text",
+        "scientific_name_raw": "text",
+        "taxon_id_matched": "text",
+        "genus": "text",
+        "species": "text",
+        "infraspecific": "text",
+        "latitude": "double precision",
+        "longitude": "double precision",
+        "country": "text",
+        "state_province": "text",
+        "locality": "text",
+        "event_date": "timestamp without time zone",
+        "observer_or_collector": "text",
+        "dataset_or_source_title": "text",
+        "citation": "text",
+        "record_json": "jsonb",
+        "created_at": "timestamp without time zone",
+        "updated_at": "timestamp without time zone",
+        "gbif_occurrence_key": "bigint",
+        "elevation_m": "numeric",
+        "elevation_min_m": "double precision",
+        "elevation_max_m": "double precision",
+        "elevation_as_stated": "text",
+        "geom": "USER-DEFINED",
+        "elevation_source": "text",
+        "elevation_method": "text",
+        "elevation_model": "text",
+        "elevation_resolution_m": "integer",
+        "elevation_confidence": "numeric",
+        "elevation_updated_at": "timestamp with time zone",
+        "elevation_dem_m": "numeric",
+        "elevation_dem_source": "text",
+        "elevation_dem_method": "text",
+        "elevation_dem_model": "text",
+        "elevation_dem_confidence": "numeric",
+        "elevation_dem_lat": "double precision",
+        "elevation_dem_lon": "double precision",
+        "elevation_dem_updated_at": "timestamp with time zone",
+        "elevation_effective_m": "numeric",
+        "accepted_taxon_id": "bigint",
+        "scientific_name_clean": "text",
+        "eol_page_id": "bigint",
+        "name_source": "text",
+        "scientific_binomial": "text",
+        "is_orchid": "boolean"
+      },
+      "view_definition": " SELECT record_id,\n    source,\n    source_record_id,\n    record_type,\n    scientific_name_raw,\n    taxon_id_matched,\n    genus,\n    species,\n    infraspecific,\n    latitude,\n    longitude,\n    country,\n    state_province,\n    locality,\n    event_date,\n    observer_or_collector,\n    dataset_or_source_title,\n    citation,\n    record_json,\n    created_at,\n    updated_at,\n    gbif_occurrence_key,\n    elevation_m,\n    elevation_min_m,\n    elevation_max_m,\n    elevation_as_stated,\n    geom,\n    elevation_source,\n    elevation_method,\n    elevation_model,\n    elevation_resolution_m,\n    elevation_confidence,\n    elevation_updated_at,\n    elevation_dem_m,\n    elevation_dem_source,\n    elevation_dem_method,\n    elevation_dem_model,\n    elevation_dem_confidence,\n    elevation_dem_lat,\n    elevation_dem_lon,\n    elevation_dem_updated_at,\n    elevation_effective_m,\n    accepted_taxon_id,\n    scientific_name_clean,\n    eol_page_id,\n    name_source,\n    scientific_binomial,\n    is_orchid\n   FROM records\n  WHERE is_orchid = true;"
+    },
+    "oc_stage.mx_occurrence_final_v3": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": 76970,
+      "exact_rows": 76970,
+      "columns": {
+        "occurrence_id": "character varying",
+        "scientific_name": "text",
+        "species": "text",
+        "genus": "text",
+        "latitude": "double precision",
+        "longitude": "double precision",
+        "elevation_m": "numeric",
+        "elevation_effective_m": "numeric",
+        "country": "text",
+        "locality": "text",
+        "source": "text",
+        "dataset_or_source_title": "text",
+        "event_date": "timestamp without time zone"
+      }
     }
   },
   "orphan_key_resolution": {
@@ -235,6 +388,50 @@
       },
       "non_null": 26,
       "distinct_non_null": 20
+    },
+    "public.records.taxon_id": {
+      "column_present": false
+    },
+    "public.records.taxonomy_id": {
+      "column_present": false
+    },
+    "public.records.orchid_taxonomy_id": {
+      "column_present": false
+    },
+    "public.records.accepted_taxon_id": {
+      "column_present": true,
+      "data_type": "bigint",
+      "resolves_against": {
+        "oc_taxonomy.taxa.taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.accepted_taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.source_record_id": {
+          "matched": 0
+        },
+        "public.orchid_taxonomy.id": {
+          "matched": 0
+        },
+        "oc_graph.kg_nodes.source_pk": {
+          "matched": 0
+        }
+      },
+      "non_null": 0,
+      "distinct_non_null": 0
+    },
+    "public.oc_occurrences.taxon_id": {
+      "column_present": false
+    },
+    "public.oc_occurrences.taxonomy_id": {
+      "column_present": false
+    },
+    "oc_stage.mx_occurrence_final_v3.taxonomy_id": {
+      "column_present": false
+    },
+    "oc_stage.mx_occurrence_final_v3.taxon_id": {
+      "column_present": false
     }
   },
   "habitat_claims": {
