@@ -12,6 +12,8 @@ on:
       - '.github/workflows/production-overall-audit.yml'
       - 'app/routers/owner_operations.py'
       - 'app/readiness/live_graph_audit.py'
+      - 'app/readiness/relationship_measurement.py'
+      - 'scripts/measure_relationships_against_production.py'
   workflow_dispatch:
 
 permissions:
@@ -24,8 +26,10 @@ jobs:
     env:
       CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
       CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CALYX_EXPECTED_COMMIT: 34352e392df8c5c55c47a6145f7ba580de7e9db6
       AUDIT_EVIDENCE_PATH: docs/evidence/audit-measurement-002/production-overall-audit.json
+      RELATIONSHIP_EVIDENCE_PATH: docs/evidence/audit-measurement-002/production-relationship-measurement.json
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,12 +46,27 @@ jobs:
           : "${CALYX_BACKEND_URL:?Repository variable CALYX_BACKEND_URL is required}"
           : "${CALYX_OWNER_ACCESS_CODE:?Repository secret CALYX_OWNER_ACCESS_CODE is required}"
 
-      - name: Capture the production Overall Audit
+      - name: Install database driver
+        run: pip install 'psycopg[binary]'
+
+      - name: Capture the production Overall Audit (BEFORE - deployed release)
         shell: bash
         run: |
           set -o pipefail
           mkdir -p docs/evidence/audit-measurement-002
           python scripts/production_overall_audit.py 2>&1 | tee production-overall-audit.log
+
+      # The deployed release predates the measurement paths added on this branch,
+      # and deploying is out of scope, so the "after" state cannot be read through
+      # the API. It is measured directly against the same production data instead,
+      # inside a read-only transaction that is rolled back.
+      - name: Measure new relationship paths against production (AFTER)
+        if: env.DATABASE_URL != ''
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/measure_relationships_against_production.py 2>&1 \
+            | tee production-relationship-measurement.log
 
       - name: Commit evidence
         if: always()
@@ -59,6 +78,7 @@ jobs:
           mkdir -p docs/evidence/audit-measurement-002
           # *.log is gitignored in this repo; keep the transcript under a tracked name.
           cp production-overall-audit.log docs/evidence/audit-measurement-002/production-overall-audit-log.txt || true
+          cp production-relationship-measurement.log docs/evidence/audit-measurement-002/production-relationship-measurement-log.txt || true
           git add docs/evidence/audit-measurement-002
           git diff --cached --quiet && exit 0
           git commit -m "evidence(audit): capture production Overall Audit from CI [skip ci]"
@@ -73,5 +93,6 @@ jobs:
           path: |
             docs/evidence/audit-measurement-002/
             production-overall-audit.log
+            production-relationship-measurement.log
           if-no-files-found: warn
           retention-days: 30

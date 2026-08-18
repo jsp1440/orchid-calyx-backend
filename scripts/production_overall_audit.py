@@ -322,25 +322,25 @@ def main() -> int:
     print(f"release match     : {evidence['release_confirmation']['matches_expected']}")
     print(f"corrected logic   : {evidence['audit_measurement_001_serving']['verdict']}")
     print(f"audit id          : {audit_payload.get('audit_id')}")
-    print("")
+    print()
     print("relationship states:")
     for name, r in per_relationship.items():
         print(f"  {name:38s} {r['state']:18s} (was: {r['previous_audit_claim']})")
-    print("")
+    print()
     print(f"state totals      : {counts}")
-    print("")
+    print()
     print("metric sources:")
     for name, m in (evidence.get("metric_summary") or {}).items():
-        print(f"  {name:16s} {str(m['selected_source']):58s} {m['count']}")
+        print(f"  {name:16s} {m['selected_source']!s:58s} {m['count']}")
     if evidence["masking_warnings"]:
-        print("")
+        print()
         print("masking warnings:")
         for w in evidence["masking_warnings"]:
             print(f"  [{w['metric']}] {w['warning']}")
-    print("")
+    print()
     print(f"evidence written  : {OUT_PATH}")
     if failures:
-        print("")
+        print()
         print("FAILURES:")
         for f in failures:
             print(f"  - {f}")

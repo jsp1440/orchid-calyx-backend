@@ -50,6 +50,7 @@ from app.executive_intelligence.schemas import RecommendationDecisionRequest
 from app.security import OWNER_SESSION_COOKIE, REVOKED_OWNER_NONCES, create_owner_session_token, owner_cookie_samesite, owner_cookie_secure, owner_session_ttl_seconds, verify_owner_access_code, verify_owner_or_api_key, verify_owner_session
 from app.routers.mission_control import completeness_rows, harvester_rows, metric_snapshot
 from app.readiness.live_graph_audit import run_live_graph_audit
+from app.readiness.relationship_measurement import measure_declared_relationships
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
 
 router = APIRouter(prefix="/api/mission-control/owner", tags=["BUILD-051 Owner Operations"])
@@ -820,6 +821,14 @@ DB_UNREACHABLE_DETAIL = (
     "unknown rather than absent."
 )
 
+# "unmeasured" and "unavailable" were previously both reported as "unmeasured",
+# which sent a reader to write a measurement path that already existed when the
+# real blocker was a missing relation. They are separated because they call for
+# different work. Neither is a finding of absence, and that is the invariant the
+# whole AUDIT-MEASUREMENT line exists to hold.
+UNAVAILABLE_STATES = ("unavailable",)
+NON_FINDING_STATES = ("unmeasured", "unavailable")
+
 
 def relationship_evidence() -> dict[str, dict[str, Any]]:
     """Return a per-relationship evidence state measured against the live database.
@@ -889,6 +898,20 @@ def relationship_evidence() -> dict[str, dict[str, Any]]:
             "detail", UNMEASURED_DETAIL
         )
 
+    # The remaining eight relationships, measured against the same canonical
+    # sources the Knowledge Graph adapters already read. These are read-only
+    # measurements: they count and join, they do not publish edges, and a
+    # discovery failure becomes "unavailable" rather than "absent".
+    try:
+        declared = db_execute(
+            lambda cur: measure_declared_relationships(cur) if cur is not None else None
+        )
+    except HTTPException:
+        declared = None
+    for name, measured in (declared or {}).items():
+        if name in evidence:
+            evidence[name] = measured
+
     return evidence
 
 
@@ -913,6 +936,17 @@ def derived_next_actions(
         actions.append(
             "Implement a measurement path for these relationships before any claim "
             "is made about them: {}.".format(", ".join(unmeasured))
+        )
+    unavailable = sorted(
+        name for name, entry in evidence.items() if entry.get("state") == "unavailable"
+    )
+    if unavailable:
+        actions.append(
+            "Resolve why these relationships could not be measured; a measurement "
+            "path exists and something blocked it, so this is a schema or "
+            "connectivity question rather than missing instrumentation: {}.".format(
+                ", ".join(unavailable)
+            )
         )
     absent = sorted(
         name for name, entry in evidence.items() if entry.get("state") == "absent"
@@ -951,11 +985,22 @@ def live_audit_payload(audit_type: str) -> dict[str, Any]:
     unmeasured = sorted(
         name for name, entry in evidence.items() if entry.get("state") == "unmeasured"
     )
+    unavailable = sorted(
+        name for name, entry in evidence.items() if entry.get("state") == "unavailable"
+    )
     source_warnings = [
         warning
         for metric in (metrics.get("metrics") or {}).values()
         for warning in (metric.get("source_warnings") or [])
     ]
+    # A relationship measured against a relation that a far larger candidate is
+    # masking is the same class of finding as a masked metric, so it is reported
+    # in the same place rather than buried in the per-relationship detail.
+    source_warnings.extend(
+        "{}: {}".format(name, warning)
+        for name, entry in evidence.items()
+        for warning in (entry.get("source_warnings") or [])
+    )
     return {
         "audit_id": f"AUD-{uuid4().hex[:12].upper()}",
         "audit_type": audit_type,
@@ -969,6 +1014,7 @@ def live_audit_payload(audit_type: str) -> dict[str, Any]:
         "relationship_evidence": evidence,
         "missing_relationships": measured_absent,
         "unmeasured_relationships": unmeasured,
+        "unavailable_relationships": unavailable,
         "unresolved_failures": degraded + list(metrics.get("blockers", [])),
         "confidence": "medium" if metrics.get("database_connected") else "low",
         "strengths": ["Mission Control backend telemetry is queryable.", "Harvester registry is visible."],
@@ -1002,6 +1048,9 @@ def audit_markdown(payload: dict[str, Any]) -> str:
         "## Unmeasured Relationships (state unknown, not a finding of absence)",
         *([f"- {item}" for item in payload.get("unmeasured_relationships") or []] or ["- none"]),
         "",
+        "## Unavailable Relationships (measurement blocked, not a finding of absence)",
+        *([f"- {item}" for item in payload.get("unavailable_relationships") or []] or ["- none"]),
+        "",
         "## Metric Source Warnings",
         *([f"- {item}" for item in payload.get("metric_source_warnings") or []] or ["- none"]),
         "",
@@ -1024,6 +1073,7 @@ def _audit_sections(payload: dict[str, Any]) -> list[tuple[str, list[str]]]:
     counts = [f"{k}: {v}" for k, v in payload["record_counts"].items()]
     missing = list(payload["missing_relationships"]) or ["none measured absent"]
     unmeasured = list(payload.get("unmeasured_relationships") or []) or ["none"]
+    unavailable = list(payload.get("unavailable_relationships") or []) or ["none"]
     warnings = list(payload.get("metric_source_warnings") or []) or ["none"]
     evidence = [
         "{}: {}".format(name, entry.get("state", "unmeasured"))
@@ -1038,6 +1088,7 @@ def _audit_sections(payload: dict[str, Any]) -> list[tuple[str, list[str]]]:
         ("Relationship Evidence", evidence),
         ("Measured-Absent Relationships", missing),
         ("Unmeasured Relationships (state unknown, not a finding of absence)", unmeasured),
+        ("Unavailable Relationships (measurement blocked, not a finding of absence)", unavailable),
         ("Metric Source Warnings", warnings),
         ("Strengths", strengths),
         ("Weaknesses", weaknesses),
