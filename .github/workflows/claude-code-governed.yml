@@ -31,9 +31,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run Claude Code — attempt 1
-        id: claude_attempt_1
-        continue-on-error: true
+      - name: Run Claude Code
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -43,60 +41,6 @@ jobs:
             actions: read
           claude_args: |
             --model claude-sonnet-5
-            --max-turns 10
-            --allowedTools "Edit,Read,Write,Bash(git diff --check),Bash(git status),Bash(git diff)"
-            --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative; model output is not project state. Reuse existing authoritative work. For implementation missions, run focused validation and required CI, commit and push the work, and create or update exactly one DRAFT pull request. Never merge or auto-merge, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create or disclose credentials, spend funds, force-push, or delete branches/repositories. Stop after three unsuccessful repair attempts on the same deterministic failure class and report the blocker."
-
-      - name: Back off after attempt 1
-        if: steps.claude_attempt_1.outcome == 'failure'
-        run: sleep 30
-
-      - name: Reset repository before attempt 2
-        if: steps.claude_attempt_1.outcome == 'failure'
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          clean: true
-
-      - name: Run Claude Code — attempt 2
-        id: claude_attempt_2
-        if: steps.claude_attempt_1.outcome == 'failure'
-        continue-on-error: true
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          trigger_phrase: "@claude"
-          branch_prefix: "claude/"
-          additional_permissions: |
-            actions: read
-          claude_args: |
-            --model claude-sonnet-5
-            --max-turns 10
-            --allowedTools "Edit,Read,Write,Bash(git diff --check),Bash(git status),Bash(git diff)"
-            --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative; model output is not project state. Reuse existing authoritative work. For implementation missions, run focused validation and required CI, commit and push the work, and create or update exactly one DRAFT pull request. Never merge or auto-merge, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create or disclose credentials, spend funds, force-push, or delete branches/repositories. Stop after three unsuccessful repair attempts on the same deterministic failure class and report the blocker."
-
-      - name: Back off after attempt 2
-        if: steps.claude_attempt_1.outcome == 'failure' && steps.claude_attempt_2.outcome == 'failure'
-        run: sleep 60
-
-      - name: Reset repository before attempt 3
-        if: steps.claude_attempt_1.outcome == 'failure' && steps.claude_attempt_2.outcome == 'failure'
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          clean: true
-
-      - name: Run Claude Code — attempt 3
-        if: steps.claude_attempt_1.outcome == 'failure' && steps.claude_attempt_2.outcome == 'failure'
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          trigger_phrase: "@claude"
-          branch_prefix: "claude/"
-          additional_permissions: |
-            actions: read
-          claude_args: |
-            --model claude-sonnet-5
-            --max-turns 10
-            --allowedTools "Edit,Read,Write,Bash(git diff --check),Bash(git status),Bash(git diff)"
-            --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative; model output is not project state. Reuse existing authoritative work. For implementation missions, run focused validation and required CI, commit and push the work, and create or update exactly one DRAFT pull request. Never merge or auto-merge, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create or disclose credentials, spend funds, force-push, or delete branches/repositories. Stop after three unsuccessful repair attempts on the same deterministic failure class and report the blocker."
+            --max-turns 25
+            --allowedTools "Edit,Read,Write,Bash(git diff:*),Bash(git status:*),Bash(git ls-files:*),Bash(git log:*),Bash(git rev-parse:*),Bash(test:*)"
+            --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative; model output is not project state. Reuse existing authoritative work. For implementation missions, run focused validation and required CI, commit and push the work, and create or update exactly one DRAFT pull request. Never merge or auto-merge, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create or disclose credentials, spend funds, force-push, or delete branches/repositories. Use the available Read/Glob/Grep tools instead of shell commands when possible. Complete the requested validation and final GitHub comment before stopping."
