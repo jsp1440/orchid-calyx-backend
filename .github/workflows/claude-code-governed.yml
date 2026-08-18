@@ -39,6 +39,7 @@ jobs:
           branch_prefix: "claude/"
           additional_permissions: |
             actions: read
+          show_full_output: true
           claude_args: |
             --max-turns 10
             --allowedTools "Edit,Read,Write,Bash(git diff --check),Bash(git status),Bash(git diff)"
