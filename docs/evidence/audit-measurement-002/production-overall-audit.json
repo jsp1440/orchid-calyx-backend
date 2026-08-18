@@ -1,6 +1,6 @@
 {
   "contract": "OCU-PRODUCTION-OVERALL-AUDIT-EVIDENCE-001",
-  "captured_at": "2026-08-18T21:45:30.798577+00:00",
+  "captured_at": "2026-08-18T21:54:02.141292+00:00",
   "target": "\r\nhttps://orchid-calyx-backend.onrender.com",
   "expected_commit": "34352e392df8c5c55c47a6145f7ba580de7e9db6",
   "steps": [
@@ -321,7 +321,7 @@
       },
       "runtime_jobs": {
         "table": "oc_admin.ocp_execution_jobs",
-        "count": 12213,
+        "count": 12214,
         "available": true,
         "checked": [
           "oc_admin.ocp_execution_jobs"
@@ -332,7 +332,7 @@
             "selected": true,
             "exists": true,
             "relkind": "r",
-            "approximate_rows": 11803
+            "approximate_rows": 12214
           }
         ],
         "source_warnings": []
@@ -356,7 +356,7 @@
         "source_warnings": []
       }
     },
-    "generated_at": "2026-08-18T21:45:32.464617+00:00"
+    "generated_at": "2026-08-18T21:54:03.193553+00:00"
   },
   "metric_summary": {
     "taxonomy": {
@@ -575,14 +575,14 @@
     },
     "runtime_jobs": {
       "selected_source": "oc_admin.ocp_execution_jobs",
-      "count": 12213,
+      "count": 12214,
       "available": true,
       "candidates_probed": [
         {
           "table": "oc_admin.ocp_execution_jobs",
           "exists": true,
           "selected": true,
-          "approximate_rows": 11803
+          "approximate_rows": 12214
         }
       ],
       "source_warnings": []
@@ -618,8 +618,8 @@
   },
   "audit": {
     "status": 200,
-    "audit_id": "AUD-06886729E814",
-    "generated_at": "2026-08-18T21:45:37.569861+00:00",
+    "audit_id": "AUD-1C21A9905AAE",
+    "generated_at": "2026-08-18T21:54:07.326287+00:00",
     "confidence": "medium",
     "data_freshness": "live_query",
     "record_counts": {
@@ -629,7 +629,7 @@
       "literature": 408,
       "relationships": 70609,
       "mycorrhiza": 1,
-      "runtime_jobs": 12213,
+      "runtime_jobs": 12214,
       "runtime_actions": 668
     },
     "metric_source_warnings": [
@@ -751,6 +751,6 @@
     "measured-present": 2,
     "unmeasured": 8
   },
-  "completed_at": "2026-08-18T21:45:37.683742+00:00",
+  "completed_at": "2026-08-18T21:54:07.413873+00:00",
   "failures": []
 }

@@ -1,7 +1,7 @@
 {
   "contract": "OCU-PRODUCTION-RELATIONSHIP-MEASUREMENT-001",
-  "captured_at": "2026-08-18T21:45:38.237098+00:00",
-  "completed_at": "2026-08-18T21:46:01.671376+00:00",
+  "captured_at": "2026-08-18T21:54:07.895992+00:00",
+  "completed_at": "2026-08-18T21:54:13.798936+00:00",
   "access": "read_only_transaction_rolled_back",
   "note": "Executed against the production database using the measurement paths added in this branch. The deployed release does not yet carry them; this records what the audit would report once it does.",
   "relationships": {
