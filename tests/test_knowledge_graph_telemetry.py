@@ -19,14 +19,26 @@ from runtime.scientific_intelligence.adapters import (
 
 
 class FakeCursor:
-    """Minimal cursor emulating to_regclass + COUNT(*) behaviour."""
+    """Minimal cursor emulating to_regclass, pg_class and COUNT(*) behaviour.
+
+    The pg_class branch must be tested BEFORE the to_regclass one, because the
+    planner-estimate query contains both. Matching on to_regclass first returned
+    a one-element tuple to a caller that reads row[1], which is what made these
+    tests fail with IndexError once ``relation_estimate`` was introduced: the
+    fake still only knew the two query shapes that existed before it.
+    """
 
     def __init__(self, tables: dict[str, int]):
         self.tables = tables
         self._result = None
 
     def execute(self, sql, params=None):
-        if "to_regclass" in sql:
+        if "pg_class" in sql:
+            table = params[0]
+            # Ordinary table, with the row count standing in as the planner
+            # estimate; that is what the masking check compares candidates on.
+            self._result = ("r", float(self.tables[table])) if table in self.tables else None
+        elif "to_regclass" in sql:
             table = params[0]
             self._result = (table if table in self.tables else None,)
         elif sql.startswith("SELECT COUNT(*) FROM "):
