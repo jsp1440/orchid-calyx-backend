@@ -54,14 +54,32 @@ ORPHAN_KEYS = (
     ("public.orchid_occurrence", "taxonomy_id"),
     ("public.orchid_occurrence", "orchid_taxonomy_id"),
     ("oc_atlas.occurrences", "taxon_id"),
+    ("public.records", "taxon_id"),
+    ("public.records", "taxonomy_id"),
+    ("public.records", "orchid_taxonomy_id"),
+    ("public.records", "accepted_taxon_id"),
+    ("public.oc_occurrences", "taxon_id"),
+    ("public.oc_occurrences", "taxonomy_id"),
+    ("oc_stage.mx_occurrence_final_v3", "taxonomy_id"),
+    ("oc_stage.mx_occurrence_final_v3", "taxon_id"),
 )
 
+# The first pass of this diagnostic only knew the relations already named in the
+# metric candidate lists, and concluded public.orchid_occurrence was canonical on
+# 580,612 rows. The corrected column scan then found public.records carrying
+# 2,934,913 elevation values and public.oc_occurrences another 37,794, against
+# 7 on public.orchid_occurrence. A candidate list can only settle a question
+# among the relations it happens to name, so these are now probed too.
 OCCURRENCE_CANDIDATES = (
     "oc_atlas.occurrences",
     "oc_views.occurrences_enriched",
     "public.orchid_occurrence",
     "public.orchid_occurrences",
     "public.occurrences",
+    "public.records",
+    "public.oc_occurrences",
+    "public.v_orchid_records",
+    "oc_stage.mx_occurrence_final_v3",
 )
 
 

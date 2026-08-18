@@ -81,10 +81,14 @@ jobs:
           cp production-relationship-measurement.log docs/evidence/audit-measurement-002/production-relationship-measurement-log.txt || true
           git add docs/evidence/audit-measurement-002
           git diff --cached --quiet && exit 0
-          # No [skip ci]. This commit becomes the PR head, and a head with
-          # skipped CI cannot be shown green against the exact commit that would
-          # merge. Committing under docs/evidence/** does not match this
-          # workflow's own path filter, so it cannot retrigger itself.
+          # Two things are needed for the PR head to be testable, and this
+          # handles only the first: the message carries no CI-skip directive.
+          # The second cannot be fixed here -- a push authored by the default
+          # GITHUB_TOKEN never triggers a workflow run, by design, so this
+          # commit will show zero checks no matter what its message says. The
+          # branch must therefore END on a human-authored commit before it is
+          # judged merge-ready. Committing under docs/evidence/** also does not
+          # match this workflow's own path filter, so it cannot retrigger itself.
           git commit -m "evidence(audit): capture production Overall Audit from CI"
           git fetch origin ${{ github.ref_name }}
           git rebase origin/${{ github.ref_name }} || git rebase --abort

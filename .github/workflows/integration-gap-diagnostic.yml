@@ -56,8 +56,14 @@ jobs:
           cp integration-gap-diagnostic.log docs/evidence/audit-measurement-002/integration-gap-diagnostic-log.txt || true
           git add docs/evidence/audit-measurement-002
           git diff --cached --quiet && exit 0
-          # No [skip ci]: this commit can become the PR head, and a head with
-          # skipped CI cannot be shown green against the commit that would merge.
+          # Two things are needed for the PR head to be testable, and this
+          # handles only the first: the message carries no CI-skip directive.
+          # The second cannot be fixed here -- a push authored by the default
+          # GITHUB_TOKEN never triggers a workflow run, by design, so this
+          # commit will show zero checks no matter what its message says. The
+          # branch must therefore END on a human-authored commit before it is
+          # judged merge-ready. Committing under docs/evidence/** also does not
+          # match this workflow's own path filter, so it cannot retrigger itself.
           git commit -m "evidence(audit): capture production integration-gap diagnostic"
           git fetch origin ${{ github.ref_name }}
           git rebase origin/${{ github.ref_name }} || git rebase --abort
