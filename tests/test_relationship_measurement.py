@@ -263,9 +263,12 @@ def test_join_failure_names_the_columns_each_side_actually_has():
     assert result["state"] == "unavailable"
     assert result["object_columns"] == ["assoc_id", "fungal_name", "orchid_name"]
     assert result["taxonomy_columns"] == ["scientific_name", "taxon_id"]
-    # The taxonomy side did have a key; the object side is what failed.
-    assert result["taxonomy_key_found"] == "taxon_id"
+    # Which taxonomy relations were available is part of the answer, since the
+    # audit now tries every one of them rather than a single anchor.
+    assert result["taxonomy_tables_present"] == ["oc_taxonomy.taxa"]
+    # The taxonomy side had a key; the object side is what failed.
     assert result["object_key_found"] is None
+    assert result["object_name_column_found"] is None
 
 
 def test_missing_value_column_names_what_the_relation_does_carry():
@@ -429,3 +432,137 @@ def test_any_defining_column_counts_not_just_the_first_that_exists():
     )
     assert result["state"] == "present"
     assert result["value_columns"] == ["avg_elevation_m", "min_elevation_m", "max_elevation_m"]
+
+
+# --- DATA-INTEGRATION-REPAIR-001 regressions ---------------------------------
+#
+# Each of these encodes a linkage that production measured as broken, and the
+# specific reason it was broken. They are written against the shapes the
+# read-only diagnostic actually found, so a regression reproduces the original
+# defect rather than an invented one.
+
+TAX_BOTH = {
+    "oc_taxonomy.taxa": {"taxon_id", "canonical_name"},
+    "public.orchid_taxonomy": {"id", "scientific_name"},
+}
+
+
+def test_pollinator_ids_resolve_against_the_taxonomy_relation_they_belong_to():
+    """23 of 23 orchid_taxonomy_id values resolve into public.orchid_taxonomy, 0 into oc_taxonomy.taxa.
+
+    Anchoring every relationship to a single taxonomy relation reported this as
+    measured-absent while all 23 rows were linked, just to a different table.
+    """
+    cur = FakeCursor(
+        {
+            **TAX_BOTH,
+            "oc_interactions.orchid_interaction_edges": {
+                "orchid_taxonomy_id",
+                "orchid_scientific_name",
+                "partner_taxon_id",
+            },
+        },
+        rows={
+            "oc_taxonomy.taxa": 31840,
+            "public.orchid_taxonomy": 69485,
+            "oc_interactions.orchid_interaction_edges": 23,
+        },
+        joins={
+            # Same object column, different taxonomy relation on each side of
+            # the join -- the fake keys on the object column, so both id
+            # attempts share these numbers; reach is what separates them.
+            "orchid_taxonomy_id": {"carrying": 23, "matched": 23, "taxa_reached": 4},
+            "orchid_scientific_name": {"carrying": 23, "matched": 0, "taxa_reached": 0},
+        },
+    )
+    result = measure(cur, object_tables=("oc_interactions.orchid_interaction_edges",))
+    assert result["state"] == "present"
+    assert result["measurement"] == "relational_linkage_by_id"
+    assert result["rows_matching_taxonomy"] == 23
+    # Both taxonomy relations were tried, so the choice is evidenced.
+    assert len(result["joins_attempted"]) >= 2
+
+
+def test_habitat_claims_reach_taxonomy_once_the_right_anchor_is_tried():
+    """695 claims, 695 resolving into public.orchid_taxonomy and 2 into oc_taxonomy.taxa."""
+    cur = FakeCursor(
+        {**TAX_BOTH, "public.oc_species_habitat_claims": {"taxonomy_id", "habitat_type"}},
+        rows={
+            "oc_taxonomy.taxa": 31840,
+            "public.orchid_taxonomy": 69485,
+            "public.oc_species_habitat_claims": 695,
+        },
+        joins={"taxonomy_id": {"carrying": 695, "matched": 695, "taxa_reached": 400}},
+    )
+    result = measure(cur, object_tables=("public.oc_species_habitat_claims",))
+    assert result["state"] == "present"
+    assert result["rows_matching_taxonomy"] == 695
+
+
+def test_the_larger_occurrence_corpus_is_measured_first():
+    spec = next(s for s in rm.RELATIONSHIP_SPECS if s["name"] == "taxonomy_to_occurrences")
+    assert spec["object_tables"][0] == "public.orchid_occurrence"
+    # The 26-row relation is kept as a candidate so masking stays visible.
+    assert "oc_atlas.occurrences" in spec["object_tables"]
+
+
+def test_elevation_looks_at_the_occurrence_corpus_and_its_real_column_names():
+    spec = next(s for s in rm.RELATIONSHIP_SPECS if s["name"] == "taxonomy_to_elevation")
+    assert spec["object_tables"][0] == "public.orchid_occurrence"
+    for column in ("elevation_m", "minimum_elevation", "maximum_elevation", "elevation_meters"):
+        assert column in spec["required_value_columns"]
+
+
+def test_a_name_join_that_wins_says_the_id_join_is_weaker_and_by_how_much():
+    """Name matching is the documented fallback, so using it must be visible."""
+    cur = FakeCursor(
+        {
+            **TAX_BOTH,
+            "oc_mycorrhiza.orchid_fungal_associations": {
+                "orchid_taxonomy_id",
+                "orchid_scientific_name",
+            },
+        },
+        rows={
+            "oc_taxonomy.taxa": 31840,
+            "public.orchid_taxonomy": 69485,
+            "oc_mycorrhiza.orchid_fungal_associations": 462,
+        },
+        joins={
+            "orchid_taxonomy_id": {"carrying": 2, "matched": 2, "taxa_reached": 2},
+            "orchid_scientific_name": {"carrying": 462, "matched": 347, "taxa_reached": 146},
+        },
+    )
+    result = measure(cur, object_tables=("oc_mycorrhiza.orchid_fungal_associations",))
+    assert result["measurement"] == "relational_linkage_by_name"
+    assert result["rows_matching_taxonomy"] == 347
+    assert any(
+        "documented fallback" in w and "2" in w for w in result["source_warnings"]
+    ), result["source_warnings"]
+
+
+def test_reach_outranks_join_strength():
+    """A 2-row id join must not outrank a 347-row name join.
+
+    Ranking by strength first would report 0.4% coverage as the measurement and
+    call that an improvement.
+    """
+    cur = FakeCursor(
+        {**TAX_BOTH, "t.x": {"taxon_id", "scientific_name"}},
+        rows={"oc_taxonomy.taxa": 31840, "public.orchid_taxonomy": 69485, "t.x": 462},
+        joins={
+            "taxon_id": {"carrying": 2, "matched": 2, "taxa_reached": 2},
+            "scientific_name": {"carrying": 462, "matched": 347, "taxa_reached": 146},
+        },
+    )
+    result = measure(cur, object_tables=("t.x",))
+    assert result["rows_matching_taxonomy"] == 347
+
+
+def test_blocked_domains_state_the_relation_is_absent_not_merely_unverified():
+    from runtime.knowledge_graph import source_registry as sr
+
+    for domain in ("habitat", "elevation"):
+        entry = next(q for q in sr.SOURCE_QUERIES if q.domain == domain)
+        assert entry.enabled is False, "these domains must stay fail-closed"
+        assert "does not exist in production" in (entry.blocked_reason or "")

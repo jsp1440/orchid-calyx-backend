@@ -77,16 +77,23 @@ METRIC_CANDIDATES = {
         "public.taxonomy",
     ],
     "occurrences": [
+        # Promoted on measured evidence, having previously been listed last so
+        # the masking check could surface it without redefining the metric. It
+        # has now surfaced it, twice, and the read-only diagnostic settles it:
+        # public.orchid_occurrence holds 580,612 rows to oc_atlas.occurrences'
+        # 26, oc_views.occurrences_enriched is a view over that same 26-row
+        # relation, and 109,195 of its taxonomy_id values resolve into
+        # public.orchid_taxonomy without a single miss. It also carries the
+        # provenance columns an occurrence corpus needs -- source_table,
+        # source_record_id, canonical_gbif_occurrence_key, taxon_match_method.
+        # The headline occurrences count changes from 26 to 580,612 as a result.
+        # That is the correction, not a side effect of one.
+        "public.orchid_occurrence",
         "oc_atlas.occurrences",
         "oc_atlas.map_data",
         "public.occurrences",
         "public.orchid_occurrences",
         "public.map_data",
-        # Appended, not promoted: live-schema verification on PR #901 reports
-        # public.orchid_occurrence as a large occurrence corpus. Listing it last
-        # keeps the selected source unchanged while letting the masking check
-        # surface the discrepancy instead of silently redefining the metric.
-        "public.orchid_occurrence",
     ],
     "images": [
         "public.orchid_images_linked_v2",

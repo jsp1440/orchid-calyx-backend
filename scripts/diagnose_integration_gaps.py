@@ -212,15 +212,23 @@ def main() -> int:
             out["habitat_claims"] = hab
 
             # --- 4. Any elevation values anywhere ----------------------
+            # The pattern must be a bound parameter. Inlined, psycopg reads the
+            # %e of "%elevation%" as a placeholder and refuses the statement --
+            # which is how the first run reported that the database held no
+            # elevation columns at all, while public.orchid_occurrence carried
+            # six. A scan that could not run must never read as a scan that
+            # found nothing.
             rows, err = q(
                 cur,
                 """
                 SELECT table_schema, table_name, column_name, data_type
                 FROM information_schema.columns
-                WHERE column_name ILIKE '%elevation%'
+                WHERE (column_name ILIKE %s OR column_name ILIKE %s
+                       OR column_name ILIKE %s OR column_name ILIKE %s)
                   AND table_schema NOT IN ('pg_catalog','information_schema')
                 ORDER BY table_schema, table_name, column_name
                 """,
+                ("%elevation%", "%habitat%", "%climate%", "%altitude%"),
             )
             elevation = []
             for r in rows or []:
@@ -278,7 +286,10 @@ def main() -> int:
     print()
     print("=== elevation columns ===")
     for e in out["elevation_columns"]:
-        print(f"  {e['relation']}.{e['column']:24s} populated={e['populated_rows']}")
+        if e["populated_rows"]:
+            print(f"  {e['relation']}.{e['column']:28s} populated={e['populated_rows']:,}")
+    empty = [e for e in out["elevation_columns"] if not e["populated_rows"]]
+    print(f"  ({len(empty)} further matching column(s) exist but hold no values)")
     print()
     print("=== declared relations ===")
     for n, i in out["declared_relations"].items():

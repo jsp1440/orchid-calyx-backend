@@ -186,7 +186,7 @@ def measure_link_relationship(
     recorded an elevation for it, and only the ones that did are evidence of a
     taxonomy-to-elevation relationship.
     """
-    taxonomy_table, taxonomy_reports = _probe_candidates(cur, taxonomy_tables)
+    _, taxonomy_reports = _probe_candidates(cur, taxonomy_tables)
     object_table, object_reports = _probe_candidates(cur, object_tables)
 
     discovery = {
@@ -194,7 +194,16 @@ def measure_link_relationship(
         "object_candidates": object_reports,
     }
 
-    if not taxonomy_table:
+    # Every taxonomy relation that exists, not just the first. Which relation a
+    # corpus anchors to is a fact about how it was ingested, and this schema does
+    # not answer it the same way twice: oc_atlas.occurrences.taxon_id resolves
+    # into oc_taxonomy.taxa, while the pollinator, mycorrhiza and habitat
+    # relations all carry ids belonging to public.orchid_taxonomy. Picking one
+    # anchor globally reported 695 habitat claims as 2, and two whole
+    # relationships as absent, when the rows were there and pointed elsewhere.
+    existing_taxonomy = [r["table"] for r in taxonomy_reports if r["exists"]]
+
+    if not existing_taxonomy:
         return _unavailable(
             name,
             "No canonical taxonomy relation from the candidate list exists.",
@@ -208,68 +217,60 @@ def measure_link_relationship(
             discovery=discovery,
         )
 
-    tax_cols = _columns(cur, taxonomy_table)
     obj_cols = _columns(cur, object_table)
-
-    # An attribute the relationship is defined by must actually be a column.
-    value_column = next((c for c in required_value_columns if c in obj_cols), None)
-    if required_value_columns and not value_column:
-        return _unavailable(
-            name,
-            "{} exists but carries none of the columns this relationship is "
-            "defined by ({}).".format(object_table, ", ".join(required_value_columns)),
-            discovery=discovery,
-            taxonomy_table=taxonomy_table,
-            object_table=object_table,
-            object_columns=sorted(obj_cols),
-        )
-
-    tax_pk = next((c for c in taxonomy_keys if c in tax_cols), None)
-    obj_fk = next((c for c in object_taxon_keys if c in obj_cols), None)
-    tax_name = next((c for c in taxonomy_name_columns if c in tax_cols), None)
-    obj_name = next((c for c in object_name_columns if c in obj_cols), None)
-
-    # Every join this schema supports, strongest first. Both are attempted,
-    # because preferring one and stopping there is how an audit reports absence
-    # that is not there: oc_mycorrhiza.orchid_fungal_associations holds 462 rows
-    # of which 2 carry orchid_taxonomy_id and neither resolves, while the source
-    # registry joins that table on orchid_scientific_name. An id-only
-    # measurement would have called 462 documented associations "absent".
-    attempts: list[tuple[str, str, str]] = []
-    if tax_pk and obj_fk:
-        attempts.append(("relational_linkage_by_id", tax_pk, obj_fk))
-    if tax_name and obj_name:
-        attempts.append(("relational_linkage_by_name", tax_name, obj_name))
-
-    if not attempts:
-        # Report the columns each side actually has. An "unavailable" that only
-        # says "no join recognised" leaves the reader to go and look; one that
-        # names the available columns tells them exactly which candidate to add,
-        # turning a dead end into a one-line fix.
-        return _unavailable(
-            name,
-            f"{taxonomy_table} and {object_table} exist but share no join this audit recognises: no taxon id "
-            "foreign key and no scientific-name column pair.",
-            discovery=discovery,
-            taxonomy_table=taxonomy_table,
-            object_table=object_table,
-            taxonomy_columns=sorted(tax_cols),
-            object_columns=sorted(obj_cols),
-            taxonomy_key_found=tax_pk,
-            taxonomy_name_column_found=tax_name,
-            object_key_found=obj_fk,
-            object_name_column_found=obj_name,
-        )
-
-    t, o = _safe(taxonomy_table), _safe(object_table)
-    total_taxa = _scalar(cur, f"SELECT COUNT(*) FROM {t}")
-    total_objects = _scalar(cur, f"SELECT COUNT(*) FROM {o}")
 
     # Any of the relationship's defining columns being populated counts, not
     # just the first one that happens to exist. species_environment_profile
     # carries avg_, min_ and max_elevation_m; measuring only avg_ would report
     # absence while min_ and max_ sat populated beside it.
     value_columns = [c for c in required_value_columns if c in obj_cols]
+    if required_value_columns and not value_columns:
+        return _unavailable(
+            name,
+            "{} exists but carries none of the columns this relationship is "
+            "defined by ({}).".format(object_table, ", ".join(required_value_columns)),
+            discovery=discovery,
+            object_table=object_table,
+            object_columns=sorted(obj_cols),
+        )
+
+    obj_fk = next((c for c in object_taxon_keys if c in obj_cols), None)
+    obj_name = next((c for c in object_name_columns if c in obj_cols), None)
+
+    # Strongest first: an id join against any taxonomy relation outranks a name
+    # join, because an identifier is an assertion the ingest made and a name
+    # match is one this audit is making on its behalf.
+    attempts_spec: list[tuple[str, str, str, str]] = []
+    for tax_table in existing_taxonomy:
+        tax_cols = _columns(cur, tax_table)
+        tax_pk = next((c for c in taxonomy_keys if c in tax_cols), None)
+        if tax_pk and obj_fk:
+            attempts_spec.append(("relational_linkage_by_id", tax_table, tax_pk, obj_fk))
+    for tax_table in existing_taxonomy:
+        tax_cols = _columns(cur, tax_table)
+        tax_name = next((c for c in taxonomy_name_columns if c in tax_cols), None)
+        if tax_name and obj_name:
+            attempts_spec.append(("relational_linkage_by_name", tax_table, tax_name, obj_name))
+
+    if not attempts_spec:
+        first_tax = existing_taxonomy[0]
+        tax_cols = _columns(cur, first_tax)
+        return _unavailable(
+            name,
+            f"{object_table} shares no join this audit recognises with any existing "
+            "taxonomy relation: no taxon id foreign key and no scientific-name column pair.",
+            discovery=discovery,
+            taxonomy_tables_present=existing_taxonomy,
+            object_table=object_table,
+            taxonomy_columns=sorted(tax_cols),
+            object_columns=sorted(obj_cols),
+            object_key_found=obj_fk,
+            object_name_column_found=obj_name,
+        )
+
+    o = _safe(object_table)
+    total_objects = _scalar(cur, f"SELECT COUNT(*) FROM {o}")
+
     value_predicate = ""
     if value_columns:
         value_predicate = " AND (" + " OR ".join(
@@ -277,7 +278,8 @@ def measure_link_relationship(
         ) + ")"
 
     results: list[dict[str, Any]] = []
-    for mode, left, right in attempts:
+    for mode, tax_table, left, right in attempts_spec:
+        t = _safe(tax_table)
         lcol, rcol = _safe(left), _safe(right)
         predicate = f"o.{rcol} IS NOT NULL" + value_predicate
         linked_objects = _scalar(cur, f"SELECT COUNT(*) FROM {o} o WHERE {predicate}")
@@ -293,7 +295,8 @@ def measure_link_relationship(
         results.append(
             {
                 "measurement": mode,
-                "join": f"{object_table}.{right} -> {taxonomy_table}.{left}",
+                "taxonomy_table": tax_table,
+                "join": f"{object_table}.{right} -> {tax_table}.{left}",
                 # A populated key pointing at nothing is a linkage defect, and a
                 # different problem from a key nobody filled in. Both are reported.
                 "rows_carrying_relationship": linked_objects,
@@ -303,13 +306,30 @@ def measure_link_relationship(
             }
         )
 
-    # The first attempt that found anything wins; absence is reported only when
-    # every join this schema supports ran and all of them found nothing.
-    chosen = next((r for r in results if r["rows_matching_taxonomy"] > 0), results[0])
+    # Attempts are already ordered id-before-name. Among them the best-resolving
+    # one wins, so a sparse-but-authoritative id column cannot quietly outrank a
+    # name join that reaches far more of the corpus -- and the loser is reported
+    # rather than dropped, because "the id column exists and resolves 2 of 462"
+    # is itself a finding. Absence is reported only when every supported join
+    # ran and all of them found nothing.
+    def _rank(r: dict[str, Any]) -> tuple[int, int]:
+        # Reach first, id-over-name only to break a tie. Ranking by join
+        # strength first would have picked the 2-row id join over the 347-row
+        # name join on the mycorrhiza corpus and reported 0.4% coverage as the
+        # measurement.
+        return (
+            r["rows_matching_taxonomy"],
+            r["measurement"] == "relational_linkage_by_id",
+        )
+
+    resolving = [r for r in results if r["rows_matching_taxonomy"] > 0]
+    chosen = max(resolving, key=_rank) if resolving else results[0]
     rejected = [r for r in results if r is not chosen]
 
+    taxonomy_table = chosen["taxonomy_table"]
+    total_taxa = _scalar(cur, f"SELECT COUNT(*) FROM {_safe(taxonomy_table)}")
+
     warnings = _masking_warnings(object_reports, total_objects)
-    warnings.extend(_masking_warnings(taxonomy_reports, total_taxa))
     for other in rejected:
         if other["rows_carrying_relationship"] > 0 and other["rows_matching_taxonomy"] == 0:
             warnings.append(
@@ -318,9 +338,24 @@ def measure_link_relationship(
                     object_table,
                     other["rows_carrying_relationship"],
                     other["join"].split(" -> ")[0],
-                    taxonomy_table,
+                    other["taxonomy_table"],
                 )
             )
+    if (
+        chosen["measurement"] == "relational_linkage_by_name"
+        and any(r["measurement"] == "relational_linkage_by_id" for r in results)
+    ):
+        best_id = max(
+            (r for r in results if r["measurement"] == "relational_linkage_by_id"),
+            key=lambda r: r["rows_matching_taxonomy"],
+        )
+        warnings.append(
+            "Measured by name match. The stronger id join ({}) reaches {:,} of {:,} "
+            "row(s); name matching is the documented fallback and is carrying this "
+            "relationship.".format(
+                best_id["join"], best_id["rows_matching_taxonomy"], total_objects
+            )
+        )
 
     taxa_reached = chosen["taxa_reached"]
     return {
@@ -361,6 +396,14 @@ def measure_link_relationship(
 # Order is deliberate. The first existing candidate is measured, and the rest
 # are probed so a smaller relation earlier in a list cannot hide a larger corpus
 # without the report saying so.
+# All of these are probed, and every existing one is joined against, because
+# this schema does not anchor every corpus to the same taxonomy relation.
+# Read-only diagnostic (docs/evidence/audit-measurement-002/) measured:
+#   oc_atlas.occurrences.taxon_id      -> oc_taxonomy.taxa      26 of 26
+#   pollinator .orchid_taxonomy_id     -> public.orchid_taxonomy 23 of 23, 0 to taxa
+#   mycorrhiza .orchid_taxonomy_id     -> public.orchid_taxonomy  2 of 2,  0 to taxa
+#   habitat    .taxonomy_id            -> public.orchid_taxonomy 695 of 695, 2 to taxa
+#   orchid_occurrence.taxonomy_id      -> public.orchid_taxonomy 109,195 of 109,195
 TAXONOMY_TABLES = (
     "oc_taxonomy.taxa",
     "public.orchid_taxonomy",
@@ -408,19 +451,29 @@ OBJECT_TAXON_KEYS = (
 RELATIONSHIP_SPECS: tuple[dict[str, Any], ...] = (
     {
         "name": "taxonomy_to_occurrences",
+        # public.orchid_occurrence is measured first on evidence, not preference.
+        # It holds 580,612 rows against oc_atlas.occurrences' 26, and
+        # oc_views.occurrences_enriched is a view over that same 26-row table.
+        # Its taxonomy_id resolves 109,195 of 109,195 into public.orchid_taxonomy.
+        # The 26-row relation is kept as a candidate rather than removed, so if
+        # it is ever the intended source the masking check will say so.
         "object_tables": (
+            "public.orchid_occurrence",
             "oc_atlas.occurrences",
             "oc_views.occurrences_enriched",
-            "public.orchid_occurrence",
             "public.orchid_occurrences",
             "public.occurrences",
         ),
     },
     {
         "name": "taxonomy_to_elevation",
+        # oc_env.taxon_elevation_profiles, which the elevation adapter declares,
+        # does not exist in production -- confirmed by catalog probe. The
+        # occurrence corpus carries the elevation values instead.
         "object_tables": (
-            "oc_env.taxon_elevation_profiles",
+            "public.orchid_occurrence",
             "oc_env_intel.species_environment_profile",
+            "oc_env.taxon_elevation_profiles",
             "oc_atlas.occurrences",
         ),
         # An occurrence row exists whether or not anyone recorded an elevation
@@ -429,13 +482,16 @@ RELATIONSHIP_SPECS: tuple[dict[str, Any], ...] = (
         # per its adapter, species_environment_profile uses min_/max_. Any one of
         # them being populated is evidence, so all are listed.
         "required_value_columns": (
+            "elevation_m",
             "mean_elevation_m",
             "avg_elevation_m",
             "minimum_elevation_m",
             "maximum_elevation_m",
             "min_elevation_m",
             "max_elevation_m",
-            "elevation_m",
+            "minimum_elevation",
+            "maximum_elevation",
+            "elevation_meters",
             "elevation",
         ),
     },
@@ -480,9 +536,12 @@ RELATIONSHIP_SPECS: tuple[dict[str, Any], ...] = (
     },
     {
         "name": "taxonomy_to_habitat",
+        # oc_habitat.taxon_habitats, which the habitat adapter declares, does not
+        # exist in production. public.oc_species_habitat_claims does, with 695
+        # rows whose taxonomy_id resolves entirely into public.orchid_taxonomy.
         "object_tables": (
-            "oc_habitat.taxon_habitats",
             "public.oc_species_habitat_claims",
+            "oc_habitat.taxon_habitats",
             "oc_habitat.habitat_claims",
         ),
     },
