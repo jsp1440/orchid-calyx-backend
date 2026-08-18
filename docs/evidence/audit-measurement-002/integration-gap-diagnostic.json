@@ -1,0 +1,340 @@
+{
+  "contract": "OCU-INTEGRATION-GAP-DIAGNOSTIC-001",
+  "captured_at": "2026-08-18T21:03:42.562502+00:00",
+  "access": "read_only_transaction_rolled_back",
+  "occurrence_candidates": {
+    "oc_atlas.occurrences": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": -1,
+      "exact_rows": 26,
+      "columns": {
+        "occurrence_id": "bigint",
+        "taxon_id": "bigint",
+        "scientific_name": "text",
+        "genus": "text",
+        "species": "text",
+        "country": "text",
+        "country_code": "text",
+        "locality": "text",
+        "latitude": "double precision",
+        "longitude": "double precision",
+        "elevation": "double precision",
+        "depth": "double precision",
+        "basis_of_record": "text",
+        "event_date": "date",
+        "year": "integer",
+        "institution_code": "text",
+        "collection_code": "text",
+        "catalog_number": "text",
+        "source_name": "text",
+        "source_record_id": "text",
+        "ingest_run_id": "bigint",
+        "raw_payload": "jsonb",
+        "created_at": "timestamp with time zone",
+        "updated_at": "timestamp with time zone"
+      }
+    },
+    "oc_views.occurrences_enriched": {
+      "exists": true,
+      "relkind": "v",
+      "approximate_rows": -1,
+      "exact_rows": 26,
+      "columns": {
+        "occurrence_id": "bigint",
+        "original_name": "text",
+        "resolved_taxon_id": "bigint",
+        "resolved_name": "character varying",
+        "genus": "character varying",
+        "species": "character varying",
+        "latitude": "double precision",
+        "longitude": "double precision"
+      },
+      "view_definition": " SELECT o.occurrence_id,\n    o.scientific_name AS original_name,\n    r.resolved_taxon_id,\n    t.scientific_name AS resolved_name,\n    t.genus,\n    t.species,\n    o.latitude,\n    o.longitude\n   FROM oc_atlas.occurrences o\n     LEFT JOIN oc_resolver.occurrence_taxon_resolved r ON o.occurrence_id = r.occurrence_id\n     LEFT JOIN orchid_taxonomy t ON r.resolved_taxon_id = t.id;"
+    },
+    "public.orchid_occurrence": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": 580612,
+      "exact_rows": 580612,
+      "columns": {
+        "occurrence_id": "bigint",
+        "taxonomy_id": "bigint",
+        "scientific_name": "text",
+        "country": "text",
+        "region": "text",
+        "locality": "text",
+        "decimal_latitude": "double precision",
+        "decimal_longitude": "double precision",
+        "minimum_elevation": "integer",
+        "maximum_elevation": "integer",
+        "elevation_meters": "integer",
+        "growth_habit": "text",
+        "habitat_description": "text",
+        "climate_preference": "text",
+        "temperature_range": "text",
+        "humidity_preference": "text",
+        "source_table": "text",
+        "source_record_id": "bigint",
+        "raw_payload": "jsonb",
+        "created_at": "timestamp with time zone",
+        "updated_at": "timestamp with time zone",
+        "minimum_elevation_m": "double precision",
+        "maximum_elevation_m": "double precision",
+        "elevation_m": "double precision",
+        "state_province": "text",
+        "canonical_gbif_occurrence_key": "bigint",
+        "event_date_standardized": "date",
+        "event_year": "integer",
+        "event_month": "integer",
+        "event_day": "integer",
+        "temporal_source": "text",
+        "temporal_confidence": "numeric",
+        "record_type_standardized": "text",
+        "record_type_confidence": "numeric",
+        "record_type_source": "text",
+        "accepted_taxon_id": "bigint",
+        "taxon_match_method": "text",
+        "taxon_match_confidence": "numeric",
+        "scientific_name_recovery_source": "text",
+        "scientific_name_recovery_confidence": "numeric",
+        "canonical_name": "text",
+        "canonical_name_clean": "text"
+      }
+    },
+    "public.orchid_occurrences": {
+      "exists": false,
+      "error": null
+    },
+    "public.occurrences": {
+      "exists": false,
+      "error": null
+    }
+  },
+  "orphan_key_resolution": {
+    "oc_interactions.orchid_interaction_edges.orchid_taxonomy_id": {
+      "column_present": true,
+      "data_type": "bigint",
+      "resolves_against": {
+        "oc_taxonomy.taxa.taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.accepted_taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.source_record_id": {
+          "matched": 0
+        },
+        "public.orchid_taxonomy.id": {
+          "matched": 23
+        },
+        "oc_graph.kg_nodes.source_pk": {
+          "matched": 0
+        }
+      },
+      "non_null": 23,
+      "distinct_non_null": 4
+    },
+    "oc_mycorrhiza.orchid_fungal_associations.orchid_taxonomy_id": {
+      "column_present": true,
+      "data_type": "bigint",
+      "resolves_against": {
+        "oc_taxonomy.taxa.taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.accepted_taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.source_record_id": {
+          "matched": 0
+        },
+        "public.orchid_taxonomy.id": {
+          "matched": 2
+        },
+        "oc_graph.kg_nodes.source_pk": {
+          "matched": 0
+        }
+      },
+      "non_null": 2,
+      "distinct_non_null": 1
+    },
+    "public.oc_species_habitat_claims.taxon_id": {
+      "column_present": false
+    },
+    "public.oc_species_habitat_claims.taxonomy_id": {
+      "column_present": true,
+      "data_type": "integer",
+      "resolves_against": {
+        "oc_taxonomy.taxa.taxon_id": {
+          "matched": 2
+        },
+        "oc_taxonomy.taxa.accepted_taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.source_record_id": {
+          "matched": 0
+        },
+        "public.orchid_taxonomy.id": {
+          "matched": 695
+        },
+        "oc_graph.kg_nodes.source_pk": {
+          "matched": 2
+        }
+      },
+      "non_null": 695,
+      "distinct_non_null": 655
+    },
+    "public.orchid_occurrence.taxon_id": {
+      "column_present": false
+    },
+    "public.orchid_occurrence.taxonomy_id": {
+      "column_present": true,
+      "data_type": "bigint",
+      "resolves_against": {
+        "oc_taxonomy.taxa.taxon_id": {
+          "matched": 41278
+        },
+        "oc_taxonomy.taxa.accepted_taxon_id": {
+          "matched": 6
+        },
+        "oc_taxonomy.taxa.source_record_id": {
+          "matched": 301
+        },
+        "public.orchid_taxonomy.id": {
+          "matched": 109195
+        },
+        "oc_graph.kg_nodes.source_pk": {
+          "matched": 53045
+        }
+      },
+      "non_null": 109195,
+      "distinct_non_null": 3596
+    },
+    "public.orchid_occurrence.orchid_taxonomy_id": {
+      "column_present": false
+    },
+    "oc_atlas.occurrences.taxon_id": {
+      "column_present": true,
+      "data_type": "bigint",
+      "resolves_against": {
+        "oc_taxonomy.taxa.taxon_id": {
+          "matched": 26
+        },
+        "oc_taxonomy.taxa.accepted_taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.source_record_id": {
+          "matched": 0
+        },
+        "public.orchid_taxonomy.id": {
+          "matched": 0
+        },
+        "oc_graph.kg_nodes.source_pk": {
+          "matched": 126
+        }
+      },
+      "non_null": 26,
+      "distinct_non_null": 20
+    }
+  },
+  "habitat_claims": {
+    "exists": true,
+    "relkind": "r",
+    "approximate_rows": 695,
+    "exact_rows": 695,
+    "columns": {
+      "claim_id": "bigint",
+      "taxonomy_id": "integer",
+      "habitat_class": "text",
+      "habitat_text": "text",
+      "elevation_m_min": "numeric",
+      "elevation_m_max": "numeric",
+      "climate_zone": "text",
+      "substrate": "text",
+      "canopy_cover": "text",
+      "moisture_regime": "text",
+      "source_type": "text",
+      "source_id": "text",
+      "source_table": "text",
+      "source_column": "text",
+      "citation_url": "text",
+      "citation_text": "text",
+      "observed_inferred_heuristic": "text",
+      "confidence": "numeric",
+      "needs_review": "boolean",
+      "claim_status": "text",
+      "evidence_text": "text",
+      "geom_hint": "text",
+      "created_at": "timestamp without time zone",
+      "updated_at": "timestamp without time zone",
+      "claim_key": "text",
+      "claim_scope": "text",
+      "normalization_method": "text",
+      "parser_version": "text",
+      "language_code": "text",
+      "review_status": "text",
+      "reviewed_by": "text",
+      "reviewed_at": "timestamp without time zone",
+      "confidence_score_numeric": "numeric",
+      "source_priority": "integer",
+      "effective_rank": "integer"
+    },
+    "null_counts": {
+      "taxonomy_id": 695
+    }
+  },
+  "elevation_columns": [],
+  "elevation_scan_error": "ProgrammingError: only '%s', '%b', '%t' are allowed as placeholders, got '%e'",
+  "declared_relations": {
+    "oc_env.taxon_elevation_profiles": {
+      "exists": false,
+      "error": null
+    },
+    "oc_habitat.taxon_habitats": {
+      "exists": false,
+      "error": null
+    },
+    "oc_env_intel.species_environment_profile": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": 26788,
+      "exact_rows": 26788
+    },
+    "oc_interactions.orchid_interaction_edges": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": -1,
+      "exact_rows": 23
+    },
+    "oc_mycorrhiza.orchid_fungal_associations": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": 462,
+      "exact_rows": 462
+    },
+    "oc_conservation.conservation_records": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": -1,
+      "exact_rows": 2
+    },
+    "oc_graph.taxon_literature_edges": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": -1,
+      "exact_rows": 35
+    },
+    "oc_taxonomy.taxa": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": 31712,
+      "exact_rows": 31840
+    },
+    "public.orchid_taxonomy": {
+      "exists": true,
+      "relkind": "r",
+      "approximate_rows": 72304,
+      "exact_rows": 69485
+    }
+  }
+}

@@ -1,0 +1,31 @@
+=== occurrence candidates ===
+  oc_atlas.occurrences                       kind=r exact=26
+  oc_views.occurrences_enriched              kind=v exact=26
+  public.orchid_occurrence                   kind=r exact=580612
+  public.orchid_occurrences                  ABSENT
+  public.occurrences                         ABSENT
+
+=== orphan key resolution ===
+  oc_interactions.orchid_interaction_edges.orchid_taxonomy_id  type=bigint non_null=23 -> {'public.orchid_taxonomy.id': 23}
+  oc_mycorrhiza.orchid_fungal_associations.orchid_taxonomy_id  type=bigint non_null=2 -> {'public.orchid_taxonomy.id': 2}
+  public.oc_species_habitat_claims.taxon_id                    column absent
+  public.oc_species_habitat_claims.taxonomy_id                 type=integer non_null=695 -> {'oc_taxonomy.taxa.taxon_id': 2, 'public.orchid_taxonomy.id': 695, 'oc_graph.kg_nodes.source_pk': 2}
+  public.orchid_occurrence.taxon_id                            column absent
+  public.orchid_occurrence.taxonomy_id                         type=bigint non_null=109195 -> {'oc_taxonomy.taxa.taxon_id': 41278, 'oc_taxonomy.taxa.accepted_taxon_id': 6, 'oc_taxonomy.taxa.source_record_id': 301, 'public.orchid_taxonomy.id': 109195, 'oc_graph.kg_nodes.source_pk': 53045}
+  public.orchid_occurrence.orchid_taxonomy_id                  column absent
+  oc_atlas.occurrences.taxon_id                                type=bigint non_null=26 -> {'oc_taxonomy.taxa.taxon_id': 26, 'oc_graph.kg_nodes.source_pk': 126}
+
+=== elevation columns ===
+
+=== declared relations ===
+  oc_env.taxon_elevation_profiles                exists=False rows=None
+  oc_habitat.taxon_habitats                      exists=False rows=None
+  oc_env_intel.species_environment_profile       exists=True rows=26788
+  oc_interactions.orchid_interaction_edges       exists=True rows=23
+  oc_mycorrhiza.orchid_fungal_associations       exists=True rows=462
+  oc_conservation.conservation_records           exists=True rows=2
+  oc_graph.taxon_literature_edges                exists=True rows=35
+  oc_taxonomy.taxa                               exists=True rows=31840
+  public.orchid_taxonomy                         exists=True rows=69485
+
+written: docs/evidence/audit-measurement-002/integration-gap-diagnostic.json
