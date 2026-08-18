@@ -48,6 +48,38 @@ jobs:
         run: psql "$BROAD_DATABASE_URL" -f migrations/BUILD-051-owner-operations-console.sql
         env:
           BROAD_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
+      # 087B runs the focused suites before the repository-wide one. Running
+      # them here too means the artifact says WHICH step 087B died in, rather
+      # than leaving it to be inferred from a bare exit code.
+      - name: Focused suites 087B runs first
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          : > focused-results.txt
+          for t in tests/test_build_087b_scientific_interpretation.py \
+                   tests/test_build_046_scientific_priorities.py \
+                   tests/test_calyx_live_graph_audit.py \
+                   tests/test_knowledge_graph_orchestrator.py \
+                   tests/test_source_registry.py \
+                   tests/test_ci_baseline_001.py; do
+            out=$(env -u DATABASE_URL -u TEST_DATABASE_URL python -m pytest -q "$t" 2>&1 | tail -3)
+            printf '%s :: %s\n' "$t" "$(printf '%s' "$out" | tr '\n' ' ')" >> focused-results.txt
+          done
+          cat focused-results.txt
+        env:
+          TEST_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation
+
+      - name: Strict hygiene 087B runs last
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          { python -m compileall -q app/scientific_interpretation app/main.py runtime/knowledge_graph \
+            && python -m ruff check app/scientific_interpretation/postgres_repository.py \
+                 runtime/knowledge_graph/source_registry.py tests/test_ci_baseline_001.py \
+            && git diff --check ; } > hygiene-results.txt 2>&1
+          echo "hygiene exit: $?" >> hygiene-results.txt
+          cat hygiene-results.txt
+
       - name: Repository-wide suite, failures only
         continue-on-error: true
         run: |
@@ -70,18 +102,26 @@ jobs:
         if: always()
         shell: bash
         run: |
-          set -euo pipefail
+          # This block publishes diagnostics; it must never be the reason a job
+          # goes red. `git rebase --abort` exits 128 when no rebase is in
+          # progress, so the previous `rebase || abort` pair turned an ordinary
+          # "nothing to rebase" into a failed step under `set -e` -- which is
+          # how the job built to make CI legible became the illegible one.
+          set -uo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           mkdir -p docs/evidence/audit-measurement-002
           cp repo-wide-failures.txt docs/evidence/audit-measurement-002/repo-wide-failures.txt || true
           cp repo-wide-tail.txt docs/evidence/audit-measurement-002/repo-wide-tail.txt || true
+          cp focused-results.txt docs/evidence/audit-measurement-002/focused-results.txt || true
+          cp hygiene-results.txt docs/evidence/audit-measurement-002/hygiene-results.txt || true
           git add docs/evidence/audit-measurement-002
           git diff --cached --quiet && exit 0
           git commit -m "evidence(ci): record repository-wide suite failures"
-          git fetch origin ${{ github.ref_name }}
-          git rebase origin/${{ github.ref_name }} || git rebase --abort
+          git fetch origin ${{ github.ref_name }} || true
+          git rebase origin/${{ github.ref_name }} || git rebase --abort || true
           git push origin HEAD:${{ github.ref_name }} || true
+          exit 0
 
       - uses: actions/upload-artifact@v4
         if: always()
