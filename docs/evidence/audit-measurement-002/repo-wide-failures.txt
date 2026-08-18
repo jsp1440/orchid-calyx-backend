@@ -1,2 +1,2 @@
-ERROR tests/test_calyx_scientific_uncertainty_617.py
-ERROR tests/test_calyx_scientific_uncertainty_artifacts_617.py
+FAILED tests/test_knowledge_graph_telemetry.py::test_first_available_count_reports_honestly_when_absent - IndexError: tuple index out of range
+FAILED tests/test_knowledge_graph_telemetry.py::test_first_available_count_uses_live_count_from_kg_edges - IndexError: tuple index out of range
