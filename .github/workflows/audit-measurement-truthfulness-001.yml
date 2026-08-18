@@ -1,0 +1,43 @@
+name: AUDIT-MEASUREMENT-TRUTHFULNESS-001
+
+on:
+  pull_request:
+    paths:
+      - 'app/routers/mission_control.py'
+      - 'app/routers/owner_operations.py'
+      - 'app/readiness/live_graph_audit.py'
+      - 'scripts/smoke_owner_backend.py'
+      - 'tests/test_audit_relationship_measurement_truthfulness.py'
+      - 'tests/test_build_051_owner_smoke_transport.py'
+      - 'tests/test_build_051_owner_operations.py'
+      - 'tests/test_calyx_live_graph_audit.py'
+      - '.github/workflows/audit-measurement-truthfulness-001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: pip install pytest ruff httpx
+      - name: Syntax check changed modules
+        run: python -m compileall -q app/routers/mission_control.py app/routers/owner_operations.py scripts/smoke_owner_backend.py
+      - name: Lint new test modules
+        run: ruff check tests/test_audit_relationship_measurement_truthfulness.py tests/test_build_051_owner_smoke_transport.py
+      - name: Relationship measurement truthfulness
+        run: pytest -q tests/test_audit_relationship_measurement_truthfulness.py
+      - name: Owner smoke-test credential transport
+        run: pytest -q tests/test_build_051_owner_smoke_transport.py
+      - name: Existing owner-operations regression suite
+        run: pytest -q tests/test_build_051_owner_operations.py
+      - name: Existing live graph audit suite
+        run: pytest -q tests/test_calyx_live_graph_audit.py
