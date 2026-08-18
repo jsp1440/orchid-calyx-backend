@@ -36,16 +36,28 @@ class FakeCursor:
             schema, table = params[0], params[1]
             self._many = [(c,) for c in self.schema.get(f"{schema}.{table}", set())]
         elif flat.startswith("SELECT COUNT(*) FROM ") and " JOIN " in flat:
-            self._result = (self.joins.get("matched", 0),)
+            self._result = (self._by_join(flat, "matched"),)
         elif flat.startswith("SELECT COUNT(DISTINCT"):
-            self._result = (self.joins.get("taxa_reached", 0),)
+            self._result = (self._by_join(flat, "taxa_reached"),)
         elif flat.startswith("SELECT COUNT(*) FROM ") and " WHERE " in flat:
-            self._result = (self.joins.get("carrying", 0),)
+            self._result = (self._by_join(flat, "carrying"),)
         elif flat.startswith("SELECT COUNT(*) FROM "):
             table = flat[len("SELECT COUNT(*) FROM ") :].strip()
             self._result = (self.rows.get(table, 0),)
         else:  # pragma: no cover - a query the fake was not taught
             raise AssertionError(f"Unexpected SQL: {flat}")
+
+    def _by_join(self, flat, key):
+        """Answer per join column, so a test can describe an id join and a name join separately.
+
+        ``joins`` may be flat ({"matched": 5}) or keyed by the object-side column
+        ({"orchid_taxonomy_id": {"matched": 0}, "orchid_scientific_name": {...}}).
+        """
+        for column, values in self.joins.items():
+            if isinstance(values, dict) and f"o.{column}" in flat:
+                return values.get(key, 0)
+        flat_values = {k: v for k, v in self.joins.items() if not isinstance(v, dict)}
+        return flat_values.get(key, 0)
 
     def fetchone(self):
         return self._result
@@ -155,7 +167,7 @@ def test_required_value_column_present_is_measured():
         required_value_columns=("mean_elevation_m",),
     )
     assert result["state"] == "present"
-    assert result["value_column"] == "mean_elevation_m"
+    assert result["value_columns"] == ["mean_elevation_m"]
     # Rows without the attribute are excluded from the relationship count.
     assert result["rows_carrying_relationship"] == 3800
 
@@ -326,3 +338,94 @@ def test_canonical_name_is_recognised_as_the_taxonomy_name_column():
     assert result["state"] == "present"
     assert result["measurement"] == "relational_linkage_by_name"
     assert "canonical_name" in result["join"]
+
+
+def test_a_dead_id_column_does_not_produce_absence_when_the_name_join_finds_rows():
+    """The production defect this fallback exists for.
+
+    oc_mycorrhiza.orchid_fungal_associations holds 462 rows. Two carry
+    orchid_taxonomy_id and neither resolves. The source registry joins that
+    table on orchid_scientific_name. An id-only measurement called 462
+    documented fungal associations "absent" -- the precise error the whole
+    AUDIT-MEASUREMENT line exists to prevent.
+    """
+    cur = FakeCursor(
+        {
+            **TAX,
+            "oc_mycorrhiza.orchid_fungal_associations": {
+                "orchid_taxonomy_id",
+                "orchid_scientific_name",
+                "fungal_name",
+            },
+        },
+        rows={"oc_taxonomy.taxa": 31840, "oc_mycorrhiza.orchid_fungal_associations": 462},
+        joins={
+            "orchid_taxonomy_id": {"carrying": 2, "matched": 0, "taxa_reached": 0},
+            "orchid_scientific_name": {"carrying": 462, "matched": 440, "taxa_reached": 210},
+        },
+    )
+    result = measure(cur, object_tables=("oc_mycorrhiza.orchid_fungal_associations",))
+    assert result["state"] == "present"
+    assert result["measurement"] == "relational_linkage_by_name"
+    assert result["rows_matching_taxonomy"] == 440
+    # Both attempts are recorded, so the dead id column is visible rather than hidden.
+    assert len(result["joins_attempted"]) == 2
+    assert any(
+        "populated and broken" in w for w in result["source_warnings"]
+    ), result["source_warnings"]
+
+
+def test_absence_requires_every_supported_join_to_have_found_nothing():
+    cur = FakeCursor(
+        {**TAX, "oc_habitat.taxon_habitats": {"taxon_id", "scientific_name"}},
+        rows={"oc_taxonomy.taxa": 31840, "oc_habitat.taxon_habitats": 300},
+        joins={
+            "taxon_id": {"carrying": 0, "matched": 0, "taxa_reached": 0},
+            "scientific_name": {"carrying": 0, "matched": 0, "taxa_reached": 0},
+        },
+    )
+    result = measure(cur, object_tables=("oc_habitat.taxon_habitats",))
+    assert result["state"] == "absent"
+    assert len(result["joins_attempted"]) == 2
+
+
+def test_the_id_join_still_wins_when_it_finds_rows():
+    cur = FakeCursor(
+        {**TAX, "oc_conservation.conservation_records": {"taxon_id", "scientific_name"}},
+        rows={"oc_taxonomy.taxa": 31840, "oc_conservation.conservation_records": 500},
+        joins={
+            "taxon_id": {"carrying": 500, "matched": 480, "taxa_reached": 470},
+            "scientific_name": {"carrying": 500, "matched": 300, "taxa_reached": 290},
+        },
+    )
+    result = measure(cur, object_tables=("oc_conservation.conservation_records",))
+    assert result["measurement"] == "relational_linkage_by_id"
+    assert result["rows_matching_taxonomy"] == 480
+
+
+def test_any_defining_column_counts_not_just_the_first_that_exists():
+    """species_environment_profile carries avg_, min_ and max_elevation_m.
+
+    Measuring only the first match would report absence while the other two sat
+    populated beside it.
+    """
+    cur = FakeCursor(
+        {
+            **TAX,
+            "oc_env_intel.species_environment_profile": {
+                "taxonomy_id",
+                "avg_elevation_m",
+                "min_elevation_m",
+                "max_elevation_m",
+            },
+        },
+        rows={"oc_taxonomy.taxa": 31840, "oc_env_intel.species_environment_profile": 26788},
+        joins={"carrying": 900, "matched": 880, "taxa_reached": 800},
+    )
+    result = measure(
+        cur,
+        object_tables=("oc_env_intel.species_environment_profile",),
+        required_value_columns=("avg_elevation_m", "min_elevation_m", "max_elevation_m"),
+    )
+    assert result["state"] == "present"
+    assert result["value_columns"] == ["avg_elevation_m", "min_elevation_m", "max_elevation_m"]

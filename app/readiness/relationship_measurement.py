@@ -229,13 +229,19 @@ def measure_link_relationship(
     tax_name = next((c for c in taxonomy_name_columns if c in tax_cols), None)
     obj_name = next((c for c in object_name_columns if c in obj_cols), None)
 
+    # Every join this schema supports, strongest first. Both are attempted,
+    # because preferring one and stopping there is how an audit reports absence
+    # that is not there: oc_mycorrhiza.orchid_fungal_associations holds 462 rows
+    # of which 2 carry orchid_taxonomy_id and neither resolves, while the source
+    # registry joins that table on orchid_scientific_name. An id-only
+    # measurement would have called 462 documented associations "absent".
+    attempts: list[tuple[str, str, str]] = []
     if tax_pk and obj_fk:
-        mode = "relational_linkage_by_id"
-        left, right = tax_pk, obj_fk
-    elif tax_name and obj_name:
-        mode = "relational_linkage_by_name"
-        left, right = tax_name, obj_name
-    else:
+        attempts.append(("relational_linkage_by_id", tax_pk, obj_fk))
+    if tax_name and obj_name:
+        attempts.append(("relational_linkage_by_name", tax_name, obj_name))
+
+    if not attempts:
         # Report the columns each side actually has. An "unavailable" that only
         # says "no join recognised" leaves the reader to go and look; one that
         # names the available columns tells them exactly which candidate to add,
@@ -256,45 +262,83 @@ def measure_link_relationship(
         )
 
     t, o = _safe(taxonomy_table), _safe(object_table)
-    lcol, rcol = _safe(left), _safe(right)
-    predicate = f"o.{rcol} IS NOT NULL"
-    if value_column:
-        predicate += f" AND o.{_safe(value_column)} IS NOT NULL"
-
     total_taxa = _scalar(cur, f"SELECT COUNT(*) FROM {t}")
     total_objects = _scalar(cur, f"SELECT COUNT(*) FROM {o}")
-    linked_objects = _scalar(cur, f"SELECT COUNT(*) FROM {o} o WHERE {predicate}")
-    matched_objects = _scalar(
-        cur,
-        f"SELECT COUNT(*) FROM {o} o JOIN {t} t ON t.{lcol} = o.{rcol} WHERE {predicate}",
-    )
-    taxa_reached = _scalar(
-        cur,
-        f"SELECT COUNT(DISTINCT t.{lcol}) FROM {o} o "
-        f"JOIN {t} t ON t.{lcol} = o.{rcol} WHERE {predicate}",
-    )
-    # A populated key pointing at nothing is a linkage defect, and it is a
-    # different problem from a null key. Both are reported.
-    broken_targets = linked_objects - matched_objects
+
+    # Any of the relationship's defining columns being populated counts, not
+    # just the first one that happens to exist. species_environment_profile
+    # carries avg_, min_ and max_elevation_m; measuring only avg_ would report
+    # absence while min_ and max_ sat populated beside it.
+    value_columns = [c for c in required_value_columns if c in obj_cols]
+    value_predicate = ""
+    if value_columns:
+        value_predicate = " AND (" + " OR ".join(
+            f"o.{_safe(c)} IS NOT NULL" for c in value_columns
+        ) + ")"
+
+    results: list[dict[str, Any]] = []
+    for mode, left, right in attempts:
+        lcol, rcol = _safe(left), _safe(right)
+        predicate = f"o.{rcol} IS NOT NULL" + value_predicate
+        linked_objects = _scalar(cur, f"SELECT COUNT(*) FROM {o} o WHERE {predicate}")
+        matched_objects = _scalar(
+            cur,
+            f"SELECT COUNT(*) FROM {o} o JOIN {t} t ON t.{lcol} = o.{rcol} WHERE {predicate}",
+        )
+        taxa_reached = _scalar(
+            cur,
+            f"SELECT COUNT(DISTINCT t.{lcol}) FROM {o} o "
+            f"JOIN {t} t ON t.{lcol} = o.{rcol} WHERE {predicate}",
+        )
+        results.append(
+            {
+                "measurement": mode,
+                "join": f"{object_table}.{right} -> {taxonomy_table}.{left}",
+                # A populated key pointing at nothing is a linkage defect, and a
+                # different problem from a key nobody filled in. Both are reported.
+                "rows_carrying_relationship": linked_objects,
+                "rows_matching_taxonomy": matched_objects,
+                "broken_taxonomy_targets": linked_objects - matched_objects,
+                "taxa_reached": taxa_reached,
+            }
+        )
+
+    # The first attempt that found anything wins; absence is reported only when
+    # every join this schema supports ran and all of them found nothing.
+    chosen = next((r for r in results if r["rows_matching_taxonomy"] > 0), results[0])
+    rejected = [r for r in results if r is not chosen]
 
     warnings = _masking_warnings(object_reports, total_objects)
     warnings.extend(_masking_warnings(taxonomy_reports, total_taxa))
+    for other in rejected:
+        if other["rows_carrying_relationship"] > 0 and other["rows_matching_taxonomy"] == 0:
+            warnings.append(
+                "{} carries {:,} row(s) on {} but none resolve to {}; that join is "
+                "populated and broken rather than empty.".format(
+                    object_table,
+                    other["rows_carrying_relationship"],
+                    other["join"].split(" -> ")[0],
+                    taxonomy_table,
+                )
+            )
 
+    taxa_reached = chosen["taxa_reached"]
     return {
         "relationship": name,
-        # Absence is asserted only here, where a join ran and returned nothing.
-        "state": "present" if matched_objects > 0 else "absent",
-        "measurement": mode,
+        # Absence is asserted only here, after every supported join has run.
+        "state": "present" if chosen["rows_matching_taxonomy"] > 0 else "absent",
+        "measurement": chosen["measurement"],
         "taxonomy_table": taxonomy_table,
         "object_table": object_table,
-        "join": f"{object_table}.{right} -> {taxonomy_table}.{left}",
-        "value_column": value_column,
+        "join": chosen["join"],
+        "value_columns": value_columns,
         "total_taxa": total_taxa,
         "total_object_rows": total_objects,
-        "rows_carrying_relationship": linked_objects,
-        "rows_matching_taxonomy": matched_objects,
-        "broken_taxonomy_targets": broken_targets,
+        "rows_carrying_relationship": chosen["rows_carrying_relationship"],
+        "rows_matching_taxonomy": chosen["rows_matching_taxonomy"],
+        "broken_taxonomy_targets": chosen["broken_taxonomy_targets"],
         "taxa_reached": taxa_reached,
+        "joins_attempted": results,
         "taxa_reached_percentage": (
             round((taxa_reached / total_taxa) * 100, 4) if total_taxa else None
         ),
@@ -381,11 +425,16 @@ RELATIONSHIP_SPECS: tuple[dict[str, Any], ...] = (
         ),
         # An occurrence row exists whether or not anyone recorded an elevation
         # for it. Only rows carrying one are evidence of this relationship.
+        # Both spellings: oc_env.taxon_elevation_profiles uses minimum_/maximum_
+        # per its adapter, species_environment_profile uses min_/max_. Any one of
+        # them being populated is evidence, so all are listed.
         "required_value_columns": (
             "mean_elevation_m",
+            "avg_elevation_m",
             "minimum_elevation_m",
             "maximum_elevation_m",
-            "avg_elevation_m",
+            "min_elevation_m",
+            "max_elevation_m",
             "elevation_m",
             "elevation",
         ),
