@@ -1,0 +1,74 @@
+name: Integration Gap Diagnostic
+
+# Read-only production diagnostics for DATA-INTEGRATION-REPAIR-001. The
+# development sandbox has no egress to the database host, so schema questions
+# can only be answered from a runner.
+on:
+  push:
+    branches: [claude/audit-measurement-002]
+    paths:
+      - 'scripts/diagnose_integration_gaps.py'
+      - '.github/workflows/integration-gap-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIAGNOSTIC_PATH: docs/evidence/audit-measurement-002/integration-gap-diagnostic.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - run: pip install 'psycopg[binary]'
+
+      - name: Validate required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${DATABASE_URL:?Repository secret DATABASE_URL is required}"
+
+      - name: Run read-only diagnostic
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p docs/evidence/audit-measurement-002
+          python scripts/diagnose_integration_gaps.py 2>&1 | tee integration-gap-diagnostic.log
+
+      - name: Commit diagnostic
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p docs/evidence/audit-measurement-002
+          cp integration-gap-diagnostic.log docs/evidence/audit-measurement-002/integration-gap-diagnostic-log.txt || true
+          git add docs/evidence/audit-measurement-002
+          git diff --cached --quiet && exit 0
+          # No [skip ci]: this commit can become the PR head, and a head with
+          # skipped CI cannot be shown green against the commit that would merge.
+          git commit -m "evidence(audit): capture production integration-gap diagnostic"
+          git fetch origin ${{ github.ref_name }}
+          git rebase origin/${{ github.ref_name }} || git rebase --abort
+          git push origin HEAD:${{ github.ref_name }} || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-gap-diagnostic-${{ github.sha }}
+          path: |
+            docs/evidence/audit-measurement-002/integration-gap-diagnostic.json
+            integration-gap-diagnostic.log
+          if-no-files-found: warn
+          retention-days: 30

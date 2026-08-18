@@ -81,7 +81,11 @@ jobs:
           cp production-relationship-measurement.log docs/evidence/audit-measurement-002/production-relationship-measurement-log.txt || true
           git add docs/evidence/audit-measurement-002
           git diff --cached --quiet && exit 0
-          git commit -m "evidence(audit): capture production Overall Audit from CI [skip ci]"
+          # No [skip ci]. This commit becomes the PR head, and a head with
+          # skipped CI cannot be shown green against the exact commit that would
+          # merge. Committing under docs/evidence/** does not match this
+          # workflow's own path filter, so it cannot retrigger itself.
+          git commit -m "evidence(audit): capture production Overall Audit from CI"
           git fetch origin ${{ github.ref_name }}
           git rebase origin/${{ github.ref_name }} || git rebase --abort
           git push origin HEAD:${{ github.ref_name }} || true
