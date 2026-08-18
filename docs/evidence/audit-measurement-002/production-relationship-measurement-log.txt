@@ -2,13 +2,16 @@
   taxonomy_to_elevation            absent       oc_env_intel.species_environment_profile  rows=0  taxa=0  via=relational_linkage_by_id
   taxonomy_to_climate              present      oc_env_intel.species_environment_profile  rows=18,621  taxa=18,621  via=relational_linkage_by_id
   taxonomy_to_literature           present      oc_graph.taxon_literature_edges  rows=29  taxa=15  via=relational_linkage_by_name
-  taxonomy_to_pollinators          absent       oc_interactions.orchid_interaction_edges  rows=0  taxa=0  via=relational_linkage_by_id
-  taxonomy_to_mycorrhiza           absent       oc_mycorrhiza.orchid_fungal_associations  rows=0  taxa=0  via=relational_linkage_by_id
+  taxonomy_to_pollinators          present      oc_interactions.orchid_interaction_edges  rows=23  taxa=4  via=relational_linkage_by_name
+  taxonomy_to_mycorrhiza           present      oc_mycorrhiza.orchid_fungal_associations  rows=347  taxa=146  via=relational_linkage_by_name
   taxonomy_to_habitat              present      public.oc_species_habitat_claims  rows=2  taxa=2  via=relational_linkage_by_id
   taxonomy_to_conservation         present      oc_conservation.conservation_records  rows=2  taxa=2  via=relational_linkage_by_id
 
-state totals: {'present': 5, 'absent': 3}
+state totals: {'present': 7, 'absent': 1}
   WARNING [taxonomy_to_occurrences] public.orchid_occurrence exists with approximately 580,612 row(s), far more than the measured source (26 row(s)); this relationship measurement may be reading a non-authoritative relation.
+  WARNING [taxonomy_to_occurrences] oc_atlas.occurrences carries 26 row(s) on oc_atlas.occurrences.scientific_name but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty.
   WARNING [taxonomy_to_literature] oc_literature.papers exists with approximately 408 row(s), far more than the measured source (35 row(s)); this relationship measurement may be reading a non-authoritative relation.
   WARNING [taxonomy_to_literature] public.research_documents exists with approximately 6,725 row(s), far more than the measured source (35 row(s)); this relationship measurement may be reading a non-authoritative relation.
+  WARNING [taxonomy_to_pollinators] oc_interactions.orchid_interaction_edges carries 23 row(s) on oc_interactions.orchid_interaction_edges.orchid_taxonomy_id but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty.
+  WARNING [taxonomy_to_mycorrhiza] oc_mycorrhiza.orchid_fungal_associations carries 2 row(s) on oc_mycorrhiza.orchid_fungal_associations.orchid_taxonomy_id but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty.
 evidence written: docs/evidence/audit-measurement-002/production-relationship-measurement.json

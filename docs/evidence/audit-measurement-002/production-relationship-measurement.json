@@ -1,7 +1,7 @@
 {
   "contract": "OCU-PRODUCTION-RELATIONSHIP-MEASUREMENT-001",
-  "captured_at": "2026-08-18T20:18:43.726325+00:00",
-  "completed_at": "2026-08-18T20:18:55.773754+00:00",
+  "captured_at": "2026-08-18T20:22:39.097092+00:00",
+  "completed_at": "2026-08-18T20:22:50.294278+00:00",
   "access": "read_only_transaction_rolled_back",
   "note": "Executed against the production database using the measurement paths added in this branch. The deployed release does not yet carry them; this records what the audit would report once it does.",
   "relationships": {
@@ -12,16 +12,35 @@
       "taxonomy_table": "oc_taxonomy.taxa",
       "object_table": "oc_atlas.occurrences",
       "join": "oc_atlas.occurrences.taxon_id -> oc_taxonomy.taxa.taxon_id",
-      "value_column": null,
+      "value_columns": [],
       "total_taxa": 31840,
       "total_object_rows": 26,
       "rows_carrying_relationship": 26,
       "rows_matching_taxonomy": 26,
       "broken_taxonomy_targets": 0,
       "taxa_reached": 20,
+      "joins_attempted": [
+        {
+          "measurement": "relational_linkage_by_id",
+          "join": "oc_atlas.occurrences.taxon_id -> oc_taxonomy.taxa.taxon_id",
+          "rows_carrying_relationship": 26,
+          "rows_matching_taxonomy": 26,
+          "broken_taxonomy_targets": 0,
+          "taxa_reached": 20
+        },
+        {
+          "measurement": "relational_linkage_by_name",
+          "join": "oc_atlas.occurrences.scientific_name -> oc_taxonomy.taxa.canonical_name",
+          "rows_carrying_relationship": 26,
+          "rows_matching_taxonomy": 0,
+          "broken_taxonomy_targets": 26,
+          "taxa_reached": 0
+        }
+      ],
       "taxa_reached_percentage": 0.0628,
       "source_warnings": [
-        "public.orchid_occurrence exists with approximately 580,612 row(s), far more than the measured source (26 row(s)); this relationship measurement may be reading a non-authoritative relation."
+        "public.orchid_occurrence exists with approximately 580,612 row(s), far more than the measured source (26 row(s)); this relationship measurement may be reading a non-authoritative relation.",
+        "oc_atlas.occurrences carries 26 row(s) on oc_atlas.occurrences.scientific_name but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty."
       ],
       "discovery": {
         "taxonomy_candidates": [
@@ -92,13 +111,35 @@
       "taxonomy_table": "oc_taxonomy.taxa",
       "object_table": "oc_env_intel.species_environment_profile",
       "join": "oc_env_intel.species_environment_profile.taxonomy_id -> oc_taxonomy.taxa.taxon_id",
-      "value_column": "avg_elevation_m",
+      "value_columns": [
+        "avg_elevation_m",
+        "min_elevation_m",
+        "max_elevation_m"
+      ],
       "total_taxa": 31840,
       "total_object_rows": 26788,
       "rows_carrying_relationship": 0,
       "rows_matching_taxonomy": 0,
       "broken_taxonomy_targets": 0,
       "taxa_reached": 0,
+      "joins_attempted": [
+        {
+          "measurement": "relational_linkage_by_id",
+          "join": "oc_env_intel.species_environment_profile.taxonomy_id -> oc_taxonomy.taxa.taxon_id",
+          "rows_carrying_relationship": 0,
+          "rows_matching_taxonomy": 0,
+          "broken_taxonomy_targets": 0,
+          "taxa_reached": 0
+        },
+        {
+          "measurement": "relational_linkage_by_name",
+          "join": "oc_env_intel.species_environment_profile.scientific_name -> oc_taxonomy.taxa.canonical_name",
+          "rows_carrying_relationship": 0,
+          "rows_matching_taxonomy": 0,
+          "broken_taxonomy_targets": 0,
+          "taxa_reached": 0
+        }
+      ],
       "taxa_reached_percentage": 0.0,
       "source_warnings": [],
       "discovery": {
@@ -158,13 +199,34 @@
       "taxonomy_table": "oc_taxonomy.taxa",
       "object_table": "oc_env_intel.species_environment_profile",
       "join": "oc_env_intel.species_environment_profile.taxonomy_id -> oc_taxonomy.taxa.taxon_id",
-      "value_column": "climate_proxy_zones",
+      "value_columns": [
+        "climate_proxy_zones",
+        "environmental_readiness_label"
+      ],
       "total_taxa": 31840,
       "total_object_rows": 26788,
       "rows_carrying_relationship": 26788,
       "rows_matching_taxonomy": 18621,
       "broken_taxonomy_targets": 8167,
       "taxa_reached": 18621,
+      "joins_attempted": [
+        {
+          "measurement": "relational_linkage_by_id",
+          "join": "oc_env_intel.species_environment_profile.taxonomy_id -> oc_taxonomy.taxa.taxon_id",
+          "rows_carrying_relationship": 26788,
+          "rows_matching_taxonomy": 18621,
+          "broken_taxonomy_targets": 8167,
+          "taxa_reached": 18621
+        },
+        {
+          "measurement": "relational_linkage_by_name",
+          "join": "oc_env_intel.species_environment_profile.scientific_name -> oc_taxonomy.taxa.canonical_name",
+          "rows_carrying_relationship": 26788,
+          "rows_matching_taxonomy": 2355,
+          "broken_taxonomy_targets": 24433,
+          "taxa_reached": 2355
+        }
+      ],
       "taxa_reached_percentage": 58.483,
       "source_warnings": [],
       "discovery": {
@@ -212,13 +274,23 @@
       "taxonomy_table": "oc_taxonomy.taxa",
       "object_table": "oc_graph.taxon_literature_edges",
       "join": "oc_graph.taxon_literature_edges.scientific_name -> oc_taxonomy.taxa.canonical_name",
-      "value_column": null,
+      "value_columns": [],
       "total_taxa": 31840,
       "total_object_rows": 35,
       "rows_carrying_relationship": 35,
       "rows_matching_taxonomy": 29,
       "broken_taxonomy_targets": 6,
       "taxa_reached": 15,
+      "joins_attempted": [
+        {
+          "measurement": "relational_linkage_by_name",
+          "join": "oc_graph.taxon_literature_edges.scientific_name -> oc_taxonomy.taxa.canonical_name",
+          "rows_carrying_relationship": 35,
+          "rows_matching_taxonomy": 29,
+          "broken_taxonomy_targets": 6,
+          "taxa_reached": 15
+        }
+      ],
       "taxa_reached_percentage": 0.0471,
       "source_warnings": [
         "oc_literature.papers exists with approximately 408 row(s), far more than the measured source (35 row(s)); this relationship measurement may be reading a non-authoritative relation.",
@@ -294,20 +366,40 @@
     },
     "taxonomy_to_pollinators": {
       "relationship": "taxonomy_to_pollinators",
-      "state": "absent",
-      "measurement": "relational_linkage_by_id",
+      "state": "present",
+      "measurement": "relational_linkage_by_name",
       "taxonomy_table": "oc_taxonomy.taxa",
       "object_table": "oc_interactions.orchid_interaction_edges",
-      "join": "oc_interactions.orchid_interaction_edges.orchid_taxonomy_id -> oc_taxonomy.taxa.taxon_id",
-      "value_column": null,
+      "join": "oc_interactions.orchid_interaction_edges.orchid_scientific_name -> oc_taxonomy.taxa.canonical_name",
+      "value_columns": [],
       "total_taxa": 31840,
       "total_object_rows": 23,
       "rows_carrying_relationship": 23,
-      "rows_matching_taxonomy": 0,
-      "broken_taxonomy_targets": 23,
-      "taxa_reached": 0,
-      "taxa_reached_percentage": 0.0,
-      "source_warnings": [],
+      "rows_matching_taxonomy": 23,
+      "broken_taxonomy_targets": 0,
+      "taxa_reached": 4,
+      "joins_attempted": [
+        {
+          "measurement": "relational_linkage_by_id",
+          "join": "oc_interactions.orchid_interaction_edges.orchid_taxonomy_id -> oc_taxonomy.taxa.taxon_id",
+          "rows_carrying_relationship": 23,
+          "rows_matching_taxonomy": 0,
+          "broken_taxonomy_targets": 23,
+          "taxa_reached": 0
+        },
+        {
+          "measurement": "relational_linkage_by_name",
+          "join": "oc_interactions.orchid_interaction_edges.orchid_scientific_name -> oc_taxonomy.taxa.canonical_name",
+          "rows_carrying_relationship": 23,
+          "rows_matching_taxonomy": 23,
+          "broken_taxonomy_targets": 0,
+          "taxa_reached": 4
+        }
+      ],
+      "taxa_reached_percentage": 0.0126,
+      "source_warnings": [
+        "oc_interactions.orchid_interaction_edges carries 23 row(s) on oc_interactions.orchid_interaction_edges.orchid_taxonomy_id but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty."
+      ],
       "discovery": {
         "taxonomy_candidates": [
           {
@@ -360,20 +452,40 @@
     },
     "taxonomy_to_mycorrhiza": {
       "relationship": "taxonomy_to_mycorrhiza",
-      "state": "absent",
-      "measurement": "relational_linkage_by_id",
+      "state": "present",
+      "measurement": "relational_linkage_by_name",
       "taxonomy_table": "oc_taxonomy.taxa",
       "object_table": "oc_mycorrhiza.orchid_fungal_associations",
-      "join": "oc_mycorrhiza.orchid_fungal_associations.orchid_taxonomy_id -> oc_taxonomy.taxa.taxon_id",
-      "value_column": null,
+      "join": "oc_mycorrhiza.orchid_fungal_associations.orchid_scientific_name -> oc_taxonomy.taxa.canonical_name",
+      "value_columns": [],
       "total_taxa": 31840,
       "total_object_rows": 462,
-      "rows_carrying_relationship": 2,
-      "rows_matching_taxonomy": 0,
-      "broken_taxonomy_targets": 2,
-      "taxa_reached": 0,
-      "taxa_reached_percentage": 0.0,
-      "source_warnings": [],
+      "rows_carrying_relationship": 462,
+      "rows_matching_taxonomy": 347,
+      "broken_taxonomy_targets": 115,
+      "taxa_reached": 146,
+      "joins_attempted": [
+        {
+          "measurement": "relational_linkage_by_id",
+          "join": "oc_mycorrhiza.orchid_fungal_associations.orchid_taxonomy_id -> oc_taxonomy.taxa.taxon_id",
+          "rows_carrying_relationship": 2,
+          "rows_matching_taxonomy": 0,
+          "broken_taxonomy_targets": 2,
+          "taxa_reached": 0
+        },
+        {
+          "measurement": "relational_linkage_by_name",
+          "join": "oc_mycorrhiza.orchid_fungal_associations.orchid_scientific_name -> oc_taxonomy.taxa.canonical_name",
+          "rows_carrying_relationship": 462,
+          "rows_matching_taxonomy": 347,
+          "broken_taxonomy_targets": 115,
+          "taxa_reached": 146
+        }
+      ],
+      "taxa_reached_percentage": 0.4585,
+      "source_warnings": [
+        "oc_mycorrhiza.orchid_fungal_associations carries 2 row(s) on oc_mycorrhiza.orchid_fungal_associations.orchid_taxonomy_id but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty."
+      ],
       "discovery": {
         "taxonomy_candidates": [
           {
@@ -437,13 +549,23 @@
       "taxonomy_table": "oc_taxonomy.taxa",
       "object_table": "public.oc_species_habitat_claims",
       "join": "public.oc_species_habitat_claims.taxonomy_id -> oc_taxonomy.taxa.taxon_id",
-      "value_column": null,
+      "value_columns": [],
       "total_taxa": 31840,
       "total_object_rows": 695,
       "rows_carrying_relationship": 695,
       "rows_matching_taxonomy": 2,
       "broken_taxonomy_targets": 693,
       "taxa_reached": 2,
+      "joins_attempted": [
+        {
+          "measurement": "relational_linkage_by_id",
+          "join": "public.oc_species_habitat_claims.taxonomy_id -> oc_taxonomy.taxa.taxon_id",
+          "rows_carrying_relationship": 695,
+          "rows_matching_taxonomy": 2,
+          "broken_taxonomy_targets": 693,
+          "taxa_reached": 2
+        }
+      ],
       "taxa_reached_percentage": 0.0063,
       "source_warnings": [],
       "discovery": {
@@ -503,13 +625,31 @@
       "taxonomy_table": "oc_taxonomy.taxa",
       "object_table": "oc_conservation.conservation_records",
       "join": "oc_conservation.conservation_records.taxon_id -> oc_taxonomy.taxa.taxon_id",
-      "value_column": null,
+      "value_columns": [],
       "total_taxa": 31840,
       "total_object_rows": 2,
       "rows_carrying_relationship": 2,
       "rows_matching_taxonomy": 2,
       "broken_taxonomy_targets": 0,
       "taxa_reached": 2,
+      "joins_attempted": [
+        {
+          "measurement": "relational_linkage_by_id",
+          "join": "oc_conservation.conservation_records.taxon_id -> oc_taxonomy.taxa.taxon_id",
+          "rows_carrying_relationship": 2,
+          "rows_matching_taxonomy": 2,
+          "broken_taxonomy_targets": 0,
+          "taxa_reached": 2
+        },
+        {
+          "measurement": "relational_linkage_by_name",
+          "join": "oc_conservation.conservation_records.scientific_name -> oc_taxonomy.taxa.canonical_name",
+          "rows_carrying_relationship": 2,
+          "rows_matching_taxonomy": 2,
+          "broken_taxonomy_targets": 0,
+          "taxa_reached": 2
+        }
+      ],
       "taxa_reached_percentage": 0.0063,
       "source_warnings": [],
       "discovery": {
@@ -558,13 +698,17 @@
     }
   },
   "state_totals": {
-    "present": 5,
-    "absent": 3
+    "present": 7,
+    "absent": 1
   },
   "source_warnings": [
     {
       "relationship": "taxonomy_to_occurrences",
       "warning": "public.orchid_occurrence exists with approximately 580,612 row(s), far more than the measured source (26 row(s)); this relationship measurement may be reading a non-authoritative relation."
+    },
+    {
+      "relationship": "taxonomy_to_occurrences",
+      "warning": "oc_atlas.occurrences carries 26 row(s) on oc_atlas.occurrences.scientific_name but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty."
     },
     {
       "relationship": "taxonomy_to_literature",
@@ -573,6 +717,14 @@
     {
       "relationship": "taxonomy_to_literature",
       "warning": "public.research_documents exists with approximately 6,725 row(s), far more than the measured source (35 row(s)); this relationship measurement may be reading a non-authoritative relation."
+    },
+    {
+      "relationship": "taxonomy_to_pollinators",
+      "warning": "oc_interactions.orchid_interaction_edges carries 23 row(s) on oc_interactions.orchid_interaction_edges.orchid_taxonomy_id but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty."
+    },
+    {
+      "relationship": "taxonomy_to_mycorrhiza",
+      "warning": "oc_mycorrhiza.orchid_fungal_associations carries 2 row(s) on oc_mycorrhiza.orchid_fungal_associations.orchid_taxonomy_id but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty."
     }
   ]
 }
