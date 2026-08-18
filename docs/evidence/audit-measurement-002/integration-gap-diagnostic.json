@@ -1,6 +1,6 @@
 {
   "contract": "OCU-INTEGRATION-GAP-DIAGNOSTIC-001",
-  "captured_at": "2026-08-18T21:27:18.952729+00:00",
+  "captured_at": "2026-08-18T21:37:38.665402+00:00",
   "access": "read_only_transaction_rolled_back",
   "occurrence_candidates": {
     "oc_atlas.occurrences": {
@@ -432,6 +432,137 @@
     },
     "oc_stage.mx_occurrence_final_v3.taxon_id": {
       "column_present": false
+    },
+    "public.records.taxon_id_matched": {
+      "column_present": true,
+      "data_type": "text",
+      "resolves_against": {
+        "oc_taxonomy.taxa.taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.accepted_taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.source_record_id": {
+          "matched": 0
+        },
+        "public.orchid_taxonomy.id": {
+          "matched": 0
+        },
+        "oc_graph.kg_nodes.source_pk": {
+          "matched": 0
+        }
+      },
+      "non_null": 0,
+      "distinct_non_null": 0
+    },
+    "public.v_orchid_records.taxon_id_matched": {
+      "column_present": true,
+      "data_type": "text",
+      "resolves_against": {
+        "oc_taxonomy.taxa.taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.accepted_taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.source_record_id": {
+          "matched": 0
+        },
+        "public.orchid_taxonomy.id": {
+          "matched": 0
+        },
+        "oc_graph.kg_nodes.source_pk": {
+          "matched": 0
+        }
+      },
+      "non_null": 0,
+      "distinct_non_null": 0
+    },
+    "public.oc_occurrences.species_id": {
+      "column_present": true,
+      "data_type": "bigint",
+      "resolves_against": {
+        "oc_taxonomy.taxa.taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.accepted_taxon_id": {
+          "matched": 0
+        },
+        "oc_taxonomy.taxa.source_record_id": {
+          "matched": 0
+        },
+        "public.orchid_taxonomy.id": {
+          "matched": 0
+        },
+        "oc_graph.kg_nodes.source_pk": {
+          "matched": 0
+        }
+      },
+      "non_null": 2446,
+      "distinct_non_null": 15
+    }
+  },
+  "name_key_resolution": {
+    "public.records.scientific_name_clean": {
+      "column_present": true,
+      "resolves_against": {
+        "oc_taxonomy.taxa.canonical_name": {
+          "matched": 651007
+        },
+        "public.orchid_taxonomy.scientific_name": {
+          "matched": 616827
+        }
+      },
+      "non_null": 1128359
+    },
+    "public.records.scientific_binomial": {
+      "column_present": true,
+      "resolves_against": {
+        "oc_taxonomy.taxa.canonical_name": {
+          "matched": 847517
+        },
+        "public.orchid_taxonomy.scientific_name": {
+          "matched": 803692
+        }
+      },
+      "non_null": 1128359
+    },
+    "public.v_orchid_records.scientific_name_clean": {
+      "column_present": true,
+      "resolves_against": {
+        "oc_taxonomy.taxa.canonical_name": {
+          "matched": 613456
+        },
+        "public.orchid_taxonomy.scientific_name": {
+          "matched": 576419
+        }
+      },
+      "non_null": 927819
+    },
+    "oc_stage.mx_occurrence_final_v3.scientific_name": {
+      "column_present": true,
+      "resolves_against": {
+        "oc_taxonomy.taxa.canonical_name": {
+          "matched": 7802
+        },
+        "public.orchid_taxonomy.scientific_name": {
+          "matched": 43250
+        }
+      },
+      "non_null": 76970
+    },
+    "public.orchid_occurrence.canonical_name": {
+      "column_present": true,
+      "resolves_against": {
+        "oc_taxonomy.taxa.canonical_name": {
+          "matched": 113874
+        },
+        "public.orchid_taxonomy.scientific_name": {
+          "matched": 108049
+        }
+      },
+      "non_null": 126913
     }
   },
   "habitat_claims": {

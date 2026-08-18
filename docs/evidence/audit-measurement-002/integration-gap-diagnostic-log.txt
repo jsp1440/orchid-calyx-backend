@@ -26,6 +26,16 @@
   public.oc_occurrences.taxonomy_id                            column absent
   oc_stage.mx_occurrence_final_v3.taxonomy_id                  column absent
   oc_stage.mx_occurrence_final_v3.taxon_id                     column absent
+  public.records.taxon_id_matched                              type=text non_null=0 -> NOTHING MATCHES
+  public.v_orchid_records.taxon_id_matched                     type=text non_null=0 -> NOTHING MATCHES
+  public.oc_occurrences.species_id                             type=bigint non_null=2446 -> NOTHING MATCHES
+
+=== name key resolution ===
+  public.records.scientific_name_clean                     non_null=1128359 -> {'oc_taxonomy.taxa.canonical_name': 651007, 'public.orchid_taxonomy.scientific_name': 616827}
+  public.records.scientific_binomial                       non_null=1128359 -> {'oc_taxonomy.taxa.canonical_name': 847517, 'public.orchid_taxonomy.scientific_name': 803692}
+  public.v_orchid_records.scientific_name_clean            non_null=927819 -> {'oc_taxonomy.taxa.canonical_name': 613456, 'public.orchid_taxonomy.scientific_name': 576419}
+  oc_stage.mx_occurrence_final_v3.scientific_name          non_null=76970 -> {'oc_taxonomy.taxa.canonical_name': 7802, 'public.orchid_taxonomy.scientific_name': 43250}
+  public.orchid_occurrence.canonical_name                  non_null=126913 -> {'oc_taxonomy.taxa.canonical_name': 113874, 'public.orchid_taxonomy.scientific_name': 108049}
 
 === elevation columns ===
   neondb_import.bloombuilder_species.habitat                      populated=10
