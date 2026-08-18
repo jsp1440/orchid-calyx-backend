@@ -1,6 +1,6 @@
 {
   "contract": "OCU-INTEGRATION-GAP-DIAGNOSTIC-001",
-  "captured_at": "2026-08-18T21:45:25.663530+00:00",
+  "captured_at": "2026-08-18T21:54:02.124729+00:00",
   "access": "read_only_transaction_rolled_back",
   "occurrence_candidates": {
     "oc_atlas.occurrences": {
