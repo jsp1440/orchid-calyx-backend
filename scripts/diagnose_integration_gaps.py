@@ -62,6 +62,29 @@ ORPHAN_KEYS = (
     ("public.oc_occurrences", "taxonomy_id"),
     ("oc_stage.mx_occurrence_final_v3", "taxonomy_id"),
     ("oc_stage.mx_occurrence_final_v3", "taxon_id"),
+    # The first pass probed accepted_taxon_id on public.records and found it
+    # entirely null, then concluded the relation carried no taxonomy key. It
+    # carries taxon_id_matched, which the probe never asked about -- the same
+    # shape of mistake as the candidate list that only knew a 26-row relation.
+    ("public.records", "taxon_id_matched"),
+    ("public.v_orchid_records", "taxon_id_matched"),
+    ("public.oc_occurrences", "species_id"),
+)
+
+# Name-based resolution for the same relations. A corpus with no usable id key
+# may still be joinable by name, and 2.9 million elevation values are worth
+# asking the question about twice.
+NAME_KEYS = (
+    ("public.records", "scientific_name_clean"),
+    ("public.records", "scientific_binomial"),
+    ("public.v_orchid_records", "scientific_name_clean"),
+    ("oc_stage.mx_occurrence_final_v3", "scientific_name"),
+    ("public.orchid_occurrence", "canonical_name"),
+)
+
+TAXONOMY_NAME_TARGETS = (
+    ("oc_taxonomy.taxa", "canonical_name"),
+    ("public.orchid_taxonomy", "scientific_name"),
 )
 
 # The first pass of this diagnostic only knew the relations already named in the
@@ -214,6 +237,35 @@ def main() -> int:
                 resolution[f"{table}.{column}"] = entry
             out["orphan_key_resolution"] = resolution
 
+            # --- 2b. Name-based resolution -----------------------------
+            name_res = {}
+            for table, column in NAME_KEYS:
+                cols, _ = columns_with_types(cur, table)
+                if column not in cols:
+                    name_res[f"{table}.{column}"] = {"column_present": False}
+                    continue
+                entry = {"column_present": True, "resolves_against": {}}
+                entry["non_null"], _ = scalar(
+                    cur, f"SELECT COUNT(*) FROM {table} WHERE {column} IS NOT NULL"
+                )
+                for tax_table, tax_col in TAXONOMY_NAME_TARGETS:
+                    tcols, _ = columns_with_types(cur, tax_table)
+                    if tax_col not in tcols:
+                        continue
+                    matched, err = scalar(
+                        cur,
+                        f"""
+                        SELECT COUNT(*) FROM {table} o
+                        JOIN {tax_table} t ON lower(t.{tax_col}) = lower(o.{column})
+                        WHERE o.{column} IS NOT NULL
+                        """,
+                    )
+                    entry["resolves_against"][f"{tax_table}.{tax_col}"] = (
+                        {"matched": matched} if not err else {"error": err}
+                    )
+                name_res[f"{table}.{column}"] = entry
+            out["name_key_resolution"] = name_res
+
             # --- 3. Habitat claims -------------------------------------
             hab = relation_info(cur, "public.oc_species_habitat_claims")
             if hab.get("exists"):
@@ -301,6 +353,14 @@ def main() -> int:
             continue
         hits = {t: r.get("matched") for t, r in v["resolves_against"].items() if r.get("matched")}
         print(f"  {k:60s} type={v['data_type']} non_null={v['non_null']} -> {hits or 'NOTHING MATCHES'}")
+    print()
+    print("=== name key resolution ===")
+    for k, v in (out.get("name_key_resolution") or {}).items():
+        if not v.get("column_present"):
+            print(f"  {k:56s} column absent")
+            continue
+        hits = {t: r.get("matched") for t, r in v["resolves_against"].items() if r.get("matched")}
+        print(f"  {k:56s} non_null={v['non_null']} -> {hits or 'NOTHING MATCHES'}")
     print()
     print("=== elevation columns ===")
     for e in out["elevation_columns"]:

@@ -1,0 +1,70 @@
+name: CI Visibility
+
+# BUILD-087B fails on this branch and its logs are not readable with the token
+# available to the agent working on it: the jobs, run-logs and rerun endpoints
+# all answer 403. A full A/B of the repository-wide suite -- with and without
+# this branch's changes, against a real PostgreSQL, under 087B's exact
+# invocation -- shows an identical failure set, so the failure appears not to
+# originate here. "Appears not to" is not good enough to call a PR merge-ready,
+# so this job runs the same suite and publishes the failure list as an artifact,
+# which IS readable. It exists to turn an opaque red check into a legible one.
+on:
+  push:
+    branches: [claude/audit-measurement-002]
+    paths:
+      - '.github/workflows/ci-visibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repo-wide-failures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: build087
+          POSTGRES_PASSWORD: build087_test_only
+          POSTGRES_DB: build087_validation
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U build087 -d build087_validation"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+      - name: Apply BUILD-051 owner-console schema
+        run: psql "$BROAD_DATABASE_URL" -f migrations/BUILD-051-owner-operations-console.sql
+        env:
+          BROAD_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
+      - name: Repository-wide suite, failures only
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          env -u TEST_DATABASE_URL python -m pytest -q \
+            --ignore=tests/calyx_certification/test_deterministic_failure_round2.py \
+            --ignore=tests/test_calyx_journalism_mvp_001.py \
+            --deselect=tests/test_build_034_044_049_integration.py::test_state_changing_runtime_routes_fail_closed_without_api_key \
+            2>&1 | tee repo-wide.txt || true
+          grep -E '^(FAILED|ERROR)' repo-wide.txt | sort > repo-wide-failures.txt || true
+          tail -40 repo-wide.txt > repo-wide-tail.txt || true
+          echo "--- failure count ---"
+          wc -l < repo-wide-failures.txt
+        env:
+          DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: repo-wide-failures-${{ github.sha }}
+          path: |
+            repo-wide-failures.txt
+            repo-wide-tail.txt
+          if-no-files-found: warn
+          retention-days: 7
