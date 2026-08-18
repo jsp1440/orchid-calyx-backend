@@ -1,6 +1,6 @@
 {
   "contract": "OCU-INTEGRATION-GAP-DIAGNOSTIC-001",
-  "captured_at": "2026-08-18T21:03:42.562502+00:00",
+  "captured_at": "2026-08-18T21:11:52.893597+00:00",
   "access": "read_only_transaction_rolled_back",
   "occurrence_candidates": {
     "oc_atlas.occurrences": {
@@ -283,8 +283,3887 @@
       "taxonomy_id": 695
     }
   },
-  "elevation_columns": [],
-  "elevation_scan_error": "ProgrammingError: only '%s', '%b', '%t' are allowed as placeholders, got '%e'",
+  "elevation_columns": [
+    {
+      "relation": "neondb_import.bloombuilder_species",
+      "column": "habitat",
+      "data_type": "text",
+      "populated_rows": 10,
+      "error": null
+    },
+    {
+      "relation": "oc_api.species_atlas_summary_v1",
+      "column": "elevation_max_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_api.species_atlas_summary_v1",
+      "column": "elevation_min_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_api.v_relationship_explorer_live_payload_v1",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_api.v_relationship_explorer_live_payload_v1",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_api.v_relationship_explorer_species_profile_v1",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_api.v_relationship_explorer_species_profile_v1",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_atlas.occurrences",
+      "column": "elevation",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_atlas.species_atlas_bridge_v1",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_atlas.species_atlas_bridge_v1",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_audit.build45a_fast_unresolved_sample",
+      "column": "elevation_meters",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_audit.build84b_summary",
+      "column": "elevation_signals",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_audit.extraction_quality_audit",
+      "column": "avg_habitat_confidence",
+      "data_type": "numeric",
+      "populated_rows": 14,
+      "error": null
+    },
+    {
+      "relation": "oc_audit.extraction_quality_audit",
+      "column": "distinct_habitat_signals",
+      "data_type": "bigint",
+      "populated_rows": 20,
+      "error": null
+    },
+    {
+      "relation": "oc_audit.extraction_quality_audit",
+      "column": "habitat_claims",
+      "data_type": "bigint",
+      "populated_rows": 20,
+      "error": null
+    },
+    {
+      "relation": "oc_audit.extraction_quality_audit",
+      "column": "missing_habitat_data",
+      "data_type": "boolean",
+      "populated_rows": 20,
+      "error": null
+    },
+    {
+      "relation": "oc_audit.v_build146_priority_repairs",
+      "column": "missing_habitat_data",
+      "data_type": "boolean",
+      "populated_rows": 20,
+      "error": null
+    },
+    {
+      "relation": "oc_audit.v_build146_quality_summary",
+      "column": "missing_habitat_taxa",
+      "data_type": "bigint",
+      "populated_rows": 4,
+      "error": null
+    },
+    {
+      "relation": "oc_collection.grow_spaces",
+      "column": "climate_notes",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_collection.grow_spaces",
+      "column": "elevation_meters",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.ecological_observations",
+      "column": "elevation_m",
+      "data_type": "integer",
+      "populated_rows": 2,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.ecological_observations",
+      "column": "habitat_type",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.ecological_observations",
+      "column": "microhabitat",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.project_sites",
+      "column": "elevation_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.project_sites",
+      "column": "habitat_description",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.restoration_score",
+      "column": "climate_similarity_score",
+      "data_type": "numeric",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.restoration_score",
+      "column": "habitat_similarity_score",
+      "data_type": "numeric",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.v_ecological_observation_map_points",
+      "column": "elevation_m",
+      "data_type": "integer",
+      "populated_rows": 2,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.v_ecological_observation_map_points",
+      "column": "habitat_type",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.v_ecological_observation_map_points",
+      "column": "microhabitat",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.v_legacy_project_locations_normalized",
+      "column": "elevation_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.v_legacy_project_locations_normalized",
+      "column": "legacy_habitat_description",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.v_project_site_insert_candidates",
+      "column": "elevation_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.v_project_site_insert_candidates",
+      "column": "habitat_description",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_conservation.v_project_species_ecology_summary",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 2,
+      "error": null
+    },
+    {
+      "relation": "oc_core.records",
+      "column": "elevation_meters_max",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_core.records",
+      "column": "elevation_meters_min",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_core.records",
+      "column": "habitat",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_dependency.elevation_derivation_queue",
+      "column": "derived_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_dependency.elevation_derivation_queue",
+      "column": "elevation_source",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_dependency.elevation_derivation_queue",
+      "column": "existing_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_dependency.v_dependency_geography",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_ecuador.ecuador_candidates_view",
+      "column": "elevation_m",
+      "data_type": "integer",
+      "populated_rows": 70,
+      "error": null
+    },
+    {
+      "relation": "oc_env.species_environmental_profile",
+      "column": "habitat_temporal_distinctiveness_score",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.elevation_conflict_flags",
+      "column": "elevation_range_span_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.elevation_conflict_flags",
+      "column": "elevation_record_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.elevation_conflict_flags",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.elevation_conflict_flags",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.elevation_recovery_candidates",
+      "column": "elevation_record_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.environment_enrichment_candidates",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_elevation_recovery",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_elevation_recovery",
+      "column": "elevation_record_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_elevation_recovery",
+      "column": "habitat_profile_elevation_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_elevation_recovery",
+      "column": "image_elevation_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_elevation_recovery",
+      "column": "image_temporal_elevation_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_elevation_recovery",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_elevation_recovery",
+      "column": "median_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_elevation_recovery",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_elevation_recovery",
+      "column": "occurrence_elevation_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_environment_profile",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_environment_profile",
+      "column": "climate_proxy_zones",
+      "data_type": "ARRAY",
+      "populated_rows": 26788,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_environment_profile",
+      "column": "elevation_record_count",
+      "data_type": "bigint",
+      "populated_rows": 26788,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_environment_profile",
+      "column": "habitat_claim_count",
+      "data_type": "bigint",
+      "populated_rows": 26788,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_environment_profile",
+      "column": "habitat_classes",
+      "data_type": "ARRAY",
+      "populated_rows": 26788,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_environment_profile",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.species_environment_profile",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_atlas_environment_species",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_atlas_environment_species",
+      "column": "climate_proxy_zones",
+      "data_type": "ARRAY",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_atlas_environment_species",
+      "column": "elevation_record_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_atlas_environment_species",
+      "column": "habitat_claim_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_atlas_environment_species",
+      "column": "habitat_classes",
+      "data_type": "ARRAY",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_atlas_environment_species",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_atlas_environment_species",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_oacs_candidate_species",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_oacs_candidate_species",
+      "column": "climate_proxy_zones",
+      "data_type": "ARRAY",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_oacs_candidate_species",
+      "column": "elevation_record_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_oacs_candidate_species",
+      "column": "habitat_claim_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_oacs_candidate_species",
+      "column": "habitat_classes",
+      "data_type": "ARRAY",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_oacs_candidate_species",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_oacs_candidate_species",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_species_environment_profile_current",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_species_environment_profile_current",
+      "column": "climate_proxy_zones",
+      "data_type": "ARRAY",
+      "populated_rows": 26788,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_species_environment_profile_current",
+      "column": "elevation_record_count",
+      "data_type": "bigint",
+      "populated_rows": 26788,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_species_environment_profile_current",
+      "column": "habitat_claim_count",
+      "data_type": "bigint",
+      "populated_rows": 26788,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_species_environment_profile_current",
+      "column": "habitat_classes",
+      "data_type": "ARRAY",
+      "populated_rows": 26788,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_species_environment_profile_current",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_env_intel.v_species_environment_profile_current",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_federation.external_occurrence_refs",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.orchid_occurrence_geo",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.orchid_occurrence_h3_r6",
+      "column": "elevation_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_h3_occurrence_source",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_orchid_h3_r6_calibrated_signals",
+      "column": "high_elevation_diversity_signal",
+      "data_type": "integer",
+      "populated_rows": 99,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_orchid_h3_r6_calibrated_signals",
+      "column": "mean_elevation",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_orchid_h3_r6_enriched_real",
+      "column": "high_elevation_diversity_signal",
+      "data_type": "boolean",
+      "populated_rows": 99,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_orchid_h3_r6_priority_queue",
+      "column": "high_elevation_diversity_signal",
+      "data_type": "integer",
+      "populated_rows": 2,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_orchid_h3_r6_priority_queue",
+      "column": "mean_elevation",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_orchid_h3_r6_priority_queue_real",
+      "column": "high_elevation_diversity_signal",
+      "data_type": "boolean",
+      "populated_rows": 11,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_orchid_h3_r6_signal_priority_queue",
+      "column": "high_elevation_diversity_signal",
+      "data_type": "boolean",
+      "populated_rows": 91,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_orchid_h3_r6_signals",
+      "column": "elevation_class",
+      "data_type": "text",
+      "populated_rows": 99,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_orchid_h3_r6_signals",
+      "column": "high_elevation_diversity_signal",
+      "data_type": "boolean",
+      "populated_rows": 99,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_orchid_h3_r6_theme_elevation",
+      "column": "elevation_class",
+      "data_type": "text",
+      "populated_rows": 99,
+      "error": null
+    },
+    {
+      "relation": "oc_geo.v_orchid_h3_r6_theme_enriched",
+      "column": "elevation_class",
+      "data_type": "text",
+      "populated_rows": 99,
+      "error": null
+    },
+    {
+      "relation": "oc_graph.system_status",
+      "column": "climate_nodes",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_graph.system_status",
+      "column": "elevation_nodes",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_graph.v_latest_system_status",
+      "column": "climate_nodes",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_graph.v_latest_system_status",
+      "column": "elevation_nodes",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_habitat.literature_habitat_phenology_claims",
+      "column": "habitat_claim_id",
+      "data_type": "bigint",
+      "populated_rows": 731,
+      "error": null
+    },
+    {
+      "relation": "oc_habitat.literature_habitat_phenology_claims",
+      "column": "habitat_group",
+      "data_type": "text",
+      "populated_rows": 731,
+      "error": null
+    },
+    {
+      "relation": "oc_habitat.literature_habitat_phenology_claims",
+      "column": "habitat_signal",
+      "data_type": "text",
+      "populated_rows": 731,
+      "error": null
+    },
+    {
+      "relation": "oc_habitat.species_habitat_profile",
+      "column": "avg_elevation",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_habitat.species_habitat_profile",
+      "column": "elevation_records",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_habitat.species_habitat_profile",
+      "column": "habitat_descriptions",
+      "data_type": "text",
+      "populated_rows": 102,
+      "error": null
+    },
+    {
+      "relation": "oc_habitat.species_habitat_profile",
+      "column": "max_elevation",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_habitat.species_habitat_profile",
+      "column": "min_elevation",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_habitat.v_species_habitat_summary",
+      "column": "with_elevation",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_habitat.v_species_habitat_summary",
+      "column": "with_habitat",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_identity.image_to_continuum_taxon",
+      "column": "elevation_meters",
+      "data_type": "integer",
+      "populated_rows": 1184,
+      "error": null
+    },
+    {
+      "relation": "oc_image.record_media_recovery_candidates_b74d",
+      "column": "elevation_effective_m",
+      "data_type": "numeric",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_image.record_media_recovery_candidates_b74d",
+      "column": "media_elevation_m",
+      "data_type": "real",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_image.v_homepage_orchid_images",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 3011586,
+      "error": null
+    },
+    {
+      "relation": "oc_image.v_unified_media_spine",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 3688623,
+      "error": null
+    },
+    {
+      "relation": "oc_image_resolve.inat_recovery_queue",
+      "column": "resolved_elevation",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_integration.v_occurrence_elevation_foundation",
+      "column": "canonical_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_integration.v_occurrence_elevation_foundation",
+      "column": "elevation_zone",
+      "data_type": "text",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_integration.v_occurrence_elevation_foundation",
+      "column": "maximum_elevation",
+      "data_type": "integer",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_integration.v_occurrence_elevation_foundation",
+      "column": "maximum_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_integration.v_occurrence_elevation_foundation",
+      "column": "minimum_elevation",
+      "data_type": "integer",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_integration.v_occurrence_elevation_foundation",
+      "column": "minimum_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_integration.v_occurrence_temporal_foundation",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_intelligence._occ_norm",
+      "column": "climate_preference",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_intelligence._occ_norm",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_intelligence.region_species_summary_qc",
+      "column": "rows_with_elevation",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_intelligence.v_region_species_summary",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_intelligence.v_region_species_summary",
+      "column": "dominant_climate_preference",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_intelligence.v_region_species_summary",
+      "column": "max_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_intelligence.v_region_species_summary",
+      "column": "min_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_atlas_interaction_density_grid",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_atlas_interaction_hotspot_points",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_atlas_interaction_partner_hotspots",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_atlas_interaction_points",
+      "column": "avg_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_atlas_interaction_recovered_points",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_atlas_interaction_species_hotspots",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_ecological_network_summary",
+      "column": "avg_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_interaction_hotspots",
+      "column": "avg_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_interaction_spatial_recovery",
+      "column": "avg_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_interaction_spatial_recovery",
+      "column": "max_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_interaction_spatial_recovery",
+      "column": "min_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_interaction_spatial_recovery_best",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_interactions.v_interaction_spatial_recovery_sources",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_literature.v_build125_species_claim_profile",
+      "column": "habitat_claims",
+      "data_type": "bigint",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.ecological_signature_profiles",
+      "column": "habitat_claim_count",
+      "data_type": "integer",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.ecological_signature_profiles",
+      "column": "plain_language_habitats",
+      "data_type": "ARRAY",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.ecological_similarity_edges",
+      "column": "shared_habitat_labels",
+      "data_type": "ARRAY",
+      "populated_rows": 694863,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.identification_sessions",
+      "column": "submitted_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.trait_source_inventory",
+      "column": "has_elevation",
+      "data_type": "boolean",
+      "populated_rows": 67,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.trait_source_inventory",
+      "column": "has_habitat_traits",
+      "data_type": "boolean",
+      "populated_rows": 67,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build96_habitat_ontology_resolution_summary",
+      "column": "habitat_ontology_claims",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build96_species_habitat_phrase",
+      "column": "habitat_ontology_claim_count",
+      "data_type": "bigint",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build96_species_habitat_phrase",
+      "column": "habitat_phrase",
+      "data_type": "text",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build96_species_habitat_phrase",
+      "column": "habitat_semantics",
+      "data_type": "jsonb",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build96_taxon_habitat_semantics",
+      "column": "habitat_ontology_claim_count",
+      "data_type": "bigint",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build96_taxon_habitat_semantics",
+      "column": "habitat_semantics",
+      "data_type": "jsonb",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build98_ecological_signature_summary",
+      "column": "avg_habitat_claims",
+      "data_type": "numeric",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build98_species_ecological_signatures",
+      "column": "habitat_claim_count",
+      "data_type": "integer",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build98_species_ecological_signatures",
+      "column": "plain_language_habitats",
+      "data_type": "ARRAY",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build99_ecological_similarity_edges",
+      "column": "shared_habitat_labels",
+      "data_type": "ARRAY",
+      "populated_rows": 694863,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build99_species_ecological_neighbors",
+      "column": "shared_habitat_labels",
+      "data_type": "ARRAY",
+      "populated_rows": 1389726,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_build99_top_species_neighbors",
+      "column": "shared_habitat_labels",
+      "data_type": "ARRAY",
+      "populated_rows": 12196,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_trait_source_by_capability",
+      "column": "has_elevation",
+      "data_type": "boolean",
+      "populated_rows": 67,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_trait_source_by_capability",
+      "column": "has_habitat_traits",
+      "data_type": "boolean",
+      "populated_rows": 67,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_trait_source_priority",
+      "column": "has_elevation",
+      "data_type": "boolean",
+      "populated_rows": 67,
+      "error": null
+    },
+    {
+      "relation": "oc_matrix.v_trait_source_priority",
+      "column": "has_habitat_traits",
+      "data_type": "boolean",
+      "populated_rows": 67,
+      "error": null
+    },
+    {
+      "relation": "oc_mycorrhiza.fungal_occurrences",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_mycorrhiza.fungal_occurrences",
+      "column": "habitat_description",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_mycorrhiza.orchid_seed_bank_accessions",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_mycorrhiza.seed_fungal_accession_staging",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_mycorrhiza.spatial_fungal_layer_staging",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_mycorrhiza.v_orchid_fungal_atlas_candidates",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_mycorrhiza.v_spatial_fungal_staging_review_queue",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_oacs.species_culture_bridge_v1",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_oacs.species_culture_bridge_v1",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_reflect.v_ecological_semantic_profiles_fallback",
+      "column": "habitat_types",
+      "data_type": "ARRAY",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_reflect.v_ecological_semantic_profiles_fallback",
+      "column": "total_habitat_claims",
+      "data_type": "integer",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_regions.region_habitats",
+      "column": "habitat_description",
+      "data_type": "text",
+      "populated_rows": 6,
+      "error": null
+    },
+    {
+      "relation": "oc_regions.region_habitats",
+      "column": "habitat_name",
+      "data_type": "text",
+      "populated_rows": 6,
+      "error": null
+    },
+    {
+      "relation": "oc_regions.region_profiles",
+      "column": "climate_summary",
+      "data_type": "text",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "oc_regions.region_profiles",
+      "column": "elevation_summary",
+      "data_type": "text",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "oc_regions.region_profiles",
+      "column": "habitat_summary",
+      "data_type": "text",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "oc_regions.v_region_profiles",
+      "column": "climate_summary",
+      "data_type": "text",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "oc_regions.v_region_profiles",
+      "column": "elevation_summary",
+      "data_type": "text",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "oc_regions.v_region_profiles",
+      "column": "habitat_count",
+      "data_type": "bigint",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "oc_regions.v_region_profiles",
+      "column": "habitat_summary",
+      "data_type": "text",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "oc_repair.species_repair_queue_v1",
+      "column": "habitat_claims",
+      "data_type": "integer",
+      "populated_rows": 51775,
+      "error": null
+    },
+    {
+      "relation": "oc_species.canonical_species_literature_intelligence",
+      "column": "habitat_claims",
+      "data_type": "integer",
+      "populated_rows": 20,
+      "error": null
+    },
+    {
+      "relation": "oc_species.canonical_species_literature_intelligence",
+      "column": "missing_habitat_data",
+      "data_type": "boolean",
+      "populated_rows": 20,
+      "error": null
+    },
+    {
+      "relation": "oc_species.literature_species_narratives",
+      "column": "habitat_claims",
+      "data_type": "bigint",
+      "populated_rows": 325,
+      "error": null
+    },
+    {
+      "relation": "oc_species.species_knowledge_fusion_calibrated_v1",
+      "column": "habitat_claims",
+      "data_type": "integer",
+      "populated_rows": 51775,
+      "error": null
+    },
+    {
+      "relation": "oc_species.species_knowledge_fusion_calibrated_v1",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.species_knowledge_fusion_calibrated_v1",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.species_knowledge_fusion_v1",
+      "column": "habitat_claims",
+      "data_type": "integer",
+      "populated_rows": 51775,
+      "error": null
+    },
+    {
+      "relation": "oc_species.species_knowledge_fusion_v1",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.species_knowledge_fusion_v1",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_build173_species_page_literature_feed",
+      "column": "habitat_claims",
+      "data_type": "integer",
+      "populated_rows": 20,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_build173_species_repair_targets",
+      "column": "missing_habitat_data",
+      "data_type": "boolean",
+      "populated_rows": 20,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_ecological_intelligence",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_ecological_intelligence",
+      "column": "climate_preference",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_ecological_intelligence",
+      "column": "habitat_description",
+      "data_type": "text",
+      "populated_rows": 50,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_ecological_intelligence",
+      "column": "max_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_ecological_intelligence",
+      "column": "min_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_intelligence_profile",
+      "column": "climate_preference_record_count",
+      "data_type": "bigint",
+      "populated_rows": 69485,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_intelligence_profile",
+      "column": "distinct_climate_preference_count",
+      "data_type": "bigint",
+      "populated_rows": 69485,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_intelligence_profile",
+      "column": "distinct_habitat_count",
+      "data_type": "bigint",
+      "populated_rows": 69485,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_intelligence_profile",
+      "column": "elevation_max_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_intelligence_profile",
+      "column": "elevation_mean_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_intelligence_profile",
+      "column": "elevation_min_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_intelligence_profile",
+      "column": "elevation_range_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_intelligence_profile",
+      "column": "elevation_record_count",
+      "data_type": "bigint",
+      "populated_rows": 69485,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_intelligence_profile",
+      "column": "habitat_record_count",
+      "data_type": "bigint",
+      "populated_rows": 69485,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_intelligence_profile",
+      "column": "habitat_text_count",
+      "data_type": "bigint",
+      "populated_rows": 69485,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_profile_summary",
+      "column": "habitat_summary",
+      "data_type": "text",
+      "populated_rows": 50,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_profile_summary",
+      "column": "max_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_species.v_species_profile_summary",
+      "column": "min_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_from_v4_preview",
+      "column": "climate_zone",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_from_v4_preview",
+      "column": "elevation_m_max",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_from_v4_preview",
+      "column": "elevation_m_min",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_from_v4_preview",
+      "column": "habitat_class",
+      "data_type": "text",
+      "populated_rows": 695,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_from_v4_preview",
+      "column": "habitat_text",
+      "data_type": "text",
+      "populated_rows": 695,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_v1_preview",
+      "column": "habitat_class",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_v1_preview",
+      "column": "habitat_text",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_v2_preview",
+      "column": "climate_zone",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_v2_preview",
+      "column": "elevation_m_max",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_v2_preview",
+      "column": "elevation_m_min",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_v2_preview",
+      "column": "habitat_class",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.habitat_claim_materialization_v2_preview",
+      "column": "habitat_text",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.mx_occurrence_final_v3",
+      "column": "elevation_effective_m",
+      "data_type": "numeric",
+      "populated_rows": 64523,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.mx_occurrence_final_v3",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 64523,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.mycorrhizal_associations_stage",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.pollinator_interactions_stage",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.species_resolution_lift_candidates",
+      "column": "mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 1505,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.trait_candidates_stage",
+      "column": "elevation_band_confidence",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.trait_candidates_stage",
+      "column": "elevation_band_key",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.trait_candidates_stage",
+      "column": "elevation_band_label",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.trait_candidates_stage",
+      "column": "elevation_band_method",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.trait_candidates_stage",
+      "column": "elevation_band_rank",
+      "data_type": "integer",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.trait_candidates_stage",
+      "column": "elevation_max_m",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.trait_candidates_stage",
+      "column": "elevation_mid_m",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.trait_candidates_stage",
+      "column": "elevation_min_m",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.trait_candidates_stage",
+      "column": "elevation_parse_rule_id",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.trait_candidates_stage",
+      "column": "elevation_parse_status",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.trait_candidates_stage",
+      "column": "elevation_source_unit",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_band_classification",
+      "column": "elevation_band_confidence",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_band_classification",
+      "column": "elevation_band_key",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_band_classification",
+      "column": "elevation_band_label",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_band_classification",
+      "column": "elevation_band_method",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_band_classification",
+      "column": "elevation_band_rank",
+      "data_type": "integer",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_band_classification",
+      "column": "elevation_max_m",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_band_classification",
+      "column": "elevation_mid_m",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_band_classification",
+      "column": "elevation_min_m",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_band_classification",
+      "column": "elevation_parse_status",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_band_classification",
+      "column": "elevation_source_unit",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_normalized",
+      "column": "elevation_max_m",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_normalized",
+      "column": "elevation_mid_m",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_normalized",
+      "column": "elevation_min_m",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_normalized",
+      "column": "elevation_parse_rule_id",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_normalized",
+      "column": "elevation_parse_status",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_elevation_normalized",
+      "column": "elevation_source_unit",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_mx_species_summary",
+      "column": "avg_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 3627,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_mx_species_summary",
+      "column": "max_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 3627,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_mx_species_summary",
+      "column": "min_elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 3627,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_mycorrhiza_ecology_enriched",
+      "column": "dominant_habitat_group",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_mycorrhiza_ecology_enriched",
+      "column": "habitat_accepted_taxon_id",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_mycorrhiza_ecology_enriched",
+      "column": "habitat_evidence_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_prose_trait_taxon_profile_v1",
+      "column": "habitat",
+      "data_type": "text",
+      "populated_rows": 10,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_species_mycorrhiza_ecology_summary",
+      "column": "dominant_habitat_group",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_species_mycorrhiza_ecology_summary",
+      "column": "habitat_evidence_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_stage.v_species_resolution_lift_samples",
+      "column": "mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 200,
+      "error": null
+    },
+    {
+      "relation": "oc_time.image_temporal_facts",
+      "column": "climate_proxy_zone",
+      "data_type": "text",
+      "populated_rows": 8809,
+      "error": null
+    },
+    {
+      "relation": "oc_time.image_temporal_facts",
+      "column": "derived_elevation_band",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_time.image_temporal_facts",
+      "column": "effective_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_time.image_temporal_facts",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_time.temporal_event_spine",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 1153,
+      "error": null
+    },
+    {
+      "relation": "oc_time.v_atlas_monthly_heatmap",
+      "column": "avg_elevation",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_time.v_atlas_seasonal_dashboard",
+      "column": "avg_elevation",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_time.v_image_enrichment_by_source",
+      "column": "pct_with_effective_elevation",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_time.v_image_enrichment_by_source",
+      "column": "with_effective_elevation",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_time.v_image_enrichment_summary",
+      "column": "pct_with_effective_elevation",
+      "data_type": "numeric",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_time.v_image_enrichment_summary",
+      "column": "with_effective_elevation",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.elevation_taxon_bridge",
+      "column": "elevation_band_confidence",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.elevation_taxon_bridge",
+      "column": "elevation_band_key",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.elevation_taxon_bridge",
+      "column": "elevation_band_label",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.elevation_taxon_bridge",
+      "column": "elevation_band_method",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.elevation_taxon_bridge",
+      "column": "elevation_band_rank",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.elevation_taxon_bridge",
+      "column": "elevation_max_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.elevation_taxon_bridge",
+      "column": "elevation_mid_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.elevation_taxon_bridge",
+      "column": "elevation_min_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.elevation_taxon_bridge",
+      "column": "elevation_parse_rule_id",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.elevation_taxon_bridge",
+      "column": "elevation_parse_status",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.elevation_taxon_bridge",
+      "column": "elevation_source_unit",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.fungal_association",
+      "column": "habitat_context",
+      "data_type": "text",
+      "populated_rows": 6,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility",
+      "column": "elevation_band",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility",
+      "column": "elevation_max_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility",
+      "column": "elevation_mean_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility",
+      "column": "elevation_min_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility",
+      "column": "habitat_evidence_count",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility",
+      "column": "habitat_interpretation",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility_v2",
+      "column": "dominant_habitat_group",
+      "data_type": "text",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility_v2",
+      "column": "elevation_derivation_method",
+      "data_type": "text",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility_v2",
+      "column": "elevation_max_m",
+      "data_type": "double precision",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility_v2",
+      "column": "elevation_min_m",
+      "data_type": "double precision",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility_v2",
+      "column": "elevation_value_m",
+      "data_type": "double precision",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility_v2",
+      "column": "habitat_evidence_count",
+      "data_type": "bigint",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility_v3",
+      "column": "dominant_habitat_group",
+      "data_type": "text",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility_v5",
+      "column": "primary_habitat",
+      "data_type": "text",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_compatibility_v5",
+      "column": "secondary_habitat",
+      "data_type": "text",
+      "populated_rows": 44,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_intelligence",
+      "column": "elevation_band",
+      "data_type": "text",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_intelligence",
+      "column": "elevation_max_m",
+      "data_type": "double precision",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_intelligence",
+      "column": "elevation_mean_m",
+      "data_type": "double precision",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_intelligence",
+      "column": "elevation_min_m",
+      "data_type": "double precision",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_rules",
+      "column": "habitat_rule_id",
+      "data_type": "bigint",
+      "populated_rows": 15,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_elevation_rules",
+      "column": "habitat_value_group",
+      "data_type": "text",
+      "populated_rows": 15,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_ontology_map",
+      "column": "habitat_value_group",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_phrase_dictionary",
+      "column": "habitat_group",
+      "data_type": "text",
+      "populated_rows": 17,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_profile_v1",
+      "column": "habitat_diversity",
+      "data_type": "bigint",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_profile_v1",
+      "column": "habitat_evidence_counts",
+      "data_type": "ARRAY",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_profile_v1",
+      "column": "habitat_groups",
+      "data_type": "ARRAY",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_profile_v1",
+      "column": "habitat_weights",
+      "data_type": "ARRAY",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.habitat_uri_dictionary",
+      "column": "habitat_group",
+      "data_type": "text",
+      "populated_rows": 9,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.species_trait_profile_v84",
+      "column": "elevation_max_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.species_trait_profile_v84",
+      "column": "elevation_min_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.species_trait_profile_v84",
+      "column": "inferred_climate_signal",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.species_trait_profile_v84b",
+      "column": "elevation_max_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.species_trait_profile_v84b",
+      "column": "elevation_min_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.species_trait_profile_v84b",
+      "column": "inferred_elevation_zone",
+      "data_type": "text",
+      "populated_rows": 51775,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_claims",
+      "column": "elevation",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_claims",
+      "column": "habitat",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_elevation",
+      "column": "elevation_derivation_method",
+      "data_type": "text",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_elevation",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_elevation",
+      "column": "elevation_max_m",
+      "data_type": "double precision",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_elevation",
+      "column": "elevation_meters",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_elevation",
+      "column": "elevation_min_m",
+      "data_type": "double precision",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_elevation",
+      "column": "elevation_value_m",
+      "data_type": "double precision",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_elevation",
+      "column": "maximum_elevation",
+      "data_type": "integer",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_elevation",
+      "column": "maximum_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_elevation",
+      "column": "minimum_elevation",
+      "data_type": "integer",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_elevation",
+      "column": "minimum_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_envo",
+      "column": "climate_preference",
+      "data_type": "text",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_envo",
+      "column": "habitat_description",
+      "data_type": "text",
+      "populated_rows": 56,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_envo_taxon_summary",
+      "column": "dominant_habitat_group",
+      "data_type": "text",
+      "populated_rows": 19,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_envo_taxon_summary",
+      "column": "habitat_evidence_count",
+      "data_type": "bigint",
+      "populated_rows": 19,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_envo_taxon_summary_v2",
+      "column": "dominant_habitat_group",
+      "data_type": "text",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_envo_taxon_summary_v4",
+      "column": "habitat_group_count",
+      "data_type": "bigint",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_envo_taxon_summary_v4",
+      "column": "primary_habitat",
+      "data_type": "text",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_envo_taxon_summary_v4",
+      "column": "secondary_habitat",
+      "data_type": "text",
+      "populated_rows": 44,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_envo_v4",
+      "column": "elevation_max_m",
+      "data_type": "double precision",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_envo_v4",
+      "column": "elevation_min_m",
+      "data_type": "double precision",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_envo_v4",
+      "column": "elevation_value_m",
+      "data_type": "double precision",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_classified_v2",
+      "column": "habitat_group",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_classified_v2",
+      "column": "habitat_text",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_enriched",
+      "column": "habitat_evidence_strength",
+      "data_type": "text",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_enriched",
+      "column": "habitat_value_group",
+      "data_type": "text",
+      "populated_rows": 1222,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_enriched_v2",
+      "column": "habitat_value_group",
+      "data_type": "text",
+      "populated_rows": 1269,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_grouped",
+      "column": "habitat_text",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_grouped",
+      "column": "habitat_text_lc",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_grouped",
+      "column": "habitat_token",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_grouped",
+      "column": "habitat_uri_family",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_grouped",
+      "column": "habitat_value_group",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_grouped",
+      "column": "habitat_value_group_fixed",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_ranked_v1",
+      "column": "habitat_group",
+      "data_type": "text",
+      "populated_rows": 1268,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_ranked_v1",
+      "column": "habitat_rank",
+      "data_type": "bigint",
+      "populated_rows": 1268,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_ranked_v1",
+      "column": "habitat_weight",
+      "data_type": "numeric",
+      "populated_rows": 1268,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_resolved",
+      "column": "habitat_text",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_resolved",
+      "column": "habitat_text_lc",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_resolved",
+      "column": "habitat_token",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_resolved",
+      "column": "habitat_uri_family",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_resolved",
+      "column": "habitat_value_group",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_source",
+      "column": "habitat_text",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_source",
+      "column": "habitat_value_group",
+      "data_type": "text",
+      "populated_rows": 1366,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_weighted_v1",
+      "column": "habitat_group",
+      "data_type": "text",
+      "populated_rows": 1268,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_habitat_weighted_v1",
+      "column": "habitat_weight",
+      "data_type": "numeric",
+      "populated_rows": 1268,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_signal_evidence_v84b",
+      "column": "elevation_max_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.trait_signal_evidence_v84b",
+      "column": "elevation_min_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.traitbank_habitat_trait_map",
+      "column": "mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 1505,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.traitbank_habitat_trait_map_v2",
+      "column": "mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 1505,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.traitbank_habitat_trait_map_v3",
+      "column": "mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 1505,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.traitbank_habitat_trait_map_v4",
+      "column": "mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 1505,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.traitbank_habitat_trait_map_v4",
+      "column": "prior_mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 1505,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.v_traitbank_habitat_envo_diagnostics_v4",
+      "column": "mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 4,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.v_traitbank_habitat_trait_map_samples",
+      "column": "mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 100,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.v_traitbank_habitat_trait_map_summary",
+      "column": "distinct_mapped_habitat_classes",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.v_traitbank_habitat_trait_map_summary",
+      "column": "total_habitat_rows",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.v_traitbank_habitat_trait_map_v2_samples",
+      "column": "mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 100,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.v_traitbank_habitat_trait_map_v2_summary",
+      "column": "distinct_mapped_habitat_classes",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.v_traitbank_habitat_trait_map_v3_samples",
+      "column": "mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 100,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.v_traitbank_habitat_trait_map_v3_summary",
+      "column": "distinct_mapped_habitat_classes",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.v_traitbank_habitat_trait_map_v4_samples",
+      "column": "mapped_habitat_class",
+      "data_type": "text",
+      "populated_rows": 100,
+      "error": null
+    },
+    {
+      "relation": "oc_traits.v_traitbank_habitat_trait_map_v4_summary",
+      "column": "distinct_habitat_classes",
+      "data_type": "bigint",
+      "populated_rows": 1,
+      "error": null
+    },
+    {
+      "relation": "oc_zoo.zoo_image_queue",
+      "column": "elevation_meters",
+      "data_type": "numeric",
+      "populated_rows": 1036,
+      "error": null
+    },
+    {
+      "relation": "public._migration_staging",
+      "column": "elevation_meters",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.advanced_orchid_pollinator_relationships",
+      "column": "altitude_overlap_range",
+      "data_type": "json",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.advanced_orchid_pollinator_relationships",
+      "column": "habitat_overlap_score",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.backup_orchid_images_record_link_fix",
+      "column": "elevation_meters",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.backup_orchid_images_unlinked_taxonomy_fix",
+      "column": "elevation_meters",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.baker_culture_sheets",
+      "column": "climate_zone",
+      "data_type": "character varying",
+      "populated_rows": 2,
+      "error": null
+    },
+    {
+      "relation": "public.baker_culture_sheets",
+      "column": "native_elevation_max",
+      "data_type": "integer",
+      "populated_rows": 2,
+      "error": null
+    },
+    {
+      "relation": "public.baker_culture_sheets",
+      "column": "native_elevation_min",
+      "data_type": "integer",
+      "populated_rows": 2,
+      "error": null
+    },
+    {
+      "relation": "public.bloombuilder_species",
+      "column": "habitat",
+      "data_type": "text",
+      "populated_rows": 10,
+      "error": null
+    },
+    {
+      "relation": "public.climate_normals_monthly_point",
+      "column": "climate_elev_m",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.culture_engine_species_monthly_climate",
+      "column": "climate_updated_at",
+      "data_type": "timestamp with time zone",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.culture_engine_species_monthly_climate",
+      "column": "elevation_n_records",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.culture_engine_species_monthly_climate",
+      "column": "elevation_updated_at",
+      "data_type": "timestamp with time zone",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.ecosystem_networks",
+      "column": "habitat_type",
+      "data_type": "character varying",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.elevation_lookup_log",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 106,
+      "error": null
+    },
+    {
+      "relation": "public.expert_verifications",
+      "column": "habitat_verified",
+      "data_type": "boolean",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.field_observations",
+      "column": "altitude",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.field_observations",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.field_observations",
+      "column": "habitat_notes",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.fungal_distributions",
+      "column": "climate",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.fungal_distributions",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.fungal_distributions",
+      "column": "habitat",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.fungal_taxa",
+      "column": "habitat_description",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.habitat_overlaps",
+      "column": "elevation_overlap_range",
+      "data_type": "json",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.habitat_overlaps",
+      "column": "habitat_quality_score",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.habitat_overlaps",
+      "column": "habitat_similarity_score",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.habitat_overlaps",
+      "column": "microhabitat_overlap",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.media_assets",
+      "column": "elevation_m",
+      "data_type": "real",
+      "populated_rows": 13908,
+      "error": null
+    },
+    {
+      "relation": "public.migration_patterns",
+      "column": "habitat_corridor_requirements",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.mx_occurrence_geo",
+      "column": "elevation",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oacs_origin_climate_profiles",
+      "column": "elevation_max_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oacs_origin_climate_profiles",
+      "column": "elevation_min_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oc_calyx_lesson_input_v1",
+      "column": "climate",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oc_calyx_lesson_input_v1",
+      "column": "elevation",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oc_calyx_lesson_input_v1",
+      "column": "habitat",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oc_habitat_media",
+      "column": "habitat_id",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oc_habitat_media",
+      "column": "habitat_media_id",
+      "data_type": "bigint",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oc_media_graph_overview",
+      "column": "habitat_links",
+      "data_type": "bigint",
+      "populated_rows": 12253,
+      "error": null
+    },
+    {
+      "relation": "public.oc_occurrences",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 37794,
+      "error": null
+    },
+    {
+      "relation": "public.oc_species_habitat_claims",
+      "column": "climate_zone",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oc_species_habitat_claims",
+      "column": "elevation_m_max",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oc_species_habitat_claims",
+      "column": "elevation_m_min",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oc_species_habitat_claims",
+      "column": "habitat_class",
+      "data_type": "text",
+      "populated_rows": 695,
+      "error": null
+    },
+    {
+      "relation": "public.oc_species_habitat_claims",
+      "column": "habitat_text",
+      "data_type": "text",
+      "populated_rows": 695,
+      "error": null
+    },
+    {
+      "relation": "public.oc_species_profile_current",
+      "column": "elevation_summary",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.oc_species_profile_current",
+      "column": "habitat_summary",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_collections",
+      "column": "climate_zone",
+      "data_type": "character varying",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_ecology_inference",
+      "column": "supporting_elevation_max_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_ecology_inference",
+      "column": "supporting_elevation_min_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_fungus_associations",
+      "column": "climate",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_fungus_associations",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_fungus_associations",
+      "column": "habitat",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_images",
+      "column": "elevation",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_images",
+      "column": "elevation_meters",
+      "data_type": "integer",
+      "populated_rows": 2104,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence",
+      "column": "climate_preference",
+      "data_type": "text",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence",
+      "column": "elevation_meters",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence",
+      "column": "habitat_description",
+      "data_type": "text",
+      "populated_rows": 320,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence",
+      "column": "maximum_elevation",
+      "data_type": "integer",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence",
+      "column": "maximum_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence",
+      "column": "minimum_elevation",
+      "data_type": "integer",
+      "populated_rows": 7,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence",
+      "column": "minimum_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence_filtered",
+      "column": "climate_preference",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence_filtered",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence_filtered",
+      "column": "elevation_meters",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence_filtered",
+      "column": "habitat_description",
+      "data_type": "text",
+      "populated_rows": 25,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence_filtered",
+      "column": "maximum_elevation",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence_filtered",
+      "column": "maximum_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence_filtered",
+      "column": "minimum_elevation",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_occurrence_filtered",
+      "column": "minimum_elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_record",
+      "column": "climate_preference",
+      "data_type": "character varying",
+      "populated_rows": 1484,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_record",
+      "column": "elevation_indicators",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_record",
+      "column": "habitat_research",
+      "data_type": "json",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_record",
+      "column": "native_habitat",
+      "data_type": "text",
+      "populated_rows": 313,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_taxonomy",
+      "column": "elevation_accuracy",
+      "data_type": "numeric",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_taxonomy",
+      "column": "elevation_meters",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_taxonomy",
+      "column": "habitat_description",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_taxonomy",
+      "column": "maximum_elevation",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_taxonomy",
+      "column": "minimum_elevation",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_trait_intelligence",
+      "column": "elevation_max_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.orchid_trait_intelligence",
+      "column": "elevation_min_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.pollinator_lifecycles",
+      "column": "microhabitat",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.pollinators",
+      "column": "altitude_max_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.pollinators",
+      "column": "altitude_min_m",
+      "data_type": "integer",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.pollinators",
+      "column": "climate_preferences",
+      "data_type": "json",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.pollinators",
+      "column": "habitat_types",
+      "data_type": "json",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.prey_predator_relationships",
+      "column": "habitat_specificity",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.prey_predator_relationships",
+      "column": "microhabitat_overlap",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_as_stated",
+      "data_type": "text",
+      "populated_rows": 2721312,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_confidence",
+      "data_type": "numeric",
+      "populated_rows": 80,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_dem_confidence",
+      "data_type": "numeric",
+      "populated_rows": 26,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_dem_lat",
+      "data_type": "double precision",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_dem_lon",
+      "data_type": "double precision",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_dem_m",
+      "data_type": "numeric",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_dem_method",
+      "data_type": "text",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_dem_model",
+      "data_type": "text",
+      "populated_rows": 26,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_dem_source",
+      "data_type": "text",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_dem_updated_at",
+      "data_type": "timestamp with time zone",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_effective_m",
+      "data_type": "numeric",
+      "populated_rows": 2934913,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 2934913,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_max_m",
+      "data_type": "double precision",
+      "populated_rows": 2721332,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_method",
+      "data_type": "text",
+      "populated_rows": 80,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_min_m",
+      "data_type": "double precision",
+      "populated_rows": 2721332,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_model",
+      "data_type": "text",
+      "populated_rows": 80,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_resolution_m",
+      "data_type": "integer",
+      "populated_rows": 80,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_source",
+      "data_type": "text",
+      "populated_rows": 2402,
+      "error": null
+    },
+    {
+      "relation": "public.records",
+      "column": "elevation_updated_at",
+      "data_type": "timestamp with time zone",
+      "populated_rows": 2402,
+      "error": null
+    },
+    {
+      "relation": "public.species",
+      "column": "habitat",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.trait_elevation",
+      "column": "elevation_as_stated",
+      "data_type": "text",
+      "populated_rows": 3901,
+      "error": null
+    },
+    {
+      "relation": "public.trait_elevation",
+      "column": "elevation_max_m",
+      "data_type": "integer",
+      "populated_rows": 3193,
+      "error": null
+    },
+    {
+      "relation": "public.trait_elevation",
+      "column": "elevation_min_m",
+      "data_type": "integer",
+      "populated_rows": 3193,
+      "error": null
+    },
+    {
+      "relation": "public.trait_elevation",
+      "column": "trait_elevation_id",
+      "data_type": "bigint",
+      "populated_rows": 3901,
+      "error": null
+    },
+    {
+      "relation": "public.user_locations",
+      "column": "microclimate_notes",
+      "data_type": "text",
+      "populated_rows": 0,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_images_trusted",
+      "column": "elevation_meters",
+      "data_type": "integer",
+      "populated_rows": 2104,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_as_stated",
+      "data_type": "text",
+      "populated_rows": 402131,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_confidence",
+      "data_type": "numeric",
+      "populated_rows": 78,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_dem_confidence",
+      "data_type": "numeric",
+      "populated_rows": 26,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_dem_lat",
+      "data_type": "double precision",
+      "populated_rows": 995,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_dem_lon",
+      "data_type": "double precision",
+      "populated_rows": 995,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_dem_m",
+      "data_type": "numeric",
+      "populated_rows": 995,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_dem_method",
+      "data_type": "text",
+      "populated_rows": 995,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_dem_model",
+      "data_type": "text",
+      "populated_rows": 26,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_dem_source",
+      "data_type": "text",
+      "populated_rows": 995,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_dem_updated_at",
+      "data_type": "timestamp with time zone",
+      "populated_rows": 995,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_effective_m",
+      "data_type": "numeric",
+      "populated_rows": 402785,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 402785,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_max_m",
+      "data_type": "double precision",
+      "populated_rows": 402158,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_method",
+      "data_type": "text",
+      "populated_rows": 78,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_min_m",
+      "data_type": "double precision",
+      "populated_rows": 402158,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_model",
+      "data_type": "text",
+      "populated_rows": 78,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_resolution_m",
+      "data_type": "integer",
+      "populated_rows": 78,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_source",
+      "data_type": "text",
+      "populated_rows": 1510,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_records",
+      "column": "elevation_updated_at",
+      "data_type": "timestamp with time zone",
+      "populated_rows": 1510,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_restoration_summary",
+      "column": "climate_similarity_score",
+      "data_type": "numeric",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_restoration_summary",
+      "column": "habitat_contexts",
+      "data_type": "ARRAY",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "public.v_orchid_restoration_summary",
+      "column": "habitat_similarity_score",
+      "data_type": "numeric",
+      "populated_rows": 5,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_as_stated",
+      "data_type": "text",
+      "populated_rows": 2721312,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_confidence",
+      "data_type": "numeric",
+      "populated_rows": 80,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_dem_confidence",
+      "data_type": "numeric",
+      "populated_rows": 26,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_dem_lat",
+      "data_type": "double precision",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_dem_lon",
+      "data_type": "double precision",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_dem_m",
+      "data_type": "numeric",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_dem_method",
+      "data_type": "text",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_dem_model",
+      "data_type": "text",
+      "populated_rows": 26,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_dem_source",
+      "data_type": "text",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_dem_updated_at",
+      "data_type": "timestamp with time zone",
+      "populated_rows": 1287,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_effective_m",
+      "data_type": "numeric",
+      "populated_rows": 2934913,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_effective_type",
+      "data_type": "text",
+      "populated_rows": 2934913,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_m",
+      "data_type": "numeric",
+      "populated_rows": 2934913,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_max_m",
+      "data_type": "double precision",
+      "populated_rows": 2721332,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_method",
+      "data_type": "text",
+      "populated_rows": 80,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_min_m",
+      "data_type": "double precision",
+      "populated_rows": 2721332,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_model",
+      "data_type": "text",
+      "populated_rows": 80,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_resolution_m",
+      "data_type": "integer",
+      "populated_rows": 80,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_source",
+      "data_type": "text",
+      "populated_rows": 2402,
+      "error": null
+    },
+    {
+      "relation": "public.v_records_elevation",
+      "column": "elevation_updated_at",
+      "data_type": "timestamp with time zone",
+      "populated_rows": 2402,
+      "error": null
+    },
+    {
+      "relation": "public.widget_climate_cache",
+      "column": "elevation_m",
+      "data_type": "double precision",
+      "populated_rows": 0,
+      "error": null
+    }
+  ],
+  "elevation_scan_error": null,
   "declared_relations": {
     "oc_env.taxon_elevation_profiles": {
       "exists": false,
