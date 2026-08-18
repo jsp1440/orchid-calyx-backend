@@ -4,16 +4,14 @@ name: Production Overall Audit
 # policy rejects CONNECT to onrender.com), so an audit of production can only be
 # taken from a runner. Push-triggered as well as dispatchable because
 # workflow_dispatch only registers from the default branch.
+# The push trigger is removed deliberately. These jobs commit their findings
+# back to the branch, and a push authored by GITHUB_TOKEN cannot trigger a
+# workflow -- so every automatic evidence commit became a PR head with zero
+# checks against the exact commit that would merge. They were investigation
+# instruments; the evidence they were built to gather is committed under
+# docs/evidence/audit-measurement-002/. Re-run them deliberately when a
+# question needs re-asking.
 on:
-  push:
-    branches: [claude/audit-measurement-002]
-    paths:
-      - 'scripts/production_overall_audit.py'
-      - '.github/workflows/production-overall-audit.yml'
-      - 'app/routers/owner_operations.py'
-      - 'app/readiness/live_graph_audit.py'
-      - 'app/readiness/relationship_measurement.py'
-      - 'scripts/measure_relationships_against_production.py'
   workflow_dispatch:
 
 permissions:

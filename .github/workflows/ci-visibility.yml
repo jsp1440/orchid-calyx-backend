@@ -8,15 +8,14 @@ name: CI Visibility
 # originate here. "Appears not to" is not good enough to call a PR merge-ready,
 # so this job runs the same suite and publishes the failure list as an artifact,
 # which IS readable. It exists to turn an opaque red check into a legible one.
+# The push trigger is removed deliberately. These jobs commit their findings
+# back to the branch, and a push authored by GITHUB_TOKEN cannot trigger a
+# workflow -- so every automatic evidence commit became a PR head with zero
+# checks against the exact commit that would merge. They were investigation
+# instruments; the evidence they were built to gather is committed under
+# docs/evidence/audit-measurement-002/. Re-run them deliberately when a
+# question needs re-asking.
 on:
-  push:
-    branches: [claude/audit-measurement-002]
-    paths:
-      - '.github/workflows/ci-visibility.yml'
-      - 'requirements.txt'
-      - 'app/readiness/relationship_measurement.py'
-      - 'app/routers/mission_control.py'
-      - 'runtime/knowledge_graph/source_registry.py'
   workflow_dispatch:
 
 permissions:
