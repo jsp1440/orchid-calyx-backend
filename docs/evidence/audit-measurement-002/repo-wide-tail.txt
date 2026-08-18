@@ -1,0 +1,40 @@
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+../../../../../opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/applications.py:4495
+../../../../../opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/applications.py:4495
+  /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/applications.py:4495: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+app/main.py:520
+  /home/runner/work/orchid-calyx-backend/orchid-calyx-backend/app/main.py:520: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+tests/test_connector_registry.py:15
+  /home/runner/work/orchid-calyx-backend/orchid-calyx-backend/tests/test_connector_registry.py:15: PytestCollectionWarning: cannot collect test class 'TestConnector' because it has a __init__ constructor (from: tests/test_connector_registry.py)
+    class TestConnector(ConnectorInterface):
+
+tests/test_connector_routes.py:17
+  /home/runner/work/orchid-calyx-backend/orchid-calyx-backend/tests/test_connector_routes.py:17: PytestCollectionWarning: cannot collect test class 'TestConnector' because it has a __init__ constructor (from: tests/test_connector_routes.py)
+    class TestConnector(ConnectorInterface):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR tests/test_calyx_scientific_uncertainty_617.py
+ERROR tests/test_calyx_scientific_uncertainty_artifacts_617.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
+1 deselected, 35 warnings, 2 errors in 13.35s
