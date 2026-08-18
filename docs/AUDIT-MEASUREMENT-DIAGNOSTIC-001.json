@@ -83,7 +83,9 @@
       "audit_value": 31840,
       "live_value": 31840,
       "selected_relation": "oc_taxonomy.taxa",
-      "candidates_checked": ["oc_taxonomy.taxa"],
+      "candidates_checked": [
+        "oc_taxonomy.taxa"
+      ],
       "verdict": "confirmed_accurate",
       "note": "Independently corroborated by docs/BUILD-064-01-identifier-crosswalk-report.md."
     },
@@ -92,7 +94,9 @@
       "audit_value": 26,
       "live_value": 26,
       "selected_relation": "oc_atlas.occurrences",
-      "candidates_checked": ["oc_atlas.occurrences"],
+      "candidates_checked": [
+        "oc_atlas.occurrences"
+      ],
       "verdict": "wrong_source_suspected",
       "note": "PR #901 live-schema verification reports public.orchid_occurrence at approximately 580,612 rows. That relation was not in the candidate list and was never probed. 26 is not evidence of data loss.",
       "confidence": "high_that_26_is_unrepresentative; unverified_that_580612_is_exact"
@@ -110,7 +114,11 @@
       "audit_value": 408,
       "live_value": 408,
       "selected_relation": "oc_literature.papers",
-      "candidates_checked": ["oc_literature.documents", "oc_literature.literature_documents", "oc_literature.papers"],
+      "candidates_checked": [
+        "oc_literature.documents",
+        "oc_literature.literature_documents",
+        "oc_literature.papers"
+      ],
       "verdict": "wrong_source_suspected",
       "note": "PR #901 reports public.research_documents at approximately 6,725 rows; not in the candidate list."
     },
@@ -127,7 +135,9 @@
       "audit_value": 1,
       "live_value": 1,
       "selected_relation": "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache",
-      "candidates_checked": ["oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache"],
+      "candidates_checked": [
+        "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache"
+      ],
       "verdict": "wrong_source_confirmed",
       "note": "The selected relation is an endpoint response cache, not a mycorrhizal relationship corpus. oc_mycorrhiza.relationships is listed as the next candidate and was never probed. The count of 1 is one cached response and carries no biological meaning whatsoever."
     },
@@ -224,5 +234,36 @@
     "No scientific relationship was fabricated, inferred from taxonomy, or promoted from genus to species level by this work.",
     "Headline metric selection semantics were left unchanged; newly identified candidate relations were appended, not promoted, so no metric definition was silently altered to improve a result.",
     "No production data was mutated. All database facts were obtained from read-only telemetry endpoints."
-  ]
+  ],
+  "immediate_next_action_dispositions": {
+    "note": "The audit listed three immediate next actions. All three were emitted from a hardcoded constant (RC-3), not derived from state. Each was independently checked.",
+    "Apply BUILD-051 migration.": {
+      "verdict": "already_applied",
+      "evidence": "Read-only verification run 32171559524 (BEGIN/ROLLBACK, to_regclass + SELECT only) confirms all 8 oc_admin.build051_* tables and 14 indexes exist in production. oc_admin.build051_privileged_action_log holds 61 rows, so the schema is not merely present but in active use.",
+      "action_taken": "none required; migration was not applied because it was already applied"
+    },
+    "Deploy owner-session backend.": {
+      "verdict": "already_deployed",
+      "evidence": "All 27 /api/mission-control/owner/* routes present in the deployed OpenAPI schema. Smoke run 32171386837 against production: owner_session status=200 authenticated=True cookie=True, owner_session_validate authenticated=True, owner_permissions 200.",
+      "action_taken": "none required"
+    },
+    "Run smoke tests.": {
+      "verdict": "was_failing_due_to_a_defect_in_the_test",
+      "evidence": "Run 32132141402 failed with HTTPError 401 on /owner/permissions. Root cause RC-5 (bearer vs HttpOnly cookie transport). After the fix, run 32171386837 passes all six checks including the two that were never previously reached.",
+      "action_taken": "smoke script repaired in this branch; now green end-to-end against production"
+    }
+  },
+  "owner_session_smoke_result_after_fix": {
+    "workflow_run": 32171386837,
+    "target": "https://orchid-calyx-backend.onrender.com",
+    "checks": [
+      "PASS health: 200",
+      "PASS owner_session: status=200 authenticated=True cookie=True bearer=False",
+      "PASS owner_session_validate: status=200 authenticated=True",
+      "PASS owner_permissions: status=200",
+      "PASS mission_control_chat: 200",
+      "PASS runtime_status: 200"
+    ],
+    "interpretation": "The owner-session backend is deployed, authenticating, and enforcing owner-scoped access. cookie=True bearer=False confirms the HttpOnly cookie transport diagnosis in RC-5."
+  }
 }
