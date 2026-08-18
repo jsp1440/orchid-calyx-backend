@@ -30,6 +30,42 @@
   public.v_orchid_records.taxon_id_matched                     type=text non_null=0 -> NOTHING MATCHES
   public.oc_occurrences.species_id                             type=bigint non_null=2446 -> NOTHING MATCHES
 
+=== record kind breakdown ===
+  public.records.record_type:
+      occurrence                                     2,776,500
+      observation                                    927,446
+      occurrence_stub                                621,526
+      specimen                                       139,330
+      occurrence_photo                               103,007
+      media_record                                   96,832
+      media_observation                              69,575
+      taxon_profile                                  64,764
+      observation_photo                              53,998
+      species_profile                                33,650
+      HUMAN_OBSERVATION                              29,390
+      video                                          23,692
+      conservation_assessment                        16,955
+      OBSERVATION                                    11,251
+      vendor_listing                                 10,066
+  public.records.source:
+      inaturalist                                    1,087,739
+      gbif                                           673,080
+      hotspot_harvest                                459,380
+      oh                                             247,067
+      gbif_country_targeted                          227,510
+      idigbio                                        185,266
+      gbif_megadiverse                               143,349
+      species_media_gap                              142,253
+      ala                                            104,261
+      eol                                            96,291
+      inat_projects                                  94,253
+      gbif_datasets                                  84,549
+      gbif_genus_country                             71,777
+      gbif_genus_country_c                           71,777
+      gbif_genus_country_b                           71,777
+  public.orchid_occurrence.record_type_standardized:
+      None                                           580,612
+
 === name key resolution ===
   public.records.scientific_name_clean                     non_null=1128359 -> {'oc_taxonomy.taxa.canonical_name': 651007, 'public.orchid_taxonomy.scientific_name': 616827}
   public.records.scientific_binomial                       non_null=1128359 -> {'oc_taxonomy.taxa.canonical_name': 847517, 'public.orchid_taxonomy.scientific_name': 803692}

@@ -1,6 +1,6 @@
 {
   "contract": "OCU-INTEGRATION-GAP-DIAGNOSTIC-001",
-  "captured_at": "2026-08-18T21:37:38.665402+00:00",
+  "captured_at": "2026-08-18T21:45:25.663530+00:00",
   "access": "read_only_transaction_rolled_back",
   "occurrence_candidates": {
     "oc_atlas.occurrences": {
@@ -563,6 +563,150 @@
         }
       },
       "non_null": 126913
+    }
+  },
+  "record_kind_breakdown": {
+    "public.records.record_type": {
+      "column_present": true,
+      "top_values": [
+        {
+          "value": "occurrence",
+          "rows": 2776500
+        },
+        {
+          "value": "observation",
+          "rows": 927446
+        },
+        {
+          "value": "occurrence_stub",
+          "rows": 621526
+        },
+        {
+          "value": "specimen",
+          "rows": 139330
+        },
+        {
+          "value": "occurrence_photo",
+          "rows": 103007
+        },
+        {
+          "value": "media_record",
+          "rows": 96832
+        },
+        {
+          "value": "media_observation",
+          "rows": 69575
+        },
+        {
+          "value": "taxon_profile",
+          "rows": 64764
+        },
+        {
+          "value": "observation_photo",
+          "rows": 53998
+        },
+        {
+          "value": "species_profile",
+          "rows": 33650
+        },
+        {
+          "value": "HUMAN_OBSERVATION",
+          "rows": 29390
+        },
+        {
+          "value": "video",
+          "rows": 23692
+        },
+        {
+          "value": "conservation_assessment",
+          "rows": 16955
+        },
+        {
+          "value": "OBSERVATION",
+          "rows": 11251
+        },
+        {
+          "value": "vendor_listing",
+          "rows": 10066
+        }
+      ],
+      "error": null
+    },
+    "public.records.source": {
+      "column_present": true,
+      "top_values": [
+        {
+          "value": "inaturalist",
+          "rows": 1087739
+        },
+        {
+          "value": "gbif",
+          "rows": 673080
+        },
+        {
+          "value": "hotspot_harvest",
+          "rows": 459380
+        },
+        {
+          "value": "oh",
+          "rows": 247067
+        },
+        {
+          "value": "gbif_country_targeted",
+          "rows": 227510
+        },
+        {
+          "value": "idigbio",
+          "rows": 185266
+        },
+        {
+          "value": "gbif_megadiverse",
+          "rows": 143349
+        },
+        {
+          "value": "species_media_gap",
+          "rows": 142253
+        },
+        {
+          "value": "ala",
+          "rows": 104261
+        },
+        {
+          "value": "eol",
+          "rows": 96291
+        },
+        {
+          "value": "inat_projects",
+          "rows": 94253
+        },
+        {
+          "value": "gbif_datasets",
+          "rows": 84549
+        },
+        {
+          "value": "gbif_genus_country",
+          "rows": 71777
+        },
+        {
+          "value": "gbif_genus_country_c",
+          "rows": 71777
+        },
+        {
+          "value": "gbif_genus_country_b",
+          "rows": 71777
+        }
+      ],
+      "error": null
+    },
+    "public.orchid_occurrence.record_type_standardized": {
+      "column_present": true,
+      "top_values": [
+        {
+          "value": null,
+          "rows": 580612
+        }
+      ],
+      "error": null
     }
   },
   "habitat_claims": {
