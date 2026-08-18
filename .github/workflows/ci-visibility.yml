@@ -23,6 +23,66 @@ permissions:
   contents: write
 
 jobs:
+  # BUILD-BRAIN-114Q went red the moment requirements.txt changed, exits 2, and
+  # every one of its steps passes locally. It runs Python 3.12 where this
+  # sandbox has 3.11, and it installs an unpinned ruff, so the difference is
+  # environmental. Reproduce it step by step and record which one dies.
+  owner-signature-114q:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Reproduce 114Q step by step
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          : > 114q-results.txt
+          run_step () {
+            name="$1"; shift
+            out=$("$@" 2>&1); code=$?
+            printf '%s :: exit=%s :: %s\n' "$name" "$code" \
+              "$(printf '%s' "$out" | tail -6 | tr '\n' ' ')" >> 114q-results.txt
+          }
+          python -m pip install --upgrade pip >/dev/null 2>&1
+          run_step "pip install -r requirements.txt" pip install -r requirements.txt
+          run_step "pip install pytest ruff" pip install pytest ruff
+          printf 'ruff version :: %s\n' "$(ruff --version 2>&1)" >> 114q-results.txt
+          run_step "compileall" python -m compileall -q \
+            app/calyx_orchestrator/owner_signature_verifier.py \
+            app/calyx_orchestrator/git_mutation_authorization.py \
+            tests/test_calyx_owner_signature_verifier_114q.py
+          run_step "ruff check" ruff check \
+            app/calyx_orchestrator/owner_signature_verifier.py \
+            app/calyx_orchestrator/git_mutation_authorization.py \
+            tests/test_calyx_owner_signature_verifier_114q.py
+          run_step "ruff format --check" ruff format --check \
+            app/calyx_orchestrator/owner_signature_verifier.py \
+            app/calyx_orchestrator/git_mutation_authorization.py \
+            tests/test_calyx_owner_signature_verifier_114q.py
+          PYTHONPATH=. run_step "pytest 114q+114o" python -m pytest -q \
+            tests/test_calyx_owner_signature_verifier_114q.py \
+            tests/test_calyx_git_mutation_authorization_114o.py
+          cat 114q-results.txt
+      - name: Commit the 114Q reproduction
+        if: always()
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p docs/evidence/audit-measurement-002
+          cp 114q-results.txt docs/evidence/audit-measurement-002/114q-results.txt || true
+          git add docs/evidence/audit-measurement-002
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence(ci): record BUILD-BRAIN-114Q step results"
+          git fetch origin ${{ github.ref_name }} || true
+          git rebase origin/${{ github.ref_name }} || git rebase --abort || true
+          git push origin HEAD:${{ github.ref_name }} || true
+          exit 0
+
   repo-wide-failures:
     runs-on: ubuntu-latest
     timeout-minutes: 45
