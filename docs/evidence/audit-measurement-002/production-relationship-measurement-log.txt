@@ -1,19 +1,20 @@
   taxonomy_to_occurrences          present      public.orchid_occurrence  rows=109,195  taxa=3,596  via=relational_linkage_by_id
-  taxonomy_to_elevation            present      public.orchid_occurrence  rows=7  taxa=1  via=relational_linkage_by_id
-  taxonomy_to_climate              present      oc_env_intel.species_environment_profile  rows=26,788  taxa=26,788  via=relational_linkage_by_id
+  taxonomy_to_elevation            present      public.records  rows=358,253  taxa=11,566  via=relational_linkage_by_name
+  taxonomy_to_climate              present      oc_env_intel.species_environment_profile  rows=26,790  taxa=26,787  via=relational_linkage_by_name
   taxonomy_to_literature           present      oc_graph.taxon_literature_edges  rows=35  taxa=20  via=relational_linkage_by_name
   taxonomy_to_pollinators          present      oc_interactions.orchid_interaction_edges  rows=23  taxa=4  via=relational_linkage_by_id
   taxonomy_to_mycorrhiza           present      oc_mycorrhiza.orchid_fungal_associations  rows=462  taxa=218  via=relational_linkage_by_name
   taxonomy_to_habitat              present      public.oc_species_habitat_claims  rows=695  taxa=655  via=relational_linkage_by_id
-  taxonomy_to_conservation         present      oc_conservation.conservation_records  rows=2  taxa=2  via=relational_linkage_by_id
+  taxonomy_to_conservation         present      oc_conservation.conservation_records  rows=4  taxa=2  via=relational_linkage_by_name
 
 state totals: {'present': 8}
-  WARNING [taxonomy_to_elevation] public.orchid_occurrence carries 7 row(s) on public.orchid_occurrence.taxonomy_id but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty.
+  WARNING [taxonomy_to_elevation] Measured by name match. The stronger id join (public.records.accepted_taxon_id -> oc_taxonomy.taxa.taxon_id) reaches 0 of 5,006,022 row(s); name matching is the documented fallback and is carrying this relationship.
+  WARNING [taxonomy_to_climate] Measured by name match. The stronger id join (oc_env_intel.species_environment_profile.taxonomy_id -> public.orchid_taxonomy.id) reaches 26,788 of 26,788 row(s); name matching is the documented fallback and is carrying this relationship.
   WARNING [taxonomy_to_literature] oc_literature.papers exists with approximately 408 row(s), far more than the measured source (35 row(s)); this relationship measurement may be reading a non-authoritative relation.
   WARNING [taxonomy_to_literature] public.research_documents exists with approximately 6,725 row(s), far more than the measured source (35 row(s)); this relationship measurement may be reading a non-authoritative relation.
   WARNING [taxonomy_to_pollinators] oc_interactions.orchid_interaction_edges carries 23 row(s) on oc_interactions.orchid_interaction_edges.orchid_taxonomy_id but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty.
   WARNING [taxonomy_to_mycorrhiza] oc_mycorrhiza.orchid_fungal_associations carries 2 row(s) on oc_mycorrhiza.orchid_fungal_associations.orchid_taxonomy_id but none resolve to oc_taxonomy.taxa; that join is populated and broken rather than empty.
   WARNING [taxonomy_to_mycorrhiza] Measured by name match. The stronger id join (oc_mycorrhiza.orchid_fungal_associations.orchid_taxonomy_id -> public.orchid_taxonomy.id) reaches 2 of 462 row(s); name matching is the documented fallback and is carrying this relationship.
   WARNING [taxonomy_to_conservation] oc_conservation.conservation_records carries 2 row(s) on oc_conservation.conservation_records.taxon_id but none resolve to public.orchid_taxonomy; that join is populated and broken rather than empty.
-  WARNING [taxonomy_to_conservation] oc_conservation.conservation_records carries 2 row(s) on oc_conservation.conservation_records.scientific_name but none resolve to public.orchid_taxonomy; that join is populated and broken rather than empty.
+  WARNING [taxonomy_to_conservation] Measured by name match. The stronger id join (oc_conservation.conservation_records.taxon_id -> oc_taxonomy.taxa.taxon_id) reaches 2 of 2 row(s); name matching is the documented fallback and is carrying this relationship.
 evidence written: docs/evidence/audit-measurement-002/production-relationship-measurement.json
