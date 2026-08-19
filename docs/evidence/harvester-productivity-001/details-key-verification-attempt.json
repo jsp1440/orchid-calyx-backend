@@ -1,0 +1,35 @@
+{
+  "contract": "OCU-HARVESTER-PRODUCTIVITY-DETAILS-KEY-VERIFICATION-001",
+  "purpose": "Record the attempt to verify, against real production data, whether the COUNTER_KEYS candidate key list in app/readiness/harvester_productivity.py matches what the eleven bound jobs actually write to their `details` column. This is the follow-up #1008 asks for: 'verify counters against real source rows.'",
+  "attempted_at": "2026-08-19T17:35:00+00:00",
+  "tool_added_this_session": "scripts/verify_harvester_details_keys.py",
+  "outcome": "blocked_in_this_sandbox_not_blocked_overall",
+  "findings": [
+    {
+      "check": "DATABASE_URL",
+      "result": "not set in this session",
+      "evidence": "python3 -c \"import os; print(bool(os.environ.get('DATABASE_URL')))\" -> False"
+    },
+    {
+      "check": "network egress to the deployed backend",
+      "result": "blocked",
+      "evidence": "WebFetch to https://orchid-calyx-backend.onrender.com/api/release-identity required a permission grant this non-interactive session cannot supply; `pip install` (any package) likewise required approval that could not be granted. This matches the repository's own recorded network policy: .github/workflows/production-overall-audit.yml states 'The development sandbox has no egress to the deployed backend (the network policy rejects CONNECT to onrender.com)', and docs/AUDIT-MEASUREMENT-DIAGNOSTIC-001.json recorded the same limitation for an earlier session: 'No DATABASE_URL, psql client, or Python interpreter is available in this environment.'"
+    },
+    {
+      "check": "in-repo source of the eleven bound jobs' `details` payloads",
+      "result": "not present in this repository",
+      "evidence": "No function named after any of the eleven job_name values (audit_missing_pollinator_data, audit_missing_mycorrhizal_data, audit_literature_extraction_coverage, audit_ecological_relationship_graph_gaps, audit_traitbank_trait_coverage, audit_conservation_habitat_gaps, audit_image_species_evidence_coverage, audit_frontend_relationship_cards) exists anywhere under app/ or runtime/. runtime/science_registry.py and app/main.py only declare the job names as registry metadata; the code that executes each job and writes its `details` column is out-of-repo. So the candidate key list cannot be confirmed by reading source either -- only by sampling recorded rows, which requires the database access this sandbox does not have."
+    },
+    {
+      "check": "did the added diagnostic itself run and fail closed correctly",
+      "result": "yes",
+      "evidence": "`python3 scripts/verify_harvester_details_keys.py` in this sandbox printed 'DATABASE_URL is not set; cannot verify harvester details keys against production from this environment.' and exited 1. No evidence file was written and no key was guessed at."
+    }
+  ],
+  "conclusion": "The candidate COUNTER_KEYS list in app/readiness/harvester_productivity.py remains an documented, unconfirmed candidate set, exactly as the PR states. This session could not reduce that uncertainty because production access is unavailable from here, not because no diagnostic exists -- one now does (scripts/verify_harvester_details_keys.py). The module's own safety property is unaffected either way: any key not in the candidate list, and any candidate key whose value the payload does not actually carry, is already reported as `unavailable` rather than guessed.",
+  "next_executable_action": {
+    "action": "Run scripts/verify_harvester_details_keys.py with a real, read-only DATABASE_URL against production (or extend .github/workflows/production-overall-audit.yml, which already carries the DATABASE_URL secret and read-only pattern, to invoke it) and commit the resulting evidence JSON here.",
+    "who_or_what": "An operator or CI runner with the DATABASE_URL secret and real network egress to the production database -- neither of which this session has. This repository's own workflow files are also outside this session's write permissions.",
+    "safety": "Read-only: the script opens the connection read-only and rolls back a READ ONLY transaction; it can only ever write its own evidence JSON file, never harvester or job data."
+  }
+}
