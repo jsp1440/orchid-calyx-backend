@@ -15,6 +15,7 @@ from .anthropic_provider import (
     AnthropicPatchRequest,
     generate_file_changes,
 )
+from .completion_loop import GovernedAutonomousCompletionLoop
 from .github import FileChange, GitHubEngineeringClient
 from .inspection import RepositoryInspector
 from .provider import EngineeringProviderError, StructuredPatchProvider
@@ -53,6 +54,14 @@ class RepairRequest(BaseModel):
     objective: str = Field(min_length=1, max_length=12000)
     attempt: int = Field(ge=1, le=3)
     approved: bool = False
+
+
+class CompletionCycleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    paths: list[str] = Field(min_length=1, max_length=20)
+    objective: str = Field(min_length=1, max_length=12000)
+    attempt: int = Field(ge=1, le=4)
+    repairs_authorized: bool = False
 
 
 class ProviderRequest(BaseModel):
@@ -99,6 +108,7 @@ def status(auth: AuthDependency) -> dict:
             "inspect_ci_failures",
             "generate_structured_patches",
             "apply_bounded_ci_repairs",
+            "advance_governed_completion_cycle",
             "create_issue",
             "create_branch",
             "commit_changes",
@@ -188,6 +198,32 @@ def repair_pull_request(
             attempt=payload.attempt,
         )
         return result.to_dict()
+    except PermissionError as exc:
+        raise HTTPException(403, detail={"code": str(exc)}) from exc
+    except (EngineeringProviderError, RuntimeError, ValueError) as exc:
+        raise HTTPException(422, detail={"code": str(exc)}) from exc
+
+
+@router.post("/pull-requests/{pull_request_number}/completion-cycle")
+def advance_completion_cycle(
+    pull_request_number: int,
+    payload: CompletionCycleRequest,
+    auth: AuthDependency,
+) -> dict:
+    """Advance one bounded CI/repair cycle without merging or deploying."""
+    _owner(auth)
+    if not CalyxEngineeringService.enabled():
+        raise HTTPException(422, detail={"code": "CALYX_ENGINEERING_DISABLED"})
+    try:
+        service = CalyxEngineeringService()
+        client = GitHubEngineeringClient(service.repository)
+        return GovernedAutonomousCompletionLoop(client).advance(
+            pull_request_number=pull_request_number,
+            repair_paths=payload.paths,
+            objective=payload.objective,
+            attempt=payload.attempt,
+            repairs_authorized=payload.repairs_authorized,
+        ).to_dict()
     except PermissionError as exc:
         raise HTTPException(403, detail={"code": str(exc)}) from exc
     except (EngineeringProviderError, RuntimeError, ValueError) as exc:
