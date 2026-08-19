@@ -1,0 +1,693 @@
+{
+  "contract": "OCU-OCCURRENCE-SEMANTICS-DIAGNOSTIC-001",
+  "captured_at": "2026-08-19T03:49:42.621873+00:00",
+  "access": "read_only_transaction_rolled_back",
+  "record_types": [
+    {
+      "record_type": "occurrence",
+      "rows": 2776500,
+      "with_elevation": 1812538,
+      "with_coordinates": 1778054,
+      "with_event_date": 312745,
+      "with_gbif_key": 197002,
+      "with_binomial": 693629
+    },
+    {
+      "record_type": "observation",
+      "rows": 927446,
+      "with_elevation": 882216,
+      "with_coordinates": 903642,
+      "with_event_date": 911852,
+      "with_gbif_key": 0,
+      "with_binomial": 54162
+    },
+    {
+      "record_type": "occurrence_stub",
+      "rows": 621526,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 188292,
+      "with_binomial": 0
+    },
+    {
+      "record_type": "specimen",
+      "rows": 139330,
+      "with_elevation": 87171,
+      "with_coordinates": 88079,
+      "with_event_date": 76645,
+      "with_gbif_key": 0,
+      "with_binomial": 32657
+    },
+    {
+      "record_type": "occurrence_photo",
+      "rows": 103007,
+      "with_elevation": 77558,
+      "with_coordinates": 77790,
+      "with_event_date": 97619,
+      "with_gbif_key": 0,
+      "with_binomial": 78792
+    },
+    {
+      "record_type": "media_record",
+      "rows": 96832,
+      "with_elevation": 202,
+      "with_coordinates": 203,
+      "with_event_date": 178,
+      "with_gbif_key": 203,
+      "with_binomial": 541
+    },
+    {
+      "record_type": "media_observation",
+      "rows": 69575,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 25130
+    },
+    {
+      "record_type": "taxon_profile",
+      "rows": 64764,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 64029
+    },
+    {
+      "record_type": "observation_photo",
+      "rows": 53998,
+      "with_elevation": 45962,
+      "with_coordinates": 46108,
+      "with_event_date": 46478,
+      "with_gbif_key": 0,
+      "with_binomial": 39135
+    },
+    {
+      "record_type": "species_profile",
+      "rows": 33650,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 31440
+    },
+    {
+      "record_type": "HUMAN_OBSERVATION",
+      "rows": 29390,
+      "with_elevation": 29240,
+      "with_coordinates": 29288,
+      "with_event_date": 29390,
+      "with_gbif_key": 0,
+      "with_binomial": 29390
+    },
+    {
+      "record_type": "video",
+      "rows": 23692,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 23435,
+      "with_gbif_key": 0,
+      "with_binomial": 19497
+    },
+    {
+      "record_type": "conservation_assessment",
+      "rows": 16955,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 16718
+    },
+    {
+      "record_type": "OBSERVATION",
+      "rows": 11251,
+      "with_elevation": 23,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 2467,
+      "with_binomial": 11251
+    },
+    {
+      "record_type": "vendor_listing",
+      "rows": 10066,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 9681
+    },
+    {
+      "record_type": "species_photo",
+      "rows": 9899,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 7312
+    },
+    {
+      "record_type": "taxonomy_record",
+      "rows": 9838,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 9838
+    },
+    {
+      "record_type": "cultivar",
+      "rows": 1274,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 0
+    },
+    {
+      "record_type": "personal_collection",
+      "rows": 945,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 945
+    },
+    {
+      "record_type": "photo",
+      "rows": 927,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 927
+    },
+    {
+      "record_type": "hybrid_registration",
+      "rows": 866,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 0
+    },
+    {
+      "record_type": "living_collection",
+      "rows": 716,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 696
+    },
+    {
+      "record_type": "photo_gallery",
+      "rows": 678,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 107
+    },
+    {
+      "record_type": "genus_profile",
+      "rows": 519,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 518
+    },
+    {
+      "record_type": "personal_collection_hybrid",
+      "rows": 426,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 426
+    },
+    {
+      "record_type": "community_observation",
+      "rows": 346,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 234
+    },
+    {
+      "record_type": "breeder_catalog",
+      "rows": 344,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 302
+    },
+    {
+      "record_type": "knowledge_article",
+      "rows": 190,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 172
+    },
+    {
+      "record_type": "hybrid_photo",
+      "rows": 168,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 4
+    },
+    {
+      "record_type": "herbarium_specimen",
+      "rows": 145,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 145
+    },
+    {
+      "record_type": "image_collection",
+      "rows": 119,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 119
+    },
+    {
+      "record_type": "literature_title",
+      "rows": 118,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 112
+    },
+    {
+      "record_type": "hybrid_listing",
+      "rows": 105,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 105
+    },
+    {
+      "record_type": "photo_directory",
+      "rows": 100,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 100
+    },
+    {
+      "record_type": "dataset_metadata",
+      "rows": 81,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 70
+    },
+    {
+      "record_type": "judging_standard",
+      "rows": 60,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 0
+    },
+    {
+      "record_type": "culture_sheet",
+      "rows": 52,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 52
+    },
+    {
+      "record_type": "documentation",
+      "rows": 36,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 36
+    },
+    {
+      "record_type": "species_observation",
+      "rows": 26,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 26
+    },
+    {
+      "record_type": "genomic_record",
+      "rows": 18,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 18
+    },
+    {
+      "record_type": "vip_hybrid",
+      "rows": 16,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 15
+    },
+    {
+      "record_type": "literature_taxon",
+      "rows": 16,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 16
+    },
+    {
+      "record_type": "article",
+      "rows": 6,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 6
+    },
+    {
+      "record_type": "PRESERVED_SPECIMEN",
+      "rows": 3,
+      "with_elevation": 3,
+      "with_coordinates": 3,
+      "with_event_date": 3,
+      "with_gbif_key": 0,
+      "with_binomial": 3
+    },
+    {
+      "record_type": "literature",
+      "rows": 2,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 2
+    },
+    {
+      "record_type": "migration",
+      "rows": 1,
+      "with_elevation": 0,
+      "with_coordinates": 0,
+      "with_event_date": 0,
+      "with_gbif_key": 0,
+      "with_binomial": 1
+    }
+  ],
+  "record_types_error": null,
+  "record_type_count": 46,
+  "corpus_relationship": {
+    "orchid_occurrence_rows": 580612,
+    "records_rows": 5006022,
+    "orchid_occurrence_source_tables": [
+      {
+        "source_table": "gbif",
+        "rows": 189747
+      },
+      {
+        "source_table": "records_gbif_backfill",
+        "rows": 189685
+      },
+      {
+        "source_table": "records_source_record_id_backfill_safe",
+        "rows": 188285
+      },
+      {
+        "source_table": "orchid_record",
+        "rows": 6301
+      },
+      {
+        "source_table": "staging_gbif_images_seed",
+        "rows": 4922
+      },
+      {
+        "source_table": "records_gbif_backfill_round2",
+        "rows": 1672
+      }
+    ],
+    "orchid_occurrence_source_tables_error": null,
+    "overlap_on_gbif_key": 379731,
+    "overlap_on_gbif_key_error": null,
+    "orchid_occurrence_with_gbif_key": 580612,
+    "records_occurrence_typed_with_gbif_key": 197002,
+    "overlap_on_source_record_id": 364879,
+    "overlap_on_source_record_id_error": null
+  },
+  "taxonomy_reach_by_type": [
+    {
+      "record_type": "occurrence",
+      "reaches_taxa": 644610,
+      "elevation_and_taxon": 306359
+    },
+    {
+      "record_type": "taxon_profile",
+      "reaches_taxa": 41250,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "occurrence_photo",
+      "reaches_taxa": 36923,
+      "elevation_and_taxon": 25258
+    },
+    {
+      "record_type": "HUMAN_OBSERVATION",
+      "reaches_taxa": 31539,
+      "elevation_and_taxon": 31381
+    },
+    {
+      "record_type": "species_profile",
+      "reaches_taxa": 23681,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "specimen",
+      "reaches_taxa": 14061,
+      "elevation_and_taxon": 8686
+    },
+    {
+      "record_type": "observation",
+      "reaches_taxa": 12741,
+      "elevation_and_taxon": 11824
+    },
+    {
+      "record_type": "media_observation",
+      "reaches_taxa": 9938,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "taxonomy_record",
+      "reaches_taxa": 8679,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "conservation_assessment",
+      "reaches_taxa": 8090,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "species_photo",
+      "reaches_taxa": 6920,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "observation_photo",
+      "reaches_taxa": 3945,
+      "elevation_and_taxon": 2023
+    },
+    {
+      "record_type": "vendor_listing",
+      "reaches_taxa": 1550,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "video",
+      "reaches_taxa": 1037,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "personal_collection",
+      "reaches_taxa": 654,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "living_collection",
+      "reaches_taxa": 545,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "media_record",
+      "reaches_taxa": 531,
+      "elevation_and_taxon": 202
+    },
+    {
+      "record_type": "photo",
+      "reaches_taxa": 197,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "herbarium_specimen",
+      "reaches_taxa": 127,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "image_collection",
+      "reaches_taxa": 123,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "OBSERVATION",
+      "reaches_taxa": 92,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "community_observation",
+      "reaches_taxa": 83,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "photo_gallery",
+      "reaches_taxa": 67,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "breeder_catalog",
+      "reaches_taxa": 54,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "culture_sheet",
+      "reaches_taxa": 34,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "genomic_record",
+      "reaches_taxa": 15,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "literature_taxon",
+      "reaches_taxa": 13,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "dataset_metadata",
+      "reaches_taxa": 6,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "PRESERVED_SPECIMEN",
+      "reaches_taxa": 3,
+      "elevation_and_taxon": 3
+    },
+    {
+      "record_type": "hybrid_listing",
+      "reaches_taxa": 3,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "hybrid_photo",
+      "reaches_taxa": 2,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "article",
+      "reaches_taxa": 2,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "personal_collection_hybrid",
+      "reaches_taxa": 1,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "photo_directory",
+      "reaches_taxa": 1,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "vip_hybrid",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "literature",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "knowledge_article",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "migration",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "judging_standard",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "hybrid_registration",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "occurrence_stub",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "genus_profile",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "species_observation",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "documentation",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "cultivar",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    },
+    {
+      "record_type": "literature_title",
+      "reaches_taxa": 0,
+      "elevation_and_taxon": 0
+    }
+  ],
+  "taxonomy_reach_by_type_error": null
+}

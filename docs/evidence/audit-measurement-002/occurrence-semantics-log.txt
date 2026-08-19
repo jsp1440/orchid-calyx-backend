@@ -1,0 +1,92 @@
+=== record_type values: 46 distinct ===
+record_type                                  rows      elev    coords      date      gbif
+occurrence                              2,776,500 1,812,538 1,778,054   312,745   197,002
+observation                               927,446   882,216   903,642   911,852         0
+occurrence_stub                           621,526         0         0         0   188,292
+specimen                                  139,330    87,171    88,079    76,645         0
+occurrence_photo                          103,007    77,558    77,790    97,619         0
+media_record                               96,832       202       203       178       203
+media_observation                          69,575         0         0         0         0
+taxon_profile                              64,764         0         0         0         0
+observation_photo                          53,998    45,962    46,108    46,478         0
+species_profile                            33,650         0         0         0         0
+HUMAN_OBSERVATION                          29,390    29,240    29,288    29,390         0
+video                                      23,692         0         0    23,435         0
+conservation_assessment                    16,955         0         0         0         0
+OBSERVATION                                11,251        23         0         0     2,467
+vendor_listing                             10,066         0         0         0         0
+species_photo                               9,899         0         0         0         0
+taxonomy_record                             9,838         0         0         0         0
+cultivar                                    1,274         0         0         0         0
+personal_collection                           945         0         0         0         0
+photo                                         927         0         0         0         0
+hybrid_registration                           866         0         0         0         0
+living_collection                             716         0         0         0         0
+photo_gallery                                 678         0         0         0         0
+genus_profile                                 519         0         0         0         0
+personal_collection_hybrid                    426         0         0         0         0
+community_observation                         346         0         0         0         0
+breeder_catalog                               344         0         0         0         0
+knowledge_article                             190         0         0         0         0
+hybrid_photo                                  168         0         0         0         0
+herbarium_specimen                            145         0         0         0         0
+image_collection                              119         0         0         0         0
+literature_title                              118         0         0         0         0
+hybrid_listing                                105         0         0         0         0
+photo_directory                               100         0         0         0         0
+dataset_metadata                               81         0         0         0         0
+judging_standard                               60         0         0         0         0
+culture_sheet                                  52         0         0         0         0
+documentation                                  36         0         0         0         0
+species_observation                            26         0         0         0         0
+genomic_record                                 18         0         0         0         0
+vip_hybrid                                     16         0         0         0         0
+literature_taxon                               16         0         0         0         0
+article                                         6         0         0         0         0
+PRESERVED_SPECIMEN                              3         3         3         3         0
+literature                                      2         0         0         0         0
+migration                                       1         0         0         0         0
+
+=== corpus relationship ===
+  orchid_occurrence_rows                       580612
+  records_rows                                 5006022
+  orchid_occurrence.source_table:
+      gbif                                           189,747
+      records_gbif_backfill                          189,685
+      records_source_record_id_backfill_safe         188,285
+      orchid_record                                  6,301
+      staging_gbif_images_seed                       4,922
+      records_gbif_backfill_round2                   1,672
+  overlap_on_gbif_key                          379731
+  orchid_occurrence_with_gbif_key              580612
+  records_occurrence_typed_with_gbif_key       197002
+  overlap_on_source_record_id                  364879
+
+=== taxonomy reach by record_type (name join) ===
+  occurrence                             reaches_taxa=644,610      elev+taxon=306,359
+  taxon_profile                          reaches_taxa=41,250       elev+taxon=0
+  occurrence_photo                       reaches_taxa=36,923       elev+taxon=25,258
+  HUMAN_OBSERVATION                      reaches_taxa=31,539       elev+taxon=31,381
+  species_profile                        reaches_taxa=23,681       elev+taxon=0
+  specimen                               reaches_taxa=14,061       elev+taxon=8,686
+  observation                            reaches_taxa=12,741       elev+taxon=11,824
+  media_observation                      reaches_taxa=9,938        elev+taxon=0
+  taxonomy_record                        reaches_taxa=8,679        elev+taxon=0
+  conservation_assessment                reaches_taxa=8,090        elev+taxon=0
+  species_photo                          reaches_taxa=6,920        elev+taxon=0
+  observation_photo                      reaches_taxa=3,945        elev+taxon=2,023
+  vendor_listing                         reaches_taxa=1,550        elev+taxon=0
+  video                                  reaches_taxa=1,037        elev+taxon=0
+  personal_collection                    reaches_taxa=654          elev+taxon=0
+  living_collection                      reaches_taxa=545          elev+taxon=0
+  media_record                           reaches_taxa=531          elev+taxon=202
+  photo                                  reaches_taxa=197          elev+taxon=0
+  herbarium_specimen                     reaches_taxa=127          elev+taxon=0
+  image_collection                       reaches_taxa=123          elev+taxon=0
+  OBSERVATION                            reaches_taxa=92           elev+taxon=0
+  community_observation                  reaches_taxa=83           elev+taxon=0
+  photo_gallery                          reaches_taxa=67           elev+taxon=0
+  breeder_catalog                        reaches_taxa=54           elev+taxon=0
+  culture_sheet                          reaches_taxa=34           elev+taxon=0
+
+written: docs/evidence/audit-measurement-002/occurrence-semantics-diagnostic.json
