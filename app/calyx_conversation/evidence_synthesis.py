@@ -186,6 +186,30 @@ def build_synthesis_packet(
         if not isinstance(taxon, dict):
             continue
         genus = str(taxon.get("genus") or taxon.get("scientific_name") or "resolved taxon")
+        graph = taxon.get("knowledge_graph") or {}
+        brain_graph = taxon.get("brain_graph") or {}
+        graph_nodes = graph.get("nodes") or [] if isinstance(graph, dict) else []
+        graph_edges = graph.get("edges") or [] if isinstance(graph, dict) else []
+        brain_nodes = brain_graph.get("nodes") or [] if isinstance(brain_graph, dict) else []
+        if graph_nodes or graph_edges or brain_nodes:
+            evidence.append(_evidence_item(
+                evidence_id=f"graph:{genus}:summary",
+                source_family="knowledge_graph",
+                evidence_type="canonical_graph_context",
+                status="available",
+                title=f"Knowledge Graph context for {genus}",
+                statement=(
+                    f"Orchid Continuum context: canonical Knowledge Graph context resolved for {genus} "
+                    f"with {len(graph_nodes)} nodes and {len(graph_edges)} edges."
+                ),
+                provenance={
+                    "taxon": genus,
+                    "knowledge_graph_nodes": len(graph_nodes),
+                    "knowledge_graph_edges": len(graph_edges),
+                    "brain_graph_nodes": len(brain_nodes),
+                },
+                review_state="CANONICAL_READ_ONLY",
+            ))
         for index, fact in enumerate(taxon.get("environmental_facts") or []):
             if isinstance(fact, dict):
                 statement, provenance = str(fact.get("statement") or fact.get("value") or fact), {"taxon": genus, "fact": fact}
@@ -200,11 +224,12 @@ def build_synthesis_packet(
         if not isinstance(product, dict):
             continue
         points = product.get("summary_points") or []
-        statement = " ".join(str(v) for v in points[:8]) or str(product.get("text") or "")
+        climate_text = " ".join(str(v) for v in points[:8]) or str(product.get("text") or "")
+        statement = "NOAA/NWS Climate Prediction Center: " + climate_text if climate_text else "NOAA/NWS Climate Prediction Center context was retrieved."
         evidence.append(_evidence_item(
             evidence_id=f"climate:{index}", source_family="climate", evidence_type="time_sensitive_external_context",
             status="context_only", title=str(product.get("product") or "NOAA CPC climate product"), statement=statement,
-            provenance={"provider": climate.get("provider"), "issued_text": product.get("issued_text")}, review_state="EXTERNAL_TIME_SENSITIVE",
+            provenance={"provider": climate.get("provider") or "NOAA/NWS Climate Prediction Center", "issued_text": product.get("issued_text")}, review_state="EXTERNAL_TIME_SENSITIVE",
         ))
     supporting, contradicting, missing, conclusions = _mission_items(mission)
     evidence.extend(supporting)
