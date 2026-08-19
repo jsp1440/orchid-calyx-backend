@@ -7,6 +7,7 @@ from typing import Any
 
 import requests
 
+from .evidence_synthesis import build_synthesis_packet, provider_context
 from .provider import (
     CalyxReplyProvider,
     GeneratedReply,
@@ -100,29 +101,30 @@ def _compact_value(value: Any, *, depth: int = 0) -> Any:
 
 
 def compact_governed_context(governed_context: dict[str, Any]) -> dict[str, Any]:
-    """Create the model-facing context while retaining source/governance boundaries.
+    """Create the model-facing semantic handoff from heterogeneous tool outputs.
 
-    The full governed objects remain available server-side and in research details.
-    The model receives a bounded representation so a large mission, climate product,
-    or literature result set cannot knock the generative provider offline.
+    Full retrieval, graph, climate, and mission payloads remain available server-side
+    and in research details. Before anything is sent to the generative provider, each
+    source family is adapted into the canonical Calyx evidence contract, reconciled,
+    and accompanied by an explicit synthesis plan. This prevents the model from
+    having to infer every subsystem's format or narrate raw source blocks one-by-one.
     """
 
-    preferred_keys = (
-        "casual",
-        "conversation_id",
-        "project_id",
-        "interaction_context",
-        "retrieval",
-        "continuum",
-        "climate",
-        "mission",
-        "mission_error",
-        "provider_configuration",
-        "epistemic_policy",
-        "deliverable_capabilities",
-    )
-    selected = {key: governed_context[key] for key in preferred_keys if key in governed_context}
-    return _compact_value(selected)
+    mission = governed_context.get("mission") or {}
+    synthesis_packet = governed_context.get("synthesis_packet")
+    if not isinstance(synthesis_packet, dict) or not synthesis_packet:
+        synthesis_packet = build_synthesis_packet(
+            question=str(mission.get("question") or ""),
+            retrieval=governed_context.get("retrieval") or {},
+            continuum=governed_context.get("continuum") or {},
+            climate=governed_context.get("climate") or {},
+            mission=governed_context.get("mission"),
+            mission_error=governed_context.get("mission_error"),
+            interaction_context=governed_context.get("interaction_context") or {},
+        )
+    semantic_context = dict(governed_context)
+    semantic_context["synthesis_packet"] = synthesis_packet
+    return _compact_value(provider_context(semantic_context))
 
 
 def _compact_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -244,7 +246,7 @@ class OpenAIRuntimeResponsesProvider:
                 _MAX_CONTEXT_CHARS,
             )
             text = text[:_MAX_CONTEXT_CHARS] + "\n[additional governed context omitted; full provenance remains server-side]"
-        return "Governed Calyx context for this turn:\n" + text
+        return "Governed Calyx semantic synthesis context for this turn:\n" + text
 
     def _responses_payload(
         self,
@@ -485,6 +487,8 @@ def runtime_provider_configuration() -> dict[str, Any]:
         "responses_primary": True,
         "chat_completions_fallback": True,
         "model_context_compaction": True,
+        "semantic_evidence_synthesis": True,
+        "semantic_evidence_contract": "CALYX-EVIDENCE-SYNTHESIS-001",
         "max_governed_context_chars": _MAX_CONTEXT_CHARS,
         "max_current_message_chars": _MAX_CURRENT_MESSAGE_CHARS,
         "max_conversation_history_chars": _MAX_HISTORY_CHARS,
