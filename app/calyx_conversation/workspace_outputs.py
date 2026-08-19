@@ -81,5 +81,3 @@ def matrix_identification_table(report: dict[str, Any]) -> dict[str, Any] | None
         },
         "created_at": _now(),
     }
-
-
