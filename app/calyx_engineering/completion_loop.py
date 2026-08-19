@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from .github import GitHubEngineeringClient
-from .provider import StructuredPatchProvider
 from .repair_loop import BoundedRepairLoop, RepairResult
+from .provider import StructuredPatchProvider
 
 
 MAX_REPAIR_ATTEMPTS = 3
