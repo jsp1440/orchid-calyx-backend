@@ -8,6 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
+from runtime.matrix_identification_persistence_preflight import (
+    matrix_session_persistence_preflight,
+)
 from runtime.matrix_identification_session import (
     add_observation,
     create_session,
@@ -71,6 +74,14 @@ def get_persistence_status(
     _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     return persistence_status()
+
+
+@router.get("/persistence-preflight")
+def get_persistence_preflight(
+    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    """Read-only inspection of durable-session activation prerequisites."""
+    return matrix_session_persistence_preflight()
 
 
 @router.post("")

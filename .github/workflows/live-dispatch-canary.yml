@@ -1,0 +1,91 @@
+name: Live Dispatch Canary (manual, one-shot)
+
+# workflow_dispatch ONLY - no schedule, no push/pull_request trigger, no
+# other automatic entry point of any kind. This workflow exists to run the
+# single live-dispatch-canary-002 mission defined in Orchid-Continuum-Brain
+# OPS-0012, exactly once per explicit manual trigger, never automatically.
+#
+# Two modes, both selected by hand at trigger time:
+#   execute=false (default) - preflight only. Enqueues the mission, runs the
+#     real admission/preflight chain, and stops. The GitHub transport passed
+#     in this mode raises if it is ever called - proof, not just a claim,
+#     that a dry run cannot reach the network. This mode's step never
+#     receives CALYX_GITHUB_CODING_AGENT_TOKEN in its environment at all.
+#   execute=true - the real dispatch, gated by the exact confirmation input
+#     matching EXECUTE_CONFIRMATION AND the CALYX_GITHUB_CODING_AGENT_TOKEN
+#     repository secret being configured. Missing either one fails the run
+#     closed before any database or GitHub API call. Before ever creating
+#     the canary issue, this step also checks GitHub itself (via the same
+#     credential) for an existing live-dispatch-canary-002 issue - open or
+#     closed - and refuses to proceed if one is already found, so a second
+#     manual trigger against a brand-new throwaway database can never
+#     produce a second live dispatch.
+#
+# Only the execute step ever sees the secret. Checkout, Python setup,
+# dependency installation, database bring-up, and the preflight step run
+# with no coding-agent credential present in their environment at all.
+#
+# Every run provisions its own throwaway PostgreSQL database local to the
+# runner (destroyed with the runner at job end) and applies only the two
+# named dispatch-table migrations to it - never a persistent or production
+# database.
+#
+# concurrency prevents two manually-triggered runs of this workflow from
+# executing simultaneously (queued, not cancelled - an in-progress run is
+# never pre-empted by a later trigger). permissions locks the workflow's
+# own automatically-provisioned GITHUB_TOKEN down to read-only contents
+# access - it is never the coding-agent mutation credential, and checkout
+# does not even persist it to disk.
+
+on:
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: "true = run the real dispatch. false (default) = preflight only, network calls forbidden."
+        type: boolean
+        default: false
+      confirmation:
+        description: "Required only when execute=true. Must exactly equal DISPATCH_GITHUB_CODING_AGENT."
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-dispatch-canary
+  cancel-in-progress: false
+
+jobs:
+  live-dispatch-canary:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/calyx_live_dispatch_canary
+      PYTHONPATH: .
+      CALYX_LIVE_DISPATCH_CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Start a throwaway local PostgreSQL and create the database
+        run: |
+          sudo systemctl start postgresql.service
+          sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+          sudo -u postgres createdb calyx_live_dispatch_canary
+      - run: pip install -r requirements.txt
+      - name: Preflight only (execute=false)
+        if: ${{ inputs.execute != true }}
+        env:
+          CALYX_LIVE_DISPATCH_EXECUTE: "false"
+        run: python scripts/run_live_dispatch_canary.py
+      - name: Execute the real dispatch (execute=true)
+        if: ${{ inputs.execute == true }}
+        env:
+          CALYX_LIVE_DISPATCH_EXECUTE: "true"
+          # The ONLY step in this workflow that ever sees this secret.
+          CALYX_GITHUB_CODING_AGENT_TOKEN: ${{ secrets.CALYX_GITHUB_CODING_AGENT_TOKEN }}
+        run: python scripts/run_live_dispatch_canary.py

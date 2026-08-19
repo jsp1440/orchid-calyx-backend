@@ -10,8 +10,12 @@ from pydantic import BaseModel
 from app.security import verify_owner_or_api_key
 from runtime.matrix_identification_vision import (
     attach_vision_analysis,
+    get_vision_region_for_suggestion,
     list_vision_suggestions,
     review_vision_suggestion,
+)
+from runtime.matrix_identification_vision_discovery import (
+    list_vision_analyses_for_image,
 )
 
 router = APIRouter(
@@ -38,6 +42,26 @@ def _access_actor(auth: dict[str, Any]) -> str | None:
     if auth.get("auth_type") == "api_key":
         return None
     return _actor(auth)
+
+
+@router.get("/{session_id}/vision/images/{image_id}/analyses")
+def discover_image_analyses(
+    session_id: str,
+    image_id: str,
+    auth: dict[str, Any] = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    try:
+        return list_vision_analyses_for_image(
+            session_id,
+            image_id,
+            access_actor=_access_actor(auth),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/{session_id}/vision/analyses/{analysis_id}/suggestions")
@@ -72,6 +96,24 @@ def get_suggestions(
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{session_id}/vision/suggestions/{suggestion_id}/region")
+def get_suggestion_region(
+    session_id: str,
+    suggestion_id: str,
+    auth: dict[str, Any] = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    try:
+        return get_vision_region_for_suggestion(
+            session_id,
+            suggestion_id,
+            access_actor=_access_actor(auth),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/{session_id}/vision/suggestions/{suggestion_id}/review")

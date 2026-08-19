@@ -1,0 +1,64 @@
+name: Calyx Intelligence Ledger Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/intake/intelligence.py"
+      - "app/intake/intelligence_repository.py"
+      - "app/intake/knowledge_delta.py"
+      - "app/intake/knowledge_delta_repository.py"
+      - "app/intake/routes.py"
+      - "migrations/108_intelligence_assimilation_ledger.sql"
+      - "tests/test_intelligence_assimilation.py"
+      - "tests/test_intelligence_ledger_postgres.py"
+      - "tests/test_intelligence_knowledge_delta_postgres.py"
+      - ".github/workflows/calyx-intelligence-ledger-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  postgres-ledger:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orchid_intelligence_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d orchid_intelligence_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Run deterministic assimilation tests
+        env:
+          PYTHONPATH: .
+        run: pytest -q tests/test_intelligence_assimilation.py
+      - name: Run PostgreSQL lifecycle ledger tests
+        env:
+          PYTHONPATH: .
+          INTELLIGENCE_LEDGER_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_intelligence_test
+        run: pytest -q tests/test_intelligence_ledger_postgres.py
+      - name: Reset PostgreSQL for knowledge-delta tests
+        env:
+          PGPASSWORD: postgres
+        run: |
+          dropdb -h localhost -U postgres --if-exists orchid_intelligence_delta_test
+          createdb -h localhost -U postgres orchid_intelligence_delta_test
+      - name: Run PostgreSQL knowledge-delta tests
+        env:
+          PYTHONPATH: .
+          INTELLIGENCE_DELTA_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_intelligence_delta_test
+        run: pytest -q tests/test_intelligence_knowledge_delta_postgres.py
+      - name: Compile intake package
+        run: python -m compileall -q app/intake

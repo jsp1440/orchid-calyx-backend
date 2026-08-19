@@ -10,24 +10,36 @@ from app.vision_lexicon.contracts import (
     ImageQualityState,
     MeasurementBasis,
     VisionAnalysisRecord,
+    VisionRegion,
     VisionReviewState,
 )
 from runtime.matrix_identification import Candidate
-from runtime.matrix_identification_registry import RegistryCharacter, create_registry_version
+from runtime.matrix_identification_registry import (
+    RegistryCharacter,
+    create_registry_version,
+)
 from runtime.matrix_identification_session import create_session, get_session
-from runtime.matrix_identification_vision import attach_vision_analysis, review_vision_suggestion
+from runtime.matrix_identification_vision import (
+    attach_vision_analysis,
+    get_vision_region_for_suggestion,
+    review_vision_suggestion,
+)
 
 
 class FakeVisionService:
-    def __init__(self, analysis, observations):
+    def __init__(self, analysis, observations, regions=None):
         self.analysis = analysis
         self.observations = observations
+        self.regions = {r.region_id: r for r in (regions or [])}
 
     def get_analysis(self, analysis_id):
         return self.analysis if analysis_id == self.analysis.analysis_id else None
 
     def list_observations_for_analysis(self, analysis_id):
         return self.observations if analysis_id == self.analysis.analysis_id else []
+
+    def get_region(self, region_id):
+        return self.regions.get(region_id)
 
 
 def _registry(root: Path) -> None:
@@ -47,7 +59,7 @@ def _registry(root: Path) -> None:
     )
 
 
-def _vision(unit="mm", value=300.0):
+def _vision(unit="mm", value=300.0, region_id=None, regions=None):
     analysis_id = uuid4()
     analysis = VisionAnalysisRecord(
         analysis_id=analysis_id,
@@ -70,7 +82,7 @@ def _vision(unit="mm", value=300.0):
     observation = CharacterObservation(
         observation_id=uuid4(),
         analysis_id=analysis_id,
-        region_id=None,
+        region_id=region_id,
         concept_id=None,
         character_id="spur_length_mm",
         character_state_id=None,
@@ -85,7 +97,7 @@ def _vision(unit="mm", value=300.0):
         provenance={"model": "test-model"},
         limitations=(),
     )
-    return FakeVisionService(analysis, [observation])
+    return FakeVisionService(analysis, [observation], regions=regions)
 
 
 def _session(tmp_path: Path):
@@ -185,4 +197,112 @@ def test_cross_owner_cannot_attach_or_review_vision_evidence(tmp_path: Path):
         attach_vision_analysis(
             session["session_id"], str(service.analysis.analysis_id), access_actor="other-owner",
             root=session_root, registry_root=registry_root, vision_service=service,
+        )
+
+
+def test_region_is_none_when_suggestion_has_no_region_reference(tmp_path: Path):
+    session, session_root, registry_root = _session(tmp_path)
+    service = _vision()
+    attached = attach_vision_analysis(
+        session["session_id"], str(service.analysis.analysis_id), access_actor="owner",
+        root=session_root, registry_root=registry_root, vision_service=service,
+    )
+    suggestion = attached["suggestions"][0]
+    assert suggestion["region_id"] is None
+    result = get_vision_region_for_suggestion(
+        session["session_id"], suggestion["suggestion_id"], access_actor="owner",
+        root=session_root, vision_service=service,
+    )
+    assert result["region"] is None
+
+
+def test_region_returns_full_geometry_when_present(tmp_path: Path):
+    region_id = uuid4()
+    session, session_root, registry_root = _session(tmp_path)
+    service = _vision(region_id=region_id)
+    service.regions = {
+        region_id: VisionRegion(
+            region_id=region_id,
+            analysis_id=service.analysis.analysis_id,
+            concept_id=None,
+            label="labellum",
+            bounding_box={"x": 120, "y": 200, "width": 80, "height": 60},
+            segmentation_ref="mask:labellum:v1",
+            landmarks=[{"name": "labellum_apex", "x": 160, "y": 240}],
+            confidence=0.83,
+            review_state=VisionReviewState.MACHINE_GENERATED,
+            provenance={"model": "test-model"},
+        )
+    }
+    attached = attach_vision_analysis(
+        session["session_id"], str(service.analysis.analysis_id), access_actor="owner",
+        root=session_root, registry_root=registry_root, vision_service=service,
+    )
+    suggestion = attached["suggestions"][0]
+    assert suggestion["region_id"] == str(region_id)
+
+    result = get_vision_region_for_suggestion(
+        session["session_id"], suggestion["suggestion_id"], access_actor="owner",
+        root=session_root, vision_service=service,
+    )
+    assert result["region"]["region_id"] == str(region_id)
+    assert result["region"]["bounding_box"] == {"x": 120, "y": 200, "width": 80, "height": 60}
+    assert result["region"]["landmarks"] == [{"name": "labellum_apex", "x": 160, "y": 240}]
+    assert result["region"]["segmentation_ref"] == "mask:labellum:v1"
+
+
+def test_region_is_none_when_stored_region_belongs_to_a_different_analysis(tmp_path: Path):
+    region_id = uuid4()
+    mismatched_region = VisionRegion(
+        region_id=region_id,
+        analysis_id=uuid4(),  # deliberately different from the attached analysis
+        concept_id=None,
+        label="labellum",
+        bounding_box={"x": 1, "y": 1, "width": 1, "height": 1},
+        segmentation_ref=None,
+        landmarks=None,
+        confidence=None,
+        review_state=VisionReviewState.MACHINE_GENERATED,
+        provenance={},
+    )
+    session, session_root, registry_root = _session(tmp_path)
+    service = _vision(region_id=region_id, regions=[mismatched_region])
+    attached = attach_vision_analysis(
+        session["session_id"], str(service.analysis.analysis_id), access_actor="owner",
+        root=session_root, registry_root=registry_root, vision_service=service,
+    )
+    suggestion = attached["suggestions"][0]
+
+    result = get_vision_region_for_suggestion(
+        session["session_id"], suggestion["suggestion_id"], access_actor="owner",
+        root=session_root, vision_service=service,
+    )
+    assert result["region"] is None
+
+
+def test_region_lookup_requires_known_suggestion(tmp_path: Path):
+    session, session_root, registry_root = _session(tmp_path)
+    service = _vision()
+    attach_vision_analysis(
+        session["session_id"], str(service.analysis.analysis_id), access_actor="owner",
+        root=session_root, registry_root=registry_root, vision_service=service,
+    )
+    with pytest.raises(FileNotFoundError):
+        get_vision_region_for_suggestion(
+            session["session_id"], "not-a-real-suggestion-id", access_actor="owner",
+            root=session_root, vision_service=service,
+        )
+
+
+def test_region_lookup_denied_for_cross_owner_access(tmp_path: Path):
+    session, session_root, registry_root = _session(tmp_path)
+    service = _vision()
+    attached = attach_vision_analysis(
+        session["session_id"], str(service.analysis.analysis_id), access_actor="owner",
+        root=session_root, registry_root=registry_root, vision_service=service,
+    )
+    with pytest.raises(FileNotFoundError):
+        get_vision_region_for_suggestion(
+            session["session_id"], attached["suggestions"][0]["suggestion_id"],
+            access_actor="other-owner", root=session_root, vision_service=service,
         )

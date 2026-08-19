@@ -194,7 +194,7 @@ class ResearchWorkspaceService:
         items = self.db.scalars(
             select(Project)
             .where(*filters)
-            .order_by(Project.updated_at.desc())
+            .order_by(Project.updated_at.desc(), Project.project_id.asc())
             .limit(limit)
             .offset(offset)
         ).all()
@@ -547,7 +547,7 @@ class ResearchWorkspaceService:
         items = self.db.scalars(
             select(AuditEvent)
             .where(AuditEvent.project_id == project.project_id)
-            .order_by(AuditEvent.occurred_at.desc())
+            .order_by(AuditEvent.occurred_at.desc(), AuditEvent.event_id.asc())
             .limit(limit)
             .offset(offset)
         ).all()

@@ -1,0 +1,101 @@
+name: Calyx Intelligence Verification Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/intake/primary_source.py"
+      - "app/intake/intelligence_verification.py"
+      - "migrations/109_intelligence_verification_routing.sql"
+      - ".github/workflows/calyx-intelligence-verification-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: calyx_intelligence_verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d calyx_intelligence_verify"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/calyx_intelligence_verify
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install focused dependencies
+        run: pip install -r requirements.txt
+      - name: Apply intelligence migrations
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/070_knowledge_intake.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/076a_universal_intake.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/108_intelligence_assimilation_ledger.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/109_intelligence_verification_routing.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/109_intelligence_verification_routing.sql
+      - name: Exercise source record and route lifecycle
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+          from app.intake.primary_source import SourceSnapshot
+          from app.intake.intelligence_verification import record_source_snapshot, route_intelligence_item, intelligence_operator_summary
+
+          with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+              with conn.cursor() as cur:
+                  cur.execute("""
+                      INSERT INTO oc_intake.intelligence_items
+                          (knowledge_fingerprint, domain, title, normalized_title, priority,
+                           canonical_destinations, source_urls, dois)
+                      VALUES (%s,'technology','Earth Engine Atlas provider','earth engine atlas provider','HIGH',
+                              '[\"atlas\",\"source_registry\"]'::jsonb,
+                              '[\"https://earthengine.google.com/\"]'::jsonb,'[]'::jsonb)
+                      RETURNING id
+                  """, ('1'*64,))
+                  item_id = cur.fetchone()[0]
+
+          snapshot = SourceSnapshot(
+              source_url='https://earthengine.google.com/',
+              resolved_url='https://earthengine.google.com/',
+              source_kind='URL',
+              outcome='SOURCE_CONFIRMED',
+              http_status=200,
+              content_type='text/html',
+              source_title='Google Earth Engine',
+              source_doi=None,
+              published_at=None,
+              authority_host='earthengine.google.com',
+              authority_tier='AUTHORITATIVE',
+              evidence_sha256='a'*64,
+              metadata={'claim_verified': False},
+          )
+          recorded = record_source_snapshot(item_id, snapshot)
+          assert recorded['source_confirmed'] is True
+          assert recorded['claim_verified'] is False
+          assert recorded['canonical_graph_mutated'] is False
+          assert recorded['external_contacted'] is False
+
+          routed = route_intelligence_item(item_id)
+          assert {row['destination'] for row in routed['routes']} == {'atlas','source_registry'}
+          assert {row['route_status'] for row in routed['routes']} == {'READY'}
+          assert routed['claim_verified'] is False
+          assert routed['canonical_graph_mutated'] is False
+          assert routed['external_contacted'] is False
+
+          summary = intelligence_operator_summary()
+          assert summary['canonical_graph_mutated'] is False
+          assert summary['external_contacted'] is False
+          PY
+      - name: Compile intelligence modules
+        run: python -m compileall -q app/intake

@@ -1,5 +1,6 @@
-import concurrent.futures,os
+import concurrent.futures,os,socket
 from pathlib import Path
+from urllib.parse import urlparse
 import pytest
 from fastapi import HTTPException
 from app.candidate_knowledge.models import EvidenceInput,SourceAnchor
@@ -10,8 +11,18 @@ from app.evidence_aggregation.repository import MemoryAggregateRepository
 from app.evidence_aggregation.service import EvidenceAggregationService
 from app.persistence.state_repository import decode,encode
 
+def _postgres_reachable(dsn,timeout=0.5):
+    # tests/conftest.py sets a placeholder DATABASE_URL so unrelated modules
+    # import cleanly without a real database; presence alone is not evidence
+    # of a usable disposable validation database.
+    if not dsn:return False
+    try:
+        parsed=urlparse(dsn)
+        with socket.create_connection((parsed.hostname or "localhost",parsed.port or 5432),timeout=timeout):return True
+    except OSError:return False
+
 DSN=os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
-db=pytest.mark.skipif(not DSN,reason="no disposable PostgreSQL validation database")
+db=pytest.mark.skipif(not _postgres_reachable(DSN),reason="no reachable disposable PostgreSQL validation database")
 
 def evidence(i=1):return EvidenceInput("CLAIM",i,i,i,"source evidence",(SourceAnchor(i,locator={"page":1}),),display_policy="METADATA_ONLY",metadata={"candidate_facts":[{"kind":"TRAIT","subject":"Taxon","predicate":"has_trait","object_value":"green"}]})
 def candidate(i=1):return CandidateInput(i,1,"TRAIT","taxon","has_trait",object_value="green",source_revision_id=i,source_document_id=f"doc-{i}",source_anchor_ids=(i,),source_lineage=f"study-{i}",document_hash=f"hash-{i}")

@@ -86,9 +86,19 @@ def _actor(auth: Any) -> str:
     return actor
 
 
+def _persistence_unavailable(exc: RuntimeError) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={"code": "MATRIX_REGISTRY_PERSISTENCE_UNAVAILABLE", "message": str(exc)},
+    )
+
+
 @router.get("")
 def list_versions(_: Any = Depends(verify_owner_or_api_key)) -> dict[str, Any]:  # noqa: B008
-    return {"versions": list_registry_versions(), "read_only_listing": True}
+    try:
+        return {"versions": list_registry_versions(), "read_only_listing": True}
+    except RuntimeError as exc:
+        raise _persistence_unavailable(exc) from exc
 
 
 @router.get("/{registry_id}/{version}")
@@ -103,6 +113,8 @@ def get_version(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _persistence_unavailable(exc) from exc
 
 
 @router.get("/{registry_id}/{version}/concept-mapping-status")
@@ -117,6 +129,8 @@ def concept_mapping_status(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _persistence_unavailable(exc) from exc
 
     characters: list[dict[str, Any]] = []
     mapped_approved = 0
@@ -209,6 +223,8 @@ def create_version(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _persistence_unavailable(exc) from exc
 
 
 @router.post("/{registry_id}/{version}/derive-concept-mappings")
@@ -219,14 +235,20 @@ def derive_concept_mappings(
     auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
 ) -> dict[str, Any]:
     actor = _actor(auth)
-    mapping_by_character: dict[str, str] = {}
-    approved_concepts: list[dict[str, Any]] = []
+
+    # Validate deterministic request-shape errors before any Lexicon/database access.
+    seen_characters: set[str] = set()
     for mapping in payload.mappings:
-        if mapping.character in mapping_by_character:
+        if mapping.character in seen_characters:
             raise HTTPException(
                 status_code=422,
                 detail=f"duplicate concept mapping for character: {mapping.character}",
             )
+        seen_characters.add(mapping.character)
+
+    mapping_by_character: dict[str, str] = {}
+    approved_concepts: list[dict[str, Any]] = []
+    for mapping in payload.mappings:
         try:
             concept_uuid = UUID(mapping.concept_id)
         except ValueError as exc:
@@ -276,6 +298,8 @@ def derive_concept_mappings(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _persistence_unavailable(exc) from exc
 
     record = result["record"]
     return {
@@ -328,3 +352,5 @@ def evaluate_version(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _persistence_unavailable(exc) from exc

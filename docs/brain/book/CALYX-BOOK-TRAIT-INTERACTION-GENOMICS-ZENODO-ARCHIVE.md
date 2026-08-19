@@ -1,0 +1,15 @@
+# Trait–Interaction–Genomics: From Discovery to a Citable Scientific Archive
+
+The Trait–Interaction–Genomics engine is intended to find patterns that become visible only when trait, ecological-interaction, and molecular evidence are considered together. Discovery alone is not sufficient, however. A scientific system also needs to preserve exactly what evidence and hypotheses existed at a particular point in time so that a result can be inspected, reproduced, cited, and compared with later versions.
+
+For that reason the Orchid Continuum uses two complementary storage layers. Neon/Postgres holds the mutable operational record: evidence, candidate hypotheses, review state, and release tracking. Zenodo is the long-term scientific archive for immutable or versioned public snapshots. The live database answers, “What do we currently know?” The archive answers, “What exactly did we release, and what evidence supported it at that time?”
+
+A Calyx TIG archive release contains four core files. The evidence file preserves provenance-bearing trait, interaction, and molecular records. The hypotheses file preserves the non-causal discovery candidates produced from those records. A README explains how the snapshot should be interpreted. A manifest records counts, source snapshots, scientific policies, SHA-256 checksums, and a deterministic fingerprint of the release content.
+
+The fingerprint is important. If the same scientific package is submitted again, Calyx can recognize that the content is identical and reuse the existing archive record instead of creating another Zenodo deposition. This makes the archive workflow idempotent and prevents duplicate scientific releases caused by retries or automation.
+
+The workflow is deliberately asymmetric. Calyx may create an unpublished Zenodo draft and upload a checksummed release package, but it may not publish that draft automatically. Public publication remains a human scientific-governance decision. This protects the distinction between machine-generated candidate knowledge and reviewed scientific output while still allowing the mechanical work of packaging, checksum generation, transfer, and provenance capture to be automated.
+
+The first live integration test on August 12, 2026 created Zenodo deposition `21909610` in the `orchid-continuum` community. It remained unsubmitted, had no DOI, and was not publicly published. That test demonstrated that the production service could reach Zenodo and create a controlled draft while preserving the publication boundary.
+
+This archive design is not limited to TIG. The same pattern can become a general Orchid Continuum scientific-release architecture for trait datasets, pollinator relationships, mycorrhizal associations, taxonomic crosswalks, literature-derived evidence, conservation datasets, genomic associations, and knowledge-graph snapshots. Mutable research infrastructure can continue to evolve rapidly while selected scientific states are preserved as durable, citable versions.

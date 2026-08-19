@@ -13,9 +13,7 @@ from __future__ import annotations
 
 import json
 import os
-import time
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import psycopg2
 import psycopg2.extras
@@ -34,7 +32,6 @@ def _get_db_url() -> str:
 
 
 def _connect():
-    # Using sslmode=require is safe for Neon and most hosted PGs; if your URL already has sslmode it will be respected.
     url = _get_db_url()
     if "sslmode=" not in url:
         sep = "&" if "?" in url else "?"
@@ -43,31 +40,21 @@ def _connect():
 
 
 def ensure_state_table() -> None:
-    """
-    Ensures public.harvest_state exists with expected columns.
-    Safe to call repeatedly.
-    """
     ddl = """
     CREATE TABLE IF NOT EXISTS public.harvest_state (
-        source        text PRIMARY KEY,
-        last_offset   integer NOT NULL DEFAULT 0,
-        updated_at    timestamptz NOT NULL DEFAULT now(),
+        source text PRIMARY KEY,
+        last_offset integer NOT NULL DEFAULT 0,
+        updated_at timestamptz NOT NULL DEFAULT now(),
         total_inserted bigint NOT NULL DEFAULT 0,
-        exhausted     boolean NOT NULL DEFAULT false,
-        error_count   integer NOT NULL DEFAULT 0,
-        last_error    text,
-        created_at    timestamptz NOT NULL DEFAULT now(),
-        last_run_at   timestamptz,
-        meta         jsonb
+        exhausted boolean NOT NULL DEFAULT false,
+        error_count integer NOT NULL DEFAULT 0,
+        last_error text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        last_run_at timestamptz,
+        meta jsonb
     );
     """
-
-    images_ddl = """
-    CREATE TABLE IF NOT EXISTS public.images (
-        id bigserial PRIMARY KEY
-    );
-    """
-
+    images_ddl = "CREATE TABLE IF NOT EXISTS public.images (id bigserial PRIMARY KEY);"
     trigger_fn = """
     CREATE OR REPLACE FUNCTION public.sync_updated_at()
     RETURNS trigger AS $$
@@ -80,7 +67,6 @@ def ensure_state_table() -> None:
     END;
     $$ LANGUAGE plpgsql;
     """
-
     trigger = """
     DROP TRIGGER IF EXISTS harvest_state_sync ON public.harvest_state;
     CREATE TRIGGER harvest_state_sync
@@ -88,7 +74,6 @@ def ensure_state_table() -> None:
     FOR EACH ROW
     EXECUTE FUNCTION public.sync_updated_at();
     """
-
     alters = [
         "ALTER TABLE public.harvest_state ADD COLUMN IF NOT EXISTS total_inserted bigint NOT NULL DEFAULT 0;",
         "ALTER TABLE public.harvest_state ADD COLUMN IF NOT EXISTS exhausted boolean NOT NULL DEFAULT false;",
@@ -110,13 +95,12 @@ def ensure_state_table() -> None:
         "ALTER TABLE public.images ADD COLUMN IF NOT EXISTS source_id text;",
         "ALTER TABLE public.images ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();",
     ]
-
     with _connect() as conn:
         with conn.cursor() as cur:
             cur.execute(ddl)
             cur.execute(images_ddl)
-            for a in alters:
-                cur.execute(a)
+            for statement in alters:
+                cur.execute(statement)
             cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS images_url_unique ON public.images (url);")
             cur.execute(trigger_fn)
             cur.execute(trigger)
@@ -124,21 +108,13 @@ def ensure_state_table() -> None:
 
 
 def _coerce_jsonb(value: Any) -> Any:
-    # psycopg2 can handle dict -> json automatically via Json wrapper,
-    # but we keep this explicit for safety.
     return psycopg2.extras.Json(value) if isinstance(value, (dict, list)) else value
 
 
 def get_state(source: str) -> Dict[str, Any]:
-    """
-    Returns a dict for the given source. If missing, inserts a default row and returns defaults.
-    NEVER returns None.
-    """
     ensure_state_table()
-
     q_sel = "SELECT source, last_offset, total_inserted, exhausted, error_count, last_error, meta, last_run_at, updated_at, created_at FROM public.harvest_state WHERE source=%s"
     q_ins = "INSERT INTO public.harvest_state (source) VALUES (%s) ON CONFLICT (source) DO NOTHING"
-
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(q_sel, (source,))
@@ -148,7 +124,6 @@ def get_state(source: str) -> Dict[str, Any]:
                 conn.commit()
                 cur.execute(q_sel, (source,))
                 row = cur.fetchone()
-
     if not row:
         return {
             "source": source,
@@ -160,33 +135,28 @@ def get_state(source: str) -> Dict[str, Any]:
             "meta": {},
             "last_run_at": None,
         }
-
     meta = row.get("meta") or {}
     if isinstance(meta, str):
         try:
             meta = json.loads(meta)
         except Exception:
             meta = {}
-
     row["meta"] = meta
     return dict(row)
 
 
 def save_state(source: str, state: Optional[Dict[str, Any]] = None, **fields: Any) -> None:
-    """
-    Persists updated state/meta fields for a source.
-    """
+    """Persist state. ``increment_total`` atomically increments total_inserted."""
     ensure_state_table()
-
     merged: Dict[str, Any] = {}
     if state:
         merged.update(state)
     merged.update(fields)
 
+    increment_total = int(merged.pop("increment_total", 0) or 0)
     meta = merged.get("meta", None)
     known_cols = {"last_offset", "total_inserted", "exhausted", "error_count", "last_error", "last_run_at"}
     col_updates: Dict[str, Any] = {k: merged[k] for k in known_cols if k in merged}
-
     extra_keys = {k: v for k, v in merged.items() if k not in known_cols and k not in {"source", "updated_at", "created_at", "meta"}}
     if extra_keys:
         if not isinstance(meta, dict) or meta is None:
@@ -195,20 +165,20 @@ def save_state(source: str, state: Optional[Dict[str, Any]] = None, **fields: An
 
     sets = []
     params = []
-    for k, v in col_updates.items():
-        sets.append(f"{k}=%s")
-        params.append(v)
-
+    for key, value in col_updates.items():
+        sets.append(f"{key}=%s")
+        params.append(value)
+    if increment_total:
+        sets.append("total_inserted=COALESCE(total_inserted, 0)+%s")
+        params.append(increment_total)
     if meta is not None:
         sets.append("meta=%s")
         params.append(_coerce_jsonb(meta))
-
     if not sets:
         return
 
     q = f"UPDATE public.harvest_state SET {', '.join(sets)} WHERE source=%s"
     params.append(source)
-
     with _connect() as conn:
         with conn.cursor() as cur:
             cur.execute(q, tuple(params))
@@ -216,8 +186,7 @@ def save_state(source: str, state: Optional[Dict[str, Any]] = None, **fields: An
 
 
 def is_source_exhausted(source: str) -> bool:
-    st = get_state(source)
-    return bool(st.get("exhausted", False))
+    return bool(get_state(source).get("exhausted", False))
 
 
 def mark_source_exhausted(source: str, exhausted: bool = True, reason: Optional[str] = None) -> None:

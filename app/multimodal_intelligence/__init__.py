@@ -1,3 +1,8 @@
+from .anthropic_vision_provider import (
+    AnthropicVisionProvider,
+    AnthropicVisionProviderError,
+    register_default_anthropic_vision_provider,
+)
 from .contracts import (
     CharacterDefinition,
     CharacterObservation,
@@ -28,7 +33,11 @@ from .integration import (
     literature_claim_from_phrase,
 )
 
+register_default_anthropic_vision_provider()
+
 __all__ = [
+    "AnthropicVisionProvider",
+    "AnthropicVisionProviderError",
     "CharacterDefinition",
     "CharacterObservation",
     "DisabledOCRAdapter",
@@ -55,4 +64,5 @@ __all__ = [
     "literature_claim_from_phrase",
     "matrix_observations_from_vision",
     "rank_matrix_candidates",
+    "register_default_anthropic_vision_provider",
 ]

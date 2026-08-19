@@ -10,7 +10,7 @@ on:
       - "tests/test_occurrence_taxonomy_guard.py"
       - "docs/brain/CALYX-CORE-OCCURRENCE-CONSOLIDATION.md"
       - ".github/workflows/calyx-occurrence-consolidated-validation.yml"
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 jobs:
   occurrence-consolidated:
@@ -25,22 +25,42 @@ jobs:
           POSTGRES_PASSWORD: test
           POSTGRES_DB: orchid_test
         ports:
-          - 5432:5432
+          - "5432:5432"
         options: >-
           --health-cmd "pg_isready -U test -d orchid_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
     env:
-      PYTHONPATH: .
-      TEST_DATABASE_URL: ******localhost:5432/orchid_test
-      DATABASE_URL: ******localhost:5432/orchid_test
+      PYTHONPATH: "."
+      PGUSER: test
+      PGPASSWORD: test
+      PGDATABASE: orchid_test
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt pytest ruff
+      - name: Configure SQLAlchemy occurrence test URL
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import os
+          from sqlalchemy import URL
+          value = URL.create(
+              "postgresql+psycopg",
+              username=os.environ["PGUSER"],
+              password=os.environ["PGPASSWORD"],
+              host=os.environ["PGHOST"],
+              port=int(os.environ["PGPORT"]),
+              database=os.environ["PGDATABASE"],
+          ).render_as_string(hide_password=False)
+          print(f"DATABASE_URL={value}")
+          print(f"TEST_DATABASE_URL={value}")
+          PY
       - name: Compile consolidated occurrence surface
         run: >-
           python -m py_compile
