@@ -15,6 +15,7 @@ from .intelligence_repository import (
     list_intelligence_items,
     record_intelligence_items,
 )
+from .gmail_collector import GoogleApiGmailGateway, collect_twin_intelligence
 from .knowledge_delta import assess_item
 from .knowledge_delta_repository import record_comparison
 from app.storage import LocalImmutableStorage
@@ -107,6 +108,19 @@ def intelligence_index(limit: int = Query(default=100, ge=1, le=500)):
         "canonical_graph_mutated": False,
         "external_contacted": False,
     }
+
+
+@router.post("/intelligence/collect/twin-gmail")
+def collect_twin_gmail(limit: int = Query(default=20, ge=1, le=100)):
+    """Read matching Twin briefings from Gmail and ingest them without mailbox mutation."""
+    try:
+        gateway = GoogleApiGmailGateway.from_environment()
+        return collect_twin_intelligence(gateway, limit=limit)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "GMAIL_COLLECTOR_NOT_CONFIGURED", "message": str(exc)},
+        ) from exc
 
 
 @router.post("/intelligence/{item_id}/compare")
