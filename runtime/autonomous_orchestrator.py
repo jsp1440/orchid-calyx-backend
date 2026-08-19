@@ -245,11 +245,17 @@ class DefaultTaskExecutor:
                 "inspected": [payload.get("target_repository", "frontend")],
                 "changed": [],
                 "skipped": ["frontend_mutation"],
+                # Every path here must resolve on the app. Two of them did not:
+                # there is no /api/runner/summary (the runner's summary endpoint
+                # is brain-summary) and no /api/runner/seed-missions (it is
+                # mounted on the science router). A contract that advertises a
+                # route the router never registered is worse than no contract,
+                # because a caller cannot tell it from a working one.
                 "frontend_contract": {
                     "health": "/api/runner/health",
-                    "summary": "/api/runner/summary",
+                    "summary": "/api/runner/brain-summary",
                     "run_once": "/api/runner/run-once",
-                    "seed_missions": "/api/runner/seed-missions",
+                    "seed_missions": "/api/science/seed-missions",
                 },
             }
             evaluation = self.evaluate(result, required_keys=["frontend_contract"])
