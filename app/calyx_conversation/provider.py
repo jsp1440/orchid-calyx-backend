@@ -107,9 +107,15 @@ class DeterministicGovernedReplyProvider:
         packet = semantic.get("synthesis_packet") or {}
         payload = {"messages": messages, "semantic_context": semantic}
         if governed_context.get("casual"):
+            text = "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. I can discuss a question conversationally, connect evidence across the Continuum, and keep inference and uncertainty visible."
+            return GeneratedReply(text=text, provider=self.provider_name, model=self.model_name, request_hash=_request_hash(payload))
+
+        mission_error = governed_context.get("mission_error")
+        if mission_error:
             text = (
-                "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. "
-                "I can discuss a question conversationally, connect evidence across the Continuum, and keep inference and uncertainty visible."
+                "I could not complete a governed Brain mission for this turn, so I will not present a scientific conclusion as established.\n\n"
+                f"Mission status: {mission_error}\n\n"
+                "Evidence vs inference: any available records remain evidence inputs, not an established conclusion."
             )
             return GeneratedReply(text=text, provider=self.provider_name, model=self.model_name, request_hash=_request_hash(payload))
 
@@ -128,10 +134,7 @@ class DeterministicGovernedReplyProvider:
             lines.append("Scientific conclusion: " + " ".join(str(item.get("text") or "").strip() for item in conclusions[:2] if str(item.get("text") or "").strip()))
         elif evidence:
             strongest = [self._evidence_statement(item) for item in evidence if self._evidence_statement(item)][:3]
-            lines.append(
-                "Scientific conclusion: the available governed evidence is relevant, but it does not yet justify a stronger integrated conclusion."
-                + ((" The strongest available evidence is: " + "; ".join(strongest) + ".") if strongest else "")
-            )
+            lines.append("Scientific conclusion: the available governed evidence is relevant, but it does not yet justify a stronger integrated conclusion." + ((" The strongest available evidence is: " + "; ".join(strongest) + ".") if strongest else ""))
         else:
             lines.append("Scientific conclusion: no evidence-grounded conclusion could be justified from the governed synthesis packet.")
 
@@ -139,14 +142,14 @@ class DeterministicGovernedReplyProvider:
             lines.append("Evidence summary: " + "; ".join(self._evidence_statement(item) for item in supporting[:4] if self._evidence_statement(item)))
             lines.append(f"Supporting evidence count: {len(supporting)}.")
         else:
-            lines.append("Evidence summary: the synthesis did not surface supporting evidence records sufficient to justify a stronger conclusion.")
+            lines.append("Evidence summary: the mission did not surface any supporting evidence records that could justify a conclusion.")
 
         if contradicting:
             lines.append("Disagreements or conflicting evidence: " + "; ".join(self._evidence_statement(item) for item in contradicting[:4] if self._evidence_statement(item)))
         if missing:
             lines.append("Limitations and uncertainty: missing or incomplete evidence for " + "; ".join(str(item) for item in missing[:8]) + ".")
         confidence = mission.get("confidence")
-        if confidence is not None:
+        if confidence is not None and (supporting or contradicting or missing):
             lines.append(f"Strength of evidence: provisional backend confidence {float(confidence):.2f}; this remains an inference pending human scientific review.")
         citations = self._citations(mission)
         if citations:
@@ -159,7 +162,8 @@ class DeterministicGovernedReplyProvider:
             identifiers.append(f"interpretation {artifacts['interpretation_id']}")
         if identifiers:
             lines.append("Governed provenance: " + ", ".join(identifiers) + ".")
-        lines.append("Evidence vs inference: source evidence remains distinct from this provisional synthesis, which is not reviewed or published knowledge.")
+        if supporting or contradicting or missing or citations or identifiers:
+            lines.append("Evidence vs inference: source evidence and extracted evidence remain distinct from this provisional synthesis, which is not reviewed or published knowledge.")
         return GeneratedReply(text="\n\n".join(line for line in lines if line), provider=self.provider_name, model=self.model_name, request_hash=_request_hash(payload))
 
 
@@ -178,11 +182,7 @@ class OpenAICompatibleReplyProvider:
     def generate(self, *, messages: list[dict[str, str]], governed_context: dict[str, Any]) -> GeneratedReply:
         semantic = semantic_provider_context(messages, governed_context)
         context_text = json.dumps(semantic, sort_keys=True, default=str)
-        provider_messages = [
-            {"role": "system", "content": _scientific_system_prompt()},
-            *messages,
-            {"role": "system", "content": "Governed Calyx semantic synthesis context for this turn:\n" + context_text},
-        ]
+        provider_messages = [{"role": "system", "content": _scientific_system_prompt()}, *messages, {"role": "system", "content": "Governed Calyx semantic synthesis context for this turn:\n" + context_text}]
         payload = {"model": self.model, "messages": provider_messages, "temperature": 0.2, "max_tokens": self.max_tokens}
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -233,23 +233,12 @@ class OpenAIResponsesReplyProvider:
             "model": self.model,
             "input": [
                 {"role": "system", "content": [{"type": "input_text", "text": _scientific_system_prompt()}]},
-                *[
-                    {
-                        "role": "assistant" if item.get("role") == "assistant" else "user",
-                        "content": [{"type": "input_text", "text": str(item.get("content") or "")}],
-                    }
-                    for item in messages if item.get("role") in {"user", "assistant"}
-                ],
+                *[{"role": "assistant" if item.get("role") == "assistant" else "user", "content": [{"type": "input_text", "text": str(item.get("content") or "")}]} for item in messages if item.get("role") in {"user", "assistant"}],
                 {"role": "user", "content": [{"type": "input_text", "text": "Governed Calyx semantic synthesis context for this turn:\n" + json.dumps(semantic, sort_keys=True, default=str)}]},
             ],
             "max_output_tokens": self.max_tokens,
         }
-        response = requests.post(
-            f"{self.base_url}/responses",
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=self.timeout,
-        )
+        response = requests.post(f"{self.base_url}/responses", headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}, json=payload, timeout=self.timeout)
         response.raise_for_status()
         body = response.json()
         text = self._extract_text(body)
@@ -261,10 +250,6 @@ class OpenAIResponsesReplyProvider:
 def configured_reply_provider() -> CalyxReplyProvider:
     if os.getenv("CALYX_CHAT_COMPLETIONS_URL", "").strip() and os.getenv("CALYX_CHAT_MODEL", "").strip():
         return OpenAICompatibleReplyProvider()
-    if (
-        os.getenv("CALYX_AGENT_PROVIDER", "").strip().casefold() == "openai"
-        and os.getenv("CALYX_AGENT_MODEL", "").strip()
-        and os.getenv("OPENAI_API_KEY", "").strip()
-    ):
+    if os.getenv("CALYX_AGENT_PROVIDER", "").strip().casefold() == "openai" and os.getenv("CALYX_AGENT_MODEL", "").strip() and os.getenv("OPENAI_API_KEY", "").strip():
         return OpenAIResponsesReplyProvider()
     return DeterministicGovernedReplyProvider()
