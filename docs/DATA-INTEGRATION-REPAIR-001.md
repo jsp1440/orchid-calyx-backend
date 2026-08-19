@@ -35,18 +35,27 @@ matching stays a visible documented fallback rather than a silent default.
 
 Deployed release `34352e39` reports 2 measured-present and 8 unmeasured.
 
-| Relationship | Deployed | After first repair | After join repair |
+| Relationship | Deployed | After join repair | After semantics + case-fold |
 |---|---|---|---|
-| `taxonomy_to_occurrences` | unmeasured | 26 rows / 20 taxa | **109,195 / 3,596** |
-| `taxonomy_to_habitat` | unmeasured | 2 / 2 | **695 / 655** |
-| `taxonomy_to_climate` | unmeasured | 18,621 | **26,788** |
-| `taxonomy_to_mycorrhiza` | unmeasured | 347 / 146 | **462 / 218** |
-| `taxonomy_to_literature` | unmeasured | 29 / 15 | **35 / 20** |
-| `taxonomy_to_pollinators` | unmeasured | 23 (name join) | 23 (**id join**) |
-| `taxonomy_to_conservation` | unmeasured | 2 / 2 | 2 / 2 |
-| `taxonomy_to_elevation` | unmeasured | **measured-absent** | present, 7 |
+| `taxonomy_to_occurrences` | unmeasured | 109,195 / 3,596 | **109,195 / 3,596** (id) |
+| `taxonomy_to_elevation` | unmeasured | 7 / 1 | **358,253 / 11,566** (name) |
+| `taxonomy_to_climate` | unmeasured | 26,788 | **26,790 / 26,787** |
+| `taxonomy_to_mycorrhiza` | unmeasured | 462 / 218 | **462 / 218** (name) |
+| `taxonomy_to_habitat` | unmeasured | 695 / 655 | **695 / 655** (id) |
+| `taxonomy_to_literature` | unmeasured | 35 / 20 | **35 / 20** (name) |
+| `taxonomy_to_pollinators` | unmeasured | 23 / 4 | **23 / 4** (id) |
+| `taxonomy_to_conservation` | unmeasured | 2 / 2 | **4 / 2** (name) |
 | `taxonomy_to_images` | measured-present | — | 971,105 / 30,807 |
 | `knowledge_graph_node_edge_integrity` | measured-present | — | integrity passed |
+
+Elevation is the largest movement, and it took two separate repairs. Reading
+the curated projection first answered **7**, because that projection has not
+backfilled elevation. Reading the harvest instead answered **16,170** — still
+wrong, because the name join was case-sensitive and scientific names arrive
+from a dozen harvesters with inconsistent casing. Case-folded, it answers
+**358,253 rows across 11,566 taxa**, which cross-checks against the independent
+per-type diagnostic (306,359 occurrence + 31,381 HUMAN_OBSERVATION + 11,824
+observation + 8,686 specimen = 358,250). Two independent paths agree.
 
 Totals: **2 present / 8 unmeasured → 8 present / 0 absent / 0 unavailable**, plus
 the two the deployed release already measured.
