@@ -213,7 +213,10 @@ def build_synthesis_packet(
     retrieval_gap = not bool(retrieval.get("results"))
     if mission_error:
         missing.append(f"Brain mission unavailable: {mission_error}")
-    if retrieval_gap and not (external.get("results") or []):
+    # A general retrieval-gap note is useful when no governed mission exists, but
+    # it must not overwrite or dilute the mission's own explicit missing-evidence
+    # semantics. Mission-specific gaps remain first-class and stable for callers.
+    if mission is None and retrieval_gap and not (external.get("results") or []):
         missing.append("No canonical or external literature retrieval evidence was available for this turn.")
     reasoning_graph = _reasoning_graph(resolved_question, evidence, conclusions, missing)
     packet = {
