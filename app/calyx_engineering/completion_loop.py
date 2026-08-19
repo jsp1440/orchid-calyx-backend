@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import StrEnum
+import dataclasses
+import enum
 
-from .github import GitHubEngineeringClient
-from .provider import StructuredPatchProvider
-from .repair_loop import BoundedRepairLoop, RepairResult
+from . import github, provider, repair_loop
 
 
 MAX_REPAIR_ATTEMPTS = 3
 
 
-class CompletionState(StrEnum):
+class CompletionState(enum.StrEnum):
     WAITING_FOR_CI = "waiting_for_ci"
     FAILED_REPAIRABLE = "failed_repairable"
     REPAIRING = "repairing"
@@ -22,7 +20,7 @@ class CompletionState(StrEnum):
     HALTED_NO_REPAIR = "halted_no_repair"
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class CompletionReceipt:
     pull_request_number: int
     head_sha: str
@@ -67,13 +65,16 @@ class GovernedAutonomousCompletionLoop:
 
     def __init__(
         self,
-        client: GitHubEngineeringClient,
+        client: github.GitHubEngineeringClient,
         *,
         repair_factory=None,
     ) -> None:
         self.client = client
         self.repair_factory = repair_factory or (
-            lambda client: BoundedRepairLoop(client, StructuredPatchProvider())
+            lambda client: repair_loop.BoundedRepairLoop(
+                client,
+                provider.StructuredPatchProvider(),
+            )
         )
 
     @staticmethod
@@ -182,7 +183,7 @@ class GovernedAutonomousCompletionLoop:
                 next_action="authorize_bounded_repair",
             )
 
-        repair: RepairResult = self.repair_factory(self.client).repair_once(
+        repair: repair_loop.RepairResult = self.repair_factory(self.client).repair_once(
             pull_request_number=pull_request_number,
             paths=repair_paths,
             objective=objective,
