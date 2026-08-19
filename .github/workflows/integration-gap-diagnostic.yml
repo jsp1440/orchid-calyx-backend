@@ -11,6 +11,8 @@ name: Integration Gap Diagnostic
 # docs/evidence/audit-measurement-002/. Re-run them deliberately when a
 # question needs re-asking.
 on:
+  push:
+    branches: [claude/audit-measurement-002]
   workflow_dispatch:
 
 permissions:
@@ -21,8 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      EVIDENCE_BRANCH: evidence/audit-measurement-002
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DIAGNOSTIC_PATH: docs/evidence/audit-measurement-002/integration-gap-diagnostic.json
+      OCCURRENCE_SEMANTICS_PATH: docs/evidence/audit-measurement-002/occurrence-semantics-diagnostic.json
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,6 +44,9 @@ jobs:
           set -euo pipefail
           : "${DATABASE_URL:?Repository secret DATABASE_URL is required}"
 
+      - name: Prepare evidence directory
+        run: mkdir -p docs/evidence/audit-measurement-002
+
       - name: Run read-only diagnostic
         shell: bash
         run: |
@@ -47,44 +54,45 @@ jobs:
           mkdir -p docs/evidence/audit-measurement-002
           python scripts/diagnose_integration_gaps.py 2>&1 | tee integration-gap-diagnostic.log
 
-      - name: Commit diagnostic
+      - name: Classify occurrence semantics
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/diagnose_occurrence_semantics.py 2>&1 \
+            | tee occurrence-semantics-diagnostic.log
+
+      - name: Publish evidence to the evidence branch
         if: always()
         shell: bash
         run: |
-          # This block publishes diagnostics; it must never be the reason a job
-          # goes red. `git rebase --abort` exits 128 when no rebase is in
-          # progress, so the previous `rebase || abort` pair turned an ordinary
-          # "nothing to rebase" into a failed step under `set -e` -- which is
-          # how the job built to make CI legible became the illegible one.
           set -uo pipefail
+          # Evidence is published to a SEPARATE branch, never to the PR branch.
+          # A push authored by GITHUB_TOKEN cannot trigger a workflow, so any
+          # evidence commit landing on the PR branch becomes a head with zero
+          # checks against the exact commit that would merge. Publishing
+          # sideways keeps the PR head human-authored permanently, while
+          # preserving evidence generation on every run.
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          mkdir -p docs/evidence/audit-measurement-002
-          cp integration-gap-diagnostic.log docs/evidence/audit-measurement-002/integration-gap-diagnostic-log.txt || true
-          # Strip trailing whitespace before committing. Captured console output
-          # carries it routinely, and this repo gates every PR on
-          # `git diff --check origin/<base>...HEAD` -- so evidence files were
-          # failing BUILD-BRAIN-114Q's diff-hygiene step. Only invisible trailing
-          # spaces are removed; no recorded content changes.
-          for f in docs/evidence/audit-measurement-002/*.txt; do
+          if git fetch origin "$EVIDENCE_BRANCH" 2>/dev/null; then
+            git worktree add /tmp/evtree FETCH_HEAD || true
+          else
+            git worktree add --detach /tmp/evtree || true
+            ( cd /tmp/evtree && git checkout --orphan evidence-root && git rm -rf . >/dev/null 2>&1 ) || true
+          fi
+          cp integration-gap-diagnostic.log docs/evidence/audit-measurement-002/integration-gap-diagnostic-log.txt 2>/dev/null || true
+          cp occurrence-semantics-diagnostic.log docs/evidence/audit-measurement-002/occurrence-semantics-log.txt 2>/dev/null || true
+          mkdir -p /tmp/evtree/docs/evidence/audit-measurement-002
+          cp -f docs/evidence/audit-measurement-002/* /tmp/evtree/docs/evidence/audit-measurement-002/ 2>/dev/null || true
+          for f in /tmp/evtree/docs/evidence/audit-measurement-002/*.txt; do
             [ -e "$f" ] && sed -i 's/[[:space:]]*$//' "$f"
           done
-          git add docs/evidence/audit-measurement-002
+          cd /tmp/evtree
+          git add -A
           git diff --cached --quiet && exit 0
-          # Two things are needed for the PR head to be testable, and this
-          # handles only the first: the message carries no CI-skip directive.
-          # The second cannot be fixed here -- a push authored by the default
-          # GITHUB_TOKEN never triggers a workflow run, by design, so this
-          # commit will show zero checks no matter what its message says. The
-          # branch must therefore END on a human-authored commit before it is
-          # judged merge-ready. Committing under docs/evidence/** also does not
-          # match this workflow's own path filter, so it cannot retrigger itself.
-          git commit -m "evidence(audit): capture production integration-gap diagnostic"
-          git fetch origin ${{ github.ref_name }} || true
-          git rebase origin/${{ github.ref_name }} || git rebase --abort || true
-          git push origin HEAD:${{ github.ref_name }} || true
+          git commit -m "evidence: ${{ github.workflow }} on ${{ github.sha }}"
+          git push origin "HEAD:refs/heads/$EVIDENCE_BRANCH" --force || true
           exit 0
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
