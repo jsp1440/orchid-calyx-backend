@@ -1,8 +1,5 @@
-    @app.on_event("startup")
-
-../../../../../opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/site-packages/fastapi/applications.py:4495
-../../../../../opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/site-packages/fastapi/applications.py:4495
-  /opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/site-packages/fastapi/applications.py:4495: DeprecationWarning:
+../../../../../opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/applications.py:4495
+  /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/applications.py:4495: DeprecationWarning:
           on_event is deprecated, use lifespan event handlers instead.
 
           Read more about it in the
@@ -28,7 +25,7 @@ tests/test_connector_routes.py:17
     class TestConnector(ConnectorInterface):
 
 tests/test_build_621_plant_diagnostic_context.py::test_out_of_scope_canonical_path_remains_visible_but_not_applicable
-  /opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/site-packages/pydantic/main.py:475: UserWarning: Pydantic serializer warnings:
+  /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/pydantic/main.py:475: UserWarning: Pydantic serializer warnings:
     PydanticSerializationUnexpectedValue(Expected `CausalScope` - serialized value may not be as expected [field_name='applicability_scope', input_value={'scope_class': 'bounded'...'], 'tissues': ['leaf']}, input_type=dict])
     return self.__pydantic_serializer__.to_python(
 
@@ -37,4 +34,7 @@ tests/test_calyx_git_proposal_mutation_journal_114t.py::test_recovery_validates_
     self.db.commit()
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-3214 passed, 43 skipped, 1 deselected, 37 warnings, 8 subtests passed in 131.23s (0:02:11)
+=========================== short test summary info ============================
+FAILED tests/test_knowledge_graph_telemetry.py::test_first_available_count_uses_live_count_from_kg_edges - IndexError: tuple index out of range
+FAILED tests/test_knowledge_graph_telemetry.py::test_first_available_count_reports_honestly_when_absent - IndexError: tuple index out of range
+2 failed, 3164 passed, 43 skipped, 1 deselected, 37 warnings, 8 subtests passed in 131.24s (0:02:11)

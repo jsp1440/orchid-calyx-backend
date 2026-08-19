@@ -1,6 +1,6 @@
 {
   "contract": "OCU-OCCURRENCE-SEMANTICS-DIAGNOSTIC-001",
-  "captured_at": "2026-08-19T04:09:35.862993+00:00",
+  "captured_at": "2026-08-19T04:16:52.570358+00:00",
   "access": "read_only_transaction_rolled_back",
   "record_types": [
     {
