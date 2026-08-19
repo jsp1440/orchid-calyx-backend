@@ -1,0 +1,756 @@
+{
+  "contract": "OCU-PRODUCTION-OVERALL-AUDIT-EVIDENCE-001",
+  "captured_at": "2026-08-18T22:10:52.233901+00:00",
+  "target": "\r\nhttps://orchid-calyx-backend.onrender.com",
+  "expected_commit": "34352e392df8c5c55c47a6145f7ba580de7e9db6",
+  "steps": [
+    {
+      "step": "release_identity",
+      "status": 200,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "step": "mission_control_metrics",
+      "status": 200,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "step": "owner_session",
+      "status": 200,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "step": "owner_session_authenticated",
+      "status": 200,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "step": "generate_overall_audit",
+      "status": 200,
+      "ok": true,
+      "note": ""
+    },
+    {
+      "step": "audit_measurement_001_serving",
+      "status": 200,
+      "ok": true,
+      "note": ""
+    }
+  ],
+  "release_identity": {
+    "contract": "OCU-RELEASE-IDENTITY-001",
+    "service": "orchid-calyx-backend",
+    "commit_sha": "34352e392df8c5c55c47a6145f7ba580de7e9db6",
+    "attested": true,
+    "source": "RENDER_GIT_COMMIT"
+  },
+  "release_confirmation": {
+    "served_commit": "34352e392df8c5c55c47a6145f7ba580de7e9db6",
+    "attested": true,
+    "expected_commit": "34352e392df8c5c55c47a6145f7ba580de7e9db6",
+    "matches_expected": true
+  },
+  "metrics": {
+    "build": "BUILD-065",
+    "database_connected": true,
+    "metrics": {
+      "taxonomy": {
+        "table": "oc_taxonomy.taxa",
+        "count": 31840,
+        "available": true,
+        "checked": [
+          "oc_taxonomy.taxa"
+        ],
+        "candidates": [
+          {
+            "table": "oc_taxonomy.taxa",
+            "selected": true,
+            "exists": true,
+            "relkind": "r",
+            "approximate_rows": 31712
+          },
+          {
+            "table": "oc_taxonomy.orchid_taxa",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.orchid_taxa",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.orchid_species",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.taxonomy",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          }
+        ],
+        "source_warnings": []
+      },
+      "occurrences": {
+        "table": "oc_atlas.occurrences",
+        "count": 26,
+        "available": true,
+        "checked": [
+          "oc_atlas.occurrences"
+        ],
+        "candidates": [
+          {
+            "table": "oc_atlas.occurrences",
+            "selected": true,
+            "exists": true,
+            "relkind": "r",
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_atlas.map_data",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.occurrences",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.orchid_occurrences",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.map_data",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.orchid_occurrence",
+            "selected": false,
+            "exists": true,
+            "relkind": "r",
+            "approximate_rows": 580612
+          }
+        ],
+        "source_warnings": [
+          "public.orchid_occurrence exists with approximately 580,612 row(s), far more than the selected source oc_atlas.occurrences (26 row(s)); metric source selection may be masking the authoritative corpus."
+        ]
+      },
+      "images": {
+        "table": "public.orchid_images_linked_v2",
+        "count": 5071287,
+        "available": true,
+        "checked": [
+          "public.orchid_images_linked_v2"
+        ],
+        "candidates": [
+          {
+            "table": "public.orchid_images_linked_v2",
+            "selected": true,
+            "exists": true,
+            "relkind": "v",
+            "approximate_rows": null
+          },
+          {
+            "table": "public.orchid_images",
+            "selected": false,
+            "exists": true,
+            "relkind": "r",
+            "approximate_rows": 4977361
+          },
+          {
+            "table": "public.record_media_link",
+            "selected": false,
+            "exists": true,
+            "relkind": "r",
+            "approximate_rows": 5206599
+          },
+          {
+            "table": "oc_media.orchid_images",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          }
+        ],
+        "source_warnings": []
+      },
+      "literature": {
+        "table": "oc_literature.papers",
+        "count": 408,
+        "available": true,
+        "checked": [
+          "oc_literature.documents",
+          "oc_literature.literature_documents",
+          "oc_literature.papers"
+        ],
+        "candidates": [
+          {
+            "table": "oc_literature.documents",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_literature.literature_documents",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_literature.papers",
+            "selected": true,
+            "exists": true,
+            "relkind": "r",
+            "approximate_rows": 408
+          },
+          {
+            "table": "public.literature_documents",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.research_documents",
+            "selected": false,
+            "exists": true,
+            "relkind": "r",
+            "approximate_rows": 6725
+          }
+        ],
+        "source_warnings": [
+          "public.research_documents exists with approximately 6,725 row(s), far more than the selected source oc_literature.papers (408 row(s)); metric source selection may be masking the authoritative corpus."
+        ]
+      },
+      "relationships": {
+        "table": "oc_graph.kg_edges",
+        "count": 70609,
+        "available": true,
+        "checked": [
+          "oc_graph.kg_edges"
+        ],
+        "candidates": [
+          {
+            "table": "oc_graph.kg_edges",
+            "selected": true,
+            "exists": true,
+            "relkind": "r",
+            "approximate_rows": 67572
+          },
+          {
+            "table": "oc_relationships.relationships",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_interactions.relationships",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_literature.extracted_relationships",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          },
+          {
+            "table": "public.relationships",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          }
+        ],
+        "source_warnings": []
+      },
+      "mycorrhiza": {
+        "table": "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache",
+        "count": 1,
+        "available": true,
+        "checked": [
+          "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache"
+        ],
+        "candidates": [
+          {
+            "table": "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache",
+            "selected": true,
+            "exists": true,
+            "relkind": "r",
+            "approximate_rows": null
+          },
+          {
+            "table": "oc_mycorrhiza.relationships",
+            "selected": false,
+            "exists": false,
+            "relkind": null,
+            "approximate_rows": null
+          }
+        ],
+        "source_warnings": []
+      },
+      "runtime_jobs": {
+        "table": "oc_admin.ocp_execution_jobs",
+        "count": 12218,
+        "available": true,
+        "checked": [
+          "oc_admin.ocp_execution_jobs"
+        ],
+        "candidates": [
+          {
+            "table": "oc_admin.ocp_execution_jobs",
+            "selected": true,
+            "exists": true,
+            "relkind": "r",
+            "approximate_rows": 12214
+          }
+        ],
+        "source_warnings": []
+      },
+      "runtime_actions": {
+        "table": "oc_admin.ocp_runtime_actions",
+        "count": 668,
+        "available": true,
+        "checked": [
+          "oc_admin.ocp_runtime_actions"
+        ],
+        "candidates": [
+          {
+            "table": "oc_admin.ocp_runtime_actions",
+            "selected": true,
+            "exists": true,
+            "relkind": "r",
+            "approximate_rows": 608
+          }
+        ],
+        "source_warnings": []
+      }
+    },
+    "generated_at": "2026-08-18T22:10:58.545206+00:00"
+  },
+  "metric_summary": {
+    "taxonomy": {
+      "selected_source": "oc_taxonomy.taxa",
+      "count": 31840,
+      "available": true,
+      "candidates_probed": [
+        {
+          "table": "oc_taxonomy.taxa",
+          "exists": true,
+          "selected": true,
+          "approximate_rows": 31712
+        },
+        {
+          "table": "oc_taxonomy.orchid_taxa",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "public.orchid_taxa",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "public.orchid_species",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "public.taxonomy",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        }
+      ],
+      "source_warnings": []
+    },
+    "occurrences": {
+      "selected_source": "oc_atlas.occurrences",
+      "count": 26,
+      "available": true,
+      "candidates_probed": [
+        {
+          "table": "oc_atlas.occurrences",
+          "exists": true,
+          "selected": true,
+          "approximate_rows": null
+        },
+        {
+          "table": "oc_atlas.map_data",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "public.occurrences",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "public.orchid_occurrences",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "public.map_data",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "public.orchid_occurrence",
+          "exists": true,
+          "selected": false,
+          "approximate_rows": 580612
+        }
+      ],
+      "source_warnings": [
+        "public.orchid_occurrence exists with approximately 580,612 row(s), far more than the selected source oc_atlas.occurrences (26 row(s)); metric source selection may be masking the authoritative corpus."
+      ]
+    },
+    "images": {
+      "selected_source": "public.orchid_images_linked_v2",
+      "count": 5071287,
+      "available": true,
+      "candidates_probed": [
+        {
+          "table": "public.orchid_images_linked_v2",
+          "exists": true,
+          "selected": true,
+          "approximate_rows": null
+        },
+        {
+          "table": "public.orchid_images",
+          "exists": true,
+          "selected": false,
+          "approximate_rows": 4977361
+        },
+        {
+          "table": "public.record_media_link",
+          "exists": true,
+          "selected": false,
+          "approximate_rows": 5206599
+        },
+        {
+          "table": "oc_media.orchid_images",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        }
+      ],
+      "source_warnings": []
+    },
+    "literature": {
+      "selected_source": "oc_literature.papers",
+      "count": 408,
+      "available": true,
+      "candidates_probed": [
+        {
+          "table": "oc_literature.documents",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "oc_literature.literature_documents",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "oc_literature.papers",
+          "exists": true,
+          "selected": true,
+          "approximate_rows": 408
+        },
+        {
+          "table": "public.literature_documents",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "public.research_documents",
+          "exists": true,
+          "selected": false,
+          "approximate_rows": 6725
+        }
+      ],
+      "source_warnings": [
+        "public.research_documents exists with approximately 6,725 row(s), far more than the selected source oc_literature.papers (408 row(s)); metric source selection may be masking the authoritative corpus."
+      ]
+    },
+    "relationships": {
+      "selected_source": "oc_graph.kg_edges",
+      "count": 70609,
+      "available": true,
+      "candidates_probed": [
+        {
+          "table": "oc_graph.kg_edges",
+          "exists": true,
+          "selected": true,
+          "approximate_rows": 67572
+        },
+        {
+          "table": "oc_relationships.relationships",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "oc_interactions.relationships",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "oc_literature.extracted_relationships",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        },
+        {
+          "table": "public.relationships",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        }
+      ],
+      "source_warnings": []
+    },
+    "mycorrhiza": {
+      "selected_source": "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache",
+      "count": 1,
+      "available": true,
+      "candidates_probed": [
+        {
+          "table": "oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache",
+          "exists": true,
+          "selected": true,
+          "approximate_rows": null
+        },
+        {
+          "table": "oc_mycorrhiza.relationships",
+          "exists": false,
+          "selected": false,
+          "approximate_rows": null
+        }
+      ],
+      "source_warnings": []
+    },
+    "runtime_jobs": {
+      "selected_source": "oc_admin.ocp_execution_jobs",
+      "count": 12218,
+      "available": true,
+      "candidates_probed": [
+        {
+          "table": "oc_admin.ocp_execution_jobs",
+          "exists": true,
+          "selected": true,
+          "approximate_rows": 12214
+        }
+      ],
+      "source_warnings": []
+    },
+    "runtime_actions": {
+      "selected_source": "oc_admin.ocp_runtime_actions",
+      "count": 668,
+      "available": true,
+      "candidates_probed": [
+        {
+          "table": "oc_admin.ocp_runtime_actions",
+          "exists": true,
+          "selected": true,
+          "approximate_rows": 608
+        }
+      ],
+      "source_warnings": []
+    }
+  },
+  "masking_warnings": [
+    {
+      "metric": "occurrences",
+      "warning": "public.orchid_occurrence exists with approximately 580,612 row(s), far more than the selected source oc_atlas.occurrences (26 row(s)); metric source selection may be masking the authoritative corpus."
+    },
+    {
+      "metric": "literature",
+      "warning": "public.research_documents exists with approximately 6,725 row(s), far more than the selected source oc_literature.papers (408 row(s)); metric source selection may be masking the authoritative corpus."
+    }
+  ],
+  "owner_session": {
+    "authenticated": true,
+    "cookie": true
+  },
+  "audit": {
+    "status": 200,
+    "audit_id": "AUD-4083BAAD14EE",
+    "generated_at": "2026-08-18T22:11:08.806570+00:00",
+    "confidence": "medium",
+    "data_freshness": "live_query",
+    "record_counts": {
+      "taxonomy": 31840,
+      "occurrences": 26,
+      "images": 5071287,
+      "literature": 408,
+      "relationships": 70609,
+      "mycorrhiza": 1,
+      "runtime_jobs": 12218,
+      "runtime_actions": 668
+    },
+    "metric_source_warnings": [
+      "public.orchid_occurrence exists with approximately 580,612 row(s), far more than the selected source oc_atlas.occurrences (26 row(s)); metric source selection may be masking the authoritative corpus.",
+      "public.research_documents exists with approximately 6,725 row(s), far more than the selected source oc_literature.papers (408 row(s)); metric source selection may be masking the authoritative corpus."
+    ],
+    "missing_relationships": [],
+    "unmeasured_relationships": [
+      "taxonomy_to_climate",
+      "taxonomy_to_conservation",
+      "taxonomy_to_elevation",
+      "taxonomy_to_habitat",
+      "taxonomy_to_literature",
+      "taxonomy_to_mycorrhiza",
+      "taxonomy_to_occurrences",
+      "taxonomy_to_pollinators"
+    ],
+    "recommended_next_actions": [
+      "Resolve metric source authority for occurrences: public.orchid_occurrence exists with approximately 580,612 row(s), far more than the selected source oc_atlas.occurrences (26 row(s)); metric source selection may be masking the authoritative corpus.",
+      "Resolve metric source authority for literature: public.research_documents exists with approximately 6,725 row(s), far more than the selected source oc_literature.papers (408 row(s)); metric source selection may be masking the authoritative corpus.",
+      "Implement a measurement path for these relationships before any claim is made about them: taxonomy_to_climate, taxonomy_to_conservation, taxonomy_to_elevation, taxonomy_to_habitat, taxonomy_to_literature, taxonomy_to_mycorrhiza, taxonomy_to_occurrences, taxonomy_to_pollinators.",
+      "Review subsystem telemetry reporting below healthy: atlas, species_explorer, literature, knowledge_graph, mycorrhiza."
+    ],
+    "unresolved_failures": [
+      "atlas",
+      "species_explorer",
+      "literature",
+      "knowledge_graph",
+      "mycorrhiza"
+    ]
+  },
+  "audit_measurement_001_serving": {
+    "relationship_evidence_present": true,
+    "unmeasured_relationships_present": true,
+    "all_ten_listed_missing": false,
+    "verdict": "serving_corrected_logic"
+  },
+  "relationships": {
+    "taxonomy_to_images": {
+      "state": "measured-present",
+      "reason": "Measured against live data.",
+      "previous_audit_claim": "missing",
+      "changed": true,
+      "measurement": "relational_linkage_only",
+      "provenance": {
+        "taxonomy_table": "public.orchid_taxonomy",
+        "image_table": "public.orchid_images",
+        "join": "public.orchid_images.taxonomy_id -> public.orchid_taxonomy.id"
+      },
+      "linked_images": 971105,
+      "total_images": 5071298,
+      "taxa_with_images": 30807,
+      "broken_taxonomy_targets": 1743
+    },
+    "taxonomy_to_occurrences": {
+      "state": "unmeasured",
+      "reason": "No measurement path implemented for this relationship.",
+      "previous_audit_claim": "missing",
+      "changed": true
+    },
+    "taxonomy_to_elevation": {
+      "state": "unmeasured",
+      "reason": "No measurement path implemented for this relationship.",
+      "previous_audit_claim": "missing",
+      "changed": true
+    },
+    "taxonomy_to_climate": {
+      "state": "unmeasured",
+      "reason": "No measurement path implemented for this relationship.",
+      "previous_audit_claim": "missing",
+      "changed": true
+    },
+    "taxonomy_to_literature": {
+      "state": "unmeasured",
+      "reason": "No measurement path implemented for this relationship.",
+      "previous_audit_claim": "missing",
+      "changed": true
+    },
+    "taxonomy_to_pollinators": {
+      "state": "unmeasured",
+      "reason": "No measurement path implemented for this relationship.",
+      "previous_audit_claim": "missing",
+      "changed": true
+    },
+    "taxonomy_to_mycorrhiza": {
+      "state": "unmeasured",
+      "reason": "No measurement path implemented for this relationship.",
+      "previous_audit_claim": "missing",
+      "changed": true
+    },
+    "taxonomy_to_habitat": {
+      "state": "unmeasured",
+      "reason": "No measurement path implemented for this relationship.",
+      "previous_audit_claim": "missing",
+      "changed": true
+    },
+    "taxonomy_to_conservation": {
+      "state": "unmeasured",
+      "reason": "No measurement path implemented for this relationship.",
+      "previous_audit_claim": "missing",
+      "changed": true
+    },
+    "knowledge_graph_node_edge_integrity": {
+      "state": "measured-present",
+      "reason": "Measured against live data.",
+      "previous_audit_claim": "missing",
+      "changed": true,
+      "measurement": "persisted_graph_edges",
+      "provenance": {
+        "edge_table": "oc_graph.kg_edges"
+      },
+      "null_endpoint_edges": 0,
+      "duplicate_edges": 0,
+      "passed": true
+    }
+  },
+  "previous_audit_note": "Pre-#1019 production audits listed all ten relationships under missing_relationships. That list was a literal constant emitted whenever any subsystem completeness row scored below healthy; it was not a measurement of any relationship.",
+  "state_totals": {
+    "measured-present": 2,
+    "unmeasured": 8
+  },
+  "completed_at": "2026-08-18T22:11:08.951706+00:00",
+  "failures": []
+}

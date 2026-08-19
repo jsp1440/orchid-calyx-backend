@@ -77,16 +77,40 @@ METRIC_CANDIDATES = {
         "public.taxonomy",
     ],
     "occurrences": [
+        # Promoted on measured evidence, having previously been listed last so
+        # the masking check could surface it without redefining the metric. It
+        # has now surfaced it, twice, and the read-only diagnostic settles it:
+        # public.orchid_occurrence holds 580,612 rows to oc_atlas.occurrences'
+        # 26, oc_views.occurrences_enriched is a view over that same 26-row
+        # relation, and 109,195 of its taxonomy_id values resolve into
+        # public.orchid_taxonomy without a single miss. It also carries the
+        # provenance columns an occurrence corpus needs -- source_table,
+        # source_record_id, canonical_gbif_occurrence_key, taxon_match_method.
+        # The headline occurrences count changes from 26 to 580,612 as a result.
+        # That is the correction, not a side effect of one.
+        "public.orchid_occurrence",
         "oc_atlas.occurrences",
         "oc_atlas.map_data",
         "public.occurrences",
         "public.orchid_occurrences",
         "public.map_data",
-        # Appended, not promoted: live-schema verification on PR #901 reports
-        # public.orchid_occurrence as a large occurrence corpus. Listing it last
-        # keeps the selected source unchanged while letting the masking check
-        # surface the discrepancy instead of silently redefining the metric.
-        "public.orchid_occurrence",
+        # Listed, never promoted. public.records is a universal ingest spine
+        # carrying 46 distinct record_type values across 5,006,022 rows. The
+        # owner decision is encoded in app/readiness/occurrence_semantics.py:
+        # 3,884,091 rows are occurrence evidence, and 1,121,931 are not --
+        # vendor listings, videos, taxon and species profiles, media, culture
+        # sheets, judging standards, hybrid registrations, and 621,526
+        # occurrence_stub placeholders already promoted into
+        # public.orchid_occurrence.
+        #
+        # The metric therefore keeps public.orchid_occurrence, which is the
+        # curated projection: its own source_table column shows 379,642 of its
+        # 580,612 rows were backfilled out of public.records, and it carries the
+        # taxonomy linkage the spine lacks. Listing the spine makes the masking
+        # check state the size discrepancy on every audit without ever letting a
+        # vendor listing enter an occurrence count.
+        "public.records",
+        "public.v_orchid_records",
     ],
     "images": [
         "public.orchid_images_linked_v2",
