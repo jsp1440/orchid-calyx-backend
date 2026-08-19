@@ -1,6 +1,6 @@
-tests/test_build_087b_scientific_interpretation.py :: .................s                                                       [100%] 17 passed, 1 skipped in 1.05s
-tests/test_build_046_scientific_priorities.py ::  -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html 3 passed, 33 warnings in 4.28s
-tests/test_calyx_live_graph_audit.py :: ..                                                                       [100%] 2 passed in 0.11s
-tests/test_knowledge_graph_orchestrator.py :: .......................                                                  [100%] 23 passed in 0.34s
-tests/test_source_registry.py :: ...............................................                          [100%] 47 passed in 0.28s
-tests/test_ci_baseline_001.py :: ....                                                                     [100%] 4 passed in 0.19s
+tests/test_build_087b_scientific_interpretation.py :: .................s                                                       [100%] 17 passed, 1 skipped in 1.01s
+tests/test_build_046_scientific_priorities.py ::  -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html 3 passed, 33 warnings in 5.03s
+tests/test_calyx_live_graph_audit.py :: ..                                                                       [100%] 2 passed in 0.14s
+tests/test_knowledge_graph_orchestrator.py :: .......................                                                  [100%] 23 passed in 0.33s
+tests/test_source_registry.py :: ...............................................                          [100%] 47 passed in 0.34s
+tests/test_ci_baseline_001.py :: ....                                                                     [100%] 4 passed in 0.20s
