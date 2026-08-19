@@ -31,10 +31,19 @@ BLOCKED_MEDIA_RE = re.compile(
 
 
 def _allow_frontend_origin(request: Request, response: Response) -> None:
-    """Allow the public Orchid Continuum frontend to read this JSON response."""
+    """Allow the public Orchid Continuum frontend to read this JSON response.
+
+    The frontend's shared fetch transport sends every request to a Calyx
+    origin with `credentials: 'include'` (needed elsewhere for the owner
+    session cookie), even to these public, unauthenticated read endpoints.
+    Per the Fetch/CORS spec, a credentialed request's response must declare
+    Access-Control-Allow-Credentials: true or the browser discards it
+    entirely, regardless of Access-Control-Allow-Origin being correct.
+    """
     origin = request.headers.get("origin")
     if origin in _ALLOWED_MEDIA_ORIGINS:
         response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Vary"] = "Origin"
 
 
@@ -198,6 +207,7 @@ def genus_media(
 
     items: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
+    seen_species: set[str] = set()
     for row in rows:
         text_fields = " ".join(
             str(row.get(key) or "")
@@ -218,7 +228,12 @@ def genus_media(
             continue
         if url in seen_urls:
             continue
+        species_key = str(row.get("scientific_name") or "").strip().lower()
+        if species_key and species_key in seen_species:
+            continue
         seen_urls.add(url)
+        if species_key:
+            seen_species.add(species_key)
 
         source_name = str(row.get("image_source") or "").strip()
         items.append(

@@ -52,10 +52,17 @@ DOMAIN_SOURCES: tuple[DomainSource, ...] = (
                  "evidence", "supported_by_evidence",
                  "Model claims as assertion/evidence nodes, not raw edges."),
     DomainSource("pollinators", "production", "oc_pollination.* / oc_globi.* / oc_interactions.*",
-                 "pollinator", "associated_with_pollinator", ""),
+                 "pollinator", "associated_with_pollinator",
+                 "GloBI-sourced candidates specifically are not yet in oc_globi.* -- they land as "
+                 "review-bound INTERACTION_DISCOVERY_RECORD documents in the semantic index (see "
+                 "app.interaction_discovery), queryable but unpublished. Treat that portion as "
+                 "staging_only until a reviewed subset is promoted."),
     DomainSource("mycorrhiza", "production",
                  "oc_mycorrhiza.* / oc_dependency.fungal_dependency_evidence",
-                 "fungus", "associated_with_mycorrhiza", ""),
+                 "fungus", "associated_with_mycorrhiza",
+                 "GloBI-sourced fungal-association candidates land in the same review-bound "
+                 "semantic-index surface as pollinators (see app.interaction_discovery); not yet "
+                 "part of this domain's production source until reviewed and promoted."),
     DomainSource("conservation", "production", "oc_conservation.conservation_records",
                  "conservation_assessment", "has_conservation_assessment", ""),
     DomainSource("molecular", "production", "oc_phylogeny.*", "molecular_record",

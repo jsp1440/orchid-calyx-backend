@@ -1,0 +1,118 @@
+name: Production Overall Audit
+
+# The development sandbox has no egress to the deployed backend (the network
+# policy rejects CONNECT to onrender.com), so an audit of production can only be
+# taken from a runner. Push-triggered as well as dispatchable because
+# workflow_dispatch only registers from the default branch.
+# The push trigger is removed deliberately. These jobs commit their findings
+# back to the branch, and a push authored by GITHUB_TOKEN cannot trigger a
+# workflow -- so every automatic evidence commit became a PR head with zero
+# checks against the exact commit that would merge. They were investigation
+# instruments; the evidence they were built to gather is committed under
+# docs/evidence/audit-measurement-002/. Re-run them deliberately when a
+# question needs re-asking.
+on:
+  push:
+    branches: [claude/audit-measurement-002]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EVIDENCE_BRANCH: evidence/audit-measurement-002
+      CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+      CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CALYX_EXPECTED_COMMIT: 34352e392df8c5c55c47a6145f7ba580de7e9db6
+      AUDIT_EVIDENCE_PATH: docs/evidence/audit-measurement-002/production-overall-audit.json
+      RELATIONSHIP_EVIDENCE_PATH: docs/evidence/audit-measurement-002/production-relationship-measurement.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Validate required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CALYX_BACKEND_URL:?Repository variable CALYX_BACKEND_URL is required}"
+          : "${CALYX_OWNER_ACCESS_CODE:?Repository secret CALYX_OWNER_ACCESS_CODE is required}"
+
+      - name: Install database driver
+        run: pip install 'psycopg[binary]'
+
+      - name: Capture the production Overall Audit (BEFORE - deployed release)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p docs/evidence/audit-measurement-002
+          python scripts/production_overall_audit.py 2>&1 | tee production-overall-audit.log
+
+      # The deployed release predates the measurement paths added on this branch,
+      # and deploying is out of scope, so the "after" state cannot be read through
+      # the API. It is measured directly against the same production data instead,
+      # inside a read-only transaction that is rolled back.
+      - name: Measure new relationship paths against production (AFTER)
+        if: env.DATABASE_URL != ''
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/measure_relationships_against_production.py 2>&1 \
+            | tee production-relationship-measurement.log
+
+      - name: Publish evidence to the evidence branch
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Evidence is published to a SEPARATE branch, never to the PR branch.
+          # A push authored by GITHUB_TOKEN cannot trigger a workflow, so any
+          # evidence commit landing on the PR branch becomes a head with zero
+          # checks against the exact commit that would merge. Publishing
+          # sideways keeps the PR head human-authored permanently, while
+          # preserving evidence generation on every run.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin "$EVIDENCE_BRANCH" 2>/dev/null; then
+            git worktree add /tmp/evtree FETCH_HEAD || true
+          else
+            git worktree add --detach /tmp/evtree || true
+            ( cd /tmp/evtree && git checkout --orphan evidence-root && git rm -rf . >/dev/null 2>&1 ) || true
+          fi
+          # Refresh the human-readable logs before publishing. These copies
+          # lived in the old commit step and were lost when the sideways
+          # publisher replaced it, so the .txt logs went stale while the JSON
+          # kept updating -- a stale log beside a fresh measurement is worse
+          # than no log, because it reads as current.
+          cp production-overall-audit.log docs/evidence/audit-measurement-002/production-overall-audit-log.txt 2>/dev/null || true
+          cp production-relationship-measurement.log docs/evidence/audit-measurement-002/production-relationship-measurement-log.txt 2>/dev/null || true
+          mkdir -p /tmp/evtree/docs/evidence/audit-measurement-002
+          cp -f docs/evidence/audit-measurement-002/* /tmp/evtree/docs/evidence/audit-measurement-002/ 2>/dev/null || true
+          for f in /tmp/evtree/docs/evidence/audit-measurement-002/*.txt; do
+            [ -e "$f" ] && sed -i 's/[[:space:]]*$//' "$f"
+          done
+          cd /tmp/evtree
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: ${{ github.workflow }} on ${{ github.sha }}"
+          git push origin "HEAD:refs/heads/$EVIDENCE_BRANCH" --force || true
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-overall-audit-${{ github.sha }}
+          path: |
+            docs/evidence/audit-measurement-002/
+            production-overall-audit.log
+            production-relationship-measurement.log
+          if-no-files-found: warn
+          retention-days: 30

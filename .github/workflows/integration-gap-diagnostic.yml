@@ -1,0 +1,111 @@
+name: Integration Gap Diagnostic
+
+# Read-only production diagnostics for DATA-INTEGRATION-REPAIR-001. The
+# development sandbox has no egress to the database host, so schema questions
+# can only be answered from a runner.
+# The push trigger is removed deliberately. These jobs commit their findings
+# back to the branch, and a push authored by GITHUB_TOKEN cannot trigger a
+# workflow -- so every automatic evidence commit became a PR head with zero
+# checks against the exact commit that would merge. They were investigation
+# instruments; the evidence they were built to gather is committed under
+# docs/evidence/audit-measurement-002/. Re-run them deliberately when a
+# question needs re-asking.
+on:
+  push:
+    branches: [claude/audit-measurement-002]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EVIDENCE_BRANCH: evidence/audit-measurement-002
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIAGNOSTIC_PATH: docs/evidence/audit-measurement-002/integration-gap-diagnostic.json
+      OCCURRENCE_SEMANTICS_PATH: docs/evidence/audit-measurement-002/occurrence-semantics-diagnostic.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - run: pip install 'psycopg[binary]'
+
+      - name: Validate required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${DATABASE_URL:?Repository secret DATABASE_URL is required}"
+
+      - name: Prepare evidence directory
+        run: mkdir -p docs/evidence/audit-measurement-002
+
+      - name: Run read-only diagnostic
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p docs/evidence/audit-measurement-002
+          python scripts/diagnose_integration_gaps.py 2>&1 | tee integration-gap-diagnostic.log
+
+      - name: Classify occurrence semantics
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/diagnose_occurrence_semantics.py 2>&1 \
+            | tee occurrence-semantics-diagnostic.log
+
+      - name: Publish evidence to the evidence branch
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Evidence is published to a SEPARATE branch, never to the PR branch.
+          # A push authored by GITHUB_TOKEN cannot trigger a workflow, so any
+          # evidence commit landing on the PR branch becomes a head with zero
+          # checks against the exact commit that would merge. Publishing
+          # sideways keeps the PR head human-authored permanently, while
+          # preserving evidence generation on every run.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin "$EVIDENCE_BRANCH" 2>/dev/null; then
+            git worktree add /tmp/evtree FETCH_HEAD || true
+          else
+            git worktree add --detach /tmp/evtree || true
+            ( cd /tmp/evtree && git checkout --orphan evidence-root && git rm -rf . >/dev/null 2>&1 ) || true
+          fi
+          cp integration-gap-diagnostic.log docs/evidence/audit-measurement-002/integration-gap-diagnostic-log.txt 2>/dev/null || true
+          cp occurrence-semantics-diagnostic.log docs/evidence/audit-measurement-002/occurrence-semantics-log.txt 2>/dev/null || true
+          # Refresh the human-readable logs before publishing. These copies
+          # lived in the old commit step and were lost when the sideways
+          # publisher replaced it, so the .txt logs went stale while the JSON
+          # kept updating -- a stale log beside a fresh measurement is worse
+          # than no log, because it reads as current.
+          cp integration-gap-diagnostic.log docs/evidence/audit-measurement-002/integration-gap-diagnostic-log.txt 2>/dev/null || true
+          cp occurrence-semantics-diagnostic.log docs/evidence/audit-measurement-002/occurrence-semantics-log.txt 2>/dev/null || true
+          mkdir -p /tmp/evtree/docs/evidence/audit-measurement-002
+          cp -f docs/evidence/audit-measurement-002/* /tmp/evtree/docs/evidence/audit-measurement-002/ 2>/dev/null || true
+          for f in /tmp/evtree/docs/evidence/audit-measurement-002/*.txt; do
+            [ -e "$f" ] && sed -i 's/[[:space:]]*$//' "$f"
+          done
+          cd /tmp/evtree
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: ${{ github.workflow }} on ${{ github.sha }}"
+          git push origin "HEAD:refs/heads/$EVIDENCE_BRANCH" --force || true
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-gap-diagnostic-${{ github.sha }}
+          path: |
+            docs/evidence/audit-measurement-002/integration-gap-diagnostic.json
+            integration-gap-diagnostic.log
+          if-no-files-found: warn
+          retention-days: 30

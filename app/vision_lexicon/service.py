@@ -41,6 +41,7 @@ from .contracts import (
     ReviewerTier,
     ValidationRunStatus,
     VisionAnalysisRecord,
+    VisionRegion,
     VisionReviewRecord,
     VisionReviewState,
 )
@@ -202,6 +203,43 @@ class VisionLexiconService:
 
     def list_analyses_for_image(self, image_id: str) -> list[VisionAnalysisRecord]:
         return self._repo.list_analyses_for_image(image_id)
+
+    # ------------------------------------------------------------------
+    # Regions
+    # ------------------------------------------------------------------
+
+    def record_region(
+        self,
+        *,
+        analysis_id: UUID,
+        concept_id: UUID | None,
+        label: str,
+        bounding_box: dict[str, Any] | None,
+        segmentation_ref: str | None,
+        landmarks: list[dict[str, Any]] | None,
+        confidence: float | None,
+        provenance: dict[str, Any],
+    ) -> VisionRegion:
+        region = VisionRegion(
+            region_id=uuid4(),
+            analysis_id=analysis_id,
+            concept_id=concept_id,
+            label=label,
+            bounding_box=bounding_box,
+            segmentation_ref=segmentation_ref,
+            landmarks=landmarks,
+            confidence=confidence,
+            review_state=VisionReviewState.MACHINE_GENERATED,
+            provenance=provenance,
+        )
+        region.validate()
+        return self._repo.save_region(region)
+
+    def get_region(self, region_id: UUID) -> VisionRegion | None:
+        return self._repo.get_region(region_id)
+
+    def list_regions_for_analysis(self, analysis_id: UUID) -> list[VisionRegion]:
+        return self._repo.list_regions_for_analysis(analysis_id)
 
     # ------------------------------------------------------------------
     # Character Observations

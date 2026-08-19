@@ -9,7 +9,7 @@ from app.calyx_conversation.provider import _scientific_system_prompt
 
 
 def test_calyx_persona_has_stable_version_and_core_traits():
-    assert CALYX_PERSONA_VERSION == "CALYX-PERSONA-002"
+    assert CALYX_PERSONA_VERSION == "CALYX-PERSONA-005"
     text = CALYX_CONVERSATIONAL_CONSTITUTION.casefold()
     for phrase in (
         "warm",

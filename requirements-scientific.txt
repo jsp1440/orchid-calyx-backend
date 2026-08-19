@@ -1,0 +1,6 @@
+# Scientific Computing dependency layer for CALYX-617.
+# Base runtime dependencies remain authoritative and are included first.
+-r requirements.txt
+
+# Reference-validated Student-t uncertainty foundation (SCICOMP-001M).
+scipy==1.18.0

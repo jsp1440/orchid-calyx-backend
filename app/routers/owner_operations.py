@@ -49,6 +49,8 @@ from app.executive_intelligence.repository import decide as executive_intelligen
 from app.executive_intelligence.schemas import RecommendationDecisionRequest
 from app.security import OWNER_SESSION_COOKIE, REVOKED_OWNER_NONCES, create_owner_session_token, owner_cookie_samesite, owner_cookie_secure, owner_session_ttl_seconds, verify_owner_access_code, verify_owner_or_api_key, verify_owner_session
 from app.routers.mission_control import completeness_rows, harvester_rows, metric_snapshot
+from app.readiness.live_graph_audit import run_live_graph_audit
+from app.readiness.relationship_measurement import measure_declared_relationships
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
 
 router = APIRouter(prefix="/api/mission-control/owner", tags=["BUILD-051 Owner Operations"])
@@ -790,38 +792,234 @@ def patch_intelligence(item_id: str, request: IntelligencePatchRequest, auth: di
     return {"status": "updated", "item": item}
 
 
+# Relationships this executive audit reports on. Only a relationship with an
+# implemented measurement path may be reported as present or absent. Every other
+# one is reported as "unmeasured", which is deliberately a different claim from
+# "absent": treating an unmeasured relationship as absent would convert a gap in
+# this audit's own instrumentation into an assertion about the underlying data,
+# and for the ecological domains into an assertion about the underlying biology.
+AUDIT_RELATIONSHIPS = (
+    "taxonomy_to_images",
+    "taxonomy_to_occurrences",
+    "taxonomy_to_elevation",
+    "taxonomy_to_climate",
+    "taxonomy_to_literature",
+    "taxonomy_to_pollinators",
+    "taxonomy_to_mycorrhiza",
+    "taxonomy_to_habitat",
+    "taxonomy_to_conservation",
+    "knowledge_graph_node_edge_integrity",
+)
+
+UNMEASURED_DETAIL = (
+    "No measurement path is implemented in this audit for this relationship. "
+    "State is unknown; this is not a finding that the relationship is absent."
+)
+
+DB_UNREACHABLE_DETAIL = (
+    "Live database was not reachable for this audit run; relationship states are "
+    "unknown rather than absent."
+)
+
+# "unmeasured" and "unavailable" were previously both reported as "unmeasured",
+# which sent a reader to write a measurement path that already existed when the
+# real blocker was a missing relation. They are separated because they call for
+# different work. Neither is a finding of absence, and that is the invariant the
+# whole AUDIT-MEASUREMENT line exists to hold.
+UNAVAILABLE_STATES = ("unavailable",)
+NON_FINDING_STATES = ("unmeasured", "unavailable")
+
+
+def relationship_evidence() -> dict[str, dict[str, Any]]:
+    """Return a per-relationship evidence state measured against the live database.
+
+    Relational foreign-key linkage and persisted Knowledge Graph materialization
+    are kept as separate evidence, matching ``app.readiness.live_graph_audit``,
+    because a populated join column is not the same fact as a published graph edge.
+    """
+    evidence: dict[str, dict[str, Any]] = {
+        name: {"state": "unmeasured", "detail": UNMEASURED_DETAIL}
+        for name in AUDIT_RELATIONSHIPS
+    }
+
+    try:
+        live = db_execute(
+            lambda cur: run_live_graph_audit(cur) if cur is not None else None
+        )
+    except HTTPException:
+        live = None
+    if not live:
+        for entry in evidence.values():
+            entry["detail"] = DB_UNREACHABLE_DETAIL
+        return evidence
+
+    relational = (live.get("relational") or {}).get("taxonomy_to_images") or {}
+    if relational.get("state") == "available":
+        linked = (relational.get("linked_images") or {}).get("value") or 0
+        image_table = relational.get("image_table")
+        image_key = relational.get("image_taxonomy_key")
+        taxonomy_table = relational.get("taxonomy_table")
+        taxonomy_key = relational.get("taxonomy_key")
+        evidence["taxonomy_to_images"] = {
+            "state": "present" if linked > 0 else "absent",
+            "measurement": "relational_linkage_only",
+            "linked_images": linked,
+            "total_images": relational.get("total_images"),
+            "taxa_with_images": (relational.get("taxa_with_images") or {}).get("value"),
+            "broken_taxonomy_targets": (
+                relational.get("broken_taxonomy_targets") or {}
+            ).get("value"),
+            "provenance": {
+                "taxonomy_table": taxonomy_table,
+                "image_table": image_table,
+                "join": "{}.{} -> {}.{}".format(
+                    image_table, image_key, taxonomy_table, taxonomy_key
+                ),
+            },
+        }
+    else:
+        evidence["taxonomy_to_images"]["detail"] = relational.get(
+            "detail", UNMEASURED_DETAIL
+        )
+
+    graph = live.get("graph") or {}
+    integrity = graph.get("integrity") or {}
+    if integrity.get("state") == "available":
+        evidence["knowledge_graph_node_edge_integrity"] = {
+            "state": "present" if integrity.get("passed") else "absent",
+            "measurement": "persisted_graph_edges",
+            "null_endpoint_edges": integrity.get("null_endpoint_edges"),
+            "duplicate_edges": integrity.get("duplicate_edges"),
+            "passed": integrity.get("passed"),
+            "provenance": {"edge_table": graph.get("edge_table")},
+        }
+    else:
+        evidence["knowledge_graph_node_edge_integrity"]["detail"] = integrity.get(
+            "detail", UNMEASURED_DETAIL
+        )
+
+    # The remaining eight relationships, measured against the same canonical
+    # sources the Knowledge Graph adapters already read. These are read-only
+    # measurements: they count and join, they do not publish edges, and a
+    # discovery failure becomes "unavailable" rather than "absent".
+    try:
+        declared = db_execute(
+            lambda cur: measure_declared_relationships(cur) if cur is not None else None
+        )
+    except HTTPException:
+        declared = None
+    for name, measured in (declared or {}).items():
+        if name in evidence:
+            evidence[name] = measured
+
+    return evidence
+
+
+def derived_next_actions(
+    metrics: dict[str, Any],
+    subsystems: list[dict[str, Any]],
+    evidence: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Derive next actions from measured state instead of a fixed list."""
+    actions: list[str] = []
+    if not metrics.get("database_connected"):
+        actions.append(
+            "Restore backend database connectivity; telemetry is currently unmeasurable."
+        )
+    for name, metric in (metrics.get("metrics") or {}).items():
+        for warning in metric.get("source_warnings") or []:
+            actions.append("Resolve metric source authority for {}: {}".format(name, warning))
+    unmeasured = sorted(
+        name for name, entry in evidence.items() if entry.get("state") == "unmeasured"
+    )
+    if unmeasured:
+        actions.append(
+            "Implement a measurement path for these relationships before any claim "
+            "is made about them: {}.".format(", ".join(unmeasured))
+        )
+    unavailable = sorted(
+        name for name, entry in evidence.items() if entry.get("state") == "unavailable"
+    )
+    if unavailable:
+        actions.append(
+            "Resolve why these relationships could not be measured; a measurement "
+            "path exists and something blocked it, so this is a schema or "
+            "connectivity question rather than missing instrumentation: {}.".format(
+                ", ".join(unavailable)
+            )
+        )
+    absent = sorted(
+        name for name, entry in evidence.items() if entry.get("state") == "absent"
+    )
+    if absent:
+        actions.append(
+            "Investigate measured-absent relationships: {}.".format(", ".join(absent))
+        )
+    degraded = [
+        row["id"]
+        for row in subsystems
+        if row.get("status") in {"warning", "stub", "error", "unknown"}
+    ]
+    if degraded:
+        actions.append(
+            "Review subsystem telemetry reporting below healthy: {}.".format(
+                ", ".join(degraded)
+            )
+        )
+    return actions or ["No action derived from current measurements."]
+
+
 def live_audit_payload(audit_type: str) -> dict[str, Any]:
     metrics = metric_snapshot()
     subsystems = completeness_rows()
     harvesters = harvester_rows()
-    missing = [row["id"] for row in subsystems if row.get("status") in {"warning", "stub", "error", "unknown"}]
-    relationships = [
-        "taxonomy_to_images",
-        "taxonomy_to_occurrences",
-        "taxonomy_to_elevation",
-        "taxonomy_to_climate",
-        "taxonomy_to_literature",
-        "taxonomy_to_pollinators",
-        "taxonomy_to_mycorrhiza",
-        "taxonomy_to_habitat",
-        "taxonomy_to_conservation",
-        "knowledge_graph_node_edge_integrity",
+    degraded = [
+        row["id"]
+        for row in subsystems
+        if row.get("status") in {"warning", "stub", "error", "unknown"}
     ]
+    evidence = relationship_evidence()
+    measured_absent = sorted(
+        name for name, entry in evidence.items() if entry.get("state") == "absent"
+    )
+    unmeasured = sorted(
+        name for name, entry in evidence.items() if entry.get("state") == "unmeasured"
+    )
+    unavailable = sorted(
+        name for name, entry in evidence.items() if entry.get("state") == "unavailable"
+    )
+    source_warnings = [
+        warning
+        for metric in (metrics.get("metrics") or {}).values()
+        for warning in (metric.get("source_warnings") or [])
+    ]
+    # A relationship measured against a relation that a far larger candidate is
+    # masking is the same class of finding as a masked metric, so it is reported
+    # in the same place rather than buried in the per-relationship detail.
+    source_warnings.extend(
+        "{}: {}".format(name, warning)
+        for name, entry in evidence.items()
+        for warning in (entry.get("source_warnings") or [])
+    )
     return {
         "audit_id": f"AUD-{uuid4().hex[:12].upper()}",
         "audit_type": audit_type,
         "generated_at": utc_now(),
         "source_systems": ["mission_control_metrics", "subsystem_completeness", "harvester_registry"],
         "record_counts": {name: metric.get("count", 0) for name, metric in (metrics.get("metrics") or {}).items()},
+        "metric_source_warnings": source_warnings,
         "data_freshness": "live_query" if metrics.get("database_connected") else "database_unavailable",
         "connection_coverage": subsystems,
         "provenance_coverage": "partial_live_backend_tables",
-        "missing_relationships": relationships if missing else [],
-        "unresolved_failures": missing + list(metrics.get("blockers", [])),
+        "relationship_evidence": evidence,
+        "missing_relationships": measured_absent,
+        "unmeasured_relationships": unmeasured,
+        "unavailable_relationships": unavailable,
+        "unresolved_failures": degraded + list(metrics.get("blockers", [])),
         "confidence": "medium" if metrics.get("database_connected") else "low",
         "strengths": ["Mission Control backend telemetry is queryable.", "Harvester registry is visible."],
         "weaknesses": ["Deep source-specific provenance coverage still needs expansion."],
-        "recommended_next_actions": ["Apply BUILD-051 migration.", "Deploy owner-session backend.", "Run smoke tests."],
+        "recommended_next_actions": derived_next_actions(metrics, subsystems, evidence),
         "grant_relevance": "Current audit can support readiness narratives after owner review.",
         "collaboration_relevance": "Partner packets can cite operational versus planned capabilities explicitly.",
         "harvesters": harvesters,
@@ -838,8 +1036,23 @@ def audit_markdown(payload: dict[str, Any]) -> str:
         "## Record Counts",
         *[f"- {key}: {value}" for key, value in payload["record_counts"].items()],
         "",
-        "## Missing Relationships",
-        *[f"- {item}" for item in payload["missing_relationships"]],
+        "## Relationship Evidence",
+        *[
+            f"- {name}: {entry.get('state', 'unmeasured')}"
+            for name, entry in (payload.get("relationship_evidence") or {}).items()
+        ],
+        "",
+        "## Measured-Absent Relationships",
+        *([f"- {item}" for item in payload["missing_relationships"]] or ["- none measured absent"]),
+        "",
+        "## Unmeasured Relationships (state unknown, not a finding of absence)",
+        *([f"- {item}" for item in payload.get("unmeasured_relationships") or []] or ["- none"]),
+        "",
+        "## Unavailable Relationships (measurement blocked, not a finding of absence)",
+        *([f"- {item}" for item in payload.get("unavailable_relationships") or []] or ["- none"]),
+        "",
+        "## Metric Source Warnings",
+        *([f"- {item}" for item in payload.get("metric_source_warnings") or []] or ["- none"]),
         "",
         "## Strengths",
         *[f"- {item}" for item in payload["strengths"]],
@@ -858,14 +1071,25 @@ def _audit_sections(payload: dict[str, Any]) -> list[tuple[str, list[str]]]:
     title = payload["audit_type"].replace("_", " ").title() + " Audit"
     meta = [f"Generated: {payload['generated_at']}", f"Confidence: {payload['confidence']}"]
     counts = [f"{k}: {v}" for k, v in payload["record_counts"].items()]
-    missing = list(payload["missing_relationships"])
+    missing = list(payload["missing_relationships"]) or ["none measured absent"]
+    unmeasured = list(payload.get("unmeasured_relationships") or []) or ["none"]
+    unavailable = list(payload.get("unavailable_relationships") or []) or ["none"]
+    warnings = list(payload.get("metric_source_warnings") or []) or ["none"]
+    evidence = [
+        "{}: {}".format(name, entry.get("state", "unmeasured"))
+        for name, entry in (payload.get("relationship_evidence") or {}).items()
+    ]
     strengths = list(payload["strengths"])
     weaknesses = list(payload["weaknesses"])
     actions = list(payload["recommended_next_actions"])
     return [
         (title, meta),
         ("Record Counts", counts),
-        ("Missing Relationships", missing),
+        ("Relationship Evidence", evidence),
+        ("Measured-Absent Relationships", missing),
+        ("Unmeasured Relationships (state unknown, not a finding of absence)", unmeasured),
+        ("Unavailable Relationships (measurement blocked, not a finding of absence)", unavailable),
+        ("Metric Source Warnings", warnings),
         ("Strengths", strengths),
         ("Weaknesses", weaknesses),
         ("Recommended Next Actions", actions),
