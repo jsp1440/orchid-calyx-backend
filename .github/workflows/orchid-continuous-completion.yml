@@ -1,0 +1,99 @@
+name: Orchid Continuous Completion
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+  pull_request:
+    types: [closed]
+  issues:
+    types: [closed, reopened]
+
+concurrency:
+  group: orchid-continuous-completion-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: read
+  id-token: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      issue1: ${{ steps.queue.outputs.issue1 }}
+      issue2: ${{ steps.queue.outputs.issue2 }}
+      issue3: ${{ steps.queue.outputs.issue3 }}
+    steps:
+      - name: Ensure orchestration labels and refill queue
+        id: queue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ensure_label () {
+            local name="$1" color="$2" description="$3"
+            gh label create "$name" --repo "$REPO" --color "$color" --description "$description" 2>/dev/null || true
+          }
+          ensure_label oc-queued 1d76db "Eligible for autonomous Orchid Continuum execution"
+          ensure_label oc-running fbca04 "Currently assigned to an autonomous execution lane"
+          ensure_label oc-owner-gate d93f0b "Implementation delivered; waiting on merge/deploy/production owner gate"
+          ensure_label oc-blocked b60205 "Externally blocked; does not consume an execution lane"
+          ensure_label oc-done 0e8a16 "Acceptance criteria completed"
+
+          # Ordered backend backlog. A task is admitted only while its issue is open and
+          # it has no terminal/active orchestration label. Blocked/owner-gated work never
+          # prevents another task from entering a lane.
+          BACKLOG=(1030 1029 1025 1026 1027 1008 1021 1022 1023 1024)
+
+          for issue in "${BACKLOG[@]}"; do
+            state=$(gh issue view "$issue" --repo "$REPO" --json state --jq '.state' 2>/dev/null || echo MISSING)
+            [[ "$state" == "OPEN" ]] || continue
+            labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")')
+            if [[ "$labels" != *"oc-queued"* && "$labels" != *"oc-running"* && "$labels" != *"oc-owner-gate"* && "$labels" != *"oc-blocked"* && "$labels" != *"oc-done"* ]]; then
+              gh issue edit "$issue" --repo "$REPO" --add-label oc-queued >/dev/null
+            fi
+          done
+
+          mapfile -t selected < <(
+            gh issue list --repo "$REPO" --state open --label oc-queued --limit 100 --json number,createdAt \
+              --jq '. | sort_by(.createdAt) | .[].number' | head -3
+          )
+
+          for idx in 0 1 2; do
+            value="${selected[$idx]:-}"
+            if [[ -n "$value" ]]; then
+              gh issue edit "$value" --repo "$REPO" --remove-label oc-queued --add-label oc-running >/dev/null
+            fi
+            echo "issue$((idx+1))=$value" >> "$GITHUB_OUTPUT"
+          done
+
+  lane1:
+    needs: prepare
+    if: needs.prepare.outputs.issue1 != ''
+    uses: ./.github/workflows/orchid-completion-lane.yml
+    with:
+      issue_number: ${{ needs.prepare.outputs.issue1 }}
+    secrets: inherit
+
+  lane2:
+    needs: prepare
+    if: needs.prepare.outputs.issue2 != ''
+    uses: ./.github/workflows/orchid-completion-lane.yml
+    with:
+      issue_number: ${{ needs.prepare.outputs.issue2 }}
+    secrets: inherit
+
+  lane3:
+    needs: prepare
+    if: needs.prepare.outputs.issue3 != ''
+    uses: ./.github/workflows/orchid-completion-lane.yml
+    with:
+      issue_number: ${{ needs.prepare.outputs.issue3 }}
+    secrets: inherit
