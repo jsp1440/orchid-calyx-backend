@@ -1,0 +1,53 @@
+name: KERNEL Contract Suite
+
+# Consolidates the former KERNEL-003..011 validation workflows (9 files).
+# All 9 watched the exact same paths (app/kernel/**, tests/kernel/**) and
+# each ran an increasingly larger, strictly cumulative slice of
+# tests/kernel/*.py culminating in KERNEL-011, which already covers every
+# test file in tests/kernel/. Previously a single PR touching app/kernel/**
+# fired all 9 workflows simultaneously to run overlapping subsets of the
+# same suite; this workflow runs the full suite once. The public-import
+# contract check from KERNEL-003 is preserved.
+
+on:
+  pull_request:
+    paths:
+      - "app/kernel/**"
+      - "tests/kernel/**"
+      - "docs/KERNEL-003.md"
+      - "docs/KERNEL-004.md"
+      - "docs/KERNEL-005.md"
+      - "docs/KERNEL-006.md"
+      - "docs/KERNEL-007.md"
+      - "docs/KERNEL-008.md"
+      - "docs/KERNEL-009.md"
+      - "docs/KERNEL-010.md"
+      - "docs/KERNEL-011.md"
+      - ".github/workflows/kernel-suite.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest
+      - name: Verify public imports
+        run: python -c "from app.kernel import Assertion, AssertionObject, AssertionStatus, Confidence"
+      - name: Run Kernel contract tests
+        run: |
+          python -m pytest -q \
+            tests/kernel/test_foundation.py \
+            tests/kernel/test_evidence.py \
+            tests/kernel/test_assertions.py \
+            tests/kernel/test_relationships.py \
+            tests/kernel/test_publications.py \
+            tests/kernel/test_queries.py \
+            tests/kernel/test_knowledge.py \
+            tests/kernel/test_events.py \
+            tests/kernel/test_runtime.py \
+            tests/kernel/test_governance.py \
+            tests/kernel/test_integrity.py

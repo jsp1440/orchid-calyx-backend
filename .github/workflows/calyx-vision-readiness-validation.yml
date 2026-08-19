@@ -5,9 +5,11 @@ on:
     branches: [main]
     paths:
       - "app/vision_lexicon/**"
+      - "app/multimodal_intelligence/vision_provider_registry.py"
       - "app/routers/vision_activation_preflight.py"
       - "app/routers/reference_docs.py"
       - "tests/test_vision_lexicon_*.py"
+      - "tests/test_vision_provider_registry.py"
       - ".github/workflows/calyx-vision-readiness-validation.yml"
   workflow_dispatch:
 
@@ -33,19 +35,23 @@ jobs:
           pytest -q \
             tests/test_vision_lexicon_activation_status.py \
             tests/test_vision_lexicon_activation_preflight.py \
-            tests/test_vision_lexicon_bridge.py
+            tests/test_vision_lexicon_bridge.py \
+            tests/test_vision_provider_registry.py
       - name: Compile Vision readiness implementation
         run: |
           python -m compileall -q \
             app/vision_lexicon/activation.py \
             app/vision_lexicon/preflight.py \
+            app/multimodal_intelligence/vision_provider_registry.py \
             app/routers/vision_activation_preflight.py
       - name: Ruff Vision readiness implementation
         run: |
           python -m ruff check \
             app/vision_lexicon/activation.py \
             app/vision_lexicon/preflight.py \
+            app/multimodal_intelligence/vision_provider_registry.py \
             app/routers/vision_activation_preflight.py \
             tests/test_vision_lexicon_activation_status.py \
             tests/test_vision_lexicon_activation_preflight.py \
-            tests/test_vision_lexicon_bridge.py
+            tests/test_vision_lexicon_bridge.py \
+            tests/test_vision_provider_registry.py

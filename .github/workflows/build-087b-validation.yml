@@ -127,15 +127,6 @@ jobs:
           --ignore=tests/calyx_certification/test_deterministic_failure_round2.py
           --ignore=tests/test_calyx_journalism_mvp_001.py
           --deselect=tests/test_build_034_044_049_integration.py::test_state_changing_runtime_routes_fail_closed_without_api_key
-          --deselect=tests/test_build_055_runtime_activation.py::test_api_key_missing_with_header_reports_configuration_blocker
-          --deselect=tests/test_build_055_runtime_activation.py::test_owner_session_authorizes_runtime_control_without_api_key
-          --deselect=tests/test_build_055_runtime_activation.py::test_unauthorized_runtime_control_still_rejected
-          --deselect=tests/test_build_055_runtime_activation.py::test_runtime_configuration_diagnostic_is_secret_safe
-          --deselect=tests/test_build_055_runtime_activation.py::test_execute_next_uses_skip_locked_for_duplicate_job_prevention
-          --deselect=tests/test_build_056_owner_authentication.py::test_cookie_session_login_inspect_logout_and_secret_safety
-          --deselect=tests/test_build_056_owner_authentication.py::test_expired_tampered_api_key_cors_and_configuration
-          --deselect=tests/test_build_063_owner_auth.py::test_runner_authenticated_start_includes_cors_headers
-          --deselect=tests/test_build_052_executive_engine.py::test_executive_api_endpoints_are_read_only
         env:
           DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
       - name: Scientific interpretation package Ruff diagnostic

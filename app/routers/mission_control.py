@@ -77,11 +77,40 @@ METRIC_CANDIDATES = {
         "public.taxonomy",
     ],
     "occurrences": [
+        # Promoted on measured evidence, having previously been listed last so
+        # the masking check could surface it without redefining the metric. It
+        # has now surfaced it, twice, and the read-only diagnostic settles it:
+        # public.orchid_occurrence holds 580,612 rows to oc_atlas.occurrences'
+        # 26, oc_views.occurrences_enriched is a view over that same 26-row
+        # relation, and 109,195 of its taxonomy_id values resolve into
+        # public.orchid_taxonomy without a single miss. It also carries the
+        # provenance columns an occurrence corpus needs -- source_table,
+        # source_record_id, canonical_gbif_occurrence_key, taxon_match_method.
+        # The headline occurrences count changes from 26 to 580,612 as a result.
+        # That is the correction, not a side effect of one.
+        "public.orchid_occurrence",
         "oc_atlas.occurrences",
         "oc_atlas.map_data",
         "public.occurrences",
         "public.orchid_occurrences",
         "public.map_data",
+        # Listed, never promoted. public.records is a universal ingest spine
+        # carrying 46 distinct record_type values across 5,006,022 rows. The
+        # owner decision is encoded in app/readiness/occurrence_semantics.py:
+        # 3,884,091 rows are occurrence evidence, and 1,121,931 are not --
+        # vendor listings, videos, taxon and species profiles, media, culture
+        # sheets, judging standards, hybrid registrations, and 621,526
+        # occurrence_stub placeholders already promoted into
+        # public.orchid_occurrence.
+        #
+        # The metric therefore keeps public.orchid_occurrence, which is the
+        # curated projection: its own source_table column shows 379,642 of its
+        # 580,612 rows were backfilled out of public.records, and it carries the
+        # taxonomy linkage the spine lacks. Listing the spine makes the masking
+        # check state the size discrepancy on every audit without ever letting a
+        # vendor listing enter an occurrence count.
+        "public.records",
+        "public.v_orchid_records",
     ],
     "images": [
         "public.orchid_images_linked_v2",
@@ -94,6 +123,8 @@ METRIC_CANDIDATES = {
         "oc_literature.literature_documents",
         "oc_literature.papers",
         "public.literature_documents",
+        # Appended for the same reason as public.orchid_occurrence above.
+        "public.research_documents",
     ],
     "relationships": [
         "oc_graph.kg_edges",
@@ -150,14 +181,87 @@ def safe_count(cur, fq_table: str) -> int | None:
     return int(cur.fetchone()[0])
 
 
+def relation_estimate(cur, fq_table: str) -> dict[str, Any]:
+    """Describe a candidate relation without scanning it.
+
+    Uses ``pg_class`` planner statistics rather than ``COUNT(*)`` so that probing
+    every candidate stays cheap even when a candidate holds millions of rows.
+    ``reltuples`` is ``-1`` for a relation that has never been analyzed and is
+    not meaningful for a view, so both cases report ``None`` rather than ``0`` --
+    an unknown size must never be presented as an empty one.
+    """
+    cur.execute(
+        """
+        SELECT c.relkind, c.reltuples
+        FROM pg_class c
+        WHERE c.oid = to_regclass(%s)
+        """,
+        (fq_table,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return {"exists": False, "relkind": None, "approximate_rows": None}
+    relkind = str(row[0])
+    reltuples = float(row[1]) if row[1] is not None else -1.0
+    approximate = int(reltuples) if relkind == "r" and reltuples >= 0 else None
+    return {"exists": True, "relkind": relkind, "approximate_rows": approximate}
+
+
+# A non-selected candidate is reported as masking the selected one when it is
+# both an order of magnitude larger and large enough that the gap cannot be
+# ordinary churn. The audit surfaces the discrepancy; it does not reassign
+# authority on its own, because which relation is canonical is an owner/schema
+# decision rather than something a row count can settle.
+MASKING_RATIO = 10
+MASKING_FLOOR = 100
+
+
 def first_available_count(cur, candidates: Iterable[str]) -> dict[str, Any]:
+    """Select the first existing candidate, but measure every candidate.
+
+    Selection semantics are deliberately unchanged so that headline metric values
+    are not silently redefined. What is new is that the non-selected candidates
+    are still probed, so a small legacy or fixture relation appearing earlier in
+    the list can no longer hide a substantially larger corpus behind it.
+    """
+    candidate_list = list(candidates)
     checked: list[str] = []
-    for table in candidates:
-        checked.append(table)
-        count = safe_count(cur, table)
-        if count is not None:
-            return {"table": table, "count": count, "available": True, "checked": checked}
-    return {"table": None, "count": 0, "available": False, "checked": checked}
+    selected: str | None = None
+    selected_count = 0
+    reports: list[dict[str, Any]] = []
+
+    for table in candidate_list:
+        estimate = relation_estimate(cur, table)
+        if selected is None:
+            checked.append(table)
+            if estimate["exists"]:
+                selected = table
+                selected_count = safe_count(cur, table) or 0
+        reports.append({"table": table, "selected": table == selected, **estimate})
+
+    warnings: list[str] = []
+    for report in reports:
+        if report["selected"] or not report["exists"]:
+            continue
+        approximate = report["approximate_rows"]
+        if approximate is None:
+            continue
+        if approximate > MASKING_FLOOR and approximate > selected_count * MASKING_RATIO:
+            warnings.append(
+                f"{report['table']} exists with approximately {approximate:,} row(s), "
+                f"far more than the selected source {selected} "
+                f"({selected_count:,} row(s)); metric source selection may be masking "
+                "the authoritative corpus."
+            )
+
+    return {
+        "table": selected,
+        "count": selected_count,
+        "available": selected is not None,
+        "checked": checked,
+        "candidates": reports,
+        "source_warnings": warnings,
+    }
 
 
 def metric_snapshot() -> dict[str, Any]:
@@ -180,6 +284,9 @@ def score_from_metric(metric: dict[str, Any], target: int) -> tuple[int, list[st
         evidence.append(f"{table} reachable with {count:,} row(s).")
     else:
         blockers.append("No configured source table was reachable for this metric.")
+    # A masked metric source is a real, actionable finding: the number is being
+    # read from a relation that a much larger candidate sits behind.
+    blockers.extend(metric.get("source_warnings") or [])
     if count <= 0:
         return 15, evidence, blockers
     return max(25, min(95, int((count / target) * 100))), evidence, blockers

@@ -25,6 +25,7 @@ from app.source_registry.routes import router as source_registry_router
 from app.document_import.routes import router as document_import_router
 from app.document_intelligence.routes import router as document_intelligence_router
 from app.semantic_index.routes import router as semantic_index_router
+from app.interaction_discovery.routes import router as interaction_discovery_router
 from app.evidence_retrieval.routes import router as evidence_retrieval_router
 from app.candidate_knowledge.routes import router as candidate_knowledge_router
 from app.evidence_aggregation.routes import router as evidence_aggregation_router
@@ -45,6 +46,7 @@ from app.reasoning_ledger.routes import (
 from app.reasoning_publication.routes import router as reasoning_publication_router
 from app.review_api.routes import router as review_api_router
 from app.vision_lexicon.routes import router as vision_lexicon_router
+from app.atlas_intelligence.api import router as atlas_intelligence_router
 from app.mission_control_briefing.routes import router as mission_control_briefing_router
 from app.mission_control_release.routes import router as mission_control_release_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
@@ -59,7 +61,12 @@ from runtime.constitutional_router import router as constitutional_router
 from runtime.kernel_router import router as kernel_router
 from runtime.orchestrator_router import router as orchestrator_router
 from runtime.planner_router import router as planner_router
-from runtime.autonomous_runner import enqueue_default_jobs, execute_next_job, run_job_logic
+from runtime.autonomous_runner import (
+    enqueue_default_jobs,
+    execute_all_pending_jobs,
+    execute_next_job,
+    run_job_logic,
+)
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
@@ -324,6 +331,18 @@ def verify(request: VerificationRequest):
     return {"received": True, "source_context": request.source_context}
 
 
+class RunnerConfirmRequest(BaseModel):
+    confirm: bool = False
+
+
+def _high_risk_gate(action: str) -> dict[str, Any] | None:
+    """Evaluate a high-risk runtime action; return a response dict to short-circuit with, or None to proceed."""
+    decision = evaluate_runtime_action(action, requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
+    if decision["decision"]["status"] == "review_required":
+        return {"status": "blocked", "decision": decision["decision"]}
+    return None
+
+
 @app.get("/api/runner/health", dependencies=RUNTIME_CORS)
 def runner_health():
     config = runtime_configuration()
@@ -343,6 +362,111 @@ def runner_health():
         "runtime_engine": runtime_engine.status(),
         "allowedActions": runner_allowed_actions(),
     }
+
+
+@app.get("/api/runtime/configuration", dependencies=RUNTIME_CORS)
+def runtime_configuration_diagnostic():
+    """Read-only, secret-safe: booleans about what's configured, never the values."""
+    return {
+        "api_key_configured": bool(get_api_key()),
+        "owner_access_code_configured": bool(get_owner_access_code()),
+        "owner_session_secret_configured": bool(get_owner_session_secret()),
+        "database_configured": bool(os.environ.get("DATABASE_URL")),
+        "owner_auth_ready": bool(get_owner_access_code()) and bool(get_owner_session_secret()),
+        "allowed_origin_configured": bool(os.environ.get("CORS_ALLOW_ORIGIN", "").strip()),
+        "runtime_enabled": autonomous_runtime_enabled_by_config(),
+        "interval_seconds": runtime_interval_seconds_from_env(),
+    }
+
+
+@app.post("/api/runner/run-once", dependencies=RUNTIME_WRITE_AUTH)
+def run_once():
+    """Seed the default maintenance/intelligence job set idempotently."""
+    return enqueue_default_jobs()
+
+
+# Bound directly to runtime.autonomous_runner.execute_next_job (not a thin
+# wrapper) so this route executes the exact same FOR UPDATE SKIP LOCKED
+# job-selection query the in-process RuntimeEngine background loop uses,
+# rather than a second, divergent implementation.
+execute_next = app.post("/api/runner/execute-next", dependencies=RUNTIME_WRITE_AUTH)(execute_next_job)
+
+
+@app.post("/api/runner/execute-all", dependencies=RUNTIME_WRITE_AUTH)
+def execute_all(request: RunnerConfirmRequest = RunnerConfirmRequest()):
+    """Drain the pending job queue. High-risk: requires explicit confirmation.
+
+    Mirrors the constitutional-review pattern already used by
+    POST /api/mission-control/owner/commands: verify_owner_or_api_key
+    establishes who is calling, but a high-risk, many-write action still
+    requires an explicit confirm=true and a passing constitutional review
+    before it actually executes.
+    """
+    decision = evaluate_runtime_action("execute_all", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
+    if not request.confirm:
+        return {
+            "status": "awaiting_owner",
+            "decision": decision["decision"],
+            "instruction": "Resubmit with confirm=true to execute the pending job queue.",
+        }
+    if decision["decision"]["status"] == "review_required":
+        return {"status": "blocked", "decision": decision["decision"]}
+    result = execute_all_pending_jobs()
+    return {**result, "decision": decision["decision"]}
+
+
+@app.post("/api/runner/autonomous-cycle", dependencies=RUNTIME_WRITE_AUTH)
+def autonomous_cycle():
+    """Run one on-demand engine cycle (heartbeat + enqueue + one execution), synchronously."""
+    return runtime_engine.run_cycle()
+
+
+@app.post("/api/runner/start", dependencies=RUNTIME_WRITE_AUTH)
+def start_runtime(request: RunnerConfirmRequest = RunnerConfirmRequest()):
+    if not request.confirm:
+        decision = evaluate_runtime_action("start_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
+        return {
+            "status": "awaiting_owner",
+            "decision": decision["decision"],
+            "instruction": "Resubmit with confirm=true to start the autonomous runtime worker.",
+        }
+    blocked = _high_risk_gate("start_runtime")
+    if blocked is not None:
+        return blocked
+    runtime_engine.set_enabled(True)
+    started = runtime_engine.start()
+    return {"status": "started" if started else "already_running", "engine": runtime_engine.status()}
+
+
+@app.post("/api/runner/stop", dependencies=RUNTIME_WRITE_AUTH)
+def stop_runtime(request: RunnerConfirmRequest = RunnerConfirmRequest()):
+    if not request.confirm:
+        decision = evaluate_runtime_action("stop_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
+        return {
+            "status": "awaiting_owner",
+            "decision": decision["decision"],
+            "instruction": "Resubmit with confirm=true to stop the autonomous runtime worker.",
+        }
+    blocked = _high_risk_gate("stop_runtime")
+    if blocked is not None:
+        return blocked
+    stopped = runtime_engine.stop()
+    return {"status": "stopped" if stopped else "still_running", "engine": runtime_engine.status()}
+
+
+@app.post("/api/runner/restart", dependencies=RUNTIME_WRITE_AUTH)
+def restart_runtime(request: RunnerConfirmRequest = RunnerConfirmRequest()):
+    if not request.confirm:
+        decision = evaluate_runtime_action("restart_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
+        return {
+            "status": "awaiting_owner",
+            "decision": decision["decision"],
+            "instruction": "Resubmit with confirm=true to restart the autonomous runtime worker.",
+        }
+    blocked = _high_risk_gate("restart_runtime")
+    if blocked is not None:
+        return blocked
+    return runtime_engine.restart()
 
 
 def runtime_configuration():
@@ -412,6 +536,7 @@ app.include_router(source_registry_router)
 app.include_router(document_import_router)
 app.include_router(document_intelligence_router)
 app.include_router(semantic_index_router)
+app.include_router(interaction_discovery_router)
 app.include_router(evidence_retrieval_router)
 app.include_router(candidate_knowledge_router)
 app.include_router(evidence_aggregation_router)
@@ -430,6 +555,7 @@ app.include_router(reasoning_ledger_project_router)
 app.include_router(reasoning_publication_router)
 app.include_router(review_api_router)
 app.include_router(vision_lexicon_router)
+app.include_router(atlas_intelligence_router)
 app.include_router(mission_control_briefing_router)
 app.include_router(mission_control_release_router)
 app.include_router(executive_telemetry_router)

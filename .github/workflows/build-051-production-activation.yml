@@ -8,6 +8,11 @@ on:
         required: true
         default: false
         type: boolean
+      verify_migration:
+        description: "Verify BUILD-051 migration state only (read-only, applies nothing)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -22,13 +27,21 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install PostgreSQL client
-        if: ${{ inputs.apply_migration }}
+        if: ${{ inputs.apply_migration || inputs.verify_migration }}
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Apply BUILD-051 migration and database smoke test
         if: ${{ inputs.apply_migration }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: bash scripts/apply_build_051.sh
+      # Read-only: BUILD-051-owner-operations-smoke-test.sql runs inside a
+      # BEGIN/ROLLBACK and issues only to_regclass checks and SELECTs, so this
+      # reports whether the migration has been applied without applying it.
+      - name: Verify BUILD-051 migration state (read-only)
+        if: ${{ inputs.verify_migration && !inputs.apply_migration }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/BUILD-051-owner-operations-smoke-test.sql
       - name: Smoke-test deployed owner backend
         env:
           CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}

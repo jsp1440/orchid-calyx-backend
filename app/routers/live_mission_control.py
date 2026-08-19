@@ -13,6 +13,7 @@ from app.routers.calyx_runtime_controls import create_runtime_controls_router
 from app.routers.harvester_command_center import (
     router as harvester_command_center_router,
 )
+from app.routers.scientific_analysis import router as scientific_analysis_router
 from app.routers.taxonomy_release_intake import router as taxonomy_release_router
 from app.security import verify_owner_or_api_key
 from runtime.governed_worker_loop import GovernedWorkerLoop
@@ -48,3 +49,4 @@ router.include_router(
 )
 router.include_router(harvester_command_center_router)
 router.include_router(taxonomy_release_router)
+router.include_router(scientific_analysis_router)
