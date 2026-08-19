@@ -18,6 +18,7 @@ from app.research_workspace.models import (
     ProjectEvidence,
     ProjectTaxon,
     SavedSearch,
+    utcnow,
 )
 from app.research_workspace.schemas import (
     DocumentLinkCreate,
@@ -139,6 +140,105 @@ def test_project_crud_pagination_archive_restore_and_activity(service):
         "PROJECT_ARCHIVED",
         "PROJECT_RESTORED",
     } <= actions
+
+
+def test_project_list_pagination_is_deterministic_when_updated_at_ties(service):
+    """SCICOMP-002T: offset pagination ordered only by updated_at DESC has no
+    total order when timestamps tie, so page boundaries can be unstable
+    (duplicate or omitted projects across pages). Forces an exact tie across
+    every project's updated_at, then proves paged reads are deterministic,
+    adjacent pages never overlap, and the paged union equals the full set -
+    for both the active and archived filters."""
+    from sqlalchemy import update
+
+    created = [
+        service.create_project("owner-a", project_payload(f"Project {i}"))
+        for i in range(5)
+    ]
+    ids = [project["project_id"] for project in created]
+    tie_timestamp = created[0]["updated_at"]
+    service.db.execute(
+        update(Project).where(Project.project_id.in_(ids)).values(updated_at=tie_timestamp)
+    )
+    service.db.commit()
+
+    def read_all_pages(limit):
+        seen = []
+        offset = 0
+        while True:
+            page = service.list_projects("owner-a", None, False, limit, offset)
+            if not page["items"]:
+                break
+            seen.extend(item["project_id"] for item in page["items"])
+            offset += limit
+            if offset >= page["total"]:
+                break
+        return seen
+
+    first_read = read_all_pages(2)
+    second_read = read_all_pages(2)
+    assert first_read == second_read  # 1. deterministic ordering across repeated reads
+    assert len(first_read) == len(set(first_read))  # 2. adjacent pages never overlap
+    assert set(first_read) == set(ids)  # 3. paged union equals the expected project set
+
+    # 4. Active/Archived filtering retains the same deterministic rule.
+    service.set_archive(ids[0], "owner-a", True)
+    service.set_archive(ids[1], "owner-a", True)
+    service.db.execute(
+        update(Project).where(Project.project_id.in_(ids)).values(updated_at=tie_timestamp)
+    )
+    service.db.commit()
+    archived_first = service.list_projects("owner-a", None, True, 1, 0)
+    archived_second = service.list_projects("owner-a", None, True, 1, 1)
+    archived_ids = {archived_first["items"][0]["project_id"], archived_second["items"][0]["project_id"]}
+    assert archived_ids == {ids[0], ids[1]}
+    assert archived_first["items"][0]["project_id"] != archived_second["items"][0]["project_id"]
+
+
+def test_project_activity_pagination_is_deterministic_when_occurred_at_ties(service):
+    """SCICOMP-002U (backend half): activity paging ordered only by
+    occurred_at DESC has the same tie-breaking gap as project-list paging.
+    Forces an exact tie across a batch of audit events on one project, then
+    proves paged reads are deterministic, adjacent pages never overlap, and
+    the paged union equals the expected event set."""
+    project = service.create_project("owner-a", project_payload())
+    tie_timestamp = utcnow()
+    events = [
+        AuditEvent(
+            project_id=project["project_id"],
+            actor_subject="owner-a",
+            action=f"TEST_EVENT_{i}",
+            entity_type="PROJECT",
+            entity_id=project["project_id"],
+            occurred_at=tie_timestamp,
+            change_summary={},
+        )
+        for i in range(6)
+    ]
+    service.db.add_all(events)
+    service.db.commit()
+    event_ids = {event.event_id for event in events}
+
+    def read_all_pages(limit):
+        seen = []
+        offset = 0
+        while True:
+            page = service.activity(project["project_id"], "owner-a", limit, offset)
+            if not page["items"]:
+                break
+            seen.extend(item["event_id"] for item in page["items"])
+            offset += limit
+            if offset >= page["total"]:
+                break
+        return seen
+
+    first_read = read_all_pages(2)
+    second_read = read_all_pages(2)
+    assert first_read == second_read  # deterministic ordering across repeated reads
+    assert len(first_read) == len(set(first_read))  # adjacent pages never overlap
+    # union of the paged reads equals every tied event plus the PROJECT_CREATED
+    # event from create_project() above - not just the tied batch.
+    assert event_ids <= set(first_read)
 
 
 def test_ownership_isolation_and_version_conflict(service):

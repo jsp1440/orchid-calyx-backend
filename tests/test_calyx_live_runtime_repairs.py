@@ -7,7 +7,11 @@ from sqlalchemy import create_engine
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import Session
 
-from app.calyx_conversation.provider_runtime import OpenAIRuntimeResponsesProvider
+from app.calyx_conversation.provider_runtime import (
+    OpenAIRuntimeResponsesProvider,
+    _compact_messages,
+)
+from app.calyx_conversation.speak_routes import ConversationTurnRequest
 from app.calyx_conversation.store import ConversationStore
 from app.calyx_orchestrator.schema import ensure_orchestrator_schema
 
@@ -53,6 +57,30 @@ def test_postgres_store_query_limits_newest_rows_before_reordering() -> None:
     assert "reversed(rows)" in source
 
 
+def test_long_research_turn_contract_accepts_100000_characters() -> None:
+    payload = ConversationTurnRequest(message="x" * 100000)
+    assert len(payload.message) == 100000
+
+    with pytest.raises(ValueError):
+        ConversationTurnRequest(message="x" * 100001)
+
+
+def test_compaction_preserves_current_long_research_prompt() -> None:
+    current = "BEGIN " + ("research detail " * 1200) + " END"
+    compact = _compact_messages(
+        [
+            {"role": "user", "content": "old question" * 500},
+            {"role": "assistant", "content": "old answer" * 500},
+            {"role": "user", "content": current},
+        ]
+    )
+
+    assert compact[-1]["role"] == "user"
+    assert compact[-1]["content"].startswith("BEGIN ")
+    assert compact[-1]["content"].endswith(" END")
+    assert compact[-1]["content"] == current
+
+
 def test_openai_responses_provider_returns_generative_reply(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
 
@@ -85,6 +113,40 @@ def test_openai_responses_provider_returns_generative_reply(monkeypatch: pytest.
     assert reply.model == "gpt-5-mini"
     assert reply.text == "A conversational Calyx answer."
     assert calls == ["https://api.openai.com/v1/responses"]
+
+
+def test_responses_payload_uses_output_text_for_assistant_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict = {}
+
+    def fake_post(url: str, **kwargs):
+        captured.update(kwargs["json"])
+        return _FakeResponse(
+            200,
+            {
+                "id": "resp_roles",
+                "status": "completed",
+                "output": [{"content": [{"type": "output_text", "text": "ok"}]}],
+            },
+        )
+
+    monkeypatch.setattr("app.calyx_conversation.provider_runtime.requests.post", fake_post)
+    provider = OpenAIRuntimeResponsesProvider(model="gpt-5-mini", api_key="test-key")
+    provider.generate(
+        messages=[
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "prior answer"},
+            {"role": "user", "content": "follow-up"},
+        ],
+        governed_context={"retrieval": {}, "mission": None},
+    )
+
+    history = captured["input"][1:-1]
+    assistant_item = next(item for item in history if item["role"] == "assistant")
+    user_items = [item for item in history if item["role"] == "user"]
+    assert assistant_item["content"][0]["type"] == "output_text"
+    assert all(item["content"][0]["type"] == "input_text" for item in user_items)
 
 
 def test_openai_provider_falls_back_to_chat_for_request_shape_failure(

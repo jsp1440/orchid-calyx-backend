@@ -17,9 +17,14 @@ from .provider import (
 
 LOGGER = logging.getLogger(__name__)
 
-_MAX_CONTEXT_CHARS = 30000
-_MAX_MESSAGE_CHARS = 2600
-_MAX_HISTORY_CHARS = 12000
+# These are model-budget guards, not word-count limits. The current user turn is
+# kept much larger than ordinary chat so formal research briefs can pass intact.
+_MAX_CONTEXT_CHARS = 60000
+_MAX_MESSAGE_CHARS = 4000
+_MAX_CURRENT_MESSAGE_CHARS = 100000
+_MAX_HISTORY_CHARS = 20000
+_DEFAULT_MAX_OUTPUT_TOKENS = 12000
+_MAX_CONFIGURABLE_OUTPUT_TOKENS = 32000
 
 
 def _runtime_model() -> str:
@@ -67,20 +72,29 @@ def _compact_value(value: Any, *, depth: int = 0) -> Any:
         return value
     if isinstance(value, str):
         text = " ".join(value.split())
-        return text if len(text) <= 1400 else text[:1400] + "…"
+        return text if len(text) <= 2200 else text[:2200] + "…"
     if isinstance(value, dict):
         compact: dict[str, Any] = {}
         for index, (key, item) in enumerate(value.items()):
-            if index >= 24:
-                compact["_additional_fields_omitted"] = len(value) - 24
+            if index >= 32:
+                compact["_additional_fields_omitted"] = len(value) - 32
                 break
             compact[str(key)] = _compact_value(item, depth=depth + 1)
         return compact
     if isinstance(value, (list, tuple)):
         items = list(value)
-        compact_items = [_compact_value(item, depth=depth + 1) for item in items[:8]]
-        if len(items) > 8:
-            compact_items.append({"_additional_items_omitted": len(items) - 8})
+        compact_items: list[Any] = []
+        used_chars = 0
+        for item in items[:16]:
+            compacted_item = _compact_value(item, depth=depth + 1)
+            item_chars = len(json.dumps(compacted_item, default=str))
+            if compact_items and used_chars + item_chars > _MAX_HISTORY_CHARS:
+                break
+            compact_items.append(compacted_item)
+            used_chars += item_chars
+        omitted = len(items) - len(compact_items)
+        if omitted > 0:
+            compact_items.append({"_additional_items_omitted": omitted})
         return compact_items
     return value
 
@@ -105,35 +119,46 @@ def compact_governed_context(governed_context: dict[str, Any]) -> dict[str, Any]
         "mission_error",
         "provider_configuration",
         "epistemic_policy",
+        "deliverable_capabilities",
     )
-    selected = {
-        key: governed_context[key]
-        for key in preferred_keys
-        if key in governed_context
-    }
+    selected = {key: governed_context[key] for key in preferred_keys if key in governed_context}
     return _compact_value(selected)
 
 
 def _compact_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
-    """Keep recent conversational continuity without replaying huge prior turns."""
+    """Keep the current research prompt intact while bounding older conversation history."""
+
+    eligible = [
+        item
+        for item in messages
+        if item.get("role") in {"user", "assistant"}
+        and str(item.get("content") or "").strip()
+    ]
+    if not eligible:
+        return []
 
     compact: list[dict[str, str]] = []
-    remaining = _MAX_HISTORY_CHARS
-    for item in reversed(messages):
-        role = item.get("role")
-        if role not in {"user", "assistant"}:
-            continue
+    current = eligible[-1]
+    current_content = str(current.get("content") or "").strip()
+    if len(current_content) > _MAX_CURRENT_MESSAGE_CHARS:
+        current_content = current_content[:_MAX_CURRENT_MESSAGE_CHARS]
+
+    remaining = max(0, _MAX_HISTORY_CHARS - len(current_content))
+    history: list[dict[str, str]] = []
+    for item in reversed(eligible[:-1]):
+        if remaining <= 0:
+            break
+        role = str(item.get("role"))
         content = str(item.get("content") or "").strip()
-        if not content:
-            continue
         clipped = content[-_MAX_MESSAGE_CHARS:]
         if len(clipped) > remaining:
             clipped = clipped[-remaining:]
-        compact.append({"role": role, "content": clipped})
-        remaining -= len(clipped)
-        if remaining <= 0:
-            break
-    compact.reverse()
+        if clipped:
+            history.append({"role": role, "content": clipped})
+            remaining -= len(clipped)
+    history.reverse()
+    compact.extend(history)
+    compact.append({"role": str(current.get("role")), "content": current_content})
     return compact
 
 
@@ -151,11 +176,14 @@ class OpenAIRuntimeResponsesProvider:
         ).rstrip("/")
         self.timeout = max(
             1.0,
-            min(float(os.getenv("CALYX_AGENT_TIMEOUT_SECONDS", "45")), 120.0),
+            min(float(os.getenv("CALYX_AGENT_TIMEOUT_SECONDS", "90")), 180.0),
         )
         self.max_tokens = max(
             128,
-            min(int(os.getenv("CALYX_CHAT_MAX_TOKENS", "2200")), 6000),
+            min(
+                int(os.getenv("CALYX_CHAT_MAX_TOKENS", str(_DEFAULT_MAX_OUTPUT_TOKENS))),
+                _MAX_CONFIGURABLE_OUTPUT_TOKENS,
+            ),
         )
         if not self.model or not self.api_key:
             raise RuntimeError("CALYX_RUNTIME_OPENAI_PROVIDER_NOT_CONFIGURED")
@@ -225,6 +253,16 @@ class OpenAIRuntimeResponsesProvider:
         governed_context: dict[str, Any],
     ) -> dict[str, Any]:
         model_messages = _compact_messages(messages)
+        response_messages = []
+        for item in model_messages:
+            role = item["role"]
+            content_type = "output_text" if role == "assistant" else "input_text"
+            response_messages.append(
+                {
+                    "role": role,
+                    "content": [{"type": content_type, "text": item["content"]}],
+                }
+            )
         return {
             "model": self.model,
             "input": [
@@ -232,13 +270,7 @@ class OpenAIRuntimeResponsesProvider:
                     "role": "system",
                     "content": [{"type": "input_text", "text": _scientific_system_prompt()}],
                 },
-                *[
-                    {
-                        "role": item["role"],
-                        "content": [{"type": "input_text", "text": item["content"]}],
-                    }
-                    for item in model_messages
-                ],
+                *response_messages,
                 {
                     "role": "user",
                     "content": [
@@ -433,6 +465,13 @@ def runtime_provider_configuration() -> dict[str, Any]:
     else:
         selected = "deterministic-governed"
 
+    configured_output = max(
+        128,
+        min(
+            int(os.getenv("CALYX_CHAT_MAX_TOKENS", str(_DEFAULT_MAX_OUTPUT_TOKENS))),
+            _MAX_CONFIGURABLE_OUTPUT_TOKENS,
+        ),
+    )
     return {
         "selected": selected,
         "generative_ready": selected != "deterministic-governed",
@@ -447,21 +486,18 @@ def runtime_provider_configuration() -> dict[str, Any]:
         "chat_completions_fallback": True,
         "model_context_compaction": True,
         "max_governed_context_chars": _MAX_CONTEXT_CHARS,
+        "max_current_message_chars": _MAX_CURRENT_MESSAGE_CHARS,
         "max_conversation_history_chars": _MAX_HISTORY_CHARS,
+        "max_output_tokens": configured_output,
+        "output_budget_configurable": True,
+        "word_count_limit": False,
         "missing_configuration": missing,
         "secrets_exposed": False,
     }
 
 
 def configured_runtime_provider() -> CalyxReplyProvider:
-    """Select Speak's provider with hardened OpenAI precedence.
-
-    Explicit CALYX_CHAT_* configuration remains authoritative. Otherwise an
-    available OPENAI_API_KEY plus resolved runtime model must use the hardened
-    Responses provider, including when CALYX_AGENT_PROVIDER=openai. This avoids
-    silently routing Speak through the older agent provider and bypassing
-    runtime diagnostics/fallback behavior.
-    """
+    """Select Speak's provider with hardened OpenAI precedence."""
 
     chat_url = os.getenv("CALYX_CHAT_COMPLETIONS_URL", "").strip()
     chat_model = os.getenv("CALYX_CHAT_MODEL", "").strip()

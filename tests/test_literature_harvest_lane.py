@@ -163,7 +163,7 @@ def test_biodiversity_falls_through_to_global_gbif(monkeypatch) -> None:
         calls.append(source)
         return {"records_examined": 0, "inserted": 0}
 
-    def fake_global_gbif(*, max_pages: int):
+    def fake_global_gbif(*, max_pages: int, max_runtime_seconds: float):
         calls.append("gbif")
         return {
             "occurrences_added": 1,

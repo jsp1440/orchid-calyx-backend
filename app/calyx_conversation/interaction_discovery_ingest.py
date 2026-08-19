@@ -21,18 +21,38 @@ def _text(record: dict[str, Any], *keys: str) -> str:
     return ""
 
 
-def document_from_globi_interaction(record: dict[str, Any], *, query_role: str) -> IndexDocument | None:
+def document_from_globi_interaction(
+    record: dict[str, Any],
+    *,
+    query_role: str,
+    provider_stability: str = "LIVE_EXPLORATORY_API",
+    dataset_version: str | None = None,
+) -> IndexDocument | None:
+    """Build a review-bound interaction-discovery document from one GloBI record.
+
+    Accepts both the live Web API's field names (``source_taxon_name``,
+    ``interaction_type``, ...) and the versioned stable dataset export's
+    field names (``sourceTaxonName``, ``interactionTypeName``,
+    ``referenceCitation``, ...), since both are legitimate GloBI record
+    shapes this function may be called with.
+    """
     source_name = _text(record, "source_taxon_name", "sourceTaxonName", "source_name")
     target_name = _text(record, "target_taxon_name", "targetTaxonName", "target_name")
-    interaction_type = _text(record, "interaction_type", "interactionType", "interaction_type_name")
+    interaction_type = _text(
+        record, "interaction_type", "interactionType", "interaction_type_name", "interactionTypeName"
+    )
     if not source_name or not target_name or not interaction_type:
         return None
 
     source_id = _text(record, "source_taxon_external_id", "sourceTaxonId", "source_taxon_id")
     target_id = _text(record, "target_taxon_external_id", "targetTaxonId", "target_taxon_id")
-    study_id = _text(record, "study_external_id", "studyExternalId", "study_url", "studyUrl")
-    study_citation = _text(record, "study_citation", "studyCitation")
-    source_citation = _text(record, "study_source_citation", "studySourceCitation", "source_citation")
+    study_id = _text(
+        record, "study_external_id", "studyExternalId", "study_url", "studyUrl", "referenceDoi", "referenceUrl"
+    )
+    study_citation = _text(record, "study_citation", "studyCitation", "referenceCitation")
+    source_citation = _text(
+        record, "study_source_citation", "studySourceCitation", "source_citation", "sourceCitation"
+    )
     identity = "|".join(
         [source_id or source_name.casefold(), interaction_type.casefold(), target_id or target_name.casefold(), study_id or study_citation.casefold()]
     )
@@ -86,8 +106,9 @@ def document_from_globi_interaction(record: dict[str, Any], *, query_role: str) 
             "locator": locator,
             "anchor_locators": {str(anchor_id): locator},
             "external_discovery_provider": "Global Biotic Interactions",
-            "provider_stability": "LIVE_EXPLORATORY_API",
-            "stable_research_snapshot_preferred": True,
+            "provider_stability": provider_stability,
+            "dataset_version": dataset_version,
+            "stable_research_snapshot_preferred": provider_stability != "VERSIONED_STABLE_DATASET",
             "scientific_review_required": True,
             "evidence_type": "ECOLOGICAL_INTERACTION_CANDIDATE",
             "automatic_publication": False,
@@ -96,18 +117,16 @@ def document_from_globi_interaction(record: dict[str, Any], *, query_role: str) 
     )
 
 
-def ingest_globi_interactions_for_research(
-    records: list[dict[str, Any]], *, query_role: str
+def _ingest_globi_documents(
+    documents: list[IndexDocument],
+    *,
+    discovered: int,
+    configuration: dict[str, Any],
 ) -> dict[str, Any]:
-    documents = [
-        document
-        for record in records
-        if (document := document_from_globi_interaction(record, query_role=query_role)) is not None
-    ]
     if not documents:
         return {
             "status": "nothing_indexable",
-            "discovered": len(records),
+            "discovered": discovered,
             "indexable": 0,
             "indexed": 0,
             "review_required": True,
@@ -131,30 +150,20 @@ def ingest_globi_interactions_for_research(
     if not new_documents:
         return {
             "status": "already_indexed",
-            "discovered": len(records),
+            "discovered": discovered,
             "indexable": len(documents),
             "indexed": 0,
             "review_required": True,
         }
 
     preview = semantic_index_routes._write(
-        lambda: service.preview(
-            new_documents,
-            configuration={
-                "source": "Global Biotic Interactions",
-                "purpose": "Orchid interaction discovery candidate intake",
-                "query_role": query_role,
-                "provenance_contract": "globi-live-discovery-review-bound-v1",
-                "automatic_publication": False,
-                "knowledge_graph_mutation": False,
-            },
-        )
+        lambda: service.preview(new_documents, configuration=configuration)
     )
     run_id = preview["index_run_id"]
     execution = semantic_index_routes._write(lambda: service.execute(run_id))
     return {
         "status": "indexed_for_research",
-        "discovered": len(records),
+        "discovered": discovered,
         "indexable": len(documents),
         "indexed": len(new_documents),
         "index_run_id": run_id,
@@ -163,3 +172,63 @@ def ingest_globi_interactions_for_research(
         "automatic_publication": False,
         "knowledge_graph_mutation": False,
     }
+
+
+def ingest_globi_interactions_for_research(
+    records: list[dict[str, Any]], *, query_role: str
+) -> dict[str, Any]:
+    documents = [
+        document
+        for record in records
+        if (document := document_from_globi_interaction(record, query_role=query_role)) is not None
+    ]
+    return _ingest_globi_documents(
+        documents,
+        discovered=len(records),
+        configuration={
+            "source": "Global Biotic Interactions",
+            "purpose": "Orchid interaction discovery candidate intake",
+            "query_role": query_role,
+            "provenance_contract": "globi-live-discovery-review-bound-v1",
+            "automatic_publication": False,
+            "knowledge_graph_mutation": False,
+        },
+    )
+
+
+def ingest_globi_interactions_for_canonical_dataset(
+    records: list[dict[str, Any]], *, dataset_version: str
+) -> dict[str, Any]:
+    """Ingest rows already read from GloBI's versioned stable dataset export.
+
+    Unlike :func:`ingest_globi_interactions_for_research`, this is intended
+    for an operator-triggered, reproducible bulk backfill from a downloaded
+    dataset snapshot rather than the periodic live-API sampling lane. Every
+    resulting document is still review-bound: it never publishes to the
+    knowledge graph or mutates canonical data by itself.
+    """
+    documents = [
+        document
+        for record in records
+        if (
+            document := document_from_globi_interaction(
+                record,
+                query_role="canonical_dataset",
+                provider_stability="VERSIONED_STABLE_DATASET",
+                dataset_version=dataset_version,
+            )
+        )
+        is not None
+    ]
+    return _ingest_globi_documents(
+        documents,
+        discovered=len(records),
+        configuration={
+            "source": "Global Biotic Interactions",
+            "purpose": "Orchid interaction discovery reproducible bulk backfill",
+            "dataset_version": dataset_version,
+            "provenance_contract": "globi-canonical-dataset-review-bound-v1",
+            "automatic_publication": False,
+            "knowledge_graph_mutation": False,
+        },
+    )

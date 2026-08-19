@@ -1,0 +1,65 @@
+name: CALYX Proposal CI Repair Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/calyx_orchestrator/git_proposal_ci_repair.py'
+      - 'tests/test_calyx_git_proposal_ci_repair_114u.py'
+      - 'migrations/20260813_calyx_git_proposal_ci_repair.sql'
+      - 'docs/brain/BUILD-BRAIN-114U-CI-REPAIR-LOOP.md'
+      - '.github/workflows/calyx-proposal-ci-repair-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest ruff
+      - name: Compile
+        run: >-
+          python -m py_compile
+          app/calyx_orchestrator/git_proposal_ci_repair.py
+          tests/test_calyx_git_proposal_ci_repair_114u.py
+      - name: Focused regressions
+        run: >-
+          pytest -q
+          tests/test_calyx_git_proposal_ci_repair_114u.py
+          tests/test_calyx_git_proposal_mutation_executor_114s.py
+          tests/test_calyx_github_proposal_mutation_adapter_114u.py
+      - name: Ruff
+        if: ${{ always() }}
+        run: |
+          ruff check app/calyx_orchestrator/git_proposal_ci_repair.py tests/test_calyx_git_proposal_ci_repair_114u.py
+          ruff format --check app/calyx_orchestrator/git_proposal_ci_repair.py tests/test_calyx_git_proposal_ci_repair_114u.py
+      - name: Migration invariants
+        if: ${{ always() }}
+        run: |
+          grep -q 'calyx_git_proposal_ci_repair_events' migrations/20260813_calyx_git_proposal_ci_repair.sql
+          grep -q "event_kind IN ('assignment', 'revalidation')" migrations/20260813_calyx_git_proposal_ci_repair.sql
+          grep -q 'uq_calyx_ci_repair_key_kind' migrations/20260813_calyx_git_proposal_ci_repair.sql
+      - name: Permanent authority boundary
+        if: ${{ always() }}
+        run: |
+          grep -q '"automatic_merge_authorized": False' app/calyx_orchestrator/git_proposal_ci_repair.py
+          grep -q '"deployment_authorized": False' app/calyx_orchestrator/git_proposal_ci_repair.py
+          grep -q '"publication_authorized": False' app/calyx_orchestrator/git_proposal_ci_repair.py
+          grep -q '"production_graph_mutation_authorized": False' app/calyx_orchestrator/git_proposal_ci_repair.py
+          ! grep -q 'enable_auto_merge' app/calyx_orchestrator/git_proposal_ci_repair.py
+          ! grep -q 'merge_pull_request' app/calyx_orchestrator/git_proposal_ci_repair.py
+      - name: Diff hygiene
+        if: ${{ always() }}
+        run: git diff --check HEAD^ HEAD
