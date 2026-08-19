@@ -35,6 +35,8 @@ import re
 from collections.abc import Iterable, Sequence
 from typing import Any
 
+from app.readiness.occurrence_semantics import occurrence_predicate
+
 # Identifiers reach SQL by interpolation because PostgreSQL will not accept a
 # bound parameter in a table or column position. Every one is drawn from a
 # hardcoded candidate list AND confirmed against the live catalog before use;
@@ -173,6 +175,7 @@ def measure_link_relationship(
     object_taxon_keys: Sequence[str] = (),
     object_name_columns: Sequence[str] = (),
     required_value_columns: Sequence[str] = (),
+    row_filters: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Measure whether taxonomy rows reach rows in a related relation.
 
@@ -271,6 +274,26 @@ def measure_link_relationship(
     o = _safe(object_table)
     total_objects = _scalar(cur, f"SELECT COUNT(*) FROM {o}")
 
+    # A semantic filter on the object relation, applied when the selected table
+    # mixes record kinds. This is what keeps a vendor listing out of an
+    # occurrence count: the filter is on declared semantics, and it is reported
+    # alongside the number so a count can never be read without the rule that
+    # produced it.
+    semantic_predicate = ""
+    semantic_rule = None
+    if row_filters and object_table in row_filters:
+        semantic_predicate = " AND (" + row_filters[object_table] + ")"
+        semantic_rule = {"table": object_table, "predicate": row_filters[object_table]}
+
+    # Rows the semantics admit, which is what masking must compare against: a
+    # five-million-row spine is not "larger" than a curated occurrence table if
+    # only a fraction of it is occurrence evidence.
+    semantically_eligible = total_objects
+    if semantic_predicate:
+        semantically_eligible = _scalar(
+            cur, f"SELECT COUNT(*) FROM {o} o WHERE true{semantic_predicate}"
+        )
+
     value_predicate = ""
     if value_columns:
         value_predicate = " AND (" + " OR ".join(
@@ -281,7 +304,7 @@ def measure_link_relationship(
     for mode, tax_table, left, right in attempts_spec:
         t = _safe(tax_table)
         lcol, rcol = _safe(left), _safe(right)
-        predicate = f"o.{rcol} IS NOT NULL" + value_predicate
+        predicate = f"o.{rcol} IS NOT NULL" + semantic_predicate + value_predicate
         linked_objects = _scalar(cur, f"SELECT COUNT(*) FROM {o} o WHERE {predicate}")
         matched_objects = _scalar(
             cur,
@@ -329,7 +352,7 @@ def measure_link_relationship(
     taxonomy_table = chosen["taxonomy_table"]
     total_taxa = _scalar(cur, f"SELECT COUNT(*) FROM {_safe(taxonomy_table)}")
 
-    warnings = _masking_warnings(object_reports, total_objects)
+    warnings = _masking_warnings(object_reports, semantically_eligible)
     for other in rejected:
         if other["rows_carrying_relationship"] > 0 and other["rows_matching_taxonomy"] == 0:
             warnings.append(
@@ -369,6 +392,8 @@ def measure_link_relationship(
         "value_columns": value_columns,
         "total_taxa": total_taxa,
         "total_object_rows": total_objects,
+        "semantically_eligible_rows": semantically_eligible,
+        "semantic_filter": semantic_rule,
         "rows_carrying_relationship": chosen["rows_carrying_relationship"],
         "rows_matching_taxonomy": chosen["rows_matching_taxonomy"],
         "broken_taxonomy_targets": chosen["broken_taxonomy_targets"],
@@ -425,9 +450,15 @@ TAXONOMY_NAME_COLUMNS = (
 
 # Name columns used by corpora ingested against names rather than taxon ids --
 # the mycorrhiza source registry joins on orchid_scientific_name, for one.
+# scientific_binomial and scientific_name_clean are the columns public.records
+# actually uses; measured resolution into oc_taxonomy.taxa.canonical_name was
+# 847,517 and 651,007 rows respectively, against zero for its (entirely null)
+# taxon_id_matched. Ordered by measured reach.
 OBJECT_NAME_COLUMNS = (
     "scientific_name",
     "orchid_scientific_name",
+    "scientific_binomial",
+    "scientific_name_clean",
     "taxon_name",
     "accepted_name",
     "species_name",
@@ -463,10 +494,15 @@ RELATIONSHIP_SPECS: tuple[dict[str, Any], ...] = (
             "oc_views.occurrences_enriched",
             "public.orchid_occurrences",
             "public.occurrences",
-            # Measured last so the masking check reports it. See the metric
-            # candidate list in mission_control for why it is not promoted.
+            # Measured last, and only through the occurrence filter below. See
+            # app/readiness/occurrence_semantics.py for what that admits.
             "public.records",
         ),
+        # If public.records is ever the selected relation, only rows whose
+        # declared type is occurrence evidence may be counted. Without this a
+        # vendor listing, a video and a taxon profile would each register as
+        # evidence that an orchid grew somewhere.
+        "row_filters": {"public.records": occurrence_predicate("o", "record_type")},
     },
     {
         "name": "taxonomy_to_elevation",
@@ -478,12 +514,18 @@ RELATIONSHIP_SPECS: tuple[dict[str, Any], ...] = (
             "oc_env_intel.species_environment_profile",
             "oc_env.taxon_elevation_profiles",
             "oc_atlas.occurrences",
+            # Last, and only through the occurrence filter above.
+            "public.records",
         ),
         # An occurrence row exists whether or not anyone recorded an elevation
         # for it. Only rows carrying one are evidence of this relationship.
         # Both spellings: oc_env.taxon_elevation_profiles uses minimum_/maximum_
         # per its adapter, species_environment_profile uses min_/max_. Any one of
         # them being populated is evidence, so all are listed.
+        # Elevation is only occurrence evidence when the row it sits on is an
+        # occurrence. 2,934,913 elevation values live on public.records, and
+        # most of them belong to media, profiles and listings.
+        "row_filters": {"public.records": occurrence_predicate("o", "record_type")},
         "required_value_columns": (
             "elevation_m",
             "mean_elevation_m",
@@ -581,6 +623,7 @@ def measure_declared_relationships(cur) -> dict[str, dict[str, Any]]:
                 object_taxon_keys=OBJECT_TAXON_KEYS,
                 object_name_columns=OBJECT_NAME_COLUMNS,
                 required_value_columns=spec.get("required_value_columns", ()),
+                row_filters=spec.get("row_filters"),
             )
         except Exception as exc:  # noqa: BLE001 - reported, never silently dropped
             results[name] = _unavailable(

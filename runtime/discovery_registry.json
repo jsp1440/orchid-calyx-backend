@@ -14393,7 +14393,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 1836,
+    "edge_count": 1837,
     "edges": [
       {
         "from": "GovernanceService",
@@ -20911,6 +20911,11 @@
         "type": "import"
       },
       {
+        "from": "OccurrenceSemantics",
+        "to": "RelationshipMeasurement",
+        "type": "import"
+      },
+      {
         "from": "DeployedPreflight",
         "to": "RelationshipMeasurement",
         "type": "import"
@@ -23978,7 +23983,7 @@
         "module": "Awards"
       }
     ],
-    "node_count": 827,
+    "node_count": 828,
     "nodes": [
       {
         "category": "Runtime",
@@ -28528,6 +28533,13 @@
         "health": "healthy",
         "name": "Metric",
         "path": "app/readiness/live_graph_audit.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "OccurrenceSemantics",
+        "path": "app/readiness/occurrence_semantics.py",
         "type": "python_module"
       },
       {
@@ -49715,6 +49727,28 @@
       "classes": [],
       "dependencies": [
         "__future__",
+        "typing"
+      ],
+      "functions": [
+        "classify_record_type",
+        "is_occurrence",
+        "occurrence_type_values",
+        "occurrence_predicate",
+        "classify_all"
+      ],
+      "module_type": "python_module",
+      "name": "OccurrenceSemantics",
+      "path": "app/readiness/occurrence_semantics.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.readiness.occurrence_semantics",
         "collections.abc",
         "re",
         "typing"
@@ -55993,10 +56027,10 @@
     "brain_connected": true,
     "capabilities": 683,
     "degraded": 1,
-    "graph_edges": 1836,
-    "graph_nodes": 827,
+    "graph_edges": 1837,
+    "graph_nodes": 828,
     "healthy": 595,
-    "modules": 827,
+    "modules": 828,
     "recommendations": 3
   }
 }

@@ -588,3 +588,149 @@ def test_the_mixed_ingest_spine_is_never_promoted_over_a_real_occurrence_table()
     metric = METRIC_CANDIDATES["occurrences"]
     assert metric[0] == "public.orchid_occurrence"
     assert metric.index("public.records") > metric.index("public.orchid_occurrence")
+
+
+# --- Occurrence contamination guards -----------------------------------------
+#
+# public.records is a universal ingest spine. These prove that when it is
+# measured at all, only rows whose declared type is occurrence evidence can
+# reach an occurrence or elevation number.
+
+class FilteringCursor(FakeCursor):
+    """A cursor that honours the semantic predicate instead of ignoring it.
+
+    ``by_type`` maps a record_type to how many of its rows would match. Any
+    COUNT whose SQL carries the record_type filter answers with the sum over
+    admitted types only, so a test fails loudly if the filter is dropped.
+    """
+
+    def __init__(self, schema, rows, by_type, joins=None):
+        super().__init__(schema, rows, joins)
+        self.by_type = by_type
+
+    def execute(self, sql, params=()):
+        flat = " ".join(sql.split())
+        if "record_type IN (" in flat and flat.startswith("SELECT COUNT("):
+            admitted = sum(
+                n for t, n in self.by_type.items() if f"'{t}'" in flat
+            )
+            self._result = (admitted,)
+            return
+        super().execute(sql, params)
+
+
+PRODUCTION_TYPE_MIX = {
+    "occurrence": 2_776_500,
+    "observation": 927_446,
+    "specimen": 139_330,
+    "occurrence_stub": 621_526,
+    "occurrence_photo": 103_007,
+    "media_record": 96_832,
+    "media_observation": 69_575,
+    "taxon_profile": 64_764,
+    "observation_photo": 53_998,
+    "species_profile": 33_650,
+    "video": 23_692,
+    "conservation_assessment": 16_955,
+    "vendor_listing": 10_066,
+}
+
+
+def _measure_records_spine():
+    cur = FilteringCursor(
+        {
+            **TAX_BOTH,
+            "public.records": {"scientific_binomial", "record_type", "elevation_m"},
+        },
+        rows={
+            "oc_taxonomy.taxa": 31840,
+            "public.orchid_taxonomy": 69485,
+            "public.records": sum(PRODUCTION_TYPE_MIX.values()),
+        },
+        by_type=PRODUCTION_TYPE_MIX,
+        joins={"scientific_binomial": {"carrying": 1, "matched": 1, "taxa_reached": 1}},
+    )
+    return rm.measure_link_relationship(
+        cur,
+        name="taxonomy_to_occurrences",
+        taxonomy_tables=rm.TAXONOMY_TABLES,
+        taxonomy_keys=rm.TAXONOMY_KEYS,
+        taxonomy_name_columns=rm.TAXONOMY_NAME_COLUMNS,
+        object_tables=("public.records",),
+        object_taxon_keys=rm.OBJECT_TAXON_KEYS,
+        object_name_columns=rm.OBJECT_NAME_COLUMNS,
+        row_filters={"public.records": rm.occurrence_predicate("o", "record_type")},
+    )
+
+
+def test_vendor_listings_videos_and_profiles_cannot_reach_an_occurrence_count():
+    """The core contamination guard, against the real production type mix."""
+    result = _measure_records_spine()
+    eligible = result["semantically_eligible_rows"]
+
+    # Only the three admitted types in this mix.
+    assert eligible == 2_776_500 + 927_446 + 139_330
+    # And demonstrably none of the excluded ones.
+    for excluded in ("vendor_listing", "video", "taxon_profile", "species_profile"):
+        assert PRODUCTION_TYPE_MIX[excluded] > 0
+        assert eligible + PRODUCTION_TYPE_MIX[excluded] != eligible
+
+
+def test_occurrence_stub_is_excluded_from_the_measured_total():
+    """621,526 rows that are withheld pending curation, not counted."""
+    result = _measure_records_spine()
+    assert result["semantically_eligible_rows"] < sum(PRODUCTION_TYPE_MIX.values())
+    assert 621_526 not in (result["semantically_eligible_rows"],)
+    assert "occurrence_stub" not in result["semantic_filter"]["predicate"]
+
+
+def test_media_rows_cannot_double_count_the_occurrences_they_illustrate():
+    result = _measure_records_spine()
+    predicate = result["semantic_filter"]["predicate"]
+    for media in ("occurrence_photo", "observation_photo", "media_record", "media_observation"):
+        assert f"'{media}'" not in predicate, media
+
+
+def test_the_measurement_reports_the_rule_that_produced_its_number():
+    """A filtered count is unreadable without the filter, so it travels with it."""
+    result = _measure_records_spine()
+    assert result["semantic_filter"]["table"] == "public.records"
+    assert "record_type IN (" in result["semantic_filter"]["predicate"]
+
+
+def test_masking_compares_eligible_rows_not_raw_table_size():
+    """A 5M spine is not 'larger' than a curated table if most of it is not occurrences.
+
+    Comparing raw size would make the spine look authoritative on every audit
+    and push a reader toward exactly the promotion these semantics forbid.
+    """
+    result = _measure_records_spine()
+    assert result["semantically_eligible_rows"] < result["total_object_rows"]
+
+
+def test_elevation_spec_carries_the_same_occurrence_filter():
+    """Elevation must not be sourced from a video or a vendor listing."""
+    spec = next(s for s in rm.RELATIONSHIP_SPECS if s["name"] == "taxonomy_to_elevation")
+    assert "public.records" in spec["row_filters"]
+    predicate = spec["row_filters"]["public.records"]
+    for excluded in ("vendor_listing", "video", "taxon_profile", "media_record"):
+        assert f"'{excluded}'" not in predicate, excluded
+
+
+def test_occurrence_spec_carries_the_filter_too():
+    spec = next(s for s in rm.RELATIONSHIP_SPECS if s["name"] == "taxonomy_to_occurrences")
+    assert "public.records" in spec["row_filters"]
+    assert "record_type IN (" in spec["row_filters"]["public.records"]
+
+
+def test_a_relation_without_a_filter_is_measured_unfiltered():
+    """The filter is per-relation; curated tables are not silently narrowed."""
+    cur = FakeCursor(
+        {**TAX_BOTH, "oc_conservation.conservation_records": {"taxon_id"}},
+        rows={"oc_taxonomy.taxa": 31840, "public.orchid_taxonomy": 69485,
+              "oc_conservation.conservation_records": 2},
+        joins={"taxon_id": {"carrying": 2, "matched": 2, "taxa_reached": 2}},
+    )
+    result = measure(cur, object_tables=("oc_conservation.conservation_records",))
+    assert result["semantic_filter"] is None
+    assert result["semantically_eligible_rows"] == result["total_object_rows"]

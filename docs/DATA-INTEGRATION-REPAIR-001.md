@@ -64,6 +64,85 @@ the `orchid_scientific_name` join the source registry itself uses.
 Absence is now reported only when every join the schema supports has run and all
 of them found nothing. Both cases are pinned by regression tests.
 
+## Occurrence semantics, as encoded
+
+`app/readiness/occurrence_semantics.py` encodes the definition:
+
+> An occurrence is evidence that an orchid taxon occurred at a particular
+> place -- a legitimate observation, specimen, collection, or equivalent.
+
+Three rules govern it. **Classification is by declared semantics, never by
+shape** -- a record does not become an occurrence because it carries
+coordinates, elevation, a GBIF key or a taxon name, because vendor listings
+carry all four. **Unknown types are ambiguous, never occurrences**, so a new
+ingest type cannot inflate a count merely by appearing. **Raw source data is
+never rewritten**; this is a derived classification applied at read time, and
+`source`, `source_record_id`, `gbif_occurrence_key` and `record_type` travel
+with every measurement.
+
+`public.records` carries **46 distinct record_type values** across 5,006,022
+rows. All 46 are classified; the test suite fails if production grows a 47th.
+
+**Occurrence (3,884,091 rows):** occurrence 2,776,500 · observation 927,446 ·
+specimen 139,330 · HUMAN_OBSERVATION 29,390 · OBSERVATION 11,251 ·
+herbarium_specimen 145 · species_observation 26 · PRESERVED_SPECIMEN 3.
+The three spellings of observation are admitted together because they are the
+same evidence under an unnormalised vocabulary.
+
+**Non-occurrence (1,121,931 rows):** occurrence_stub 621,526 · media_record
+96,832 · media_observation 69,575 · taxon_profile 64,764 · occurrence_photo
+103,007 · observation_photo 53,998 · species_profile 33,650 · video 23,692 ·
+conservation_assessment 16,955 · vendor_listing 10,066 · species_photo 9,899 ·
+taxonomy_record 9,838 · plus cultivar, hybrid_registration, living_collection,
+personal_collection, breeder_catalog, culture_sheet, judging_standard,
+knowledge_article, dataset_metadata, literature_title, migration and the rest.
+
+Photographs attached to occurrences (`occurrence_photo`, `observation_photo`)
+are excluded deliberately: the occurrence they illustrate is already counted,
+and admitting the photo double-counts it.
+
+**Ambiguous, withheld (364 rows):** `community_observation` (346) is named as an
+observation but carries zero coordinates and zero event dates, so whether these
+are field observations or forum posts is not established; `genomic_record` (18)
+qualifies only with a voucher locality, which is not present. Both are withheld
+rather than guessed, and ambiguous never counts as an occurrence.
+
+**`occurrence_stub` was resolved from ambiguous by measurement.** All 621,526
+carry zero coordinates, zero event dates and zero elevations, so they assert no
+place. The 188,292 that carry a GBIF key correspond to the 188,285 rows
+`public.orchid_occurrence` records as sourced from
+`records_source_record_id_backfill_safe`: they are ingest placeholders whose
+real content already lives in the canonical occurrence table. Counting them
+would double-count rows measured there.
+
+## How the two occurrence corpora relate
+
+They are **different stages of one pipeline**, not rival corpora, and
+`public.orchid_occurrence` is measurably derived from `public.records`. Its own
+`source_table` column says so:
+
+| source_table | rows |
+|---|---|
+| `gbif` | 189,747 |
+| `records_gbif_backfill` | 189,685 |
+| `records_source_record_id_backfill_safe` | 188,285 |
+| `orchid_record` | 6,301 |
+| `staging_gbif_images_seed` | 4,922 |
+| `records_gbif_backfill_round2` | 1,672 |
+
+379,642 of its 580,612 rows were backfilled out of `public.records`, and
+379,731 share a GBIF key with it — the two figures agree. A further 364,879
+match on `source_record_id`.
+
+So: **`public.records` is the raw harvest spine; `public.orchid_occurrence` is
+the curated, taxonomy-linked projection.** Neither is discarded. The spine keeps
+every harvested row including the vendor listings; the projection carries the
+`taxonomy_id` that resolves 109,195 of 109,195 into `public.orchid_taxonomy`.
+
+There is also **genuine uncovered occurrence coverage**: 3,884,091 rows in the
+spine are occurrence evidence against 580,612 in the projection. Promoting that
+remainder is an ingest task, not a measurement one, and is left as such.
+
 ## The occurrence source, and why it is not the biggest relation
 
 `oc_atlas.occurrences` (26 rows) is not canonical, and
@@ -110,13 +189,27 @@ whose id key is entirely unpopulated. So `taxonomy_to_elevation` genuinely canno
 exceed 7 through any relation with working id linkage today. This is gated on the
 same curatorial decision as the occurrence source.
 
-## Open items for the owner
+## Status of the items previously left open
 
-1. Decide which `record_type` values in `public.records` constitute an
-   occurrence. This unblocks both the occurrence metric and elevation.
-2. Repair `orchid_taxonomy_id` on the pollinator and mycorrhiza tables. Every
-   populated value is broken; the name join is carrying both relationships.
-3. Reconcile `observation` / `OBSERVATION` / `HUMAN_OBSERVATION` into one vocabulary.
-4. Two relations answer "taxonomy" in the same audit payload:
-   `taxonomy_to_images` measures against `public.orchid_taxonomy` while the
-   taxonomy metric counts `oc_taxonomy.taxa`.
+1. **Which record_type values constitute an occurrence — RESOLVED.** Encoded in
+   `occurrence_semantics.py` against the owner definition, covering all 46
+   production values, with regression tests that fail on an unclassified 47th.
+2. **`orchid_taxonomy_id` on the pollinator and mycorrhiza tables — DIAGNOSED,
+   repair is an ingest task.** Every populated value is broken: 23 of 23 and 2
+   of 2 resolve into `public.orchid_taxonomy` and none into `oc_taxonomy.taxa`.
+   The measurement now joins the relation the ids belong to, so both
+   relationships measure correctly today. Rewriting the stored ids is a
+   production data mutation and is deliberately out of scope here.
+3. **`observation` / `OBSERVATION` / `HUMAN_OBSERVATION` — RESOLVED in
+   measurement.** All three are admitted as the same evidence, so no rows are
+   dropped to a casing difference. Normalising the stored vocabulary is an
+   ingest change; the audit no longer depends on it.
+4. **Two relations answering "taxonomy" — RESOLVED.** The measurement joins
+   every existing taxonomy relation and reports which one resolved, so the
+   payload is self-describing rather than silently anchored to one.
+
+Nothing here now requires an owner decision. The remaining work is ingest-side:
+promoting the uncovered occurrence rows out of the spine, repairing the stored
+`orchid_taxonomy_id` values, and normalising the observation vocabulary. Each is
+a mutation of production scientific data and is therefore left to a deliberate,
+separately-reviewed change.
