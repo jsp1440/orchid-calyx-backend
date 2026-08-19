@@ -1,0 +1,93 @@
+name: Orchid Completion Lane
+
+on:
+  workflow_call:
+    inputs:
+      issue_number:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: read
+  id-token: write
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      ISSUE_NUMBER: ${{ inputs.issue_number }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Load issue context
+        id: issue
+        shell: bash
+        run: |
+          set -euo pipefail
+          title=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json title --jq '.title')
+          body=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json body --jq '.body')
+          {
+            echo 'title<<EOF'
+            echo "$title"
+            echo EOF
+            echo 'body<<EOF'
+            echo "$body"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Execute issue with Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            ORCHID CONTINUUM — CONTINUOUS COMPLETION LANE
+
+            Repository: ${{ github.repository }}
+            Source issue: #${{ inputs.issue_number }} — ${{ steps.issue.outputs.title }}
+
+            Issue requirements:
+            ${{ steps.issue.outputs.body }}
+
+            EXECUTE BEFORE EXPLAINING. This is one lane in a continuously refilling multi-lane completion system.
+
+            Rules:
+            - Inspect current main and overlapping PRs before editing; converge rather than duplicate.
+            - Implement the largest safe bounded slice that can be completed in this run.
+            - Test, fix, lint/typecheck/build as appropriate, then commit and push durable work.
+            - Open or update exactly one draft PR to main. Include the exact marker `OC-AUTO-ISSUE: #${{ inputs.issue_number }}` in the PR body.
+            - If the entire issue cannot fit in one run, deliver a coherent vertical slice and leave explicit remaining acceptance items on the source issue; do not return only an audit or plan.
+            - If blocked by an owner gate or external dependency, document the exact blocker on the issue and stop consuming this lane; another queued task will replace it.
+            - Never merge, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create/disclose credentials, spend funds, force-push, or delete branches/repos.
+            - Final output must state: DONE, VALIDATION, PR/HEAD SHA, REMAINING, OWNER GATE if any.
+          claude_args: |
+            --model claude-sonnet-5
+            --max-turns 75
+            --allowedTools "Edit,Read,Write,Bash(git diff:*),Bash(git status:*),Bash(git ls-files:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git branch:*),Bash(git fetch:*),Bash(python:*),Bash(python3:*),Bash(pytest:*),Bash(ruff:*),Bash(npm:*),Bash(npx:*),Bash(test:*),Bash(gh pr:*),Bash(gh issue:*)"
+            --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative. BLOCKED DOES NOT MEAN STOPPED FOR THE PROGRAM: this lane may stop at a genuine gate, but the orchestrator will immediately refill it with another task. Deliver durable GitHub work, never runner-local-only claims."
+
+      - name: Classify lane result and release slot
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker="OC-AUTO-ISSUE: #${ISSUE_NUMBER}"
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,body --jq ".[] | select(.body != null and (.body | contains(\"$marker\"))) | .number" | head -1)
+
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running >/dev/null 2>&1 || true
+
+          if [[ -n "$pr" ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label oc-owner-gate >/dev/null
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered PR #$pr and released its execution slot. The queue will continue with the next eligible task; this issue is now owner/CI-gated." >/dev/null
+          else
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label oc-queued >/dev/null
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane ended without a durable PR. Returned to the queue for retry while other lanes continue." >/dev/null
+          fi
