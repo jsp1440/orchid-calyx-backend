@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -70,7 +69,7 @@ class GovernedAutonomousCompletionLoop:
         self,
         client: GitHubEngineeringClient,
         *,
-        repair_factory: Callable[[GitHubEngineeringClient], BoundedRepairLoop] | None = None,
+        repair_factory=None,
     ) -> None:
         self.client = client
         self.repair_factory = repair_factory or (
