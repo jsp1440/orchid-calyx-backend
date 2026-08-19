@@ -143,17 +143,12 @@ class DeterministicGovernedReplyProvider:
             lines.append("Evidence summary: " + "; ".join(self._evidence_statement(item) for item in supporting[:4] if self._evidence_statement(item)))
             lines.append(f"Supporting evidence count: {len(supporting)}.")
         elif not conclusions:
-            # Preserve the explicit no-evidence diagnostic when no conclusion exists,
-            # but keep successful mission fallbacks compact so follow-up turns retain
-            # the preceding user question inside the bounded conversation window.
             lines.append("Evidence summary: the mission did not surface any supporting evidence records that could justify a conclusion.")
 
-        # Provenance stays visible without returning to source-by-source narration.
-        # These are compact boundary statements after the integrated conclusion.
         if "knowledge_graph" in source_families:
             lines.append("Orchid Continuum context: canonical Knowledge Graph evidence informed this synthesis.")
         if "external_literature" in source_families:
-            lines.append("External literature context: review-required Europe PMC records informed this provisional synthesis and are not canonical Orchid Continuum evidence.")
+            lines.append("External literature context: review-required Europe PMC records informed this provisional synthesis; they are not yet reviewed/indexed Orchid Continuum evidence.")
 
         if contradicting:
             lines.append("Disagreements or conflicting evidence: " + "; ".join(self._evidence_statement(item) for item in contradicting[:4] if self._evidence_statement(item)))
