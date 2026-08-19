@@ -141,7 +141,10 @@ class DeterministicGovernedReplyProvider:
         if supporting:
             lines.append("Evidence summary: " + "; ".join(self._evidence_statement(item) for item in supporting[:4] if self._evidence_statement(item)))
             lines.append(f"Supporting evidence count: {len(supporting)}.")
-        else:
+        elif not conclusions:
+            # Preserve the explicit no-evidence diagnostic when no conclusion exists,
+            # but keep successful mission fallbacks compact so follow-up turns retain
+            # the preceding user question inside the bounded conversation window.
             lines.append("Evidence summary: the mission did not surface any supporting evidence records that could justify a conclusion.")
 
         if contradicting:
