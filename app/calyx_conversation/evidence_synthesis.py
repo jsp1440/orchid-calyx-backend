@@ -93,7 +93,7 @@ def _mission_items(mission: dict[str, Any] | None) -> tuple[list[dict[str, Any]]
 
 def _question_claims(question: str) -> list[dict[str, Any]]:
     cleaned = _text(question, 4000)
-    parts = [part.strip(" .?!") for part in re.split(r"[?;]+|\band\s+(?=how|why|what|which|whether|can|does|do|is|are|should)\b", cleaned, flags=re.I) if part.strip(" .?!")]
+    parts = [part.strip(" .?!") for part in re.split(r"[?;]+|\band\s+(?=how|why|what|which|whether|can|does|do|is|are|should)\b", cleaned, flags=re.IGNORECASE) if part.strip(" .?!")]
     if not parts and cleaned:
         parts = [cleaned]
     return [{"claim_id": f"question:{index}", "kind": "question_component", "text": part} for index, part in enumerate(parts[:8])]
