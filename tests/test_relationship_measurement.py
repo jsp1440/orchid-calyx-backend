@@ -506,9 +506,11 @@ def test_the_larger_occurrence_corpus_is_measured_first():
     assert "oc_atlas.occurrences" in spec["object_tables"]
 
 
-def test_elevation_looks_at_the_occurrence_corpus_and_its_real_column_names():
+def test_elevation_knows_the_real_column_names_and_keeps_the_projection_as_a_candidate():
     spec = next(s for s in rm.RELATIONSHIP_SPECS if s["name"] == "taxonomy_to_elevation")
-    assert spec["object_tables"][0] == "public.orchid_occurrence"
+    # The curated projection stays a candidate; it is simply not the one that
+    # holds the elevations. See test_elevation_reads_the_harvest_... below.
+    assert "public.orchid_occurrence" in spec["object_tables"]
     for column in ("elevation_m", "minimum_elevation", "maximum_elevation", "elevation_meters"):
         assert column in spec["required_value_columns"]
 
@@ -734,3 +736,24 @@ def test_a_relation_without_a_filter_is_measured_unfiltered():
     result = measure(cur, object_tables=("oc_conservation.conservation_records",))
     assert result["semantic_filter"] is None
     assert result["semantically_eligible_rows"] == result["total_object_rows"]
+
+
+def test_elevation_reads_the_harvest_where_the_elevations_actually_are():
+    """The curated projection holds 7 elevations; the harvest holds 306,359.
+
+    Selecting the projection first answered 7 and presented it as the state of
+    the archive. Elevation therefore reads public.records first -- but only
+    through the occurrence filter, so this is not a promotion of the spine.
+    """
+    spec = next(s for s in rm.RELATIONSHIP_SPECS if s["name"] == "taxonomy_to_elevation")
+    assert spec["object_tables"][0] == "public.records"
+    assert "public.records" in spec["row_filters"]
+
+
+def test_the_occurrence_metric_does_not_follow_elevation_onto_the_spine():
+    """Only elevation reads the harvest first. Occurrences stay on the projection."""
+    occ = next(s for s in rm.RELATIONSHIP_SPECS if s["name"] == "taxonomy_to_occurrences")
+    assert occ["object_tables"][0] == "public.orchid_occurrence"
+    from app.routers.mission_control import METRIC_CANDIDATES
+
+    assert METRIC_CANDIDATES["occurrences"][0] == "public.orchid_occurrence"

@@ -507,15 +507,25 @@ RELATIONSHIP_SPECS: tuple[dict[str, Any], ...] = (
     {
         "name": "taxonomy_to_elevation",
         # oc_env.taxon_elevation_profiles, which the elevation adapter declares,
-        # does not exist in production -- confirmed by catalog probe. The
-        # occurrence corpus carries the elevation values instead.
+        # does not exist in production -- confirmed by catalog probe.
+        #
+        # public.records is measured FIRST here, and only here. The elevation
+        # question asks whether the Continuum holds elevation for its taxa, and
+        # the answer is in the raw harvest: 306,359 occurrence-typed rows carry
+        # both an elevation and a name that reaches taxonomy, against 7 in the
+        # curated projection, which has not backfilled elevation. Selecting the
+        # projection first answered 7 and called it the state of the archive.
+        #
+        # This is not promoting the spine. The occurrence metric still reads
+        # public.orchid_occurrence; only elevation reads the spine, and only
+        # through the occurrence filter below, so a video or a vendor listing
+        # carrying an elevation still cannot contribute one.
         "object_tables": (
+            "public.records",
             "public.orchid_occurrence",
             "oc_env_intel.species_environment_profile",
             "oc_env.taxon_elevation_profiles",
             "oc_atlas.occurrences",
-            # Last, and only through the occurrence filter above.
-            "public.records",
         ),
         # An occurrence row exists whether or not anyone recorded an elevation
         # for it. Only rows carrying one are evidence of this relationship.
