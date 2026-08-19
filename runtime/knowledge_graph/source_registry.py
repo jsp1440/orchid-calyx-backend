@@ -115,8 +115,8 @@ def _verified(
     )
 
 
-def _blocked(domain: str, query_id: str, table: str) -> SourceQuery:
-    reason = (
+def _blocked(domain: str, query_id: str, table: str, reason: str | None = None) -> SourceQuery:
+    reason = reason or (
         "Source table is known from the adapter contract, but its production "
         "projection and backbone taxon mapping have not been verified for a "
         "publication build. Registered explicitly and disabled fail-closed."
@@ -329,8 +329,35 @@ _MEDIA = _verified(
 # adapter contract, but no current-main evidence establishes a safe publication
 # projection/taxon crosswalk. Register them explicitly, disabled, until verified.
 _GEOGRAPHY = _blocked("geography", "geography_unverified_v1", "oc_geo.taxon_places")
-_HABITAT = _blocked("habitat", "habitat_unverified_v1", "oc_habitat.taxon_habitats")
-_ELEVATION = _blocked("elevation", "elevation_unverified_v1", "oc_env.taxon_elevation_profiles")
+# These two stay disabled, but the reason is now measured rather than assumed.
+# A read-only catalog probe against production (recorded under
+# docs/evidence/audit-measurement-002/) confirms neither relation exists. That is
+# a stronger statement than "unverified", and it points at different work: the
+# contract needs a source, not a verification pass.
+_HABITAT = _blocked(
+    "habitat",
+    "habitat_unverified_v1",
+    "oc_habitat.taxon_habitats",
+    reason=(
+        "oc_habitat.taxon_habitats does not exist in production; confirmed by "
+        "read-only catalog probe, not merely unverified. public.oc_species_habitat_claims "
+        "does exist with 695 rows whose taxonomy_id resolves entirely into "
+        "public.orchid_taxonomy, and is a candidate replacement source -- but "
+        "adopting it is a contract decision for the owner, so this domain stays "
+        "disabled fail-closed rather than being silently repointed."
+    ),
+)
+_ELEVATION = _blocked(
+    "elevation",
+    "elevation_unverified_v1",
+    "oc_env.taxon_elevation_profiles",
+    reason=(
+        "oc_env.taxon_elevation_profiles does not exist in production; confirmed "
+        "by read-only catalog probe. Elevation values are carried on "
+        "public.orchid_occurrence instead. Repointing the domain is a contract "
+        "decision for the owner, so it stays disabled fail-closed."
+    ),
+)
 _GLOSSARY = _blocked("glossary", "glossary_unverified_v1", "oc_glossary.taxon_terms")
 _EVIDENCE = _blocked("evidence", "evidence_unverified_v1", "oc_claims.evidence_item")
 _MOLECULAR = _blocked("molecular", "molecular_unverified_v1", "oc_phylogeny.taxon_molecular_records")

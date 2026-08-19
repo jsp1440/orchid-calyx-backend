@@ -105,20 +105,43 @@ def test_change_detector_reports_regressions_and_new_blockers():
     assert any(change["type"] == "new_blocker" for change in changes)
 
 
-def test_executive_api_endpoints_are_read_only(monkeypatch):
+def test_executive_state_requires_authentication(monkeypatch):
+    """/api/executive/state is owner/API-key gated, not public.
+
+    This used to be served by two competing routers sharing the same
+    /api/executive prefix: app/routers/executive.py (BUILD-052, no auth
+    dependency at all) and app/executive_telemetry/routes.py
+    (MISSION-CONTROL-TELEMETRY, Depends(authenticated_principal)). Because
+    the telemetry router was registered first in app/routers/health.py,
+    /api/executive/state was always actually served by the authenticated
+    implementation -- but the BUILD-052 router's sibling paths
+    (/summary, /priorities, /recommendations, /changes, /dependencies,
+    /briefing) did not collide with anything in the telemetry router, so
+    they really were live and unauthenticated, silently exposing internal
+    subsystem/priority/recommendation data. The BUILD-052 router has been
+    removed entirely rather than reconciled: its /state route was already
+    dead weight, and its unique paths were an unintended public-exposure
+    gap now closed by deleting them.
+    """
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("CALYX_API_KEY", raising=False)
     api = client()
-    for endpoint in [
-        "/api/executive/state",
-        "/api/executive/summary",
-        "/api/executive/priorities",
-        "/api/executive/recommendations",
-        "/api/executive/changes",
-        "/api/executive/dependencies",
-        "/api/executive/briefing",
-    ]:
-        response = api.get(endpoint)
-        assert response.status_code == 200
-        assert response.json()["build"] == "BUILD-064"
-        assert api.post(endpoint).status_code in {404, 405}
+
+    assert api.get("/api/executive/state").status_code == 401
+
+    # The BUILD-052-only paths no longer exist at all. A catch-all OPTIONS
+    # route still matches the path for CORS preflight, so GET correctly
+    # yields 405 (path known, method not allowed) rather than 404.
+    for endpoint in ["/api/executive/summary", "/api/executive/priorities", "/api/executive/recommendations"]:
+        assert api.get(endpoint).status_code == 405
+
+
+def test_executive_state_permits_authenticated_api_key_access(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("CALYX_API_KEY", "test-executive-key")
+    api = client()
+
+    response = api.get("/api/executive/state", headers={"X-API-Key": "test-executive-key"})
+    assert response.status_code == 200
+    assert response.json()["contract_version"] == "MISSION-CONTROL-TELEMETRY-001A"
 

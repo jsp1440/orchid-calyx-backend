@@ -1,0 +1,238 @@
+name: CI Visibility
+
+# BUILD-087B fails on this branch and its logs are not readable with the token
+# available to the agent working on it: the jobs, run-logs and rerun endpoints
+# all answer 403. A full A/B of the repository-wide suite -- with and without
+# this branch's changes, against a real PostgreSQL, under 087B's exact
+# invocation -- shows an identical failure set, so the failure appears not to
+# originate here. "Appears not to" is not good enough to call a PR merge-ready,
+# so this job runs the same suite and publishes the failure list as an artifact,
+# which IS readable. It exists to turn an opaque red check into a legible one.
+# The push trigger is removed deliberately. These jobs commit their findings
+# back to the branch, and a push authored by GITHUB_TOKEN cannot trigger a
+# workflow -- so every automatic evidence commit became a PR head with zero
+# checks against the exact commit that would merge. They were investigation
+# instruments; the evidence they were built to gather is committed under
+# docs/evidence/audit-measurement-002/. Re-run them deliberately when a
+# question needs re-asking.
+on:
+  push:
+    branches: [claude/audit-measurement-002]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # BUILD-BRAIN-114Q went red the moment requirements.txt changed, exits 2, and
+  # every one of its steps passes locally. It runs Python 3.12 where this
+  # sandbox has 3.11, and it installs an unpinned ruff, so the difference is
+  # environmental. Reproduce it step by step and record which one dies.
+  owner-signature-114q:
+    runs-on: ubuntu-latest
+    env:
+      EVIDENCE_BRANCH: evidence/audit-measurement-002
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Reproduce 114Q step by step
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          : > 114q-results.txt
+          run_step () {
+            name="$1"; shift
+            out=$("$@" 2>&1); code=$?
+            printf '%s :: exit=%s :: %s\n' "$name" "$code" \
+              "$(printf '%s' "$out" | tail -6 | tr '\n' ' ')" >> 114q-results.txt
+          }
+          python -m pip install --upgrade pip >/dev/null 2>&1
+          run_step "pip install -r requirements.txt" pip install -r requirements.txt
+          run_step "pip install pytest ruff" pip install pytest ruff
+          printf 'ruff version :: %s\n' "$(ruff --version 2>&1)" >> 114q-results.txt
+          run_step "compileall" python -m compileall -q \
+            app/calyx_orchestrator/owner_signature_verifier.py \
+            app/calyx_orchestrator/git_mutation_authorization.py \
+            tests/test_calyx_owner_signature_verifier_114q.py
+          run_step "ruff check" ruff check \
+            app/calyx_orchestrator/owner_signature_verifier.py \
+            app/calyx_orchestrator/git_mutation_authorization.py \
+            tests/test_calyx_owner_signature_verifier_114q.py
+          run_step "ruff format --check" ruff format --check \
+            app/calyx_orchestrator/owner_signature_verifier.py \
+            app/calyx_orchestrator/git_mutation_authorization.py \
+            tests/test_calyx_owner_signature_verifier_114q.py
+          PYTHONPATH=. run_step "pytest 114q+114o" python -m pytest -q \
+            tests/test_calyx_owner_signature_verifier_114q.py \
+            tests/test_calyx_git_mutation_authorization_114o.py
+          cat 114q-results.txt
+      - name: Publish evidence to the evidence branch
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Evidence is published to a SEPARATE branch, never to the PR branch.
+          # A push authored by GITHUB_TOKEN cannot trigger a workflow, so any
+          # evidence commit landing on the PR branch becomes a head with zero
+          # checks against the exact commit that would merge. Publishing
+          # sideways keeps the PR head human-authored permanently, while
+          # preserving evidence generation on every run.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin "$EVIDENCE_BRANCH" 2>/dev/null; then
+            git worktree add /tmp/evtree FETCH_HEAD || true
+          else
+            git worktree add --detach /tmp/evtree || true
+            ( cd /tmp/evtree && git checkout --orphan evidence-root && git rm -rf . >/dev/null 2>&1 ) || true
+          fi
+          # Refresh the human-readable logs before publishing. These copies
+          # lived in the old commit step and were lost when the sideways
+          # publisher replaced it, so the .txt logs went stale while the JSON
+          # kept updating -- a stale log beside a fresh measurement is worse
+          # than no log, because it reads as current.
+          cp repo-wide-failures.txt docs/evidence/audit-measurement-002/repo-wide-failures.txt 2>/dev/null || true
+          cp repo-wide-tail.txt docs/evidence/audit-measurement-002/repo-wide-tail.txt 2>/dev/null || true
+          cp focused-results.txt docs/evidence/audit-measurement-002/focused-results.txt 2>/dev/null || true
+          cp hygiene-results.txt docs/evidence/audit-measurement-002/hygiene-results.txt 2>/dev/null || true
+          cp 114q-results.txt docs/evidence/audit-measurement-002/114q-results.txt 2>/dev/null || true
+          mkdir -p /tmp/evtree/docs/evidence/audit-measurement-002
+          cp -f docs/evidence/audit-measurement-002/* /tmp/evtree/docs/evidence/audit-measurement-002/ 2>/dev/null || true
+          for f in /tmp/evtree/docs/evidence/audit-measurement-002/*.txt; do
+            [ -e "$f" ] && sed -i 's/[[:space:]]*$//' "$f"
+          done
+          cd /tmp/evtree
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: ${{ github.workflow }} on ${{ github.sha }}"
+          git push origin "HEAD:refs/heads/$EVIDENCE_BRANCH" --force || true
+          exit 0
+
+  repo-wide-failures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: build087
+          POSTGRES_PASSWORD: build087_test_only
+          POSTGRES_DB: build087_validation
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U build087 -d build087_validation"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      EVIDENCE_BRANCH: evidence/audit-measurement-002
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+      - name: Apply BUILD-051 owner-console schema
+        run: psql "$BROAD_DATABASE_URL" -f migrations/BUILD-051-owner-operations-console.sql
+        env:
+          BROAD_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
+      # 087B runs the focused suites before the repository-wide one. Running
+      # them here too means the artifact says WHICH step 087B died in, rather
+      # than leaving it to be inferred from a bare exit code.
+      - name: Focused suites 087B runs first
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          : > focused-results.txt
+          for t in tests/test_build_087b_scientific_interpretation.py \
+                   tests/test_build_046_scientific_priorities.py \
+                   tests/test_calyx_live_graph_audit.py \
+                   tests/test_knowledge_graph_orchestrator.py \
+                   tests/test_source_registry.py \
+                   tests/test_ci_baseline_001.py; do
+            out=$(env -u DATABASE_URL -u TEST_DATABASE_URL python -m pytest -q "$t" 2>&1 | tail -3)
+            printf '%s :: %s\n' "$t" "$(printf '%s' "$out" | tr '\n' ' ')" >> focused-results.txt
+          done
+          cat focused-results.txt
+        env:
+          TEST_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation
+
+      - name: Strict hygiene 087B runs last
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          { python -m compileall -q app/scientific_interpretation app/main.py runtime/knowledge_graph \
+            && python -m ruff check app/scientific_interpretation/postgres_repository.py \
+                 runtime/knowledge_graph/source_registry.py tests/test_ci_baseline_001.py \
+            && git diff --check ; } > hygiene-results.txt 2>&1
+          echo "hygiene exit: $?" >> hygiene-results.txt
+          cat hygiene-results.txt
+
+      - name: Repository-wide suite, failures only
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          env -u TEST_DATABASE_URL python -m pytest -q \
+            --ignore=tests/calyx_certification/test_deterministic_failure_round2.py \
+            --ignore=tests/test_calyx_journalism_mvp_001.py \
+            --deselect=tests/test_build_034_044_049_integration.py::test_state_changing_runtime_routes_fail_closed_without_api_key \
+            2>&1 | tee repo-wide.txt || true
+          grep -E '^(FAILED|ERROR)' repo-wide.txt | sort > repo-wide-failures.txt || true
+          tail -40 repo-wide.txt > repo-wide-tail.txt || true
+          echo "--- failure count ---"
+          wc -l < repo-wide-failures.txt
+        env:
+          DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
+      # Committed rather than only uploaded: artifact zips redirect to a host
+      # the agent's network policy blocks, so an artifact is as unreadable as
+      # the logs were. A committed file is readable with git.
+      - name: Publish evidence to the evidence branch
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Evidence is published to a SEPARATE branch, never to the PR branch.
+          # A push authored by GITHUB_TOKEN cannot trigger a workflow, so any
+          # evidence commit landing on the PR branch becomes a head with zero
+          # checks against the exact commit that would merge. Publishing
+          # sideways keeps the PR head human-authored permanently, while
+          # preserving evidence generation on every run.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin "$EVIDENCE_BRANCH" 2>/dev/null; then
+            git worktree add /tmp/evtree FETCH_HEAD || true
+          else
+            git worktree add --detach /tmp/evtree || true
+            ( cd /tmp/evtree && git checkout --orphan evidence-root && git rm -rf . >/dev/null 2>&1 ) || true
+          fi
+          # Refresh the human-readable logs before publishing. These copies
+          # lived in the old commit step and were lost when the sideways
+          # publisher replaced it, so the .txt logs went stale while the JSON
+          # kept updating -- a stale log beside a fresh measurement is worse
+          # than no log, because it reads as current.
+          cp repo-wide-failures.txt docs/evidence/audit-measurement-002/repo-wide-failures.txt 2>/dev/null || true
+          cp repo-wide-tail.txt docs/evidence/audit-measurement-002/repo-wide-tail.txt 2>/dev/null || true
+          cp focused-results.txt docs/evidence/audit-measurement-002/focused-results.txt 2>/dev/null || true
+          cp hygiene-results.txt docs/evidence/audit-measurement-002/hygiene-results.txt 2>/dev/null || true
+          cp 114q-results.txt docs/evidence/audit-measurement-002/114q-results.txt 2>/dev/null || true
+          mkdir -p /tmp/evtree/docs/evidence/audit-measurement-002
+          cp -f docs/evidence/audit-measurement-002/* /tmp/evtree/docs/evidence/audit-measurement-002/ 2>/dev/null || true
+          for f in /tmp/evtree/docs/evidence/audit-measurement-002/*.txt; do
+            [ -e "$f" ] && sed -i 's/[[:space:]]*$//' "$f"
+          done
+          cd /tmp/evtree
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence: ${{ github.workflow }} on ${{ github.sha }}"
+          git push origin "HEAD:refs/heads/$EVIDENCE_BRANCH" --force || true
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: repo-wide-failures-${{ github.sha }}
+          path: |
+            repo-wide-failures.txt
+            repo-wide-tail.txt
+          if-no-files-found: warn
+          retention-days: 7

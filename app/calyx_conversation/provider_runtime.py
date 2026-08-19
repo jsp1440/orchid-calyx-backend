@@ -83,9 +83,18 @@ def _compact_value(value: Any, *, depth: int = 0) -> Any:
         return compact
     if isinstance(value, (list, tuple)):
         items = list(value)
-        compact_items = [_compact_value(item, depth=depth + 1) for item in items[:16]]
-        if len(items) > 16:
-            compact_items.append({"_additional_items_omitted": len(items) - 16})
+        compact_items: list[Any] = []
+        used_chars = 0
+        for item in items[:16]:
+            compacted_item = _compact_value(item, depth=depth + 1)
+            item_chars = len(json.dumps(compacted_item, default=str))
+            if compact_items and used_chars + item_chars > _MAX_HISTORY_CHARS:
+                break
+            compact_items.append(compacted_item)
+            used_chars += item_chars
+        omitted = len(items) - len(compact_items)
+        if omitted > 0:
+            compact_items.append({"_additional_items_omitted": omitted})
         return compact_items
     return value
 
@@ -134,9 +143,11 @@ def _compact_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     if len(current_content) > _MAX_CURRENT_MESSAGE_CHARS:
         current_content = current_content[:_MAX_CURRENT_MESSAGE_CHARS]
 
-    remaining = _MAX_HISTORY_CHARS
+    remaining = max(0, _MAX_HISTORY_CHARS - len(current_content))
     history: list[dict[str, str]] = []
     for item in reversed(eligible[:-1]):
+        if remaining <= 0:
+            break
         role = str(item.get("role"))
         content = str(item.get("content") or "").strip()
         clipped = content[-_MAX_MESSAGE_CHARS:]
@@ -145,8 +156,6 @@ def _compact_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
         if clipped:
             history.append({"role": role, "content": clipped})
             remaining -= len(clipped)
-        if remaining <= 0:
-            break
     history.reverse()
     compact.extend(history)
     compact.append({"role": str(current.get("role")), "content": current_content})
