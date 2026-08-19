@@ -36,7 +36,7 @@ class FakeCursor:
             schema, table = params[0], params[1]
             self._many = [(c,) for c in self.schema.get(f"{schema}.{table}", set())]
         elif flat.startswith("SELECT COUNT(*) FROM ") and " JOIN " in flat:
-            self._result = (self._by_join(flat, "matched"),)
+            self._result = (self._by_join(self._fold(flat), "matched"),)
         elif flat.startswith("SELECT COUNT(DISTINCT"):
             self._result = (self._by_join(flat, "taxa_reached"),)
         elif flat.startswith("SELECT COUNT(*) FROM ") and " WHERE " in flat:
@@ -46,6 +46,13 @@ class FakeCursor:
             self._result = (self.rows.get(table, 0),)
         else:  # pragma: no cover - a query the fake was not taught
             raise AssertionError(f"Unexpected SQL: {flat}")
+
+    def _fold(self, flat):
+        """Record whether the join this query used was case-folded."""
+        self.saw_lower = getattr(self, "saw_lower", set())
+        if "lower(t." in flat:
+            self.saw_lower.add("name")
+        return flat
 
     def _by_join(self, flat, key):
         """Answer per join column, so a test can describe an id join and a name join separately.
@@ -757,3 +764,31 @@ def test_the_occurrence_metric_does_not_follow_elevation_onto_the_spine():
     from app.routers.mission_control import METRIC_CANDIDATES
 
     assert METRIC_CANDIDATES["occurrences"][0] == "public.orchid_occurrence"
+
+
+def test_name_joins_are_case_folded_and_id_joins_are_not():
+    """Scientific names arrive from a dozen harvesters with inconsistent casing.
+
+    Measuring them case-sensitively made elevation read 16,170 rows where the
+    same join, folded, finds 306,359 -- a measurement of capitalisation rather
+    than of the archive. The Knowledge Graph source registry already folds these
+    joins; the audit now matches it. Identifier joins stay exact, because an id
+    that differs by case is a different id.
+    """
+    cur = FakeCursor(
+        {**TAX_BOTH, "t.byname": {"scientific_name"}},
+        rows={"oc_taxonomy.taxa": 31840, "public.orchid_taxonomy": 69485, "t.byname": 500},
+        joins={"scientific_name": {"carrying": 500, "matched": 480, "taxa_reached": 300}},
+    )
+    result = measure(cur, object_tables=("t.byname",))
+    assert result["measurement"] == "relational_linkage_by_name"
+    assert "name" in getattr(cur, "saw_lower", set()), "name join was not case-folded"
+
+    id_cur = FakeCursor(
+        {**TAX_BOTH, "t.byid": {"taxon_id"}},
+        rows={"oc_taxonomy.taxa": 31840, "public.orchid_taxonomy": 69485, "t.byid": 500},
+        joins={"taxon_id": {"carrying": 500, "matched": 480, "taxa_reached": 300}},
+    )
+    id_result = measure(id_cur, object_tables=("t.byid",))
+    assert id_result["measurement"] == "relational_linkage_by_id"
+    assert "name" not in getattr(id_cur, "saw_lower", set()), "id join must stay exact"

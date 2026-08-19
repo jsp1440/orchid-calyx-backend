@@ -88,6 +88,13 @@ jobs:
             git worktree add --detach /tmp/evtree || true
             ( cd /tmp/evtree && git checkout --orphan evidence-root && git rm -rf . >/dev/null 2>&1 ) || true
           fi
+          # Refresh the human-readable logs before publishing. These copies
+          # lived in the old commit step and were lost when the sideways
+          # publisher replaced it, so the .txt logs went stale while the JSON
+          # kept updating -- a stale log beside a fresh measurement is worse
+          # than no log, because it reads as current.
+          cp production-overall-audit.log docs/evidence/audit-measurement-002/production-overall-audit-log.txt 2>/dev/null || true
+          cp production-relationship-measurement.log docs/evidence/audit-measurement-002/production-relationship-measurement-log.txt 2>/dev/null || true
           mkdir -p /tmp/evtree/docs/evidence/audit-measurement-002
           cp -f docs/evidence/audit-measurement-002/* /tmp/evtree/docs/evidence/audit-measurement-002/ 2>/dev/null || true
           for f in /tmp/evtree/docs/evidence/audit-measurement-002/*.txt; do

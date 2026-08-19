@@ -304,16 +304,29 @@ def measure_link_relationship(
     for mode, tax_table, left, right in attempts_spec:
         t = _safe(tax_table)
         lcol, rcol = _safe(left), _safe(right)
+        # Name joins are case-folded on both sides; id joins are not. Scientific
+        # names arrive from a dozen harvesters with inconsistent casing, and the
+        # Knowledge Graph source registry already joins them this way
+        # (lower(k.display_label) = lower(a.orchid_scientific_name)). Measuring
+        # case-sensitively made elevation read 16,170 rows against the 306,359
+        # the same join finds when folded -- a measurement of capitalisation,
+        # not of the archive.
+        if mode == "relational_linkage_by_name":
+            join_on = f"lower(t.{lcol}) = lower(o.{rcol})"
+            distinct_expr = f"lower(t.{lcol})"
+        else:
+            join_on = f"t.{lcol} = o.{rcol}"
+            distinct_expr = f"t.{lcol}"
         predicate = f"o.{rcol} IS NOT NULL" + semantic_predicate + value_predicate
         linked_objects = _scalar(cur, f"SELECT COUNT(*) FROM {o} o WHERE {predicate}")
         matched_objects = _scalar(
             cur,
-            f"SELECT COUNT(*) FROM {o} o JOIN {t} t ON t.{lcol} = o.{rcol} WHERE {predicate}",
+            f"SELECT COUNT(*) FROM {o} o JOIN {t} t ON {join_on} WHERE {predicate}",
         )
         taxa_reached = _scalar(
             cur,
-            f"SELECT COUNT(DISTINCT t.{lcol}) FROM {o} o "
-            f"JOIN {t} t ON t.{lcol} = o.{rcol} WHERE {predicate}",
+            f"SELECT COUNT(DISTINCT {distinct_expr}) FROM {o} o "
+            f"JOIN {t} t ON {join_on} WHERE {predicate}",
         )
         results.append(
             {
