@@ -1,0 +1,21 @@
+name: Orchid Continuation Trigger
+
+on:
+  workflow_run:
+    workflows:
+      - Orchid Autonomous Backend Validation
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  continue:
+    if: github.event.workflow_run.event == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger immediate orchestration follow-through
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run orchid-continuous-completion.yml --repo "$GITHUB_REPOSITORY" --ref main
