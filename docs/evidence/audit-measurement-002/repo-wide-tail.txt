@@ -1,6 +1,3 @@
-    @app.on_event("startup")
-
-../../../../../opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/applications.py:4495
 ../../../../../opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/applications.py:4495
   /opt/hostedtoolcache/Python/3.12.13/x64/lib/python3.12/site-packages/fastapi/applications.py:4495: DeprecationWarning:
           on_event is deprecated, use lifespan event handlers instead.
@@ -37,4 +34,7 @@ tests/test_calyx_git_proposal_mutation_journal_114t.py::test_recovery_validates_
     self.db.commit()
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-3214 passed, 43 skipped, 1 deselected, 37 warnings, 8 subtests passed in 143.17s (0:02:23)
+=========================== short test summary info ============================
+FAILED tests/test_knowledge_graph_telemetry.py::test_first_available_count_uses_live_count_from_kg_edges - IndexError: tuple index out of range
+FAILED tests/test_knowledge_graph_telemetry.py::test_first_available_count_reports_honestly_when_absent - IndexError: tuple index out of range
+2 failed, 3164 passed, 43 skipped, 1 deselected, 37 warnings, 8 subtests passed in 131.24s (0:02:11)
