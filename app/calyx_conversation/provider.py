@@ -122,6 +122,7 @@ class DeterministicGovernedReplyProvider:
         conclusions = packet.get("candidate_conclusions") or []
         evidence = packet.get("evidence_items") or []
         reconciliation = packet.get("reconciliation") or {}
+        source_families = set(reconciliation.get("source_families") or [])
         supporting_ids = set(reconciliation.get("supporting_evidence_ids") or [])
         contradicting_ids = set(reconciliation.get("contradicting_evidence_ids") or [])
         supporting = [item for item in evidence if item.get("evidence_id") in supporting_ids]
@@ -146,6 +147,13 @@ class DeterministicGovernedReplyProvider:
             # but keep successful mission fallbacks compact so follow-up turns retain
             # the preceding user question inside the bounded conversation window.
             lines.append("Evidence summary: the mission did not surface any supporting evidence records that could justify a conclusion.")
+
+        # Provenance stays visible without returning to source-by-source narration.
+        # These are compact boundary statements after the integrated conclusion.
+        if "knowledge_graph" in source_families:
+            lines.append("Orchid Continuum context: canonical Knowledge Graph evidence informed this synthesis.")
+        if "external_literature" in source_families:
+            lines.append("External literature context: review-required Europe PMC records informed this provisional synthesis and are not canonical Orchid Continuum evidence.")
 
         if contradicting:
             lines.append("Disagreements or conflicting evidence: " + "; ".join(self._evidence_statement(item) for item in contradicting[:4] if self._evidence_statement(item)))
