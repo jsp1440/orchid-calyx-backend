@@ -149,6 +149,10 @@ class DeterministicGovernedReplyProvider:
             lines.append("Orchid Continuum context: canonical Knowledge Graph evidence informed this synthesis.")
         if "external_literature" in source_families:
             lines.append("External literature context: review-required Europe PMC records informed this provisional synthesis; they are not yet reviewed/indexed Orchid Continuum evidence.")
+        if "climate" in source_families:
+            lines.append(
+                "Climate context: NOAA/NWS Climate Prediction Center products are time-sensitive external context and do not establish orchid physiological responses by themselves."
+            )
 
         if contradicting:
             lines.append("Disagreements or conflicting evidence: " + "; ".join(self._evidence_statement(item) for item in contradicting[:4] if self._evidence_statement(item)))
