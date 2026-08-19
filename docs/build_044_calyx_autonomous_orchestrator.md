@@ -46,6 +46,7 @@ All BUILD-044 tables live in `oc_admin`:
 - `calyx_observations`
 - `calyx_runs`
 - `calyx_runtime_state`
+- `calyx_audit_findings`
 
 Task statuses are:
 
@@ -140,6 +141,24 @@ Check status:
 curl "$CALYX_URL/api/runner/health"
 curl "$CALYX_URL/api/runner/summary"
 ```
+
+## Audit Follow-Through (ORCHESTRATION-AUDIT-FOLLOWTHROUGH-001)
+
+An audit is not complete when it produces findings. `audit_requires_followthrough` is a constitutional policy (see `runtime/constitutional_orchestrator.py`) requiring every actionable finding to reach one of seven terminal dispositions before an audit may be reported complete:
+
+- `auto_remediation_queued`
+- `auto_remediation_in_progress`
+- `verified_resolved`
+- `owner_approval_required`
+- `external_blocker`
+- `scientific_data_gap`
+- `no_action_needed`
+
+`POST /api/orchestrator/audit/findings` classifies a batch of findings for one audit run (`AuditFollowthroughEngine` in `runtime/autonomous_orchestrator.py`), dedupes against any unresolved task sharing the same stable `finding_key`/`task_key`, creates a new `calyx_tasks` row only when none exists, reopens a task with an evidence trail when its prior verification failed instead of reporting completion, and never creates a task at all for `scientific_data_gap` or `external_blocker` findings. High-risk task types (see Approval Gates) resolve to `owner_approval_required` and are created as `needs_review`, never auto-executed. Every finding, its disposition, evidence, and linked task are persisted to `oc_admin.calyx_audit_findings`, keyed uniquely by `finding_key`.
+
+`GET /api/orchestrator/audit/followthrough[?audit_id=...]` returns the owner-facing summary grouped as fixed automatically, in progress, owner action required, and blocked — the prioritized view Mission Control should render instead of raw narration.
+
+`ConstitutionalMissionOrchestrator.evaluate_audit_completion(...)` is the enforcement point: it returns `blocked_narrative_only` and opens a governance question if any actionable finding lacks a terminal disposition, and `approved` only once every actionable finding does. This makes narrative-only "audit complete" reports structurally impossible for actionable findings.
 
 ## Frontend / Control Panel Display
 

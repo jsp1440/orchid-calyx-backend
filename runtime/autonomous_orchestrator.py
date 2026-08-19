@@ -7,8 +7,9 @@ task has passed an approval gate.
 
 from __future__ import annotations
 
+import hashlib
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -39,6 +40,180 @@ RISKY_ACTIONS = {
     "retire",
     "restore",
 }
+
+
+# ORCHESTRATION-AUDIT-FOLLOWTHROUGH-001: every audit finding must resolve to
+# exactly one of these terminal dispositions. Narrative-only completion (a
+# finding with no disposition) is prohibited. Kept in sync with
+# runtime.constitutional_orchestrator.TERMINAL_FINDING_DISPOSITIONS.
+FINDING_DISPOSITIONS = (
+    "auto_remediation_queued",
+    "auto_remediation_in_progress",
+    "verified_resolved",
+    "owner_approval_required",
+    "external_blocker",
+    "scientific_data_gap",
+    "no_action_needed",
+)
+
+# Dispositions that never create or touch a durable remediation task.
+NON_TASK_DISPOSITIONS = frozenset({"external_blocker", "scientific_data_gap", "no_action_needed"})
+
+
+def finding_key(audit_id: str, finding: dict[str, Any]) -> str:
+    """Derive a stable dedupe key for an audit finding.
+
+    Callers may supply an explicit ``finding_key`` (preferred, since the
+    audit usually knows its own natural identity for a finding). Otherwise
+    the key is derived from the audit id and title so that re-running the
+    same audit against the same unresolved condition never creates a
+    duplicate remediation task.
+    """
+
+    explicit = finding.get("finding_key")
+    if explicit:
+        return str(explicit)
+    basis = f"{audit_id}:{finding.get('title', '')}"
+    digest = hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
+    return f"audit:{audit_id}:{digest}"
+
+
+@dataclass
+class FindingPlan:
+    """The result of classifying one audit finding, before any DB write."""
+
+    finding_key: str
+    audit_id: str
+    title: str
+    category: str
+    disposition: str
+    task_key: Optional[str]
+    task_action: Optional[str]  # "create" | "requeue" | None
+    task_type: Optional[str]
+    payload: dict[str, Any]
+    priority: int
+    evidence: list[str] = field(default_factory=list)
+    rationale: str = ""
+
+
+class AuditFollowthroughEngine:
+    """Pure classification of audit findings into terminal dispositions.
+
+    This performs no I/O. Given the findings an audit produced and the
+    current state of any previously created remediation tasks (as plain
+    dicts, e.g. rows from ``oc_admin.calyx_tasks``), it decides whether a
+    new task must be created, an existing one is already tracking the same
+    unresolved finding (dedupe), a completed task's verification failed and
+    must be reopened with evidence, or the finding is not actionable code
+    work at all. Keeping this logic free of database access lets the
+    dedupe/safe-autonomy/owner-gate rules be unit tested directly.
+    """
+
+    def __init__(self, executor: Optional["DefaultTaskExecutor"] = None) -> None:
+        self.executor = executor or DefaultTaskExecutor()
+
+    def plan(
+        self,
+        audit_id: str,
+        findings: list[dict[str, Any]],
+        existing_tasks_by_key: dict[str, dict[str, Any]],
+    ) -> list[FindingPlan]:
+        return [self._plan_one(audit_id, finding, existing_tasks_by_key) for finding in findings]
+
+    def _plan_one(
+        self,
+        audit_id: str,
+        finding: dict[str, Any],
+        existing_tasks_by_key: dict[str, dict[str, Any]],
+    ) -> FindingPlan:
+        key = finding_key(audit_id, finding)
+        title = str(finding.get("title") or key)
+        category = str(finding.get("category") or "engineering")
+        evidence = list(finding.get("evidence") or [])
+        priority = int(finding.get("priority", 50))
+        task_type = finding.get("task_type") or "engineering_remediation"
+        payload = dict(finding.get("payload") or {})
+        payload.setdefault("audit_id", audit_id)
+        payload.setdefault("finding_key", key)
+
+        def result(disposition: str, task_key: Optional[str], task_action: Optional[str], rationale: str) -> FindingPlan:
+            return FindingPlan(
+                finding_key=key,
+                audit_id=audit_id,
+                title=title,
+                category=category,
+                disposition=disposition,
+                task_key=task_key,
+                task_action=task_action,
+                task_type=task_type,
+                payload=payload,
+                priority=priority,
+                evidence=evidence,
+                rationale=rationale,
+            )
+
+        if category in ("scientific_data_gap", "external_blocker"):
+            return result(
+                category,
+                None,
+                None,
+                f"Finding classified as {category}; no code remediation is possible.",
+            )
+
+        if not finding.get("actionable", True):
+            return result(
+                "no_action_needed",
+                None,
+                None,
+                "Finding is informational and requires no remediation.",
+            )
+
+        task_key = finding.get("task_key") or key
+        risky = self.executor.risky_action(task_type, payload)
+        existing = existing_tasks_by_key.get(task_key)
+
+        if existing is None:
+            disposition = "owner_approval_required" if risky else "auto_remediation_queued"
+            return result(
+                disposition,
+                task_key,
+                "create",
+                "No remediation task exists yet for this unresolved finding.",
+            )
+
+        status = existing.get("status")
+        evaluation_result = existing.get("evaluation_result")
+
+        if status == "completed" and evaluation_result == "pass":
+            return result(
+                "verified_resolved",
+                task_key,
+                None,
+                "Linked remediation task completed and passed verification.",
+            )
+
+        if status in ("completed", "failed"):
+            disposition = "owner_approval_required" if risky else "auto_remediation_queued"
+            return result(
+                disposition,
+                task_key,
+                "requeue",
+                "Verification did not pass; remediation is reopened with evidence instead of reported complete.",
+            )
+
+        if status == "running":
+            disposition = "auto_remediation_in_progress"
+        elif status in ("needs_review", "blocked"):
+            disposition = "owner_approval_required"
+        else:  # pending
+            disposition = "owner_approval_required" if risky else "auto_remediation_queued"
+
+        return result(
+            disposition,
+            task_key,
+            None,
+            "An unresolved remediation task already tracks this finding; no duplicate was created.",
+        )
 
 
 DEFAULT_AGENTS: list[dict[str, Any]] = [
@@ -446,6 +621,35 @@ class CalyxAutonomousOrchestrator:
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_calyx_tasks_status_priority ON oc_admin.calyx_tasks(status, priority DESC, id ASC);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_calyx_observations_task ON oc_admin.calyx_observations(task_id, id DESC);")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS oc_admin.calyx_audit_findings (
+                id BIGSERIAL PRIMARY KEY,
+                finding_key TEXT NOT NULL UNIQUE,
+                audit_id TEXT NOT NULL,
+                audit_run_id TEXT,
+                title TEXT NOT NULL,
+                category TEXT NOT NULL,
+                disposition TEXT NOT NULL,
+                rationale TEXT NOT NULL DEFAULT '',
+                evidence JSONB NOT NULL DEFAULT '[]'::jsonb,
+                task_id BIGINT REFERENCES oc_admin.calyx_tasks(id),
+                task_key TEXT,
+                first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                resolved_at TIMESTAMPTZ,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CONSTRAINT calyx_audit_findings_disposition_check
+                    CHECK (disposition IN (
+                        'auto_remediation_queued', 'auto_remediation_in_progress', 'verified_resolved',
+                        'owner_approval_required', 'external_blocker', 'scientific_data_gap', 'no_action_needed'
+                    ))
+            );
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_calyx_audit_findings_audit ON oc_admin.calyx_audit_findings(audit_id, updated_at DESC);"
+        )
 
     def seed_defaults(self) -> dict[str, Any]:
         with self.connect() as conn:
@@ -882,6 +1086,196 @@ class CalyxAutonomousOrchestrator:
                     (limit,),
                 )
                 return {"observations": [dict(row) for row in cur.fetchall()]}
+
+    def ingest_audit_findings(
+        self,
+        audit_id: str,
+        findings: list[dict[str, Any]],
+        audit_run_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Apply the ORCHESTRATION-AUDIT-FOLLOWTHROUGH-001 rule to one audit.
+
+        Every finding is classified by :class:`AuditFollowthroughEngine` into
+        a terminal disposition. Actionable findings without a matching
+        unresolved task get a deduplicated remediation task created; findings
+        whose linked task previously failed verification are reopened with
+        evidence rather than silently dropped. Narrative-only completion is
+        never produced here: every finding always receives a disposition row.
+        """
+
+        engine = AuditFollowthroughEngine(self.executor)
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                self.ensure_schema(cur)
+
+                task_keys = sorted({finding.get("task_key") or finding_key(audit_id, finding) for finding in findings})
+                existing_tasks: dict[str, dict[str, Any]] = {}
+                if task_keys:
+                    cur.execute(
+                        "SELECT * FROM oc_admin.calyx_tasks WHERE task_key = ANY(%s)",
+                        (task_keys,),
+                    )
+                    for row in cur.fetchall():
+                        existing_tasks[row["task_key"]] = dict(row)
+
+                plans = engine.plan(audit_id, findings, existing_tasks)
+
+                next_actions_created: list[dict[str, Any]] = []
+                disposition_counts: dict[str, int] = {}
+                processed: list[dict[str, Any]] = []
+
+                for plan in plans:
+                    disposition_counts[plan.disposition] = disposition_counts.get(plan.disposition, 0) + 1
+                    task_id: Optional[int] = None
+                    required_approval = plan.disposition == "owner_approval_required"
+                    task_status = "needs_review" if required_approval else "pending"
+
+                    if plan.task_action == "create":
+                        cur.execute(
+                            """
+                            INSERT INTO oc_admin.calyx_tasks
+                                (task_key, task_type, title, payload, status, priority, required_approval)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (task_key) DO NOTHING
+                            RETURNING id
+                            """,
+                            (plan.task_key, plan.task_type, plan.title, _json(plan.payload), task_status, plan.priority, required_approval),
+                        )
+                        row = cur.fetchone()
+                        if row is not None:
+                            task_id = row["id"]
+                            next_actions_created.append(
+                                {"finding_key": plan.finding_key, "task_key": plan.task_key, "task_id": task_id, "action": "created"}
+                            )
+                            self.log_observation(
+                                cur,
+                                task_id=task_id,
+                                agent_id=None,
+                                event_type="audit_finding_ingested",
+                                action="task_created",
+                                status=task_status,
+                                details={"audit_id": audit_id, "finding_key": plan.finding_key, "evidence": plan.evidence},
+                            )
+                        else:
+                            cur.execute("SELECT id FROM oc_admin.calyx_tasks WHERE task_key = %s", (plan.task_key,))
+                            found = cur.fetchone()
+                            task_id = found["id"] if found else None
+
+                    elif plan.task_action == "requeue":
+                        existing = existing_tasks.get(plan.task_key, {})
+                        task_id = existing.get("id")
+                        history = list((existing.get("payload") or {}).get("audit_requeue_history", []))
+                        history.append(
+                            {
+                                "requeued_at": utc_now(),
+                                "previous_status": existing.get("status"),
+                                "previous_evaluation_result": existing.get("evaluation_result"),
+                            }
+                        )
+                        requeue_payload = dict(plan.payload)
+                        requeue_payload["audit_requeue_history"] = history
+                        cur.execute(
+                            """
+                            UPDATE oc_admin.calyx_tasks
+                            SET status = %s,
+                                payload = %s,
+                                required_approval = %s,
+                                last_error = NULL,
+                                started_at = NULL,
+                                finished_at = NULL,
+                                updated_at = NOW()
+                            WHERE id = %s
+                            """,
+                            (task_status, _json(requeue_payload), required_approval, task_id),
+                        )
+                        next_actions_created.append(
+                            {"finding_key": plan.finding_key, "task_key": plan.task_key, "task_id": task_id, "action": "requeued"}
+                        )
+                        self.log_observation(
+                            cur,
+                            task_id=task_id,
+                            agent_id=None,
+                            event_type="audit_finding_ingested",
+                            action="task_requeued",
+                            status=task_status,
+                            details={"audit_id": audit_id, "finding_key": plan.finding_key, "evidence": plan.evidence},
+                        )
+                    elif plan.task_key is not None:
+                        existing = existing_tasks.get(plan.task_key)
+                        task_id = existing.get("id") if existing else None
+
+                    cur.execute(
+                        """
+                        INSERT INTO oc_admin.calyx_audit_findings
+                            (finding_key, audit_id, audit_run_id, title, category, disposition, rationale, evidence, task_id, task_key)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (finding_key) DO UPDATE
+                        SET disposition = EXCLUDED.disposition,
+                            rationale = EXCLUDED.rationale,
+                            evidence = EXCLUDED.evidence,
+                            task_id = COALESCE(EXCLUDED.task_id, oc_admin.calyx_audit_findings.task_id),
+                            task_key = COALESCE(EXCLUDED.task_key, oc_admin.calyx_audit_findings.task_key),
+                            audit_run_id = EXCLUDED.audit_run_id,
+                            last_seen_at = NOW(),
+                            resolved_at = CASE WHEN EXCLUDED.disposition = 'verified_resolved' THEN NOW() ELSE NULL END,
+                            updated_at = NOW()
+                        RETURNING *
+                        """,
+                        (
+                            plan.finding_key,
+                            audit_id,
+                            audit_run_id,
+                            plan.title,
+                            plan.category,
+                            plan.disposition,
+                            plan.rationale,
+                            _json(plan.evidence),
+                            task_id,
+                            plan.task_key,
+                        ),
+                    )
+                    processed.append(dict(cur.fetchone()))
+            conn.commit()
+
+        return {
+            "status": "ingested",
+            "audit_id": audit_id,
+            "audit_run_id": audit_run_id,
+            "findings_processed": len(processed),
+            "disposition_counts": disposition_counts,
+            "next_actions_created": next_actions_created,
+            "findings": processed,
+        }
+
+    def audit_followthrough_view(self, audit_id: Optional[str] = None) -> dict[str, Any]:
+        """Owner-facing summary: fixed automatically, in progress, owner action, blockers."""
+
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                self.ensure_schema(cur)
+                if audit_id:
+                    cur.execute(
+                        "SELECT * FROM oc_admin.calyx_audit_findings WHERE audit_id = %s ORDER BY updated_at DESC",
+                        (audit_id,),
+                    )
+                else:
+                    cur.execute("SELECT * FROM oc_admin.calyx_audit_findings ORDER BY updated_at DESC LIMIT 500")
+                rows = [dict(row) for row in cur.fetchall()]
+
+        groups = {
+            "fixed_automatically": [row for row in rows if row["disposition"] == "verified_resolved"],
+            "in_progress": [row for row in rows if row["disposition"] in ("auto_remediation_queued", "auto_remediation_in_progress")],
+            "owner_action_required": [row for row in rows if row["disposition"] == "owner_approval_required"],
+            "blocked": [row for row in rows if row["disposition"] in ("external_blocker", "scientific_data_gap")],
+            "no_action_needed": [row for row in rows if row["disposition"] == "no_action_needed"],
+        }
+        return {
+            "status": "ok",
+            "audit_id": audit_id,
+            "total_findings": len(rows),
+            "summary": {key: len(value) for key, value in groups.items()},
+            "groups": groups,
+        }
 
     def runs(self, limit: int = 50) -> dict[str, Any]:
         with self.connect() as conn:

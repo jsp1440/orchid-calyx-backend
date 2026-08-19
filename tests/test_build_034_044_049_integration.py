@@ -79,6 +79,10 @@ def test_state_changing_runtime_routes_fail_closed_without_api_key(monkeypatch):
         "evidence": ["test"],
     }
     task_body = {"task_type": "backend_health_check", "title": "test task", "payload": {}, "priority": 1}
+    audit_findings_body = {
+        "audit_id": "AUDIT-TEST-001",
+        "findings": [{"title": "test finding", "actionable": True}],
+    }
     routes = [
         ("post", "/api/runner/run-once", None),
         ("post", "/api/runner/execute-next", None),
@@ -107,6 +111,7 @@ def test_state_changing_runtime_routes_fail_closed_without_api_key(monkeypatch):
         ("post", "/api/orchestrator/tasks", task_body),
         ("post", "/api/orchestrator/tasks/1/approve", None),
         ("post", "/api/orchestrator/run-once", None),
+        ("post", "/api/orchestrator/audit/findings", audit_findings_body),
         ("post", "/api/harvesters/gbif/pause", None),
     ]
 
