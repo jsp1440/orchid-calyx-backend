@@ -5353,6 +5353,34 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "app.database",
+        "collections.abc",
+        "dataclasses",
+        "datetime",
+        "enum",
+        "git_proposal_mutation_executor",
+        "git_proposal_mutation_journal",
+        "json",
+        "models",
+        "sandbox_supervisor_evidence",
+        "sqlalchemy",
+        "sqlalchemy.exc",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "description": "CiConclusion provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "CiConclusion"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
         "collections.abc",
         "copy",
         "dataclasses",
@@ -12082,6 +12110,7 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "app.calyx_conversation.workspace_outputs",
         "app.security",
         "fastapi",
         "pydantic",
@@ -14393,7 +14422,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 1837,
+    "edge_count": 1844,
     "edges": [
       {
         "from": "GovernanceService",
@@ -17326,6 +17355,11 @@
         "type": "import"
       },
       {
+        "from": "JsonActivationStateStore",
+        "to": "WorkspaceOutputs",
+        "type": "import"
+      },
+      {
         "from": "BottleneckService",
         "to": "Init",
         "type": "import"
@@ -17693,6 +17727,31 @@
       {
         "from": "DurableProposalAuthorizationStore",
         "to": "OwnerGrantSignatureVerifier",
+        "type": "import"
+      },
+      {
+        "from": "Database",
+        "to": "CiConclusion",
+        "type": "import"
+      },
+      {
+        "from": "GitProposalMutationExecutor",
+        "to": "CiConclusion",
+        "type": "import"
+      },
+      {
+        "from": "GitProposalMutationJournalEventRecord",
+        "to": "CiConclusion",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "CiConclusion",
+        "type": "import"
+      },
+      {
+        "from": "OperatorMessage",
+        "to": "CiConclusion",
         "type": "import"
       },
       {
@@ -19981,7 +20040,7 @@
         "type": "import"
       },
       {
-        "from": "OutputBundle",
+        "from": "WorkspaceOutputs",
         "to": "Cli",
         "type": "import"
       },
@@ -20161,7 +20220,7 @@
         "type": "import"
       },
       {
-        "from": "OutputBundle",
+        "from": "WorkspaceOutputs",
         "to": "LiteratureResultRepository",
         "type": "import"
       },
@@ -21973,6 +22032,11 @@
       {
         "from": "SupervisedPilotResult",
         "to": "LiveMissionControl",
+        "type": "import"
+      },
+      {
+        "from": "WorkspaceOutputs",
+        "to": "ObservationInput",
         "type": "import"
       },
       {
@@ -23983,7 +24047,7 @@
         "module": "Awards"
       }
     ],
-    "node_count": 828,
+    "node_count": 830,
     "nodes": [
       {
         "category": "Runtime",
@@ -26081,6 +26145,13 @@
       {
         "category": "Runtime",
         "health": "available",
+        "name": "WorkspaceOutputs",
+        "path": "app/calyx_conversation/workspace_outputs.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
         "name": "Init",
         "path": "app/calyx_engineering/__init__.py",
         "type": "python_module"
@@ -26272,6 +26343,13 @@
         "health": "healthy",
         "name": "OwnerGrantSignatureVerifier",
         "path": "app/calyx_orchestrator/git_mutation_authorization.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "CiConclusion",
+        "path": "app/calyx_orchestrator/git_proposal_ci_repair.py",
         "type": "python_module"
       },
       {
@@ -38825,6 +38903,29 @@
       "category": "Runtime",
       "classes": [],
       "dependencies": [
+        "__future__",
+        "datetime",
+        "hashlib",
+        "json",
+        "typing"
+      ],
+      "functions": [
+        "_id",
+        "_now",
+        "_text",
+        "matrix_identification_table"
+      ],
+      "module_type": "python_module",
+      "name": "WorkspaceOutputs",
+      "path": "app/calyx_conversation/workspace_outputs.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
         "service"
       ],
       "functions": [],
@@ -39693,6 +39794,75 @@
       "module_type": "python_module",
       "name": "OwnerGrantSignatureVerifier",
       "path": "app/calyx_orchestrator/git_mutation_authorization.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "CiConclusion",
+        "CiRepairDisposition",
+        "CiCheck",
+        "CiObservation",
+        "CiRequiredCheckRoster",
+        "CiRepairAssignment",
+        "CiRepairDecision",
+        "CorrectiveMutationReceiptResolver",
+        "DurableCorrectiveMutationReceiptResolver",
+        "GitProposalCiRepairEventRecord",
+        "DurableGitProposalCiRepairJournal",
+        "GitProposalCiRepairCoordinator"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.database",
+        "collections.abc",
+        "dataclasses",
+        "datetime",
+        "enum",
+        "git_proposal_mutation_executor",
+        "git_proposal_mutation_journal",
+        "json",
+        "models",
+        "sandbox_supervisor_evidence",
+        "sqlalchemy",
+        "sqlalchemy.exc",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "functions": [
+        "_required_check_state",
+        "_verify_corrective_receipt",
+        "_proposal_identity",
+        "_repair_assignment",
+        "_is_git_sha",
+        "_is_sha256",
+        "__post_init__",
+        "snapshot",
+        "__post_init__",
+        "observation_digest",
+        "snapshot",
+        "__post_init__",
+        "roster_digest",
+        "policy_digest",
+        "snapshot",
+        "snapshot",
+        "snapshot",
+        "resolve",
+        "__init__",
+        "resolve",
+        "__init__",
+        "record_assignment",
+        "record_revalidation",
+        "latest",
+        "_record"
+      ],
+      "module_type": "python_module",
+      "name": "CiConclusion",
+      "path": "app/calyx_orchestrator/git_proposal_ci_repair.py",
       "routers": [],
       "status": "healthy"
     },
@@ -51884,6 +52054,7 @@
       ],
       "dependencies": [
         "__future__",
+        "app.calyx_conversation.workspace_outputs",
         "app.security",
         "fastapi",
         "pydantic",
@@ -56025,12 +56196,12 @@
   "status": "discovered",
   "summary": {
     "brain_connected": true,
-    "capabilities": 683,
+    "capabilities": 684,
     "degraded": 1,
-    "graph_edges": 1837,
-    "graph_nodes": 828,
-    "healthy": 595,
-    "modules": 828,
+    "graph_edges": 1844,
+    "graph_nodes": 830,
+    "healthy": 596,
+    "modules": 830,
     "recommendations": 3
   }
 }
