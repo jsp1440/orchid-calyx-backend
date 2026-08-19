@@ -8551,6 +8551,49 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "argparse",
+        "base64",
+        "dataclasses",
+        "datetime",
+        "email.utils",
+        "email_service",
+        "google.auth",
+        "google.oauth2",
+        "googleapiclient.discovery",
+        "html_links",
+        "json",
+        "os",
+        "typing"
+      ],
+      "description": "GmailIntelligenceMessage provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "GmailIntelligenceMessage"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "html.parser",
+        "urllib.parse"
+      ],
+      "description": "_LinkPreservingParser provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "_LinkPreservingParser"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
         "intelligence_verification",
         "knowledge_delta",
         "knowledge_delta_repository",
@@ -8642,6 +8685,7 @@
         "extractor",
         "fastapi",
         "fastapi.responses",
+        "gmail_collector",
         "intelligence",
         "intelligence_repository",
         "knowledge_delta",
@@ -9932,12 +9976,15 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "app.database",
         "app.mission_control_access",
         "app.review_api.dependencies",
         "app.routers.mission_control",
         "fastapi",
+        "proposal_execution_status",
         "proposal_executor_status",
         "service",
+        "sqlalchemy.orm",
         "typing"
       ],
       "description": "Routes provides: Analyze dependencies",
@@ -9955,12 +10002,15 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "app.database",
         "app.mission_control_access",
         "app.review_api.dependencies",
         "app.routers.mission_control",
         "fastapi",
+        "proposal_execution_status",
         "proposal_executor_status",
         "service",
+        "sqlalchemy.orm",
         "typing"
       ],
       "description": "Routes provides: Execute runtime work",
@@ -9978,12 +10028,15 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "app.database",
         "app.mission_control_access",
         "app.review_api.dependencies",
         "app.routers.mission_control",
         "fastapi",
+        "proposal_execution_status",
         "proposal_executor_status",
         "service",
+        "sqlalchemy.orm",
         "typing"
       ],
       "description": "Routes provides: Expose API endpoints",
@@ -14422,7 +14475,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 1844,
+    "edge_count": 1863,
     "edges": [
       {
         "from": "GovernanceService",
@@ -19550,6 +19603,26 @@
         "type": "import"
       },
       {
+        "from": "Extractor",
+        "to": "EmailService",
+        "type": "import"
+      },
+      {
+        "from": "Intelligence",
+        "to": "EmailService",
+        "type": "import"
+      },
+      {
+        "from": "Intelligence",
+        "to": "EmailService",
+        "type": "import"
+      },
+      {
+        "from": "RepositoryContext",
+        "to": "EmailService",
+        "type": "import"
+      },
+      {
         "from": "DeployedPreflight",
         "to": "Extractor",
         "type": "import"
@@ -19557,6 +19630,46 @@
       {
         "from": "Schema",
         "to": "Extractor",
+        "type": "import"
+      },
+      {
+        "from": "Utils",
+        "to": "GmailIntelligenceMessage",
+        "type": "import"
+      },
+      {
+        "from": "Service",
+        "to": "GmailIntelligenceMessage",
+        "type": "import"
+      },
+      {
+        "from": "OwnerAuthorization",
+        "to": "GmailIntelligenceMessage",
+        "type": "import"
+      },
+      {
+        "from": "AutonomousDiscoveryEngine",
+        "to": "GmailIntelligenceMessage",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "GmailIntelligenceMessage",
+        "type": "import"
+      },
+      {
+        "from": "CrossLaneIntegration",
+        "to": "GmailIntelligenceMessage",
+        "type": "import"
+      },
+      {
+        "from": "Parser",
+        "to": "_LinkPreservingParser",
+        "type": "import"
+      },
+      {
+        "from": "Parser",
+        "to": "_LinkPreservingParser",
         "type": "import"
       },
       {
@@ -20465,8 +20578,33 @@
         "type": "import"
       },
       {
+        "from": "GitProposalExecutionPlanner",
+        "to": "ProposalExecutionStatus",
+        "type": "import"
+      },
+      {
+        "from": "GitProposalMutationExecutor",
+        "to": "ProposalExecutionStatus",
+        "type": "import"
+      },
+      {
+        "from": "GitProposalMutationJournalEventRecord",
+        "to": "ProposalExecutionStatus",
+        "type": "import"
+      },
+      {
+        "from": "OperatorMessage",
+        "to": "ProposalExecutionStatus",
+        "type": "import"
+      },
+      {
         "from": "Policy",
         "to": "ProposalExecutorStatus",
+        "type": "import"
+      },
+      {
+        "from": "Database",
+        "to": "Routes",
         "type": "import"
       },
       {
@@ -20495,7 +20633,17 @@
         "type": "import"
       },
       {
+        "from": "Status",
+        "to": "Routes",
+        "type": "import"
+      },
+      {
         "from": "BottleneckService",
+        "to": "Routes",
+        "type": "import"
+      },
+      {
+        "from": "OperatorMessage",
         "to": "Routes",
         "type": "import"
       },
@@ -24047,7 +24195,7 @@
         "module": "Awards"
       }
     ],
-    "node_count": 830,
+    "node_count": 834,
     "nodes": [
       {
         "category": "Runtime",
@@ -27608,8 +27756,29 @@
       {
         "category": "Runtime",
         "health": "available",
+        "name": "EmailService",
+        "path": "app/intake/email_service.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
         "name": "Extractor",
         "path": "app/intake/extractor.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "GmailIntelligenceMessage",
+        "path": "app/intake/gmail_collector.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "_LinkPreservingParser",
+        "path": "app/intake/html_links.py",
         "type": "python_module"
       },
       {
@@ -28192,6 +28361,13 @@
         "name": "CapabilityService",
         "path": "app/mission_control_access/service.py",
         "type": "service"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "ProposalExecutionStatus",
+        "path": "app/mission_control_briefing/proposal_execution_status.py",
+        "type": "python_module"
       },
       {
         "category": "Execution",
@@ -40028,6 +40204,7 @@
         "__init__",
         "record",
         "latest",
+        "validate_checkpoint_receipt",
         "recovery_state",
         "next_event_index",
         "_validated_history",
@@ -45530,6 +45707,27 @@
       "category": "Runtime",
       "classes": [],
       "dependencies": [
+        "__future__",
+        "extractor",
+        "intelligence",
+        "intelligence_repository",
+        "repository",
+        "typing"
+      ],
+      "functions": [
+        "ingest_external_intelligence_email"
+      ],
+      "module_type": "python_module",
+      "name": "EmailService",
+      "path": "app/intake/email_service.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
         "hashlib",
         "re",
         "schemas"
@@ -45547,6 +45745,80 @@
       "path": "app/intake/extractor.py",
       "routers": [],
       "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "GmailIntelligenceMessage",
+        "GmailGateway",
+        "GoogleApiGmailGateway"
+      ],
+      "dependencies": [
+        "__future__",
+        "argparse",
+        "base64",
+        "dataclasses",
+        "datetime",
+        "email.utils",
+        "email_service",
+        "google.auth",
+        "google.oauth2",
+        "googleapiclient.discovery",
+        "html_links",
+        "json",
+        "os",
+        "typing"
+      ],
+      "functions": [
+        "_decode",
+        "_headers",
+        "_body_parts",
+        "parse_gmail_message",
+        "collect_twin_intelligence",
+        "main",
+        "search",
+        "get",
+        "__init__",
+        "from_environment",
+        "search",
+        "get"
+      ],
+      "module_type": "python_module",
+      "name": "GmailIntelligenceMessage",
+      "path": "app/intake/gmail_collector.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "_LinkPreservingParser"
+      ],
+      "dependencies": [
+        "__future__",
+        "html.parser",
+        "urllib.parse"
+      ],
+      "functions": [
+        "html_to_text_preserving_links",
+        "merge_plain_with_html_links",
+        "__init__",
+        "_allowed_href",
+        "handle_starttag",
+        "handle_data",
+        "text"
+      ],
+      "module_type": "python_module",
+      "name": "_LinkPreservingParser",
+      "path": "app/intake/html_links.py",
+      "routers": [],
+      "status": "healthy"
     },
     {
       "capabilities": [],
@@ -45800,6 +46072,7 @@
         "extractor",
         "fastapi",
         "fastapi.responses",
+        "gmail_collector",
         "intelligence",
         "intelligence_repository",
         "knowledge_delta",
@@ -45816,6 +46089,7 @@
         "ingest_url",
         "ingest_email",
         "intelligence_index",
+        "collect_twin_gmail",
         "intelligence_compare",
         "intelligence_detail",
         "review_queue",
@@ -45836,6 +46110,7 @@
         "POST /url",
         "POST /email",
         "GET /intelligence",
+        "POST /intelligence/collect/twin-gmail",
         "POST /intelligence/{item_id}/compare",
         "GET /intelligence/{item_id}",
         "GET /review",
@@ -48000,6 +48275,33 @@
       "status": "healthy"
     },
     {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.calyx_orchestrator.git_proposal_execution_plan",
+        "app.calyx_orchestrator.git_proposal_mutation_executor",
+        "app.calyx_orchestrator.git_proposal_mutation_journal",
+        "sqlalchemy",
+        "sqlalchemy.exc",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "functions": [
+        "_operation_payload",
+        "_current_operation",
+        "_receipt_snapshot",
+        "_blocked_status",
+        "proposal_execution_mission_control_status"
+      ],
+      "module_type": "python_module",
+      "name": "ProposalExecutionStatus",
+      "path": "app/mission_control_briefing/proposal_execution_status.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
       "capabilities": [
         "Execute runtime work"
       ],
@@ -48030,12 +48332,15 @@
       "classes": [],
       "dependencies": [
         "__future__",
+        "app.database",
         "app.mission_control_access",
         "app.review_api.dependencies",
         "app.routers.mission_control",
         "fastapi",
+        "proposal_execution_status",
         "proposal_executor_status",
         "service",
+        "sqlalchemy.orm",
         "typing"
       ],
       "functions": [
@@ -56196,12 +56501,12 @@
   "status": "discovered",
   "summary": {
     "brain_connected": true,
-    "capabilities": 684,
+    "capabilities": 686,
     "degraded": 1,
-    "graph_edges": 1844,
-    "graph_nodes": 830,
-    "healthy": 596,
-    "modules": 830,
+    "graph_edges": 1863,
+    "graph_nodes": 834,
+    "healthy": 598,
+    "modules": 834,
     "recommendations": 3
   }
 }
