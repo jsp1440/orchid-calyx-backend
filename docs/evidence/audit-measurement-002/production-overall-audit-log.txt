@@ -4,7 +4,7 @@ served commit     : 34352e392df8c5c55c47a6145f7ba580de7e9db6
 expected commit   : 34352e392df8c5c55c47a6145f7ba580de7e9db6
 release match     : True
 corrected logic   : serving_corrected_logic
-audit id          : AUD-4083BAAD14EE
+audit id          : AUD-B6FB10133676
 
 relationship states:
   taxonomy_to_images                     measured-present   (was: missing)
@@ -27,7 +27,7 @@ metric sources:
   literature       oc_literature.papers                                       408
   relationships    oc_graph.kg_edges                                          70609
   mycorrhiza       oc_mycorrhiza.species_mycorrhiza_unified_endpoint_cache    1
-  runtime_jobs     oc_admin.ocp_execution_jobs                                12218
+  runtime_jobs     oc_admin.ocp_execution_jobs                                12288
   runtime_actions  oc_admin.ocp_runtime_actions                               668
 
 masking warnings:
