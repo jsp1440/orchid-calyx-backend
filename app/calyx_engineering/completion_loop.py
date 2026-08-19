@@ -3,7 +3,9 @@ from __future__ import annotations
 import dataclasses
 import enum
 
-from . import github, provider, repair_loop
+from . import github
+from . import provider
+from . import repair_loop
 
 
 MAX_REPAIR_ATTEMPTS = 3
