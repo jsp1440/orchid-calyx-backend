@@ -1,22 +1,21 @@
-name: CALYX-MATRIX-003 Validation
+name: CALYX-MATRIX Integrated Validation
 
 on:
   pull_request:
     branches: [main]
     paths:
-      - "runtime/matrix_identification.py"
-      - "runtime/matrix_identification_registry.py"
-      - "runtime/matrix_identification_session.py"
-      - "app/routers/matrix_identification.py"
-      - "app/routers/matrix_identification_registry.py"
-      - "app/routers/matrix_identification_session.py"
+      - "runtime/matrix_identification*.py"
+      - "app/routers/matrix_identification*.py"
+      - "scripts/calyx_matrix_registry_migrate.py"
       - "app/routers/reference_docs.py"
+      - "migrations/612_matrix_identification_sessions.sql"
+      - "migrations/613_matrix_identification_registry_versions.sql"
       - "tests/test_matrix_identification_*.py"
       - ".github/workflows/calyx-matrix-003-validation.yml"
   workflow_dispatch:
 
 jobs:
-  matrix-session-vertical-slice:
+  matrix-integrated-stack:
     runs-on: ubuntu-latest
     env:
       PYTHONPATH: .
@@ -27,30 +26,18 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt pytest ruff
-      - name: Matrix evaluator, registry, and session regressions
-        run: |
-          pytest -q \
-            tests/test_matrix_identification_mvp_001.py \
-            tests/test_matrix_identification_registry_001.py \
-            tests/test_matrix_identification_session_001.py
-      - name: Compile
+      - name: Matrix integrated regressions
+        run: pytest -q tests/test_matrix_identification_*.py
+      - name: Compile Matrix runtime, routers, and migration utility
         run: |
           python -m compileall -q \
-            runtime/matrix_identification.py \
-            runtime/matrix_identification_registry.py \
-            runtime/matrix_identification_session.py \
-            app/routers/matrix_identification.py \
-            app/routers/matrix_identification_registry.py \
-            app/routers/matrix_identification_session.py
-      - name: Ruff
+            runtime/matrix_identification*.py \
+            app/routers/matrix_identification*.py \
+            scripts/calyx_matrix_registry_migrate.py
+      - name: Ruff Matrix stack
         run: |
           python -m ruff check \
-            runtime/matrix_identification.py \
-            runtime/matrix_identification_registry.py \
-            runtime/matrix_identification_session.py \
-            app/routers/matrix_identification.py \
-            app/routers/matrix_identification_registry.py \
-            app/routers/matrix_identification_session.py \
-            tests/test_matrix_identification_mvp_001.py \
-            tests/test_matrix_identification_registry_001.py \
-            tests/test_matrix_identification_session_001.py
+            runtime/matrix_identification*.py \
+            app/routers/matrix_identification*.py \
+            scripts/calyx_matrix_registry_migrate.py \
+            tests/test_matrix_identification_*.py

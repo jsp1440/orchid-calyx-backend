@@ -41,6 +41,22 @@ def list_harvesters() -> dict[str, Any]:
     return {"harvesters": control_plane.list_harvesters()}
 
 
+@router.get("/runtime-status")
+def runtime_status() -> dict[str, Any]:
+    """Read-only status for the in-process adaptive harvester.
+
+    Importing app.main inside the request avoids router import cycles while
+    exposing the already-running singleton owned by the deployed Calyx service.
+    """
+    from app.main import calyx_heartbeat
+
+    return {
+        "status": "available",
+        "deployment_model": "in_process_existing_calyx_service",
+        "harvester": calyx_heartbeat.harvester.status(),
+    }
+
+
 @router.get("/{harvester_id}")
 def inspect_harvester(harvester_id: str) -> dict[str, Any]:
     try:

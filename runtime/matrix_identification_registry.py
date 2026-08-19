@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +15,11 @@ from typing import Any
 from uuid import UUID
 
 from runtime.matrix_identification import Candidate
+from runtime.matrix_identification_registry_store import (
+    configured_matrix_registry_store,
+    default_registry_root,
+    matrix_registry_persistence_status,
+)
 
 REGISTRY_SCHEMA_VERSION = "matrix-identification-registry/v1"
 
@@ -51,7 +55,12 @@ class RegistryVersion:
 
 
 def registry_root() -> Path:
-    return Path(os.getenv("CALYX_MATRIX_REGISTRY_DIR", "/tmp/calyx/matrix-identification-registry"))
+    """Compatibility accessor for the explicit/local file registry root."""
+    return default_registry_root()
+
+
+def registry_persistence_status() -> dict[str, Any]:
+    return matrix_registry_persistence_status()
 
 
 def _safe_component(value: str, field: str) -> str:
@@ -67,6 +76,26 @@ def _canonical_payload(payload: dict[str, Any]) -> bytes:
 
 def _checksum(payload: dict[str, Any]) -> str:
     return hashlib.sha256(_canonical_payload(payload)).hexdigest()
+
+
+def registry_unsigned_payload(record: dict[str, Any]) -> dict[str, Any]:
+    """Return the exact scientific payload covered by the immutable registry checksum."""
+    return {
+        "schema_version": record.get("schema_version"),
+        "registry_id": record.get("registry_id"),
+        "version": record.get("version"),
+        "title": record.get("title"),
+        "scope": record.get("scope"),
+        "characters": record.get("characters"),
+        "candidates": record.get("candidates"),
+        "provenance": record.get("provenance"),
+        "publication_state": record.get("publication_state"),
+    }
+
+
+def compute_registry_record_checksum(record: dict[str, Any]) -> str:
+    """Recompute a registry package checksum independently of its claimed digest."""
+    return _checksum(registry_unsigned_payload(record))
 
 
 def _validate_character(character: RegistryCharacter) -> None:
@@ -153,20 +182,7 @@ def create_registry_version(
         checksum_sha256=checksum,
     ).as_dict()
 
-    destination_root = root or registry_root()
-    directory = destination_root / registry_id
-    directory.mkdir(parents=True, exist_ok=True)
-    destination = directory / f"{version}.json"
-    if destination.exists():
-        existing = json.loads(destination.read_text(encoding="utf-8"))
-        if existing.get("checksum_sha256") == checksum:
-            return {"created": False, "record": existing}
-        raise ValueError("registry version already exists with different content")
-
-    temp = destination.with_suffix(".json.tmp")
-    temp.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temp.replace(destination)
-    return {"created": True, "record": record}
+    return configured_matrix_registry_store(root=root).save(record)
 
 
 def get_registry_version(
@@ -177,10 +193,10 @@ def get_registry_version(
 ) -> dict[str, Any]:
     registry_id = _safe_component(registry_id, "registry_id")
     version = _safe_component(version, "version")
-    path = (root or registry_root()) / registry_id / f"{version}.json"
-    if not path.exists():
+    record = configured_matrix_registry_store(root=root).get(registry_id, version)
+    if record is None:
         raise FileNotFoundError(f"registry version not found: {registry_id}/{version}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    return record
 
 
 def derive_registry_version_with_concept_mappings(
@@ -271,31 +287,24 @@ def derive_registry_version_with_concept_mappings(
 
 
 def list_registry_versions(*, root: Path | None = None) -> list[dict[str, Any]]:
-    destination_root = root or registry_root()
-    if not destination_root.exists():
-        return []
-    records: list[dict[str, Any]] = []
-    for path in sorted(destination_root.glob("*/*.json")):
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        records.append(
-            {
-                "registry_id": record.get("registry_id"),
-                "version": record.get("version"),
-                "title": record.get("title"),
-                "scope": record.get("scope", {}),
-                "candidate_count": len(record.get("candidates", [])),
-                "character_count": len(record.get("characters", [])),
-                "created_at": record.get("created_at"),
-                "created_by": record.get("created_by"),
-                "checksum_sha256": record.get("checksum_sha256"),
-                "publication_state": record.get("publication_state"),
-            }
-        )
+    records = configured_matrix_registry_store(root=root).list_records()
+    summaries = [
+        {
+            "registry_id": record.get("registry_id"),
+            "version": record.get("version"),
+            "title": record.get("title"),
+            "scope": record.get("scope", {}),
+            "candidate_count": len(record.get("candidates", [])),
+            "character_count": len(record.get("characters", [])),
+            "created_at": record.get("created_at"),
+            "created_by": record.get("created_by"),
+            "checksum_sha256": record.get("checksum_sha256"),
+            "publication_state": record.get("publication_state"),
+        }
+        for record in records
+    ]
     return sorted(
-        records,
+        summaries,
         key=lambda item: (
             str(item.get("registry_id", "")).casefold(),
             str(item.get("version", "")).casefold(),

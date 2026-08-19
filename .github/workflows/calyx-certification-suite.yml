@@ -1,0 +1,202 @@
+name: CALYX Certification Micro-Lane Suite
+
+# Consolidates the former per-lane CALYX-100-L1..L10 and CALYX-101..134
+# validation workflows (44 files) into one workflow. Each lane is a small,
+# independent runtime module + its dedicated test file under
+# runtime/calyx_certification/ (and one lane under runtime/knowledge_graph/).
+# The trigger paths below are the exact union of what the 44 predecessor
+# workflows watched, so PR-triggering behavior is unchanged. Within the job,
+# only the lanes whose source/test files actually changed in the PR are
+# ruff-checked and pytest-run, so a single-lane PR pays the same cost as
+# before (one checkout/setup/install + one ruff + one pytest), while a PR
+# touching several lanes now pays for one shared checkout/setup/install
+# instead of N of them. workflow_dispatch always runs every lane.
+
+on:
+  pull_request:
+    paths:
+      - "runtime/calyx_certification/deployed_preflight.py"
+      - "tests/test_calyx_100_l1_deployed_preflight.py"
+      - "runtime/knowledge_graph/all_domain_authorization.py"
+      - "tests/test_calyx_100_l2_all_domain_authorization.py"
+      - "runtime/calyx_certification/source_binding.py"
+      - "tests/test_calyx_100_l3_source_binding.py"
+      - "runtime/calyx_certification/ledger_certification.py"
+      - "tests/test_calyx_100_l4_ledger_certification.py"
+      - "runtime/calyx_certification/controlled_publication.py"
+      - "tests/test_calyx_100_l5_controlled_publication.py"
+      - "runtime/calyx_certification/publication_monitoring.py"
+      - "tests/test_calyx_100_l6_publication_monitoring.py"
+      - "runtime/calyx_certification/concept_consumers.py"
+      - "tests/test_calyx_100_l7_concept_consumers.py"
+      - "runtime/calyx_certification/literature_ingestion.py"
+      - "tests/test_calyx_100_l8_literature_ingestion.py"
+      - "runtime/calyx_certification/full_chain_manifest.py"
+      - "tests/test_calyx_100_l9_full_chain_manifest.py"
+      - "runtime/calyx_certification/status.py"
+      - "tests/test_calyx_100_l10_status.py"
+      - "runtime/calyx_certification/artifact_bundle.py"
+      - "tests/test_calyx_101_artifact_bundle.py"
+      - "runtime/calyx_certification/status_contract.py"
+      - "tests/test_calyx_102_status_contract.py"
+      - "runtime/calyx_certification/preflight_operator_plan.py"
+      - "tests/test_calyx_103_preflight_operator_plan.py"
+      - "runtime/calyx_certification/cross_lane_integration.py"
+      - "tests/test_calyx_104_cross_lane_integration.py"
+      - "runtime/calyx_certification/live_preflight_evidence.py"
+      - "tests/test_calyx_105_live_preflight_evidence.py"
+      - "runtime/calyx_certification/certification_snapshot.py"
+      - "tests/test_calyx_106_certification_snapshot.py"
+      - "runtime/calyx_certification/mission_control_readiness.py"
+      - "tests/test_calyx_107_mission_control_readiness.py"
+      - "runtime/calyx_certification/owner_authorization.py"
+      - "tests/test_calyx_108_owner_authorization.py"
+      - "runtime/calyx_certification/dependency_manifest.py"
+      - "tests/test_calyx_109_dependency_manifest.py"
+      - "runtime/calyx_certification/evidence_retention.py"
+      - "tests/test_calyx_110_evidence_retention.py"
+      - "runtime/calyx_certification/rollback_readiness.py"
+      - "tests/test_calyx_111_rollback_readiness.py"
+      - "runtime/calyx_certification/audit_export.py"
+      - "tests/test_calyx_112_audit_export.py"
+      - "runtime/calyx_certification/certification_expiry.py"
+      - "tests/test_calyx_113_certification_expiry.py"
+      - "runtime/calyx_certification/release_gate.py"
+      - "tests/test_calyx_114_release_gate.py"
+      - "runtime/calyx_certification/secret_readiness.py"
+      - "tests/test_calyx_115_secret_readiness.py"
+      - "runtime/calyx_certification/deployed_commit_drift.py"
+      - "tests/test_calyx_116_deployed_commit_drift.py"
+      - "runtime/calyx_certification/preflight_execution_lock.py"
+      - "tests/test_calyx_117_preflight_execution_lock.py"
+      - "runtime/calyx_certification/evidence_signature.py"
+      - "tests/test_calyx_118_evidence_signature.py"
+      - "runtime/calyx_certification/owner_decision_lifecycle.py"
+      - "tests/test_calyx_119_owner_decision_lifecycle.py"
+      - "runtime/calyx_certification/release_candidate_manifest.py"
+      - "tests/test_calyx_120_release_candidate_manifest.py"
+      - "runtime/calyx_certification/change_window_policy.py"
+      - "tests/test_calyx_121_change_window_policy.py"
+      - "runtime/calyx_certification/post_release_verification.py"
+      - "tests/test_calyx_122_post_release_verification.py"
+      - "runtime/calyx_certification/emergency_halt.py"
+      - "tests/test_calyx_123_emergency_halt.py"
+      - "runtime/calyx_certification/production_certification_report.py"
+      - "tests/test_calyx_124_production_certification_report.py"
+      - "runtime/calyx_certification/policy_version.py"
+      - "tests/test_calyx_125_policy_version.py"
+      - "runtime/calyx_certification/environment_fingerprint.py"
+      - "tests/test_calyx_126_environment_fingerprint.py"
+      - "runtime/calyx_certification/schema_fingerprint.py"
+      - "tests/test_calyx_127_schema_fingerprint.py"
+      - "runtime/calyx_certification/mount_durability.py"
+      - "tests/test_calyx_128_mount_durability.py"
+      - "runtime/calyx_certification/route_contract.py"
+      - "tests/test_calyx_129_route_contract.py"
+      - "runtime/calyx_certification/worker_readiness.py"
+      - "tests/test_calyx_130_worker_readiness.py"
+      - "runtime/calyx_certification/queue_drain.py"
+      - "tests/test_calyx_131_queue_drain.py"
+      - "runtime/calyx_certification/mutation_budget.py"
+      - "tests/test_calyx_132_mutation_budget.py"
+      - "runtime/calyx_certification/observation_window.py"
+      - "tests/test_calyx_133_observation_window.py"
+      - "runtime/calyx_certification/owner_handoff.py"
+      - "tests/test_calyx_134_owner_handoff.py"
+      - ".github/workflows/calyx-certification-suite.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest ruff
+      - name: Determine changed files
+        id: changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+              --paginate --jq '.[].filename' > changed_files.txt
+          else
+            echo "__RUN_ALL__" > changed_files.txt
+          fi
+          echo "Changed files considered for this run:"
+          cat changed_files.txt
+      - name: Run changed CALYX certification lanes
+        run: |
+          set -euo pipefail
+          run_all=false
+          if grep -qx "__RUN_ALL__" changed_files.txt; then run_all=true; fi
+          ran_any=false
+          run_lane() {
+            local src="$1" test="$2"
+            if [ "$run_all" = true ] || grep -qxF "$src" changed_files.txt || grep -qxF "$test" changed_files.txt; then
+              ran_any=true
+              echo "::group::$src"
+              python -m ruff check "$src" "$test"
+              python -m pytest -q "$test"
+              echo "::endgroup::"
+            fi
+          }
+          run_lane runtime/calyx_certification/deployed_preflight.py tests/test_calyx_100_l1_deployed_preflight.py
+          run_lane runtime/knowledge_graph/all_domain_authorization.py tests/test_calyx_100_l2_all_domain_authorization.py
+          run_lane runtime/calyx_certification/source_binding.py tests/test_calyx_100_l3_source_binding.py
+          run_lane runtime/calyx_certification/ledger_certification.py tests/test_calyx_100_l4_ledger_certification.py
+          run_lane runtime/calyx_certification/controlled_publication.py tests/test_calyx_100_l5_controlled_publication.py
+          run_lane runtime/calyx_certification/publication_monitoring.py tests/test_calyx_100_l6_publication_monitoring.py
+          run_lane runtime/calyx_certification/concept_consumers.py tests/test_calyx_100_l7_concept_consumers.py
+          run_lane runtime/calyx_certification/literature_ingestion.py tests/test_calyx_100_l8_literature_ingestion.py
+          run_lane runtime/calyx_certification/full_chain_manifest.py tests/test_calyx_100_l9_full_chain_manifest.py
+          run_lane runtime/calyx_certification/status.py tests/test_calyx_100_l10_status.py
+          run_lane runtime/calyx_certification/artifact_bundle.py tests/test_calyx_101_artifact_bundle.py
+          run_lane runtime/calyx_certification/status_contract.py tests/test_calyx_102_status_contract.py
+          run_lane runtime/calyx_certification/preflight_operator_plan.py tests/test_calyx_103_preflight_operator_plan.py
+          run_lane runtime/calyx_certification/cross_lane_integration.py tests/test_calyx_104_cross_lane_integration.py
+          run_lane runtime/calyx_certification/live_preflight_evidence.py tests/test_calyx_105_live_preflight_evidence.py
+          run_lane runtime/calyx_certification/certification_snapshot.py tests/test_calyx_106_certification_snapshot.py
+          run_lane runtime/calyx_certification/mission_control_readiness.py tests/test_calyx_107_mission_control_readiness.py
+          run_lane runtime/calyx_certification/owner_authorization.py tests/test_calyx_108_owner_authorization.py
+          run_lane runtime/calyx_certification/dependency_manifest.py tests/test_calyx_109_dependency_manifest.py
+          run_lane runtime/calyx_certification/evidence_retention.py tests/test_calyx_110_evidence_retention.py
+          run_lane runtime/calyx_certification/rollback_readiness.py tests/test_calyx_111_rollback_readiness.py
+          run_lane runtime/calyx_certification/audit_export.py tests/test_calyx_112_audit_export.py
+          run_lane runtime/calyx_certification/certification_expiry.py tests/test_calyx_113_certification_expiry.py
+          run_lane runtime/calyx_certification/release_gate.py tests/test_calyx_114_release_gate.py
+          run_lane runtime/calyx_certification/secret_readiness.py tests/test_calyx_115_secret_readiness.py
+          run_lane runtime/calyx_certification/deployed_commit_drift.py tests/test_calyx_116_deployed_commit_drift.py
+          run_lane runtime/calyx_certification/preflight_execution_lock.py tests/test_calyx_117_preflight_execution_lock.py
+          run_lane runtime/calyx_certification/evidence_signature.py tests/test_calyx_118_evidence_signature.py
+          run_lane runtime/calyx_certification/owner_decision_lifecycle.py tests/test_calyx_119_owner_decision_lifecycle.py
+          run_lane runtime/calyx_certification/release_candidate_manifest.py tests/test_calyx_120_release_candidate_manifest.py
+          run_lane runtime/calyx_certification/change_window_policy.py tests/test_calyx_121_change_window_policy.py
+          run_lane runtime/calyx_certification/post_release_verification.py tests/test_calyx_122_post_release_verification.py
+          run_lane runtime/calyx_certification/emergency_halt.py tests/test_calyx_123_emergency_halt.py
+          run_lane runtime/calyx_certification/production_certification_report.py tests/test_calyx_124_production_certification_report.py
+          run_lane runtime/calyx_certification/policy_version.py tests/test_calyx_125_policy_version.py
+          run_lane runtime/calyx_certification/environment_fingerprint.py tests/test_calyx_126_environment_fingerprint.py
+          run_lane runtime/calyx_certification/schema_fingerprint.py tests/test_calyx_127_schema_fingerprint.py
+          run_lane runtime/calyx_certification/mount_durability.py tests/test_calyx_128_mount_durability.py
+          run_lane runtime/calyx_certification/route_contract.py tests/test_calyx_129_route_contract.py
+          run_lane runtime/calyx_certification/worker_readiness.py tests/test_calyx_130_worker_readiness.py
+          run_lane runtime/calyx_certification/queue_drain.py tests/test_calyx_131_queue_drain.py
+          run_lane runtime/calyx_certification/mutation_budget.py tests/test_calyx_132_mutation_budget.py
+          run_lane runtime/calyx_certification/observation_window.py tests/test_calyx_133_observation_window.py
+          run_lane runtime/calyx_certification/owner_handoff.py tests/test_calyx_134_owner_handoff.py
+          if [ "$ran_any" = false ]; then
+            echo "No CALYX certification lane matched the changed files; nothing to run."
+          fi

@@ -27,6 +27,22 @@ def isolated_store(monkeypatch):
             "retrieval_mode": mode,
         },
     )
+    monkeypatch.setattr(
+        speak_routes,
+        "augment_retrieval_with_external_literature",
+        lambda retrieval, message, limit: retrieval,
+    )
+    monkeypatch.setattr(
+        speak_routes,
+        "build_seasonal_climate_context",
+        lambda message: {
+            "requested": False,
+            "status": "not_relevant",
+            "products": [],
+            "external": True,
+            "time_sensitive": True,
+        },
+    )
     return store
 
 
@@ -99,7 +115,7 @@ def test_scientific_turn_launches_governed_mission_and_records_provenance(monkey
         conversation_id,
         speak_routes.ConversationTurnRequest(
             message="What visual information should Calyx Vision require from glossary illustrations?",
-            research_mode="auto",
+            research_mode="always",
         ),
         auth("owner-a"),
     )
@@ -137,12 +153,12 @@ def test_followup_mission_receives_prior_thread_context(monkeypatch):
 
     speak_routes.append_turn(
         conversation_id,
-        speak_routes.ConversationTurnRequest(message=first),
+        speak_routes.ConversationTurnRequest(message=first, research_mode="always"),
         auth("owner-a"),
     )
     speak_routes.append_turn(
         conversation_id,
-        speak_routes.ConversationTurnRequest(message=second),
+        speak_routes.ConversationTurnRequest(message=second, research_mode="always"),
         auth("owner-a"),
     )
 

@@ -106,6 +106,9 @@ class MemoryVisionLexiconRepository:
         self._regions[region.region_id] = region
         return region
 
+    def get_region(self, region_id: UUID) -> VisionRegion | None:
+        return self._regions.get(region_id)
+
     def list_regions_for_analysis(self, analysis_id: UUID) -> list[VisionRegion]:
         return [r for r in self._regions.values() if r.analysis_id == analysis_id]
 
@@ -438,6 +441,65 @@ class PostgresVisionLexiconRepository:
             warnings=tuple(row[15] or []),
             limitations=tuple(row[16] or []),
             request_hash=row[17] if len(row) > 17 else None,
+        )
+
+    # ------------------------------------------------------------------
+    # Regions
+    # ------------------------------------------------------------------
+
+    def save_region(self, region: VisionRegion) -> VisionRegion:
+        from psycopg.types.json import Jsonb
+
+        with self._cf() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO oc_vision.vision_regions (
+                    region_id, analysis_id, concept_id, label, bounding_box,
+                    segmentation_ref, landmarks, confidence, review_state, provenance
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (region_id) DO NOTHING
+                """,
+                (
+                    region.region_id, region.analysis_id, region.concept_id,
+                    region.label,
+                    Jsonb(region.bounding_box) if region.bounding_box is not None else None,
+                    region.segmentation_ref,
+                    Jsonb(region.landmarks) if region.landmarks is not None else None,
+                    region.confidence, region.review_state, Jsonb(region.provenance),
+                ),
+            )
+        return region
+
+    def get_region(self, region_id: UUID) -> VisionRegion | None:
+        with self._cf() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM oc_vision.vision_regions WHERE region_id=%s",
+                (region_id,),
+            )
+            row = cur.fetchone()
+            return self._build_region(row) if row is not None else None
+
+    def list_regions_for_analysis(self, analysis_id: UUID) -> list[VisionRegion]:
+        with self._cf() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM oc_vision.vision_regions WHERE analysis_id=%s",
+                (analysis_id,),
+            )
+            return [self._build_region(r) for r in cur.fetchall()]
+
+    @staticmethod
+    def _build_region(row: Any) -> VisionRegion:
+        return VisionRegion(
+            region_id=row[0],
+            analysis_id=row[1],
+            concept_id=row[2],
+            label=row[3],
+            bounding_box=row[4],
+            segmentation_ref=row[5],
+            landmarks=row[6],
+            confidence=float(row[7]) if row[7] is not None else None,
+            review_state=VisionReviewState(row[8]),
+            provenance=row[9] or {},
         )
 
     # ------------------------------------------------------------------

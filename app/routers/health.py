@@ -8,7 +8,6 @@ from app.multimodal_intelligence.routes import router as multimodal_intelligence
 from app.parallel_platform.routes import router as parallel_platform_router
 from app.routers.calyx_queue import router as calyx_queue_router
 from app.routers.conservatory import router as conservatory_router
-from app.routers.executive import router as executive_router
 from app.routers.graph_pipeline_readiness import (
     router as graph_pipeline_readiness_router,
 )
@@ -21,6 +20,7 @@ from app.routers.owner_session_token import router as owner_session_token_router
 from app.routers.release_identity import router as release_identity_router
 from app.routers.scientific_intelligence import router as scientific_intelligence_router
 from app.routers.taxonomy_releases import router as taxonomy_releases_router
+from app.trait_genomics.routes import router as trait_genomics_router
 from runtime.connector_routes import router as connector_router
 from runtime.router_fastapi import config_router, infrastructure_router
 
@@ -128,6 +128,12 @@ def workflow_options(full_path: str, request: Request, response: Response):
     return {"status": "ok", "path": full_path}
 
 
+@router.options("/api/trait-genomics/{full_path:path}")
+def trait_genomics_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
 @router.options("/archive/{full_path:path}")
 def archive_options(full_path: str, request: Request, response: Response):
     add_mission_control_cors_headers(request, response)
@@ -158,12 +164,12 @@ router.include_router(conservatory_router, dependencies=[Depends(add_mission_con
 router.include_router(matrix_identification_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(matrix_relationship_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(executive_telemetry_router, dependencies=[Depends(add_mission_control_cors_headers)])
-router.include_router(executive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(scientific_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(calyx_queue_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(multimodal_intelligence_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(archive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(parallel_platform_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(trait_genomics_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(workflow_router)
 router.include_router(executive_intelligence_router)
 router.include_router(connector_router)

@@ -4,10 +4,23 @@ from fastapi.responses import Response
 from app.security import verify_owner_or_api_key
 from app.routers.health import add_mission_control_cors_headers
 from .extractor import content_hash, extract
+from .intelligence import (
+    assimilation_summary,
+    canonical_email_text,
+    intelligence_tasks,
+    parse_external_intelligence,
+)
+from .intelligence_repository import (
+    get_intelligence_item,
+    list_intelligence_items,
+    record_intelligence_items,
+)
+from .knowledge_delta import assess_item
+from .knowledge_delta_repository import record_comparison
 from app.storage import LocalImmutableStorage
 from .repository import (add_document, create_batch, create_source, decide, finalize_batch,
                          get_batch, get_source, list_batches, list_review, mark_published, review_document)
-from .schemas import DocumentReview, ReviewDecision, TextIntakeRequest, UrlIntakeRequest
+from .schemas import DocumentReview, EmailIntakeRequest, ReviewDecision, TextIntakeRequest, UrlIntakeRequest
 from .universal import CLASSIFICATIONS, classify, extract_safe_text, validate_file
 
 router = APIRouter(
@@ -43,6 +56,77 @@ def ingest_url(payload: UrlIntakeRequest):
         imported_by=payload.imported_by,
         extraction=result,
     )
+
+
+@router.post("/email", status_code=201)
+def ingest_email(payload: EmailIntakeRequest):
+    """Preserve an external-intelligence email and stage bounded follow-up work."""
+    canonical_content = canonical_email_text(
+        sender=payload.sender,
+        subject=payload.subject,
+        body=payload.body,
+        message_id=payload.message_id,
+        received_at=payload.received_at,
+    )
+    items = parse_external_intelligence(
+        payload.body,
+        sender=payload.sender,
+        message_id=payload.message_id or "",
+    )
+    result = extract(canonical_content)
+    result.tasks.extend(intelligence_tasks(items))
+    source = create_source(
+        source_type="email",
+        title=payload.subject,
+        content=canonical_content,
+        content_hash=content_hash(canonical_content),
+        source_url=None,
+        imported_by=payload.imported_by or "external-intelligence-email",
+        extraction=result,
+    )
+    persisted = record_intelligence_items(
+        source_id=source["id"],
+        items=items,
+        sender=payload.sender,
+        message_id=payload.message_id,
+    )
+    return {
+        **source,
+        "intelligence": assimilation_summary(items),
+        "intelligence_items": persisted,
+        "external_contacted": False,
+        "canonical_graph_mutated": False,
+        "publication_performed": False,
+    }
+
+
+@router.get("/intelligence")
+def intelligence_index(limit: int = Query(default=100, ge=1, le=500)):
+    return {
+        "items": list_intelligence_items(limit),
+        "canonical_graph_mutated": False,
+        "external_contacted": False,
+    }
+
+
+@router.post("/intelligence/{item_id}/compare")
+def intelligence_compare(item_id: int):
+    """Compare against current Continuum stores without claiming unverified novelty."""
+    try:
+        assessment = assess_item(item_id)
+        return record_comparison(assessment)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"code": str(exc).strip("'")}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
+
+
+@router.get("/intelligence/{item_id}")
+def intelligence_detail(item_id: int):
+    result = get_intelligence_item(item_id)
+    if not result:
+        raise HTTPException(status_code=404, detail={"code": "INTELLIGENCE_ITEM_NOT_FOUND"})
+    return result
 
 
 @router.get("/review")
