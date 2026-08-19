@@ -31,7 +31,12 @@ from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.readiness.harvester_productivity import BINDINGS, COUNTER_KEYS, JOBS_TABLE, read_counter
+from app.readiness.harvester_productivity import (
+    BINDINGS,
+    COUNTER_KEYS,
+    JOBS_TABLE,
+    read_counter,
+)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 SAMPLE_SIZE = int(os.environ.get("HARVESTER_DETAILS_SAMPLE_SIZE", "50"))
