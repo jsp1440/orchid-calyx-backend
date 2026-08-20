@@ -29,6 +29,7 @@ jobs:
           outcome="unknown"
           detail=""
           previous_failure=""
+
           draft=$(gh pr view 1043 --repo "$GITHUB_REPOSITORY" --json isDraft -q '.isDraft' 2>/tmp/gherr)
           state=$(gh pr view 1043 --repo "$GITHUB_REPOSITORY" --json state -q '.state' 2>>/tmp/gherr)
           if [[ $? -ne 0 ]]; then
@@ -41,56 +42,76 @@ jobs:
             outcome="missing_api_key_secret"
             detail="Neither CALYX_API_KEY nor MISSION_CONTROL_SMOKE_TOKEN is available to this production job."
           else
-            latest=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow calyx-agent-007-persisted-certification.yml --limit 1 --json databaseId,status,conclusion,createdAt -q '.[0] | [.databaseId,.status,(.conclusion // "-")] | @tsv' 2>/tmp/runerr)
-            if [[ -n "$latest" ]]; then
-              IFS=$'\t' read -r run_id run_status run_conclusion <<< "$latest"
-              case "$run_status" in
-                queued|in_progress|pending|requested|waiting)
-                  outcome="certification_running"
-                  detail="Persisted certification is already running as GitHub Actions run ${run_id} with status ${run_status}."
-                  ;;
-                completed)
-                  if [[ "$run_conclusion" == "success" ]]; then
-                    outcome="certification_completed_success"
-                    detail="Latest persisted certification run ${run_id} completed successfully."
-                  else
-                    previous_failure="$run_id"
-                    outcome="unknown"
-                  fi
-                  ;;
-              esac
-            fi
-            if [[ "$outcome" == "unknown" ]]; then
-              code=$(curl -sS -o /tmp/calyx-ready.json -w '%{http_code}' \
-                -H 'Accept: application/json' \
-                -H "X-API-Key: ${CALYX_API_KEY}" \
-                "${CALYX_BACKEND_URL%/}/brain/engineering/completion-jobs?limit=1" || true)
-              if [[ "$code" != "200" ]]; then
-                outcome="observation_endpoint_not_ready"
-                detail="Completion-job observation endpoint returned HTTP ${code}."
+            # The completion service is the authority for whether a governor job is
+            # already alive. Never start a duplicate just because the observing
+            # GitHub workflow failed.
+            code=$(curl -sS -o /tmp/jobs.json -w '%{http_code}' \
+              -H 'Accept: application/json' \
+              -H "X-API-Key: ${CALYX_API_KEY}" \
+              "${CALYX_BACKEND_URL%/}/brain/engineering/completion-jobs?pull_request_number=1043&limit=10" || true)
+            if [[ "$code" != "200" ]]; then
+              outcome="observation_endpoint_not_ready"
+              detail="Completion-job observation endpoint returned HTTP ${code}."
+            else
+              active=$(python - <<'PY'
+import json
+p=json.load(open('/tmp/jobs.json'))
+for j in p.get('jobs') or []:
+    if j.get('status') in {'queued','running'}:
+        vals=[j.get('job_id','-'),j.get('status','-'),j.get('state') or '-',j.get('attempt_count',0),j.get('next_action') or '-',j.get('error_code') or '-',j.get('lease_expires_at') or '-']
+        print('\t'.join(str(v).replace('\n',' ') for v in vals))
+        break
+PY
+)
+              if [[ -n "$active" ]]; then
+                IFS=$'\t' read -r job_id job_status job_state job_attempts job_next job_error job_lease <<< "$active"
+                outcome="existing_governor_job"
+                detail="Persisted job ${job_id} already exists for PR #1043: status=${job_status}, state=${job_state}, attempts=${job_attempts}, next_action=${job_next}, error=${job_error}, lease_expires=${job_lease}. No duplicate was dispatched."
               else
-                gh workflow run calyx-agent-007-persisted-certification.yml \
-                  --repo "$GITHUB_REPOSITORY" \
-                  --ref main \
-                  -f pull_request=1043 \
-                  -f confirmation='RUN AGENT-007 PERSISTED CERTIFICATION' \
-                  -f repair_path='tests/test_build_088e_publication_operational_readiness.py' \
-                  -f required_check='BUILD-088E Validation' \
-                  -f max_steps=40
-                if [[ $? -eq 0 ]]; then
-                  outcome="dispatched"
-                  if [[ -n "$previous_failure" ]]; then
-                    detail="Previous certification run ${previous_failure} failed before the governor executed; harness was repaired and a new run was dispatched."
+                latest=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow calyx-agent-007-persisted-certification.yml --limit 1 --json databaseId,status,conclusion,createdAt -q '.[0] | [.databaseId,.status,(.conclusion // "-")] | @tsv' 2>/tmp/runerr)
+                if [[ -n "$latest" ]]; then
+                  IFS=$'\t' read -r run_id run_status run_conclusion <<< "$latest"
+                  case "$run_status" in
+                    queued|in_progress|pending|requested|waiting)
+                      outcome="certification_running"
+                      detail="Persisted certification is already running as GitHub Actions run ${run_id} with status ${run_status}."
+                      ;;
+                    completed)
+                      if [[ "$run_conclusion" == "success" ]]; then
+                        outcome="certification_completed_success"
+                        detail="Latest persisted certification run ${run_id} completed successfully."
+                      else
+                        previous_failure="$run_id"
+                      fi
+                      ;;
+                  esac
+                fi
+
+                if [[ "$outcome" == "unknown" ]]; then
+                  gh workflow run calyx-agent-007-persisted-certification.yml \
+                    --repo "$GITHUB_REPOSITORY" \
+                    --ref main \
+                    -f pull_request=1043 \
+                    -f confirmation='RUN AGENT-007 PERSISTED CERTIFICATION' \
+                    -f repair_path='tests/test_build_088e_publication_operational_readiness.py' \
+                    -f required_check='BUILD-088E Validation' \
+                    -f max_steps=40
+                  if [[ $? -eq 0 ]]; then
+                    outcome="dispatched"
+                    if [[ -n "$previous_failure" ]]; then
+                      detail="Previous certification run ${previous_failure} failed and no active governor job remains; a new run was dispatched."
+                    else
+                      detail="No active governor job or certification run was found; a new persisted certification was dispatched."
+                    fi
                   else
-                    detail="No active certification was found; a new persisted certification was dispatched."
+                    outcome="workflow_dispatch_failed"
+                    detail="GitHub rejected the certification dispatch."
                   fi
-                else
-                  outcome="workflow_dispatch_failed"
-                  detail="GitHub rejected the certification dispatch."
                 fi
               fi
             fi
           fi
+
           echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
           echo "detail=$detail" >> "$GITHUB_OUTPUT"
           echo "AGENT-007 diagnostic outcome: $outcome — $detail"
@@ -112,6 +133,6 @@ jobs:
           OUTCOME: ${{ steps.diagnose.outputs.outcome }}
         run: |
           case "$OUTCOME" in
-            dispatched|certification_running|certification_completed_success) exit 0 ;;
+            dispatched|certification_running|certification_completed_success|existing_governor_job) exit 0 ;;
             *) exit 1 ;;
           esac
