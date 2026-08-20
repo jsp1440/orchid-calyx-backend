@@ -225,21 +225,42 @@ jobs:
 
   lane1:
     needs: prepare
-    if: needs.prepare.outputs.issue1 != ''
+    # always() is required, not decorative. Without it GitHub ANDs an implicit
+    # success() across the whole needs chain, so a failed planner skips every
+    # lane even though prepare itself succeeded and already labelled the issue
+    # oc-running. That left issues claimed with nothing executing them until the
+    # 95-minute reclaim, which re-claimed them within a minute - a livelock that
+    # burned five hours and produced no durable work. prepare already guards
+    # itself this way; the lanes must too.
+    if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.issue1 != ''
     uses: ./.github/workflows/orchid-completion-lane.yml
     with:
       issue_number: ${{ needs.prepare.outputs.issue1 }}
     secrets: inherit
   lane2:
     needs: prepare
-    if: needs.prepare.outputs.issue2 != ''
+    # always() is required, not decorative. Without it GitHub ANDs an implicit
+    # success() across the whole needs chain, so a failed planner skips every
+    # lane even though prepare itself succeeded and already labelled the issue
+    # oc-running. That left issues claimed with nothing executing them until the
+    # 95-minute reclaim, which re-claimed them within a minute - a livelock that
+    # burned five hours and produced no durable work. prepare already guards
+    # itself this way; the lanes must too.
+    if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.issue2 != ''
     uses: ./.github/workflows/orchid-completion-lane.yml
     with:
       issue_number: ${{ needs.prepare.outputs.issue2 }}
     secrets: inherit
   lane3:
     needs: prepare
-    if: needs.prepare.outputs.issue3 != ''
+    # always() is required, not decorative. Without it GitHub ANDs an implicit
+    # success() across the whole needs chain, so a failed planner skips every
+    # lane even though prepare itself succeeded and already labelled the issue
+    # oc-running. That left issues claimed with nothing executing them until the
+    # 95-minute reclaim, which re-claimed them within a minute - a livelock that
+    # burned five hours and produced no durable work. prepare already guards
+    # itself this way; the lanes must too.
+    if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.issue3 != ''
     uses: ./.github/workflows/orchid-completion-lane.yml
     with:
       issue_number: ${{ needs.prepare.outputs.issue3 }}
