@@ -7,6 +7,11 @@ from typing import Any
 
 import requests
 
+from .evidence_synthesis import (
+    SYNTHESIS_CONTRACT_VERSION,
+    build_synthesis_packet,
+    provider_context,
+)
 from .provider import (
     CalyxReplyProvider,
     GeneratedReply,
@@ -99,30 +104,44 @@ def _compact_value(value: Any, *, depth: int = 0) -> Any:
     return value
 
 
-def compact_governed_context(governed_context: dict[str, Any]) -> dict[str, Any]:
-    """Create the model-facing context while retaining source/governance boundaries.
+def _current_user_message(messages: list[dict[str, str]]) -> str:
+    for item in reversed(messages):
+        if item.get("role") == "user":
+            content = str(item.get("content") or "").strip()
+            if content:
+                return content[:_MAX_CURRENT_MESSAGE_CHARS]
+    return ""
 
-    The full governed objects remain available server-side and in research details.
-    The model receives a bounded representation so a large mission, climate product,
-    or literature result set cannot knock the generative provider offline.
+
+def compact_governed_context(
+    governed_context: dict[str, Any],
+    *,
+    current_question: str = "",
+) -> dict[str, Any]:
+    """Create the model-facing semantic handoff from heterogeneous tool outputs.
+
+    Full retrieval, graph, climate, and mission payloads remain available server-side
+    and in research details. Before anything is sent to the generative provider, each
+    source family is adapted into the canonical Calyx evidence contract, reconciled,
+    and accompanied by an explicit synthesis plan. This prevents the model from
+    having to infer every subsystem's format or narrate raw source blocks one-by-one.
     """
 
-    preferred_keys = (
-        "casual",
-        "conversation_id",
-        "project_id",
-        "interaction_context",
-        "retrieval",
-        "continuum",
-        "climate",
-        "mission",
-        "mission_error",
-        "provider_configuration",
-        "epistemic_policy",
-        "deliverable_capabilities",
-    )
-    selected = {key: governed_context[key] for key in preferred_keys if key in governed_context}
-    return _compact_value(selected)
+    mission = governed_context.get("mission") or {}
+    synthesis_packet = governed_context.get("synthesis_packet")
+    if not isinstance(synthesis_packet, dict) or not synthesis_packet:
+        synthesis_packet = build_synthesis_packet(
+            question=current_question or str(mission.get("question") or ""),
+            retrieval=governed_context.get("retrieval") or {},
+            continuum=governed_context.get("continuum") or {},
+            climate=governed_context.get("climate") or {},
+            mission=governed_context.get("mission"),
+            mission_error=governed_context.get("mission_error"),
+            interaction_context=governed_context.get("interaction_context") or {},
+        )
+    semantic_context = dict(governed_context)
+    semantic_context["synthesis_packet"] = synthesis_packet
+    return _compact_value(provider_context(semantic_context))
 
 
 def _compact_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -234,8 +253,16 @@ class OpenAIRuntimeResponsesProvider:
             return "\n\n".join(parts)
         return ""
 
-    def _governed_context_text(self, governed_context: dict[str, Any]) -> str:
-        compact = compact_governed_context(governed_context)
+    def _governed_context_text(
+        self,
+        governed_context: dict[str, Any],
+        *,
+        current_question: str = "",
+    ) -> str:
+        compact = compact_governed_context(
+            governed_context,
+            current_question=current_question,
+        )
         text = json.dumps(compact, sort_keys=True, default=str)
         if len(text) > _MAX_CONTEXT_CHARS:
             LOGGER.warning(
@@ -243,8 +270,10 @@ class OpenAIRuntimeResponsesProvider:
                 len(text),
                 _MAX_CONTEXT_CHARS,
             )
-            text = text[:_MAX_CONTEXT_CHARS] + "\n[additional governed context omitted; full provenance remains server-side]"
-        return "Governed Calyx context for this turn:\n" + text
+            text = text[:_MAX_CONTEXT_CHARS] + (
+                "\n[additional governed context omitted; full provenance remains server-side]"
+            )
+        return "Governed Calyx semantic synthesis context for this turn:\n" + text
 
     def _responses_payload(
         self,
@@ -253,6 +282,7 @@ class OpenAIRuntimeResponsesProvider:
         governed_context: dict[str, Any],
     ) -> dict[str, Any]:
         model_messages = _compact_messages(messages)
+        current_question = _current_user_message(model_messages)
         response_messages = []
         for item in model_messages:
             role = item["role"]
@@ -276,7 +306,10 @@ class OpenAIRuntimeResponsesProvider:
                     "content": [
                         {
                             "type": "input_text",
-                            "text": self._governed_context_text(governed_context),
+                            "text": self._governed_context_text(
+                                governed_context,
+                                current_question=current_question,
+                            ),
                         }
                     ],
                 },
@@ -290,10 +323,18 @@ class OpenAIRuntimeResponsesProvider:
         messages: list[dict[str, str]],
         governed_context: dict[str, Any],
     ) -> dict[str, Any]:
+        compact_messages = _compact_messages(messages)
+        current_question = _current_user_message(compact_messages)
         chat_messages = [
             {"role": "system", "content": _scientific_system_prompt()},
-            *_compact_messages(messages),
-            {"role": "user", "content": self._governed_context_text(governed_context)},
+            *compact_messages,
+            {
+                "role": "user",
+                "content": self._governed_context_text(
+                    governed_context,
+                    current_question=current_question,
+                ),
+            },
         ]
         return {
             "model": self.model,
@@ -380,7 +421,9 @@ class OpenAIRuntimeResponsesProvider:
                 self.model,
                 type(exc).__name__,
             )
-            primary_error = RuntimeError(f"OPENAI_RESPONSES_REQUEST_FAILED:{type(exc).__name__}")
+            primary_error = RuntimeError(
+                f"OPENAI_RESPONSES_REQUEST_FAILED:{type(exc).__name__}"
+            )
             return self._chat_completion_fallback(
                 messages=messages,
                 governed_context=governed_context,
@@ -389,7 +432,11 @@ class OpenAIRuntimeResponsesProvider:
 
         if not response.ok:
             primary_error = _provider_http_error(response, endpoint="responses")
-            LOGGER.error("Calyx OpenAI Responses path failed model=%s %s", self.model, primary_error)
+            LOGGER.error(
+                "Calyx OpenAI Responses path failed model=%s %s",
+                self.model,
+                primary_error,
+            )
             if response.status_code in {400, 404, 405, 409, 415, 422}:
                 return self._chat_completion_fallback(
                     messages=messages,
@@ -485,6 +532,8 @@ def runtime_provider_configuration() -> dict[str, Any]:
         "responses_primary": True,
         "chat_completions_fallback": True,
         "model_context_compaction": True,
+        "semantic_evidence_synthesis": True,
+        "semantic_evidence_contract": SYNTHESIS_CONTRACT_VERSION,
         "max_governed_context_chars": _MAX_CONTEXT_CHARS,
         "max_current_message_chars": _MAX_CURRENT_MESSAGE_CHARS,
         "max_conversation_history_chars": _MAX_HISTORY_CHARS,

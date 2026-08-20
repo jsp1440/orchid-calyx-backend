@@ -4,6 +4,7 @@ from typing import Any
 
 MAX_TRAIL = 8
 MAX_TEXT = 240
+MAX_QUESTION_TEXT = 4000
 
 
 def _text(value: Any, limit: int = MAX_TEXT) -> str | None:
@@ -31,12 +32,10 @@ def _surface(value: Any) -> dict[str, Any] | None:
 def sanitize_interaction_context(value: Any) -> dict[str, Any]:
     """Return bounded UI/session context for conversational reference resolution.
 
-    This data is never evidence. The server overwrites any client claim to the
-    contrary and intentionally excludes arbitrary nested metadata from provider
-    context so the page-awareness channel cannot become an unbounded prompt or a
-    competing scientific knowledge store.
+    The current user question is preserved as continuity metadata so synthesis
+    remains question-centered even when a Brain mission is not launched. It is
+    explicitly non-evidentiary and cannot be promoted into scientific knowledge.
     """
-
     source = value if isinstance(value, dict) else {}
     current = _surface(source.get("current_surface"))
     raw_trail = source.get("session_trail")
@@ -55,6 +54,7 @@ def sanitize_interaction_context(value: Any) -> dict[str, Any]:
         ("surface", 100),
         ("concept", 160),
         ("current_concept_label", 160),
+        ("current_question", MAX_QUESTION_TEXT),
     ):
         item = _text(source.get(key), limit)
         if item:
