@@ -15,6 +15,7 @@ from .github import GitHubEngineeringClient
 
 ENGINEERING_COMPLETION_JOB_TYPE = "engineering_completion"
 ENGINEERING_COMPLETION_POLICY = "owner_only"
+_MUTATION_LEASE_SECONDS = 900
 
 
 class EngineeringCompletionScheduler:
@@ -44,9 +45,13 @@ class EngineeringCompletionScheduler:
         repair_paths: list[str],
         objective: str,
         repairs_authorized: bool,
+        required_checks: list[str],
         priority: int = 20,
     ) -> CalyxJob:
         normalized_owner = owner.strip()
+        normalized_checks = sorted(
+            {str(name).strip() for name in required_checks if str(name).strip()}
+        )
         if not normalized_owner:
             raise ValueError("ENGINEERING_COMPLETION_OWNER_REQUIRED")
         if pull_request_number < 1:
@@ -57,6 +62,8 @@ class EngineeringCompletionScheduler:
             raise ValueError("ENGINEERING_COMPLETION_OBJECTIVE_REQUIRED")
         if not repairs_authorized:
             raise PermissionError("ENGINEERING_COMPLETION_REPAIR_AUTHORIZATION_REQUIRED")
+        if not normalized_checks:
+            raise ValueError("ENGINEERING_COMPLETION_REQUIRED_CHECKS_REQUIRED")
 
         existing = self.db.scalar(
             select(CalyxJob).where(
@@ -74,6 +81,7 @@ class EngineeringCompletionScheduler:
             "repair_paths": repair_paths,
             "objective": objective.strip(),
             "repairs_authorized": True,
+            "required_checks": normalized_checks,
         }
         job = CalyxJob(
             job_type=ENGINEERING_COMPLETION_JOB_TYPE,
@@ -149,6 +157,33 @@ class EngineeringCompletionScheduler:
             return None
         self.db.commit()
         return self.db.get(CalyxJob, candidate.job_id)
+
+    def _renew_lease(
+        self,
+        job: CalyxJob,
+        *,
+        worker_id: str,
+        lease_token: str,
+        lease_seconds: int = _MUTATION_LEASE_SECONDS,
+    ) -> None:
+        updated = (
+            self.db.query(CalyxJob)
+            .filter(
+                CalyxJob.job_id == job.job_id,
+                CalyxJob.status == "running",
+                CalyxJob.lease_owner == worker_id,
+                CalyxJob.lease_token == lease_token,
+            )
+            .update(
+                {CalyxJob.lease_expires_at: utcnow() + timedelta(seconds=lease_seconds)},
+                synchronize_session=False,
+            )
+        )
+        if not updated:
+            self.db.rollback()
+            raise PermissionError("STALE_ENGINEERING_COMPLETION_LEASE")
+        self.db.commit()
+        job.lease_expires_at = utcnow() + timedelta(seconds=lease_seconds)
 
     def _finish(
         self,
@@ -240,12 +275,18 @@ class EngineeringCompletionScheduler:
         repair_attempt = job.attempt_count + 1
         if job.attempt_count >= job.max_attempts:
             repair_attempt = job.max_attempts + 1
+
+        # Fence the lease across provider and GitHub mutation calls. The completion
+        # loop can spend up to 120 seconds in the provider plus bounded GitHub calls;
+        # a 15-minute fenced lease prevents another worker reclaiming the same job.
+        self._renew_lease(job, worker_id=worker_id, lease_token=lease_token)
         receipt = self.loop_factory(self.client).advance(
             pull_request_number=int(payload["pull_request_number"]),
             repair_paths=list(payload["repair_paths"]),
             objective=str(payload["objective"]),
             attempt=repair_attempt,
             repairs_authorized=bool(payload.get("repairs_authorized")),
+            required_checks=list(payload.get("required_checks") or []),
         ).to_dict()
         receipt["completion_job_id"] = job.job_id
         receipt["repair_attempts_used"] = job.attempt_count
