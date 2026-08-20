@@ -33,6 +33,8 @@ def worker_enabled() -> bool:
 
 def run_cycle(db, *, worker_id: str, lease_seconds: int) -> str:
     """Run at most one persisted job from each explicitly enabled lane."""
+    outcomes: list[str] = []
+
     if enabled():
         orchestrator = CalyxOrchestrator(db)
         job = orchestrator.claim(worker_id=worker_id, lease_seconds=lease_seconds)
@@ -41,7 +43,7 @@ def run_cycle(db, *, worker_id: str, lease_seconds: int) -> str:
             if token is None:
                 raise RuntimeError("CLAIMED_JOB_WITHOUT_LEASE_TOKEN")
             orchestrator.execute(job, worker_id=worker_id, lease_token=token)
-            return "orchestrator_job"
+            outcomes.append("orchestrator_job")
 
     if engineering_runtime_ready():
         service = CalyxEngineeringService()
@@ -54,9 +56,9 @@ def run_cycle(db, *, worker_id: str, lease_seconds: int) -> str:
             lease_seconds=lease_seconds,
         )
         if result.get("executed"):
-            return "engineering_completion_job"
+            outcomes.append("engineering_completion_job")
 
-    return "idle"
+    return "+".join(outcomes) if outcomes else "idle"
 
 
 def run_forever() -> None:
