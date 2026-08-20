@@ -110,7 +110,7 @@ jobs:
             head=$(jq -r '.headRefName' <<<"$data")
             sha=$(jq -r '.headRefOid' <<<"$data")
             runs=$(gh run list --repo "$REPO" --workflow orchid-autonomous-validation.yml --branch "$head" --event workflow_dispatch --limit 20 --json headSha,status,conclusion 2>/dev/null || echo '[]')
-            result=$(jq -r --arg sha "$sha" '[.[] | select(.headSha == $sha)][0] | if . then "\(.status) \(.conclusion // \"\")" else "" end' <<<"$runs")
+            result=$(jq -r --arg sha "$sha" '[.[] | select(.headSha == $sha)][0] | if . then (.status + " " + (.conclusion // "")) else "" end' <<<"$runs")
 
             if [[ -z "$result" ]]; then
               gh workflow run orchid-autonomous-validation.yml --repo "$REPO" --ref "$head" >/dev/null 2>&1 || true
