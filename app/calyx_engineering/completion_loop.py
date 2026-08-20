@@ -171,6 +171,21 @@ class GovernedAutonomousCompletionLoop:
 
         check_runs = self.client.check_runs_for_head(head_sha)
         conclusions, infrastructure_checks = self._check_conclusions(check_runs)
+
+        # A governed roster may name either a GitHub check-run/job or the Actions
+        # workflow that owns that job. GitHub's check-runs endpoint exposes job names,
+        # while operators and certification contracts naturally identify workflows by
+        # their workflow-run names. Include both namespaces in the same conservative
+        # assessment rather than leaving a valid workflow name pending forever.
+        workflow_runs_for_head = getattr(self.client, "workflow_runs_for_head", None)
+        if callable(workflow_runs_for_head):
+            workflow_runs = workflow_runs_for_head(head_sha)
+            workflow_conclusions, workflow_infrastructure = self._check_conclusions(workflow_runs)
+            conclusions.update(workflow_conclusions)
+            infrastructure_checks = tuple(
+                sorted(set(infrastructure_checks) | set(workflow_infrastructure))
+            )
+
         assessment = RequiredCiCheckPolicy(required_checks=normalized_required).evaluate(conclusions)
         failed = assessment.required_checks_failed
         pending = assessment.required_checks_pending
