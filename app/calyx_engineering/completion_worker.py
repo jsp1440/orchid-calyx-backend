@@ -14,9 +14,13 @@ from .service import CalyxEngineeringService
 DEFAULT_WORKER_ID = "calyx-engineering-completion"
 
 
+def runtime_ready() -> bool:
+    return CalyxEngineeringService.enabled() and bool(os.getenv("GITHUB_TOKEN", "").strip())
+
+
 def run_once(*, worker_id: str = DEFAULT_WORKER_ID) -> dict:
-    if not CalyxEngineeringService.enabled():
-        return {"executed": False, "reason": "engineering_disabled"}
+    if not runtime_ready():
+        return {"executed": False, "reason": "engineering_runtime_not_ready"}
     service = CalyxEngineeringService()
     client = GitHubEngineeringClient(service.repository)
     SessionLocal = get_session_local()
@@ -49,8 +53,8 @@ def main() -> int:
     def emit(result: dict) -> None:
         print(json.dumps(result, sort_keys=True, default=str), flush=True)
 
-    if not CalyxEngineeringService.enabled():
-        emit({"worker": worker_id, "executed": False, "reason": "engineering_disabled"})
+    if not runtime_ready():
+        emit({"worker": worker_id, "executed": False, "reason": "engineering_runtime_not_ready"})
         return 0
     run_forever(worker_id=worker_id, on_cycle=emit)
     return 0
