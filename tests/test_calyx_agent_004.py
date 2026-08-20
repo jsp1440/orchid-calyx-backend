@@ -18,7 +18,7 @@ from app.calyx_engineering.service import CalyxEngineeringService
 from app.calyx_orchestrator.models import CalyxJob
 from app.database import Base
 
-REQUIRED_CHECKS = ["validate", "conversation"]
+REQUIRED_CHECKS = ["conversation", "validate"]
 
 
 class FakeGitHubClient:
