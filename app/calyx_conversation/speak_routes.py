@@ -10,8 +10,8 @@ from app.brain_mission.routes import SERVICE as BRAIN_MISSION_SERVICE
 from app.security import verify_owner_or_api_key
 
 from .climate_context import build_seasonal_climate_context
-from .conversational_synthesis import is_follow_up, resolve_subject
 from .continuum_context import build_continuum_context
+from .conversational_synthesis import is_follow_up, resolve_subject
 from .external_literature import augment_retrieval_with_external_literature
 from .interaction_context import sanitize_interaction_context
 from .provider import DeterministicGovernedReplyProvider

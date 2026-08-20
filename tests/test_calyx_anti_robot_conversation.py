@@ -11,6 +11,8 @@ rewriting the suite -- but it cannot go back to being a database dump.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from app.calyx_conversation.conversational_synthesis import (
@@ -202,7 +204,7 @@ def test_degraded_composition_discloses_that_it_is_not_full_reasoning():
 
 
 class TestConversationalContinuity:
-    HISTORY = [
+    HISTORY: ClassVar[list[dict[str, str]]] = [
         {"role": "user", "content": QUESTION},
         {"role": "assistant", "content": "A prior Calyx answer."},
     ]
