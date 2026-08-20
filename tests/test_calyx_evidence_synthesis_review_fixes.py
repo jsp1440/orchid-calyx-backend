@@ -1,9 +1,24 @@
 from __future__ import annotations
 
-from app.calyx_conversation.evidence_synthesis import build_synthesis_packet
+import json
+
+from app.calyx_conversation.evidence_synthesis import (
+    SYNTHESIS_CONTRACT_VERSION,
+    build_synthesis_packet,
+)
+from app.calyx_conversation.provider_runtime import (
+    OpenAIRuntimeResponsesProvider,
+    runtime_provider_configuration,
+)
 
 
-def _packet(*, question: str = "How is CAM supported?", continuum=None, mission=None, retrieval=None):
+def _packet(
+    *,
+    question: str = "How is CAM supported?",
+    continuum=None,
+    mission=None,
+    retrieval=None,
+):
     return build_synthesis_packet(
         question=question,
         retrieval=retrieval or {"results": []},
@@ -94,3 +109,34 @@ def test_graph_nodes_edges_brain_graph_and_semantic_links_survive_normalization(
     assert "canonical_knowledge_graph_edge" in types
     assert "canonical_brain_graph_node" in types
     assert "approved_semantic_link" in types
+
+
+def test_runtime_uses_current_user_message_without_interaction_context_or_mission():
+    provider = OpenAIRuntimeResponsesProvider(model="test-model", api_key="test-key")
+    question = "How does CAM physiology help an epiphytic orchid conserve water?"
+    payload = provider._responses_payload(
+        messages=[{"role": "user", "content": question}],
+        governed_context={
+            "casual": False,
+            "retrieval": {"results": []},
+            "continuum": {},
+            "climate": {},
+            "mission": None,
+            "mission_error": None,
+            "interaction_context": {},
+            "epistemic_policy": {},
+            "deliverable_capabilities": {},
+            "provider_configuration": {},
+        },
+    )
+    semantic_text = payload["input"][-1]["content"][0]["text"]
+    prefix = "Governed Calyx semantic synthesis context for this turn:\n"
+    semantic = json.loads(semantic_text.removeprefix(prefix))
+    assert semantic["synthesis_packet"]["question"] == question
+    assert semantic["synthesis_packet"]["question_preserved"] is True
+    assert semantic["synthesis_packet"]["reasoning_graph"]["claims"]
+
+
+def test_runtime_reports_the_implemented_synthesis_contract_version():
+    configuration = runtime_provider_configuration()
+    assert configuration["semantic_evidence_contract"] == SYNTHESIS_CONTRACT_VERSION
