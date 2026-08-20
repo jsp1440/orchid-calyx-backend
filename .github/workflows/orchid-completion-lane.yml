@@ -123,7 +123,10 @@ jobs:
           gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running >/dev/null 2>&1 || true
 
           if [[ -n "$pr" ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-blocked --add-label oc-validating >/dev/null 2>&1 || true
+            # A repair authorization is single-use. Once the worker releases its
+            # lease, the exact PR head must return through independent validation
+            # before another repair may be authorized.
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --remove-label oc-blocked --add-label oc-validating >/dev/null 2>&1 || true
             head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefName --jq '.headRefName')
             if gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$head" >/dev/null; then
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered/updated integration PR #$pr, dispatched independent backend validation, and released its execution slot. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
@@ -131,11 +134,11 @@ jobs:
               # This is a control-plane/transient validation-dispatch failure, not
               # an implementation failure. Keep the durable PR in validation so
               # the scheduler retries validation without paying for another Claude run.
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --add-label oc-validating >/dev/null 2>&1 || true
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --add-label oc-validating >/dev/null 2>&1 || true
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Durable PR #$pr exists, but validation dispatch failed. Kept in oc-validating; scheduler will retry validation without redispatching Claude. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
               exit 1
             fi
           else
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-validating --add-label oc-queued >/dev/null 2>&1 || true
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-validating --remove-label oc-repair --add-label oc-queued >/dev/null 2>&1 || true
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane ended without a durable integration PR. Returned to the queue while other lanes continue. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
           fi
