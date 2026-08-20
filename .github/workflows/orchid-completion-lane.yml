@@ -77,7 +77,6 @@ jobs:
             - Never merge to `main`, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create/disclose credentials, spend funds, force-push, or delete branches/repos.
             - Final output: DONE, VALIDATION, PR/HEAD SHA, REMAINING, OWNER GATE if any.
           claude_args: |
-            --model claude-sonnet-5
             --max-turns 75
             --allowedTools "Edit,Read,Write,Bash(git diff:*),Bash(git status:*),Bash(git ls-files:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git branch:*),Bash(git fetch:*),Bash(git merge:*),Bash(python:*),Bash(python3:*),Bash(pytest:*),Bash(ruff:*),Bash(npm:*),Bash(npx:*),Bash(test:*),Bash(gh pr:*),Bash(gh issue:*)"
             --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative. BLOCKED DOES NOT MEAN STOPPED FOR THE PROGRAM. Deliver durable GitHub work, never runner-local-only claims."
