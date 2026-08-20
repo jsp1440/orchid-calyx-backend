@@ -65,6 +65,15 @@ class EngineeringCompletionScheduler:
         if not normalized_checks:
             raise ValueError("ENGINEERING_COMPLETION_REQUIRED_CHECKS_REQUIRED")
 
+        payload = {
+            "pull_request_number": pull_request_number,
+            "repair_paths": repair_paths,
+            "objective": objective.strip(),
+            "repairs_authorized": True,
+            "required_checks": normalized_checks,
+        }
+        request_text = json.dumps(payload, sort_keys=True)
+
         existing = self.db.scalar(
             select(CalyxJob).where(
                 CalyxJob.owner == normalized_owner,
@@ -74,19 +83,27 @@ class EngineeringCompletionScheduler:
             )
         )
         if existing is not None:
+            # A repeated enqueue is allowed to correct stale parameters only while the
+            # job is safely queued. Previously we returned the first queued job unchanged,
+            # which could trap a completion cycle forever on a placeholder check roster.
+            if existing.status == "running":
+                if existing.request_text != request_text:
+                    raise ValueError("ENGINEERING_COMPLETION_RUNNING_JOB_CONFLICT")
+                return existing
+            existing.request_text = request_text
+            existing.priority = priority
+            existing.next_attempt_at = None
+            existing.error_code = None
+            existing.approval_required = False
+            existing.approval_class = None
+            self.db.commit()
+            self.db.refresh(existing)
             return existing
 
-        payload = {
-            "pull_request_number": pull_request_number,
-            "repair_paths": repair_paths,
-            "objective": objective.strip(),
-            "repairs_authorized": True,
-            "required_checks": normalized_checks,
-        }
         job = CalyxJob(
             job_type=ENGINEERING_COMPLETION_JOB_TYPE,
             title=f"Complete PR #{pull_request_number}",
-            request_text=json.dumps(payload, sort_keys=True),
+            request_text=request_text,
             owner=normalized_owner,
             status="queued",
             priority=priority,
