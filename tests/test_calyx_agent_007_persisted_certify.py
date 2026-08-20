@@ -53,16 +53,16 @@ def _run(monkeypatch, script, **kwargs):
     recorder = Recorder(script)
     monkeypatch.setattr("scripts.calyx_agent_007_persisted_certify._call", recorder)
     monkeypatch.setattr("scripts.calyx_agent_007_persisted_certify.time.sleep", lambda _: None)
-    defaults = dict(
-        base_url="https://example.invalid",
-        api_key="k",
-        pull_request=1043,
-        paths=PATHS,
-        required_checks=CHECKS,
-        objective="Repair the certification marker only.",
-        max_steps=5,
-        poll_seconds=0,
-    )
+    defaults = {
+        "base_url": "https://example.invalid",
+        "api_key": "k",
+        "pull_request": 1043,
+        "paths": PATHS,
+        "required_checks": CHECKS,
+        "objective": "Repair the certification marker only.",
+        "max_steps": 5,
+        "poll_seconds": 0,
+    }
     defaults.update(kwargs)
     code, evidence = certify(**defaults)
     return code, evidence, recorder
