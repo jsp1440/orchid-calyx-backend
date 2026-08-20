@@ -42,3 +42,23 @@ class LiteratureResultRepository:
         if not path.is_file():
             return None
         return path.read_bytes()
+
+    def root_available(self) -> bool:
+        """Whether the storage root exists at all, distinct from being empty."""
+        return self.root.is_dir()
+
+    def list_paper_ids(self) -> list[str]:
+        """Enumerate persisted paper ids by directory listing only.
+
+        A directory without a ``paper.json`` is not a paper and is skipped
+        rather than raising, since a partially written bundle from an
+        interrupted save is a fact about that one paper, not a reason to
+        fail the whole listing.
+        """
+        if not self.root.is_dir():
+            return []
+        return sorted(
+            entry.name
+            for entry in self.root.iterdir()
+            if entry.is_dir() and (entry / "paper.json").is_file()
+        )

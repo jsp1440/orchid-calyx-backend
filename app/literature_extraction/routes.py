@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
-from typing import Annotated
+from typing import Annotated, Any
 
+import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
@@ -13,6 +14,7 @@ from .candidate_handoff import (
     LiteratureCandidateHandoffService,
     LiteratureSourceBinding,
 )
+from .coverage_audit import audit_literature_extraction_coverage
 from .repository import LiteratureResultRepository
 from .source_binding import (
     CanonicalLiteratureSourceBinding,
@@ -72,6 +74,34 @@ def _raw_source_or_error(
             "RAW_SOURCE_NOT_FOUND", {"paper_id": paper_id}
         )
     return raw_bytes
+
+
+@router.get("/coverage-audit")
+def literature_extraction_coverage_audit(
+    repository: Annotated[
+        LiteratureResultRepository, Depends(get_literature_repository)
+    ],
+) -> dict[str, Any]:
+    """Read-only literature corpus & extraction-coverage telemetry (TWO-DAY-SLICE-E).
+
+    Combines a database-level discovered-corpus measurement with a
+    filesystem-level extraction-pipeline stage count. Issues SELECT
+    statements and filesystem reads only; never writes to any table, the
+    bundle store, or the Knowledge Graph.
+    """
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        return audit_literature_extraction_coverage(None, repository)
+    try:
+        with psycopg.connect(database_url, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                return audit_literature_extraction_coverage(cur, repository)
+    except Exception as exc:
+        return audit_literature_extraction_coverage(
+            None,
+            repository,
+            db_unavailable_detail=f"Database telemetry unavailable: {exc}",
+        )
 
 
 @router.get("/papers/{paper_id}")
