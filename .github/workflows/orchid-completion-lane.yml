@@ -13,6 +13,13 @@ on:
         required: true
         type: string
 
+# At most one Claude worker may execute a given issue at once. If an old duplicate
+# dispatch was already queued, the lease preflight below makes it a no-op after
+# the authoritative worker releases oc-running.
+concurrency:
+  group: orchid-completion-lane-${{ github.repository }}-${{ inputs.issue_number }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   issues: write
@@ -35,7 +42,21 @@ jobs:
           ref: ${{ env.INTEGRATION_BRANCH }}
           fetch-depth: 0
 
+      - name: Verify scheduler lease
+        id: lease
+        shell: bash
+        run: |
+          set -euo pipefail
+          labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(" ")' 2>/dev/null || true)
+          if [[ "$labels" == *oc-running* ]]; then
+            echo "execute=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "execute=false" >> "$GITHUB_OUTPUT"
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Stale/duplicate completion dispatch suppressed before Claude execution because this issue no longer owns an oc-running lease. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+          fi
+
       - name: Load issue context and publish worker receipt
+        if: steps.lease.outputs.execute == 'true'
         id: issue
         shell: bash
         run: |
@@ -53,6 +74,7 @@ jobs:
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Completion worker started from ${GITHUB_EVENT_NAME}; run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
 
       - name: Execute issue with Claude Code
+        if: steps.lease.outputs.execute == 'true'
         id: claude
         uses: anthropics/claude-code-action@v1
         with:
@@ -92,12 +114,12 @@ jobs:
             --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative. BLOCKED DOES NOT MEAN STOPPED FOR THE PROGRAM. Deliver durable GitHub work, never runner-local-only claims."
 
       - name: Classify result, dispatch validation, release slot
-        if: always()
+        if: always() && steps.lease.outputs.execute == 'true'
         shell: bash
         run: |
           set -euo pipefail
           marker="OC-AUTO-ISSUE: #${ISSUE_NUMBER}"
-          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq ".[] | select(.body != null and (.body | contains(\"$marker\"))) | .number" | head -1)
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq "[.[] | select(.body != null and (.body | contains(\"$marker\")))][0].number // empty")
           gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running >/dev/null 2>&1 || true
 
           if [[ -n "$pr" ]]; then
@@ -106,8 +128,11 @@ jobs:
             if gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$head" >/dev/null; then
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered/updated integration PR #$pr, dispatched independent backend validation, and released its execution slot. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
             else
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-validating --add-label oc-queued >/dev/null 2>&1 || true
-              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Durable PR #$pr exists, but validation dispatch failed. Returned to queue for a bounded retry. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+              # This is a control-plane/transient validation-dispatch failure, not
+              # an implementation failure. Keep the durable PR in validation so
+              # the scheduler retries validation without paying for another Claude run.
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --add-label oc-validating >/dev/null 2>&1 || true
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Durable PR #$pr exists, but validation dispatch failed. Kept in oc-validating; scheduler will retry validation without redispatching Claude. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
               exit 1
             fi
           else
