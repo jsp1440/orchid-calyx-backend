@@ -114,10 +114,11 @@ def test_durable_pr_suppression_exempts_only_explicit_repair(scheduler_text):
     assert 'if [[ -n "$durable" && "$repair" != true ]]; then' in dispatch
 
 
-def test_orphaned_repair_authorization_self_heals_into_queue(scheduler_text):
+def test_orphaned_repair_authorization_self_heals_into_queue_before_selection(scheduler_text):
     seed_start = scheduler_text.index("name: Seed curated completion backlog")
     dispatch_start = scheduler_text.index("name: Dispatch up to three completion workers")
     seed = scheduler_text[seed_start:dispatch_start]
+    assert seed_start < dispatch_start
     assert '[[ "$labels" == *oc-repair* && "$labels" != *oc-running* && "$labels" != *oc-queued* ]]' in seed
     assert "--remove-label oc-validating --add-label oc-queued" in seed
     assert "must never be a" in seed and "terminal state by itself" in seed
