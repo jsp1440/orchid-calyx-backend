@@ -99,10 +99,28 @@ def _humanize(text: str) -> str:
     return re.sub(r"(?<=\w)_(?=\w)", " ", text)
 
 
+def _is_serialized_blob(text: str) -> bool:
+    """True when a statement is a serialized record rather than a sentence.
+
+    Knowledge-graph evidence carries ``json.dumps(record)`` as its statement
+    (see ``evidence_synthesis._bounded_graph_evidence``). Printing that into a
+    conversational answer is the database-dump register this composer exists to
+    remove, so such items fall back to their human title instead.
+    """
+
+    stripped = text.strip()
+    return stripped.startswith(("{", "[")) or '": ' in stripped
+
+
 def _statement_of(item: dict[str, Any]) -> str:
     """The most human phrasing an evidence item offers, without labels."""
 
     statement = _clean(item.get("statement"))
+    if statement and _is_serialized_blob(statement):
+        # Prefer the item's own title ("Knowledge graph node for Cymbidium")
+        # over its serialization. Never render raw records as prose.
+        title = _clean(item.get("title"), 200).rstrip(".")
+        return _humanize(title) if title else ""
     if statement:
         return _humanize(statement.rstrip("."))
     parts = [

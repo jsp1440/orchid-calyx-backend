@@ -147,6 +147,37 @@ def test_answer_leads_with_a_conclusion_not_a_source_listing():
         assert not first_paragraph.startswith(prefix)
 
 
+def test_serialized_graph_records_never_reach_the_prose():
+    """Knowledge-graph evidence carries json.dumps(record) as its statement.
+
+    Rendering that verbatim would put `{"id": 1, ...}` into a conversational
+    answer -- the exact database-dump register this composer removes.
+    """
+
+    composed = compose_conversational_answer(
+        packet=packet_for(
+            continuum={
+                "candidate_genera": ["Cymbidium"],
+                "resolved_genera": ["Cymbidium"],
+                "taxa": [
+                    {
+                        "genus": "Cymbidium",
+                        "knowledge_graph": {
+                            "found": True,
+                            "nodes": [{"id": 1, "canonical_key": "cym-1"}],
+                            "edges": [],
+                        },
+                    }
+                ],
+                "diagnostics": [],
+            },
+        ),
+    )
+    assert "{" not in composed.text
+    assert '": ' not in composed.text
+    assert "canonical_key" not in composed.text
+
+
 def test_machinery_stays_out_of_the_prose():
     composed = compose()
     for leak in ("mission-anti-robot", "ep-anti-robot", "0.6", "evidence_id", "source_family"):

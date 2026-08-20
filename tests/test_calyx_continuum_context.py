@@ -120,6 +120,14 @@ def test_speak_turn_passes_continuum_graph_context_to_reply(monkeypatch):
     )
 
     assert result["research"]["continuum"]["resolved_genera"] == ["Cymbidium"]
-    assert "Orchid Continuum context" in result["answer"]
+    # SUPERSEDED by CALYX-CONVERSATIONAL-SYNTHESIS-001: "Orchid Continuum
+    # context" was a per-subsystem block label, and announcing the subsystem is
+    # the source-inventory behaviour the reasoning contract removes. The
+    # guarantee this test exists for -- resolved graph context actually reaching
+    # the reply -- is asserted directly instead, and raw graph records must
+    # never be serialized into the prose.
     assert "Cymbidium" in result["answer"]
+    assert "Orchid Continuum context" not in result["answer"]
+    assert "{" not in result["answer"]
+    assert '": ' not in result["answer"]
     assert result["calyx_message"]["metadata"]["continuum_resolved_genera"] == ["Cymbidium"]
