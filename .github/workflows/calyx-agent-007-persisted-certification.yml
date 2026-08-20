@@ -1,0 +1,167 @@
+name: CALYX-AGENT-007 Persisted Certification
+
+# Owner-triggered certification plus a single, tightly-scoped repository trigger
+# for disposable PR #1043. The push path exists only to let the owner-authorized
+# certification run without another manual UI step. The harness observes; it
+# cannot merge, deploy, or repair. The governor inside the deployed service
+# performs the bounded repair and must terminate at READY_FOR_MERGE.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: 'Certification PR number (the disposable one - never a PR bound for main)'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type: RUN AGENT-007 PERSISTED CERTIFICATION'
+        required: true
+        type: string
+      repair_path:
+        description: 'The single file the governor is authorized to repair'
+        required: true
+        default: 'tests/test_build_088e_publication_operational_readiness.py'
+        type: string
+      required_check:
+        description: 'The required check whose failure the governor must detect'
+        required: true
+        default: 'BUILD-088E Validation'
+        type: string
+      max_steps:
+        description: 'Bounded number of governor steps to observe'
+        required: true
+        default: '40'
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/calyx-agent-007/trigger-once'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calyx-agent-007-persisted-certification
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    name: Observe the persisted governed completion loop
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      PYTHONPATH: .
+      TARGET_PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pull_request || '1043' }}
+      TARGET_CONFIRMATION: ${{ github.event_name == 'workflow_dispatch' && inputs.confirmation || 'RUN AGENT-007 PERSISTED CERTIFICATION' }}
+      TARGET_REPAIR_PATH: ${{ github.event_name == 'workflow_dispatch' && inputs.repair_path || 'tests/test_build_088e_publication_operational_readiness.py' }}
+      TARGET_REQUIRED_CHECK: ${{ github.event_name == 'workflow_dispatch' && inputs.required_check || 'BUILD-088E Validation' }}
+      TARGET_MAX_STEPS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_steps || '40' }}
+    steps:
+      - name: Validate invocation policy
+        shell: bash
+        run: |
+          if [[ "$TARGET_CONFIRMATION" != "RUN AGENT-007 PERSISTED CERTIFICATION" ]]; then
+            echo "::error::Exact confirmation phrase required."
+            exit 1
+          fi
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "$TARGET_PR" != "1043" ]]; then
+            echo "::error::One-shot push trigger is hard-bound to disposable PR #1043."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+
+      - name: Confirm the certification target is not bound for main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ env.TARGET_PR }}
+        run: |
+          set -euo pipefail
+          is_draft=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isDraft -q '.isDraft')
+          pr_state=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json state -q '.state')
+          echo "target PR #$PR: draft=$is_draft state=$pr_state"
+          if [[ "$is_draft" != "true" ]]; then
+            echo "::error::Certification target must be a draft PR; #$PR is not."
+            exit 1
+          fi
+          if [[ "$pr_state" != "OPEN" ]]; then
+            echo "::error::Certification target must be open; #$PR is $pr_state."
+            exit 1
+          fi
+
+      - name: Wait for deployed observability surface
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+          CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CALYX_BACKEND_URL}" || -z "${CALYX_API_KEY}" ]]; then
+            echo "::error::CALYX_BACKEND_URL and CALYX_API_KEY must be configured for the production environment."
+            exit 1
+          fi
+          for attempt in $(seq 1 30); do
+            code=$(curl -sS -o /tmp/calyx-ready.json -w '%{http_code}' \
+              -H "Accept: application/json" \
+              -H "X-API-Key: ${CALYX_API_KEY}" \
+              "${CALYX_BACKEND_URL%/}/brain/engineering/completion-jobs?limit=1" || true)
+            if [[ "$code" == "200" ]]; then
+              echo "Calyx observability surface is live."
+              exit 0
+            fi
+            echo "Readiness attempt ${attempt}/30 returned HTTP ${code}; waiting 15s."
+            sleep 15
+          done
+          echo "::error::Deployed observability surface did not become ready within 7.5 minutes."
+          exit 1
+
+      - name: Run the persisted certification
+        id: certify
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+          CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
+        run: |
+          set -o pipefail
+          set +e
+          python scripts/calyx_agent_007_persisted_certify.py \
+            --pull-request "$TARGET_PR" \
+            --path "$TARGET_REPAIR_PATH" \
+            --required-check "$TARGET_REQUIRED_CHECK" \
+            --max-steps "$TARGET_MAX_STEPS" \
+            --evidence-out agent-007-evidence.json \
+            | tee agent-007-transitions.log
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-007-persisted-certification-evidence
+          path: |
+            agent-007-evidence.json
+            agent-007-transitions.log
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Report outcome
+        if: always()
+        shell: bash
+        env:
+          CODE: ${{ steps.certify.outputs.exit_code }}
+        run: |
+          case "${CODE:-5}" in
+            0) echo "::notice::Governor reached READY_FOR_MERGE and stopped. No merge or deploy was performed." ;;
+            2) echo "::error::Enqueue rejected - the completion job was never created." ;;
+            3) echo "::error::Governor halted before READY_FOR_MERGE. See evidence artifact." ;;
+            4) echo "::error::Governor did not terminate within the step bound - stalled, not failed." ;;
+            5) echo "::error::Transport failure reaching the service. This is NOT a governor result." ;;
+            *) echo "::error::Unrecognized certification exit code ${CODE}." ;;
+          esac
+          exit "${CODE:-5}"
