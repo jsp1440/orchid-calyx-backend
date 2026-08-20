@@ -1,2 +1,2 @@
 AGENT-007 persisted certification trigger for disposable PR #1043.
-Inspect the active certification run before any redispatch.
+Redispatch after adding read-only pull-request metadata permission.
