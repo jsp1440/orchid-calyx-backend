@@ -6,6 +6,14 @@ on:
       - "app/calyx_engineering/**"
       - "app/brain/routes.py"
       - "tests/test_calyx_agent_004.py"
+      # The governed completion loop's own safety tests were listed by no
+      # workflow at all, and no workflow runs the whole suite, so they had
+      # never executed in CI. That is how they were able to rot into passing
+      # for the wrong reason. They are the AGENT-007 safety contract; they gate
+      # this job now.
+      - "tests/test_calyx_governed_autonomous_completion_loop.py"
+      - "tests/test_calyx_agent_007_required_workflow_roster.py"
+      - "tests/test_calyx_completion_job_refresh.py"
       - ".github/workflows/calyx-agent-004.yml"
 
 jobs:
@@ -27,8 +35,20 @@ jobs:
       - name: Compile
         run: python -m compileall -q app/calyx_engineering app/brain/routes.py
       - name: Ruff
-        run: ruff check app/calyx_engineering app/brain/routes.py tests/test_calyx_agent_004.py
+        run: |
+          ruff check \
+            app/calyx_engineering \
+            app/brain/routes.py \
+            tests/test_calyx_agent_004.py \
+            tests/test_calyx_governed_autonomous_completion_loop.py \
+            tests/test_calyx_agent_007_required_workflow_roster.py \
+            tests/test_calyx_completion_job_refresh.py
       - name: Focused tests
-        run: pytest -q tests/test_calyx_agent_004.py
+        run: |
+          pytest -q \
+            tests/test_calyx_agent_004.py \
+            tests/test_calyx_governed_autonomous_completion_loop.py \
+            tests/test_calyx_agent_007_required_workflow_roster.py \
+            tests/test_calyx_completion_job_refresh.py
       - name: Route registration smoke
         run: python -c "from app.brain.routes import router; assert any('/engineering/status' in route.path for route in router.routes)"
