@@ -132,16 +132,11 @@ jobs:
             result=$(jq -r --arg sha "$sha" '[.[] | select(.headSha == $sha)][0] | if . then (.status + " " + (.conclusion // "")) else "" end' <<<"$runs")
 
             if [[ -z "$result" ]]; then
-              # No validation evidence for this exact head. Retry validation only;
-              # never pay for Claude merely because workflow dispatch was transient.
               gh workflow run orchid-autonomous-validation.yml --repo "$REPO" --ref "$head" >/dev/null 2>&1 || true
               continue
             fi
             [[ "$result" == completed* ]] || continue
             if [[ "$result" != "completed success" ]]; then
-              # A completed red exact-head validation positively authorizes one
-              # bounded implementation repair. oc-repair distinguishes this from
-              # stale queue state that an existing durable PR must suppress.
               gh issue edit "$issue" --repo "$REPO" --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
               continue
             fi
@@ -180,8 +175,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Queue labels are advisory; durable PR lineage is authoritative unless
-          # an exact-head failure/merge conflict explicitly authorized a repair.
           mapfile -t prs < <(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq '.[] | select(.body != null and (.body | contains("OC-AUTO-ISSUE: #"))) | [.number, .body] | @base64')
           for encoded in "${prs[@]:-}"; do
             [[ -n "$encoded" ]] || continue
@@ -209,6 +202,16 @@ jobs:
             state=$(gh issue view "$issue" --repo "$REPO" --json state --jq '.state' 2>/dev/null || echo MISSING)
             [[ "$state" == OPEN ]] || continue
             labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")')
+
+            # oc-repair is a positive one-pass authorization and must never be a
+            # terminal state by itself. If overlapping scheduler generations or a
+            # partial label mutation left repair without queue/running, heal it
+            # back to a selectable repair atomically before ordinary seeding.
+            if [[ "$labels" == *oc-repair* && "$labels" != *oc-running* && "$labels" != *oc-queued* ]]; then
+              gh issue edit "$issue" --repo "$REPO" --remove-label oc-validating --add-label oc-queued >/dev/null 2>&1 || true
+              labels="$labels oc-queued"
+            fi
+
             if [[ "$labels" != *oc-queued* && "$labels" != *oc-running* && "$labels" != *oc-validating* && "$labels" != *oc-repair* && "$labels" != *oc-owner-gate* && "$labels" != *oc-blocked* && "$labels" != *oc-done* ]]; then
               gh issue edit "$issue" --repo "$REPO" --add-label oc-queued >/dev/null
             fi
@@ -241,10 +244,6 @@ jobs:
             labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
             repair=false
             [[ "$labels" == *oc-repair* ]] && repair=true
-
-            # Last-moment durable-lineage guard closes the race between queue
-            # reconciliation and dispatch. An open durable PR suppresses Claude
-            # unless exact-head failure/conflict positively authorized oc-repair.
             marker="OC-AUTO-ISSUE: #${issue}"
             durable=$(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq "[.[] | select(.body != null and (.body | contains(\"$marker\")))][0].number // empty")
             if [[ -n "$durable" && "$repair" != true ]]; then
