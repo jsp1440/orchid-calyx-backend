@@ -1,0 +1,30 @@
+name: Orchid Continuous Completion Pulse
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+jobs:
+  pulse:
+    if: github.event.issue.number == 1031 && contains(github.event.comment.body, '[OC_ENGINE_PULSE]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch continuous completion scheduler
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set +e
+          output=$(gh workflow run orchid-continuous-completion.yml --repo "$GITHUB_REPOSITORY" --ref main 2>&1)
+          code=$?
+          if [[ $code -eq 0 ]]; then
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID CONTINUOUS PULSE — **DISPATCHED**. workflow_dispatch accepted for Orchid Continuous Completion. Source pulse run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          else
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID CONTINUOUS PULSE — **FAILED**. workflow_dispatch was rejected with exit code ${code}. Source pulse run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. Diagnostic: ${output}"
+          fi
+          exit $code
