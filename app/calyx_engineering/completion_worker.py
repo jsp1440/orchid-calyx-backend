@@ -39,7 +39,14 @@ def run_forever(
         min(int(os.getenv("CALYX_ENGINEERING_COMPLETION_WORKER_SECONDS", "30")), 900),
     )
     while True:
-        result = run_once(worker_id=worker_id)
+        try:
+            result = run_once(worker_id=worker_id)
+        except Exception as exc:  # noqa: BLE001 -- durable worker must survive transient cycle faults
+            result = {
+                "executed": False,
+                "reason": "cycle_error",
+                "error_type": type(exc).__name__,
+            }
         if on_cycle is not None:
             on_cycle(result)
         sleeper(poll_seconds)
@@ -54,7 +61,13 @@ def main() -> int:
         print(json.dumps(result, sort_keys=True, default=str), flush=True)
 
     if not runtime_ready():
-        emit({"worker": worker_id, "executed": False, "reason": "engineering_runtime_not_ready"})
+        emit(
+            {
+                "worker": worker_id,
+                "executed": False,
+                "reason": "engineering_runtime_not_ready",
+            }
+        )
         return 0
     run_forever(worker_id=worker_id, on_cycle=emit)
     return 0
