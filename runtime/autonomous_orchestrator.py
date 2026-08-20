@@ -24,6 +24,21 @@ except ModuleNotFoundError:  # pragma: no cover - exercised in minimal toolchain
 
 TASK_STATUSES = ("pending", "running", "completed", "failed", "blocked", "needs_review")
 EVALUATION_RESULTS = ("pass", "fail", "needs_review")
+
+# ORCHESTRATION-LITERATURE-KG-001: literature harvest -> ingest -> extract ->
+# taxon-bind -> publication-eligibility -> KG-materialization mission lane.
+# These distinctions are load-bearing: harvested, ingested, extracted,
+# taxonomically bound, publication-eligible, and materialized are six
+# different pipeline states and must never be reported as synonyms.
+LITERATURE_KG_TASK_TYPES = (
+    "literature_harvest_freshness_audit",
+    "literature_ingestion_provenance_audit",
+    "literature_extraction_coverage_audit",
+    "literature_methodology_extraction_audit",
+    "literature_trait_measurement_extraction_audit",
+    "literature_taxon_binding_integrity_audit",
+    "literature_kg_materialization_readiness_audit",
+)
 RISKY_ACTIONS = {
     "deploy",
     "deployment",
@@ -99,6 +114,20 @@ DEFAULT_AGENTS: list[dict[str, Any]] = [
         "priority": 86,
     },
     {
+        "agent_name": "literature_kg",
+        "capability": (
+            "Read-only audit of the literature harvest -> ingest -> extract -> "
+            "taxon-bind -> publication-eligibility -> KG-materialization pipeline. "
+            "Reports harvested, ingested, extracted, taxonomically bound, "
+            "publication-eligible, and materialized as distinct pipeline states, "
+            "reuses the canonical literature extraction registry and KG source "
+            "registry, and never publishes or materializes graph state."
+        ),
+        "allowed_task_types": list(LITERATURE_KG_TASK_TYPES),
+        "enabled": True,
+        "priority": 78,
+    },
+    {
         "agent_name": "release_steward",
         "capability": "Risky release actions; disabled until human governance enables it.",
         "allowed_task_types": ["deploy", "merge", "delete", "overwrite", "external_send", "change_target", "change_schedule", "retire", "restore"],
@@ -164,7 +193,123 @@ DEFAULT_TASKS: list[dict[str, Any]] = [
         "needs_review": True,
         "payload": {"target_domain": "relationships", "mode": "coverage_gap_audit"},
     },
+    {
+        "task_key": "orch-lit-kg-001:harvest-freshness-audit",
+        "task_type": "literature_harvest_freshness_audit",
+        "title": "Audit literature harvest freshness and discovered-document yield",
+        "priority": 58,
+        "needs_review": True,
+        "payload": {
+            "checks": ["harvester_registration", "last_harvest_timestamp", "discovered_documents"],
+        },
+    },
+    {
+        "task_key": "orch-lit-kg-001:ingestion-provenance-audit",
+        "task_type": "literature_ingestion_provenance_audit",
+        "title": "Audit literature ingestion and bibliographic/source provenance",
+        "priority": 57,
+        "needs_review": True,
+        "payload": {
+            "target_tables": [
+                "oc_literature.documents",
+                "oc_literature.literature_documents",
+                "oc_literature.papers",
+                "public.literature_documents",
+                "public.research_documents",
+            ],
+            "checks": ["bibliographic_metadata", "source_document_hash", "provenance_columns"],
+        },
+    },
+    {
+        "task_key": "orch-lit-kg-001:extraction-coverage-audit",
+        "task_type": "literature_extraction_coverage_audit",
+        "title": "Audit literature claim/entity/relationship extraction coverage",
+        "priority": 56,
+        "needs_review": True,
+        "payload": {
+            "expected_entities": [
+                "claims", "entities", "evidence", "glossary_terms",
+                "relationships", "figures", "tables", "references",
+            ],
+        },
+    },
+    {
+        "task_key": "orch-lit-kg-001:taxon-binding-integrity-audit",
+        "task_type": "literature_taxon_binding_integrity_audit",
+        "title": "Audit literature-to-taxon binding integrity",
+        "priority": 55,
+        "needs_review": True,
+        "payload": {"source_domain": "literature"},
+    },
+    {
+        "task_key": "orch-lit-kg-001:methodology-extraction-audit",
+        "task_type": "literature_methodology_extraction_audit",
+        "title": "Audit scientific-method/methodology structure extraction coverage",
+        "priority": 54,
+        "needs_review": True,
+        "payload": {
+            "target_structures": [
+                "hypotheses", "research_questions", "methodologies", "protocols",
+                "sampling_methods", "experimental_design", "field_methods",
+            ],
+        },
+    },
+    {
+        "task_key": "orch-lit-kg-001:trait-measurement-extraction-audit",
+        "task_type": "literature_trait_measurement_extraction_audit",
+        "title": "Audit trait/character-state/measurement extraction coverage",
+        "priority": 53,
+        "needs_review": True,
+        "payload": {
+            "target_domains": [
+                "trait", "morphology", "anatomy", "physiology", "phenology",
+                "habitat", "pollinators", "mycorrhiza",
+            ],
+        },
+    },
+    {
+        "task_key": "orch-lit-kg-001:materialization-readiness-audit",
+        "task_type": "literature_kg_materialization_readiness_audit",
+        "title": "Audit literature-to-KG materialization readiness (harvested/ingested/extracted/bound/publication-eligible/materialized)",
+        "priority": 50,
+        "needs_review": True,
+        "payload": {"mode": "read_only_readiness_audit"},
+    },
 ]
+
+
+def _literature_extractor_names() -> Optional[list[str]]:
+    """Return the canonical registered literature extractor names, or None.
+
+    Reuses ``app.literature_extraction.registry.DEFAULT_REGISTRY`` instead of
+    inventing a second extractor list. Import is lazy and optional so the
+    pure/offline orchestrator tests remain importable when the pydantic-based
+    literature extraction stack is not installed.
+    """
+
+    try:
+        from app.literature_extraction.registry import DEFAULT_REGISTRY
+    except (ImportError, ModuleNotFoundError):
+        return None
+    return DEFAULT_REGISTRY.names()
+
+
+def _literature_source_query() -> Optional[Any]:
+    """Return the canonical KG source-registry entry for the literature domain.
+
+    Reuses ``runtime.knowledge_graph.source_registry`` (the successor slice of
+    draft PR #901) instead of a second taxon-binding contract. Import is lazy
+    and optional for the same reason as ``_literature_extractor_names``.
+    """
+
+    try:
+        from runtime.knowledge_graph.source_registry import SOURCE_QUERIES
+    except (ImportError, ModuleNotFoundError):
+        return None
+    for query in SOURCE_QUERIES:
+        if query.domain == "literature":
+            return query
+    return None
 
 
 def utc_now() -> str:
@@ -302,6 +447,10 @@ class DefaultTaskExecutor:
             }
             return ExecutionResult("needs_review", "needs_review", result, observations)
 
+        if task_type in LITERATURE_KG_TASK_TYPES:
+            result = self._execute_literature_kg(task_type, payload)
+            return ExecutionResult("needs_review", "needs_review", result, observations)
+
         return ExecutionResult(
             "blocked",
             "needs_review",
@@ -319,6 +468,148 @@ class DefaultTaskExecutor:
                 }
             ],
         )
+
+    def _execute_literature_kg(self, task_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Read-only literature -> KG pipeline audits.
+
+        This executor never queries a live database and never publishes or
+        materializes graph state; it is bounded to static introspection of
+        the canonical literature-extraction registry and KG source registry
+        already established on current main. Any telemetry that would
+        require a live connection (row counts, timestamps, yield) is
+        reported as ``"unavailable"``, never a fabricated ``0``, per
+        ORCHESTRATION-LITERATURE-KG-001.
+        """
+
+        base_skip = ["literature_harvest_trigger", "document_write", "graph_publication", "graph_materialization"]
+
+        if task_type == "literature_harvest_freshness_audit":
+            return {
+                "message": (
+                    "Literature harvest freshness audit is read-only; no harvester was "
+                    "triggered and no documents were fetched."
+                ),
+                "inspected": payload.get("checks", []),
+                "changed": [],
+                "skipped": base_skip,
+                "harvested": "unavailable",
+                "last_harvest_timestamp": "unavailable",
+                "discovered_documents": "unavailable",
+                "new_retained_documents": "unavailable",
+                "next_action": "Connect a literature harvester run-log (last-run timestamp, discovered/retained document counts) so this audit can score pass/fail instead of needs_review.",
+            }
+
+        if task_type == "literature_ingestion_provenance_audit":
+            return {
+                "message": (
+                    "Literature ingestion/provenance audit is read-only; no document was "
+                    "ingested and no bibliographic record was written."
+                ),
+                "inspected": payload.get("target_tables", []),
+                "changed": [],
+                "skipped": base_skip,
+                "ingested": "unavailable",
+                "bibliographic_metadata_verified": "unavailable",
+                "source_document_hash_verified": "unavailable",
+                "next_action": "Connect literature ingestion table row counts and content-hash/provenance verification for the candidate tables listed in `inspected`.",
+            }
+
+        if task_type == "literature_extraction_coverage_audit":
+            extractor_names = _literature_extractor_names()
+            return {
+                "message": (
+                    "Literature extraction coverage audit is read-only; reports the "
+                    "registered extractor pipeline, not live extraction counts."
+                ),
+                "inspected": payload.get("expected_entities", []),
+                "changed": [],
+                "skipped": base_skip,
+                "registered_extractors": extractor_names if extractor_names is not None else "unavailable",
+                "extracted": "unavailable",
+                "next_action": "Connect app.literature_extraction.repository extraction-run counts per entity type (claims, entities, evidence, glossary_terms, relationships, figures, tables, references).",
+            }
+
+        if task_type == "literature_taxon_binding_integrity_audit":
+            query = _literature_source_query()
+            return {
+                "message": (
+                    "Literature taxon-binding integrity audit is read-only; reports the "
+                    "registered binding contract, not live join results."
+                ),
+                "inspected": [payload.get("source_domain", "literature")],
+                "changed": [],
+                "skipped": base_skip,
+                "taxon_mapping": query.taxon_mapping if query is not None else "unavailable",
+                "binding_enabled": query.enabled if query is not None else "unavailable",
+                "binding_method_notes": query.notes if query is not None else "unavailable",
+                "taxonomically_bound": "unavailable",
+                "next_action": "Run runtime.knowledge_graph.source_coverage_audit.source_vs_graph_coverage_audit against a live connection for exact taxon-resolved vs persisted graph rows.",
+            }
+
+        if task_type == "literature_methodology_extraction_audit":
+            return {
+                "message": (
+                    "Methodology/scientific-method extraction audit is read-only; no "
+                    "dedicated methodology extractor performs a live run here."
+                ),
+                "inspected": payload.get("target_structures", []),
+                "changed": [],
+                "skipped": base_skip,
+                "modeled_claim_types": [
+                    "observation", "result", "interpretation", "hypothesis",
+                    "methodological", "background", "limitation", "recommendation",
+                ],
+                "dedicated_methodology_extractor_registered": False,
+                "methodology_extracted": "unavailable",
+                "next_action": "Add a dedicated hypothesis/protocol/sampling-method extractor to app.literature_extraction.registry, or connect live methodological-claim counts.",
+            }
+
+        if task_type == "literature_trait_measurement_extraction_audit":
+            return {
+                "message": (
+                    "Trait/measurement extraction audit is read-only; no dedicated "
+                    "trait or measurement extractor performs a live run here."
+                ),
+                "inspected": payload.get("target_domains", []),
+                "changed": [],
+                "skipped": base_skip,
+                "modeled_evidence_domains": [
+                    "taxonomy", "trait", "occurrence", "habitat",
+                    "ecological_interaction", "conservation", "cultivation", "other",
+                ],
+                "coverage_gap": (
+                    "morphology/anatomy/physiology/phenology/pollinator/mycorrhiza granularity "
+                    "is not distinguished at the domain-enum level; those mentions currently "
+                    "collapse into 'trait', 'ecological_interaction', or 'other'."
+                ),
+                "traits_extracted": "unavailable",
+                "next_action": "Add finer-grained NormalizedEvidenceRecord.domain values (or a dedicated trait/measurement extractor) and connect live per-domain extraction counts.",
+            }
+
+        # literature_kg_materialization_readiness_audit
+        return {
+            "message": (
+                "Literature-to-KG materialization readiness audit is read-only; no graph "
+                "node or edge is published or materialized by this task."
+            ),
+            "inspected": [payload.get("mode", "read_only_readiness_audit")],
+            "changed": [],
+            "skipped": base_skip,
+            "pipeline_stage_counts": {
+                "harvested": "unavailable",
+                "ingested": "unavailable",
+                "extracted": "unavailable",
+                "taxonomically_bound": "unavailable",
+                "publication_eligible": "unavailable",
+                "materialized": "unavailable",
+            },
+            "materialization_blockers": [
+                "no live DATABASE_URL telemetry available to this read-only executor",
+                "no dedicated methodology/measurement extractor registered",
+                "literature taxon binding is a name_join, not an exact identifier join",
+            ],
+            "next_action": "Run the literature extraction/taxon-binding/publication-eligibility audits against live data, then request owner-approved materialization through the existing KG publication gate; this task never publishes.",
+        }
 
     def evaluate(self, result: dict[str, Any], required_keys: list[str]) -> str:
         missing = [key for key in required_keys if key not in result]
