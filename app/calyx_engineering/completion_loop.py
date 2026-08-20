@@ -1,15 +1,18 @@
-# ruff: noqa: I001
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .github import GitHubEngineeringClient
-from .repair_loop import BoundedRepairLoop, RepairResult
-from .provider import StructuredPatchProvider
+from app.calyx_orchestrator.github_agent_ci_policy import RequiredCiCheckPolicy
 
+from .github import GitHubEngineeringClient
+from .provider import StructuredPatchProvider
+from .repair_loop import BoundedRepairLoop, RepairResult
 
 MAX_REPAIR_ATTEMPTS = 3
+_INFRASTRUCTURE_CONCLUSIONS = frozenset(
+    {"cancelled", "timed_out", "action_required", "stale"}
+)
 
 
 class CompletionState(StrEnum):
@@ -36,6 +39,8 @@ class CompletionReceipt:
     successful_workflows: tuple[str, ...]
     commits: int = 0
     next_action: str = ""
+    required_checks_known: bool = False
+    infrastructure_failure: bool = False
     autonomous_merge: bool = False
     deployment: bool = False
 
@@ -53,6 +58,8 @@ class CompletionReceipt:
             "successful_workflows": list(self.successful_workflows),
             "commits": self.commits,
             "next_action": self.next_action,
+            "required_checks_known": self.required_checks_known,
+            "infrastructure_failure": self.infrastructure_failure,
             "autonomous_merge": self.autonomous_merge,
             "deployment": self.deployment,
         }
@@ -61,9 +68,10 @@ class CompletionReceipt:
 class GovernedAutonomousCompletionLoop:
     """Advance one draft PR through a bounded CI -> repair -> CI cycle.
 
-    One invocation performs at most one mutating repair. CI is asynchronous, so a
-    caller or scheduled worker invokes this method again after GitHub reports the
-    new head's checks. Merge and deployment are intentionally outside this class.
+    Readiness is established only against an explicit required-check roster. Missing
+    checks and infrastructure-only conclusions fail closed and never consume repair
+    budget. One invocation performs at most one mutating repair; merge and deployment
+    remain outside this class.
     """
 
     def __init__(
@@ -74,28 +82,55 @@ class GovernedAutonomousCompletionLoop:
     ) -> None:
         self.client = client
         self.repair_factory = repair_factory or (
-            lambda client: BoundedRepairLoop(
-                client,
-                StructuredPatchProvider(),
-            )
+            lambda client: BoundedRepairLoop(client, StructuredPatchProvider())
         )
 
     @staticmethod
-    def _workflow_state(runs: list[dict]) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
-        failed: list[str] = []
-        pending: list[str] = []
-        successful: list[str] = []
-        for run in runs:
-            name = str(run.get("name") or f"workflow-{run.get('id', 'unknown')}")
+    def _check_conclusions(check_runs: list[dict]) -> tuple[dict[str, str | None], tuple[str, ...]]:
+        conclusions: dict[str, str | None] = {}
+        infrastructure: set[str] = set()
+        for run in check_runs:
+            name = str(run.get("name") or "").strip()
+            if not name:
+                continue
             status = str(run.get("status") or "")
-            conclusion = str(run.get("conclusion") or "")
-            if status != "completed":
-                pending.append(name)
-            elif conclusion == "success":
-                successful.append(name)
-            else:
-                failed.append(name)
-        return tuple(sorted(set(failed))), tuple(sorted(set(pending))), tuple(sorted(set(successful)))
+            conclusion = str(run.get("conclusion") or "").strip() or None
+            conclusions[name] = conclusion if status == "completed" else None
+            if status == "completed" and conclusion in _INFRASTRUCTURE_CONCLUSIONS:
+                infrastructure.add(name)
+        return conclusions, tuple(sorted(infrastructure))
+
+    def _receipt(
+        self,
+        *,
+        pull_request_number: int,
+        head_sha: str,
+        branch: str,
+        state: CompletionState,
+        attempt: int,
+        failed: tuple[str, ...] = (),
+        pending: tuple[str, ...] = (),
+        successful: tuple[str, ...] = (),
+        commits: int = 0,
+        next_action: str = "",
+        required_checks_known: bool = False,
+        infrastructure_failure: bool = False,
+    ) -> CompletionReceipt:
+        return CompletionReceipt(
+            pull_request_number=pull_request_number,
+            head_sha=head_sha,
+            branch=branch,
+            state=state,
+            attempt=attempt,
+            attempt_limit=MAX_REPAIR_ATTEMPTS,
+            failed_workflows=failed,
+            pending_workflows=pending,
+            successful_workflows=successful,
+            commits=commits,
+            next_action=next_action,
+            required_checks_known=required_checks_known,
+            infrastructure_failure=infrastructure_failure,
+        )
 
     def advance(
         self,
@@ -105,85 +140,106 @@ class GovernedAutonomousCompletionLoop:
         objective: str,
         attempt: int,
         repairs_authorized: bool,
+        required_checks: list[str],
     ) -> CompletionReceipt:
         if attempt < 1:
             raise ValueError("COMPLETION_ATTEMPT_INVALID")
+        normalized_required = frozenset(
+            str(name).strip() for name in required_checks if str(name).strip()
+        )
+        if not normalized_required:
+            raise ValueError("ENGINEERING_COMPLETION_REQUIRED_CHECKS_REQUIRED")
+
         pull_request = self.client.pull_request(pull_request_number)
         head = pull_request.get("head") or {}
         branch = str(head.get("ref") or "")
         head_sha = str(head.get("sha") or "")
-
-        if pull_request.get("state") != "open" or not pull_request.get("draft", False) or not branch or not head_sha:
-            return CompletionReceipt(
+        if (
+            pull_request.get("state") != "open"
+            or not pull_request.get("draft", False)
+            or not branch
+            or not head_sha
+        ):
+            return self._receipt(
                 pull_request_number=pull_request_number,
                 head_sha=head_sha,
                 branch=branch,
                 state=CompletionState.HALTED_UNSAFE_PR_STATE,
                 attempt=attempt,
-                attempt_limit=MAX_REPAIR_ATTEMPTS,
-                failed_workflows=(),
-                pending_workflows=(),
-                successful_workflows=(),
                 next_action="human_review_pr_state",
             )
 
-        runs = self.client.workflow_runs_for_head(head_sha)
-        failed, pending, successful = self._workflow_state(runs)
+        check_runs = self.client.check_runs_for_head(head_sha)
+        conclusions, infrastructure_checks = self._check_conclusions(check_runs)
+        assessment = RequiredCiCheckPolicy(required_checks=normalized_required).evaluate(conclusions)
+        failed = assessment.required_checks_failed
+        pending = assessment.required_checks_pending
+        successful = assessment.required_checks_succeeded
 
-        if pending or not runs:
-            return CompletionReceipt(
+        if assessment.infrastructure_failure:
+            return self._receipt(
                 pull_request_number=pull_request_number,
                 head_sha=head_sha,
                 branch=branch,
                 state=CompletionState.WAITING_FOR_CI,
                 attempt=attempt,
-                attempt_limit=MAX_REPAIR_ATTEMPTS,
-                failed_workflows=failed,
-                pending_workflows=pending,
-                successful_workflows=successful,
+                pending=tuple(sorted(set(pending) | set(infrastructure_checks))),
+                successful=successful,
+                next_action="retry_infrastructure_checks",
+                required_checks_known=assessment.required_checks_known,
+                infrastructure_failure=True,
+            )
+
+        if pending or not assessment.required_checks_known:
+            return self._receipt(
+                pull_request_number=pull_request_number,
+                head_sha=head_sha,
+                branch=branch,
+                state=CompletionState.WAITING_FOR_CI,
+                attempt=attempt,
+                failed=failed,
+                pending=pending,
+                successful=successful,
                 next_action="recheck_after_ci",
+                required_checks_known=assessment.required_checks_known,
             )
 
         if not failed:
-            return CompletionReceipt(
+            return self._receipt(
                 pull_request_number=pull_request_number,
                 head_sha=head_sha,
                 branch=branch,
                 state=CompletionState.READY_FOR_MERGE,
                 attempt=attempt,
-                attempt_limit=MAX_REPAIR_ATTEMPTS,
-                failed_workflows=(),
-                pending_workflows=(),
-                successful_workflows=successful,
+                successful=successful,
                 next_action="evaluate_merge_policy",
+                required_checks_known=True,
             )
 
         if attempt > MAX_REPAIR_ATTEMPTS:
-            return CompletionReceipt(
+            return self._receipt(
                 pull_request_number=pull_request_number,
                 head_sha=head_sha,
                 branch=branch,
                 state=CompletionState.HALTED_REPAIR_LIMIT,
                 attempt=attempt,
-                attempt_limit=MAX_REPAIR_ATTEMPTS,
-                failed_workflows=failed,
-                pending_workflows=(),
-                successful_workflows=successful,
+                failed=failed,
+                successful=successful,
                 next_action="human_review_repair_limit",
+                required_checks_known=True,
             )
 
         if not repairs_authorized:
-            return CompletionReceipt(
+            return self._receipt(
                 pull_request_number=pull_request_number,
                 head_sha=head_sha,
                 branch=branch,
                 state=CompletionState.FAILED_REPAIRABLE,
                 attempt=attempt,
-                attempt_limit=MAX_REPAIR_ATTEMPTS,
-                failed_workflows=failed,
-                pending_workflows=(),
-                successful_workflows=successful,
+                failed=failed,
+                successful=successful,
                 next_action="authorize_bounded_repair",
+                required_checks_known=True,
             )
 
         repair: RepairResult = self.repair_factory(self.client).repair_once(
@@ -195,30 +251,28 @@ class GovernedAutonomousCompletionLoop:
         if repair.status == "repair_committed_waiting_for_ci":
             refreshed = self.client.pull_request(pull_request_number)
             refreshed_head = refreshed.get("head") or {}
-            return CompletionReceipt(
+            return self._receipt(
                 pull_request_number=pull_request_number,
                 head_sha=str(refreshed_head.get("sha") or head_sha),
                 branch=str(refreshed_head.get("ref") or branch),
                 state=CompletionState.REPAIR_COMMITTED,
                 attempt=attempt,
-                attempt_limit=MAX_REPAIR_ATTEMPTS,
-                failed_workflows=failed,
-                pending_workflows=(),
-                successful_workflows=successful,
+                failed=failed,
+                successful=successful,
                 commits=repair.commits,
                 next_action="recheck_after_ci",
+                required_checks_known=True,
             )
 
-        return CompletionReceipt(
+        return self._receipt(
             pull_request_number=pull_request_number,
             head_sha=head_sha,
             branch=branch,
             state=CompletionState.HALTED_NO_REPAIR,
             attempt=attempt,
-            attempt_limit=MAX_REPAIR_ATTEMPTS,
-            failed_workflows=failed,
-            pending_workflows=(),
-            successful_workflows=successful,
+            failed=failed,
+            successful=successful,
             commits=repair.commits,
             next_action="human_review_no_repair_generated",
+            required_checks_known=True,
         )
