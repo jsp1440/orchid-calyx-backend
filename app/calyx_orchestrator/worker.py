@@ -23,8 +23,12 @@ def engineering_enabled() -> bool:
     return CalyxEngineeringService.enabled()
 
 
+def engineering_runtime_ready() -> bool:
+    return engineering_enabled() and bool(os.getenv("GITHUB_TOKEN", "").strip())
+
+
 def worker_enabled() -> bool:
-    return enabled() or engineering_enabled()
+    return enabled() or engineering_runtime_ready()
 
 
 def run_cycle(db, *, worker_id: str, lease_seconds: int) -> str:
@@ -39,7 +43,7 @@ def run_cycle(db, *, worker_id: str, lease_seconds: int) -> str:
             orchestrator.execute(job, worker_id=worker_id, lease_token=token)
             return "orchestrator_job"
 
-    if engineering_enabled():
+    if engineering_runtime_ready():
         service = CalyxEngineeringService()
         scheduler = EngineeringCompletionScheduler(
             db,
@@ -58,8 +62,8 @@ def run_cycle(db, *, worker_id: str, lease_seconds: int) -> str:
 def run_forever() -> None:
     if not worker_enabled():
         raise SystemExit(
-            "Calyx durable worker is disabled. Enable the orchestrator or the governed "
-            "engineering completion lane in preproduction mode."
+            "Calyx durable worker is disabled. Enable the orchestrator or enable the "
+            "governed engineering completion lane in preproduction mode with GITHUB_TOKEN."
         )
     worker_id = os.getenv("CALYX_WORKER_ID", f"{socket.gethostname()}-{os.getpid()}")
     poll_seconds = max(2, int(os.getenv("CALYX_ORCHESTRATOR_POLL_SECONDS", "10")))
