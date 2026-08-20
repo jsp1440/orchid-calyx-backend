@@ -303,6 +303,33 @@ class ConversationStore:
         text = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
         return text[-max_chars:]
 
+    def user_turns(
+        self,
+        conversation_id: str,
+        *,
+        turns: int = 12,
+        owner: str = LEGACY_OWNER,
+    ) -> list[dict[str, str]]:
+        """Prior OPERATOR turns only, for resolving what a follow-up refers to.
+
+        Assistant turns are deliberately excluded: prior Calyx statements may
+        preserve continuity but are never the subject of record and are never
+        scientific evidence.
+        """
+
+        conversation = self.get(
+            conversation_id,
+            owner=owner,
+            message_limit=max(2, turns * 2),
+        )
+        if not conversation:
+            return []
+        return [
+            {"role": "user", "content": str(item.get("content") or "")}
+            for item in conversation.get("messages", [])
+            if str(item.get("role")) == "operator"
+        ][-turns:]
+
     def provider_messages(
         self,
         conversation_id: str,

@@ -8,6 +8,7 @@ from typing import Any, Protocol
 
 import requests
 
+from .conversational_synthesis import compose_conversational_answer
 from .evidence_synthesis import build_synthesis_packet, provider_context
 from .persona import conversational_system_guidance
 
@@ -19,6 +20,9 @@ class GeneratedReply:
     model: str
     request_hash: str
     provider_response_id: str | None = None
+    # Claim coverage, contradictions, gaps and provenance for the inspectable
+    # secondary surface. Never rendered into the conversational prose.
+    synthesis_structure: dict[str, Any] | None = None
 
 
 class CalyxReplyProvider(Protocol):
@@ -42,6 +46,12 @@ def _scientific_system_prompt() -> str:
 
 
 def _current_question(messages: list[dict[str, str]], governed_context: dict[str, Any]) -> str:
+    # A follow-up turn's literal words ("Why?") decompose into no scientific
+    # claim at all. Claim decomposition therefore runs on the investigation
+    # subject the turn continues, resolved server-side from conversation state.
+    resolved_subject = str(governed_context.get("resolved_subject") or "").strip()
+    if resolved_subject:
+        return resolved_subject
     interaction = governed_context.get("interaction_context") or {}
     preserved = str(interaction.get("current_question") or "").strip()
     if preserved:
@@ -71,10 +81,19 @@ def semantic_provider_context(messages: list[dict[str, str]], governed_context: 
 
 
 class DeterministicGovernedReplyProvider:
-    """Evidence-safe fallback that composes from the same semantic packet as the LLM."""
+    """Degraded composer used when no generative provider is available.
+
+    It renders the SAME governed synthesis packet the LLM path receives, via
+    ``conversational_synthesis`` -- claim-by-claim, integrated across source
+    families, with machinery kept out of the prose. It previously emitted one
+    labelled block per source family, which is exactly the source-inventory
+    behaviour ``CALYX-EVIDENCE-SYNTHESIS-002`` exists to prevent.
+
+    It composes; it does not reason generatively, and it says so.
+    """
 
     provider_name = "deterministic-governed"
-    model_name = "calyx-semantic-summary-v2"
+    model_name = "calyx-conversational-composer-v3"
 
     @staticmethod
     def _citations(mission: dict[str, Any] | None) -> list[str]:
@@ -98,83 +117,42 @@ class DeterministicGovernedReplyProvider:
                 citations.append(rendered)
         return citations
 
-    @staticmethod
-    def _evidence_statement(item: dict[str, Any]) -> str:
-        return str(item.get("statement") or "").strip()
-
     def generate(self, *, messages: list[dict[str, str]], governed_context: dict[str, Any]) -> GeneratedReply:
         semantic = semantic_provider_context(messages, governed_context)
         packet = semantic.get("synthesis_packet") or {}
         payload = {"messages": messages, "semantic_context": semantic}
-        if governed_context.get("casual"):
-            text = "Hello. I’m Calyx, the Orchid Continuum’s governed scientific workspace. I can discuss a question conversationally, connect evidence across the Continuum, and keep inference and uncertainty visible."
-            return GeneratedReply(text=text, provider=self.provider_name, model=self.model_name, request_hash=_request_hash(payload))
 
-        mission_error = governed_context.get("mission_error")
-        if mission_error:
-            text = (
-                "I could not complete a governed Brain mission for this turn, so I will not present a scientific conclusion as established.\n\n"
-                f"Mission status: {mission_error}\n\n"
-                "Evidence vs inference: any available records remain evidence inputs, not an established conclusion."
-            )
-            return GeneratedReply(text=text, provider=self.provider_name, model=self.model_name, request_hash=_request_hash(payload))
+        composed = compose_conversational_answer(
+            packet=packet,
+            history=messages,
+            casual=bool(governed_context.get("casual")),
+            mission_error=governed_context.get("mission_error"),
+            generative=False,
+            resolved_subject=governed_context.get("resolved_subject"),
+            follow_up=bool(str(governed_context.get("resolved_subject") or "").strip()),
+        )
 
-        conclusions = packet.get("candidate_conclusions") or []
-        evidence = packet.get("evidence_items") or []
-        reconciliation = packet.get("reconciliation") or {}
-        source_families = set(reconciliation.get("source_families") or [])
-        supporting_ids = set(reconciliation.get("supporting_evidence_ids") or [])
-        contradicting_ids = set(reconciliation.get("contradicting_evidence_ids") or [])
-        supporting = [item for item in evidence if item.get("evidence_id") in supporting_ids]
-        contradicting = [item for item in evidence if item.get("evidence_id") in contradicting_ids]
-        missing = reconciliation.get("missing_evidence") or []
         mission = governed_context.get("mission") or {}
-        lines: list[str] = []
-
-        if conclusions:
-            lines.append("Scientific conclusion: " + " ".join(str(item.get("text") or "").strip() for item in conclusions[:2] if str(item.get("text") or "").strip()))
-        elif evidence:
-            strongest = [self._evidence_statement(item) for item in evidence if self._evidence_statement(item)][:3]
-            lines.append("Scientific conclusion: the available governed evidence is relevant, but it does not yet justify a stronger integrated conclusion." + ((" The strongest available evidence is: " + "; ".join(strongest) + ".") if strongest else ""))
-        else:
-            lines.append("Scientific conclusion: no evidence-grounded conclusion could be justified from the governed synthesis packet.")
-
-        if supporting:
-            lines.append("Evidence summary: " + "; ".join(self._evidence_statement(item) for item in supporting[:4] if self._evidence_statement(item)))
-            lines.append(f"Supporting evidence count: {len(supporting)}.")
-        elif not conclusions:
-            lines.append("Evidence summary: the mission did not surface any supporting evidence records that could justify a conclusion.")
-
-        if "knowledge_graph" in source_families:
-            lines.append("Orchid Continuum context: canonical Knowledge Graph evidence informed this synthesis.")
-        if "external_literature" in source_families:
-            lines.append("External literature context: review-required Europe PMC records informed this provisional synthesis; they are not yet reviewed/indexed Orchid Continuum evidence.")
-        if "climate" in source_families:
-            lines.append(
-                "Climate context: NOAA/NWS Climate Prediction Center products are time-sensitive external context and do not establish orchid physiological responses by themselves."
-            )
-
-        if contradicting:
-            lines.append("Disagreements or conflicting evidence: " + "; ".join(self._evidence_statement(item) for item in contradicting[:4] if self._evidence_statement(item)))
-        if missing:
-            lines.append("Limitations and uncertainty: missing or incomplete evidence for " + "; ".join(str(item) for item in missing[:8]) + ".")
-        confidence = mission.get("confidence")
-        if confidence is not None and (supporting or contradicting or missing):
-            lines.append(f"Strength of evidence: provisional backend confidence {float(confidence):.2f}; this remains an inference pending human scientific review.")
-        citations = self._citations(mission)
-        if citations:
-            lines.append("Supporting sources/citations: " + "; ".join(citations[:5]))
+        # Machinery stays OUT of the prose and inspectable alongside it: the
+        # conversational constitution keeps identifiers, counts and confidence
+        # in research details rather than the human-facing answer.
+        composed.structure["citations"] = self._citations(mission)
         artifacts = mission.get("artifacts") or {}
-        identifiers = []
-        if artifacts.get("evidence_packet_id"):
-            identifiers.append(f"evidence packet {artifacts['evidence_packet_id']}")
-        if artifacts.get("interpretation_id"):
-            identifiers.append(f"interpretation {artifacts['interpretation_id']}")
-        if identifiers:
-            lines.append("Governed provenance: " + ", ".join(identifiers) + ".")
-        if supporting or contradicting or missing or citations or identifiers:
-            lines.append("Evidence vs inference: source evidence and extracted evidence remain distinct from this provisional synthesis, which is not reviewed or published knowledge.")
-        return GeneratedReply(text="\n\n".join(line for line in lines if line), provider=self.provider_name, model=self.model_name, request_hash=_request_hash(payload))
+        composed.structure["governed_provenance"] = {
+            "mission_id": mission.get("mission_id"),
+            "evidence_packet_id": artifacts.get("evidence_packet_id"),
+            "interpretation_id": artifacts.get("interpretation_id"),
+            "confidence": mission.get("confidence"),
+            "review_status": mission.get("review_status"),
+        }
+
+        return GeneratedReply(
+            text=composed.text,
+            provider=self.provider_name,
+            model=self.model_name,
+            request_hash=_request_hash(payload),
+            synthesis_structure=composed.structure,
+        )
 
 
 class OpenAICompatibleReplyProvider:
