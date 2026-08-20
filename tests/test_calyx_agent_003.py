@@ -9,7 +9,13 @@ from sqlalchemy.orm import sessionmaker
 from app.calyx_agent.service import CalyxAgentService
 from app.calyx_orchestrator.models import CalyxFinding, CalyxJob, utcnow
 from app.calyx_orchestrator.service import CalyxOrchestrator
-from app.calyx_orchestrator.worker import enabled
+from app.calyx_orchestrator.worker import (
+    enabled,
+    engineering_enabled,
+    engineering_runtime_ready,
+    run_cycle,
+    worker_enabled,
+)
 from app.database import Base
 
 
@@ -82,6 +88,73 @@ def test_worker_is_disabled_without_preproduction_gate(monkeypatch):
     assert enabled() is False
     monkeypatch.setenv("CALYX_ORCHESTRATOR_MODE", "preproduction")
     assert enabled() is True
+
+
+def test_shared_worker_requires_engineering_gate_and_github_token(monkeypatch):
+    monkeypatch.delenv("CALYX_ORCHESTRATOR_ENABLED", raising=False)
+    monkeypatch.delenv("CALYX_ORCHESTRATOR_MODE", raising=False)
+    monkeypatch.delenv("CALYX_ENGINEERING_ENABLED", raising=False)
+    monkeypatch.delenv("CALYX_ENGINEERING_MODE", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    assert worker_enabled() is False
+
+    monkeypatch.setenv("CALYX_ENGINEERING_ENABLED", "true")
+    monkeypatch.setenv("CALYX_ENGINEERING_MODE", "production")
+    assert engineering_enabled() is False
+    assert engineering_runtime_ready() is False
+    assert worker_enabled() is False
+
+    monkeypatch.setenv("CALYX_ENGINEERING_MODE", "preproduction")
+    assert engineering_enabled() is True
+    assert engineering_runtime_ready() is False
+    assert worker_enabled() is False
+
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    assert engineering_runtime_ready() is True
+    assert worker_enabled() is True
+
+
+def test_shared_worker_services_both_enabled_lanes_in_one_cycle(monkeypatch):
+    events: list[str] = []
+
+    class FakeJob:
+        lease_token = "lease-token"
+
+    class FakeOrchestrator:
+        def __init__(self, db) -> None:
+            self.db = db
+
+        def claim(self, *, worker_id: str, lease_seconds: int):
+            return FakeJob()
+
+        def execute(self, job, *, worker_id: str, lease_token: str):
+            events.append("orchestrator")
+
+    class FakeGitHubClient:
+        def __init__(self, repository: str) -> None:
+            self.repository = repository
+
+    class FakeScheduler:
+        def __init__(self, db, client) -> None:
+            self.db = db
+            self.client = client
+
+        def run_once(self, *, worker_id: str, lease_seconds: int) -> dict:
+            events.append("engineering")
+            return {"executed": True}
+
+    monkeypatch.setenv("CALYX_ORCHESTRATOR_ENABLED", "true")
+    monkeypatch.setenv("CALYX_ORCHESTRATOR_MODE", "preproduction")
+    monkeypatch.setenv("CALYX_ENGINEERING_ENABLED", "true")
+    monkeypatch.setenv("CALYX_ENGINEERING_MODE", "preproduction")
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    monkeypatch.setattr("app.calyx_orchestrator.worker.CalyxOrchestrator", FakeOrchestrator)
+    monkeypatch.setattr("app.calyx_orchestrator.worker.GitHubEngineeringClient", FakeGitHubClient)
+    monkeypatch.setattr("app.calyx_orchestrator.worker.EngineeringCompletionScheduler", FakeScheduler)
+
+    outcome = run_cycle(object(), worker_id="worker-1", lease_seconds=120)
+    assert outcome == "orchestrator_job+engineering_completion_job"
+    assert events == ["orchestrator", "engineering"]
 
 
 def test_process_environment_is_not_modified():

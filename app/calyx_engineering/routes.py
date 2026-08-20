@@ -15,6 +15,8 @@ from .anthropic_provider import (
     AnthropicPatchRequest,
     generate_file_changes,
 )
+from .completion_loop import GovernedAutonomousCompletionLoop
+from .completion_scheduler import EngineeringCompletionScheduler
 from .github import FileChange, GitHubEngineeringClient
 from .inspection import RepositoryInspector
 from .provider import EngineeringProviderError, StructuredPatchProvider
@@ -55,6 +57,24 @@ class RepairRequest(BaseModel):
     approved: bool = False
 
 
+class CompletionCycleRequest(BaseModel):
+    """Read-only completion inspection; mutating cycles require a persisted job."""
+
+    model_config = ConfigDict(extra="forbid")
+    paths: list[str] = Field(min_length=1, max_length=20)
+    objective: str = Field(min_length=1, max_length=12000)
+    required_checks: list[str] = Field(min_length=1, max_length=50)
+
+
+class CompletionJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    paths: list[str] = Field(min_length=1, max_length=20)
+    objective: str = Field(min_length=1, max_length=12000)
+    required_checks: list[str] = Field(min_length=1, max_length=50)
+    repairs_authorized: bool = False
+    priority: int = Field(default=20, ge=1, le=1000)
+
+
 class ProviderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: str = Field(min_length=1, max_length=120)
@@ -88,6 +108,12 @@ def _proposal(db: Session, finding_id: str, owner: str) -> EngineeringProposal:
     )
 
 
+def _completion_scheduler(db: Session) -> EngineeringCompletionScheduler:
+    service = CalyxEngineeringService()
+    client = GitHubEngineeringClient(service.repository)
+    return EngineeringCompletionScheduler(db, client)
+
+
 @router.get("/status")
 def status(auth: AuthDependency) -> dict:
     _owner(auth)
@@ -99,12 +125,16 @@ def status(auth: AuthDependency) -> dict:
             "inspect_ci_failures",
             "generate_structured_patches",
             "apply_bounded_ci_repairs",
+            "inspect_governed_completion_cycle",
+            "persist_governed_completion_job",
+            "run_persisted_completion_worker_cycle",
             "create_issue",
             "create_branch",
             "commit_changes",
             "open_draft_pr",
         ],
         "repair_attempt_limit": 3,
+        "direct_completion_mutation": False,
         "autonomous_merge": False,
         "deployment": False,
     }
@@ -194,6 +224,84 @@ def repair_pull_request(
         raise HTTPException(422, detail={"code": str(exc)}) from exc
 
 
+@router.post("/pull-requests/{pull_request_number}/completion-cycle")
+def inspect_completion_cycle(
+    pull_request_number: int,
+    payload: CompletionCycleRequest,
+    auth: AuthDependency,
+) -> dict:
+    """Inspect one governed CI state without permitting a code-writing repair."""
+    _owner(auth)
+    if not CalyxEngineeringService.enabled():
+        raise HTTPException(422, detail={"code": "CALYX_ENGINEERING_DISABLED"})
+    try:
+        service = CalyxEngineeringService()
+        client = GitHubEngineeringClient(service.repository)
+        result = GovernedAutonomousCompletionLoop(client).advance(
+            pull_request_number=pull_request_number,
+            repair_paths=payload.paths,
+            objective=payload.objective,
+            attempt=1,
+            repairs_authorized=False,
+            required_checks=payload.required_checks,
+        ).to_dict()
+        result["mutating"] = False
+        result["repair_requires_persisted_job"] = True
+        return result
+    except PermissionError as exc:
+        raise HTTPException(403, detail={"code": str(exc)}) from exc
+    except (EngineeringProviderError, RuntimeError, ValueError) as exc:
+        raise HTTPException(422, detail={"code": str(exc)}) from exc
+
+
+@router.post("/pull-requests/{pull_request_number}/completion-jobs", status_code=201)
+def create_completion_job(
+    pull_request_number: int,
+    payload: CompletionJobRequest,
+    auth: AuthDependency,
+    db: DbDependency,
+) -> dict:
+    owner = _owner(auth)
+    if not CalyxEngineeringService.enabled():
+        raise HTTPException(422, detail={"code": "CALYX_ENGINEERING_DISABLED"})
+    try:
+        job = _completion_scheduler(db).enqueue(
+            owner=owner,
+            pull_request_number=pull_request_number,
+            repair_paths=payload.paths,
+            objective=payload.objective,
+            repairs_authorized=payload.repairs_authorized,
+            required_checks=payload.required_checks,
+            priority=payload.priority,
+        )
+        return {
+            "job_id": job.job_id,
+            "pull_request_number": pull_request_number,
+            "status": job.status,
+            "attempt_count": job.attempt_count,
+            "max_attempts": job.max_attempts,
+            "autonomous_merge": False,
+            "deployment": False,
+        }
+    except PermissionError as exc:
+        raise HTTPException(403, detail={"code": str(exc)}) from exc
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(422, detail={"code": str(exc)}) from exc
+
+
+@router.post("/completion-jobs/run-once")
+def run_completion_job_once(auth: AuthDependency, db: DbDependency) -> dict:
+    owner = _owner(auth)
+    if not CalyxEngineeringService.enabled():
+        raise HTTPException(422, detail={"code": "CALYX_ENGINEERING_DISABLED"})
+    try:
+        return _completion_scheduler(db).run_once(worker_id=f"engineering-api:{owner}")
+    except PermissionError as exc:
+        raise HTTPException(403, detail={"code": str(exc)}) from exc
+    except (EngineeringProviderError, RuntimeError, ValueError) as exc:
+        raise HTTPException(422, detail={"code": str(exc)}) from exc
+
+
 @router.post("/findings/{finding_id}/proposal")
 def proposal(finding_id: str, auth: AuthDependency, db: DbDependency) -> dict:
     return _proposal(db, finding_id, _owner(auth)).to_dict()
@@ -209,7 +317,9 @@ def execute(
     try:
         return CalyxEngineeringService().execute(
             proposal=_proposal(db, finding_id, _owner(auth)),
-            changes=[FileChange(item.path, item.content, item.message) for item in payload.changes],
+            changes=[
+                FileChange(item.path, item.content, item.message) for item in payload.changes
+            ],
             approved=payload.approved,
             base=payload.base,
         )

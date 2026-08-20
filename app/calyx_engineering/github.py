@@ -125,8 +125,16 @@ class GitHubEngineeringClient:
         return self._request("GET", f"/pulls/{number}")
 
     def workflow_runs_for_head(self, head_sha: str) -> list[dict]:
-        payload = self._request("GET", f"/actions/runs?head_sha={quote(head_sha, safe='')}&per_page=50")
+        payload = self._request(
+            "GET", f"/actions/runs?head_sha={quote(head_sha, safe='')}&per_page=50"
+        )
         return list(payload.get("workflow_runs", []))
+
+    def check_runs_for_head(self, head_sha: str) -> list[dict]:
+        payload = self._request(
+            "GET", f"/commits/{quote(head_sha, safe='')}/check-runs?per_page=100"
+        )
+        return list(payload.get("check_runs", []))
 
     def workflow_jobs(self, run_id: int) -> list[dict]:
         payload = self._request("GET", f"/actions/runs/{run_id}/jobs?per_page=100")
