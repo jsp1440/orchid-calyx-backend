@@ -1,10 +1,5 @@
 name: Dispatch AGENT-007 Certification Once
 
-# One-shot bridge for the explicitly authorized disposable certification target.
-# It preserves the certification workflow's owner-triggered-only contract by
-# dispatching that workflow through GitHub's Actions API rather than changing
-# the certification workflow's trigger surface.
-
 on:
   push:
     branches: [main]
@@ -15,63 +10,85 @@ permissions:
   contents: read
   actions: write
   pull-requests: read
+  issues: write
 
 jobs:
   dispatch:
     runs-on: ubuntu-24.04
     environment: production
     steps:
-      - name: Confirm disposable certification target
+      - name: Diagnose and dispatch
+        id: diagnose
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          draft=$(gh pr view 1043 --repo "$GITHUB_REPOSITORY" --json isDraft -q '.isDraft')
-          state=$(gh pr view 1043 --repo "$GITHUB_REPOSITORY" --json state -q '.state')
-          if [[ "$draft" != "true" || "$state" != "OPEN" ]]; then
-            echo "::error::PR #1043 is no longer an open disposable draft; refusing certification dispatch."
-            exit 1
-          fi
-
-      - name: Wait for deployed completion-job observation endpoint
-        shell: bash
-        env:
           CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
           CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
         run: |
-          set -euo pipefail
-          if [[ -z "${CALYX_BACKEND_URL}" || -z "${CALYX_API_KEY}" ]]; then
-            echo "::error::production environment requires CALYX_BACKEND_URL and CALYX_API_KEY."
-            exit 1
-          fi
-          for attempt in $(seq 1 40); do
-            code=$(curl -sS -o /tmp/calyx-ready.json -w '%{http_code}' \
-              -H 'Accept: application/json' \
-              -H "X-API-Key: ${CALYX_API_KEY}" \
-              "${CALYX_BACKEND_URL%/}/brain/engineering/completion-jobs?limit=1" || true)
-            if [[ "$code" == "200" ]]; then
-              echo "Deployed AGENT-007 observation endpoint is ready."
-              exit 0
+          set +e
+          outcome="unknown"
+          detail=""
+          draft=$(gh pr view 1043 --repo "$GITHUB_REPOSITORY" --json isDraft -q '.isDraft' 2>/tmp/gherr)
+          state=$(gh pr view 1043 --repo "$GITHUB_REPOSITORY" --json state -q '.state' 2>>/tmp/gherr)
+          if [[ $? -ne 0 ]]; then
+            outcome="github_pr_lookup_failed"
+            detail="Could not read PR #1043 with the workflow token."
+          elif [[ "$draft" != "true" || "$state" != "OPEN" ]]; then
+            outcome="unsafe_target_state"
+            detail="PR #1043 must remain an open draft; observed draft=$draft state=$state."
+          elif [[ -z "$CALYX_BACKEND_URL" || -z "$CALYX_API_KEY" ]]; then
+            outcome="missing_production_secrets"
+            detail="CALYX_BACKEND_URL or CALYX_API_KEY is missing from the production environment."
+          else
+            last_code="000"
+            for attempt in $(seq 1 12); do
+              last_code=$(curl -sS -o /tmp/calyx-ready.json -w '%{http_code}' \
+                -H 'Accept: application/json' \
+                -H "X-API-Key: ${CALYX_API_KEY}" \
+                "${CALYX_BACKEND_URL%/}/brain/engineering/completion-jobs?limit=1" || true)
+              if [[ "$last_code" == "200" ]]; then
+                gh workflow run calyx-agent-007-persisted-certification.yml \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --ref main \
+                  -f pull_request=1043 \
+                  -f confirmation='RUN AGENT-007 PERSISTED CERTIFICATION' \
+                  -f repair_path='tests/test_build_088e_publication_operational_readiness.py' \
+                  -f required_check='BUILD-088E Validation' \
+                  -f max_steps=40
+                if [[ $? -eq 0 ]]; then
+                  outcome="dispatched"
+                  detail="Observation endpoint returned HTTP 200 and the persisted certification workflow was dispatched."
+                else
+                  outcome="workflow_dispatch_failed"
+                  detail="Observation endpoint was ready but GitHub rejected the certification dispatch."
+                fi
+                break
+              fi
+              sleep 10
+            done
+            if [[ "$outcome" == "unknown" ]]; then
+              outcome="observation_endpoint_not_ready"
+              detail="Completion-job observation endpoint never returned HTTP 200; last HTTP code was $last_code."
             fi
-            echo "Attempt ${attempt}/40: HTTP ${code}; waiting 15 seconds."
-            sleep 15
-          done
-          echo "::error::Observation endpoint did not become ready within 10 minutes."
-          exit 1
+          fi
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+          echo "detail=$detail" >> "$GITHUB_OUTPUT"
+          echo "AGENT-007 diagnostic outcome: $outcome — $detail"
 
-      - name: Dispatch persisted certification against PR 1043
+      - name: Publish diagnostic to sprint tracker
+        if: always()
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OUTCOME: ${{ steps.diagnose.outputs.outcome }}
+          DETAIL: ${{ steps.diagnose.outputs.detail }}
         run: |
-          set -euo pipefail
-          gh workflow run calyx-agent-007-persisted-certification.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f pull_request=1043 \
-            -f confirmation='RUN AGENT-007 PERSISTED CERTIFICATION' \
-            -f repair_path='tests/test_build_088e_publication_operational_readiness.py' \
-            -f required_check='BUILD-088E Validation' \
-            -f max_steps=40
-          echo 'Persisted certification dispatched.'
+          gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "AGENT-007 AUTONOMY DIAGNOSTIC — **${OUTCOME:-unknown}**. ${DETAIL:-No detail returned.} Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Fail closed unless certification was dispatched
+        if: always()
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.diagnose.outputs.outcome }}
+        run: |
+          [[ "$OUTCOME" == "dispatched" ]]

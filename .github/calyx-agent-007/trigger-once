@@ -1,2 +1,2 @@
-AGENT-007 one-shot persisted certification trigger for disposable PR #1043.
-This marker is safe to delete after the certification run.
+AGENT-007 persisted certification trigger for disposable PR #1043.
+Diagnostic rerun requested 2026-08-20 after no autonomous repair was observed.
