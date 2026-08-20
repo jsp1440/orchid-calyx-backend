@@ -38,7 +38,10 @@ def test_the_harness_is_owner_triggered_only(workflow):
 
 
 def test_the_harness_cannot_write_to_the_repository(workflow):
-    assert workflow["permissions"] == {"contents": "read"}
+    permissions = workflow["permissions"]
+    assert permissions.get("contents") == "read"
+    assert permissions.get("pull-requests") == "read"
+    assert all(level == "read" for level in permissions.values()), permissions
 
 
 def test_the_harness_requires_an_explicit_confirmation_phrase(workflow, steps):
