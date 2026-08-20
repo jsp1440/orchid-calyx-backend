@@ -23,8 +23,15 @@ class FakeClient:
             "head": {"ref": "agent/test", "sha": self.sha},
         }
 
-    def workflow_runs_for_head(self, head_sha: str) -> list[dict]:
+    def check_runs_for_head(self, head_sha: str) -> list[dict]:
+        # The loop reads check-runs first. This fake models that namespace; the
+        # workflow-run namespace added for the AGENT-007 roster is covered by
+        # tests/test_calyx_agent_007_required_workflow_roster.py, and is kept
+        # empty here so each test asserts one namespace at a time.
         return self.runs
+
+    def workflow_runs_for_head(self, head_sha: str) -> list[dict]:
+        return []
 
 
 class FakeRepairLoop:
@@ -50,6 +57,7 @@ def test_waits_while_ci_is_running():
         objective="repair tests",
         attempt=1,
         repairs_authorized=True,
+        required_checks=["suite-a"],
     )
     assert receipt.state == CompletionState.WAITING_FOR_CI
     assert receipt.next_action == "recheck_after_ci"
@@ -66,6 +74,7 @@ def test_green_ci_advances_only_to_merge_policy_gate():
         objective="repair tests",
         attempt=1,
         repairs_authorized=True,
+        required_checks=["suite-a"],
     )
     assert receipt.state == CompletionState.READY_FOR_MERGE
     assert receipt.next_action == "evaluate_merge_policy"
@@ -82,6 +91,7 @@ def test_failed_ci_without_authorization_does_not_write():
         objective="repair tests",
         attempt=1,
         repairs_authorized=False,
+        required_checks=["suite-a"],
     )
     assert receipt.state == CompletionState.FAILED_REPAIRABLE
     assert receipt.next_action == "authorize_bounded_repair"
@@ -97,6 +107,7 @@ def test_authorized_failure_invokes_one_bounded_repair_then_waits_for_ci():
         objective="repair tests",
         attempt=2,
         repairs_authorized=True,
+        required_checks=["suite-a"],
     )
     assert len(repair.calls) == 1
     assert receipt.state == CompletionState.REPAIR_COMMITTED
@@ -115,6 +126,7 @@ def test_repair_limit_halts_before_another_write():
         objective="repair tests",
         attempt=4,
         repairs_authorized=True,
+        required_checks=["suite-a"],
     )
     assert receipt.state == CompletionState.HALTED_REPAIR_LIMIT
     assert repair.calls == []
@@ -130,6 +142,7 @@ def test_non_draft_or_closed_pr_halts_fail_closed():
         objective="repair tests",
         attempt=1,
         repairs_authorized=True,
+        required_checks=["suite-a"],
     )
     assert receipt.state == CompletionState.HALTED_UNSAFE_PR_STATE
     assert receipt.next_action == "human_review_pr_state"
