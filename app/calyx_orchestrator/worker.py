@@ -4,6 +4,9 @@ import os
 import socket
 import time
 
+from app.calyx_engineering.completion_scheduler import EngineeringCompletionScheduler
+from app.calyx_engineering.github import GitHubEngineeringClient
+from app.calyx_engineering.service import CalyxEngineeringService
 from app.database import get_session_local
 
 from .service import CalyxOrchestrator
@@ -16,11 +19,47 @@ def enabled() -> bool:
     )
 
 
+def engineering_enabled() -> bool:
+    return CalyxEngineeringService.enabled()
+
+
+def worker_enabled() -> bool:
+    return enabled() or engineering_enabled()
+
+
+def run_cycle(db, *, worker_id: str, lease_seconds: int) -> str:
+    """Run at most one persisted job from each explicitly enabled lane."""
+    if enabled():
+        orchestrator = CalyxOrchestrator(db)
+        job = orchestrator.claim(worker_id=worker_id, lease_seconds=lease_seconds)
+        if job is not None:
+            token = job.lease_token
+            if token is None:
+                raise RuntimeError("CLAIMED_JOB_WITHOUT_LEASE_TOKEN")
+            orchestrator.execute(job, worker_id=worker_id, lease_token=token)
+            return "orchestrator_job"
+
+    if engineering_enabled():
+        service = CalyxEngineeringService()
+        scheduler = EngineeringCompletionScheduler(
+            db,
+            GitHubEngineeringClient(service.repository),
+        )
+        result = scheduler.run_once(
+            worker_id=f"{worker_id}:engineering",
+            lease_seconds=lease_seconds,
+        )
+        if result.get("executed"):
+            return "engineering_completion_job"
+
+    return "idle"
+
+
 def run_forever() -> None:
-    if not enabled():
+    if not worker_enabled():
         raise SystemExit(
-            "Calyx orchestrator is disabled. Set CALYX_ORCHESTRATOR_ENABLED=true and "
-            "CALYX_ORCHESTRATOR_MODE=preproduction to start the bounded worker."
+            "Calyx durable worker is disabled. Enable the orchestrator or the governed "
+            "engineering completion lane in preproduction mode."
         )
     worker_id = os.getenv("CALYX_WORKER_ID", f"{socket.gethostname()}-{os.getpid()}")
     poll_seconds = max(2, int(os.getenv("CALYX_ORCHESTRATOR_POLL_SECONDS", "10")))
@@ -29,15 +68,9 @@ def run_forever() -> None:
     while True:
         db = SessionLocal()
         try:
-            orchestrator = CalyxOrchestrator(db)
-            job = orchestrator.claim(worker_id=worker_id, lease_seconds=lease_seconds)
-            if job is None:
+            outcome = run_cycle(db, worker_id=worker_id, lease_seconds=lease_seconds)
+            if outcome == "idle":
                 time.sleep(poll_seconds)
-                continue
-            token = job.lease_token
-            if token is None:
-                raise RuntimeError("CLAIMED_JOB_WITHOUT_LEASE_TOKEN")
-            orchestrator.execute(job, worker_id=worker_id, lease_token=token)
         except Exception as exc:  # noqa: BLE001 -- durable worker must survive unexpected job failures
             db.rollback()
             print(f"[CALYX-ORCHESTRATOR] worker error: {type(exc).__name__}")
