@@ -13,6 +13,7 @@ from app.calyx_orchestrator.worker import (
     enabled,
     engineering_enabled,
     engineering_runtime_ready,
+    run_cycle,
     worker_enabled,
 )
 from app.database import Base
@@ -111,6 +112,49 @@ def test_shared_worker_requires_engineering_gate_and_github_token(monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "test-token")
     assert engineering_runtime_ready() is True
     assert worker_enabled() is True
+
+
+def test_shared_worker_services_both_enabled_lanes_in_one_cycle(monkeypatch):
+    events: list[str] = []
+
+    class FakeJob:
+        lease_token = "lease-token"
+
+    class FakeOrchestrator:
+        def __init__(self, db) -> None:
+            self.db = db
+
+        def claim(self, *, worker_id: str, lease_seconds: int):
+            return FakeJob()
+
+        def execute(self, job, *, worker_id: str, lease_token: str):
+            events.append("orchestrator")
+
+    class FakeGitHubClient:
+        def __init__(self, repository: str) -> None:
+            self.repository = repository
+
+    class FakeScheduler:
+        def __init__(self, db, client) -> None:
+            self.db = db
+            self.client = client
+
+        def run_once(self, *, worker_id: str, lease_seconds: int) -> dict:
+            events.append("engineering")
+            return {"executed": True}
+
+    monkeypatch.setenv("CALYX_ORCHESTRATOR_ENABLED", "true")
+    monkeypatch.setenv("CALYX_ORCHESTRATOR_MODE", "preproduction")
+    monkeypatch.setenv("CALYX_ENGINEERING_ENABLED", "true")
+    monkeypatch.setenv("CALYX_ENGINEERING_MODE", "preproduction")
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    monkeypatch.setattr("app.calyx_orchestrator.worker.CalyxOrchestrator", FakeOrchestrator)
+    monkeypatch.setattr("app.calyx_orchestrator.worker.GitHubEngineeringClient", FakeGitHubClient)
+    monkeypatch.setattr("app.calyx_orchestrator.worker.EngineeringCompletionScheduler", FakeScheduler)
+
+    outcome = run_cycle(object(), worker_id="worker-1", lease_seconds=120)
+    assert outcome == "orchestrator_job+engineering_completion_job"
+    assert events == ["orchestrator", "engineering"]
 
 
 def test_process_environment_is_not_modified():
