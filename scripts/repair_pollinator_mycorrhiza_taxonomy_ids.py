@@ -16,6 +16,10 @@ inside ``SET TRANSACTION READ ONLY`` and is always rolled back, mirroring
 Never rewrites a populated ``orchid_taxonomy_id``, never touches
 ``partner_taxon_id`` / ``fungal_taxon_id``, and never resolves an ambiguous
 name -- those rows are reported in a queue for human review instead.
+
+Both modes emit two review artifacts per target: a provenance mapping CSV
+accounting for every candidate row (written, queued for a human, or resolving
+to nothing) and the generated idempotent repair SQL.
 """
 
 from __future__ import annotations
@@ -29,10 +33,14 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.readiness.taxonomy_id_repair import (  # noqa: E402
+    REPAIR_PACKAGE,
     REPAIR_TARGETS,
+    RESOLUTION_POLICY,
     apply_repair_plan,
+    build_provenance_mapping,
     build_repair_plan,
     generate_repair_sql,
+    mapping_to_csv,
     measure_repair_candidates,
 )
 
@@ -51,12 +59,44 @@ def _targets_for(name: str):
     return matches
 
 
-def _run_dry_run(database_url: str, targets) -> dict:
+def _artifact_path(base: str, domain: str) -> str:
+    root, ext = os.path.splitext(base)
+    return f"{root}.{domain}{ext}"
+
+
+def write_artifacts(target, measurement, plan, sql_text, *, mapping_out, sql_out) -> dict:
+    """Write the provenance mapping and the reviewable SQL for one target.
+
+    These are the two review handoffs: the mapping accounts for every
+    candidate row (written, queued for a human, or resolving to nothing), and
+    the SQL is the exact idempotent text a reviewer would run. Writing them is
+    a local file operation and touches no database.
+    """
+    mapping = build_provenance_mapping(target, measurement)
+    mapping_path = _artifact_path(mapping_out, target.domain)
+    sql_path = _artifact_path(sql_out, target.domain)
+
+    with open(mapping_path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(mapping_to_csv(mapping))
+    with open(sql_path, "w", encoding="utf-8") as fh:
+        fh.write(sql_text)
+
+    return {
+        "mapping_csv": mapping_path,
+        "mapping_rows": len(mapping),
+        "repair_sql": sql_path,
+        "planned_updates": len(plan["actions"]),
+    }
+
+
+def _run_dry_run(database_url: str, targets, *, mapping_out: str, sql_out: str) -> dict:
     import psycopg
     from psycopg.rows import dict_row
 
     report: dict = {
         "mode": "dry_run",
+        "repair_package": REPAIR_PACKAGE,
+        "resolution_policy": RESOLUTION_POLICY,
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "access": "read_only_transaction_rolled_back",
         "targets": [],
@@ -76,18 +116,28 @@ def _run_dry_run(database_url: str, targets) -> dict:
                         "measurement": measurement,
                         "planned_updates": len(plan["actions"]),
                         "generated_sql": sql_text,
+                        "artifacts": write_artifacts(
+                            target,
+                            measurement,
+                            plan,
+                            sql_text,
+                            mapping_out=mapping_out,
+                            sql_out=sql_out,
+                        ),
                     }
                 )
         conn.rollback()
     return report
 
 
-def _run_execute(database_url: str, targets) -> dict:
+def _run_execute(database_url: str, targets, *, mapping_out: str, sql_out: str) -> dict:
     import psycopg
     from psycopg.rows import dict_row
 
     report: dict = {
         "mode": "execute",
+        "repair_package": REPAIR_PACKAGE,
+        "resolution_policy": RESOLUTION_POLICY,
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "targets": [],
     }
@@ -96,17 +146,38 @@ def _run_execute(database_url: str, targets) -> dict:
             for target in targets:
                 measurement = measure_repair_candidates(cur, target)
                 plan = build_repair_plan(measurement)
+                # The mapping and SQL are written before the transaction is
+                # committed, so the provenance of a write always exists on
+                # disk even if the write itself is rolled back or interrupted.
+                artifacts = write_artifacts(
+                    target,
+                    measurement,
+                    plan,
+                    generate_repair_sql(target, plan),
+                    mapping_out=mapping_out,
+                    sql_out=sql_out,
+                )
                 result = apply_repair_plan(cur, target, plan, execute=True)
                 if result["rows_updated"] != result["planned"]:
                     conn.rollback()
                     result["status"] = "rolled_back_mismatch"
                     report["targets"].append(
-                        {"domain": target.domain, "table": target.table, "result": result}
+                        {
+                            "domain": target.domain,
+                            "table": target.table,
+                            "result": result,
+                            "artifacts": artifacts,
+                        }
                     )
                     continue
                 conn.commit()
                 report["targets"].append(
-                    {"domain": target.domain, "table": target.table, "result": result}
+                    {
+                        "domain": target.domain,
+                        "table": target.table,
+                        "result": result,
+                        "artifacts": artifacts,
+                    }
                 )
     return report
 
@@ -130,6 +201,22 @@ def main() -> int:
             "taxonomy-id-repair-report.json",
         ),
     )
+    parser.add_argument(
+        "--mapping-out",
+        default=os.environ.get(
+            "CALYX_TAXONOMY_ID_REPAIR_MAPPING",
+            "taxonomy-id-repair-mapping.csv",
+        ),
+        help="provenance mapping CSV; one file per target, suffixed with the domain",
+    )
+    parser.add_argument(
+        "--sql-out",
+        default=os.environ.get(
+            "CALYX_TAXONOMY_ID_REPAIR_SQL",
+            "taxonomy-id-repair.sql",
+        ),
+        help="generated idempotent repair SQL; one file per target, suffixed with the domain",
+    )
     args = parser.parse_args()
 
     targets = _targets_for(args.target)
@@ -144,7 +231,9 @@ def main() -> int:
                 "note": "DATABASE_URL not set; nothing was read or written.",
             }
         else:
-            report = _run_dry_run(database_url, targets)
+            report = _run_dry_run(
+                database_url, targets, mapping_out=args.mapping_out, sql_out=args.sql_out
+            )
     else:
         confirmation = os.environ.get("CALYX_TAXONOMY_ID_REPAIR_CONFIRMATION", "").strip()
         if confirmation != EXECUTION_CONFIRMATION:
@@ -155,7 +244,9 @@ def main() -> int:
             )
         if not database_url:
             raise SystemExit("DATABASE_URL is required to execute.")
-        report = _run_execute(database_url, targets)
+        report = _run_execute(
+            database_url, targets, mapping_out=args.mapping_out, sql_out=args.sql_out
+        )
 
     with open(args.report, "w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=2, default=str)

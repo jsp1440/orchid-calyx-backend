@@ -38,15 +38,29 @@ side of any statement this module builds.
 ``apply_repair_plan`` can write, and only when its caller passes ``execute=True``
 -- the owner-gated confirmation lives one layer up, in
 ``scripts/repair_pollinator_mycorrhiza_taxonomy_ids.py``.
+
+Every resolution -- including the ones that deliberately resolve to nothing --
+is emitted as a provenance record by ``build_provenance_mapping``, so the
+mapping handed to a human reviewer states where each candidate id came from,
+which policy produced it, what the alternatives were, and which column was
+never touched.
 """
 
 from __future__ import annotations
 
+import csv
+import io
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from app.readiness.relationship_measurement import _columns, _safe, _scalar, _table_exists
+
+# Identifies the resolution policy that produced a mapping row. Bump this when
+# the matching rules change, so an old mapping artifact can never be silently
+# mistaken for one produced under the current policy.
+REPAIR_PACKAGE = "DATA-INTEGRATION-REPAIR-002"
+RESOLUTION_POLICY = "canonical-orchid-taxonomy-normalized-exact/v1"
 
 # A self-contained copy of the regex/normalization policy in
 # app.trait_genomics.taxon_target_resolver._normalize_scientific_name. Kept
@@ -81,6 +95,66 @@ def _comparison_text(value: str) -> str:
 CANONICAL_TAXONOMY_TABLE = "public.orchid_taxonomy"
 CANONICAL_TAXONOMY_ID_COLUMN = "id"
 CANONICAL_TAXONOMY_NAME_COLUMN = "scientific_name"
+
+# Postgres base type names are lower-case identifiers (uuid, int8, text,
+# varchar). Anything else -- an array type, a quoted or schema-qualified type,
+# a value that did not come from the catalog -- is refused rather than
+# interpolated into generated SQL.
+_SAFE_TYPE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+
+MATCH_METHOD_EXACT = "canonical_name_normalized_exact"
+MATCH_METHOD_EXACT_TEXT_DISAMBIGUATED = "canonical_name_normalized_exact_text_disambiguated"
+MATCH_METHOD_NONE = "none"
+
+
+def _sql_text_literal(value: Any) -> str:
+    """Render one value as a quoted Postgres string literal.
+
+    Deliberately *not* ``repr()``. ``repr()`` of a ``uuid.UUID`` -- the likely
+    type of ``edge_id``/``association_id`` -- is ``UUID('...')``, which is not
+    SQL at all, and ``repr()`` of a name containing an apostrophe produces a
+    double-quoted string, which Postgres reads as an *identifier*. Both would
+    yield generated migration text that fails or means something other than it
+    reads as. Every value is rendered the same way here, as text, and the
+    caller casts it to the column's real type.
+    """
+    if value is None:
+        raise ValueError("Refusing to render NULL as a repair literal.")
+    text = str(value)
+    if "\x00" in text:
+        raise ValueError("Refusing to render a value containing a NUL byte.")
+    escaped = text.replace("'", "''")
+    return f"'{escaped}'"
+
+
+def _cast_suffix(type_name: str | None) -> str:
+    """``'::uuid'`` for a catalog type we can vouch for, ``''`` otherwise."""
+    if type_name and _SAFE_TYPE_NAME.fullmatch(type_name):
+        return f"::{type_name}"
+    return ""
+
+
+def _column_udt_types(cur, table_name: str) -> dict[str, str]:
+    """Base type name per column, read from the catalog. Read-only."""
+    schema, _, table = table_name.partition(".")
+    if not table:
+        schema, table = "public", schema
+    cur.execute(
+        """
+        SELECT column_name, udt_name
+        FROM information_schema.columns
+        WHERE table_schema = %s AND table_name = %s
+        """,
+        (schema, table),
+    )
+    types: dict[str, str] = {}
+    for row in cur.fetchall():
+        if isinstance(row, dict):
+            name, udt = row["column_name"], row["udt_name"]
+        else:
+            name, udt = row[0], row[1]
+        types[str(name)] = str(udt) if udt is not None else ""
+    return types
 
 
 @dataclass(frozen=True)
@@ -157,6 +231,7 @@ def _resolve_scientific_name(cur, orchid_name: str) -> dict[str, Any]:
             "normalized_name": None,
             "resolved_orchid_taxonomy_id": None,
             "candidates": [],
+            "match_method": MATCH_METHOD_NONE,
             "reason": "Not a parseable binomial or supported infraspecific scientific name.",
         }
 
@@ -184,6 +259,7 @@ def _resolve_scientific_name(cur, orchid_name: str) -> dict[str, Any]:
             "normalized_name": normalized,
             "resolved_orchid_taxonomy_id": None,
             "candidates": [],
+            "match_method": MATCH_METHOD_NONE,
             "reason": (
                 f"No {CANONICAL_TAXONOMY_TABLE} row has the same normalized "
                 "scientific name. No synonym or fuzzy substitution was attempted."
@@ -204,6 +280,7 @@ def _resolve_scientific_name(cur, orchid_name: str) -> dict[str, Any]:
                 "normalized_name": normalized,
                 "resolved_orchid_taxonomy_id": selected["id"],
                 "candidates": [dict(m) for m in matches],
+                "match_method": MATCH_METHOD_EXACT_TEXT_DISAMBIGUATED,
                 "reason": (
                     "Multiple rows share the normalized taxon identity; selected "
                     "the sole row whose stored scientific-name text exactly "
@@ -216,6 +293,7 @@ def _resolve_scientific_name(cur, orchid_name: str) -> dict[str, Any]:
             "normalized_name": normalized,
             "resolved_orchid_taxonomy_id": None,
             "candidates": [dict(m) for m in matches],
+            "match_method": MATCH_METHOD_NONE,
             "reason": (
                 "Multiple canonical rows share the normalized scientific name "
                 "and no unique exact-text row disambiguates the query; explicit "
@@ -230,6 +308,7 @@ def _resolve_scientific_name(cur, orchid_name: str) -> dict[str, Any]:
         "normalized_name": normalized,
         "resolved_orchid_taxonomy_id": selected["id"],
         "candidates": [dict(selected)],
+        "match_method": MATCH_METHOD_EXACT,
         "reason": "Resolved by exact normalized name against public.orchid_taxonomy.",
     }
 
@@ -290,18 +369,37 @@ def measure_repair_candidates(cur, target: RepairTarget) -> dict[str, Any]:
     total_rows = _scalar(cur, f"SELECT COUNT(*) FROM {t}")
     populated = _scalar(cur, f"SELECT COUNT(*) FROM {t} WHERE {idcol} IS NOT NULL")
 
+    column_types = _column_udt_types(cur, target.table)
+
     null_candidates = _fetch_null_candidates(cur, target)
     resolved: list[dict[str, Any]] = []
     ambiguous: list[dict[str, Any]] = []
     unresolved: list[dict[str, Any]] = []
     invalid: list[dict[str, Any]] = []
 
+    # One canonical lookup per *distinct* name rather than per row. The two
+    # targets repeat the same orchid across many rows (462 mycorrhiza
+    # associations span 218 taxa per DATA-INTEGRATION-REPAIR-001), and this
+    # measurement runs against production, so the duplicate reads are worth
+    # not issuing. Resolution depends only on the name, so the cached outcome
+    # is identical to the one a repeat query would have produced.
+    resolution_cache: dict[str, dict[str, Any]] = {}
+
     for row_pk, orchid_name in null_candidates:
-        outcome = _resolve_scientific_name(cur, orchid_name)
+        cache_key = " ".join((orchid_name or "").split())
+        outcome = resolution_cache.get(cache_key)
+        if outcome is None:
+            outcome = _resolve_scientific_name(cur, orchid_name)
+            resolution_cache[cache_key] = outcome
         entry = {
             "table": target.table,
             "row_pk": row_pk,
             **outcome,
+            # The cache is keyed on the whitespace-collapsed name, so a cached
+            # outcome may carry a sibling row's raw text. Provenance records
+            # this row's own stored value.
+            "orchid_scientific_name": orchid_name,
+            "candidates": [dict(c) for c in outcome["candidates"]],
         }
         if outcome["status"] == "resolved":
             resolved.append(entry)
@@ -316,6 +414,19 @@ def measure_repair_candidates(cur, target: RepairTarget) -> dict[str, Any]:
         "domain": target.domain,
         "table": target.table,
         "state": "measured",
+        "repair_package": REPAIR_PACKAGE,
+        "resolution_policy": RESOLUTION_POLICY,
+        "canonical_table": CANONICAL_TAXONOMY_TABLE,
+        "column_types": {
+            target.primary_key: column_types.get(target.primary_key, ""),
+            target.orchid_taxonomy_id_column: column_types.get(
+                target.orchid_taxonomy_id_column, ""
+            ),
+        },
+        "canonical_lookups": {
+            "null_rows_examined": len(null_candidates),
+            "distinct_names_resolved": len(resolution_cache),
+        },
         "before": {
             "total_rows": total_rows,
             "orchid_taxonomy_id_populated": populated,
@@ -341,20 +452,135 @@ def build_repair_plan(measurement: dict[str, Any]) -> dict[str, Any]:
     same generated SQL, byte for byte.
     """
     if measurement.get("state") != "measured":
-        return {"table": measurement.get("table"), "actions": []}
+        return {"table": measurement.get("table"), "actions": [], "column_types": {}}
     actions = sorted(
         (
             {
                 "row_pk": entry["row_pk"],
                 "resolved_orchid_taxonomy_id": entry["resolved_orchid_taxonomy_id"],
                 "orchid_scientific_name": entry["orchid_scientific_name"],
-                "join_method": "canonical_name_normalized_exact",
+                "join_method": entry.get("match_method", MATCH_METHOD_EXACT),
+                # The canonical rows this id was chosen from. Carried on the
+                # action so apply_repair_plan can verify, at the write
+                # boundary, that the id it is about to write really came out
+                # of public.orchid_taxonomy for this row -- a hand-edited or
+                # otherwise substituted plan cannot smuggle a partner-side
+                # taxon id into the orchid column.
+                "canonical_source": CANONICAL_TAXONOMY_TABLE,
+                "resolved_from_candidates": [c["id"] for c in entry.get("candidates", [])],
             }
             for entry in measurement["resolved_candidates"]
         ),
-        key=lambda a: a["row_pk"],
+        key=lambda a: str(a["row_pk"]),
     )
-    return {"table": measurement["table"], "actions": actions}
+    return {
+        "table": measurement["table"],
+        "actions": actions,
+        "column_types": dict(measurement.get("column_types") or {}),
+    }
+
+
+# Column order of the provenance mapping artifact. Fixed and explicit so a
+# reviewer diffing two runs sees only real changes, never a reordered header.
+MAPPING_FIELDS: tuple[str, ...] = (
+    "repair_package",
+    "resolution_policy",
+    "domain",
+    "source_table",
+    "source_row_pk",
+    "source_name_column",
+    "source_scientific_name",
+    "normalized_scientific_name",
+    "source_id_column",
+    "prior_orchid_taxonomy_id",
+    "prior_state",
+    "canonical_table",
+    "canonical_id_column",
+    "canonical_name_column",
+    "resolution_status",
+    "match_method",
+    "resolved_orchid_taxonomy_id",
+    "candidate_count",
+    "candidate_ids",
+    "action",
+    "partner_id_column",
+    "partner_id_column_written",
+    "reason",
+)
+
+_ACTION_BY_STATUS = {
+    "resolved": "write_candidate",
+    "ambiguous": "human_review",
+    "unresolved": "no_action",
+    "invalid": "no_action",
+}
+
+
+def build_provenance_mapping(target: RepairTarget, measurement: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every candidate row's resolution, including the ones resolving to nothing.
+
+    This is the provenance-preserving mapping output: for each null-id row it
+    records the stored name, the normalized form the policy derived, the
+    canonical relation and columns consulted, every candidate that relation
+    offered, which one was selected and by which rule, and the fact that the
+    partner-side column was not written. Rows that fail closed -- ambiguous,
+    unresolved, unparseable -- appear here too, with their reason, so the
+    artifact is a complete account of the measurement rather than only the
+    writable subset of it. Unavailable is never rendered as an empty mapping:
+    an unmeasured target returns no rows at all and the caller reports the
+    ``unavailable`` state from the measurement.
+    """
+    _require_known_target(target)
+    if measurement.get("state") != "measured":
+        return []
+
+    records: list[dict[str, Any]] = []
+    for queue in ("resolved_candidates", "ambiguous_queue", "unresolved_queue", "invalid_queue"):
+        for entry in measurement.get(queue, []):
+            candidates = entry.get("candidates") or []
+            records.append(
+                {
+                    "repair_package": REPAIR_PACKAGE,
+                    "resolution_policy": RESOLUTION_POLICY,
+                    "domain": target.domain,
+                    "source_table": target.table,
+                    "source_row_pk": entry["row_pk"],
+                    "source_name_column": target.orchid_name_column,
+                    "source_scientific_name": entry["orchid_scientific_name"],
+                    "normalized_scientific_name": entry["normalized_name"],
+                    "source_id_column": target.orchid_taxonomy_id_column,
+                    # Candidates are drawn exclusively from rows where the id
+                    # is NULL, so the pre-state is known, not merely absent.
+                    "prior_orchid_taxonomy_id": None,
+                    "prior_state": "null",
+                    "canonical_table": CANONICAL_TAXONOMY_TABLE,
+                    "canonical_id_column": CANONICAL_TAXONOMY_ID_COLUMN,
+                    "canonical_name_column": CANONICAL_TAXONOMY_NAME_COLUMN,
+                    "resolution_status": entry["status"],
+                    "match_method": entry.get("match_method", MATCH_METHOD_NONE),
+                    "resolved_orchid_taxonomy_id": entry["resolved_orchid_taxonomy_id"],
+                    "candidate_count": len(candidates),
+                    "candidate_ids": ";".join(str(c["id"]) for c in candidates),
+                    "action": _ACTION_BY_STATUS[entry["status"]],
+                    "partner_id_column": target.partner_id_column,
+                    "partner_id_column_written": False,
+                    "reason": entry["reason"],
+                }
+            )
+    records.sort(key=lambda r: (str(r["source_row_pk"]), r["resolution_status"]))
+    return records
+
+
+def mapping_to_csv(records: list[dict[str, Any]]) -> str:
+    """Render the provenance mapping as deterministic CSV for human review."""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(
+        buffer, fieldnames=list(MAPPING_FIELDS), extrasaction="raise", lineterminator="\n"
+    )
+    writer.writeheader()
+    for record in records:
+        writer.writerow({field: record.get(field) for field in MAPPING_FIELDS})
+    return buffer.getvalue()
 
 
 def generate_repair_sql(target: RepairTarget, plan: dict[str, Any]) -> str:
@@ -370,6 +596,7 @@ def generate_repair_sql(target: RepairTarget, plan: dict[str, Any]) -> str:
     actions = plan.get("actions", [])
     header = (
         f"-- Idempotent dry-run repair for {target.table}.{target.orchid_taxonomy_id_column}\n"
+        f"-- {REPAIR_PACKAGE} / policy {RESOLUTION_POLICY}\n"
         f"-- {len(actions)} resolved candidate row(s). This is generated SQL for review only;\n"
         "-- it is not executed by generating it. Only the orchid-side taxonomy id\n"
         "-- column above is ever assigned; no other column on this table is touched.\n"
@@ -382,22 +609,63 @@ def generate_repair_sql(target: RepairTarget, plan: dict[str, Any]) -> str:
     pk = _safe(target.primary_key)
     idcol = _safe(target.orchid_taxonomy_id_column)
 
+    # Values are rendered as text literals and cast to the columns' real
+    # catalog types. Without the cast an unknown-typed literal in a VALUES
+    # list resolves to text, and joining text against a uuid or bigint key
+    # fails outright -- so an uncastable run is flagged loudly rather than
+    # emitting SQL that only looks correct.
+    column_types = plan.get("column_types") or {}
+    pk_cast = _cast_suffix(column_types.get(target.primary_key))
+    id_cast = _cast_suffix(column_types.get(target.orchid_taxonomy_id_column))
+    if not pk_cast or not id_cast:
+        header += (
+            "-- WARNING: the catalog types of "
+            f"{target.primary_key}/{target.orchid_taxonomy_id_column} were not\n"
+            "-- available when this was generated, so no explicit casts were emitted.\n"
+            "-- Confirm the column types before running this against any database.\n"
+        )
+
     values_rows = ",\n".join(
-        f"  ({action['row_pk']!r}, {action['resolved_orchid_taxonomy_id']!r})"
+        f"  ({_sql_text_literal(action['row_pk'])}, "
+        f"{_sql_text_literal(action['resolved_orchid_taxonomy_id'])})"
         for action in actions
     )
     body = (
         "BEGIN;\n"
         f"UPDATE {t} AS t\n"
-        f"SET {idcol} = v.resolved_orchid_taxonomy_id\n"
+        f"SET {idcol} = v.resolved_orchid_taxonomy_id{id_cast}\n"
         "FROM (VALUES\n"
         f"{values_rows}\n"
         f") AS v(row_pk, resolved_orchid_taxonomy_id)\n"
-        f"WHERE t.{pk} = v.row_pk\n"
+        f"WHERE t.{pk} = v.row_pk{pk_cast}\n"
         f"  AND t.{idcol} IS NULL;\n"
         "COMMIT;\n"
     )
     return header + body
+
+
+def verify_plan_provenance(target: RepairTarget, plan: dict[str, Any]) -> None:
+    """Refuse a plan whose ids cannot be traced back to the canonical table.
+
+    Fails closed. A plan built by ``build_repair_plan`` always satisfies this;
+    a plan assembled or edited by hand must carry the same provenance to be
+    executable, which is what stops an id from another registry -- a partner
+    or fungal taxon id in particular -- being written into the orchid column.
+    """
+    _require_known_target(target)
+    for action in plan.get("actions", []):
+        if action.get("canonical_source") != CANONICAL_TAXONOMY_TABLE:
+            raise ValueError(
+                f"Refusing to write row {action.get('row_pk')!r}: action does not "
+                f"record {CANONICAL_TAXONOMY_TABLE} as the id's canonical source."
+            )
+        candidates = action.get("resolved_from_candidates")
+        if not candidates or action.get("resolved_orchid_taxonomy_id") not in candidates:
+            raise ValueError(
+                f"Refusing to write row {action.get('row_pk')!r}: "
+                f"{action.get('resolved_orchid_taxonomy_id')!r} is not among the "
+                "canonical candidates this row resolved to."
+            )
 
 
 def apply_repair_plan(
@@ -411,6 +679,12 @@ def apply_repair_plan(
     time, each guarded by the same ``IS NULL`` idempotency check as
     ``generate_repair_sql`` so a partially-applied or re-run plan cannot
     double-write or clobber a row a concurrent process already populated.
+
+    Before the first write, every action is checked against the canonical
+    candidates the measurement recorded for that row. An action whose id did
+    not come out of ``public.orchid_taxonomy`` for that row -- or that carries
+    no provenance at all -- aborts the whole apply, so no partner-side taxon id
+    can reach the orchid-side column through a substituted plan.
     """
     _require_known_target(target)
     actions = plan.get("actions", [])
@@ -421,6 +695,8 @@ def apply_repair_plan(
             "table": target.table,
             "would_update": len(actions),
         }
+
+    verify_plan_provenance(target, plan)
 
     t = _safe(target.table)
     pk = _safe(target.primary_key)
