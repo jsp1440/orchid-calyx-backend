@@ -16,6 +16,7 @@ from .anthropic_provider import (
     generate_file_changes,
 )
 from .completion_loop import GovernedAutonomousCompletionLoop
+from .completion_scheduler import EngineeringCompletionScheduler
 from .github import FileChange, GitHubEngineeringClient
 from .inspection import RepositoryInspector
 from .provider import EngineeringProviderError, StructuredPatchProvider
@@ -64,6 +65,14 @@ class CompletionCycleRequest(BaseModel):
     repairs_authorized: bool = False
 
 
+class CompletionJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    paths: list[str] = Field(min_length=1, max_length=20)
+    objective: str = Field(min_length=1, max_length=12000)
+    repairs_authorized: bool = False
+    priority: int = Field(default=20, ge=1, le=1000)
+
+
 class ProviderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: str = Field(min_length=1, max_length=120)
@@ -97,6 +106,12 @@ def _proposal(db: Session, finding_id: str, owner: str) -> EngineeringProposal:
     )
 
 
+def _completion_scheduler(db: Session) -> EngineeringCompletionScheduler:
+    service = CalyxEngineeringService()
+    client = GitHubEngineeringClient(service.repository)
+    return EngineeringCompletionScheduler(db, client)
+
+
 @router.get("/status")
 def status(auth: AuthDependency) -> dict:
     _owner(auth)
@@ -109,6 +124,8 @@ def status(auth: AuthDependency) -> dict:
             "generate_structured_patches",
             "apply_bounded_ci_repairs",
             "advance_governed_completion_cycle",
+            "persist_governed_completion_job",
+            "run_persisted_completion_worker_cycle",
             "create_issue",
             "create_branch",
             "commit_changes",
@@ -224,6 +241,53 @@ def advance_completion_cycle(
             attempt=payload.attempt,
             repairs_authorized=payload.repairs_authorized,
         ).to_dict()
+    except PermissionError as exc:
+        raise HTTPException(403, detail={"code": str(exc)}) from exc
+    except (EngineeringProviderError, RuntimeError, ValueError) as exc:
+        raise HTTPException(422, detail={"code": str(exc)}) from exc
+
+
+@router.post("/pull-requests/{pull_request_number}/completion-jobs", status_code=201)
+def create_completion_job(
+    pull_request_number: int,
+    payload: CompletionJobRequest,
+    auth: AuthDependency,
+    db: DbDependency,
+) -> dict:
+    owner = _owner(auth)
+    if not CalyxEngineeringService.enabled():
+        raise HTTPException(422, detail={"code": "CALYX_ENGINEERING_DISABLED"})
+    try:
+        job = _completion_scheduler(db).enqueue(
+            owner=owner,
+            pull_request_number=pull_request_number,
+            repair_paths=payload.paths,
+            objective=payload.objective,
+            repairs_authorized=payload.repairs_authorized,
+            priority=payload.priority,
+        )
+        return {
+            "job_id": job.job_id,
+            "pull_request_number": pull_request_number,
+            "status": job.status,
+            "attempt_count": job.attempt_count,
+            "max_attempts": job.max_attempts,
+            "autonomous_merge": False,
+            "deployment": False,
+        }
+    except PermissionError as exc:
+        raise HTTPException(403, detail={"code": str(exc)}) from exc
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(422, detail={"code": str(exc)}) from exc
+
+
+@router.post("/completion-jobs/run-once")
+def run_completion_job_once(auth: AuthDependency, db: DbDependency) -> dict:
+    owner = _owner(auth)
+    if not CalyxEngineeringService.enabled():
+        raise HTTPException(422, detail={"code": "CALYX_ENGINEERING_DISABLED"})
+    try:
+        return _completion_scheduler(db).run_once(worker_id=f"engineering-api:{owner}")
     except PermissionError as exc:
         raise HTTPException(403, detail={"code": str(exc)}) from exc
     except (EngineeringProviderError, RuntimeError, ValueError) as exc:
