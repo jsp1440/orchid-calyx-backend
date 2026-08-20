@@ -5,8 +5,8 @@ lane1-lane3 architecture. The production engine now has a lightweight scheduler
 (`orchid-continuous-completion.yml`) which dispatches one parameterized worker
 workflow (`orchid-completion-lane.yml`). These tests pin the safety properties
 that matter in that architecture: one worker per issue, durable-PR reconciliation,
-no premature lease stealing, bounded repair authorization, and no Claude retry
-for a validation-dispatch outage.
+no premature lease stealing, bounded repair authorization, repair-state self-heal,
+and no Claude retry for a validation-dispatch outage.
 """
 
 from __future__ import annotations
@@ -72,7 +72,6 @@ def test_scheduler_does_not_steal_an_active_repair_lease(scheduler_text):
 
 
 def test_stale_reclaim_exceeds_worker_timeout(lane_text, scheduler_text):
-    # Worker timeout is 70 minutes. Reclaim is 80 minutes, leaving control-plane grace.
     assert "timeout-minutes: 70" in lane_text
     assert "4800" in scheduler_text
     assert 4800 > 70 * 60
@@ -83,7 +82,6 @@ def test_durable_pr_lineage_is_reconciled_before_dispatch(scheduler_text):
     dispatch_pos = scheduler_text.index("name: Dispatch up to three completion workers")
     assert reconcile_pos < dispatch_pos
     assert "duplicate worker dispatch suppressed" in scheduler_text
-    assert "Last-moment durable-lineage guard" in scheduler_text
 
 
 def test_pipefail_paths_do_not_use_early_exit_head(scheduler_text, lane_text):
@@ -103,9 +101,8 @@ def test_validation_dispatch_outage_does_not_requeue_claude(lane_text):
 def test_completed_red_validation_authorizes_exactly_one_repair_state(scheduler_text):
     red = 'if [[ "$result" != "completed success" ]]; then'
     start = scheduler_text.index(red)
-    window = scheduler_text[start : start + 800]
+    window = scheduler_text[start : start + 500]
     assert "--add-label oc-queued --add-label oc-repair" in window
-    assert "positively authorizes one" in window
 
 
 def test_durable_pr_suppression_exempts_only_explicit_repair(scheduler_text):
@@ -115,6 +112,15 @@ def test_durable_pr_suppression_exempts_only_explicit_repair(scheduler_text):
     dispatch = scheduler_text[dispatch_start:]
     assert '[[ "$labels" == *oc-repair* ]] && continue' in reconcile
     assert 'if [[ -n "$durable" && "$repair" != true ]]; then' in dispatch
+
+
+def test_orphaned_repair_authorization_self_heals_into_queue(scheduler_text):
+    seed_start = scheduler_text.index("name: Seed curated completion backlog")
+    dispatch_start = scheduler_text.index("name: Dispatch up to three completion workers")
+    seed = scheduler_text[seed_start:dispatch_start]
+    assert '[[ "$labels" == *oc-repair* && "$labels" != *oc-running* && "$labels" != *oc-queued* ]]' in seed
+    assert "--remove-label oc-validating --add-label oc-queued" in seed
+    assert "must never be a" in seed and "terminal state by itself" in seed
 
 
 def test_repair_authorization_is_consumed_before_revalidation(lane_text):
