@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment: production
     steps:
-      - name: Diagnose and dispatch
+      - name: Diagnose certification state
         id: diagnose
         shell: bash
         env:
@@ -38,15 +38,36 @@ jobs:
             detail="PR #1043 must remain an open draft; observed draft=$draft state=$state."
           elif [[ -z "$CALYX_API_KEY" ]]; then
             outcome="missing_api_key_secret"
-            detail="Neither CALYX_API_KEY nor the already-configured MISSION_CONTROL_SMOKE_TOKEN is available to this production job."
+            detail="Neither CALYX_API_KEY nor MISSION_CONTROL_SMOKE_TOKEN is available to this production job."
           else
-            last_code="000"
-            for attempt in $(seq 1 12); do
-              last_code=$(curl -sS -o /tmp/calyx-ready.json -w '%{http_code}' \
+            latest=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow calyx-agent-007-persisted-certification.yml --limit 1 --json databaseId,status,conclusion,createdAt -q '.[0] | [.databaseId,.status,(.conclusion // "-")] | @tsv' 2>/tmp/runerr)
+            if [[ -n "$latest" ]]; then
+              IFS=$'\t' read -r run_id run_status run_conclusion <<< "$latest"
+              case "$run_status" in
+                queued|in_progress|pending|requested|waiting)
+                  outcome="certification_running"
+                  detail="Persisted certification is already running as GitHub Actions run ${run_id} with status ${run_status}."
+                  ;;
+                completed)
+                  if [[ "$run_conclusion" == "success" ]]; then
+                    outcome="certification_completed_success"
+                    detail="Latest persisted certification run ${run_id} completed successfully."
+                  else
+                    outcome="certification_completed_failure"
+                    detail="Latest persisted certification run ${run_id} completed with conclusion ${run_conclusion}."
+                  fi
+                  ;;
+              esac
+            fi
+            if [[ "$outcome" == "unknown" ]]; then
+              code=$(curl -sS -o /tmp/calyx-ready.json -w '%{http_code}' \
                 -H 'Accept: application/json' \
                 -H "X-API-Key: ${CALYX_API_KEY}" \
                 "${CALYX_BACKEND_URL%/}/brain/engineering/completion-jobs?limit=1" || true)
-              if [[ "$last_code" == "200" ]]; then
+              if [[ "$code" != "200" ]]; then
+                outcome="observation_endpoint_not_ready"
+                detail="Completion-job observation endpoint returned HTTP ${code}."
+              else
                 gh workflow run calyx-agent-007-persisted-certification.yml \
                   --repo "$GITHUB_REPOSITORY" \
                   --ref main \
@@ -57,18 +78,12 @@ jobs:
                   -f max_steps=40
                 if [[ $? -eq 0 ]]; then
                   outcome="dispatched"
-                  detail="Observation endpoint returned HTTP 200 and the persisted certification workflow was dispatched."
+                  detail="No active certification was found; a new persisted certification was dispatched."
                 else
                   outcome="workflow_dispatch_failed"
-                  detail="Observation endpoint was ready but GitHub rejected the certification dispatch."
+                  detail="GitHub rejected the certification dispatch."
                 fi
-                break
               fi
-              sleep 10
-            done
-            if [[ "$outcome" == "unknown" ]]; then
-              outcome="observation_endpoint_not_ready"
-              detail="Completion-job observation endpoint never returned HTTP 200; last HTTP code was $last_code."
             fi
           fi
           echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
@@ -85,10 +100,13 @@ jobs:
         run: |
           gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "AGENT-007 AUTONOMY DIAGNOSTIC — **${OUTCOME:-unknown}**. ${DETAIL:-No detail returned.} Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-      - name: Fail closed unless certification was dispatched
+      - name: Fail closed only on actual blocker
         if: always()
         shell: bash
         env:
           OUTCOME: ${{ steps.diagnose.outputs.outcome }}
         run: |
-          [[ "$OUTCOME" == "dispatched" ]]
+          case "$OUTCOME" in
+            dispatched|certification_running|certification_completed_success) exit 0 ;;
+            *) exit 1 ;;
+          esac

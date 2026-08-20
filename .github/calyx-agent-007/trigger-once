@@ -1,2 +1,2 @@
 AGENT-007 persisted certification trigger for disposable PR #1043.
-Rerun using existing MISSION_CONTROL_SMOKE_TOKEN fallback credential.
+Inspect the active certification run before any redispatch.
