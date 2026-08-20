@@ -57,6 +57,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # workflow_dispatch is created only by the repository scheduler. Trust
+          # that exact GitHub Actions actor; never wildcard bot execution.
+          allowed_bots: "github-actions"
           prompt: |
             ORCHID CONTINUUM — CONTINUOUS COMPLETION LANE
 
