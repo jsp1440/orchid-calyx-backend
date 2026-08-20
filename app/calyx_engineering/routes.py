@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.models import CalyxFinding, CalyxJob
@@ -16,7 +18,10 @@ from .anthropic_provider import (
     generate_file_changes,
 )
 from .completion_loop import GovernedAutonomousCompletionLoop
-from .completion_scheduler import EngineeringCompletionScheduler
+from .completion_scheduler import (
+    ENGINEERING_COMPLETION_JOB_TYPE,
+    EngineeringCompletionScheduler,
+)
 from .github import FileChange, GitHubEngineeringClient
 from .inspection import RepositoryInspector
 from .provider import EngineeringProviderError, StructuredPatchProvider
@@ -287,6 +292,105 @@ def create_completion_job(
         raise HTTPException(403, detail={"code": str(exc)}) from exc
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(422, detail={"code": str(exc)}) from exc
+
+
+def _completion_job_view(job: CalyxJob) -> dict:
+    """Project a completion job into read-only certification evidence.
+
+    Everything here is already persisted. This exists because the governor had
+    no way to be *observed*: enqueue returned a job_id and run-once returned the
+    executing worker's own view, so a job sitting in ``queued`` with a future
+    ``next_attempt_at`` - which is what WAITING_FOR_CI looks like - was
+    completely opaque between polls. A certification that has to evidence every
+    state transition cannot be run against a surface that can only be watched
+    while it happens to be executing.
+
+    request_text is parsed rather than echoed so a malformed row degrades to
+    None instead of failing the read that is supposed to diagnose it.
+    """
+    try:
+        request = json.loads(job.request_text or "{}")
+    except (TypeError, ValueError):
+        request = {}
+    try:
+        result = json.loads(job.result_json or "{}")
+    except (TypeError, ValueError):
+        result = {}
+    return {
+        "job_id": job.job_id,
+        "pull_request_number": request.get("pull_request_number"),
+        "status": job.status,
+        "attempt_count": job.attempt_count,
+        "max_attempts": job.max_attempts,
+        "priority": job.priority,
+        "error_code": job.error_code,
+        "approval_required": bool(job.approval_required),
+        "approval_class": job.approval_class,
+        "required_checks": request.get("required_checks") or [],
+        "repair_paths": request.get("repair_paths") or [],
+        "objective": request.get("objective"),
+        "repairs_authorized": bool(request.get("repairs_authorized")),
+        "state": result.get("state"),
+        "next_action": result.get("next_action"),
+        "receipt": result or None,
+        "lease_owner": job.lease_owner,
+        "lease_expires_at": _isoformat(job.lease_expires_at),
+        "next_attempt_at": _isoformat(job.next_attempt_at),
+        "created_at": _isoformat(getattr(job, "created_at", None)),
+        "completed_at": _isoformat(job.completed_at),
+        # Restated on every read so no consumer can infer these from a
+        # completed status. The governor terminates at READY_FOR_MERGE.
+        "autonomous_merge": False,
+        "deployment": False,
+    }
+
+
+def _isoformat(value: Any) -> str | None:
+    return value.isoformat() if value is not None and hasattr(value, "isoformat") else None
+
+
+@router.get("/completion-jobs")
+def list_completion_jobs(
+    auth: AuthDependency,
+    db: DbDependency,
+    pull_request_number: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> dict:
+    """Read-only. Never claims, advances, or mutates a job."""
+    owner = _owner(auth)
+    query = (
+        select(CalyxJob)
+        .where(
+            CalyxJob.owner == owner,
+            CalyxJob.job_type == ENGINEERING_COMPLETION_JOB_TYPE,
+        )
+        .order_by(CalyxJob.job_id.desc())
+    )
+    jobs = list(db.scalars(query))
+    if pull_request_number is not None:
+        title = f"Complete PR #{pull_request_number}"
+        jobs = [job for job in jobs if job.title == title]
+    return {
+        "jobs": [_completion_job_view(job) for job in jobs[:limit]],
+        "count": len(jobs[:limit]),
+        "mutating": False,
+    }
+
+
+@router.get("/completion-jobs/{job_id}")
+def read_completion_job(job_id: str, auth: AuthDependency, db: DbDependency) -> dict:
+    """Read-only. Scoped to the authenticated owner's own jobs."""
+    owner = _owner(auth)
+    job = db.get(CalyxJob, job_id)
+    if (
+        job is None
+        or job.owner != owner
+        or job.job_type != ENGINEERING_COMPLETION_JOB_TYPE
+    ):
+        raise HTTPException(404, detail={"code": "ENGINEERING_COMPLETION_JOB_NOT_FOUND"})
+    view = _completion_job_view(job)
+    view["mutating"] = False
+    return view
 
 
 @router.post("/completion-jobs/run-once")

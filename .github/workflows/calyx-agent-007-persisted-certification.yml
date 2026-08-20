@@ -1,0 +1,143 @@
+name: CALYX-AGENT-007 Persisted Certification
+
+# Owner-triggered only. This is the harness that lets the AGENT-007
+# certification actually be run, and it exists because there was no host that
+# could run it: the governed loop lives inside the deployed service, reachable
+# only with the API key and network egress that a GitHub runner has and a
+# development sandbox does not.
+#
+# The harness observes. It cannot merge, cannot deploy, and cannot repair - the
+# governor inside the service performs the bounded repair, and terminates
+# itself at READY_FOR_MERGE. Nothing in this workflow crosses that line, and
+# `permissions: contents: read` is what holds it there.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: 'Certification PR number (the disposable one - never a PR bound for main)'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type: RUN AGENT-007 PERSISTED CERTIFICATION'
+        required: true
+        type: string
+      repair_path:
+        description: 'The single file the governor is authorized to repair'
+        required: true
+        default: 'tests/test_build_088e_publication_operational_readiness.py'
+        type: string
+      required_check:
+        description: 'The required check whose failure the governor must detect'
+        required: true
+        default: 'BUILD-088E Validation'
+        type: string
+      max_steps:
+        description: 'Bounded number of governor steps to observe'
+        required: true
+        default: '40'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calyx-agent-007-persisted-certification
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    name: Observe the persisted governed completion loop
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      PYTHONPATH: .
+    steps:
+      - name: Validate invocation policy
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [[ "$CONFIRMATION" != "RUN AGENT-007 PERSISTED CERTIFICATION" ]]; then
+            echo "::error::Exact confirmation phrase required."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+
+      - name: Confirm the certification target is not bound for main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ inputs.pull_request }}
+        run: |
+          set -euo pipefail
+          # The certification PR carries a deliberate failing assertion. Running
+          # this against anything intended to merge would authorize a governed
+          # write on real work.
+          is_draft=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isDraft -q '.isDraft')
+          pr_state=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json state -q '.state')
+          echo "target PR #$PR: draft=$is_draft state=$pr_state"
+          if [[ "$is_draft" != "true" ]]; then
+            echo "::error::Certification target must be a draft PR; #$PR is not."
+            exit 1
+          fi
+          if [[ "$pr_state" != "OPEN" ]]; then
+            echo "::error::Certification target must be open; #$PR is $pr_state."
+            exit 1
+          fi
+
+      - name: Run the persisted certification
+        id: certify
+        shell: bash
+        env:
+          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
+          CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
+        run: |
+          set -o pipefail
+          if [[ -z "${CALYX_BACKEND_URL}" || -z "${CALYX_API_KEY}" ]]; then
+            echo "::error::CALYX_BACKEND_URL and CALYX_API_KEY must be configured for the production environment."
+            exit 1
+          fi
+          set +e
+          python scripts/calyx_agent_007_persisted_certify.py \
+            --pull-request "${{ inputs.pull_request }}" \
+            --path "${{ inputs.repair_path }}" \
+            --required-check "${{ inputs.required_check }}" \
+            --max-steps "${{ inputs.max_steps }}" \
+            --evidence-out agent-007-evidence.json \
+            | tee agent-007-transitions.log
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-007-persisted-certification-evidence
+          path: |
+            agent-007-evidence.json
+            agent-007-transitions.log
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Report outcome
+        if: always()
+        shell: bash
+        env:
+          CODE: ${{ steps.certify.outputs.exit_code }}
+        run: |
+          # Named outcomes. "the job failed" is not a certification result.
+          case "${CODE:-5}" in
+            0) echo "::notice::Governor reached READY_FOR_MERGE and stopped. No merge or deploy was performed." ;;
+            2) echo "::error::Enqueue rejected - the completion job was never created." ;;
+            3) echo "::error::Governor halted before READY_FOR_MERGE. See evidence artifact." ;;
+            4) echo "::error::Governor did not terminate within the step bound - stalled, not failed." ;;
+            5) echo "::error::Transport failure reaching the service. This is NOT a governor result." ;;
+            *) echo "::error::Unrecognized certification exit code ${CODE}." ;;
+          esac
+          exit "${CODE:-5}"
