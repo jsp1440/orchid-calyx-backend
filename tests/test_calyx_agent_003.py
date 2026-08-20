@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from app.calyx_agent.service import CalyxAgentService
 from app.calyx_orchestrator.models import CalyxFinding, CalyxJob, utcnow
 from app.calyx_orchestrator.service import CalyxOrchestrator
-from app.calyx_orchestrator.worker import enabled
+from app.calyx_orchestrator.worker import enabled, engineering_enabled, worker_enabled
 from app.database import Base
 
 
@@ -82,6 +82,23 @@ def test_worker_is_disabled_without_preproduction_gate(monkeypatch):
     assert enabled() is False
     monkeypatch.setenv("CALYX_ORCHESTRATOR_MODE", "preproduction")
     assert enabled() is True
+
+
+def test_shared_worker_can_enable_engineering_lane_independently(monkeypatch):
+    monkeypatch.delenv("CALYX_ORCHESTRATOR_ENABLED", raising=False)
+    monkeypatch.delenv("CALYX_ORCHESTRATOR_MODE", raising=False)
+    monkeypatch.delenv("CALYX_ENGINEERING_ENABLED", raising=False)
+    monkeypatch.delenv("CALYX_ENGINEERING_MODE", raising=False)
+    assert worker_enabled() is False
+
+    monkeypatch.setenv("CALYX_ENGINEERING_ENABLED", "true")
+    monkeypatch.setenv("CALYX_ENGINEERING_MODE", "production")
+    assert engineering_enabled() is False
+    assert worker_enabled() is False
+
+    monkeypatch.setenv("CALYX_ENGINEERING_MODE", "preproduction")
+    assert engineering_enabled() is True
+    assert worker_enabled() is True
 
 
 def test_process_environment_is_not_modified():
