@@ -58,17 +58,19 @@ class RepairRequest(BaseModel):
 
 
 class CompletionCycleRequest(BaseModel):
+    """Read-only completion inspection; mutating cycles require a persisted job."""
+
     model_config = ConfigDict(extra="forbid")
     paths: list[str] = Field(min_length=1, max_length=20)
     objective: str = Field(min_length=1, max_length=12000)
-    attempt: int = Field(ge=1, le=4)
-    repairs_authorized: bool = False
+    required_checks: list[str] = Field(min_length=1, max_length=50)
 
 
 class CompletionJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     paths: list[str] = Field(min_length=1, max_length=20)
     objective: str = Field(min_length=1, max_length=12000)
+    required_checks: list[str] = Field(min_length=1, max_length=50)
     repairs_authorized: bool = False
     priority: int = Field(default=20, ge=1, le=1000)
 
@@ -123,7 +125,7 @@ def status(auth: AuthDependency) -> dict:
             "inspect_ci_failures",
             "generate_structured_patches",
             "apply_bounded_ci_repairs",
-            "advance_governed_completion_cycle",
+            "inspect_governed_completion_cycle",
             "persist_governed_completion_job",
             "run_persisted_completion_worker_cycle",
             "create_issue",
@@ -132,6 +134,7 @@ def status(auth: AuthDependency) -> dict:
             "open_draft_pr",
         ],
         "repair_attempt_limit": 3,
+        "direct_completion_mutation": False,
         "autonomous_merge": False,
         "deployment": False,
     }
@@ -222,25 +225,29 @@ def repair_pull_request(
 
 
 @router.post("/pull-requests/{pull_request_number}/completion-cycle")
-def advance_completion_cycle(
+def inspect_completion_cycle(
     pull_request_number: int,
     payload: CompletionCycleRequest,
     auth: AuthDependency,
 ) -> dict:
-    """Advance one bounded CI/repair cycle without merging or deploying."""
+    """Inspect one governed CI state without permitting a code-writing repair."""
     _owner(auth)
     if not CalyxEngineeringService.enabled():
         raise HTTPException(422, detail={"code": "CALYX_ENGINEERING_DISABLED"})
     try:
         service = CalyxEngineeringService()
         client = GitHubEngineeringClient(service.repository)
-        return GovernedAutonomousCompletionLoop(client).advance(
+        result = GovernedAutonomousCompletionLoop(client).advance(
             pull_request_number=pull_request_number,
             repair_paths=payload.paths,
             objective=payload.objective,
-            attempt=payload.attempt,
-            repairs_authorized=payload.repairs_authorized,
+            attempt=1,
+            repairs_authorized=False,
+            required_checks=payload.required_checks,
         ).to_dict()
+        result["mutating"] = False
+        result["repair_requires_persisted_job"] = True
+        return result
     except PermissionError as exc:
         raise HTTPException(403, detail={"code": str(exc)}) from exc
     except (EngineeringProviderError, RuntimeError, ValueError) as exc:
@@ -264,6 +271,7 @@ def create_completion_job(
             repair_paths=payload.paths,
             objective=payload.objective,
             repairs_authorized=payload.repairs_authorized,
+            required_checks=payload.required_checks,
             priority=payload.priority,
         )
         return {
@@ -309,7 +317,9 @@ def execute(
     try:
         return CalyxEngineeringService().execute(
             proposal=_proposal(db, finding_id, _owner(auth)),
-            changes=[FileChange(item.path, item.content, item.message) for item in payload.changes],
+            changes=[
+                FileChange(item.path, item.content, item.message) for item in payload.changes
+            ],
             approved=payload.approved,
             base=payload.base,
         )
