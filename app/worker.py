@@ -94,7 +94,19 @@ def execute_job(job_type: str, payload: dict) -> dict:
         from app.routers.owner_operations import live_audit_payload
         audit_type = payload.get("audit_type", "overall")
         result = live_audit_payload(audit_type)
-        return {"status": "completed", "audit_id": result.get("audit_id"), "audit_type": audit_type}
+        # An audit job that produced actionable findings is not "completed"
+        # just because the report rendered; it is only complete once every
+        # finding sits in a resolved disposition. Reporting the pending state
+        # is what keeps narrative-only audits out of the job log.
+        completion = result.get("followthrough_completion_state") or {}
+        state = completion.get("state") or "unknown"
+        return {
+            "status": "completed" if state == "complete" else "follow_through_pending",
+            "audit_id": result.get("audit_id"),
+            "audit_type": audit_type,
+            "followthrough_state": state,
+            "open_findings": completion.get("open_findings", []),
+        }
 
     if job_type == "export":
         export_type = payload.get("export_type", "unknown")

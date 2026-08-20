@@ -10,12 +10,16 @@ import pytest
 from runtime.audit_followthrough import (
     ActionableFinding,
     FindingRemediation,
+    FollowthroughPersistenceError,
     InvalidDispositionError,
     NarrativeOnlyCompletionError,
+    OrchestratorFollowthroughStore,
+    audit_completion_state,
     build_remediation,
     dedupe_key,
     enforce_followthrough,
     next_actions_created,
+    persist_followthrough,
     plan_remediation,
     run_followthrough,
     task_key_for_finding,
@@ -275,3 +279,241 @@ def test_next_actions_created_summary_omits_task_key_for_non_actionable_findings
     summary = next_actions_created([remediation])
     assert summary[0]["task_key"] is None
     assert summary[0]["required_approval"] is False
+    assert summary[0]["task_created"] is False
+
+
+def test_open_disposition_without_a_durable_task_is_rejected():
+    # "remediation is under way" with nothing durable behind it is precisely
+    # the narrative-only failure mode.
+    findings = [_finding()]
+    remediations = [
+        FindingRemediation(
+            finding_key="backend:queue_depth", disposition="in_progress", task=None
+        )
+    ]
+    with pytest.raises(NarrativeOnlyCompletionError):
+        enforce_followthrough(findings, remediations)
+
+
+def test_suppressed_duplicate_still_carries_the_durable_task_key():
+    findings = [_finding(), _finding()]
+    remediations = plan_remediation(findings)
+    enforce_followthrough(findings, remediations)  # must not raise
+    key = task_key_for_finding("AUDIT-MEASUREMENT-002", "backend:queue_depth")
+    assert {remediation.effective_task_key for remediation in remediations} == {key}
+
+
+def test_existing_task_dedupe_branches_all_reference_the_existing_task_key():
+    finding = _finding()
+    key = task_key_for_finding(finding.audit_source, finding.finding_key)
+    for existing in (
+        {"status": "pending"},
+        {"status": "needs_review"},
+        {"status": "completed", "evaluation_result": "pass"},
+    ):
+        plans = plan_remediation([finding], existing_tasks_by_key={key: existing})
+        assert plans[0].effective_task_key == key
+        enforce_followthrough([finding], plans)
+
+
+# ---------------------------------------------------------------------------
+# Audit completion state
+# ---------------------------------------------------------------------------
+
+def test_audit_with_queued_remediation_is_not_complete():
+    state = audit_completion_state(plan_remediation([_finding()]))
+    assert state["state"] == "follow_through_pending"
+    assert state["open_findings"] == ["backend:queue_depth"]
+
+
+def test_audit_with_only_resolved_findings_is_complete():
+    findings = [
+        _finding(actionable=False, non_actionable_reason="scientific_data_gap"),
+        _finding(finding_key="backend:other", actionable=False, non_actionable_reason="no_action_needed"),
+    ]
+    state = audit_completion_state(plan_remediation(findings))
+    assert state["state"] == "complete"
+    assert state["open_findings"] == []
+    assert state["disposition_counts"] == {"scientific_data_gap": 1, "no_action_needed": 1}
+
+
+def test_owner_gated_finding_keeps_the_audit_pending():
+    state = audit_completion_state(plan_remediation([_finding(task_type="deploy")]))
+    assert state["state"] == "follow_through_pending"
+
+
+def test_run_followthrough_reports_completion_state():
+    result = run_followthrough([_finding()])
+    assert result["completion_state"]["state"] == "follow_through_pending"
+
+
+# ---------------------------------------------------------------------------
+# Durable persistence into oc_admin.calyx_tasks
+# ---------------------------------------------------------------------------
+
+class FakeTaskStore:
+    """In-memory stand-in for oc_admin.calyx_tasks with the same UNIQUE key."""
+
+    def __init__(self):
+        self.rows: dict[str, dict] = {}
+        self.insert_attempts: list[str] = []
+        self.fetch_calls: list[list[str]] = []
+        self._next_id = 1
+
+    def fetch_tasks_by_key(self, task_keys):
+        keys = list(task_keys)
+        self.fetch_calls.append(keys)
+        return {key: dict(self.rows[key]) for key in keys if key in self.rows}
+
+    def insert_task(self, task):
+        key = task["task_key"]
+        self.insert_attempts.append(key)
+        existing = self.rows.get(key)
+        if existing is not None:
+            # Mirrors ON CONFLICT (task_key) DO UPDATE ... WHERE status IN
+            # ('failed', 'blocked'): dead rows revive, live rows are untouched.
+            if existing.get("status") not in {"failed", "blocked"}:
+                return {"created": False, "requeued": False, "task": dict(existing)}
+            revived = dict(existing)
+            revived.update(task)
+            revived["id"] = existing["id"]
+            self.rows[key] = revived
+            return {"created": False, "requeued": True, "task": dict(revived)}
+        row = dict(task)
+        row["id"] = self._next_id
+        self._next_id += 1
+        self.rows[key] = row
+        return {"created": True, "requeued": False, "task": dict(row)}
+
+
+def test_persist_followthrough_creates_a_durable_task_for_a_new_finding():
+    store = FakeTaskStore()
+    result = persist_followthrough([_finding()], store)
+    assert result["tasks_created"] == 1
+    assert result["tasks_already_present"] == 0
+    key = task_key_for_finding("AUDIT-MEASUREMENT-002", "backend:queue_depth")
+    assert key in store.rows
+    assert result["persisted_tasks"][0]["task_key"] == key
+
+
+def test_persist_followthrough_is_idempotent_across_repeat_audit_runs():
+    store = FakeTaskStore()
+    persist_followthrough([_finding(audit_id="AUD-RUN-ONE")], store)
+    # Same logical finding, a different audit run: no second task.
+    second = persist_followthrough([_finding(audit_id="AUD-RUN-TWO")], store)
+    assert second["tasks_created"] == 0
+    assert len(store.rows) == 1
+    assert second["next_actions_created"][0]["disposition"] == "in_progress"
+
+
+def test_persist_followthrough_checks_durable_state_before_planning():
+    store = FakeTaskStore()
+    persist_followthrough([_finding()], store)
+    store.fetch_calls.clear()
+    persist_followthrough([_finding()], store)
+    # Dedupe is decided against the durable rows, not a caller-supplied guess.
+    assert store.fetch_calls and store.fetch_calls[0]
+
+
+def test_persist_followthrough_preserves_provenance_in_the_durable_row():
+    store = FakeTaskStore()
+    persist_followthrough(
+        [_finding(audit_id="AUD-PERSIST-PROV", evidence={"depth": 7})], store
+    )
+    row = next(iter(store.rows.values()))
+    assert row["payload"]["audit_id"] == "AUD-PERSIST-PROV"
+    assert row["payload"]["audit_source"] == "AUDIT-MEASUREMENT-002"
+    assert row["payload"]["finding_key"] == "backend:queue_depth"
+    assert row["payload"]["evidence"] == {"depth": 7}
+    assert row["payload"]["automatic_merge"] is False
+
+
+def test_persist_followthrough_writes_risky_tasks_as_needs_review_not_approved():
+    store = FakeTaskStore()
+    result = persist_followthrough([_finding(task_type="deploy")], store)
+    row = next(iter(store.rows.values()))
+    assert row["status"] == "needs_review"
+    assert row["required_approval"] is True
+    assert "approved_at" not in row
+    assert result["next_actions_created"][0]["disposition"] == "owner_approval_required"
+
+
+def test_persist_followthrough_never_persists_non_actionable_findings():
+    store = FakeTaskStore()
+    result = persist_followthrough(
+        [_finding(actionable=False, non_actionable_reason="scientific_data_gap")], store
+    )
+    assert result["tasks_created"] == 0
+    assert store.rows == {}
+    assert store.insert_attempts == []
+    assert result["completion_state"]["state"] == "complete"
+
+
+def test_persist_followthrough_requeues_a_finding_whose_prior_task_failed():
+    store = FakeTaskStore()
+    persist_followthrough([_finding()], store)
+    key = task_key_for_finding("AUDIT-MEASUREMENT-002", "backend:queue_depth")
+    store.rows[key]["status"] = "failed"
+    second = persist_followthrough([_finding()], store)
+    # Revived under the same dedupe key: the row is reused, never doubled, and
+    # it does not stay dead while the audit reports the finding as handled.
+    assert len(store.rows) == 1
+    assert second["tasks_created"] == 0
+    assert second["tasks_requeued"] == 1
+    assert store.rows[key]["status"] == "pending"
+    assert second["persisted_tasks"][0]["task_key"] == key
+    assert second["next_actions_created"][0]["disposition"] == "auto_remediation_queued"
+
+
+def test_persist_followthrough_leaves_a_live_task_untouched():
+    store = FakeTaskStore()
+    persist_followthrough([_finding()], store)
+    key = task_key_for_finding("AUDIT-MEASUREMENT-002", "backend:queue_depth")
+    store.rows[key]["status"] = "running"
+    second = persist_followthrough([_finding()], store)
+    assert second["tasks_created"] == 0
+    assert second["tasks_requeued"] == 0
+    assert store.rows[key]["status"] == "running"
+    # No second insert was even attempted: the plan saw the live row first.
+    assert store.insert_attempts == [key]
+    assert second["next_actions_created"][0]["disposition"] == "in_progress"
+
+
+def test_orchestrator_store_refuses_to_write_a_terminal_status():
+    store = OrchestratorFollowthroughStore(orchestrator=object())
+    with pytest.raises(FollowthroughPersistenceError):
+        store.insert_task({"task_key": "k", "task_type": "t", "title": "x", "status": "completed"})
+
+
+def test_orchestrator_store_refuses_a_task_without_a_dedupe_key():
+    store = OrchestratorFollowthroughStore(orchestrator=object())
+    with pytest.raises(FollowthroughPersistenceError):
+        store.insert_task({"task_key": "", "task_type": "t", "title": "x", "status": "pending"})
+
+
+def test_orchestrator_store_short_circuits_an_empty_key_lookup_without_a_connection():
+    # object() has no .connect(); returning {} proves no DB round-trip happens.
+    store = OrchestratorFollowthroughStore(orchestrator=object())
+    assert store.fetch_tasks_by_key([]) == {}
+    assert store.fetch_tasks_by_key([None, ""]) == {}
+
+
+def test_orchestrator_adapter_queues_followthrough_through_its_own_executor():
+    from runtime.autonomous_orchestrator import CalyxAutonomousOrchestrator
+
+    store = FakeTaskStore()
+    orchestrator = CalyxAutonomousOrchestrator(database_url="postgresql://unused")
+    result = orchestrator.queue_audit_followthrough([_finding()], store=store)
+    assert result["tasks_created"] == 1
+    assert result["completion_state"]["state"] == "follow_through_pending"
+
+
+def test_orchestrator_adapter_keeps_risky_followthrough_owner_gated():
+    from runtime.autonomous_orchestrator import CalyxAutonomousOrchestrator
+
+    store = FakeTaskStore()
+    orchestrator = CalyxAutonomousOrchestrator(database_url="postgresql://unused")
+    orchestrator.queue_audit_followthrough([_finding(task_type="deploy")], store=store)
+    row = next(iter(store.rows.values()))
+    assert row["status"] == "needs_review"
+    assert row["required_approval"] is True

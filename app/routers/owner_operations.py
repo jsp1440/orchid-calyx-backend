@@ -1078,6 +1078,10 @@ def live_audit_payload(audit_type: str) -> dict[str, Any]:
         "weaknesses": ["Deep source-specific provenance coverage still needs expansion."],
         "recommended_next_actions": derived_next_actions(metrics, subsystems, evidence),
         "next_actions_created": followthrough["next_actions_created"],
+        # An audit that still owes remediation reports
+        # ``follow_through_pending``, never "complete", however complete the
+        # narrative above reads.
+        "followthrough_completion_state": followthrough["completion_state"],
         "grant_relevance": "Current audit can support readiness narratives after owner review.",
         "collaboration_relevance": "Partner packets can cite operational versus planned capabilities explicitly.",
         "harvesters": harvesters,

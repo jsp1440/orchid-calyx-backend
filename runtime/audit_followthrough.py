@@ -11,12 +11,17 @@ are not "complete". This module is the single place that:
   while preserving the originating audit id, evidence, and provenance;
 - enforces that an audit result cannot claim completion for an actionable
   finding unless that finding carries a terminal disposition or has queued
-  remediation.
+  remediation;
+- persists the queued remediation into ``oc_admin.calyx_tasks`` idempotently,
+  keyed on the deterministic dedupe key, so repeat audit runs converge on the
+  same durable task instead of accumulating duplicates.
 
 High-risk task types are routed through the existing
 ``DefaultTaskExecutor.risky_action`` owner-gate in
 ``runtime.autonomous_orchestrator`` rather than a second, parallel notion of
-"risky" defined here.
+"risky" defined here. Nothing in this module approves, merges, deploys, or
+publishes anything: owner-gated tasks are written as ``needs_review`` and stay
+there until the existing approval path is used.
 """
 
 from __future__ import annotations
@@ -47,7 +52,29 @@ NON_ACTIONABLE_DISPOSITIONS = frozenset(
     {"external_blocker", "scientific_data_gap", "no_action_needed"}
 )
 
+# Dispositions that mean "follow-through is still owed": the finding is only
+# accounted for because durable remediation exists (or is owner-gated). An
+# audit carrying any of these is not "fully complete" -- it is
+# ``follow_through_pending``.
+OPEN_DISPOSITIONS = frozenset(
+    {"auto_remediation_queued", "in_progress", "owner_approval_required"}
+)
+
+# Dispositions that close a finding out without further remediation work.
+# ``external_blocker`` and ``scientific_data_gap`` are closed *for this
+# repository's automation*, not "solved": they are deliberately kept distinct
+# from ``verified_resolved`` so an unavailable measurement is never reported as
+# a resolved one.
+RESOLVED_DISPOSITIONS = frozenset(
+    {"verified_resolved", "external_blocker", "scientific_data_gap", "no_action_needed"}
+)
+
 DEFAULT_TASK_TYPE = "audit_followthrough_remediation"
+
+# Statuses the orchestrator's own CHECK constraint allows on
+# ``oc_admin.calyx_tasks``. Follow-through only ever writes the two entry
+# statuses; it never writes a terminal status and never approves.
+_WRITABLE_TASK_STATUSES = frozenset({"pending", "needs_review"})
 
 
 class InvalidDispositionError(ValueError):
@@ -120,15 +147,28 @@ class ActionableFinding:
 
 @dataclass(frozen=True)
 class FindingRemediation:
-    """The outcome of classifying one finding: its disposition and any task."""
+    """The outcome of classifying one finding: its disposition and any task.
+
+    ``task`` is the payload for a task that still has to be created.
+    ``task_key`` is the durable dedupe key of the task that accounts for this
+    finding, whether that task is being created now or already exists. An open
+    disposition without a ``task_key`` is exactly the narrative-only failure
+    mode this module exists to prevent, so :func:`enforce_followthrough`
+    rejects it.
+    """
 
     finding_key: str
     disposition: str
     task: Optional[dict[str, Any]] = None
     rationale: str = ""
+    task_key: Optional[str] = None
 
     def __post_init__(self) -> None:
         validate_disposition(self.disposition)
+
+    @property
+    def effective_task_key(self) -> Optional[str]:
+        return self.task_key or (self.task or {}).get("task_key")
 
 
 def _task_payload(finding: ActionableFinding) -> dict[str, Any]:
@@ -179,7 +219,11 @@ def build_remediation(
         else "safe/reversible finding queued for autonomous remediation"
     )
     return FindingRemediation(
-        finding_key=finding.finding_key, disposition=disposition, task=task, rationale=rationale
+        finding_key=finding.finding_key,
+        disposition=disposition,
+        task=task,
+        rationale=rationale,
+        task_key=task["task_key"],
     )
 
 
@@ -221,6 +265,7 @@ def plan_remediation(
                     disposition="in_progress",
                     task=None,
                     rationale=f"duplicate of an already-planned finding in this batch ({key})",
+                    task_key=key,
                 )
             )
             continue
@@ -239,6 +284,7 @@ def plan_remediation(
                     disposition="verified_resolved",
                     task=None,
                     rationale=f"existing task {key} completed and verified",
+                    task_key=key,
                 )
             )
         elif status in {"pending", "running"}:
@@ -248,6 +294,7 @@ def plan_remediation(
                     disposition="in_progress",
                     task=None,
                     rationale=f"existing task {key} already {status}; not duplicating",
+                    task_key=key,
                 )
             )
         elif status == "needs_review":
@@ -257,6 +304,7 @@ def plan_remediation(
                     disposition="owner_approval_required",
                     task=None,
                     rationale=f"existing task {key} is waiting on the owner-approval gate",
+                    task_key=key,
                 )
             )
         else:
@@ -271,16 +319,23 @@ def enforce_followthrough(
     findings: Iterable[ActionableFinding],
     remediations: Iterable[FindingRemediation],
 ) -> None:
-    """Fail closed if any actionable finding has no disposition at all.
+    """Fail closed on any finding that is narrated but not actually accounted for.
+
+    Two structural failure modes are rejected here:
+
+    1. a finding was dropped -- listed in a report but never classified at all;
+    2. a finding carries an *open* disposition (``auto_remediation_queued`` /
+       ``in_progress`` / ``owner_approval_required``) with no durable task key
+       behind it, i.e. the audit says remediation is under way while nothing
+       durable exists to make that true.
 
     A disposition value outside the seven terminal states is already
     impossible by construction (``FindingRemediation.__post_init__``
-    validates it), so the remaining structural failure mode this guards
-    against is a finding being dropped -- narrated in a report but never
-    actually classified. That is exactly the "narrative-only completion"
-    failure mode #1025 exists to close off.
+    validates it). Together these close off the "narrative-only completion"
+    failure mode #1025 exists to prevent.
     """
 
+    remediations = list(remediations)
     remediated_keys = {remediation.finding_key for remediation in remediations}
     missing = [
         finding.finding_key for finding in findings if finding.finding_key not in remediated_keys
@@ -291,6 +346,43 @@ def enforce_followthrough(
             f"disposition: {sorted(missing)}"
         )
 
+    unbacked = [
+        remediation.finding_key
+        for remediation in remediations
+        if remediation.disposition in OPEN_DISPOSITIONS and not remediation.effective_task_key
+    ]
+    if unbacked:
+        raise NarrativeOnlyCompletionError(
+            "audit cannot claim in-flight remediation without a durable task "
+            f"for findings: {sorted(unbacked)}"
+        )
+
+
+def audit_completion_state(remediations: Iterable[FindingRemediation]) -> dict[str, Any]:
+    """Whether the audit is fully complete or still owes follow-through.
+
+    An audit is ``complete`` only when every finding sits in a resolved
+    disposition. Any finding still queued, in progress, or waiting on the
+    owner gate makes the audit ``follow_through_pending`` -- explicitly not
+    "complete", no matter how thorough the narrative is.
+    """
+
+    remediations = list(remediations)
+    counts: dict[str, int] = {}
+    for remediation in remediations:
+        counts[remediation.disposition] = counts.get(remediation.disposition, 0) + 1
+    open_findings = sorted(
+        remediation.finding_key
+        for remediation in remediations
+        if remediation.disposition in OPEN_DISPOSITIONS
+    )
+    return {
+        "state": "follow_through_pending" if open_findings else "complete",
+        "open_findings": open_findings,
+        "disposition_counts": counts,
+        "findings_total": len(remediations),
+    }
+
 
 def next_actions_created(remediations: Iterable[FindingRemediation]) -> list[dict[str, Any]]:
     """The owner-facing summary shape: what follow-through actually happened."""
@@ -299,8 +391,9 @@ def next_actions_created(remediations: Iterable[FindingRemediation]) -> list[dic
         {
             "finding_key": remediation.finding_key,
             "disposition": remediation.disposition,
-            "task_key": (remediation.task or {}).get("task_key"),
+            "task_key": remediation.effective_task_key,
             "required_approval": bool((remediation.task or {}).get("required_approval")),
+            "task_created": remediation.task is not None,
             "rationale": remediation.rationale,
         }
         for remediation in remediations
@@ -331,4 +424,212 @@ def run_followthrough(
     return {
         "next_actions_created": next_actions_created(remediations),
         "tasks_to_create": tasks,
+        "completion_state": audit_completion_state(remediations),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Durable persistence into oc_admin.calyx_tasks
+# ---------------------------------------------------------------------------
+
+
+class FollowthroughPersistenceError(RuntimeError):
+    """Raised when a planned task cannot be written durably."""
+
+
+class OrchestratorFollowthroughStore:
+    """Reads/writes follow-through tasks in ``oc_admin.calyx_tasks``.
+
+    Wraps an existing :class:`~runtime.autonomous_orchestrator.CalyxAutonomousOrchestrator`
+    so follow-through reuses that module's connection handling, schema
+    creation, and observation log rather than opening a second, divergent
+    persistence path.
+
+    Writes are bounded and idempotent: every insert is keyed on the
+    deterministic ``task_key`` and uses ``ON CONFLICT (task_key) DO NOTHING``,
+    so re-running the same audit converges on the same row instead of
+    accumulating duplicates. Only ``pending``/``needs_review`` may be written;
+    this store never approves a task, never sets ``approved_at``, and never
+    touches scientific tables.
+    """
+
+    def __init__(self, orchestrator: Any) -> None:
+        self.orchestrator = orchestrator
+
+    def fetch_tasks_by_key(self, task_keys: Iterable[str]) -> dict[str, dict[str, Any]]:
+        keys = list(dict.fromkeys(key for key in task_keys if key))
+        if not keys:
+            return {}
+        with self.orchestrator.connect() as conn:
+            with conn.cursor() as cur:
+                self.orchestrator.ensure_schema(cur)
+                cur.execute(
+                    """
+                    SELECT id, task_key, task_type, status, required_approval,
+                           evaluation_result, payload
+                    FROM oc_admin.calyx_tasks
+                    WHERE task_key = ANY(%s)
+                    """,
+                    (keys,),
+                )
+                rows = [dict(row) for row in cur.fetchall()]
+            conn.commit()
+        return {row["task_key"]: row for row in rows if row.get("task_key")}
+
+    def insert_task(self, task: dict[str, Any]) -> dict[str, Any]:
+        status = str(task.get("status", "pending")).lower()
+        if status not in _WRITABLE_TASK_STATUSES:
+            raise FollowthroughPersistenceError(
+                f"audit follow-through may only write {sorted(_WRITABLE_TASK_STATUSES)}, "
+                f"got {status!r}"
+            )
+        task_key = task.get("task_key")
+        if not task_key:
+            raise FollowthroughPersistenceError("follow-through task is missing its dedupe key")
+
+        from runtime.autonomous_orchestrator import _json  # local: needs psycopg
+
+        payload = task.get("payload") or {}
+        with self.orchestrator.connect() as conn:
+            with conn.cursor() as cur:
+                self.orchestrator.ensure_schema(cur)
+                # The DO UPDATE arm is deliberately guarded to dead rows only:
+                # a task that failed or was blocked is revived under the same
+                # dedupe key (otherwise the finding is "handled" by a row that
+                # will never run again), while pending/running/needs_review/
+                # completed rows are left exactly as they are. Nothing here
+                # clears approved_at, so a revived risky task is re-gated.
+                cur.execute(
+                    """
+                    INSERT INTO oc_admin.calyx_tasks
+                        (task_key, task_type, title, payload, status, priority, required_approval)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (task_key) DO UPDATE
+                    SET task_type = EXCLUDED.task_type,
+                        title = EXCLUDED.title,
+                        payload = EXCLUDED.payload,
+                        status = EXCLUDED.status,
+                        priority = EXCLUDED.priority,
+                        required_approval = EXCLUDED.required_approval,
+                        last_error = NULL,
+                        updated_at = NOW()
+                    WHERE oc_admin.calyx_tasks.status IN ('failed', 'blocked')
+                    RETURNING *, (xmax = 0) AS was_inserted
+                    """,
+                    (
+                        task_key,
+                        task["task_type"],
+                        task["title"],
+                        _json(payload),
+                        status,
+                        int(task.get("priority", 0)),
+                        bool(task.get("required_approval")),
+                    ),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    # A live row already covers this finding; leave it alone.
+                    cur.execute(
+                        "SELECT * FROM oc_admin.calyx_tasks WHERE task_key = %s",
+                        (task_key,),
+                    )
+                    existing = cur.fetchone()
+                    conn.commit()
+                    return {
+                        "created": False,
+                        "requeued": False,
+                        "task": dict(existing) if existing else None,
+                    }
+
+                row = dict(row)
+                created = bool(row.pop("was_inserted", False))
+                self.orchestrator.log_observation(
+                    cur,
+                    task_id=row["id"],
+                    agent_id=None,
+                    event_type="audit_followthrough",
+                    action=(
+                        ("queued" if status == "pending" else "approval_required")
+                        if created
+                        else "requeued_after_failure"
+                    ),
+                    status=status,
+                    details={
+                        "task_key": task_key,
+                        "audit_id": payload.get("audit_id"),
+                        "audit_source": payload.get("audit_source"),
+                        "finding_key": payload.get("finding_key"),
+                        "required_approval": bool(task.get("required_approval")),
+                    },
+                )
+            conn.commit()
+        return {"created": created, "requeued": not created, "task": row}
+
+
+def persist_followthrough(
+    findings: Iterable[ActionableFinding],
+    store: Any,
+    *,
+    executor: Optional[DefaultTaskExecutor] = None,
+) -> dict[str, Any]:
+    """Plan, enforce, and durably persist follow-through for an audit's findings.
+
+    This is the full loop the issue asks for: the dedupe keys of the actionable
+    findings are looked up in ``oc_admin.calyx_tasks`` *first*, so duplicate
+    suppression is decided against real durable state rather than against a
+    caller-supplied guess; the plan is then enforced; and only genuinely new
+    tasks are inserted, idempotently.
+
+    Running this twice over the same unchanged findings creates tasks the first
+    time and zero the second time -- ``tasks_created`` drops to 0 and every
+    finding reports as already in flight.
+    """
+
+    findings = list(findings)
+    candidate_keys = [
+        task_key_for_finding(finding.audit_source, finding.finding_key)
+        for finding in findings
+        if finding.actionable
+    ]
+    existing = store.fetch_tasks_by_key(candidate_keys)
+    remediations = plan_remediation(
+        findings, executor=executor, existing_tasks_by_key=existing
+    )
+    enforce_followthrough(findings, remediations)
+
+    created = 0
+    requeued = 0
+    already_present = 0
+    persisted: list[dict[str, Any]] = []
+    for remediation in remediations:
+        if remediation.task is None:
+            continue
+        outcome = store.insert_task(remediation.task)
+        was_created = bool(outcome.get("created"))
+        was_requeued = bool(outcome.get("requeued"))
+        if was_created:
+            created += 1
+        elif was_requeued:
+            requeued += 1
+        else:
+            already_present += 1
+        persisted.append(
+            {
+                "finding_key": remediation.finding_key,
+                "task_key": remediation.task["task_key"],
+                "created": was_created,
+                "requeued": was_requeued,
+                "required_approval": bool(remediation.task.get("required_approval")),
+                "status": str(remediation.task.get("status")),
+            }
+        )
+
+    return {
+        "next_actions_created": next_actions_created(remediations),
+        "completion_state": audit_completion_state(remediations),
+        "persisted_tasks": persisted,
+        "tasks_created": created,
+        "tasks_requeued": requeued,
+        "tasks_already_present": already_present,
+        "existing_tasks_examined": len(existing),
     }
