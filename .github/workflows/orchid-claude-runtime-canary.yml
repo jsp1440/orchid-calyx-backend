@@ -1,0 +1,46 @@
+name: Orchid Claude Runtime Canary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/automation/claude-runtime-canary-trigger'
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify Claude Code runtime and API credential
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            ORCHID CONTINUUM AUTOMATION CANARY.
+            Read README.md only. Do not edit files, create branches, issues, comments, commits, or pull requests.
+            Return exactly: ORCHID_AUTOMATION_CANARY_OK
+          claude_args: |
+            --max-turns 3
+            --allowedTools "Read"
+
+      - name: Publish canary result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.claude.outcome }}
+        run: |
+          if [[ "$OUTCOME" == "success" ]]; then
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID AUTOMATION CANARY — **PASSED**. Claude Code action authenticated and completed with its supported default model. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          else
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID AUTOMATION CANARY — **FAILED**. Claude Code action outcome=${OUTCOME}. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            exit 1
+          fi
