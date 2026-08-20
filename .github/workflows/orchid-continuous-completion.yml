@@ -1,9 +1,9 @@
 name: Orchid Continuous Completion
 
-# Claude Code Action v1 does not support the `schedule` event directly.
-# This workflow is therefore the repository-native scheduler/dispatcher only.
-# It posts a trusted @claude issue comment; the separate Governed Claude Code
-# workflow receives that supported issue_comment event and performs the work.
+# The scheduler stays lightweight. It never runs Claude inline. Instead it
+# dispatches Orchid Completion Lane through workflow_dispatch, which GitHub
+# explicitly allows to create downstream workflow runs from GITHUB_TOKEN and
+# which Claude Code Action v1 supports as an automation event.
 
 on:
   workflow_dispatch:
@@ -82,15 +82,12 @@ jobs:
             issue=${row%% *}
             updated=${row#* }
             epoch=$(date -u -d "$updated" +%s 2>/dev/null || echo "$now")
-            # A durable worker PR owns the slot even if the issue itself has gone quiet.
             marker="OC-AUTO-ISSUE: #${issue}"
             durable=$(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq ".[] | select(.body != null and (.body | contains(\"$marker\"))) | .number" | head -1)
             if [[ -n "$durable" ]]; then
               gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --remove-label oc-queued --add-label oc-validating >/dev/null 2>&1 || true
               continue
             fi
-            # Forty-five minutes is long enough for a bounded lane but short enough
-            # to recover a crashed Claude run during the two-day completion sprint.
             if (( now - epoch > 2700 )); then
               gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
               gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] No durable integration PR appeared within 45 minutes. Lane released and returned to queue." >/dev/null 2>&1 || true
@@ -169,7 +166,7 @@ jobs:
             fi
           done
 
-      - name: Dispatch up to three trusted issue-comment lanes
+      - name: Dispatch up to three completion workers
         shell: bash
         run: |
           set -euo pipefail
@@ -190,29 +187,22 @@ jobs:
             done
           fi
 
+          dispatched=()
           for issue in "${selected[@]:-}"; do
             [[ -n "$issue" ]] || continue
             gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-validating --add-label oc-running >/dev/null
-            gh issue comment "$issue" --repo "$REPO" --body "@claude ORCHID CONTINUUM — CONTINUOUS COMPLETION LANE
-
-This is a trusted scheduler dispatch for issue #${issue}. EXECUTE BEFORE EXPLAINING.
-
-Work from current \`oc-autonomous-integration\` and inspect current \`main\` plus overlapping PRs before editing. Reuse authoritative work rather than duplicating it. Implement the largest safe bounded slice of this issue that can be completed, tested, committed, and pushed now.
-
-DELIVERY CONTRACT:
-- Open or update exactly one DRAFT PR targeting \`oc-autonomous-integration\`.
-- Include these exact lines in the PR body:
-  \`OC-AUTO-ISSUE: #${issue}\`
-  \`OC-AUTO-REQUEUE: true|false\`
-  \`OC-AUTO-BLOCKED: true|false\`
-- Test/fix/lint or compile as appropriate before delivery.
-- Preserve taxonomy, provenance, uncertainty, locality sensitivity, and unavailable-vs-zero semantics. Never invent science.
-- Do not merge to main, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create/disclose credentials, spend funds, force-push, or delete branches/repos.
-- If an integration PR already exists for this issue, update that same PR/branch.
-- A blocker on this issue does not stop other lanes.
-
-Finish with durable GitHub state, not a runner-local report." >/dev/null
+            if gh workflow run orchid-completion-lane.yml --repo "$REPO" --ref main -f issue_number="$issue" >/dev/null; then
+              dispatched+=("$issue")
+              gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Scheduler dispatched completion worker via workflow_dispatch. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            else
+              gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
+              gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Worker dispatch failed; lane returned to queue. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+            fi
           done
+          if (( ${#dispatched[@]} > 0 )); then
+            joined=$(IFS=,; echo "${dispatched[*]}")
+            gh issue comment 1031 --repo "$REPO" --body "ORCHID CONTINUOUS ENGINE — dispatched worker workflow(s) for issue(s) ${joined}. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          fi
 
       - name: Maintain integration-to-main owner gate
         shell: bash
