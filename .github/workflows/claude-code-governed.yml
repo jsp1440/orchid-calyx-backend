@@ -36,6 +36,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@claude"
+          allowed_bots: "github-actions[bot]"
           branch_prefix: "claude/"
           additional_permissions: |
             actions: read
