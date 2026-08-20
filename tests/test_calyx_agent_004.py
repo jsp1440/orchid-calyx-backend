@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.calyx_engineering.completion_loop import CompletionState
 from app.calyx_engineering.completion_scheduler import EngineeringCompletionScheduler
+from app.calyx_engineering.completion_worker import runtime_ready
 from app.calyx_engineering.github import FileChange
 from app.calyx_engineering.service import CalyxEngineeringService
 from app.calyx_orchestrator.models import CalyxJob
@@ -197,3 +198,17 @@ def test_green_ci_completes_job_at_merge_gate():
     assert job.completed_at is not None
     assert result["result"]["state"] == "ready_for_merge"
     assert result["result"]["autonomous_merge"] is False
+
+
+def test_standalone_completion_worker_requires_github_runtime_credentials(monkeypatch):
+    monkeypatch.delenv("CALYX_ENGINEERING_ENABLED", raising=False)
+    monkeypatch.delenv("CALYX_ENGINEERING_MODE", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    assert runtime_ready() is False
+
+    monkeypatch.setenv("CALYX_ENGINEERING_ENABLED", "true")
+    monkeypatch.setenv("CALYX_ENGINEERING_MODE", "preproduction")
+    assert runtime_ready() is False
+
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    assert runtime_ready() is True
