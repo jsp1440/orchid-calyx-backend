@@ -1,0 +1,1 @@
+The `trigger-once` marker is used only to fire the disposable AGENT-007 persisted certification against PR #1043 after the observability surface is deployed. It conveys no merge or deployment authority.
