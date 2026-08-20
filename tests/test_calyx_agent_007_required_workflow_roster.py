@@ -1,4 +1,7 @@
-from app.calyx_engineering.completion_loop import CompletionState, GovernedAutonomousCompletionLoop
+from app.calyx_engineering.completion_loop import (
+    CompletionState,
+    GovernedAutonomousCompletionLoop,
+)
 
 
 class WorkflowAwareClient:
