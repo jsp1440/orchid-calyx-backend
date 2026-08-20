@@ -15,7 +15,7 @@ from app.calyx_engineering.completion_loop import (
 from app.calyx_engineering.completion_scheduler import EngineeringCompletionScheduler
 from app.calyx_engineering.github import FileChange
 from app.calyx_engineering.service import CalyxEngineeringService
-from app.calyx_orchestrator.models import CalyxJob, utcnow
+from app.calyx_orchestrator.models import CalyxJob
 from app.database import Base
 
 REQUIRED_CHECKS = ["validate", "conversation"]
@@ -263,9 +263,6 @@ def test_scheduler_renews_lease_before_completion_cycle():
         lease_token=token,
     )
     assert before is not None
-    # The lease was fenced to a long mutation window before the loop executed;
-    # completion releases it afterward, so validate the stored request and behavior
-    # through a direct renewal on a fresh claim as well.
     job.status = "queued"
     job.next_attempt_at = None
     db.commit()
