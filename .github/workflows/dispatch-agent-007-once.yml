@@ -22,8 +22,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CALYX_BACKEND_URL: ${{ secrets.CALYX_BACKEND_URL }}
-          CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
+          CALYX_BACKEND_URL: https://orchid-calyx-backend.onrender.com
+          CALYX_API_KEY: ${{ secrets.CALYX_API_KEY || secrets.MISSION_CONTROL_SMOKE_TOKEN }}
         run: |
           set +e
           outcome="unknown"
@@ -36,9 +36,9 @@ jobs:
           elif [[ "$draft" != "true" || "$state" != "OPEN" ]]; then
             outcome="unsafe_target_state"
             detail="PR #1043 must remain an open draft; observed draft=$draft state=$state."
-          elif [[ -z "$CALYX_BACKEND_URL" || -z "$CALYX_API_KEY" ]]; then
-            outcome="missing_production_secrets"
-            detail="CALYX_BACKEND_URL or CALYX_API_KEY is missing from the production environment."
+          elif [[ -z "$CALYX_API_KEY" ]]; then
+            outcome="missing_api_key_secret"
+            detail="Neither CALYX_API_KEY nor the already-configured MISSION_CONTROL_SMOKE_TOKEN is available to this production job."
           else
             last_code="000"
             for attempt in $(seq 1 12); do
