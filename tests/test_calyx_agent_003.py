@@ -9,7 +9,12 @@ from sqlalchemy.orm import sessionmaker
 from app.calyx_agent.service import CalyxAgentService
 from app.calyx_orchestrator.models import CalyxFinding, CalyxJob, utcnow
 from app.calyx_orchestrator.service import CalyxOrchestrator
-from app.calyx_orchestrator.worker import enabled, engineering_enabled, worker_enabled
+from app.calyx_orchestrator.worker import (
+    enabled,
+    engineering_enabled,
+    engineering_runtime_ready,
+    worker_enabled,
+)
 from app.database import Base
 
 
@@ -84,20 +89,27 @@ def test_worker_is_disabled_without_preproduction_gate(monkeypatch):
     assert enabled() is True
 
 
-def test_shared_worker_can_enable_engineering_lane_independently(monkeypatch):
+def test_shared_worker_requires_engineering_gate_and_github_token(monkeypatch):
     monkeypatch.delenv("CALYX_ORCHESTRATOR_ENABLED", raising=False)
     monkeypatch.delenv("CALYX_ORCHESTRATOR_MODE", raising=False)
     monkeypatch.delenv("CALYX_ENGINEERING_ENABLED", raising=False)
     monkeypatch.delenv("CALYX_ENGINEERING_MODE", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     assert worker_enabled() is False
 
     monkeypatch.setenv("CALYX_ENGINEERING_ENABLED", "true")
     monkeypatch.setenv("CALYX_ENGINEERING_MODE", "production")
     assert engineering_enabled() is False
+    assert engineering_runtime_ready() is False
     assert worker_enabled() is False
 
     monkeypatch.setenv("CALYX_ENGINEERING_MODE", "preproduction")
     assert engineering_enabled() is True
+    assert engineering_runtime_ready() is False
+    assert worker_enabled() is False
+
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    assert engineering_runtime_ready() is True
     assert worker_enabled() is True
 
 
