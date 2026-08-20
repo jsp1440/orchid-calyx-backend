@@ -1,2 +1,2 @@
 AGENT-007 persisted certification trigger for disposable PR #1043.
-Status probe after repaired certification dispatch.
+Inspect persisted governor job before any further certification dispatch.
