@@ -1,0 +1,28 @@
+name: Orchid Continuous Completion Observer
+
+on:
+  workflow_run:
+    workflows: ["Orchid Continuous Completion"]
+    types: [completed]
+
+permissions:
+  actions: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish terminal scheduler result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RESULT: ${{ github.event.workflow_run.conclusion }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          failed=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")' 2>/dev/null || true)
+          detail=""
+          [[ -z "$failed" ]] || detail=" Failed jobs: ${failed}."
+          gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID CONTINUOUS ENGINE — **${RESULT}**. event=${EVENT}, head=\`${SHA}\`, run=${RUN_ID}.${detail} ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"

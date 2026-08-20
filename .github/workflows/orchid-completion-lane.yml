@@ -6,6 +6,12 @@ on:
       issue_number:
         required: true
         type: string
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Orchid Continuum issue number to execute
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -29,7 +35,7 @@ jobs:
           ref: ${{ env.INTEGRATION_BRANCH }}
           fetch-depth: 0
 
-      - name: Load issue context
+      - name: Load issue context and publish worker receipt
         id: issue
         shell: bash
         run: |
@@ -44,12 +50,16 @@ jobs:
             echo "$body"
             echo EOF
           } >> "$GITHUB_OUTPUT"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Completion worker started from ${GITHUB_EVENT_NAME}; run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
 
       - name: Execute issue with Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # workflow_dispatch is created only by the repository scheduler. Trust
+          # that exact GitHub Actions actor; never wildcard bot execution.
+          allowed_bots: "github-actions"
           prompt: |
             ORCHID CONTINUUM — CONTINUOUS COMPLETION LANE
 
@@ -77,9 +87,8 @@ jobs:
             - Never merge to `main`, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create/disclose credentials, spend funds, force-push, or delete branches/repos.
             - Final output: DONE, VALIDATION, PR/HEAD SHA, REMAINING, OWNER GATE if any.
           claude_args: |
-            --model claude-sonnet-5
             --max-turns 75
-            --allowedTools "Edit,Read,Write,Bash(git diff:*),Bash(git status:*),Bash(git ls-files:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git branch:*),Bash(git fetch:*),Bash(git merge:*),Bash(python:*),Bash(python3:*),Bash(pytest:*),Bash(ruff:*),Bash(npm:*),Bash(npx:*),Bash(test:*),Bash(gh pr:*),Bash(gh issue:*)"
+            --allowedTools "Edit,Read,Write,Bash(git diff:*),Bash(git status:*),Bash(git ls-files:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git branch:*),Bash(git fetch:*),Bash(git merge:*),Bash(python:*),Bash(python3:*),Bash(pytest:*),Bash(ruff:*),Bash(npm:*),Bash(npx:*),Bash(test:*),Bash(gh pr:*),Bash(gh issue:*),Bash(gh run:*)"
             --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative. BLOCKED DOES NOT MEAN STOPPED FOR THE PROGRAM. Deliver durable GitHub work, never runner-local-only claims."
 
       - name: Classify result, dispatch validation, release slot
@@ -94,9 +103,14 @@ jobs:
           if [[ -n "$pr" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-blocked --add-label oc-validating >/dev/null 2>&1 || true
             head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefName --jq '.headRefName')
-            gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$head" >/dev/null
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered/updated integration PR #$pr, dispatched independent backend validation, and released its execution slot." >/dev/null
+            if gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$head" >/dev/null; then
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered/updated integration PR #$pr, dispatched independent backend validation, and released its execution slot. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            else
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-validating --add-label oc-queued >/dev/null 2>&1 || true
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Durable PR #$pr exists, but validation dispatch failed. Returned to queue for a bounded retry. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+              exit 1
+            fi
           else
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-validating --add-label oc-queued >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane ended without a durable integration PR. Returned to the queue while other lanes continue." >/dev/null
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane ended without a durable integration PR. Returned to the queue while other lanes continue. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
           fi
