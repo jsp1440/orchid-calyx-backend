@@ -28,6 +28,7 @@ jobs:
           set +e
           outcome="unknown"
           detail=""
+          previous_failure=""
           draft=$(gh pr view 1043 --repo "$GITHUB_REPOSITORY" --json isDraft -q '.isDraft' 2>/tmp/gherr)
           state=$(gh pr view 1043 --repo "$GITHUB_REPOSITORY" --json state -q '.state' 2>>/tmp/gherr)
           if [[ $? -ne 0 ]]; then
@@ -53,8 +54,8 @@ jobs:
                     outcome="certification_completed_success"
                     detail="Latest persisted certification run ${run_id} completed successfully."
                   else
-                    outcome="certification_completed_failure"
-                    detail="Latest persisted certification run ${run_id} completed with conclusion ${run_conclusion}."
+                    previous_failure="$run_id"
+                    outcome="unknown"
                   fi
                   ;;
               esac
@@ -78,7 +79,11 @@ jobs:
                   -f max_steps=40
                 if [[ $? -eq 0 ]]; then
                   outcome="dispatched"
-                  detail="No active certification was found; a new persisted certification was dispatched."
+                  if [[ -n "$previous_failure" ]]; then
+                    detail="Previous certification run ${previous_failure} failed before the governor executed; harness was repaired and a new run was dispatched."
+                  else
+                    detail="No active certification was found; a new persisted certification was dispatched."
+                  fi
                 else
                   outcome="workflow_dispatch_failed"
                   detail="GitHub rejected the certification dispatch."

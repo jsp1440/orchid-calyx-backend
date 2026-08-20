@@ -8,8 +8,7 @@ name: CALYX-AGENT-007 Persisted Certification
 #
 # The harness observes. It cannot merge, cannot deploy, and cannot repair - the
 # governor inside the service performs the bounded repair, and terminates
-# itself at READY_FOR_MERGE. Nothing in this workflow crosses that line, and
-# `permissions: contents: read` is what holds it there.
+# itself at READY_FOR_MERGE. Repository contents and pull requests are read-only.
 
 on:
   workflow_dispatch:
@@ -40,6 +39,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: calyx-agent-007-persisted-certification
