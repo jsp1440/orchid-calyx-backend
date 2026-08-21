@@ -18,6 +18,8 @@ import pytest
 yaml = pytest.importorskip("yaml")
 
 SCHEDULER = Path(".github/workflows/orchid-continuous-completion.yml")
+NORMALIZE_STEP = "name: Normalize portfolio priority and heal orphaned repair authorizations"
+DISPATCH_STEP = "name: Dispatch priority-aware completion workers"
 LANE = Path(".github/workflows/orchid-completion-lane.yml")
 
 
@@ -79,7 +81,7 @@ def test_stale_reclaim_exceeds_worker_timeout(lane_text, scheduler_text):
 
 def test_durable_pr_lineage_is_reconciled_before_dispatch(scheduler_text):
     reconcile_pos = scheduler_text.index("name: Reconcile queue labels against durable PR lineage")
-    dispatch_pos = scheduler_text.index("name: Dispatch up to three completion workers")
+    dispatch_pos = scheduler_text.index(DISPATCH_STEP)
     assert reconcile_pos < dispatch_pos
     assert "duplicate worker dispatch suppressed" in scheduler_text
 
@@ -92,7 +94,9 @@ def test_pipefail_paths_do_not_use_early_exit_head(scheduler_text, lane_text):
 def test_validation_dispatch_outage_does_not_requeue_claude(lane_text):
     marker = "Durable PR #$pr exists, but validation dispatch failed"
     start = lane_text.index(marker)
-    window = lane_text[max(0, start - 1000) : start + 1000]
+    branch_start = lane_text.rindex("else", 0, start)
+    branch_end = lane_text.index("exit 1", start)
+    window = lane_text[branch_start:branch_end]
     assert "--add-label oc-validating" in window
     assert "--add-label oc-queued" not in window
     assert "without redispatching Claude" in window
@@ -107,21 +111,67 @@ def test_completed_red_validation_authorizes_exactly_one_repair_state(scheduler_
 
 def test_durable_pr_suppression_exempts_only_explicit_repair(scheduler_text):
     reconcile_start = scheduler_text.index("name: Reconcile queue labels against durable PR lineage")
-    dispatch_start = scheduler_text.index("name: Dispatch up to three completion workers")
+    dispatch_start = scheduler_text.index(DISPATCH_STEP)
     reconcile = scheduler_text[reconcile_start:dispatch_start]
     dispatch = scheduler_text[dispatch_start:]
     assert '[[ "$labels" == *oc-repair* ]] && continue' in reconcile
-    assert 'if [[ -n "$durable" && "$repair" != true ]]; then' in dispatch
+    # Durable-PR suppression now lives in the deterministic planner; the workflow
+    # only applies the plan's suppression decisions.
+    assert 'select(.reason == "durable-pr")' in dispatch
+    assert "--remove-label oc-queued --add-label oc-validating" in dispatch
 
 
 def test_orphaned_repair_authorization_self_heals_into_queue_before_selection(scheduler_text):
-    seed_start = scheduler_text.index("name: Seed curated completion backlog")
-    dispatch_start = scheduler_text.index("name: Dispatch up to three completion workers")
-    seed = scheduler_text[seed_start:dispatch_start]
-    assert seed_start < dispatch_start
-    assert '[[ "$labels" == *oc-repair* && "$labels" != *oc-running* && "$labels" != *oc-queued* ]]' in seed
-    assert "--remove-label oc-validating --add-label oc-queued" in seed
-    assert "must never be a" in seed and "terminal state by itself" in seed
+    normalize_start = scheduler_text.index(NORMALIZE_STEP)
+    dispatch_start = scheduler_text.index(DISPATCH_STEP)
+    normalize = scheduler_text[normalize_start:dispatch_start]
+    assert normalize_start < dispatch_start
+    assert 'index("oc-repair")' in normalize
+    assert 'index("oc-running")) | not' in normalize
+    assert 'index("oc-queued")) | not' in normalize
+    assert "--remove-label oc-validating --add-label oc-queued" in normalize
+    assert "must never be a" in normalize and "terminal state by itself" in normalize
+
+
+def test_scheduler_no_longer_carries_a_hard_coded_legacy_backlog(scheduler_text):
+    assert "BACKLOG=(" not in scheduler_text
+    for legacy in (1030, 1029, 1025, 1026, 1027, 1008, 1021, 1022, 1023, 1024):
+        assert f"{legacy} " not in scheduler_text
+    assert "oc-queued" in scheduler_text
+
+
+def test_selection_is_delegated_to_the_deterministic_priority_planner(scheduler_text):
+    dispatch = scheduler_text[scheduler_text.index(DISPATCH_STEP) :]
+    assert "python3 scripts/oc_portfolio_scheduler.py" in dispatch
+    assert "--mode plan" in dispatch
+    assert 'MAX_ACTIVE_LANES: "5"' in dispatch
+    assert "jq -r '.selected[].number'" in dispatch
+
+
+def test_durable_priority_labels_are_provisioned_and_backfilled(scheduler_text):
+    for level in range(6):
+        assert f"ensure_label oc-p{level} " in scheduler_text
+    normalize = scheduler_text[scheduler_text.index(NORMALIZE_STEP) : scheduler_text.index(DISPATCH_STEP)]
+    assert "--mode priority-labels" in normalize
+    assert "an explicit label always wins" in normalize
+
+
+def test_capacity_is_derived_from_active_leases_not_blind_redispatch(scheduler_text):
+    dispatch = scheduler_text[scheduler_text.index(DISPATCH_STEP) :]
+    assert "oc-running execution leases" in dispatch
+    assert "never consume a lane" in dispatch
+
+
+def test_abandoned_lane_reclamation_is_preserved(scheduler_text):
+    reclaim = scheduler_text[scheduler_text.index("name: Reclaim abandoned lanes") :]
+    assert "if (( now - epoch <= 4800 )); then" in reclaim
+    assert "Lane reclaimed and returned to queue" in reclaim
+    assert "Reclaimed the lane into validation rather than redispatching Claude" in reclaim
+
+
+def test_scheduled_runs_still_execute_the_main_control_plane(scheduler, scheduler_text):
+    assert scheduler[True]["schedule"] == [{"cron": "*/5 * * * *"}]
+    assert "ref: ${{ github.sha }}" in scheduler_text
 
 
 def test_repair_authorization_is_consumed_before_revalidation(lane_text):
