@@ -83,7 +83,11 @@ def test_scientific_turn_survives_semantic_index_outage(monkeypatch):
     assert retrieval["error"] == "SEMANTIC_INDEX_UNAVAILABLE"
     assert result["research"]["mission"] is None
     assert result["research"]["mission_error"] == "SEMANTIC_INDEX_UNAVAILABLE"
-    assert "could not complete a governed Brain mission" in result["answer"]
+    # SUPERSEDED wording, same guarantee: an unavailable evidence run is stated
+    # as a retrieval gap and nothing is presented as established. "Brain mission"
+    # is internal machinery and no longer surfaces in the conversational answer.
+    assert "couldn't complete a governed evidence run" in result["answer"]
+    assert "not a finding about the biology" in result["answer"]
     assert result["calyx_message"]["metadata"]["retrieval_status"] == "unavailable"
 
 
