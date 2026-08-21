@@ -44,5 +44,5 @@ jobs:
           fi
           mapfile -t tests < <(printf '%s\n' "${pyfiles[@]:-}" | grep -E '(^|/)test[^/]*\.py$|(^|/)tests/.*\.py$' || true)
           if (( ${#tests[@]} > 0 )); then
-            pytest -q --maxfail=1 "${tests[@]}"
+            python -m pytest -q --maxfail=1 "${tests[@]}"
           fi
