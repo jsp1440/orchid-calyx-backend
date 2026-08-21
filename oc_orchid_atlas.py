@@ -1,43 +1,63 @@
 import os
-import psycopg2
-import pandas as pd
+
 import folium
+import pandas as pd
+import psycopg2
 
-DB = os.getenv("DATABASE_URL")
+_EXACT_ATLAS_ENABLE_VALUE = "YES_I_UNDERSTAND_THIS_EXPORTS_EXACT_ORCHID_LOCATIONS"
 
-print("Connecting to Orchid Continuum database...")
 
-conn = psycopg2.connect(DB)
+def require_exact_atlas_generation() -> None:
+    """Require explicit operator acknowledgement before exact-site map export."""
 
-sql = """
-SELECT decimal_latitude, decimal_longitude
-FROM oc_occurrences
-WHERE decimal_latitude IS NOT NULL
-AND decimal_longitude IS NOT NULL
-LIMIT 20000
-"""
+    if os.getenv("OC_ALLOW_EXACT_ORCHID_ATLAS") != _EXACT_ATLAS_ENABLE_VALUE:
+        raise PermissionError(
+            "Exact orchid atlas generation is disabled by security policy. "
+            "Use a generalized/aggregated Atlas product unless exact locality "
+            "access is explicitly approved for the research purpose."
+        )
 
-df = pd.read_sql(sql, conn)
 
-conn.close()
+def main() -> None:
+    require_exact_atlas_generation()
 
-print("Loaded", len(df), "occurrence points")
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required")
 
-print("Building orchid atlas map...")
+    print("Connecting to Orchid Continuum database...")
+    conn = psycopg2.connect(database_url)
+    try:
+        sql = """
+        SELECT decimal_latitude, decimal_longitude
+        FROM oc_occurrences
+        WHERE decimal_latitude IS NOT NULL
+          AND decimal_longitude IS NOT NULL
+        LIMIT 20000
+        """
+        df = pd.read_sql(sql, conn)
+    finally:
+        conn.close()
 
-m = folium.Map(location=[0, 0], zoom_start=2)
+    print("Loaded", len(df), "occurrence points")
+    print("Building restricted exact orchid atlas map...")
 
-for _, row in df.iterrows():
-    folium.CircleMarker(
-        location=[row["decimal_latitude"], row["decimal_longitude"]],
-        radius=2,
-        color="purple",
-        fill=True,
-        fill_opacity=0.6).add_to(m)
+    atlas = folium.Map(location=[0, 0], zoom_start=2)
+    for _, row in df.iterrows():
+        folium.CircleMarker(
+            location=[row["decimal_latitude"], row["decimal_longitude"]],
+            radius=2,
+            color="purple",
+            fill=True,
+            fill_opacity=0.6,
+        ).add_to(atlas)
 
-outfile = "orchid_atlas.html"
+    outfile = "orchid_atlas_RESTRICTED_EXACT.html"
+    atlas.save(outfile)
 
-m.save(outfile)
+    print("Restricted exact map created:", outfile)
+    print("Do not publish or redistribute without locality-disclosure approval.")
 
-print("Map created:", outfile)
-print("Open this file in your browser.")
+
+if __name__ == "__main__":
+    main()
