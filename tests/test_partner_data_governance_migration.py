@@ -1,5 +1,6 @@
-from pathlib import Path
+from __future__ import annotations
 
+from pathlib import Path
 
 MIGRATION = Path("migrations/111_partner_data_governance_registry.sql")
 
