@@ -32,11 +32,12 @@ jobs:
 
           import json
           import os
+          import time
           from http.cookiejar import CookieJar
-          from urllib.error import HTTPError
+          from urllib.error import HTTPError, URLError
           from urllib.request import HTTPCookieProcessor, Request, build_opener
 
-          base = (os.getenv("CALYX_BACKEND_URL") or "https://orchid-calyx-backend.onrender.com").rstrip("/")
+          base = (os.getenv("CALYX_BACKEND_URL") or "https://orchid-calyx-backend.onrender.com").strip().rstrip("/")
           access_code = os.getenv("CALYX_OWNER_ACCESS_CODE", "")
           if not access_code:
               raise SystemExit("CALYX_OWNER_ACCESS_CODE is unavailable")
@@ -61,26 +62,54 @@ jobs:
                   try:
                       body = json.loads(raw) if raw else {}
                   except json.JSONDecodeError:
-                      body = {"detail": raw[:1000]}
+                      body = {"detail": raw[:200]}
                   return exc.code, body
+              except (URLError, TimeoutError) as exc:
+                  return 0, {"detail": type(exc).__name__}
 
-          status, session = request(
-              "/api/mission-control/owner/session",
-              method="POST",
-              payload={"access_code": access_code},
-          )
-          assert status == 200 and session.get("authenticated") is True, (status, session)
-          print("PASS owner session authenticated")
+          transient = {0, 502, 503, 504}
+          session = None
+          for attempt in range(1, 13):
+              status, candidate = request(
+                  "/api/mission-control/owner/session",
+                  method="POST",
+                  payload={"access_code": access_code},
+              )
+              if status == 200 and candidate.get("authenticated") is True:
+                  session = candidate
+                  print(f"PASS owner session authenticated on attempt {attempt}")
+                  break
+              print(f"OWNER_SESSION_WAIT attempt={attempt} status={status}")
+              if status not in transient:
+                  raise SystemExit(f"Owner session failed non-transiently with status {status}")
+              time.sleep(10)
+          if session is None:
+              raise SystemExit("Owner session never became available")
 
-          status, verifier_health = request("/api/scientific-interpretation/synthesis/health")
-          print("VERIFIER_HEALTH", status, json.dumps(verifier_health, sort_keys=True))
-          if not (
-              status == 200
-              and verifier_health.get("check_calyx") is True
-              and verifier_health.get("verification_version") == "CALYX-VERIFY-001"
-          ):
-              print("DEPLOYMENT_NOT_READY: current production does not yet expose CALYX-VERIFY-001")
-              raise SystemExit(2)
+          verifier_health = None
+          for attempt in range(1, 13):
+              status, candidate = request("/api/scientific-interpretation/synthesis/health")
+              ready = (
+                  status == 200
+                  and candidate.get("check_calyx") is True
+                  and candidate.get("verification_version") == "CALYX-VERIFY-001"
+              )
+              print(
+                  "VERIFIER_WAIT",
+                  f"attempt={attempt}",
+                  f"status={status}",
+                  f"version={candidate.get('verification_version')}",
+                  f"check_calyx={candidate.get('check_calyx')}",
+              )
+              if ready:
+                  verifier_health = candidate
+                  break
+              if status not in transient and status not in {200, 404}:
+                  raise SystemExit(f"Verifier health failed non-transiently with status {status}")
+              time.sleep(10)
+          if verifier_health is None:
+              raise SystemExit("DEPLOYMENT_NOT_READY: production never exposed CALYX-VERIFY-001")
+          print("PASS CALYX-VERIFY-001 is deployed")
 
           status, speak_status = request("/api/calyx/speak/status")
           assert status == 200, (status, speak_status)
