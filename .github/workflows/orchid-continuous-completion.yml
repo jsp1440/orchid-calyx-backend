@@ -36,13 +36,17 @@ jobs:
       REPO: ${{ github.repository }}
       INTEGRATION_BRANCH: oc-autonomous-integration
       MAX_ACTIVE_LANES: 5
+      PLANNER: scripts/oc_portfolio_scheduler.py
     steps:
-      # Scheduled, push, issues and pull_request runs all stay pinned to main, so
-      # no unreviewed control-plane code ever runs the scheduler. Only an explicit
-      # workflow_dispatch may exercise a candidate branch's own scheduler.
+      # The checkout must match whichever ref GitHub took this workflow file from,
+      # or the file and the code it calls disagree. GitHub resolves the file from
+      # the head for workflow_dispatch and pull_request, and from main for
+      # schedule/push/issues — so pin the checkout the same way. This grants no
+      # extra reach: on a pull_request the head's workflow file is already what is
+      # executing, whatever the checkout says.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}
+          ref: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request') && github.sha || 'main' }}
           fetch-depth: 0
 
       - name: Ensure orchestration labels and current integration base
@@ -69,6 +73,13 @@ jobs:
 
           git config user.name "orchid-continuum-orchestrator[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # This step switches branches to maintain the integration base, which
+          # leaves the working tree on that branch. Later steps run control-plane
+          # code from the checkout, so remember the ref that was checked out and
+          # restore it before handing over.
+          control_plane=$(git rev-parse HEAD)
+
           git fetch origin main "$INTEGRATION_BRANCH" || git fetch origin main
           if git show-ref --verify --quiet "refs/remotes/origin/$INTEGRATION_BRANCH"; then
             git checkout -B "$INTEGRATION_BRANCH" "origin/$INTEGRATION_BRANCH"
@@ -81,6 +92,8 @@ jobs:
             git merge --abort
             echo "Integration branch conflicts with current main; worker PRs stay isolated until reconciliation." >&2
           fi
+
+          git checkout --force --detach "$control_plane"
 
       - name: Reclaim abandoned lanes
         shell: bash
@@ -210,39 +223,48 @@ jobs:
           # Durable priority representation. Priority is resolved once and written
           # back as an oc-p<n> label so ranking stops depending on issue wording;
           # an explicit label is authoritative and is never overwritten here.
-          gh issue list --repo "$REPO" --state open --limit 500 \
-            --json number,title,labels,createdAt | jq '{issues: .}' > "$RUNNER_TEMP/oc-portfolio.json"
-          python3 scripts/oc_portfolio_scheduler.py \
-            --input "$RUNNER_TEMP/oc-portfolio.json" --mode priority-labels > "$RUNNER_TEMP/oc-priority-fixes.json"
-          while read -r row; do
-            [[ -n "$row" ]] || continue
-            issue=$(jq -r '.number' <<<"$row")
-            gh issue edit "$issue" --repo "$REPO" --add-label "$(jq -r '.add' <<<"$row")" >/dev/null 2>&1 || true
-            while read -r stale; do
-              [[ -n "$stale" ]] || continue
-              gh issue edit "$issue" --repo "$REPO" --remove-label "$stale" >/dev/null 2>&1 || true
-            done < <(jq -r '.remove[]?' <<<"$row")
-          done < <(jq -c '.[]' "$RUNNER_TEMP/oc-priority-fixes.json")
+          if [[ -f "$PLANNER" ]]; then
+            gh issue list --repo "$REPO" --state open --limit 500 \
+              --json number,title,labels,createdAt | jq '{issues: .}' > "$RUNNER_TEMP/oc-portfolio.json"
+            python3 "$PLANNER" \
+              --input "$RUNNER_TEMP/oc-portfolio.json" --mode priority-labels > "$RUNNER_TEMP/oc-priority-fixes.json"
+            while read -r row; do
+              [[ -n "$row" ]] || continue
+              issue=$(jq -r '.number' <<<"$row")
+              gh issue edit "$issue" --repo "$REPO" --add-label "$(jq -r '.add' <<<"$row")" >/dev/null 2>&1 || true
+              while read -r stale; do
+                [[ -n "$stale" ]] || continue
+                gh issue edit "$issue" --repo "$REPO" --remove-label "$stale" >/dev/null 2>&1 || true
+              done < <(jq -r '.remove[]?' <<<"$row")
+            done < <(jq -c '.[]' "$RUNNER_TEMP/oc-priority-fixes.json")
+          else
+            echo "::warning::$PLANNER absent from this checkout; leaving priority labels untouched."
+          fi
 
           # Terminal reconciliation: completed work must not silently carry a
           # queue lease or a repair authorization back into selection if it is
-          # ever reopened.
-          mapfile -t completed < <(gh issue list --repo "$REPO" --state all --label oc-done --limit 200 --json number --jq '.[].number')
-          for issue in "${completed[@]:-}"; do
+          # ever reopened. Ask the API for the intersections directly — this
+          # scheduler runs every five minutes and must not spend a request per
+          # completed issue just to discover that almost none of them are stale.
+          mapfile -t stale_done < <(
+            {
+              gh issue list --repo "$REPO" --state all --label oc-done --label oc-queued --limit 200 --json number --jq '.[].number'
+              gh issue list --repo "$REPO" --state all --label oc-done --label oc-repair --limit 200 --json number --jq '.[].number'
+            } | sort -u
+          )
+          for issue in "${stale_done[@]:-}"; do
             [[ -n "$issue" ]] || continue
-            labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
-            if [[ "$labels" == *oc-queued* || "$labels" == *oc-repair* ]]; then
-              gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-repair >/dev/null 2>&1 || true
-            fi
+            gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-repair >/dev/null 2>&1 || true
           done
 
           # oc-repair is a positive one-pass authorization and must never become a
           # terminal state by itself. Heal every orphaned repair, not just a fixed
           # historical issue-number list, back to selectable queue state.
-          mapfile -t repairs < <(gh issue list --repo "$REPO" --state open --label oc-repair --limit 200 --json number --jq '.[].number')
-          for issue in "${repairs[@]:-}"; do
-            [[ -n "$issue" ]] || continue
-            labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
+          mapfile -t repairs < <(gh issue list --repo "$REPO" --state open --label oc-repair --limit 200 --json number,labels --jq '.[] | [.number, ([.labels[].name] | join(" "))] | @tsv')
+          for row in "${repairs[@]:-}"; do
+            [[ -n "$row" ]] || continue
+            issue=${row%%$'\t'*}
+            labels=${row#*$'\t'}
             if [[ "$labels" == *oc-repair* && "$labels" != *oc-running* && "$labels" != *oc-queued* ]]; then
               gh issue edit "$issue" --repo "$REPO" --remove-label oc-validating --add-label oc-queued >/dev/null 2>&1 || true
             fi
@@ -273,11 +295,18 @@ jobs:
           # repair lane is reserved so a failed exact head is not starved; and
           # fairness reserves a lane outright rather than granting a single
           # one-band promotion that a continuous P0/P1 stream can still outrun.
+          #
+          # Fail closed, never red: without the planner there is no authoritative
+          # ranking, so this cycle dispatches nothing rather than guessing.
+          if [[ ! -f "$PLANNER" ]]; then
+            echo "::warning::$PLANNER absent from this checkout; no worker dispatched this cycle."
+            exit 0
+          fi
           issues=$(gh issue list --repo "$REPO" --state open --limit 500 --json number,title,labels,createdAt)
           prs=$(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body)
           jq -n --argjson issues "$issues" --argjson prs "$prs" --argjson max "$MAX_ACTIVE_LANES" \
             '{max_active_lanes: $max, issues: $issues, pull_requests: $prs}' > "$RUNNER_TEMP/oc-plan-input.json"
-          python3 scripts/oc_portfolio_scheduler.py \
+          python3 "$PLANNER" \
             --input "$RUNNER_TEMP/oc-plan-input.json" --mode plan > "$RUNNER_TEMP/oc-plan.json"
 
           # Read-only status surface: active width, queue order with priority and
@@ -338,7 +367,14 @@ jobs:
           pr=$(gh pr list --repo "$REPO" --state open --base main --head "$INTEGRATION_BRANCH" --json number --jq '.[0].number // empty')
           body='Autonomously validated backend integration batch. Worker PRs may merge here only after independent validation. This integration branch must never be auto-merged to main or deployed to production. OC-AUTO-INTEGRATION-GATE'
           if [[ -z "$pr" ]]; then
-            gh pr create --repo "$REPO" --base main --head "$INTEGRATION_BRANCH" --draft --title "OC autonomous backend integration batch" --body "$body" >/dev/null
+            # Opening the gate PR needs "Allow GitHub Actions to create and approve
+            # pull requests", which only the owner can enable. That is an owner
+            # decision about the gate itself, not an implementation failure, so it
+            # must not leave the whole control plane red every five minutes.
+            if ! gh pr create --repo "$REPO" --base main --head "$INTEGRATION_BRANCH" --draft --title "OC autonomous backend integration batch" --body "$body" >/dev/null 2>&1; then
+              echo "::warning::Could not open the integration->main gate PR. GitHub Actions is not permitted to create pull requests in this repository; the owner must open it, or enable Settings > Actions > General > 'Allow GitHub Actions to create and approve pull requests'. Integration stays isolated and main remains owner-gated either way."
+              exit 0
+            fi
             pr=$(gh pr list --repo "$REPO" --state open --base main --head "$INTEGRATION_BRANCH" --json number --jq '.[0].number // empty')
           else
             gh pr edit "$pr" --repo "$REPO" --body "$body" >/dev/null

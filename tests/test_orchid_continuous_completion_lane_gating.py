@@ -61,7 +61,8 @@ def test_scheduler_uses_canonical_priority_aware_portfolio(scheduler_text):
     # Ranking moved from inline bash into a deterministic planner whose policy is
     # proven behaviourally in tests/test_oc_portfolio_scheduler.py.
     dispatch = scheduler_text[scheduler_text.index(DISPATCH_STEP) :]
-    assert "python3 scripts/oc_portfolio_scheduler.py" in dispatch
+    assert 'python3 "$PLANNER"' in dispatch
+    assert "PLANNER: scripts/oc_portfolio_scheduler.py" in scheduler_text
     assert "--mode plan" in dispatch
     assert "jq -r '.selected[].number'" in dispatch
     assert PLANNER.exists()
@@ -97,9 +98,38 @@ def test_completed_work_cannot_carry_a_queue_lease_or_repair_authorization(sched
     assert "--remove-label oc-queued --remove-label oc-repair" in heal
 
 
-def test_only_explicit_dispatch_may_run_a_candidate_branch_scheduler(scheduler_text):
-    assert "ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}" in scheduler_text
-    assert "no unreviewed control-plane code ever runs the scheduler" in scheduler_text
+def test_checkout_matches_the_ref_the_workflow_file_came_from(scheduler_text):
+    # GitHub resolves this workflow file from the head for workflow_dispatch and
+    # pull_request and from main otherwise; a checkout that disagrees leaves the
+    # file calling code that is not there.
+    assert (
+        "ref: ${{ (github.event_name == 'workflow_dispatch' || "
+        "github.event_name == 'pull_request') && github.sha || 'main' }}"
+    ) in scheduler_text
+
+
+def test_integration_base_maintenance_restores_the_control_plane_checkout(scheduler_text):
+    # Maintaining the integration base switches branches; without restoring the
+    # checkout every later step reads that branch's tree instead of the
+    # control-plane code this workflow file belongs to.
+    step = scheduler_text[
+        scheduler_text.index("name: Ensure orchestration labels and current integration base")
+        : scheduler_text.index("name: Reclaim abandoned lanes")
+    ]
+    assert "control_plane=$(git rev-parse HEAD)" in step
+    assert 'git checkout --force --detach "$control_plane"' in step
+    assert step.index("control_plane=$(git rev-parse HEAD)") < step.index('git checkout -B "$INTEGRATION_BRANCH"')
+    assert step.rindex('git checkout --force --detach "$control_plane"') > step.rindex("git merge --abort")
+
+
+def test_a_missing_planner_fails_closed_instead_of_dispatching_blind(scheduler_text):
+    dispatch = scheduler_text[scheduler_text.index(DISPATCH_STEP) :]
+    guard = dispatch.index('if [[ ! -f "$PLANNER" ]]; then')
+    assert guard < dispatch.index("gh workflow run orchid-completion-lane.yml")
+    assert "no worker dispatched this cycle" in dispatch
+    heal = scheduler_text[scheduler_text.index(HEAL_STEP) : scheduler_text.index(DISPATCH_STEP)]
+    assert 'if [[ -f "$PLANNER" ]]; then' in heal
+    assert "leaving priority labels untouched" in heal
 
 
 def test_scheduler_caps_active_execution_width_at_five(scheduler_text):
@@ -197,6 +227,16 @@ def test_orphaned_repair_authorization_self_heals_into_queue_before_selection(sc
     assert "must never become a" in heal and "terminal state by itself" in heal
 
 
+def test_queue_healing_does_not_spend_a_request_per_issue(scheduler_text):
+    # This runs every five minutes against a repository with hundreds of open
+    # issues; per-issue lookups made the heal step outlast its own schedule.
+    heal = scheduler_text[scheduler_text.index(HEAL_STEP) : scheduler_text.index(DISPATCH_STEP)]
+    assert "gh issue view" not in heal
+    assert "--label oc-done --label oc-queued" in heal
+    assert "--label oc-done --label oc-repair" in heal
+    assert "--json number,labels" in heal
+
+
 def test_repair_authorization_is_consumed_before_revalidation(lane_text):
     classification = lane_text[lane_text.index("name: Classify result") :]
     assert "--remove-label oc-repair" in classification
@@ -212,6 +252,13 @@ def test_state_is_reread_immediately_before_portfolio_dispatch(scheduler_text):
     assert '[[ "$labels" == *oc-blocked* ]] && continue' in dispatch
     assert '[[ "$labels" == *oc-owner-gate* ]] && continue' in dispatch
     assert '[[ "$labels" == *oc-done* ]] && continue' in dispatch
+
+
+def test_owner_only_gate_permission_warns_instead_of_reddening_the_control_plane(scheduler_text):
+    gate = scheduler_text[scheduler_text.index("name: Maintain integration-to-main owner gate") :]
+    assert "if ! gh pr create" in gate
+    assert "::warning::Could not open the integration->main gate PR" in gate
+    assert "main remains owner-gated either way" in gate
 
 
 def test_main_and_production_remain_owner_gated(scheduler_text, lane_text):
