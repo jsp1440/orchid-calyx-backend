@@ -227,6 +227,23 @@ def test_oc_validating_does_not_consume_an_execution_slot():
     assert len(result["selected_numbers"]) == 5
 
 
+def test_runtime_backed_off_work_is_not_ranked_or_selected():
+    """Parked by the repository-wide Claude runtime circuit; not a candidate.
+
+    The workflow's pre-dispatch re-read also skips these, but a planner that
+    ranked them would hand back a selection the dispatch loop then refuses,
+    silently wasting a lane.
+    """
+    parked = issue(1900, title="P0 parked by the runtime circuit",
+                   labels=("oc-queued", "oc-runtime-backoff"))
+    result = plan([parked, issue(1901, title="P3 genuinely eligible")])
+    assert result["selected_numbers"] == [1901]
+    assert 1900 not in [row["number"] for row in result["ranking"]]
+    assert {"number": 1900, "reason": "oc-runtime-backoff"}.items() <= next(
+        row for row in result["suppressed"] if row["number"] == 1900
+    ).items()
+
+
 def test_oc_blocked_and_owner_gate_do_not_consume_an_execution_slot():
     held = [
         issue(1000, labels=("oc-blocked",)),

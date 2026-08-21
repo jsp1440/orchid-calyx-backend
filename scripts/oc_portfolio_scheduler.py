@@ -57,11 +57,13 @@ RUNNING = "oc-running"
 VALIDATING = "oc-validating"
 REPAIR = "oc-repair"
 BLOCKED = "oc-blocked"
+#: Parked by the repository-wide Claude runtime circuit; not an execution candidate.
+RUNTIME_BACKOFF = "oc-runtime-backoff"
 OWNER_GATE = "oc-owner-gate"
 DONE = "oc-done"
 
 #: Labels that hold an issue outside the execution portfolio entirely.
-NON_EXECUTABLE_LABELS = (BLOCKED, OWNER_GATE, DONE)
+NON_EXECUTABLE_LABELS = (BLOCKED, OWNER_GATE, DONE, RUNTIME_BACKOFF)
 
 PRIORITY_LABELS = tuple(f"oc-p{level}" for level in range(LOWEST_PRIORITY + 1))
 

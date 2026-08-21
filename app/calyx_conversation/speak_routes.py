@@ -11,6 +11,7 @@ from app.security import verify_owner_or_api_key
 
 from .climate_context import build_seasonal_climate_context
 from .continuum_context import build_continuum_context
+from .conversational_synthesis import is_follow_up, resolve_subject
 from .external_literature import augment_retrieval_with_external_literature
 from .interaction_context import sanitize_interaction_context
 from .provider import DeterministicGovernedReplyProvider
@@ -89,7 +90,14 @@ def _effective_retrieval_limit(message: str, requested: int) -> int:
 
 
 def _mission_question(history: str, message: str) -> str:
-    """Preserve the scientific subject of long turns instead of only their tail."""
+    """Preserve the scientific subject of long turns instead of only their tail.
+
+    ``history`` is a reference-resolution trail built from prior USER turns, not
+    a raw transcript. A character-truncated transcript lets a verbose assistant
+    reply evict the earlier question the follow-up depends on, which silently
+    detaches the mission from the investigation. Prior assistant statements are
+    excluded on the same principle that keeps them out of the evidence set.
+    """
 
     current = " ".join(message.split())
     if len(current) > 900:
@@ -101,6 +109,15 @@ def _mission_question(history: str, message: str) -> str:
         "Conversation context for reference resolution only, not scientific evidence: "
         + context + " Current question: " + current
     )[:1000]
+
+
+def _reference_trail(conversation_id: str, owner: str) -> str:
+    """Prior user questions, newest last, for follow-up reference resolution."""
+
+    turns = STORE.user_turns(conversation_id, owner=owner, turns=6)
+    return " ".join(
+        " ".join(str(turn.get("content") or "").split()) for turn in turns
+    ).strip()
 
 
 def _safe_retrieval(message: str, retrieval_limit: int) -> dict[str, Any]:
@@ -320,10 +337,31 @@ def _run_governed_turn(
             "external": True, "time_sensitive": True,
         }, None, None, True
 
+    # A follow-up turn ("Why?", "What evidence is that based on?") carries its
+    # subject only by reference. Retrieving on the literal words finds nothing
+    # and the answer silently regresses to a generic evidence dump, so the
+    # investigation subject is recovered from server-side conversation state
+    # and used for retrieval, graph context and the governed mission.
+    #
+    # The resolved subject is INTERACTION CONTEXT: it decides what to retrieve.
+    # It is never itself treated as scientific evidence.
+    follow_up = is_follow_up(message)
+    retrieval_subject = message
+    resolved_subject: str | None = None
+    if follow_up:
+        prior = STORE.user_turns(conversation_id, owner=owner, turns=12)
+        resolved = resolve_subject(message, prior)
+        if resolved and resolved != message:
+            # Retrieval widens to subject + follow-up wording; the composer is
+            # given the clean subject alone so the reply can name what it is
+            # continuing without echoing the follow-up back at the user.
+            resolved_subject = resolved
+            retrieval_subject = f"{resolved} {message}".strip()
+
     retrieval_limit = _effective_retrieval_limit(message, retrieval_limit)
-    retrieval = _safe_retrieval(message, retrieval_limit)
-    continuum = _safe_continuum_context(message)
-    climate = _safe_climate_context(message)
+    retrieval = _safe_retrieval(retrieval_subject, retrieval_limit)
+    continuum = _safe_continuum_context(retrieval_subject)
+    climate = _safe_climate_context(retrieval_subject)
     mission: dict[str, Any] | None = None
     mission_error: str | None = None
 
@@ -342,12 +380,16 @@ def _run_governed_turn(
             "review-required external literature when present and otherwise must disclose the retrieval gap."
         )
 
+    # A one-word follow-up is not a trivial turn -- it continues a substantive
+    # question -- so the word-count gate is applied to the RESOLVED subject.
     should_run_mission = research_mode == "always" or (
-        research_mode == "auto" and len(message.split()) >= 5 and not canonical_empty
+        research_mode == "auto"
+        and len(retrieval_subject.split()) >= 5
+        and not canonical_empty
     )
     if should_run_mission:
-        history = STORE.history_text(conversation_id, owner=owner, turns=6, max_chars=1800)
-        mission_question = _mission_question(history, message)
+        history = _reference_trail(conversation_id, owner)
+        mission_question = _mission_question(history, retrieval_subject)
         evidence_set_id = str((retrieval.get("research_index_ingest") or {}).get("evidence_set_id") or "").strip()
         if evidence_set_id:
             mission_question += f"\nGoverned research evidence set: {evidence_set_id}"
@@ -358,6 +400,7 @@ def _run_governed_turn(
             )
         except (ValueError, RuntimeError) as exc:
             mission_error = str(exc)
+    retrieval["resolved_subject"] = resolved_subject
     return retrieval, continuum, climate, mission, mission_error, False
 
 
@@ -494,6 +537,9 @@ def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: Au
         "casual": casual, "conversation_id": conversation_id, "project_id": project_id,
         "interaction_context": interaction_context, "retrieval": retrieval, "continuum": continuum,
         "climate": climate, "mission": mission, "mission_error": mission_error,
+        # The investigation subject this turn continues, resolved server-side
+        # from persistent conversation state. Interaction context, not evidence.
+        "resolved_subject": retrieval.get("resolved_subject"),
         "provider_configuration": runtime_provider_configuration(),
         "deliverable_capabilities": _deliverable_capabilities(),
         "epistemic_policy": {
@@ -523,6 +569,7 @@ def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: Au
         conversation_id, "calyx", reply.text,
         {
             "provider": reply.provider, "model": reply.model,
+            "synthesis_structure": reply.synthesis_structure,
             "provider_response_id": reply.provider_response_id, "request_hash": reply.request_hash,
             "provider_error": provider_error, "provider_configuration": runtime_provider_configuration(),
             "mission_id": mission.get("mission_id") if mission else None,
@@ -552,6 +599,7 @@ def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: Au
             "configuration": runtime_provider_configuration(),
         },
         "interaction_context": interaction_context,
+        "synthesis_structure": reply.synthesis_structure,
         "research": {
             "casual": casual, "mission": mission, "mission_error": mission_error,
             "retrieval": retrieval, "continuum": continuum, "climate": climate,
