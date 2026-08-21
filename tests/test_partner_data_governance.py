@@ -25,6 +25,47 @@ def test_public_data_is_available_but_respects_locality_and_image_policy():
     assert decision.location_disclosure == DisclosureMode.GENERALIZED
 
 
+def test_public_view_permission_does_not_imply_bulk_export_permission():
+    policy = DataPolicy(
+        policy_id="public-no-export",
+        authority_org="partner",
+        sensitivity=DataSensitivity.PUBLIC,
+        default_disclosure=DisclosureMode.FULL,
+        allow_export=False,
+    )
+    decision = DataPolicyEngine().evaluate(
+        policy,
+        DataAccessContext(
+            principal_id="anonymous",
+            authenticated=False,
+            requests_export=True,
+        ),
+    )
+    assert decision.allowed is False
+    assert decision.reason_codes == ("EXPORT_PROHIBITED",)
+
+
+def test_public_view_permission_does_not_imply_external_model_permission():
+    policy = DataPolicy(
+        policy_id="public-no-model",
+        authority_org="partner",
+        sensitivity=DataSensitivity.PUBLIC,
+        default_disclosure=DisclosureMode.FULL,
+        allow_model_processing=False,
+    )
+    decision = DataPolicyEngine().evaluate(
+        policy,
+        DataAccessContext(
+            principal_id="anonymous",
+            authenticated=False,
+            requests_model_processing=True,
+            model_provider="some-provider",
+        ),
+    )
+    assert decision.allowed is False
+    assert decision.reason_codes == ("MODEL_PROCESSING_PROHIBITED",)
+
+
 def test_restricted_data_denies_unauthenticated_access():
     policy = DataPolicy(
         policy_id="restricted-1",
