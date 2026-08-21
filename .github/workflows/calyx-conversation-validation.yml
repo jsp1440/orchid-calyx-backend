@@ -80,8 +80,7 @@ jobs:
         run: |
           python - <<'PY'
           from app.calyx_conversation.routes import AnalysisRequest, capabilities, run_analysis
-          result = run_analysis(operation='confidence_interval_mean', values=[1.0, 2.0], confidence=0.95) if False else run_analysis(AnalysisRequest(operation='confidence_interval_mean', values=[1.0, 2.0], confidence=0.95))
-          result = result['result']
+          result = run_analysis(AnalysisRequest(operation='confidence_interval_mean', values=[1.0, 2.0], confidence=0.95))['result']
           assert result['method'] == 'normal-approximation'
           assert result['approximation_only'] is True
           assert result['canonical_scientific_method'] is False
