@@ -28,6 +28,7 @@ is built from statements already present in the packet plus connective language.
 It must never:
   * assert a mechanism, cause or adaptation that no linked evidence states;
   * turn contradicting evidence into support;
+  * turn context-only evidence into biological support;
   * render unavailable evidence as a measured zero or as biological absence;
   * put counts, identifiers, confidence scores or subsystem names into the prose
     (those belong in the inspectable structure, per the conversational
@@ -173,9 +174,8 @@ def _evidence_by_id(packet: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def _claim_groups(packet: dict[str, Any]) -> list[dict[str, Any]]:
     """Group evidence under each question claim, ACROSS source families.
 
-    This is the whole point of the module: iteration is claim-first. A claim
-    supported by a trait record, a habitat record and a paper becomes one
-    integrated statement, not three subsystem announcements.
+    Context-only inputs are retained in a distinct ``informing`` collection so
+    they remain inspectable without becoming support for a biological claim.
     """
 
     reasoning = packet.get("reasoning_graph") or {}
@@ -203,28 +203,49 @@ def _claim_groups(packet: dict[str, Any]) -> list[dict[str, Any]]:
             reverse=True,
         )
         supporting: list[dict[str, Any]] = []
+        informing: list[dict[str, Any]] = []
         contradicting: list[dict[str, Any]] = []
         for edge in edges:
             item = evidence_by_id.get(str(edge.get("evidence_id")))
             if not item:
                 continue
-            if edge.get("relation") == "contradicts":
+            relation = str(edge.get("relation") or "")
+            if relation == "contradicts":
                 contradicting.append(item)
+            elif relation == "informs_context" or item.get("status") == "context_only":
+                informing.append(item)
             else:
                 supporting.append(item)
         coverage = coverage_by_claim.get(claim_id) or {}
+        substantive_items = supporting + contradicting
+        all_items = substantive_items + informing
         groups.append(
             {
                 "claim_id": claim_id,
                 "kind": str(claim.get("kind") or ""),
                 "text": _clean(claim.get("text"), 400),
                 "supporting": supporting,
+                "informing": informing,
                 "contradicting": contradicting,
                 "coverage": str(coverage.get("coverage") or "unresolved"),
                 "source_families": sorted(
                     {
                         str(item.get("source_family"))
-                        for item in supporting + contradicting
+                        for item in all_items
+                        if item.get("source_family")
+                    }
+                ),
+                "substantive_source_families": sorted(
+                    {
+                        str(item.get("source_family"))
+                        for item in substantive_items
+                        if item.get("source_family")
+                    }
+                ),
+                "informing_source_families": sorted(
+                    {
+                        str(item.get("source_family"))
+                        for item in informing
                         if item.get("source_family")
                     }
                 ),
@@ -234,11 +255,7 @@ def _claim_groups(packet: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _integrated_sentence(group: dict[str, Any]) -> str:
-    """One sentence connecting everything linked to a single claim.
-
-    The connective language ("taken together with", "alongside") joins evidence;
-    it never asserts a relationship the evidence does not already state.
-    """
+    """One sentence connecting actual support linked to a single claim."""
 
     statements: list[str] = []
     for item in group["supporting"][:3]:
@@ -268,7 +285,7 @@ def _integrated_sentence(group: dict[str, Any]) -> str:
 
 
 def _crosses_source_families(groups: list[dict[str, Any]]) -> bool:
-    return any(len(group["source_families"]) > 1 for group in groups)
+    return any(len(group["substantive_source_families"]) > 1 for group in groups)
 
 
 def compose_conversational_answer(
@@ -330,7 +347,10 @@ def compose_conversational_answer(
                 "claim": group["text"],
                 "coverage": group["coverage"],
                 "source_families": group["source_families"],
+                "substantive_source_families": group["substantive_source_families"],
+                "informing_source_families": group["informing_source_families"],
                 "supporting_count": len(group["supporting"]),
+                "informing_count": len(group["informing"]),
                 "contradicting_count": len(group["contradicting"]),
             }
             for group in groups
@@ -406,11 +426,11 @@ def compose_conversational_answer(
             )
         )
 
-    # 2. Integration — one pass over CLAIMS, combining source families per claim.
+    # 2. Integration — one pass over CLAIMS, combining substantive source
+    #    families per claim. Context-only inputs stay out of this pass.
     integration: list[str] = []
     seen_evidence: set[frozenset[str]] = set()
     if answerable and not conclusions:
-        # The lead paragraph already spoke for the first answerable claim.
         seen_evidence.add(
             frozenset(str(item.get("evidence_id")) for item in answerable[0]["supporting"][:3])
         )
@@ -456,8 +476,7 @@ def compose_conversational_answer(
 
     if "climate" in cited_families:
         # Climate products are time-sensitive external conditions. They can
-        # frame a question but do not establish orchid physiological responses,
-        # and the composer must not let them pass as biological support.
+        # frame a question but do not establish orchid physiological responses.
         paragraphs.append(
             _sentence(
                 "The climate material in there is time-sensitive external context about "
