@@ -191,15 +191,20 @@ def _claim_evidence_edges(
             if score > 0:
                 ranked.append((score, item))
         for score, item in sorted(ranked, key=lambda pair: pair[0], reverse=True)[:6]:
+            if item.get("status") == "contradicts":
+                relation = "contradicts"
+            elif item.get("status") == "context_only":
+                # Time-sensitive climate and other context may inform how a
+                # question is framed, but it is not evidence that supports the
+                # biological claim itself.
+                relation = "informs_context"
+            else:
+                relation = "supports_or_informs"
             edges.append(
                 {
                     "claim_id": claim["claim_id"],
                     "evidence_id": item["evidence_id"],
-                    "relation": (
-                        "contradicts"
-                        if item.get("status") == "contradicts"
-                        else "supports_or_informs"
-                    ),
+                    "relation": relation,
                     "relevance": round(min(score, 1.0), 3),
                 }
             )
@@ -229,6 +234,7 @@ def _reasoning_graph(
     for claim in claims:
         linked = by_claim.get(claim["claim_id"], [])
         has_support = any(edge["relation"] == "supports_or_informs" for edge in linked)
+        has_context = any(edge["relation"] == "informs_context" for edge in linked)
         has_contradiction = any(edge["relation"] == "contradicts" for edge in linked)
         if has_support and has_contradiction:
             coverage_state = "contested"
@@ -243,9 +249,17 @@ def _reasoning_graph(
                 "claim_id": claim["claim_id"],
                 "evidence_count": len(linked),
                 "supporting_or_informing_count": sum(
+                    edge["relation"] in {"supports_or_informs", "informs_context"}
+                    for edge in linked
+                ),
+                "supporting_count": sum(
                     edge["relation"] == "supports_or_informs" for edge in linked
                 ),
+                "informing_count": sum(
+                    edge["relation"] == "informs_context" for edge in linked
+                ),
                 "contradicting_count": sum(edge["relation"] == "contradicts" for edge in linked),
+                "has_context_only": has_context,
                 "has_contradiction": has_contradiction,
                 "coverage": coverage_state,
             }
@@ -260,6 +274,7 @@ def _reasoning_graph(
         "instructions": [
             "Reason claim-by-claim, not source-by-source.",
             "Use evidence edges to combine different source families around the same biological claim.",
+            "Treat context-only evidence as framing information, never as support for a biological claim.",
             "Treat contradiction as a reason to qualify or reject a claim, never as support for it.",
             "Do not convert correlation into mechanism or adaptation unless the linked evidence supports that step.",
         ],
