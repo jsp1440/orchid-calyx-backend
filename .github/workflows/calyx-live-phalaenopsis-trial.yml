@@ -1,7 +1,9 @@
 name: Calyx Live Phalaenopsis Scientific Trial
 
 on:
-  pull_request:
+  push:
+    branches:
+      - main
     paths:
       - ".github/workflows/calyx-live-phalaenopsis-trial.yml"
 
@@ -27,9 +29,8 @@ jobs:
 
           import json
           import os
-          import sys
           from http.cookiejar import CookieJar
-          from urllib.error import HTTPError, URLError
+          from urllib.error import HTTPError
           from urllib.request import HTTPCookieProcessor, Request, build_opener
 
           base = (os.getenv("CALYX_BACKEND_URL") or "https://orchid-calyx-backend.onrender.com").rstrip("/")
