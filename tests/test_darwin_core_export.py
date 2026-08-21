@@ -11,6 +11,8 @@ from __future__ import annotations
 import os
 import zipfile
 
+import pytest
+
 import darwin_core_export as dwc
 
 
@@ -48,8 +50,18 @@ class _FakeConn:
 
 
 _MERGED_COLUMNS = [
-    "source", "source_id", "scientific_name", "genus", "species", "taxon_rank",
-    "country", "latitude", "longitude", "photographer", "license", "url",
+    "source",
+    "source_id",
+    "scientific_name",
+    "genus",
+    "species",
+    "taxon_rank",
+    "country",
+    "latitude",
+    "longitude",
+    "photographer",
+    "license",
+    "url",
 ]
 
 
@@ -61,29 +73,78 @@ def _install_fake_schema(monkeypatch, *, occurrences=True, images=True):
         if name == "occurrences":
             return ["source", "source_id", "scientific_name", "genus", "species", "taxon_rank"]
         if name == "images":
-            return ["source", "source_id", "scientific_name", "genus", "species",
-                     "country", "latitude", "longitude", "photographer", "license", "url"]
+            return [
+                "source",
+                "source_id",
+                "scientific_name",
+                "genus",
+                "species",
+                "country",
+                "latitude",
+                "longitude",
+                "photographer",
+                "license",
+                "url",
+            ]
         return []
 
     monkeypatch.setattr(dwc, "_table_exists", fake_table_exists)
     monkeypatch.setattr(dwc, "_get_columns", fake_get_columns)
 
 
-def test_to_dwc_record_preserves_per_record_license():
-    row = {
-        "source": "gbif", "source_id": "12345", "scientific_name": "Cattleya labiata",
-        "genus": "Cattleya", "species": "labiata", "taxon_rank": "SPECIES",
-        "country": "Brazil", "latitude": -8.05, "longitude": -34.9,
-        "photographer": "Jane Botanist", "license": "CC_BY_4_0", "url": "https://example.org/img.jpg",
+def _gbif_row():
+    return {
+        "source": "gbif",
+        "source_id": "12345",
+        "scientific_name": "Cattleya labiata",
+        "genus": "Cattleya",
+        "species": "labiata",
+        "taxon_rank": "SPECIES",
+        "country": "Brazil",
+        "latitude": -8.05,
+        "longitude": -34.9,
+        "photographer": "Jane Botanist",
+        "license": "CC_BY_4_0",
+        "url": "https://example.org/img.jpg",
     }
-    record = dwc.to_dwc_record(row, institution_code="FCOS", dataset_name="Test Dataset")
+
+
+def test_to_dwc_record_preserves_license_and_provenance_but_redacts_coordinates_by_default():
+    record = dwc.to_dwc_record(
+        _gbif_row(),
+        institution_code="FCOS",
+        dataset_name="Test Dataset",
+    )
     assert record["occurrenceID"] == "gbif:12345"
     assert record["scientificName"] == "Cattleya labiata"
     assert record["license"] == "CC_BY_4_0"
     assert record["collectionCode"] == "gbif"
     assert record["catalogNumber"] == "12345"
-    assert record["decimalLatitude"] == "-8.05"
+    assert record["decimalLatitude"] == ""
+    assert record["decimalLongitude"] == ""
+    assert record["country"] == "Brazil"
     assert record["basisOfRecord"] == "Occurrence"
+
+
+def test_exact_coordinate_record_requires_flag_and_high_friction_ack(monkeypatch):
+    monkeypatch.delenv("OC_ALLOW_EXACT_DWC_EXPORT", raising=False)
+    with pytest.raises(PermissionError):
+        dwc.to_dwc_record(
+            _gbif_row(),
+            institution_code="FCOS",
+            dataset_name="Test Dataset",
+            include_exact_coordinates=True,
+        )
+
+    monkeypatch.setenv("OC_ALLOW_EXACT_DWC_EXPORT", dwc.EXACT_COORDINATE_EXPORT_ACK)
+    record = dwc.to_dwc_record(
+        _gbif_row(),
+        institution_code="FCOS",
+        dataset_name="Test Dataset",
+        include_exact_coordinates=True,
+    )
+    assert record["decimalLatitude"] == "-8.05"
+    assert record["decimalLongitude"] == "-34.9"
 
 
 def test_to_dwc_record_unknown_license_is_explicit_not_silent():
@@ -96,10 +157,21 @@ def test_to_dwc_record_unknown_license_is_explicit_not_silent():
 def test_fetch_merged_rows_full_outer_joins_by_source_and_source_id(monkeypatch):
     _install_fake_schema(monkeypatch)
     rows = [
-        ("gbif", "1", "Cattleya labiata", "Cattleya", "labiata", "SPECIES",
-         "Brazil", -8.05, -34.9, "", "CC0_1_0", "https://example.org/1.jpg"),
-        (None, None, None, None, None, None,
-         None, None, None, None, None, None),
+        (
+            "gbif",
+            "1",
+            "Cattleya labiata",
+            "Cattleya",
+            "labiata",
+            "SPECIES",
+            "Brazil",
+            -8.05,
+            -34.9,
+            "",
+            "CC0_1_0",
+            "https://example.org/1.jpg",
+        ),
+        (None, None, None, None, None, None, None, None, None, None, None, None),
     ]
     conn = _FakeConn(_MERGED_COLUMNS, rows)
     merged = dwc._fetch_merged_rows(conn, limit=10)
@@ -108,10 +180,13 @@ def test_fetch_merged_rows_full_outer_joins_by_source_and_source_id(monkeypatch)
 
 
 def test_write_occurrence_txt_and_meta_xml_field_order_match(tmp_path):
-    records = [dwc.to_dwc_record(
-        {"source": "gbif", "source_id": "1", "scientific_name": "Cattleya labiata"},
-        institution_code="FCOS", dataset_name="Test Dataset",
-    )]
+    records = [
+        dwc.to_dwc_record(
+            {"source": "gbif", "source_id": "1", "scientific_name": "Cattleya labiata"},
+            institution_code="FCOS",
+            dataset_name="Test Dataset",
+        )
+    ]
     out_file = tmp_path / "occurrence.txt"
     count = dwc.write_occurrence_txt(records, str(out_file))
     assert count == 1
@@ -126,11 +201,23 @@ def test_write_occurrence_txt_and_meta_xml_field_order_match(tmp_path):
         assert f'index="{index + 1}" term="{dwc._term_uri(field)}"' in meta_xml
 
 
-def test_export_to_dwc_archive_produces_valid_zip(tmp_path, monkeypatch):
+def test_export_to_dwc_archive_defaults_to_coordinate_redaction(tmp_path, monkeypatch):
     _install_fake_schema(monkeypatch)
     rows = [
-        ("gbif", "1", "Cattleya labiata", "Cattleya", "labiata", "SPECIES",
-         "Brazil", -8.05, -34.9, "", "CC0_1_0", "https://example.org/1.jpg"),
+        (
+            "gbif",
+            "1",
+            "Cattleya labiata",
+            "Cattleya",
+            "labiata",
+            "SPECIES",
+            "Brazil",
+            -8.05,
+            -34.9,
+            "",
+            "CC0_1_0",
+            "https://example.org/1.jpg",
+        ),
     ]
     conn = _FakeConn(_MERGED_COLUMNS, rows)
     output_dir = str(tmp_path / "dwc_export")
@@ -138,6 +225,7 @@ def test_export_to_dwc_archive_produces_valid_zip(tmp_path, monkeypatch):
     result = dwc.export_to_dwc_archive(output_dir, limit=10, conn=conn)
 
     assert result["record_count"] == 1
+    assert result["exact_coordinates_included"] is False
     assert os.path.exists(result["archive_file"])
     with zipfile.ZipFile(result["archive_file"]) as zf:
         names = set(zf.namelist())
@@ -145,6 +233,55 @@ def test_export_to_dwc_archive_produces_valid_zip(tmp_path, monkeypatch):
         occurrence_body = zf.read("occurrence.txt").decode("utf-8")
         assert "Cattleya labiata" in occurrence_body
         assert "CC0_1_0" in occurrence_body
+        assert "-8.05" not in occurrence_body
+        assert "-34.9" not in occurrence_body
+        eml_body = zf.read("eml.xml").decode("utf-8")
+        assert "Exact decimal coordinates are omitted" in eml_body
+
+
+def test_export_exact_coordinates_requires_explicit_ack(tmp_path, monkeypatch):
+    _install_fake_schema(monkeypatch)
+    rows = [
+        (
+            "gbif",
+            "1",
+            "Cattleya labiata",
+            "Cattleya",
+            "labiata",
+            "SPECIES",
+            "Brazil",
+            -8.05,
+            -34.9,
+            "",
+            "CC0_1_0",
+            "https://example.org/1.jpg",
+        ),
+    ]
+    conn = _FakeConn(_MERGED_COLUMNS, rows)
+
+    monkeypatch.delenv("OC_ALLOW_EXACT_DWC_EXPORT", raising=False)
+    with pytest.raises(PermissionError):
+        dwc.export_to_dwc_archive(
+            str(tmp_path / "blocked"),
+            limit=10,
+            conn=conn,
+            include_exact_coordinates=True,
+        )
+
+    monkeypatch.setenv("OC_ALLOW_EXACT_DWC_EXPORT", dwc.EXACT_COORDINATE_EXPORT_ACK)
+    result = dwc.export_to_dwc_archive(
+        str(tmp_path / "approved"),
+        limit=10,
+        conn=conn,
+        include_exact_coordinates=True,
+    )
+    assert result["exact_coordinates_included"] is True
+    with zipfile.ZipFile(result["archive_file"]) as zf:
+        occurrence_body = zf.read("occurrence.txt").decode("utf-8")
+        assert "-8.05" in occurrence_body
+        assert "-34.9" in occurrence_body
+        eml_body = zf.read("eml.xml").decode("utf-8")
+        assert "Exact decimal coordinates are included" in eml_body
 
 
 def test_export_to_dwc_archive_bounds_limit_default():
