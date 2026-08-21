@@ -37,9 +37,12 @@ jobs:
       INTEGRATION_BRANCH: oc-autonomous-integration
       MAX_ACTIVE_LANES: 5
     steps:
+      # Scheduled, push, issues and pull_request runs all stay pinned to main, so
+      # no unreviewed control-plane code ever runs the scheduler. Only an explicit
+      # workflow_dispatch may exercise a candidate branch's own scheduler.
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'main' }}
           fetch-depth: 0
 
       - name: Ensure orchestration labels and current integration base
@@ -204,6 +207,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Durable priority representation. Priority is resolved once and written
+          # back as an oc-p<n> label so ranking stops depending on issue wording;
+          # an explicit label is authoritative and is never overwritten here.
+          gh issue list --repo "$REPO" --state open --limit 500 \
+            --json number,title,labels,createdAt | jq '{issues: .}' > "$RUNNER_TEMP/oc-portfolio.json"
+          python3 scripts/oc_portfolio_scheduler.py \
+            --input "$RUNNER_TEMP/oc-portfolio.json" --mode priority-labels > "$RUNNER_TEMP/oc-priority-fixes.json"
+          while read -r row; do
+            [[ -n "$row" ]] || continue
+            issue=$(jq -r '.number' <<<"$row")
+            gh issue edit "$issue" --repo "$REPO" --add-label "$(jq -r '.add' <<<"$row")" >/dev/null 2>&1 || true
+            while read -r stale; do
+              [[ -n "$stale" ]] || continue
+              gh issue edit "$issue" --repo "$REPO" --remove-label "$stale" >/dev/null 2>&1 || true
+            done < <(jq -r '.remove[]?' <<<"$row")
+          done < <(jq -c '.[]' "$RUNNER_TEMP/oc-priority-fixes.json")
+
+          # Terminal reconciliation: completed work must not silently carry a
+          # queue lease or a repair authorization back into selection if it is
+          # ever reopened.
+          mapfile -t completed < <(gh issue list --repo "$REPO" --state all --label oc-done --limit 200 --json number --jq '.[].number')
+          for issue in "${completed[@]:-}"; do
+            [[ -n "$issue" ]] || continue
+            labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
+            if [[ "$labels" == *oc-queued* || "$labels" == *oc-repair* ]]; then
+              gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-repair >/dev/null 2>&1 || true
+            fi
+          done
+
           # oc-repair is a positive one-pass authorization and must never become a
           # terminal state by itself. Heal every orphaned repair, not just a fixed
           # historical issue-number list, back to selectable queue state.
@@ -220,8 +252,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          now=$(date -u +%s)
-
           # Capacity is based only on live Claude execution leases. Validation,
           # blocked and owner-gated states do not consume implementation width.
           running_count=$(gh issue list --repo "$REPO" --state open --label oc-running --limit 200 --json number --jq 'length')
@@ -231,56 +261,38 @@ jobs:
             exit 0
           fi
 
-          priority_of () {
-            local title="$1" labels="$2"
-            for p in 0 1 2 3 4 5; do
-              if [[ "$labels" == *"oc-p${p}"* || "$title" =~ ^P${p}([[:space:]:-]|$) ]]; then
-                echo "$p"
-                return
-              fi
-            done
-            # Unclassified queued work remains eligible but follows explicit P0-P5.
-            echo 6
-          }
+          # Ranking, durable-PR suppression, reserved repair capacity, bounded
+          # fairness and P5 idle admission are decided by one deterministic
+          # planner, so the policy is provable by unit test rather than by
+          # grepping bash: tests/test_oc_portfolio_scheduler.py.
+          #
+          # Against the previous inline ranking this fixes four things: an
+          # explicit oc-p<n> label is now authoritative over the title token
+          # (it could previously be outranked by wording); unclassified queued
+          # work now ranks above P5 idle capacity instead of below it; a bounded
+          # repair lane is reserved so a failed exact head is not starved; and
+          # fairness reserves a lane outright rather than granting a single
+          # one-band promotion that a continuous P0/P1 stream can still outrun.
+          issues=$(gh issue list --repo "$REPO" --state open --limit 500 --json number,title,labels,createdAt)
+          prs=$(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body)
+          jq -n --argjson issues "$issues" --argjson prs "$prs" --argjson max "$MAX_ACTIVE_LANES" \
+            '{max_active_lanes: $max, issues: $issues, pull_requests: $prs}' > "$RUNNER_TEMP/oc-plan-input.json"
+          python3 scripts/oc_portfolio_scheduler.py \
+            --input "$RUNNER_TEMP/oc-plan-input.json" --mode plan > "$RUNNER_TEMP/oc-plan.json"
 
-          # Canonical portfolio = every open oc-queued issue. Explicit priority
-          # labels win; title prefixes are a backwards-compatible bridge for the
-          # portfolio issues created before priority labels existed.
-          mapfile -t encoded < <(gh issue list --repo "$REPO" --state open --label oc-queued --limit 500 --json number,title,createdAt,labels --jq '.[] | @base64')
-          candidates=()
-          for item in "${encoded[@]:-}"; do
-            [[ -n "$item" ]] || continue
-            obj=$(base64 --decode <<<"$item")
-            issue=$(jq -r '.number' <<<"$obj")
-            title=$(jq -r '.title // ""' <<<"$obj")
-            created=$(jq -r '.createdAt' <<<"$obj")
-            labels=$(jq -r '[.labels[].name] | join(" ")' <<<"$obj")
-            [[ "$labels" == *oc-running* ]] && continue
-            [[ "$labels" == *oc-validating* ]] && continue
-            [[ "$labels" == *oc-blocked* ]] && continue
-            [[ "$labels" == *oc-owner-gate* ]] && continue
-            [[ "$labels" == *oc-done* ]] && continue
+          # Read-only status surface: active width, queue order with priority and
+          # its source, wait time, and why each selection was made.
+          {
+            jq -r '"active_width=\(.active_lane_count)/\(.max_active_lanes) available=\(.available_capacity) eligible=\(.eligible_count)"' "$RUNNER_TEMP/oc-plan.json"
+            echo '### queue order'
+            jq -r '.ranking[] | "  P\(.priority) #\(.number) [\(.priority_source)] waited=\(.waited_hours)h"' "$RUNNER_TEMP/oc-plan.json"
+            echo '### selected'
+            jq -r '.selected[] | "  #\(.number) P\(.priority) via \(.selection_reason)"' "$RUNNER_TEMP/oc-plan.json"
+            echo '### suppressed'
+            jq -r '.suppressed[] | "  #\(.number) \(.reason)"' "$RUNNER_TEMP/oc-plan.json"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-            base=$(priority_of "$title" "$labels")
-            epoch=$(date -u -d "$created" +%s 2>/dev/null || echo "$now")
-            age=$(( now - epoch ))
-            effective=$base
-            # Bounded starvation protection: after 72h queued, promote by one
-            # priority band, never above P0. This preserves P0/P1 dominance while
-            # ensuring older useful work is not abandoned forever.
-            if (( age >= 259200 && effective > 0 )); then
-              effective=$(( effective - 1 ))
-            fi
-            candidates+=("${effective}|${created}|${issue}")
-          done
-
-          mapfile -t ranked < <(printf '%s\n' "${candidates[@]:-}" | sed '/^$/d' | sort -t'|' -k1,1n -k2,2 -k3,3n)
-          selected=()
-          for row in "${ranked[@]:-}"; do
-            (( ${#selected[@]} >= capacity )) && break
-            issue=${row##*|}
-            selected+=("$issue")
-          done
+          mapfile -t selected < <(jq -r '.selected[].number' "$RUNNER_TEMP/oc-plan.json")
 
           dispatched=()
           for issue in "${selected[@]:-}"; do
