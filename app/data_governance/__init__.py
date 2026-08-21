@@ -5,6 +5,7 @@ fail-closed policy contract that database, graph, search, Calyx, and export
 surfaces must enforce before restricted partner data can be accepted.
 """
 
+from .access import access_context_from_principal
 from .disclosure import DataDisclosureDenied, apply_disclosure
 from .models import (
     DataAccessContext,
@@ -23,5 +24,6 @@ __all__ = [
     "DataPolicyEngine",
     "DataSensitivity",
     "DisclosureMode",
+    "access_context_from_principal",
     "apply_disclosure",
 ]
