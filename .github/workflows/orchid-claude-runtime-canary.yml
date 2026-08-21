@@ -1,6 +1,7 @@
 name: Orchid Claude Runtime Canary
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -24,6 +25,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: "github-actions"
           prompt: |
             ORCHID CONTINUUM AUTOMATION CANARY.
             Read README.md only. Do not edit files, create branches, issues, comments, commits, or pull requests.
@@ -32,15 +34,18 @@ jobs:
             --max-turns 3
             --allowedTools "Read"
 
-      - name: Publish canary result
+      - name: Publish canary result and control runtime circuit
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           OUTCOME: ${{ steps.claude.outcome }}
         run: |
+          set -euo pipefail
           if [[ "$OUTCOME" == "success" ]]; then
-            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID AUTOMATION CANARY — **PASSED**. Claude Code action authenticated and completed with its supported default model. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded >/dev/null 2>&1 || true
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID AUTOMATION CANARY — **PASSED**. Claude Code action authenticated and completed with its supported default model. Runtime circuit closed; the next scheduler pulse may recover parked workers. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           else
-            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID AUTOMATION CANARY — **FAILED**. Claude Code action outcome=${OUTCOME}. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID AUTOMATION CANARY — **FAILED**. Claude Code action outcome=${OUTCOME}. Runtime circuit remains open; ordinary worker dispatch stays paused. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             exit 1
           fi
