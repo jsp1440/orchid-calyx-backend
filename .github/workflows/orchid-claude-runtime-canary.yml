@@ -63,7 +63,20 @@ jobs:
             is_error=$(jq -r '[.. | objects | select(.type == "result")] | last | .is_error' "$log" 2>/dev/null || echo null)
             case "$is_error" in
               false) verdict=pass; detail="Claude executed and returned is_error:false" ;;
-              true)  verdict=fail; detail=$(jq -r '[.. | objects | select(.type == "result")] | last | (.error // .subtype // "is_error:true")' "$log" 2>/dev/null || echo "is_error:true") ;;
+              true)
+                verdict=fail
+                # The message lives in .result for an api_error record; .subtype is
+                # "success" even on failure, so preferring it reported nothing useful.
+                # This detail is what lands on the tracker issue, so it must name the
+                # actual cause - e.g. "api_error 400: Credit balance is too low".
+                detail=$(jq -r '
+                  [.. | objects | select(.type == "result")] | last
+                  | ((.terminal_reason // "error")
+                     + (if .api_error_status then " " + (.api_error_status | tostring) else "" end)
+                     + ": "
+                     + (.result // .error // "is_error:true"))
+                ' "$log" 2>/dev/null || echo "is_error:true")
+                ;;
             esac
           fi
 
