@@ -18,7 +18,7 @@ class DataPolicyEngine:
        its locality, and its images?
 
     Disclosure status is deliberately separate from export and model-processing
-    permission.  A publicly viewable record may still carry a license or partner
+    permission. A publicly viewable record may still carry a license or partner
     rule that prohibits bulk export or use by an external model.
     """
 
@@ -51,9 +51,11 @@ class DataPolicyEngine:
         if context.requests_model_processing:
             if not policy.allow_model_processing:
                 return self._deny(policy, "MODEL_PROCESSING_PROHIBITED")
-            if policy.approved_model_providers:
-                if not context.model_provider or context.model_provider not in policy.approved_model_providers:
-                    return self._deny(policy, "MODEL_PROVIDER_NOT_APPROVED")
+            if policy.approved_model_providers and (
+                not context.model_provider
+                or context.model_provider not in policy.approved_model_providers
+            ):
+                return self._deny(policy, "MODEL_PROVIDER_NOT_APPROVED")
             reasons.append("MODEL_PROCESSING_ALLOWED")
 
         reasons.append("POLICY_REQUIREMENTS_SATISFIED")
