@@ -37,12 +37,15 @@ jobs:
             app/data_governance/__init__.py \
             app/data_governance/access.py \
             app/data_governance/disclosure.py \
+            app/data_governance/model_gate.py \
             app/data_governance/models.py \
+            app/data_governance/output_guard.py \
             app/data_governance/policy.py \
             app/security.py \
             tests/test_partner_data_access_bridge.py \
             tests/test_partner_data_disclosure.py \
             tests/test_partner_data_governance.py \
+            tests/test_partner_data_model_output_guards.py \
             tests/test_security_fail_closed.py
       - name: Ruff security surface
         run: |
@@ -52,6 +55,7 @@ jobs:
             tests/test_partner_data_access_bridge.py \
             tests/test_partner_data_disclosure.py \
             tests/test_partner_data_governance.py \
+            tests/test_partner_data_model_output_guards.py \
             tests/test_security_fail_closed.py
       - name: Focused security regression tests
         run: |
@@ -59,6 +63,7 @@ jobs:
             tests/test_partner_data_access_bridge.py \
             tests/test_partner_data_disclosure.py \
             tests/test_partner_data_governance.py \
+            tests/test_partner_data_model_output_guards.py \
             tests/test_security_fail_closed.py \
             tests/test_mission_control_role_001b_capabilities.py
       - name: Diff hygiene
