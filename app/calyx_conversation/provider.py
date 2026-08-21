@@ -46,19 +46,25 @@ def _scientific_system_prompt() -> str:
 
 
 def _current_question(messages: list[dict[str, str]], governed_context: dict[str, Any]) -> str:
-    # A follow-up turn's literal words ("Why?") decompose into no scientific
-    # claim at all. Claim decomposition therefore runs on the investigation
-    # subject the turn continues, resolved server-side from conversation state.
-    resolved_subject = str(governed_context.get("resolved_subject") or "").strip()
-    if resolved_subject:
-        return resolved_subject
     interaction = governed_context.get("interaction_context") or {}
     preserved = str(interaction.get("current_question") or "").strip()
+    if not preserved:
+        for item in reversed(messages):
+            if item.get("role") == "user" and str(item.get("content") or "").strip():
+                preserved = str(item["content"]).strip()
+                break
+    resolved_subject = str(governed_context.get("resolved_subject") or "").strip()
+    if resolved_subject and preserved and preserved != resolved_subject:
+        # Preserve both pieces of the active investigation. The resolved subject
+        # provides continuity; the current turn carries the operation the user
+        # is asking Calyx to perform (for example "Why?" or "What about
+        # Dendrobium?"). Replacing the current turn with the prior subject would
+        # silently change the question used for claim decomposition.
+        return f"{resolved_subject}\nFollow-up: {preserved}"
     if preserved:
         return preserved
-    for item in reversed(messages):
-        if item.get("role") == "user" and str(item.get("content") or "").strip():
-            return str(item["content"]).strip()
+    if resolved_subject:
+        return resolved_subject
     mission = governed_context.get("mission") or {}
     return str(mission.get("question") or "").strip()
 
