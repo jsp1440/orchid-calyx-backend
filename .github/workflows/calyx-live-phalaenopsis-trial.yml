@@ -6,6 +6,9 @@ on:
       - main
     paths:
       - ".github/workflows/calyx-live-phalaenopsis-trial.yml"
+  pull_request:
+    paths:
+      - ".github/workflows/calyx-live-phalaenopsis-trial.yml"
 
 permissions:
   contents: read
