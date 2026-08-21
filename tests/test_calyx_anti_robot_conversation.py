@@ -21,7 +21,11 @@ from app.calyx_conversation.conversational_synthesis import (
     resolve_subject,
 )
 from app.calyx_conversation.evidence_synthesis import build_synthesis_packet
-from app.calyx_conversation.provider import DeterministicGovernedReplyProvider
+from app.calyx_conversation.provider import (
+    DeterministicGovernedReplyProvider,
+    semantic_provider_context,
+)
+from app.calyx_conversation.store import ConversationStore
 
 QUESTION = (
     "Why would an orchid growing as an epiphyte benefit from velamen, and how do "
@@ -128,31 +132,72 @@ def test_answer_is_not_a_per_subsystem_inventory():
 def test_answer_integrates_evidence_from_more_than_one_source_family():
     composed = compose()
     assert composed.structure["integrated_across_source_families"] is True
-    # At least one claim must carry evidence from more than one subsystem, and
-    # that claim must actually be spoken in the answer rather than tabulated.
     multi = [
         entry
         for entry in composed.structure["claim_coverage"]
-        if len(entry["source_families"]) > 1
+        if len(entry["substantive_source_families"]) > 1
     ]
-    assert multi, "no claim combined evidence across source families"
+    assert multi, "no claim combined substantive evidence across source families"
     assert composed.text.strip()
+
+
+def test_context_only_climate_cannot_support_a_biological_claim():
+    climate_only = {
+        "requested": True,
+        "status": "available",
+        "provider": "NOAA/NWS Climate Prediction Center",
+        "products": [
+            {
+                "product": "Seasonal outlook",
+                "summary_points": [
+                    "Phalaenopsis warmer temperature physiological response"
+                ],
+            }
+        ],
+    }
+    packet = build_synthesis_packet(
+        question="Does warmer temperature establish a Phalaenopsis physiological response?",
+        retrieval={"results": [], "total_eligible_results": 0},
+        continuum={"taxa": [], "resolved_genera": [], "diagnostics": []},
+        climate=climate_only,
+        mission=None,
+        mission_error=None,
+    )
+    climate_edges = [
+        edge
+        for edge in packet["reasoning_graph"]["edges"]
+        if str(edge["evidence_id"]).startswith("climate:")
+    ]
+    assert climate_edges
+    assert {edge["relation"] for edge in climate_edges} == {"informs_context"}
+    assert all(
+        entry["coverage"] != "supported"
+        for entry in packet["reasoning_graph"]["coverage"]
+    )
+
+    composed = compose_conversational_answer(packet=packet)
+    assert all(
+        entry["supporting_count"] == 0
+        for entry in composed.structure["claim_coverage"]
+    )
+    assert any(
+        entry["informing_count"] > 0
+        for entry in composed.structure["claim_coverage"]
+    )
+    lowered = composed.text.lower()
+    assert "can't answer that from evidence yet" in lowered
+    assert "does not establish orchid physiological responses" in lowered
 
 
 def test_answer_leads_with_a_conclusion_not_a_source_listing():
     first_paragraph = compose().text.split("\n\n")[0]
     assert first_paragraph
-    # The opening must not begin by naming a subsystem.
     for prefix in ("Retrieval", "The knowledge graph", "Taxonomy says", "Literature says"):
         assert not first_paragraph.startswith(prefix)
 
 
 def test_serialized_graph_records_never_reach_the_prose():
-    """Knowledge-graph evidence carries json.dumps(record) as its statement.
-
-    Rendering that verbatim would put `{"id": 1, ...}` into a conversational
-    answer -- the exact database-dump register this composer removes.
-    """
+    """Knowledge-graph evidence carries json.dumps(record) as its statement."""
 
     composed = compose_conversational_answer(
         packet=packet_for(
@@ -182,7 +227,6 @@ def test_machinery_stays_out_of_the_prose():
     composed = compose()
     for leak in ("mission-anti-robot", "ep-anti-robot", "0.6", "evidence_id", "source_family"):
         assert leak not in composed.text, f"internal machinery leaked into prose: {leak}"
-    # It remains inspectable, just not in the conversation.
     assert composed.structure["claim_coverage"]
 
 
@@ -206,7 +250,6 @@ def test_unavailable_evidence_is_not_reported_as_zero_or_absence():
     )
     text = composed.text.lower()
     assert "not evidence of absence" in text or "not an indication that the biology" in text
-    # An empty index must never be phrased as a measured zero.
     assert "0 " not in composed.text
     assert "no evidence exists" not in text
 
@@ -225,7 +268,6 @@ def test_provider_failure_degrades_honestly_without_fabricating_intelligence():
     lowered = composed.text.lower()
     assert "couldn't complete" in lowered
     assert "not a finding about the biology" in lowered
-    # Nothing may be presented as established when the evidence run failed.
     assert "the evidence supports" not in lowered
 
 
@@ -278,6 +320,45 @@ class TestConversationalContinuity:
         )
         assert "On why:" not in composed.text
 
+    def test_synthesis_preserves_resolved_subject_and_current_follow_up_operation(self):
+        current = "What about Dendrobium?"
+        semantic = semantic_provider_context(
+            [{"role": "user", "content": current}],
+            {
+                "resolved_subject": "How does Phalaenopsis handle drought?",
+                "interaction_context": {"current_question": current},
+                "retrieval": {"results": [], "total_eligible_results": 0},
+                "continuum": {"taxa": [], "resolved_genera": [], "diagnostics": []},
+                "climate": CLIMATE,
+                "mission": None,
+                "mission_error": None,
+            },
+        )
+        packet = semantic["synthesis_packet"]
+        assert "How does Phalaenopsis handle drought?" in packet["question"]
+        assert "Follow-up: What about Dendrobium?" in packet["question"]
+        assert any(
+            "Dendrobium" in claim["text"]
+            for claim in packet["reasoning_graph"]["claims"]
+        )
+
+
+def test_user_turns_survive_tool_heavy_conversation_history():
+    store = ConversationStore(dsn="")
+    owner = "anti-robot-owner"
+    cid = store.create_or_touch(None, title="history regression", context={}, owner=owner)
+    store.append(cid, "operator", QUESTION, owner=owner)
+    for index in range(20):
+        store.append(cid, "tool", f"tool payload {index}", owner=owner)
+        store.append(cid, "calyx", f"Calyx reply {index}", owner=owner)
+    store.append(cid, "operator", "Why?", owner=owner)
+
+    turns = store.user_turns(cid, turns=2, owner=owner)
+    assert turns == [
+        {"role": "user", "content": QUESTION},
+        {"role": "user", "content": "Why?"},
+    ]
+
 
 def test_user_questions_remain_interaction_context_not_scientific_evidence():
     packet = packet_for()
@@ -300,7 +381,6 @@ def test_deterministic_provider_uses_the_conversational_composer():
     for label in SOURCE_INVENTORY_LABELS:
         assert label not in reply.text
     assert reply.synthesis_structure is not None
-    # Provenance stays inspectable even though it left the prose.
     assert reply.synthesis_structure["governed_provenance"]["evidence_packet_id"] == "ep-anti-robot"
     assert reply.synthesis_structure["degraded_composition"] is True
 
