@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.scientific_interpretation.routes import router as interpretation_router
 from app.scientific_synthesis.claim_verification import verify_claim
 from app.scientific_synthesis.models import (
     ArticleDraft,
@@ -192,3 +193,8 @@ def test_check_calyx_health_advertises_verification_without_private_cot():
     assert status["auditable_scientific_argument"] is True
     assert status["private_chain_of_thought_exposed"] is False
     assert status["publishes_knowledge"] is False
+
+
+def test_check_calyx_route_is_mounted_under_scientific_interpretation():
+    paths = {route.path for route in interpretation_router.routes}
+    assert "/api/scientific-interpretation/synthesis/check-claim" in paths
