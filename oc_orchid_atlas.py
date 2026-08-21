@@ -1,9 +1,5 @@
 import os
 
-import folium
-import pandas as pd
-import psycopg2
-
 _EXACT_ATLAS_ENABLE_VALUE = "YES_I_UNDERSTAND_THIS_EXPORTS_EXACT_ORCHID_LOCATIONS"
 
 
@@ -20,6 +16,13 @@ def require_exact_atlas_generation() -> None:
 
 def main() -> None:
     require_exact_atlas_generation()
+
+    # Legacy visualization dependencies are intentionally imported only after
+    # the exact-locality gate passes. Importing this module for tests or tooling
+    # must never require mapping packages or touch the database.
+    import folium
+    import pandas as pd
+    import psycopg2
 
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
