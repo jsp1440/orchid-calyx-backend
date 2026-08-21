@@ -7,6 +7,7 @@ import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from .claim_verification import CHECK_CALYX_VERSION, verify_claim
 from .discovery import (
     BibliographicVerificationService,
     CrossrefProvider,
@@ -102,6 +103,10 @@ class SynthesisValidationIn(BaseModel):
     article: ArticleDraftIn
 
 
+class ClaimVerificationIn(SynthesisValidationIn):
+    claim_id: str = Field(min_length=1)
+
+
 class DiscoveryIn(BaseModel):
     question: str = Field(min_length=1)
     rows_per_provider: int = Field(default=20, ge=1, le=100)
@@ -123,22 +128,7 @@ def _external_operation(operation):
         ) from exc
 
 
-@router.post("/discovery/search")
-def discover_literature(payload: DiscoveryIn):
-    return _external_operation(
-        lambda: DISCOVERY.discover(
-            payload.question, rows_per_provider=payload.rows_per_provider
-        )
-    )
-
-
-@router.post("/discovery/verify-doi")
-def verify_doi(payload: DoiVerificationIn):
-    return _external_operation(lambda: VERIFICATION.verify_doi(payload.doi))
-
-
-@router.post("/validate")
-def validate_synthesis(payload: SynthesisValidationIn):
+def _domain_payload(payload: SynthesisValidationIn):
     bibliography = tuple(
         BibliographicRecord(
             source_id=value.source_id,
@@ -199,6 +189,26 @@ def validate_synthesis(payload: SynthesisValidationIn):
         format=payload.article.format,
         bibliography_source_ids=tuple(payload.article.bibliography_source_ids),
     )
+    return bibliography, evidence_rows, claims, article
+
+
+@router.post("/discovery/search")
+def discover_literature(payload: DiscoveryIn):
+    return _external_operation(
+        lambda: DISCOVERY.discover(
+            payload.question, rows_per_provider=payload.rows_per_provider
+        )
+    )
+
+
+@router.post("/discovery/verify-doi")
+def verify_doi(payload: DoiVerificationIn):
+    return _external_operation(lambda: VERIFICATION.verify_doi(payload.doi))
+
+
+@router.post("/validate")
+def validate_synthesis(payload: SynthesisValidationIn):
+    bibliography, evidence_rows, claims, article = _domain_payload(payload)
     return SERVICE.validate(
         bibliography=bibliography,
         evidence_rows=evidence_rows,
@@ -207,17 +217,50 @@ def validate_synthesis(payload: SynthesisValidationIn):
     )
 
 
+@router.post("/check-claim")
+def check_calyx_claim(payload: ClaimVerificationIn):
+    """Deterministically audit one Calyx scientific claim.
+
+    The response is the Verification Workbench dossier: source verification,
+    exact source anchors, supporting and conflicting evidence, an externally
+    auditable scientific argument, reproducibility metadata, and a bounded
+    verdict. It never exposes or relies on private model chain-of-thought.
+    """
+
+    bibliography, evidence_rows, claims, article = _domain_payload(payload)
+    manifest = SERVICE.validate(
+        bibliography=bibliography,
+        evidence_rows=evidence_rows,
+        claims=claims,
+        article=article,
+    )
+    try:
+        return verify_claim(
+            claim_id=payload.claim_id,
+            bibliography=bibliography,
+            evidence_rows=evidence_rows,
+            claims=claims,
+            validation_manifest=manifest,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+
+
 @router.get("/health")
 def health():
     return {
         "status": "ok",
         "validator_version": "CALYX-SYN-001",
         "discovery_version": "CALYX-SYN-003",
+        "verification_version": CHECK_CALYX_VERSION,
         "generates_prose": False,
         "requires_claim_grounding": True,
         "requires_verified_article_sources": True,
         "literature_discovery": True,
         "search_results_are_evidence": False,
         "authoritative_doi_verification": True,
+        "check_calyx": True,
+        "auditable_scientific_argument": True,
+        "private_chain_of_thought_exposed": False,
         "publishes_knowledge": False,
     }
