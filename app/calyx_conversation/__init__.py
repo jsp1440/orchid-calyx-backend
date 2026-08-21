@@ -1,8 +1,8 @@
 """Conversational analysis surface for Calyx.
 
 This package also carries one bounded compatibility guard for the live
-external-literature coverage gate.  Retrieval volume is not scientific
-evidence: a non-empty list of unverified search hits must not suppress targeted
+external-literature coverage gate. Retrieval volume is not scientific evidence:
+a non-empty list of unverified search hits must not suppress targeted
 review-bound literature discovery.
 """
 
@@ -38,9 +38,12 @@ def _has_usable_local_evidence(records: list[dict[str, Any]]) -> bool:
             return True
 
         canonical_parent = record.get("canonical_parent")
-        if isinstance(canonical_parent, dict):
-            if canonical_parent.get("available") is True and canonical_parent.get("id"):
-                return True
+        if (
+            isinstance(canonical_parent, dict)
+            and canonical_parent.get("available") is True
+            and canonical_parent.get("id")
+        ):
+            return True
 
         verification_state = str(record.get("verification_state") or "").upper().strip()
         if verification_state in accepted_verification_states:
