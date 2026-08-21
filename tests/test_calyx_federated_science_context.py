@@ -63,7 +63,10 @@ def test_external_literature_is_not_called_when_local_coverage_exists(monkeypatc
 
     monkeypatch.setattr(external_literature.requests, "get", _unexpected)
     result = external_literature.augment_retrieval_with_external_literature(
-        {"results": [{"title": "Indexed"}], "total_eligible_results": 1},
+        {
+            "results": [{"title": "Indexed", "canonical_evidence": True}],
+            "total_eligible_results": 1,
+        },
         "Sarcochilus cold flowering",
     )
     assert result["external_literature"]["status"] == "not_needed_local_coverage_available"
