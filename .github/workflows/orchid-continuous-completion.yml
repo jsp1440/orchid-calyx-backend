@@ -34,7 +34,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       INTEGRATION_BRANCH: oc-autonomous-integration
-      MAX_ACTIVE_LANES: 5
+      MAX_ACTIVE_LANES: 3
       RUNTIME_TRACKER_ISSUE: 1031
     steps:
       - uses: actions/checkout@v4

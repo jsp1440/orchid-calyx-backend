@@ -58,8 +58,8 @@ def test_scheduler_uses_canonical_priority_aware_portfolio(scheduler_text):
     assert "sort -t'|' -k1,1n -k2,2 -k3,3n" in scheduler_text
 
 
-def test_scheduler_caps_active_execution_width_at_five(scheduler_text):
-    assert "MAX_ACTIVE_LANES: 5" in scheduler_text
+def test_scheduler_caps_active_execution_width_at_three(scheduler_text):
+    assert "MAX_ACTIVE_LANES: 3" in scheduler_text
     assert "capacity=$(( MAX_ACTIVE_LANES - running_count ))" in scheduler_text
     assert "All ${MAX_ACTIVE_LANES} implementation lanes are occupied." in scheduler_text
 
