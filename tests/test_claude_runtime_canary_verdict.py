@@ -79,6 +79,21 @@ def run_verdict(script: str, tmp_path: Path, outcome: str, record: object | None
 RESULT_OK = [{"type": "system", "subtype": "init"}, {"type": "result", "subtype": "success", "is_error": False}]
 RESULT_ERR = [{"type": "system", "subtype": "init"}, {"type": "result", "subtype": "success", "is_error": True}]
 
+#: The real shape observed on main in run 32495592057. Note subtype is "success"
+#: even though the run failed, and the human-readable cause is in .result.
+RESULT_API_ERROR = [
+    {"type": "system", "subtype": "init"},
+    {
+        "type": "result",
+        "subtype": "success",
+        "is_error": True,
+        "terminal_reason": "api_error",
+        "api_error_status": 400,
+        "result": "Credit balance is too low",
+        "total_cost_usd": 0,
+    },
+]
+
 
 def test_a_real_clean_execution_closes_the_circuit(publish_script, tmp_path):
     proc, calls = run_verdict(publish_script, tmp_path, "success", RESULT_OK)
@@ -119,6 +134,21 @@ def test_is_error_true_fails_even_when_the_step_reports_success(publish_script, 
     assert proc.returncode == 1
     assert "verdict: fail" in proc.stdout
     assert "--add-label oc-runtime-degraded" in calls
+
+
+def test_failure_detail_names_the_actual_api_error(publish_script, tmp_path):
+    """The detail is what lands on the tracker issue, so it must be diagnostic.
+
+    Preferring .subtype reported the literal string "success" on a failed run,
+    because an api_error record carries subtype "success" with is_error true and
+    the real message in .result.
+    """
+    proc, calls = run_verdict(publish_script, tmp_path, "failure", RESULT_API_ERROR)
+    assert proc.returncode == 1
+    assert "verdict: fail" in proc.stdout
+    assert "api_error 400: Credit balance is too low" in proc.stdout
+    assert "api_error 400: Credit balance is too low" in calls
+    assert "; success" not in calls
 
 
 def test_malformed_record_is_indeterminate_not_a_pass(publish_script, tmp_path):
