@@ -51,17 +51,45 @@ def test_priority_comes_from_the_canonical_leading_title_token():
     assert sched.resolve_priority({"title": "[P2] federation expansion", "labels": []}) == (2, "title")
 
 
-def test_unlabelled_untitled_work_defaults_to_p3_and_never_mines_body_text():
+def test_unclassified_work_is_not_mined_from_body_text():
     resolved = sched.resolve_priority(
         {"title": "ORCHESTRATION-EVENT-DRIVEN-001 — trigger follow-through", "labels": []}
     )
     assert resolved == (sched.DEFAULT_PRIORITY, "default")
 
 
+def test_unclassified_work_outranks_p5_idle_but_yields_to_every_explicit_band():
+    result = plan(
+        [
+            issue(60, title="P5 IDLE-CAPACITY — background", created="2026-08-01T00:00:00Z"),
+            issue(61, title="ORCHESTRATION-EVENT-DRIVEN-001 — unclassified", created="2026-08-02T00:00:00Z"),
+            issue(62, title="P4 explicit operational", created="2026-08-03T00:00:00Z"),
+        ],
+        max_active_lanes=1,
+    )
+    assert [row["number"] for row in result["ranking"]] == [62, 61, 60]
+    assert result["selected_numbers"] == [62]
+
+
 def test_explicit_priority_label_outranks_the_title_token():
+    # Both directions: a label must win whether it raises or lowers the title's claim.
     assert sched.resolve_priority(
         {"title": "P5 IDLE-CAPACITY — something", "labels": [{"name": "oc-p1"}]}
     ) == (1, "label")
+    assert sched.resolve_priority(
+        {"title": "P1 looks urgent", "labels": [{"name": "oc-p3"}]}
+    ) == (3, "label")
+
+
+def test_a_title_token_never_promotes_work_over_its_explicit_label():
+    result = plan(
+        [
+            issue(70, title="P1 looks urgent", labels=("oc-queued", "oc-p3")),
+            issue(71, title="P2 genuinely second", labels=("oc-queued", "oc-p2")),
+        ],
+        max_active_lanes=1,
+    )
+    assert result["selected_numbers"] == [71]
 
 
 def test_priority_label_backfill_targets_only_orchestration_issues():

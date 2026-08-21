@@ -17,8 +17,10 @@ Policy summary
 * The canonical execution portfolio is every open issue labelled ``oc-queued``.
 * Priority comes from an explicit ``oc-p0``..``oc-p5`` label. Only when no
   explicit priority exists is it derived from a leading ``P<n>`` title token.
-  Anything else defaults to P3. Issue text is never mined for priority beyond
-  that single stable token.
+  Issue text is never mined for priority beyond that single stable token.
+* Unclassified queued work ranks immediately below every explicit priority band
+  except P5: it sorts after an explicit P4 but ahead of P5 idle capacity, so
+  idle-capacity work can never take a lane while real unclassified work waits.
 * Ordering is priority first, then oldest eligible issue first, then issue
   number. P5 is an idle-capacity band and is admitted only when no higher
   priority eligible work is waiting.
@@ -46,7 +48,7 @@ MAX_ACTIVE_LANES = 5
 REPAIR_RESERVED_LANES = 1
 FAIRNESS_WAIT_HOURS = 24
 FAIRNESS_RESERVED_LANES = 1
-DEFAULT_PRIORITY = 3
+DEFAULT_PRIORITY = 4
 IDLE_PRIORITY = 5
 LOWEST_PRIORITY = 5
 
@@ -168,6 +170,8 @@ def _order_key(candidate: dict) -> tuple:
     return (
         candidate["band"],
         candidate["priority"],
+        # An explicit priority always outranks the same level reached by default.
+        1 if candidate["priority_source"] == "default" else 0,
         candidate["created_at"],
         candidate["number"],
     )
