@@ -132,10 +132,19 @@ async def verify_owner_or_api_key(request: Request, api_key: str = Security(api_
 
 
 def require_admin(x_orchid_admin_key: Optional[str] = Header(default=None, alias="X-Orchid-Admin-Key")) -> None:
+    """Legacy admin-key dependency; deny when the server is not configured.
+
+    Historical behavior allowed requests through when ORCHID_JUDGE_ADMIN_KEY was
+    absent.  Partner-data hardening requires authentication helpers to fail closed
+    instead of turning missing configuration into implicit authorization.
+    """
+
     admin_key = os.getenv("ORCHID_JUDGE_ADMIN_KEY")
     if not admin_key:
-        return None
-    if x_orchid_admin_key != admin_key:
+        raise HTTPException(status_code=503, detail="Admin authentication is not configured")
+    if not x_orchid_admin_key or not hmac.compare_digest(
+        x_orchid_admin_key.encode("utf-8"), admin_key.encode("utf-8")
+    ):
         raise HTTPException(status_code=401, detail="Invalid admin key.")
 
 
