@@ -10,6 +10,9 @@ yaml = pytest.importorskip("yaml")
 
 SCHEDULER = Path(".github/workflows/orchid-continuous-completion.yml")
 LANE = Path(".github/workflows/orchid-completion-lane.yml")
+PLANNER = Path("scripts/oc_portfolio_scheduler.py")
+HEAL_STEP = "name: Heal portfolio queue invariants"
+DISPATCH_STEP = "name: Dispatch priority-aware portfolio workers"
 CANARY = Path(".github/workflows/orchid-claude-runtime-canary.yml")
 
 
@@ -52,10 +55,99 @@ def test_scheduler_never_runs_claude_inline(scheduler_text):
 def test_scheduler_uses_canonical_priority_aware_portfolio(scheduler_text):
     assert "name: Dispatch priority-aware portfolio workers" in scheduler_text
     assert "BACKLOG=(" not in scheduler_text
-    assert "--label oc-queued" in scheduler_text
     assert "oc-p0" in scheduler_text and "oc-p5" in scheduler_text
-    assert "for p in 0 1 2 3 4 5; do" in scheduler_text
-    assert "sort -t'|' -k1,1n -k2,2 -k3,3n" in scheduler_text
+    # Ranking moved from inline bash into a deterministic planner whose policy is
+    # proven behaviourally in tests/test_oc_portfolio_scheduler.py.
+    dispatch = scheduler_text[scheduler_text.index(DISPATCH_STEP) :]
+    assert 'python3 "$PLANNER"' in dispatch
+    assert "--mode plan" in dispatch
+    assert "jq -r '.selected[].number'" in dispatch
+    assert "PLANNER: scripts/oc_portfolio_scheduler.py" in scheduler_text
+    assert PLANNER.exists()
+
+
+def test_planner_is_the_single_source_of_selection_policy(scheduler_text):
+    dispatch = scheduler_text[scheduler_text.index(DISPATCH_STEP) :]
+    # No second, divergent ranking implementation may live in the workflow.
+    assert "priority_of ()" not in dispatch
+    assert "sort -t'|'" not in dispatch
+
+
+def test_planner_excludes_runtime_backed_off_work_from_ranking(scheduler_text):
+    # The workflow re-read also skips it, but a planner that ranked parked work
+    # would silently waste a lane on an issue the dispatch loop then refuses.
+    source = PLANNER.read_text()
+    assert 'RUNTIME_BACKOFF = "oc-runtime-backoff"' in source
+    assert "NON_EXECUTABLE_LABELS = (BLOCKED, OWNER_GATE, DONE, RUNTIME_BACKOFF)" in source
+
+
+def test_scheduler_publishes_a_read_only_status_surface(scheduler_text):
+    dispatch = scheduler_text[scheduler_text.index(DISPATCH_STEP) :]
+    assert "$GITHUB_STEP_SUMMARY" in dispatch
+    for field in ("active_lane_count", "available_capacity", "eligible_count",
+                  ".ranking[]", ".selected[]", ".suppressed[]", "priority_source",
+                  "waited_hours", "selection_reason"):
+        assert field in dispatch
+
+
+def test_a_missing_planner_fails_closed_instead_of_dispatching_blind(scheduler_text):
+    dispatch = scheduler_text[scheduler_text.index(DISPATCH_STEP) :]
+    guard = dispatch.index('if [[ ! -f "$PLANNER" ]]; then')
+    assert guard < dispatch.index("gh workflow run orchid-completion-lane.yml")
+    assert "no worker dispatched this cycle" in dispatch
+    heal = scheduler_text[scheduler_text.index(HEAL_STEP) : scheduler_text.index("name: Manage Claude runtime circuit")]
+    assert 'if [[ -f "$PLANNER" ]]; then' in heal
+    assert "leaving priority labels untouched" in heal
+
+
+def test_durable_priority_labels_are_provisioned_and_backfilled(scheduler_text):
+    for level in range(6):
+        assert f"ensure_label oc-p{level} " in scheduler_text
+    heal = scheduler_text[scheduler_text.index(HEAL_STEP) : scheduler_text.index("name: Manage Claude runtime circuit")]
+    assert "--mode priority-labels" in heal
+    assert "an explicit label is authoritative" in heal
+
+
+def test_completed_work_cannot_carry_a_queue_lease_or_repair_authorization(scheduler_text):
+    heal = scheduler_text[scheduler_text.index(HEAL_STEP) : scheduler_text.index("name: Manage Claude runtime circuit")]
+    assert "--label oc-done --label oc-queued" in heal
+    assert "--remove-label oc-queued --remove-label oc-repair" in heal
+
+
+def test_queue_healing_does_not_spend_a_request_per_issue(scheduler_text):
+    # This runs every five minutes against a repository with hundreds of open
+    # issues; per-issue lookups made the heal step outlast its own schedule.
+    heal = scheduler_text[scheduler_text.index(HEAL_STEP) : scheduler_text.index("name: Manage Claude runtime circuit")]
+    assert "gh issue view" not in heal
+    assert "--json number,labels" in heal
+
+
+def test_integration_base_maintenance_restores_the_control_plane_checkout(scheduler_text):
+    # Maintaining the integration base switches branches; without restoring the
+    # checkout every later step reads that branch's tree instead of the
+    # control-plane code this workflow file belongs to.
+    step = scheduler_text[
+        scheduler_text.index("name: Ensure orchestration labels and current integration base")
+        : scheduler_text.index("name: Reclaim abandoned lanes")
+    ]
+    assert "control_plane=$(git rev-parse HEAD)" in step
+    assert 'git checkout --force --detach "$control_plane"' in step
+    assert step.index("control_plane=$(git rev-parse HEAD)") < step.index('git checkout -B "$INTEGRATION_BRANCH"')
+    assert step.rindex('git checkout --force --detach "$control_plane"') > step.rindex("git merge --abort")
+
+
+def test_checkout_matches_the_ref_the_workflow_file_came_from(scheduler_text):
+    assert (
+        "ref: ${{ (github.event_name == 'workflow_dispatch' || "
+        "github.event_name == 'pull_request') && github.sha || 'main' }}"
+    ) in scheduler_text
+
+
+def test_owner_only_gate_permission_warns_instead_of_reddening_the_control_plane(scheduler_text):
+    gate = scheduler_text[scheduler_text.index("name: Maintain integration-to-main owner gate") :]
+    assert "if ! gh pr create" in gate
+    assert "::warning::Could not open the integration->main gate PR" in gate
+    assert "main remains owner-gated either way" in gate
 
 
 def test_scheduler_caps_active_execution_width_at_three(scheduler_text):
@@ -64,9 +156,14 @@ def test_scheduler_caps_active_execution_width_at_three(scheduler_text):
     assert "All ${MAX_ACTIVE_LANES} implementation lanes are occupied." in scheduler_text
 
 
-def test_scheduler_has_bounded_starvation_protection(scheduler_text):
-    assert "age >= 259200" in scheduler_text
-    assert "effective=$(( effective - 1 ))" in scheduler_text
+def test_scheduler_has_bounded_starvation_protection():
+    # A single one-band promotion can still be outrun by a continuous P0/P1
+    # stream, so fairness now reserves a lane outright. Bounded to one lane per
+    # cycle, and never ahead of fresh higher-priority work for the other lanes.
+    source = PLANNER.read_text()
+    assert "FAIRNESS_RESERVED_LANES = 1" in source
+    assert "FAIRNESS_WAIT_HOURS" in source
+    assert "REPAIR_RESERVED_LANES = 1" in source
 
 
 def test_completion_lane_is_serialized_per_issue(lane_text):
