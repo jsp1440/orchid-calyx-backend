@@ -3,14 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from .models import (
-    BibliographicRecord,
-    ClaimKind,
-    EvidenceClass,
-    EvidenceMatrixRow,
-    SynthesisClaim,
-    VerificationState,
-)
+from .models import BibliographicRecord, ClaimKind, EvidenceMatrixRow, SynthesisClaim
 from .service import PRIMARY_EXPERIMENTAL_CLASSES, VERIFIED_STATES, fingerprint
 
 CHECK_CALYX_VERSION = "CALYX-VERIFY-001"
