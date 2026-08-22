@@ -14,7 +14,12 @@ are not "complete". This module is the single place that:
   remediation;
 - persists the queued remediation into ``oc_admin.calyx_tasks`` idempotently,
   keyed on the deterministic dedupe key, so repeat audit runs converge on the
-  same durable task instead of accumulating duplicates.
+  same durable task instead of accumulating duplicates;
+- reconciles a re-audit against the durable task that claimed to fix the
+  finding: a finding still observed after its remediation task completed is
+  reopened with the failed-verification evidence instead of being reported
+  ``verified_resolved``;
+- orders the owner-facing summary by what the owner actually has to act on.
 
 High-risk task types are routed through the existing
 ``DefaultTaskExecutor.risky_action`` owner-gate in
@@ -27,7 +32,7 @@ there until the existing approval path is used.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
 from runtime.autonomous_orchestrator import DefaultTaskExecutor
@@ -70,6 +75,25 @@ RESOLVED_DISPOSITIONS = frozenset(
 )
 
 DEFAULT_TASK_TYPE = "audit_followthrough_remediation"
+
+# Why a durable task was revived under its existing dedupe key. ``VERIFICATION_FAILED``
+# means the re-audit still observes the condition the completed task claimed to
+# fix; ``VERIFICATION_UNPROVEN`` means the task finished without a passing
+# evaluation, so its resolution was never demonstrated. Neither is
+# ``verified_resolved``.
+VERIFICATION_FAILED = "verification_failed"
+VERIFICATION_UNPROVEN = "verification_unproven"
+
+# Owner-facing bucket order for audit output: what was fixed automatically,
+# what is being fixed now, what genuinely needs the owner, and what is blocked
+# externally or by missing science. Narrative belongs after all four.
+OWNER_FACING_BUCKETS = (
+    "fixed_automatically",
+    "being_fixed_now",
+    "owner_action_required",
+    "blocked_or_data_gap",
+    "no_action_needed",
+)
 
 # Statuses the orchestrator's own CHECK constraint allows on
 # ``oc_admin.calyx_tasks``. Follow-through only ever writes the two entry
@@ -133,6 +157,18 @@ class ActionableFinding:
     non_actionable_reason: Optional[str] = None
     task_type: str = DEFAULT_TASK_TYPE
     priority: int = 50
+    # Whether *this* audit run still observes the condition. Findings are
+    # normally only emitted when observed, so the default is True; a re-audit
+    # that re-checks a previously reported finding and no longer sees it passes
+    # ``still_observed=False``. This is the difference between "the fix worked"
+    # and "the fix is claimed to have worked" -- see :func:`plan_remediation`.
+    still_observed: bool = True
+    # Caller-supplied provenance only: run/commit/PR/task identifiers and
+    # timestamps as observed by the audit. Never synthesized here, because a
+    # fabricated timestamp or run id is indistinguishable from a real one once
+    # it is written to the durable task.
+    observed_at: Optional[str] = None
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.actionable and self.non_actionable_reason is not None:
@@ -171,8 +207,12 @@ class FindingRemediation:
         return self.task_key or (self.task or {}).get("task_key")
 
 
-def _task_payload(finding: ActionableFinding) -> dict[str, Any]:
-    return {
+def _task_payload(
+    finding: ActionableFinding,
+    *,
+    verification: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    payload = {
         "audit_id": finding.audit_id,
         "audit_source": finding.audit_source,
         "finding_key": finding.finding_key,
@@ -182,14 +222,54 @@ def _task_payload(finding: ActionableFinding) -> dict[str, Any]:
         "automatic_deploy": False,
         "automatic_publication": False,
     }
+    # Optional provenance is copied through verbatim and only when the audit
+    # actually supplied it: an absent run id stays absent rather than becoming
+    # an invented one.
+    if finding.observed_at:
+        payload["observed_at"] = finding.observed_at
+    if finding.provenance:
+        payload["provenance"] = dict(finding.provenance)
+    if verification:
+        payload["verification"] = verification
+    return payload
+
+
+def verification_failure(finding: ActionableFinding, existing: dict[str, Any]) -> dict[str, Any]:
+    """Evidence block for a finding that outlived the task meant to fix it.
+
+    ``reason`` distinguishes the two ways a completed task can fail to account
+    for a finding: the condition is still observed (:data:`VERIFICATION_FAILED`),
+    or the task finished without ever passing evaluation
+    (:data:`VERIFICATION_UNPROVEN`). Only durable, observed facts go in here --
+    the prior row's own identifiers and this audit's identity.
+    """
+
+    return {
+        "reason": VERIFICATION_FAILED if finding.still_observed else VERIFICATION_UNPROVEN,
+        "outcome": "failed",
+        "prior_task_id": existing.get("id"),
+        "prior_task_key": existing.get("task_key"),
+        "prior_status": existing.get("status"),
+        "prior_evaluation_result": existing.get("evaluation_result"),
+        "still_observed": bool(finding.still_observed),
+        "recurred_in_audit_id": finding.audit_id,
+        "recurred_at": finding.observed_at,
+    }
 
 
 def build_remediation(
     finding: ActionableFinding,
     *,
     executor: Optional[DefaultTaskExecutor] = None,
+    verification: Optional[dict[str, Any]] = None,
 ) -> FindingRemediation:
-    """Classify a single finding with no knowledge of any prior task state."""
+    """Classify a single finding with no knowledge of any prior task state.
+
+    ``verification`` is the failed-verification evidence produced by
+    :func:`verification_failure` when this remediation is reopening a task that
+    already claimed to fix the finding. It is carried in the task payload and
+    marks the task as revivable from ``completed`` in the durable store.
+    """
 
     if not finding.actionable:
         disposition = finding.non_actionable_reason or "no_action_needed"
@@ -201,7 +281,7 @@ def build_remediation(
         )
 
     executor = executor or DefaultTaskExecutor()
-    payload = _task_payload(finding)
+    payload = _task_payload(finding, verification=verification)
     risky = executor.risky_action(finding.task_type, payload)
     task = {
         "task_key": task_key_for_finding(finding.audit_source, finding.finding_key),
@@ -212,12 +292,21 @@ def build_remediation(
         "status": "needs_review" if risky else "pending",
         "payload": payload,
     }
+    if verification:
+        task["reopen_reason"] = verification["reason"]
     disposition = "owner_approval_required" if risky else "auto_remediation_queued"
     rationale = (
         f"task type routes through the existing owner-gate ({risky})"
         if risky
         else "safe/reversible finding queued for autonomous remediation"
     )
+    if verification:
+        rationale = (
+            f"reopened under the same dedupe key: {verification['reason']} "
+            f"(prior task {verification.get('prior_task_id')} "
+            f"{verification.get('prior_status')}/"
+            f"{verification.get('prior_evaluation_result')}); {rationale}"
+        )
     return FindingRemediation(
         finding_key=finding.finding_key,
         disposition=disposition,
@@ -241,9 +330,23 @@ def plan_remediation(
     pending/needs_review/running is reported as ``in_progress`` (or
     ``owner_approval_required`` if it is still waiting on the owner gate)
     instead of creating a second, duplicate task. A finding whose prior task
-    completed and passed evaluation is reported ``verified_resolved``. A
-    finding whose prior task failed or was blocked is requeued under the same
-    dedupe key rather than left unresolved.
+    failed or was blocked is requeued under the same dedupe key rather than
+    left unresolved.
+
+    A *completed* prior task is reconciled against what this audit run actually
+    observes, which is the re-audit half of follow-through:
+
+    - the finding is no longer observed and the task passed evaluation ->
+      ``verified_resolved``;
+    - the finding is still observed -> the fix did not work, so the task is
+      reopened under the same dedupe key carrying the failed-verification
+      evidence;
+    - the finding is no longer observed but the task never passed evaluation ->
+      reopened as ``verification_unproven``, because "it stopped showing up"
+      is not the same as "it was demonstrably fixed".
+
+    Reporting ``verified_resolved`` for a finding this audit still sees would
+    be exactly the narrative-only completion #1025 exists to prevent.
     """
 
     executor = executor or DefaultTaskExecutor()
@@ -273,20 +376,44 @@ def plan_remediation(
 
         existing = existing_tasks_by_key.get(key)
         if existing is None:
+            if not finding.still_observed:
+                # Re-checked, no longer observed, and no remediation task ever
+                # existed: there is nothing to remediate and nothing to verify.
+                plans.append(
+                    FindingRemediation(
+                        finding_key=finding.finding_key,
+                        disposition="no_action_needed",
+                        task=None,
+                        rationale="not observed in this audit run and no prior remediation task exists",
+                    )
+                )
+                continue
             plans.append(build_remediation(finding, executor=executor))
             continue
 
         status = str(existing.get("status", "")).lower()
-        if status == "completed" and existing.get("evaluation_result") == "pass":
-            plans.append(
-                FindingRemediation(
-                    finding_key=finding.finding_key,
-                    disposition="verified_resolved",
-                    task=None,
-                    rationale=f"existing task {key} completed and verified",
-                    task_key=key,
+        if status == "completed":
+            if not finding.still_observed and existing.get("evaluation_result") == "pass":
+                plans.append(
+                    FindingRemediation(
+                        finding_key=finding.finding_key,
+                        disposition="verified_resolved",
+                        task=None,
+                        rationale=(
+                            f"existing task {key} completed, passed evaluation, and the "
+                            "condition is no longer observed"
+                        ),
+                        task_key=key,
+                    )
                 )
-            )
+            else:
+                plans.append(
+                    build_remediation(
+                        finding,
+                        executor=executor,
+                        verification=verification_failure(finding, {**existing, "task_key": key}),
+                    )
+                )
         elif status in {"pending", "running"}:
             plans.append(
                 FindingRemediation(
@@ -394,10 +521,47 @@ def next_actions_created(remediations: Iterable[FindingRemediation]) -> list[dic
             "task_key": remediation.effective_task_key,
             "required_approval": bool((remediation.task or {}).get("required_approval")),
             "task_created": remediation.task is not None,
+            "reopen_reason": (remediation.task or {}).get("reopen_reason"),
             "rationale": remediation.rationale,
         }
         for remediation in remediations
     ]
+
+
+def owner_facing_summary(remediations: Iterable[FindingRemediation]) -> dict[str, Any]:
+    """Audit output ordered by what the owner has to do about it.
+
+    The buckets are deliberately ordered ``fixed_automatically`` ->
+    ``being_fixed_now`` -> ``owner_action_required`` -> ``blocked_or_data_gap``
+    so a consumer rendering them in order surfaces the owner's actual decisions
+    ahead of the narrative. ``blocked_or_data_gap`` keeps external blockers and
+    scientific data gaps out of the "fixed" bucket: an unmeasured relationship
+    is not a resolved one.
+    """
+
+    buckets: dict[str, list[dict[str, Any]]] = {name: [] for name in OWNER_FACING_BUCKETS}
+    for remediation in remediations:
+        entry = {
+            "finding_key": remediation.finding_key,
+            "disposition": remediation.disposition,
+            "task_key": remediation.effective_task_key,
+            "rationale": remediation.rationale,
+        }
+        if remediation.disposition == "verified_resolved":
+            buckets["fixed_automatically"].append(entry)
+        elif remediation.disposition in {"auto_remediation_queued", "in_progress"}:
+            buckets["being_fixed_now"].append(entry)
+        elif remediation.disposition == "owner_approval_required":
+            buckets["owner_action_required"].append(entry)
+        elif remediation.disposition in {"external_blocker", "scientific_data_gap"}:
+            buckets["blocked_or_data_gap"].append(entry)
+        else:
+            buckets["no_action_needed"].append(entry)
+    return {
+        "priority_order": list(OWNER_FACING_BUCKETS),
+        "counts": {name: len(entries) for name, entries in buckets.items()},
+        **buckets,
+    }
 
 
 def run_followthrough(
@@ -425,6 +589,7 @@ def run_followthrough(
         "next_actions_created": next_actions_created(remediations),
         "tasks_to_create": tasks,
         "completion_state": audit_completion_state(remediations),
+        "owner_facing_summary": owner_facing_summary(remediations),
     }
 
 
@@ -446,11 +611,17 @@ class OrchestratorFollowthroughStore:
     persistence path.
 
     Writes are bounded and idempotent: every insert is keyed on the
-    deterministic ``task_key`` and uses ``ON CONFLICT (task_key) DO NOTHING``,
-    so re-running the same audit converges on the same row instead of
-    accumulating duplicates. Only ``pending``/``needs_review`` may be written;
-    this store never approves a task, never sets ``approved_at``, and never
-    touches scientific tables.
+    deterministic ``task_key`` and conflicts resolve to a guarded update, so
+    re-running the same audit converges on the same row instead of accumulating
+    duplicates. Only ``pending``/``needs_review`` may be written; this store
+    never approves a task, never sets ``approved_at``, and never touches
+    scientific tables.
+
+    Reviving a row always clears ``approved_at``. The orchestrator's own
+    scheduler treats a non-null ``approved_at`` as a satisfied owner gate
+    (``_select_next_task``), so a revived task that kept a prior approval would
+    execute a *rewritten payload* under an approval the owner gave for the
+    earlier one. Re-gating is the only safe behavior.
     """
 
     def __init__(self, orchestrator: Any) -> None:
@@ -490,15 +661,21 @@ class OrchestratorFollowthroughStore:
         from runtime.autonomous_orchestrator import _json  # local: needs psycopg
 
         payload = task.get("payload") or {}
+        reopen_reason = task.get("reopen_reason")
+        # The DO UPDATE arm is guarded to rows that cannot account for the
+        # finding any more. Normally that is only failed/blocked: a dead row is
+        # revived under the same dedupe key (otherwise the finding is "handled"
+        # by a row that will never run again), while pending/running/
+        # needs_review/completed rows are left exactly as they are. A
+        # reopen -- the finding survived the task that claimed to fix it --
+        # additionally revives a completed row, since leaving it alone would
+        # let a failed verification stand as a resolution.
+        revivable_statuses = ["failed", "blocked"]
+        if reopen_reason:
+            revivable_statuses.append("completed")
         with self.orchestrator.connect() as conn:
             with conn.cursor() as cur:
                 self.orchestrator.ensure_schema(cur)
-                # The DO UPDATE arm is deliberately guarded to dead rows only:
-                # a task that failed or was blocked is revived under the same
-                # dedupe key (otherwise the finding is "handled" by a row that
-                # will never run again), while pending/running/needs_review/
-                # completed rows are left exactly as they are. Nothing here
-                # clears approved_at, so a revived risky task is re-gated.
                 cur.execute(
                     """
                     INSERT INTO oc_admin.calyx_tasks
@@ -512,8 +689,13 @@ class OrchestratorFollowthroughStore:
                         priority = EXCLUDED.priority,
                         required_approval = EXCLUDED.required_approval,
                         last_error = NULL,
+                        approved_at = NULL,
+                        evaluation_result = NULL,
+                        assigned_agent_id = NULL,
+                        started_at = NULL,
+                        finished_at = NULL,
                         updated_at = NOW()
-                    WHERE oc_admin.calyx_tasks.status IN ('failed', 'blocked')
+                    WHERE oc_admin.calyx_tasks.status = ANY(%s)
                     RETURNING *, (xmax = 0) AS was_inserted
                     """,
                     (
@@ -524,6 +706,7 @@ class OrchestratorFollowthroughStore:
                         status,
                         int(task.get("priority", 0)),
                         bool(task.get("required_approval")),
+                        revivable_statuses,
                     ),
                 )
                 row = cur.fetchone()
@@ -538,21 +721,24 @@ class OrchestratorFollowthroughStore:
                     return {
                         "created": False,
                         "requeued": False,
+                        "reopened": False,
                         "task": dict(existing) if existing else None,
                     }
 
                 row = dict(row)
                 created = bool(row.pop("was_inserted", False))
+                if created:
+                    action = "queued" if status == "pending" else "approval_required"
+                elif reopen_reason:
+                    action = f"reopened_after_{reopen_reason}"
+                else:
+                    action = "requeued_after_failure"
                 self.orchestrator.log_observation(
                     cur,
                     task_id=row["id"],
                     agent_id=None,
                     event_type="audit_followthrough",
-                    action=(
-                        ("queued" if status == "pending" else "approval_required")
-                        if created
-                        else "requeued_after_failure"
-                    ),
+                    action=action,
                     status=status,
                     details={
                         "task_key": task_key,
@@ -560,10 +746,17 @@ class OrchestratorFollowthroughStore:
                         "audit_source": payload.get("audit_source"),
                         "finding_key": payload.get("finding_key"),
                         "required_approval": bool(task.get("required_approval")),
+                        "reopen_reason": reopen_reason,
+                        "verification": payload.get("verification"),
                     },
                 )
             conn.commit()
-        return {"created": created, "requeued": not created, "task": row}
+        return {
+            "created": created,
+            "requeued": not created,
+            "reopened": bool(reopen_reason) and not created,
+            "task": row,
+        }
 
 
 def persist_followthrough(
@@ -599,6 +792,7 @@ def persist_followthrough(
 
     created = 0
     requeued = 0
+    reopened = 0
     already_present = 0
     persisted: list[dict[str, Any]] = []
     for remediation in remediations:
@@ -607,10 +801,13 @@ def persist_followthrough(
         outcome = store.insert_task(remediation.task)
         was_created = bool(outcome.get("created"))
         was_requeued = bool(outcome.get("requeued"))
+        reopen_reason = remediation.task.get("reopen_reason")
         if was_created:
             created += 1
         elif was_requeued:
             requeued += 1
+            if reopen_reason:
+                reopened += 1
         else:
             already_present += 1
         persisted.append(
@@ -619,6 +816,8 @@ def persist_followthrough(
                 "task_key": remediation.task["task_key"],
                 "created": was_created,
                 "requeued": was_requeued,
+                "reopened": bool(reopen_reason) and was_requeued,
+                "reopen_reason": reopen_reason,
                 "required_approval": bool(remediation.task.get("required_approval")),
                 "status": str(remediation.task.get("status")),
             }
@@ -627,9 +826,11 @@ def persist_followthrough(
     return {
         "next_actions_created": next_actions_created(remediations),
         "completion_state": audit_completion_state(remediations),
+        "owner_facing_summary": owner_facing_summary(remediations),
         "persisted_tasks": persisted,
         "tasks_created": created,
         "tasks_requeued": requeued,
+        "tasks_reopened": reopened,
         "tasks_already_present": already_present,
         "existing_tasks_examined": len(existing),
     }
