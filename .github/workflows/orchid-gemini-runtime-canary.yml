@@ -1,4 +1,4 @@
-name: Orchid Gemini Runtime Canary
+name: Orchid Provider Recovery Canary
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ jobs:
   canary:
     if: github.event_name != 'issues' || (github.event.issue.number == 1031 && github.event.label.name == 'oc-runtime-degraded')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
       RUNTIME_TRACKER_ISSUE: "1031"
@@ -98,38 +98,116 @@ jobs:
           echo "Gemini edit canary classified result as $kind (exit=$status)."
           exit 1
 
-      - name: Publish normalized result and recover circuit when proven healthy
-        if: always()
+      - name: Execute bounded OpenAI edit canary
+        id: openai
+        if: always() && steps.gemini.outcome != 'success' && (steps.gemini.outputs.kind == 'quota_or_billing_error' || steps.gemini.outputs.kind == 'timeout' || steps.gemini.outputs.kind == 'provider_or_cli_error')
+        continue-on-error: true
         env:
-          KIND: ${{ steps.gemini.outputs.kind }}
-          OUTCOME: ${{ steps.gemini.outcome }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          kind="${KIND:-unknown}"
-          if [[ "$kind" == healthy_edit && "$OUTCOME" == success ]]; then
-            state=PASSED
-          else
-            state=FAILED
-          fi
-          gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
-            --body "ORCHID GEMINI EDIT CANARY — **${state}**. normalized_class=${kind}. Probe is runner-local and deleted; no provider transcript or secret material persisted. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          probe="openai_canary_probe.txt"
+          cleanup() { rm -f "$probe"; }
+          trap cleanup EXIT
 
-          # Only an actual degraded-circuit event may mutate runtime state. PR/push
-          # canaries are health observations; temporary provider quota must not make
-          # the code-change CI itself unmergeable.
+          if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+            echo "kind=config_missing" >> "$GITHUB_OUTPUT"
+            exit 20
+          fi
+
+          codex_home="$RUNNER_TEMP/codex-home"
+          mkdir -p "$codex_home"
+          cat > "$codex_home/config.toml" <<'TOML'
+          sandbox_mode = "workspace-write"
+          approval_policy = "never"
+          web_search = "disabled"
+          allow_login_shell = false
+
+          [sandbox_workspace_write]
+          network_access = false
+
+          [shell_environment_policy]
+          inherit = "core"
+          ignore_default_excludes = false
+          exclude = ["*KEY*", "*SECRET*", "*TOKEN*"]
+          TOML
+
+          set +e
+          env -u GH_TOKEN CODEX_HOME="$codex_home" OPENAI_API_KEY="$OPENAI_API_KEY" \
+            timeout 5m npx -y @openai/codex@latest exec \
+            --sandbox workspace-write \
+            --ask-for-approval never \
+            'ORCHID OPENAI EDIT CANARY. Work only in this repository. Do not use network access, inspect credentials, or modify git metadata. Create exactly one file named openai_canary_probe.txt in the repository root containing exactly ORCHID_OPENAI_EDIT_CANARY_OK followed by a newline. Do not modify any other file. Then finish.' \
+            > "$RUNNER_TEMP/openai-result.log" 2> "$RUNNER_TEMP/openai-stderr.log"
+          status=$?
+          set -e
+
+          if (( status == 0 )) && [[ -f "$probe" ]] && [[ "$(cat "$probe")" == "ORCHID_OPENAI_EDIT_CANARY_OK" ]]; then
+            changed=$(git status --porcelain --untracked-files=all | awk '{print $2}')
+            if [[ "$changed" == "$probe" ]]; then
+              echo "kind=healthy_edit" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "kind=scope_violation" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          combined="$RUNNER_TEMP/openai-diagnostic.txt"
+          cat "$RUNNER_TEMP/openai-stderr.log" "$RUNNER_TEMP/openai-result.log" > "$combined" 2>/dev/null || true
+          if grep -Eqi '401|403|unauthor|forbidden|invalid.?api.?key|api.?key.*invalid|authentication' "$combined"; then
+            kind=authentication_or_permission_error
+          elif grep -Eqi '429|quota|rate.?limit|billing|credit|insufficient_quota' "$combined"; then
+            kind=quota_or_billing_error
+          elif grep -Eqi 'unknown option|unknown argument|invalid option|usage:' "$combined"; then
+            kind=cli_argument_error
+          elif [[ $status -eq 124 ]]; then
+            kind=timeout
+          else
+            kind=provider_or_cli_error
+          fi
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "OpenAI edit canary classified result as $kind (exit=$status)."
+          exit 1
+
+      - name: Publish normalized provider-chain result and recover circuit when proven healthy
+        if: always()
+        env:
+          GEMINI_KIND: ${{ steps.gemini.outputs.kind }}
+          GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
+          OPENAI_KIND: ${{ steps.openai.outputs.kind }}
+          OPENAI_OUTCOME: ${{ steps.openai.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          provider="none"
+          state=FAILED
+          if [[ "${GEMINI_KIND:-}" == healthy_edit && "${GEMINI_OUTCOME:-}" == success ]]; then
+            provider=gemini
+            state=PASSED
+          elif [[ "${OPENAI_KIND:-}" == healthy_edit && "${OPENAI_OUTCOME:-}" == success ]]; then
+            provider=openai
+            state=PASSED
+          fi
+
+          gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
+            --body "ORCHID PROVIDER RECOVERY CANARY — **${state}**. provider=${provider}; gemini=${GEMINI_KIND:-not_run}; openai=${OPENAI_KIND:-not_run}. Probe files are runner-local and deleted; no provider transcript or secret material persisted. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+
+          # PR/push executions are observational CI only. A temporary provider quota
+          # condition must not make the fallback-infrastructure change unmergeable.
+          if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_EVENT_NAME" == push ]]; then
+            exit 0
+          fi
+
           if [[ "$state" == PASSED && "$GITHUB_EVENT_NAME" == issues ]]; then
             gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded >/dev/null 2>&1 || true
             mapfile -t parked < <(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label oc-runtime-backoff --limit 200 --json number --jq '.[].number')
             for issue in "${parked[@]:-}"; do
               [[ -n "$issue" ]] || continue
               gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
-              gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Gemini bounded edit canary passed after degraded runtime state. Global breaker cleared; issue returned to bounded repair without weakening any acceptance or owner gate." >/dev/null 2>&1 || true
+              gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Provider recovery canary passed via ${provider}. Global breaker cleared; issue returned to bounded repair without weakening acceptance or owner gates." >/dev/null 2>&1 || true
             done
-            gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **RECOVERED VIA GEMINI**. Bounded edit canary passed; parked issues returned to repair and ordinary scheduler dispatch may resume." >/dev/null
+            gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **RECOVERED VIA ${provider^^}**. Bounded edit canary passed; parked issues returned to repair and ordinary scheduler dispatch may resume." >/dev/null
           fi
 
-          if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_EVENT_NAME" == push ]]; then
-            exit 0
-          fi
           [[ "$state" == PASSED ]]
