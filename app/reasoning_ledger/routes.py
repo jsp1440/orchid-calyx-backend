@@ -233,9 +233,7 @@ def review_ledger(
 
 
 @project_router.get("/{project_id}/epistemic-memory")
-def get_project_epistemic_memory(
-    project_id: str, request: Request, auth: Auth, db: Db
-):
+def get_project_epistemic_memory(project_id: str, request: Request, auth: Auth, db: Db):
     """Return the project's recallable Calyx reasoning corpus without truth promotion."""
 
     owner = _subject(auth)
