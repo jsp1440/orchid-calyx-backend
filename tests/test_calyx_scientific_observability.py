@@ -39,9 +39,8 @@ def test_circular_self_evidence_requires_review():
 
 def test_span_records_error_type_without_error_message():
     trace = ScientificTrace("calyx.query")
-    with pytest.raises(ValueError, match="sensitive detail"):
-        with trace.span("retrieval"):
-            raise ValueError("sensitive detail")
+    with pytest.raises(ValueError, match="sensitive detail"), trace.span("retrieval"):
+        raise ValueError("sensitive detail")
     result = trace.finish()
     assert result["status"] == "error"
     assert result["spans"][0]["error_type"] == "ValueError"
