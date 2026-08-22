@@ -175,9 +175,10 @@ class AgentSecurityGateway:
             return "RISK_NOT_ALLOWED"
         if not tool.required_scopes.issubset(agent.scopes):
             return "REQUIRED_SCOPE_MISSING"
-        if tool.resource_allowlist:
-            if not invocation.resource or invocation.resource not in tool.resource_allowlist:
-                return "RESOURCE_NOT_ALLOWED"
+        if tool.resource_allowlist and (
+            not invocation.resource or invocation.resource not in tool.resource_allowlist
+        ):
+            return "RESOURCE_NOT_ALLOWED"
         if invocation.untrusted_context and invocation.risk != ActionRisk.READ:
             return "UNTRUSTED_CONTEXT_MUTATION_PROHIBITED"
         if invocation.risk in tool.approval_required_for and not invocation.approved:
@@ -215,7 +216,7 @@ class AgentSecurityGateway:
         )
         fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         decision_id = hashlib.sha256(
-            f"{invocation.request_id}|{fingerprint}".encode("utf-8")
+            f"{invocation.request_id}|{fingerprint}".encode()
         ).hexdigest()[:24]
         return SecurityAuditEvent(
             decision_id=decision_id,
