@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import re
 import secrets
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
 from typing import Any
 
 
