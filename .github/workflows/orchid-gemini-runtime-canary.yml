@@ -1,0 +1,96 @@
+name: Orchid Gemini Runtime Canary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUNTIME_TRACKER_ISSUE: "1031"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Execute bounded Gemini canary
+        id: gemini
+        continue-on-error: true
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+            echo "kind=config_missing" >> "$GITHUB_OUTPUT"
+            exit 20
+          fi
+
+          gemini_home="$RUNNER_TEMP/gemini-home"
+          mkdir -p "$gemini_home/.gemini"
+          cat > "$gemini_home/.gemini/settings.json" <<'JSON'
+          {
+            "tools": {
+              "exclude": ["run_shell_command", "write_file", "replace"]
+            },
+            "telemetry": {
+              "enabled": false
+            }
+          }
+          JSON
+
+          set +e
+          HOME="$gemini_home" env -u GH_TOKEN GEMINI_API_KEY="$GEMINI_API_KEY" GEMINI_CLI_TRUST_WORKSPACE=true \
+            timeout 5m npx -y @google/gemini-cli@latest \
+            --approval-mode auto_edit \
+            --output-format json \
+            -p 'ORCHID GEMINI RUNTIME CANARY. Read README.md only if needed. Do not edit files and do not use shell tools. Reply exactly ORCHID_GEMINI_CANARY_OK.' \
+            > "$RUNNER_TEMP/gemini-result.json" 2> "$RUNNER_TEMP/gemini-stderr.log"
+          status=$?
+          set -e
+
+          if (( status == 0 )) && grep -q 'ORCHID_GEMINI_CANARY_OK' "$RUNNER_TEMP/gemini-result.json"; then
+            echo "kind=healthy" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          combined="$RUNNER_TEMP/gemini-diagnostic.txt"
+          cat "$RUNNER_TEMP/gemini-stderr.log" "$RUNNER_TEMP/gemini-result.json" > "$combined" 2>/dev/null || true
+          if grep -Eqi '401|403|unauthor|forbidden|invalid.?api.?key|api.?key.*invalid|auth' "$combined"; then
+            kind=authentication_or_permission_error
+          elif grep -Eqi '429|quota|rate.?limit|billing|credit|resource.?exhausted' "$combined"; then
+            kind=quota_or_billing_error
+          elif grep -Eqi 'unknown option|unknown argument|invalid option|usage:' "$combined"; then
+            kind=cli_argument_error
+          elif [[ $status -eq 124 ]]; then
+            kind=timeout
+          else
+            kind=provider_or_cli_error
+          fi
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "Gemini canary classified failure as $kind (exit=$status)."
+          exit 1
+
+      - name: Publish normalized result
+        if: always()
+        env:
+          KIND: ${{ steps.gemini.outputs.kind }}
+          OUTCOME: ${{ steps.gemini.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          kind="${KIND:-unknown}"
+          if [[ "$kind" == healthy && "$OUTCOME" == success ]]; then
+            state=PASSED
+          else
+            state=FAILED
+          fi
+          gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
+            --body "ORCHID GEMINI CANARY — **${state}**. normalized_class=${kind}. No provider transcript or secret material persisted. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          [[ "$state" == PASSED ]]
