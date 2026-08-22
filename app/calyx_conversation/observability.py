@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+from typing import Any
 import re
 import secrets
 import time
-from contextlib import contextmanager
-from typing import Any
 
 
 _TRACE_ID = re.compile(r"^[0-9a-f]{32}$")
