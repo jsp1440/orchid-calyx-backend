@@ -11,6 +11,7 @@ from app.security import verify_owner_or_api_key
 
 from .assignment_factory import assignment_payload, governed_assignment_from_claimed_job
 from .dry_run_service import execute_deterministic_dry_run, require_owned_program_job
+from .experience_memory import load_program_experience
 from .program_repository import PersistentProgramRepository, ProgramJobSpec
 from .program_worker import PersistentProgramWorker
 
@@ -242,6 +243,16 @@ def create_program(payload: ProgramRequest, auth: AuthDependency, db: DbDependen
 def get_program(program_id: str, auth: AuthDependency, db: DbDependency) -> dict:
     try:
         return PersistentProgramRepository(db).snapshot(owner=_owner(auth), program_id=program_id)
+    except LookupError as exc:
+        raise _translate_error(exc) from exc
+
+
+@router.get("/{program_id}/experience-memory")
+def get_program_experience_memory(
+    program_id: str, auth: AuthDependency, db: DbDependency
+) -> dict:
+    try:
+        return load_program_experience(db, owner=_owner(auth), program_id=program_id)
     except LookupError as exc:
         raise _translate_error(exc) from exc
 
