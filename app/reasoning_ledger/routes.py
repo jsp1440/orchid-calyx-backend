@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.security import verify_owner_or_api_key
 
+from .epistemic_memory import project_epistemic_memory
 from .models import (
     LedgerEntry,
     LedgerProvenance,
@@ -143,6 +144,19 @@ def get_ledger(ledger_id: str, request: Request, auth: Auth, db: Db):
             lambda: OperationalReasoningLedgerService(db).current(ledger_id, owner),
         )
     )
+
+
+@router.get("/{ledger_id}/epistemic-memory")
+def get_epistemic_memory(ledger_id: str, request: Request, auth: Auth, db: Db):
+    """Return the durable reasoning revision as non-authoritative machine memory."""
+
+    owner = _subject(auth)
+    ledger = _invoke(
+        db,
+        request,
+        lambda: OperationalReasoningLedgerService(db).current(ledger_id, owner),
+    )
+    return project_epistemic_memory(ledger)
 
 
 @router.get("/{ledger_id}/history")
