@@ -3,9 +3,10 @@
 Provides:
 - GET /api/connectors - List all connectors and their status
 - GET /api/connectors/health - Aggregate health check
+- GET /api/connectors/security - Common security manifest for connector surfaces
 - GET /api/connectors/tasks - List supported tasks for all connectors
 - GET /api/connectors/tasks/{connector} - List supported tasks for one connector
-- POST /api/connectors/execute - Execute a task through a connector
+- POST /api/connectors/execute - Execute a task through the common security boundary
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -22,27 +24,27 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/connectors", tags=["Connectors"])
 
-# Global registry instance
 _registry: ConnectorRegistry | None = None
 
 
 def get_registry() -> ConnectorRegistry:
-    """Get or create the global connector registry."""
+    """Get or create the canonical, security-bound connector registry."""
     global _registry
     if _registry is None:
-        _registry = ConnectorRegistry()
+        from app.calyx_orchestrator.orchid_security_boundary import (
+            build_orchid_continuum_security_boundary,
+        )
+
+        _registry = ConnectorRegistry(
+            security=build_orchid_continuum_security_boundary(),
+            security_agent_id="calyx.connector_api",
+        )
         _registry.discover()
     return _registry
 
 
 def parse_kwargs(raw_kwargs: str | None) -> dict[str, Any]:
-    """Parse JSON kwargs from Swagger query string input.
-
-    Swagger sends kwargs as a query parameter string, so `**kwargs` in the
-    route signature never receives nested values. This helper accepts either
-    an empty value, `{}`, or a JSON object string and returns a dictionary that
-    can be passed to connector.execute(..., **kwargs).
-    """
+    """Parse JSON kwargs from Swagger query string input."""
     if raw_kwargs is None or raw_kwargs.strip() == "":
         return {}
 
@@ -70,7 +72,11 @@ def connector_task_payload(name: str) -> dict[str, Any]:
     try:
         health_info = connector.health()
     except Exception as exc:
-        logger.error("Failed to read connector health for task discovery: %s", name, exc_info=True)
+        logger.error(
+            "Failed to read connector health for task discovery: %s",
+            name,
+            exc_info=True,
+        )
         health_info = {"status": "unhealthy", "error": str(exc)}
 
     supported_tasks = health_info.get("supported_tasks") or []
@@ -89,14 +95,6 @@ def connector_task_payload(name: str) -> dict[str, Any]:
 
 @router.get("")
 def list_connectors() -> dict[str, Any]:
-    """List all discovered connectors and their health status.
-
-    Returns:
-        dict with:
-        - 'connectors': List of connector info (name, healthy)
-        - 'total': Total connector count
-        - 'healthy': Healthy connector count
-    """
     registry = get_registry()
     connector_list = []
 
@@ -116,24 +114,31 @@ def list_connectors() -> dict[str, Any]:
     return {
         "connectors": connector_list,
         "total": len(connector_list),
-        "healthy": sum(1 for c in connector_list if c["healthy"]),
+        "healthy": sum(1 for connector in connector_list if connector["healthy"]),
+        "security_boundary": registry.security is not None,
     }
 
 
 @router.get("/health")
 def connector_health() -> dict[str, Any]:
-    """Get aggregate health status for all connectors.
+    return get_registry().health()
 
-    Returns:
-        Detailed health report with per-connector status
-    """
+
+@router.get("/security")
+def connector_security_manifest() -> dict[str, object]:
     registry = get_registry()
-    return registry.health()
+    manifest = registry.security_manifest()
+    if manifest is None:
+        return {
+            "boundary": "disabled",
+            "enabled": False,
+            "servers": [],
+        }
+    return manifest
 
 
 @router.get("/tasks")
 def connector_tasks() -> dict[str, Any]:
-    """List supported tasks for all discovered connectors."""
     registry = get_registry()
     connectors = [connector_task_payload(name) for name in registry.list_connectors()]
     return {
@@ -146,7 +151,6 @@ def connector_tasks() -> dict[str, Any]:
 
 @router.get("/tasks/{connector}")
 def connector_tasks_for(connector: str) -> dict[str, Any]:
-    """List supported tasks for one connector."""
     payload = connector_task_payload(connector)
     return {
         "build": "BUILD-027",
@@ -159,21 +163,17 @@ def connector_tasks_for(connector: str) -> dict[str, Any]:
 def execute_task(
     connector: str = Query(..., description="Connector name"),
     task: str = Query(..., description="Task to execute"),
-    kwargs: str | None = Query(default=None, description="JSON object of task-specific parameters"),
+    kwargs: str | None = Query(
+        default=None,
+        description="JSON object of task-specific parameters",
+    ),
 ) -> dict[str, Any]:
-    """Execute a task through a connector.
+    """Execute a connector task after common-boundary authorization.
 
-    Args:
-        connector: Name of the connector
-        task: Task to execute
-        kwargs: JSON object string of task-specific parameters
-
-    Returns:
-        Execution result with status, result/error, and execution time
-
-    Raises:
-        404: If connector not found
-        400: If task execution fails or kwargs is invalid
+    HTTP-originated task context is always marked untrusted. That still permits
+    explicitly manifested read-only capabilities, while ensuring any future
+    mutating connector capability is denied unless it is invoked through a more
+    privileged, approval-aware composition path.
     """
     if not connector:
         logger.warning("Execute request with missing connector name")
@@ -194,7 +194,19 @@ def execute_task(
         )
 
     try:
-        result = registry.execute(connector, task, **task_kwargs)
+        result = registry.execute(
+            connector,
+            task,
+            security_context={
+                "request_id": f"connector-api:{uuid4().hex}",
+                "agent_id": "calyx.connector_api",
+                "untrusted_context": True,
+                "data_class": "internal",
+                "approved": False,
+                "cost_units": 0,
+            },
+            **task_kwargs,
+        )
         if result["status"] == "failure":
             logger.warning(
                 "Task '%s' failed on connector '%s': %s",
