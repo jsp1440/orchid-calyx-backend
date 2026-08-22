@@ -116,7 +116,8 @@ jobs:
             --body "ORCHID GEMINI EDIT CANARY — **${state}**. normalized_class=${kind}. Probe is runner-local and deleted; no provider transcript or secret material persisted. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
 
           # Only an actual degraded-circuit event may mutate runtime state. PR/push
-          # canaries are validation evidence and must not alter the live queue.
+          # canaries are health observations; temporary provider quota must not make
+          # the code-change CI itself unmergeable.
           if [[ "$state" == PASSED && "$GITHUB_EVENT_NAME" == issues ]]; then
             gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded >/dev/null 2>&1 || true
             mapfile -t parked < <(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label oc-runtime-backoff --limit 200 --json number --jq '.[].number')
@@ -128,4 +129,7 @@ jobs:
             gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **RECOVERED VIA GEMINI**. Bounded edit canary passed; parked issues returned to repair and ordinary scheduler dispatch may resume." >/dev/null
           fi
 
+          if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_EVENT_NAME" == push ]]; then
+            exit 0
+          fi
           [[ "$state" == PASSED ]]
