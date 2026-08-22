@@ -18,6 +18,10 @@ class ConnectorInterface(ABC):
     - name: The human-readable connector name
     - health(): Check connector health status
     - execute(task): Execute a task through the connector
+
+    Connectors that are executable through the common Orchid security boundary
+    should additionally override ``security_capabilities``. The default is empty,
+    which is intentionally fail-closed when security enforcement is enabled.
     """
 
     @property
@@ -52,3 +56,14 @@ class ConnectorInterface(ABC):
             - 'error' (optional): Error message (if failed)
             - 'execution_time_ms': Execution time in milliseconds
         """
+
+    def security_capabilities(self) -> tuple[dict[str, Any], ...]:
+        """Return explicit security declarations for executable tasks.
+
+        Each declaration is metadata only. An empty tuple means that no task is
+        authorized when the connector is composed with the common security
+        boundary. This prevents newly discovered plugins from gaining authority
+        merely by becoming importable.
+        """
+
+        return ()
