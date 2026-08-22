@@ -19,6 +19,7 @@ from app.security import verify_owner_or_api_key
 from app.semantic_index.provider import DeterministicLocalProvider
 from runtime.knowledge_graph import PostgresGraphRepository, canonical_key, traverse
 
+from .observability import ScientificTrace
 from .store import ConversationStore
 
 router = APIRouter(
@@ -469,19 +470,47 @@ def _build_report(payload: ConversationRequest, answer: dict[str, Any]) -> str:
 
 
 def _execute(payload: ConversationRequest) -> dict[str, Any]:
+    trace = ScientificTrace("calyx.query")
     title = " ".join(payload.message.split())[:120]
-    conversation_id = STORE.create_or_touch(payload.conversation_id, title=title, context=payload.context)
-    history = STORE.history_text(conversation_id) if payload.include_history else ""
-    operator_message = STORE.append(conversation_id, "operator", payload.message, {"context": payload.context})
+    with trace.span("calyx.conversation.initialize", history_requested=payload.include_history):
+        conversation_id = STORE.create_or_touch(payload.conversation_id, title=title, context=payload.context)
+        history = STORE.history_text(conversation_id) if payload.include_history else ""
+        operator_message = STORE.append(conversation_id, "operator", payload.message, {"context": payload.context})
     try:
-        retrieval = _retrieval(payload.message, payload.retrieval_mode, payload.limit, payload.internal_access)
-        analysis = run_analysis(payload.analysis) if payload.analysis else None
-        dataset = run_dataset_analysis(payload.dataset_analysis) if payload.dataset_analysis else None
-        graph = run_graph_context(payload.graph_context) if payload.graph_context else None
-        brain = run_brain_query(payload.brain_query) if payload.brain_query else None
+        with trace.span(
+            "calyx.retrieval",
+            retrieval_mode=payload.retrieval_mode,
+            requested_limit=payload.limit,
+            internal_access=payload.internal_access,
+        ) as retrieval_attributes:
+            retrieval = _retrieval(payload.message, payload.retrieval_mode, payload.limit, payload.internal_access)
+            retrieval_attributes["eligible_results"] = retrieval.get("total_eligible_results")
+            retrieval_attributes["shown_results"] = len(retrieval.get("results", []))
+            retrieval_attributes["ranking_version"] = retrieval.get("ranking_configuration_version")
+        if payload.analysis:
+            with trace.span("calyx.analysis", operation=payload.analysis.operation):
+                analysis = run_analysis(payload.analysis)
+        else:
+            analysis = None
+        if payload.dataset_analysis:
+            with trace.span("calyx.dataset_analysis", operation=payload.dataset_analysis.operation):
+                dataset = run_dataset_analysis(payload.dataset_analysis)
+        else:
+            dataset = None
+        if payload.graph_context:
+            with trace.span("calyx.knowledge_graph", read_only=True):
+                graph = run_graph_context(payload.graph_context)
+        else:
+            graph = None
+        if payload.brain_query:
+            with trace.span("calyx.brain_query", read_only=True):
+                brain = run_brain_query(payload.brain_query)
+        else:
+            brain = None
     except (ValueError, TypeError, SyntaxError, ZeroDivisionError, OverflowError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    answer_text = _compose_answer(payload.message, retrieval, analysis, dataset, graph, brain)
+    with trace.span("calyx.synthesis", generative_claims_without_evidence=False):
+        answer_text = _compose_answer(payload.message, retrieval, analysis, dataset, graph, brain)
     evidence_summary = {
         "eligible_results": retrieval.get("total_eligible_results"),
         "shown_results": len(retrieval.get("results", [])),
@@ -490,12 +519,14 @@ def _execute(payload: ConversationRequest) -> dict[str, Any]:
         "graph_edges": len((graph or {}).get("edges", [])),
         "brain_nodes": len((brain or {}).get("nodes", [])),
     }
-    calyx_message = STORE.append(
-        conversation_id,
-        "calyx",
-        answer_text,
-        {"evidence": evidence_summary, "analysis": analysis, "dataset_operation": (dataset or {}).get("operation")},
-    )
+    with trace.span("calyx.conversation.persist_result", knowledge_graph_mutation=False):
+        calyx_message = STORE.append(
+            conversation_id,
+            "calyx",
+            answer_text,
+            {"evidence": evidence_summary, "analysis": analysis, "dataset_operation": (dataset or {}).get("operation")},
+        )
+    observability = trace.finish(retrieval)
     return {
         "conversation_id": conversation_id,
         "operator_message_id": operator_message["message_id"],
@@ -509,6 +540,7 @@ def _execute(payload: ConversationRequest) -> dict[str, Any]:
         "context": payload.context,
         "history_context": history,
         "persistence_mode": STORE.persistence_mode,
+        "observability": observability,
         "epistemic_policy": {
             "continuum_first": True,
             "generative_claims_without_evidence": False,
