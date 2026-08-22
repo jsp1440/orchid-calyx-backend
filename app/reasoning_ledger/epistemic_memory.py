@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
@@ -230,6 +231,9 @@ def project_epistemic_memory(ledger: ReasoningLedger) -> dict[str, Any]:
     recallable = [
         {
             "node_id": item["node_id"],
+            "ledger_id": str(ledger.ledger_id),
+            "ledger_version": ledger.version,
+            "project_id": ledger.project_id,
             "entry_id": item["entry_id"],
             "entry_kind": item["entry_kind"],
             "text": item["text"],
@@ -268,4 +272,66 @@ def project_epistemic_memory(ledger: ReasoningLedger) -> dict[str, Any]:
         "nodes": nodes,
         "edges": edges,
         "recallable_memories": recallable,
+    }
+
+
+def project_epistemic_corpus(ledgers: Iterable[ReasoningLedger]) -> dict[str, Any]:
+    """Assemble a deterministic project-level corpus of prior Calyx reasoning.
+
+    The corpus is a retrieval surface over durable ledger revisions, not a truth
+    store. It may inform later planning and hypothesis generation, but every memory
+    remains explicitly non-authoritative and cannot count as independent evidence.
+    """
+
+    ordered = sorted(
+        ledgers, key=lambda ledger: (ledger.project_id, str(ledger.ledger_id))
+    )
+    if not ordered:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "project_id": None,
+            "corpus_fingerprint": _canonical_hash([]),
+            "authority": "non_authoritative_epistemic_memory",
+            "ledger_count": 0,
+            "memory_count": 0,
+            "memories": [],
+            "publication_boundary": {
+                "automatic_promotion": False,
+                "machine_memory_is_source_evidence": False,
+                "controlled_graph_publication_required": True,
+                "independent_evidence_required_for_new_scientific_claims": True,
+            },
+        }
+
+    project_ids = {ledger.project_id for ledger in ordered}
+    if len(project_ids) != 1:
+        raise ValueError("EPISTEMIC_CORPUS_REQUIRES_ONE_PROJECT")
+    tenant_ids = {ledger.tenant_id for ledger in ordered}
+    if len(tenant_ids) != 1:
+        raise ValueError("EPISTEMIC_CORPUS_REQUIRES_ONE_TENANT")
+
+    projections = [project_epistemic_memory(ledger) for ledger in ordered]
+    memories = [
+        memory
+        for projection in projections
+        for memory in projection["recallable_memories"]
+    ]
+    memories.sort(
+        key=lambda item: (
+            item["entry_kind"],
+            item["ledger_id"],
+            item["entry_id"],
+        )
+    )
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "project_id": ordered[0].project_id,
+        "corpus_fingerprint": _canonical_hash(
+            [projection["memory_fingerprint"] for projection in projections]
+        ),
+        "authority": "non_authoritative_epistemic_memory",
+        "ledger_count": len(projections),
+        "memory_count": len(memories),
+        "memories": memories,
+        "publication_boundary": projections[0]["publication_boundary"],
     }
