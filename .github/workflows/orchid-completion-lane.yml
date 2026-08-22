@@ -13,7 +13,7 @@ on:
         required: true
         type: string
 
-# At most one Claude worker may execute a given issue at once. If an old duplicate
+# At most one worker may execute a given issue at once. If an old duplicate
 # dispatch was already queued, the lease preflight below makes it a no-op after
 # the authoritative worker releases oc-running.
 concurrency:
@@ -52,7 +52,7 @@ jobs:
             echo "execute=true" >> "$GITHUB_OUTPUT"
           else
             echo "execute=false" >> "$GITHUB_OUTPUT"
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Stale/duplicate completion dispatch suppressed before Claude execution because this issue no longer owns an oc-running lease. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Stale/duplicate completion dispatch suppressed before provider execution because this issue no longer owns an oc-running lease. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
           fi
 
       - name: Load issue context and publish worker receipt
@@ -71,11 +71,12 @@ jobs:
             echo "$body"
             echo EOF
           } >> "$GITHUB_OUTPUT"
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Completion worker started from ${GITHUB_EVENT_NAME}; run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Completion worker started from ${GITHUB_EVENT_NAME}; preferred provider=Claude. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
 
       - name: Execute issue with Claude Code
         if: steps.lease.outputs.execute == 'true'
         id: claude
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -111,10 +112,140 @@ jobs:
             --allowedTools "Edit,Read,Write,Bash(git diff:*),Bash(git status:*),Bash(git ls-files:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git branch:*),Bash(git fetch:*),Bash(git merge:*),Bash(python:*),Bash(python3:*),Bash(pytest:*),Bash(ruff:*),Bash(npm:*),Bash(npx:*),Bash(test:*),Bash(gh pr:*),Bash(gh issue:*),Bash(gh run:*)"
             --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative. BLOCKED DOES NOT MEAN STOPPED FOR THE PROGRAM. Deliver durable GitHub work, never runner-local-only claims."
 
+      - name: Classify Claude terminal state
+        if: always() && steps.lease.outputs.execute == 'true'
+        id: provider
+        env:
+          CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          execution_log="/home/runner/work/_temp/claude-execution-output.json"
+          terminal_reason=""
+          result_text=""
+          error_type=""
+          subtype=""
+          if [[ -f "$execution_log" ]]; then
+            terminal_reason=$(jq -r '[.. | objects | select(.type == "result")] | last | .terminal_reason // ""' "$execution_log" 2>/dev/null || true)
+            result_text=$(jq -r '[.. | objects | select(.type == "result")] | last | .result // ""' "$execution_log" 2>/dev/null || true)
+            error_type=$(jq -r '[.. | objects | select(.type == "assistant" and .is_api_error_message == true)] | last | .error // ""' "$execution_log" 2>/dev/null || true)
+            subtype=$(jq -r '[.. | objects | select(.type == "result")] | last | .subtype // ""' "$execution_log" 2>/dev/null || true)
+          fi
+          normalized=$(printf '%s %s %s %s' "$terminal_reason" "$result_text" "$error_type" "$subtype" | tr '[:upper:]' '[:lower:]')
+          kind=healthy
+          fallback=false
+          if [[ "$CLAUDE_OUTCOME" != "success" ]]; then
+            if [[ "$normalized" == *"error_max_turns"* || "$normalized" == *"max_turns"* || "$normalized" == *"max turns"* || "$normalized" == *"maximum turns"* ]]; then
+              kind=max_turns
+            elif [[ "$normalized" == *"authentication"* || "$normalized" == *"unauthorized"* || "$normalized" == *"forbidden"* || "$normalized" == *"permission"* || "$normalized" == *"invalid api key"* || "$normalized" == *"invalid_api_key"* ]]; then
+              kind=security
+            elif [[ "$normalized" == *"billing_error"* || "$normalized" == *"credit balance"* || "$normalized" == *"insufficient credit"* || "$normalized" == *"rate_limit"* || "$normalized" == *"rate limit"* || "$normalized" == *"overloaded"* || "$normalized" == *"service unavailable"* || "$normalized" == *"connection_error"* || "$normalized" == *"timeout"* ]]; then
+              kind=safe_provider
+              fallback=true
+            else
+              kind=unknown
+            fi
+          fi
+          {
+            echo "kind=$kind"
+            echo "fallback_allowed=$fallback"
+            echo "terminal_reason=${terminal_reason:-unknown}"
+            echo "error_type=${error_type:-unknown}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Claude classification: kind=$kind fallback_allowed=$fallback"
+
+      - name: Execute bounded Gemini fallback
+        if: steps.provider.outputs.fallback_allowed == 'true'
+        id: gemini
+        continue-on-error: true
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          ISSUE_BODY: ${{ steps.issue.outputs.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+            echo "GEMINI_API_KEY is unavailable to the workflow." >&2
+            exit 20
+          fi
+
+          branch="oc-auto-${ISSUE_NUMBER}-gemini-${GITHUB_RUN_ID}"
+          git config user.name "orchid-continuum-orchestrator[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+
+          prompt=$(cat <<EOF
+          ORCHID CONTINUUM — GOVERNED GEMINI FALLBACK
+
+          Claude was safely classified unavailable for provider/billing reasons. You are a bounded fallback implementation worker.
+          Repository: ${GITHUB_REPOSITORY}
+          Base branch: ${INTEGRATION_BRANCH}
+          Issue: #${ISSUE_NUMBER} — ${ISSUE_TITLE}
+
+          ${ISSUE_BODY}
+
+          Implement the largest safe coherent repository-local slice by EDITING FILES ONLY.
+          You have no shell permission and must not attempt to use shell tools.
+          Do not create commits, branches, pull requests, issues, releases, deployments, credentials, or external publications; the workflow will package your edits deterministically.
+          Preserve taxonomy, provenance, uncertainty, sensitive-locality protections, unavailable-vs-zero semantics, and scientific review boundaries. Never invent science.
+          Do not modify secrets or credential files. Do not weaken tests, security checks, governance, or owner gates.
+          Do not mutate production data, activate taxonomy, publish science, spend funds, or perform destructive operations.
+          Prefer a bounded implementation that can pass existing independent validation. If the issue cannot be safely advanced by file edits alone, make no changes.
+          EOF
+          )
+
+          # Keep the provider secret scoped to Gemini only; remove the GitHub token
+          # from the model process. auto_edit permits repository edits, while shell
+          # execution is excluded so git/gh/deploy/credential operations remain
+          # deterministic workflow responsibilities rather than model capabilities.
+          set +e
+          env -u GH_TOKEN GEMINI_API_KEY="$GEMINI_API_KEY" GEMINI_CLI_TRUST_WORKSPACE=true \
+            timeout 35m npx -y @google/gemini-cli@latest \
+            --approval-mode auto_edit \
+            --exclude-tools run_shell_command \
+            --output-format json \
+            -p "$prompt" > "$RUNNER_TEMP/gemini-result.json" 2> "$RUNNER_TEMP/gemini-stderr.log"
+          gemini_status=$?
+          set -e
+
+          if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+            git diff --check
+            git add -A
+            git commit -m "feat(auto): Gemini fallback slice for #${ISSUE_NUMBER}"
+            git push origin "HEAD:$branch"
+            body=$(cat <<EOF
+          Governed Gemini fallback slice after Claude safe provider/billing failure.
+
+          Provider: Gemini fallback
+          Claude classification: ${{ steps.provider.outputs.kind }}
+          Gemini CLI exit status: ${gemini_status}
+
+          Independent exact-head validation remains mandatory. No production mutation, taxonomy activation, scientific publication, sensitive-locality relaxation, credential change, spending action, or destructive operation was authorized.
+
+          OC-AUTO-ISSUE: #${ISSUE_NUMBER}
+          OC-AUTO-REQUEUE: true
+          OC-AUTO-BLOCKED: false
+          EOF
+            )
+            gh pr create --repo "$GITHUB_REPOSITORY" --base "$INTEGRATION_BRANCH" --head "$branch" --draft \
+              --title "Gemini fallback: #${ISSUE_NUMBER} ${ISSUE_TITLE}" --body "$body" >/dev/null
+            echo "Gemini fallback produced a durable PR candidate."
+            exit 0
+          fi
+
+          echo "Gemini fallback produced no repository changes (exit=${gemini_status})." >&2
+          exit "$gemini_status"
+
       - name: Classify result, dispatch validation, release slot
         if: always() && steps.lease.outputs.execute == 'true'
         env:
           CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
+          GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
+          CLAUDE_KIND: ${{ steps.provider.outputs.kind }}
+          FALLBACK_ALLOWED: ${{ steps.provider.outputs.fallback_allowed }}
+          TERMINAL_REASON: ${{ steps.provider.outputs.terminal_reason }}
+          ERROR_TYPE: ${{ steps.provider.outputs.error_type }}
         shell: bash
         run: |
           set -euo pipefail
@@ -126,43 +257,35 @@ jobs:
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --remove-label oc-blocked --remove-label oc-runtime-backoff --add-label oc-validating >/dev/null 2>&1 || true
             head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefName --jq '.headRefName')
             if gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$head" >/dev/null; then
-              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered/updated integration PR #$pr, dispatched independent backend validation, and released its execution slot. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered/updated integration PR #$pr, dispatched independent backend validation, and released its execution slot. Claude kind=${CLAUDE_KIND:-unknown}; Gemini outcome=${GEMINI_OUTCOME:-not-run}. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
             else
               gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --add-label oc-validating >/dev/null 2>&1 || true
-              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Durable PR #$pr exists, but validation dispatch failed. Kept in oc-validating; scheduler will retry validation without redispatching Claude. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Durable PR #$pr exists, but validation dispatch failed. Kept in oc-validating; scheduler will retry validation without redispatching a model. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
               exit 1
             fi
+          elif [[ "$CLAUDE_KIND" == "max_turns" ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --remove-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude reached the bounded task/turn ceiling before producing a durable PR. Provider runtime remains healthy; repository circuit was NOT opened. Issue moved to oc-repair for a narrower continuation. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          elif [[ "$FALLBACK_ALLOWED" == "true" && "$GEMINI_OUTCOME" == "success" ]]; then
+            # A healthy fallback that chose not to edit is an implementation outcome,
+            # not evidence that provider capacity is unavailable.
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was safely unavailable and Gemini fallback completed without a durable PR. Repository circuit remains open-capable; issue returned to bounded repair rather than halting unrelated work. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          elif [[ "$FALLBACK_ALLOWED" == "true" ]]; then
+            # Claude was safely unavailable and the bounded Gemini fallback also
+            # failed before durable work. Until a second fallback is implemented,
+            # park this issue and fail closed at the repository circuit.
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude safe-provider failure triggered Gemini fallback, but Gemini did not produce durable work (outcome=${GEMINI_OUTCOME:-unknown}). Issue parked and repository runtime circuit opened pending provider recovery or the OpenAI fallback slice. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after Claude safe-provider failure plus unsuccessful Gemini fallback on issue #${ISSUE_NUMBER}. Portfolio dispatch paused pending recovery/OpenAI fallback. Worker: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
           elif [[ "$CLAUDE_OUTCOME" != "success" ]]; then
-            # Distinguish bounded task exhaustion from a real provider/runtime failure.
-            # claude-code-action writes the normalized SDK records here when execution
-            # reached Claude. A max-turn result means the provider is healthy; it must
-            # not trip the repository-wide runtime breaker.
-            execution_log="/home/runner/work/_temp/claude-execution-output.json"
-            terminal_reason=""
-            result_text=""
-            error_type=""
-            subtype=""
-            if [[ -f "$execution_log" ]]; then
-              terminal_reason=$(jq -r '[.. | objects | select(.type == "result")] | last | .terminal_reason // ""' "$execution_log" 2>/dev/null || true)
-              result_text=$(jq -r '[.. | objects | select(.type == "result")] | last | .result // ""' "$execution_log" 2>/dev/null || true)
-              error_type=$(jq -r '[.. | objects | select(.type == "assistant" and .is_api_error_message == true)] | last | .error // ""' "$execution_log" 2>/dev/null || true)
-              subtype=$(jq -r '[.. | objects | select(.type == "result")] | last | .subtype // ""' "$execution_log" 2>/dev/null || true)
-            fi
-
-            normalized=$(printf '%s %s %s %s' "$terminal_reason" "$result_text" "$error_type" "$subtype" | tr '[:upper:]' '[:lower:]')
-            if [[ "$normalized" == *"error_max_turns"* || "$normalized" == *"max_turns"* || "$normalized" == *"max turns"* || "$normalized" == *"maximum turns"* ]]; then
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --remove-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
-              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude reached the bounded task/turn ceiling before producing a durable PR. Provider runtime remains healthy; repository circuit was NOT opened. Issue moved to oc-repair for a narrower continuation. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
-            else
-              # Unknown/action/provider/auth/billing failures still fail closed. They
-              # park the issue and trip the repository-wide circuit until a canary
-              # proves the runtime is safe again.
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
-              gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
-              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude runtime failed before producing a durable PR (outcome=${CLAUDE_OUTCOME}, terminal_reason=${terminal_reason:-unknown}, error_type=${error_type:-unknown}). Issue parked in oc-runtime-backoff and repository runtime circuit opened; ordinary workers will not be redispatched until the canary proves recovery. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
-              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after issue #${ISSUE_NUMBER} failed before producing a durable PR (outcome=${CLAUDE_OUTCOME}, terminal_reason=${terminal_reason:-unknown}, error_type=${error_type:-unknown}). Portfolio dispatch is paused pending runtime canary recovery. Worker: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
-            fi
+            # Security/auth/unknown failures do not silently bypass providers.
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude failed with non-fallback classification=${CLAUDE_KIND:-unknown} (terminal_reason=${TERMINAL_REASON:-unknown}, error_type=${ERROR_TYPE:-unknown}). Failed closed; no provider bypass was attempted. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after non-fallback Claude failure on issue #${ISSUE_NUMBER} (classification=${CLAUDE_KIND:-unknown}). Portfolio dispatch is paused pending runtime canary recovery. Worker: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
           else
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-validating --remove-label oc-repair --add-label oc-queued >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude completed without a durable integration PR. Returned to the queue for a bounded implementation retry while other lanes continue. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Preferred provider completed without a durable integration PR. Returned to the queue for a bounded implementation retry while other lanes continue. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
           fi
