@@ -133,13 +133,35 @@ jobs:
               exit 1
             fi
           elif [[ "$CLAUDE_OUTCOME" != "success" ]]; then
-            # Infrastructure/provider failure before a durable PR is not an
-            # implementation retry. Park this issue and trip the repository-wide
-            # runtime circuit so the scheduler cannot churn through the portfolio.
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
-            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude runtime failed before producing a durable PR (outcome=${CLAUDE_OUTCOME}). Issue parked in oc-runtime-backoff and repository runtime circuit opened; ordinary workers will not be redispatched until the canary proves recovery. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
-            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after issue #${ISSUE_NUMBER} failed before producing a durable PR (outcome=${CLAUDE_OUTCOME}). Portfolio dispatch is paused pending runtime canary recovery. Worker: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            # Distinguish bounded task exhaustion from a real provider/runtime failure.
+            # claude-code-action writes the normalized SDK records here when execution
+            # reached Claude. A max-turn result means the provider is healthy; it must
+            # not trip the repository-wide runtime breaker.
+            execution_log="/home/runner/work/_temp/claude-execution-output.json"
+            terminal_reason=""
+            result_text=""
+            error_type=""
+            subtype=""
+            if [[ -f "$execution_log" ]]; then
+              terminal_reason=$(jq -r '[.. | objects | select(.type == "result")] | last | .terminal_reason // ""' "$execution_log" 2>/dev/null || true)
+              result_text=$(jq -r '[.. | objects | select(.type == "result")] | last | .result // ""' "$execution_log" 2>/dev/null || true)
+              error_type=$(jq -r '[.. | objects | select(.type == "assistant" and .is_api_error_message == true)] | last | .error // ""' "$execution_log" 2>/dev/null || true)
+              subtype=$(jq -r '[.. | objects | select(.type == "result")] | last | .subtype // ""' "$execution_log" 2>/dev/null || true)
+            fi
+
+            normalized=$(printf '%s %s %s %s' "$terminal_reason" "$result_text" "$error_type" "$subtype" | tr '[:upper:]' '[:lower:]')
+            if [[ "$normalized" == *"error_max_turns"* || "$normalized" == *"max_turns"* || "$normalized" == *"max turns"* || "$normalized" == *"maximum turns"* ]]; then
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --remove-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude reached the bounded task/turn ceiling before producing a durable PR. Provider runtime remains healthy; repository circuit was NOT opened. Issue moved to oc-repair for a narrower continuation. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            else
+              # Unknown/action/provider/auth/billing failures still fail closed. They
+              # park the issue and trip the repository-wide circuit until a canary
+              # proves the runtime is safe again.
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+              gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude runtime failed before producing a durable PR (outcome=${CLAUDE_OUTCOME}, terminal_reason=${terminal_reason:-unknown}, error_type=${error_type:-unknown}). Issue parked in oc-runtime-backoff and repository runtime circuit opened; ordinary workers will not be redispatched until the canary proves recovery. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after issue #${ISSUE_NUMBER} failed before producing a durable PR (outcome=${CLAUDE_OUTCOME}, terminal_reason=${terminal_reason:-unknown}, error_type=${error_type:-unknown}). Portfolio dispatch is paused pending runtime canary recovery. Worker: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            fi
           else
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-validating --remove-label oc-repair --add-label oc-queued >/dev/null 2>&1 || true
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude completed without a durable integration PR. Returned to the queue for a bounded implementation retry while other lanes continue. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
