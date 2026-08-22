@@ -195,15 +195,25 @@ jobs:
           EOF
           )
 
-          # Keep the provider secret scoped to Gemini only; remove the GitHub token
-          # from the model process. auto_edit permits repository edits, while shell
-          # execution is excluded so git/gh/deploy/credential operations remain
-          # deterministic workflow responsibilities rather than model capabilities.
+          # Keep the provider secret scoped to Gemini only and remove the GitHub
+          # token from the model process. Gemini CLI tool exclusion is configured
+          # through runner-local settings; the CLI does not expose --exclude-tools.
+          # This keeps shell/git/gh/deploy operations outside the model while
+          # auto_edit permits bounded repository file edits.
+          gemini_home="$RUNNER_TEMP/gemini-home"
+          mkdir -p "$gemini_home/.gemini"
+          cat > "$gemini_home/.gemini/settings.json" <<'JSON'
+          {
+            "tools": {
+              "exclude": ["run_shell_command"]
+            }
+          }
+          JSON
+
           set +e
-          env -u GH_TOKEN GEMINI_API_KEY="$GEMINI_API_KEY" GEMINI_CLI_TRUST_WORKSPACE=true \
+          HOME="$gemini_home" env -u GH_TOKEN GEMINI_API_KEY="$GEMINI_API_KEY" GEMINI_CLI_TRUST_WORKSPACE=true \
             timeout 35m npx -y @google/gemini-cli@latest \
             --approval-mode auto_edit \
-            --exclude-tools run_shell_command \
             --output-format json \
             -p "$prompt" > "$RUNNER_TEMP/gemini-result.json" 2> "$RUNNER_TEMP/gemini-stderr.log"
           gemini_status=$?
@@ -234,7 +244,22 @@ jobs:
             exit 0
           fi
 
-          echo "Gemini fallback produced no repository changes (exit=${gemini_status})." >&2
+          if (( gemini_status != 0 )); then
+            # Emit only a bounded diagnostic class. Never print provider output or
+            # stderr because those streams are not part of the durable evidence
+            # contract and could contain provider/account metadata.
+            if grep -Eqi 'unknown option|unknown argument|invalid option' "$RUNNER_TEMP/gemini-stderr.log"; then
+              echo "Gemini fallback failed: cli_argument_error (exit=${gemini_status})." >&2
+            elif grep -Eqi '401|403|unauthor|forbidden|api.?key|auth' "$RUNNER_TEMP/gemini-stderr.log"; then
+              echo "Gemini fallback failed: authentication_or_permission_error (exit=${gemini_status})." >&2
+            elif grep -Eqi '429|quota|rate.?limit|billing|credit' "$RUNNER_TEMP/gemini-stderr.log"; then
+              echo "Gemini fallback failed: quota_or_billing_error (exit=${gemini_status})." >&2
+            else
+              echo "Gemini fallback failed: provider_or_cli_error (exit=${gemini_status})." >&2
+            fi
+          else
+            echo "Gemini fallback completed successfully with no repository changes."
+          fi
           exit "$gemini_status"
 
       - name: Classify result, dispatch validation, release slot
