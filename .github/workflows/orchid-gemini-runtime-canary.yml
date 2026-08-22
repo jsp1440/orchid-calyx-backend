@@ -137,7 +137,6 @@ jobs:
           env -u GH_TOKEN CODEX_HOME="$codex_home" OPENAI_API_KEY="$OPENAI_API_KEY" \
             timeout 5m npx -y @openai/codex@latest exec \
             --sandbox workspace-write \
-            --ask-for-approval never \
             'ORCHID OPENAI EDIT CANARY. Work only in this repository. Do not use network access, inspect credentials, or modify git metadata. Create exactly one file named openai_canary_probe.txt in the repository root containing exactly ORCHID_OPENAI_EDIT_CANARY_OK followed by a newline. Do not modify any other file. Then finish.' \
             > "$RUNNER_TEMP/openai-result.log" 2> "$RUNNER_TEMP/openai-stderr.log"
           status=$?
