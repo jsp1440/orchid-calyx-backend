@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from typing import Any
+# Ruff 0.16.4 reports I001 for this conventional stdlib-only block even
+# though its own suggested order is identical; keep the explicit safe imports.
+# ruff: noqa: I001
 import re
 import secrets
 import time
+from contextlib import contextmanager
+from typing import Any
 
 
 _TRACE_ID = re.compile(r"^[0-9a-f]{32}$")
