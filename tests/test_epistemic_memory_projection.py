@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from app.reasoning_ledger.epistemic_memory import project_epistemic_memory
+from app.reasoning_ledger.epistemic_memory import (
+    project_epistemic_corpus,
+    project_epistemic_memory,
+)
 from app.reasoning_ledger.models import (
     LedgerEntry,
     LedgerEntryKind,
@@ -133,7 +136,9 @@ def test_support_counterevidence_and_conflict_relations_survive_projection():
         references=(hypothesis.entry_id,),
     )
 
-    projection = project_epistemic_memory(_ledger((hypothesis, support, counter, conflict)))
+    projection = project_epistemic_memory(
+        _ledger((hypothesis, support, counter, conflict))
+    )
     predicates = {
         (edge["source"], edge["predicate"], edge["target"])
         for edge in projection["edges"]
@@ -227,3 +232,40 @@ def test_grounding_resolution_is_cycle_safe():
 
     assert _node_by_entry_id(projection, first)["grounding_state"] == "ungrounded"
     assert _node_by_entry_id(projection, second)["grounding_state"] == "ungrounded"
+
+
+def test_project_corpus_combines_recallable_memories_without_promoting_them():
+    first = _ledger(
+        (
+            _entry(
+                LedgerEntryKind.HYPOTHESIS,
+                "Earlier Calyx hypothesis.",
+                0,
+                confidence=0.55,
+            ),
+        )
+    )
+    second = _ledger(
+        (
+            _entry(
+                LedgerEntryKind.CONCLUSION,
+                "Later Calyx interpretation.",
+                0,
+                confidence=0.64,
+            ),
+        )
+    )
+
+    corpus = project_epistemic_corpus((second, first))
+
+    assert corpus["ledger_count"] == 2
+    assert corpus["memory_count"] == 2
+    assert corpus["authority"] == "non_authoritative_epistemic_memory"
+    assert all(
+        memory["can_be_cited_as_source_evidence"] is False
+        for memory in corpus["memories"]
+    )
+    assert all(memory["project_id"] == PROJECT_ID for memory in corpus["memories"])
+    assert corpus["corpus_fingerprint"] == project_epistemic_corpus(
+        (first, second)
+    )["corpus_fingerprint"]
