@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import secrets
 import time
-from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -40,7 +39,7 @@ class ScientificTrace:
         self._terminal_error: str | None = None
 
     @contextmanager
-    def span(self, name: str, **attributes: Any) -> Iterator[dict[str, Any]]:
+    def span(self, name: str, **attributes: Any):
         started_ns = time.perf_counter_ns()
         span_id = secrets.token_hex(8)
         mutable_attributes = _safe_attributes(attributes)
