@@ -46,3 +46,48 @@ def test_span_records_error_type_without_error_message():
     assert result["status"] == "error"
     assert result["spans"][0]["error_type"] == "ValueError"
     assert "sensitive detail" not in json.dumps(result)
+
+
+def test_execute_returns_trace_for_complete_mounted_query(monkeypatch):
+    from app.calyx_conversation import routes
+    from app.calyx_conversation.routes import ConversationRequest
+    from app.calyx_conversation.store import ConversationStore
+
+    monkeypatch.setattr(routes, "STORE", ConversationStore(dsn=""))
+    monkeypatch.setattr(
+        routes,
+        "_retrieval",
+        lambda *_args, **_kwargs: {
+            "results": [
+                {
+                    "object_id": "evidence-1",
+                    "object_type": "paper",
+                    "authorized_excerpt": "redacted from telemetry",
+                    "citation": {
+                        "document_title": "A governed orchid paper",
+                        "locator": "p. 4",
+                        "revision_id": "sha256:abc",
+                    },
+                }
+            ],
+            "total_eligible_results": 1,
+            "ranking_configuration_version": "test-v1",
+        },
+    )
+
+    response = routes._execute(ConversationRequest(message="Which traits distinguish cool-growing Phalaenopsis?"))
+    observability = response["observability"]
+    span_names = {span["name"] for span in observability["spans"]}
+
+    assert observability["trace_id"]
+    assert observability["evidence_identifiers"] == ["evidence-1"]
+    assert {
+        "calyx.conversation.initialize",
+        "calyx.retrieval",
+        "calyx.synthesis",
+        "calyx.conversation.persist_result",
+    } <= span_names
+    serialized = json.dumps(observability)
+    assert "Which traits" not in serialized
+    assert "redacted from telemetry" not in serialized
+    assert response["epistemic_policy"]["knowledge_graph_mutation"] is False
