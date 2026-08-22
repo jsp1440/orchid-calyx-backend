@@ -10,6 +10,7 @@ from app.database import get_db
 from app.security import verify_owner_or_api_key
 
 from .assignment_factory import assignment_payload, governed_assignment_from_claimed_job
+from .capability_memory import load_owner_capability_registry
 from .dry_run_service import execute_deterministic_dry_run, require_owned_program_job
 from .experience_memory import load_program_experience
 from .program_repository import PersistentProgramRepository, ProgramJobSpec
@@ -237,6 +238,11 @@ def create_program(payload: ProgramRequest, auth: AuthDependency, db: DbDependen
         return repository.snapshot(owner=_owner(auth), program_id=program.program_id)
     except (LookupError, TypeError, ValueError) as exc:
         raise _translate_error(exc) from exc
+
+
+@router.get("/capability-registry")
+def get_capability_registry(auth: AuthDependency, db: DbDependency) -> dict:
+    return load_owner_capability_registry(db, owner=_owner(auth))
 
 
 @router.get("/{program_id}")
