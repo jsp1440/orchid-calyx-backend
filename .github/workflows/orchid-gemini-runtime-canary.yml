@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/orchid-gemini-runtime-canary.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/orchid-gemini-runtime-canary.yml'
 
 permissions:
   contents: read
