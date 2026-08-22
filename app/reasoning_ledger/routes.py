@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.security import verify_owner_or_api_key
 
-from .epistemic_memory import project_epistemic_memory
+from .epistemic_memory import project_epistemic_corpus, project_epistemic_memory
 from .models import (
     LedgerEntry,
     LedgerProvenance,
@@ -230,6 +230,23 @@ def review_ledger(
         ),
     )
     return ledger_to_dict(ledger)
+
+
+@project_router.get("/{project_id}/epistemic-memory")
+def get_project_epistemic_memory(
+    project_id: str, request: Request, auth: Auth, db: Db
+):
+    """Return the project's recallable Calyx reasoning corpus without truth promotion."""
+
+    owner = _subject(auth)
+    ledgers = _invoke(
+        db,
+        request,
+        lambda: OperationalReasoningLedgerService(db).list_for_project(
+            project_id, owner
+        ),
+    )
+    return project_epistemic_corpus(ledgers)
 
 
 @project_router.get("/{project_id}/reasoning-ledgers")
