@@ -63,7 +63,10 @@ def test_external_literature_is_not_called_when_local_coverage_exists(monkeypatc
 
     monkeypatch.setattr(external_literature.requests, "get", _unexpected)
     result = external_literature.augment_retrieval_with_external_literature(
-        {"results": [{"title": "Indexed"}], "total_eligible_results": 1},
+        {
+            "results": [{"title": "Indexed", "canonical_evidence": True}],
+            "total_eligible_results": 1,
+        },
         "Sarcochilus cold flowering",
     )
     assert result["external_literature"]["status"] == "not_needed_local_coverage_available"
@@ -131,7 +134,17 @@ def test_deterministic_provider_exposes_external_sources_without_promoting_them(
             "mission_error": None,
         },
     )
-    assert "Europe PMC" in reply.text
-    assert "NOAA/NWS Climate Prediction Center" in reply.text
-    assert "not yet reviewed/indexed Orchid Continuum evidence" in reply.text
-    assert "do not establish orchid physiological responses" in reply.text
+    # SUPERSEDED wording, IDENTICAL guarantees. Provider names are machinery and
+    # now live in the inspectable structure rather than the prose (the
+    # conversational constitution keeps provider paths out of the answer). The
+    # two epistemic guarantees this test exists for remain in the answer itself:
+    # external literature is not promoted to canonical, and climate context does
+    # not establish physiology.
+    assert "hasn't been through Continuum review yet" in reply.text
+    assert "provisional rather than as settled Continuum evidence" in reply.text
+    assert "does not establish orchid physiological responses" in reply.text
+    assert "not treating it as evidence for the biology" in reply.text
+    # The external sources themselves stay exposed, just not promoted.
+    assert "external_literature" in reply.synthesis_structure["cited_source_families"]
+    assert "climate" in reply.synthesis_structure["cited_source_families"]
+    assert reply.synthesis_structure["external_literature_review_required"] is True

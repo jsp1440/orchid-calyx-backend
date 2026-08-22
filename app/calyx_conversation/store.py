@@ -303,6 +303,61 @@ class ConversationStore:
         text = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
         return text[-max_chars:]
 
+    def user_turns(
+        self,
+        conversation_id: str,
+        *,
+        turns: int = 12,
+        owner: str = LEGACY_OWNER,
+    ) -> list[dict[str, str]]:
+        """Return the last N OPERATOR turns without mixed-role window loss.
+
+        Assistant/tool turns are deliberately excluded: prior Calyx statements
+        may preserve conversational continuity elsewhere but are never the
+        subject of record and are never scientific evidence.
+        """
+
+        limit = max(0, int(turns))
+        if limit == 0:
+            return []
+
+        if self.dsn:
+            self.ensure_schema()
+            with psycopg.connect(self.dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT m.content
+                    FROM calyx_conversation_messages m
+                    JOIN calyx_conversations c
+                      ON c.conversation_id=m.conversation_id
+                    WHERE m.conversation_id=%s::uuid
+                      AND c.owner=%s
+                      AND m.role='operator'
+                    ORDER BY m.created_at DESC, m.message_id DESC
+                    LIMIT %s
+                    """,
+                    (conversation_id, owner, limit),
+                )
+                rows = cur.fetchall()
+            return [
+                {"role": "user", "content": str(row.get("content") or "")}
+                for row in reversed(rows)
+            ]
+
+        with self._lock:
+            conversation = self._conversations.get(conversation_id)
+            if conversation is None or conversation["owner"] != owner:
+                return []
+            operator_messages = [
+                item
+                for item in self._messages.get(conversation_id, [])
+                if str(item.get("role")) == "operator"
+            ][-limit:]
+        return [
+            {"role": "user", "content": str(item.get("content") or "")}
+            for item in operator_messages
+        ]
+
     def provider_messages(
         self,
         conversation_id: str,

@@ -1,10 +1,10 @@
-import os
-import hmac
 import hashlib
+import hmac
+import os
 import secrets
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
-from typing import Optional
+
 from fastapi import Header, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 
@@ -24,13 +24,18 @@ def get_owner_access_code() -> str | None:
 def get_owner_session_secret() -> str | None:
     return os.getenv("CALYX_OWNER_SESSION_SECRET")
 
+
 def owner_session_ttl_seconds() -> int:
-    try: return max(300, min(int(os.getenv("CALYX_OWNER_SESSION_TTL_SECONDS", "3600")), 86400))
-    except ValueError: return 3600
+    try:
+        return max(300, min(int(os.getenv("CALYX_OWNER_SESSION_TTL_SECONDS", "3600")), 86400))
+    except ValueError:
+        return 3600
+
 
 def owner_cookie_secure() -> bool:
     value = os.getenv("CALYX_OWNER_COOKIE_SECURE")
     return value.strip().lower() in {"1", "true", "yes", "on"} if value is not None else bool(os.getenv("RENDER"))
+
 
 def owner_cookie_samesite() -> str:
     value = os.getenv("CALYX_OWNER_COOKIE_SAMESITE", "none" if owner_cookie_secure() else "lax").lower()
@@ -131,15 +136,28 @@ async def verify_owner_or_api_key(request: Request, api_key: str = Security(api_
     raise HTTPException(status_code=401, detail="Owner session or API key is required")
 
 
-def require_admin(x_orchid_admin_key: Optional[str] = Header(default=None, alias="X-Orchid-Admin-Key")) -> None:
+def require_admin(
+    x_orchid_admin_key: str | None = Header(default=None, alias="X-Orchid-Admin-Key"),
+) -> None:
+    """Legacy admin-key dependency; deny when the server is not configured.
+
+    Historical behavior allowed requests through when ORCHID_JUDGE_ADMIN_KEY was
+    absent. Partner-data hardening requires authentication helpers to fail closed
+    instead of turning missing configuration into implicit authorization.
+    """
+
     admin_key = os.getenv("ORCHID_JUDGE_ADMIN_KEY")
     if not admin_key:
-        return None
-    if x_orchid_admin_key != admin_key:
+        raise HTTPException(status_code=503, detail="Admin authentication is not configured")
+    if not x_orchid_admin_key or not hmac.compare_digest(
+        x_orchid_admin_key.encode("utf-8"), admin_key.encode("utf-8")
+    ):
         raise HTTPException(status_code=401, detail="Invalid admin key.")
 
 
-def require_judge(x_judge_id: Optional[str] = Header(default=None, alias="X-Judge-Id")) -> str:
+def require_judge(
+    x_judge_id: str | None = Header(default=None, alias="X-Judge-Id"),
+) -> str:
     if not x_judge_id:
         raise HTTPException(status_code=401, detail="X-Judge-Id header is required.")
     return x_judge_id
