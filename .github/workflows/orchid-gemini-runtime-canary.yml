@@ -9,6 +9,8 @@ on:
   pull_request:
     paths:
       - '.github/workflows/orchid-gemini-runtime-canary.yml'
+  issues:
+    types: [labeled]
 
 permissions:
   contents: read
@@ -16,6 +18,7 @@ permissions:
 
 jobs:
   canary:
+    if: github.event_name != 'issues' || (github.event.issue.number == 1031 && github.event.label.name == 'oc-runtime-degraded')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -95,7 +98,7 @@ jobs:
           echo "Gemini edit canary classified result as $kind (exit=$status)."
           exit 1
 
-      - name: Publish normalized result
+      - name: Publish normalized result and recover circuit when proven healthy
         if: always()
         env:
           KIND: ${{ steps.gemini.outputs.kind }}
@@ -111,4 +114,18 @@ jobs:
           fi
           gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
             --body "ORCHID GEMINI EDIT CANARY — **${state}**. normalized_class=${kind}. Probe is runner-local and deleted; no provider transcript or secret material persisted. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+
+          # Only an actual degraded-circuit event may mutate runtime state. PR/push
+          # canaries are validation evidence and must not alter the live queue.
+          if [[ "$state" == PASSED && "$GITHUB_EVENT_NAME" == issues ]]; then
+            gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded >/dev/null 2>&1 || true
+            mapfile -t parked < <(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label oc-runtime-backoff --limit 200 --json number --jq '.[].number')
+            for issue in "${parked[@]:-}"; do
+              [[ -n "$issue" ]] || continue
+              gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+              gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Gemini bounded edit canary passed after degraded runtime state. Global breaker cleared; issue returned to bounded repair without weakening any acceptance or owner gate." >/dev/null 2>&1 || true
+            done
+            gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **RECOVERED VIA GEMINI**. Bounded edit canary passed; parked issues returned to repair and ordinary scheduler dispatch may resume." >/dev/null
+          fi
+
           [[ "$state" == PASSED ]]
