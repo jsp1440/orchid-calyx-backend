@@ -26,7 +26,7 @@ jobs:
         with:
           ref: main
 
-      - name: Execute bounded Gemini canary
+      - name: Execute bounded Gemini edit canary
         id: gemini
         continue-on-error: true
         env:
@@ -34,6 +34,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          probe="gemini_canary_probe.txt"
+          cleanup() { rm -f "$probe"; }
+          trap cleanup EXIT
+
           if [[ -z "${GEMINI_API_KEY:-}" ]]; then
             echo "kind=config_missing" >> "$GITHUB_OUTPUT"
             exit 20
@@ -44,7 +48,7 @@ jobs:
           cat > "$gemini_home/.gemini/settings.json" <<'JSON'
           {
             "tools": {
-              "exclude": ["run_shell_command", "write_file", "replace"]
+              "exclude": ["run_shell_command", "web_fetch", "google_web_search"]
             },
             "telemetry": {
               "enabled": false
@@ -57,14 +61,19 @@ jobs:
             timeout 5m npx -y @google/gemini-cli@latest \
             --approval-mode auto_edit \
             --output-format json \
-            -p 'ORCHID GEMINI RUNTIME CANARY. Read README.md only if needed. Do not edit files and do not use shell tools. Reply exactly ORCHID_GEMINI_CANARY_OK.' \
+            -p 'ORCHID GEMINI EDIT CANARY. Do not use shell or web tools. Create exactly one file named gemini_canary_probe.txt in the repository root containing exactly ORCHID_GEMINI_EDIT_CANARY_OK followed by a newline. Do not modify any other file. Then reply exactly ORCHID_GEMINI_EDIT_CANARY_OK.' \
             > "$RUNNER_TEMP/gemini-result.json" 2> "$RUNNER_TEMP/gemini-stderr.log"
           status=$?
           set -e
 
-          if (( status == 0 )) && grep -q 'ORCHID_GEMINI_CANARY_OK' "$RUNNER_TEMP/gemini-result.json"; then
-            echo "kind=healthy" >> "$GITHUB_OUTPUT"
-            exit 0
+          if (( status == 0 )) && [[ -f "$probe" ]] && [[ "$(cat "$probe")" == "ORCHID_GEMINI_EDIT_CANARY_OK" ]]; then
+            changed=$(git status --porcelain --untracked-files=all | awk '{print $2}')
+            if [[ "$changed" == "$probe" ]]; then
+              echo "kind=healthy_edit" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "kind=scope_violation" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
 
           combined="$RUNNER_TEMP/gemini-diagnostic.txt"
@@ -75,13 +84,15 @@ jobs:
             kind=quota_or_billing_error
           elif grep -Eqi 'unknown option|unknown argument|invalid option|usage:' "$combined"; then
             kind=cli_argument_error
+          elif grep -Eqi 'tool.*denied|denied.*tool|confirmation|approval' "$combined"; then
+            kind=edit_tool_denied
           elif [[ $status -eq 124 ]]; then
             kind=timeout
           else
             kind=provider_or_cli_error
           fi
           echo "kind=$kind" >> "$GITHUB_OUTPUT"
-          echo "Gemini canary classified failure as $kind (exit=$status)."
+          echo "Gemini edit canary classified result as $kind (exit=$status)."
           exit 1
 
       - name: Publish normalized result
@@ -93,11 +104,11 @@ jobs:
         run: |
           set -euo pipefail
           kind="${KIND:-unknown}"
-          if [[ "$kind" == healthy && "$OUTCOME" == success ]]; then
+          if [[ "$kind" == healthy_edit && "$OUTCOME" == success ]]; then
             state=PASSED
           else
             state=FAILED
           fi
           gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
-            --body "ORCHID GEMINI CANARY — **${state}**. normalized_class=${kind}. No provider transcript or secret material persisted. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            --body "ORCHID GEMINI EDIT CANARY — **${state}**. normalized_class=${kind}. Probe is runner-local and deleted; no provider transcript or secret material persisted. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
           [[ "$state" == PASSED ]]
