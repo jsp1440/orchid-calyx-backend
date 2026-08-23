@@ -1,4 +1,4 @@
-from app.email_gateway import InboundEmailEnvelope, EmailRoute, route_inbound_email
+from app.email_gateway import EmailRoute, InboundEmailEnvelope, route_inbound_email
 
 
 def envelope(
