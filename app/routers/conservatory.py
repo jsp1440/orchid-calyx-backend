@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
+from runtime.conservatory_calyx_context import build_cultivation_context
 from runtime.conservatory_environment import (
     ConservatoryEnvironmentStore,
     EnvironmentError_,
@@ -410,6 +411,42 @@ def create_conservatory_router(
         # The timeline states its own provenance and that it is not scientific
         # evidence, so a consumer cannot pick these up as findings by accident.
         return get_events().timeline(plant_id)
+
+    @router.get("/plants/{plant_id}/cultivation-context")
+    def cultivation_context(
+        plant_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Everything known about one plant, each claim labelled by class.
+
+        This answers nothing. It exists so that whatever reasons over a plant
+        is handed what is known without being handed a false impression of how
+        well any of it is known. No recommendation, no scoring, no conclusion
+        crosses this boundary.
+        """
+        plant = get_store().get(plant_id)
+        if plant is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        locations = get_locations()
+        current = locations.current_placement(plant_id)
+        location = (
+            locations.get_location(current["location_id"])
+            if current and current.get("location_id")
+            else None
+        )
+        environment = (
+            get_environment().context_for(location["id"])
+            if location is not None
+            else None
+        )
+        return build_cultivation_context(
+            plant=plant,
+            placement_current=current,
+            placement_history=locations.placement_history(plant_id),
+            location=location,
+            environment=environment,
+            events=get_events().timeline(plant_id),
+        )
 
     @router.get("/locations/occupancy")
     def location_occupancy(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
