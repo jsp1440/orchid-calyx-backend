@@ -15,6 +15,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
+from runtime.conservatory_environment import (
+    ConservatoryEnvironmentStore,
+    EnvironmentError_,
+)
 from runtime.conservatory_locations import ConservatoryLocationStore, LocationError
 from runtime.conservatory_readiness import (
     build_conservatory_readiness,
@@ -59,6 +63,22 @@ class PlacementCreate(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
+class EnvironmentReadingCreate(BaseModel):
+    variable: str = Field(min_length=2, max_length=60)
+    #: Absent means nobody has said. It is never coerced to zero.
+    value: float | None = None
+    #: measured | manual | inferred | unknown. Not interchangeable: only
+    #: `measured` may name an instrument, and only `inferred` may cite a
+    #: derivation. A recommendation is not an origin and has no place here.
+    origin: str = Field(min_length=2, max_length=20)
+    observed_at: str = Field(min_length=4, max_length=40)
+    instrument: str | None = Field(default=None, max_length=200)
+    derived_from: str | None = Field(default=None, max_length=500)
+    window_end: str | None = Field(default=None, max_length=40)
+    summary_kind: str | None = Field(default=None, max_length=20)
+    note: str | None = Field(default=None, max_length=2000)
+
+
 class LabelRequest(BaseModel):
     plant_ids: list[str] | None = None
 
@@ -77,6 +97,10 @@ def _default_store() -> ConservatoryStore:
 
 def _default_location_store() -> ConservatoryLocationStore:
     return ConservatoryLocationStore(_conservatory_root())
+
+
+def _default_environment_store() -> ConservatoryEnvironmentStore:
+    return ConservatoryEnvironmentStore(_conservatory_root())
 
 
 def _scan_base_url() -> str | None:
@@ -119,6 +143,7 @@ def create_conservatory_router(
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
     get_root: Callable[[], Path] = _conservatory_root,
     get_locations: Callable[[], ConservatoryLocationStore] = _default_location_store,
+    get_environment: Callable[[], ConservatoryEnvironmentStore] = _default_environment_store,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/conservatory", tags=["conservatory"])
 
@@ -303,6 +328,38 @@ def create_conservatory_router(
             "location_id": location_id,
             "history": locations.location_history(location_id),
         }
+
+    def _known_location_or_404(location_id: str) -> None:
+        if get_locations().get_location(location_id) is None:
+            raise HTTPException(status_code=404, detail={"code": "LOCATION_NOT_FOUND"})
+
+    @router.post("/locations/{location_id}/environment", status_code=201)
+    def record_environment(
+        location_id: str,
+        payload: EnvironmentReadingCreate,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        _known_location_or_404(location_id)
+        try:
+            return get_environment().record(location_id=location_id, **payload.model_dump())
+        except EnvironmentError_ as exc:
+            # Every one of these means the record would have misrepresented its
+            # own origin, which is a malformed claim rather than a conflict.
+            raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+    @router.get("/locations/{location_id}/environment")
+    def read_environment(
+        location_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        _known_location_or_404(location_id)
+        environment = get_environment()
+        context = environment.context_for(location_id)
+        # Both shapes are returned: the per-variable summary a consumer reasons
+        # over, and the raw readings behind it, so nothing has to trust the
+        # summary without being able to check it.
+        context["readings"] = environment.readings_for(location_id)
+        return context
 
     @router.get("/locations/occupancy")
     def location_occupancy(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
