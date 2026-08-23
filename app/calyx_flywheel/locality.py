@@ -17,7 +17,8 @@ travelled.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 __all__ = [
     "SENSITIVE_LOCALITY_FIELDS",

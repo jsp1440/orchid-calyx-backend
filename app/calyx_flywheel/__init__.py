@@ -5,6 +5,11 @@ routes, no graph writes. Later packets build on these; nothing here can be used
 to promote anything.
 """
 
+from app.calyx_flywheel.locality import (
+    SENSITIVE_LOCALITY_FIELDS,
+    SensitiveLocalityError,
+    assert_no_sensitive_locality,
+)
 from app.calyx_flywheel.models import (
     AssertionKind,
     AssertionOrigin,
@@ -21,11 +26,6 @@ from app.calyx_flywheel.models import (
     SimulationRun,
     StepControl,
     SupersessionRecord,
-)
-from app.calyx_flywheel.locality import (
-    SENSITIVE_LOCALITY_FIELDS,
-    SensitiveLocalityError,
-    assert_no_sensitive_locality,
 )
 
 __all__ = [
