@@ -74,6 +74,46 @@ def _raw_source_or_error(
     return raw_bytes
 
 
+@router.get("/papers")
+def list_papers(
+    repository: Annotated[
+        LiteratureResultRepository, Depends(get_literature_repository)
+    ],
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Discover which extraction results exist.
+
+    The module could return a paper by id and offered no way to learn which ids
+    exist, so nothing could build an index without inventing one. `/literature`
+    consequently shipped as a placeholder while real extractions sat in the
+    store.
+
+    Identity and counts only. Section text, claims and evidence carry their own
+    display policies, and a list endpoint is the wrong place to adjudicate
+    those — a caller who wants content asks for the paper.
+
+    `total` is returned alongside the page so "no more results" stays distinct
+    from "no results", and an unreadable record is reported as unreadable
+    rather than omitted: silently skipping an incomplete write would make the
+    corpus look smaller than it is.
+    """
+    if limit < 1 or offset < 0:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_PAGE_BOUNDS", "message": "limit must be >= 1 and offset >= 0"},
+        )
+
+    summaries, total = repository.list_summaries(limit=limit, offset=offset)
+    return {
+        "papers": summaries,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "unreadable_count": sum(1 for item in summaries if not item.get("readable", False)),
+    }
+
+
 @router.get("/papers/{paper_id}")
 def get_paper(
     paper_id: str,
