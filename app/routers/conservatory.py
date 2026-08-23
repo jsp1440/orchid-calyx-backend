@@ -19,6 +19,7 @@ from runtime.conservatory_environment import (
     ConservatoryEnvironmentStore,
     EnvironmentError_,
 )
+from runtime.conservatory_events import ConservatoryEventStore, PlantEventError
 from runtime.conservatory_locations import ConservatoryLocationStore, LocationError
 from runtime.conservatory_readiness import (
     build_conservatory_readiness,
@@ -79,6 +80,18 @@ class EnvironmentReadingCreate(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
+class PlantEventCreate(BaseModel):
+    kind: str = Field(min_length=2, max_length=40)
+    #: When it happened in the world. Never inferred from the request time.
+    occurred_at: str = Field(min_length=4, max_length=40)
+    recorder_kind: str = Field(default="grower", max_length=20)
+    recorder_ref: str | None = Field(default=None, max_length=200)
+    note: str | None = Field(default=None, max_length=5000)
+    #: The event this corrects. Required when kind is "correction".
+    supersedes_id: str | None = Field(default=None, max_length=100)
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
 class LabelRequest(BaseModel):
     plant_ids: list[str] | None = None
 
@@ -101,6 +114,10 @@ def _default_location_store() -> ConservatoryLocationStore:
 
 def _default_environment_store() -> ConservatoryEnvironmentStore:
     return ConservatoryEnvironmentStore(_conservatory_root())
+
+
+def _default_event_store() -> ConservatoryEventStore:
+    return ConservatoryEventStore(_conservatory_root())
 
 
 def _scan_base_url() -> str | None:
@@ -146,6 +163,7 @@ def create_conservatory_router(
     get_environment: Callable[
         [], ConservatoryEnvironmentStore
     ] = _default_environment_store,
+    get_events: Callable[[], ConservatoryEventStore] = _default_event_store,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/conservatory", tags=["conservatory"])
 
@@ -364,6 +382,34 @@ def create_conservatory_router(
         # summary without being able to check it.
         context["readings"] = environment.readings_for(location_id)
         return context
+
+    @router.post("/plants/{plant_id}/events", status_code=201)
+    def record_plant_event(
+        plant_id: str,
+        payload: PlantEventCreate,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        try:
+            return get_events().record(plant_id=plant_id, **payload.model_dump())
+        except PlantEventError as exc:
+            code = str(exc)
+            # Superseding an already-corrected event is a conflict with the
+            # ledger's current state; everything else is a malformed claim.
+            status = 409 if code == "EVENT_ALREADY_SUPERSEDED" else 422
+            raise HTTPException(status_code=status, detail={"code": code}) from exc
+
+    @router.get("/plants/{plant_id}/events")
+    def read_plant_events(
+        plant_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        # The timeline states its own provenance and that it is not scientific
+        # evidence, so a consumer cannot pick these up as findings by accident.
+        return get_events().timeline(plant_id)
 
     @router.get("/locations/occupancy")
     def location_occupancy(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
