@@ -28,6 +28,7 @@ from runtime.conservatory_readiness import (
     verify_restart_probe,
 )
 from runtime.conservatory_store import ConservatoryStore
+from runtime.conservatory_suitability import assess_placement_suitability
 
 
 class PlantCreate(BaseModel):
@@ -459,6 +460,43 @@ def create_conservatory_router(
             environment=environment,
             events=get_events().timeline(plant_id),
         )
+
+    @router.get("/plants/{plant_id}/placement-assessment")
+    def placement_assessment(
+        plant_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Compare this plant's recorded conditions against evidence-backed
+        bounds for its taxon.
+
+        Not advice about whether to move it: that depends on what else is on
+        the bench, what the grower can do, and the season, none of which are
+        in this data.
+        """
+        plant = get_store().get(plant_id)
+        if plant is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        locations = get_locations()
+        current = locations.current_placement(plant_id)
+        location = (
+            locations.get_location(current["location_id"])
+            if current and current.get("location_id")
+            else None
+        )
+        environment = (
+            get_environment().context_for(location["id"])
+            if location is not None
+            else None
+        )
+        context = build_cultivation_context(
+            plant=plant,
+            placement_current=current,
+            placement_history=locations.placement_history(plant_id),
+            location=location,
+            environment=environment,
+            events=get_events().timeline(plant_id),
+        )
+        return assess_placement_suitability(context)
 
     @router.get("/locations/occupancy")
     def location_occupancy(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
