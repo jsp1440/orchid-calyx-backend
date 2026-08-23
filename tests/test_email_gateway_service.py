@@ -24,20 +24,57 @@ def test_research_mail_uses_existing_governed_intelligence_service(monkeypatch):
 
     def fake_record(envelope, decision, *, intake_source_id=None):
         calls["record"] = (envelope, decision, intake_source_id)
-        return {"id": 77, "duplicate": False}
+        return {"id": 77, "duplicate": False, "intake_source_id": None}
+
+    def fake_link(message_id, source_id):
+        calls["link"] = (message_id, source_id)
+        return {"id": message_id, "intake_source_id": source_id}
 
     monkeypatch.setattr(service, "ingest_external_intelligence_email", fake_ingest)
     monkeypatch.setattr(service, "record_inbound_message", fake_record)
+    monkeypatch.setattr(service, "link_intake_source", fake_link)
 
     result = service.process_inbound_email(message("research@orchidcontinuum.org"))
 
     assert result["route"] == "research"
-    assert calls["record"][2] == 41
+    assert calls["record"][2] is None
+    assert calls["link"] == (77, 41)
     assert calls["ingest"]["imported_by"] == "test-provider-email-gateway"
     assert result["ticket"] is None
     assert result["canonical_graph_mutated"] is False
     assert result["external_contacted"] is False
     assert result["trusted_instruction"] is False
+
+
+def test_replayed_research_message_with_source_skips_assimilation(monkeypatch):
+    calls = {"ingest": 0, "link": 0}
+
+    monkeypatch.setattr(
+        service,
+        "record_inbound_message",
+        lambda envelope, decision, *, intake_source_id=None: {
+            "id": 77,
+            "duplicate": True,
+            "intake_source_id": 41,
+        },
+    )
+
+    def forbidden_ingest(**kwargs):
+        calls["ingest"] += 1
+        raise AssertionError("transport replay must not re-run intelligence assimilation")
+
+    def forbidden_link(message_id, source_id):
+        calls["link"] += 1
+        raise AssertionError("existing intake source must not be relinked")
+
+    monkeypatch.setattr(service, "ingest_external_intelligence_email", forbidden_ingest)
+    monkeypatch.setattr(service, "link_intake_source", forbidden_link)
+
+    result = service.process_inbound_email(message("research@orchidcontinuum.org"))
+
+    assert calls == {"ingest": 0, "link": 0}
+    assert result["intelligence"]["id"] == 41
+    assert result["intelligence"]["replayed_from_transport_ledger"] is True
 
 
 def test_bug_mail_creates_operational_ticket_without_science_ingestion(monkeypatch):
