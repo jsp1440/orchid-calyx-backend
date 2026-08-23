@@ -7,6 +7,7 @@ from app.constituent_platform import (
     CommunicationState,
     MessagePurpose,
     PreferenceState,
+    SuppressionKind,
     approval_required,
     assert_authorization_source,
     audience_snapshot_sha256,
@@ -46,26 +47,39 @@ def test_campaign_and_multi_recipient_intents_require_approval() -> None:
     assert approval_required(MessagePurpose.TRANSACTIONAL, 1) is False
 
 
-def test_suppression_overrides_even_required_service_preference() -> None:
+def test_delivery_critical_suppression_overrides_required_service() -> None:
     allowed, reason = recipient_delivery_decision(
         purpose=MessagePurpose.TRANSACTIONAL,
         preference=PreferenceState.REQUIRED_SERVICE,
-        suppressed=True,
+        suppressions={SuppressionKind.HARD_BOUNCE},
     )
     assert allowed is False
-    assert reason == "suppression_override"
+    assert reason == "critical_suppression"
+
+
+def test_marketing_unsubscribe_does_not_silence_required_transactional_message() -> None:
+    assert recipient_delivery_decision(
+        purpose=MessagePurpose.MARKETING,
+        preference=PreferenceState.SUBSCRIBED,
+        suppressions={SuppressionKind.UNSUBSCRIBE},
+    ) == (False, "unsubscribed")
+    assert recipient_delivery_decision(
+        purpose=MessagePurpose.TRANSACTIONAL,
+        preference=PreferenceState.UNSUBSCRIBED,
+        suppressions={SuppressionKind.UNSUBSCRIBE},
+    ) == (True, "required_service_purpose")
 
 
 def test_non_service_delivery_requires_affirmative_preference() -> None:
     assert recipient_delivery_decision(
         purpose=MessagePurpose.MARKETING,
         preference=None,
-        suppressed=False,
+        suppressions=set(),
     ) == (False, "no_affirmative_preference")
     assert recipient_delivery_decision(
         purpose=MessagePurpose.RESEARCH_DELIVERY,
         preference=PreferenceState.SUBSCRIBED,
-        suppressed=False,
+        suppressions=set(),
     ) == (True, "subscribed")
 
 

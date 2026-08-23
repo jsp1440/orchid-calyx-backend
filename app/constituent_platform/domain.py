@@ -28,6 +28,14 @@ class PreferenceState(str, Enum):
     REQUIRED_SERVICE = "required_service"
 
 
+class SuppressionKind(str, Enum):
+    UNSUBSCRIBE = "unsubscribe"
+    HARD_BOUNCE = "hard_bounce"
+    COMPLAINT = "complaint"
+    INVALID = "invalid"
+    ADMIN_BLOCK = "admin_block"
+
+
 class MessagePurpose(str, Enum):
     TRANSACTIONAL = "transactional"
     MEMBERSHIP_RELATIONSHIP = "membership_relationship"
@@ -62,6 +70,15 @@ REQUIRED_SERVICE_PURPOSES = frozenset(
         MessagePurpose.TRANSACTIONAL,
         MessagePurpose.SUPPORT,
         MessagePurpose.ADMINISTRATIVE,
+    }
+)
+
+CRITICAL_SUPPRESSIONS = frozenset(
+    {
+        SuppressionKind.HARD_BOUNCE,
+        SuppressionKind.COMPLAINT,
+        SuppressionKind.INVALID,
+        SuppressionKind.ADMIN_BLOCK,
     }
 )
 
@@ -147,12 +164,14 @@ def recipient_delivery_decision(
     *,
     purpose: MessagePurpose,
     preference: PreferenceState | None,
-    suppressed: bool,
+    suppressions: set[SuppressionKind] | frozenset[SuppressionKind],
 ) -> tuple[bool, str]:
-    """Apply suppression before purpose-specific preference state."""
+    """Apply delivery-critical suppression before purpose-specific preference state."""
 
-    if suppressed:
-        return False, "suppression_override"
+    if CRITICAL_SUPPRESSIONS.intersection(suppressions):
+        return False, "critical_suppression"
+    if SuppressionKind.UNSUBSCRIBE in suppressions and purpose not in REQUIRED_SERVICE_PURPOSES:
+        return False, "unsubscribed"
     if purpose in REQUIRED_SERVICE_PURPOSES:
         return True, "required_service_purpose"
     if preference is PreferenceState.REQUIRED_SERVICE:

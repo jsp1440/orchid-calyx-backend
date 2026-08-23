@@ -53,6 +53,50 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_oc_constituent_primary_email_scope
     ON oc_constituent.email_addresses (constituent_id, COALESCE(organization_id, 0))
     WHERE is_primary;
 
+CREATE TABLE IF NOT EXISTS oc_constituent.phone_numbers (
+    id BIGSERIAL PRIMARY KEY,
+    constituent_id BIGINT NOT NULL
+        REFERENCES oc_constituent.constituents(id) ON DELETE RESTRICT,
+    organization_id BIGINT
+        REFERENCES oc_constituent.organizations(id) ON DELETE RESTRICT,
+    normalized_phone TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT 'mobile',
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    verification_state TEXT NOT NULL DEFAULT 'unverified'
+        CHECK (verification_state IN ('unverified', 'pending', 'verified', 'invalid')),
+    verified_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE NULLS NOT DISTINCT (constituent_id, organization_id, normalized_phone),
+    CHECK ((verification_state = 'verified') = (verified_at IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_oc_constituent_primary_phone_scope
+    ON oc_constituent.phone_numbers (constituent_id, COALESCE(organization_id, 0))
+    WHERE is_primary;
+
+CREATE TABLE IF NOT EXISTS oc_constituent.postal_addresses (
+    id BIGSERIAL PRIMARY KEY,
+    constituent_id BIGINT NOT NULL
+        REFERENCES oc_constituent.constituents(id) ON DELETE RESTRICT,
+    organization_id BIGINT
+        REFERENCES oc_constituent.organizations(id) ON DELETE RESTRICT,
+    address_type TEXT NOT NULL DEFAULT 'mailing'
+        CHECK (address_type IN ('mailing', 'billing', 'shipping', 'other')),
+    line1 TEXT NOT NULL,
+    line2 TEXT,
+    locality TEXT,
+    administrative_area TEXT,
+    postal_code TEXT,
+    country_code CHAR(2) NOT NULL CHECK (country_code = UPPER(country_code)),
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_oc_constituent_primary_address_scope
+    ON oc_constituent.postal_addresses (constituent_id, COALESCE(organization_id, 0), address_type)
+    WHERE is_primary;
+
 CREATE TABLE IF NOT EXISTS oc_constituent.memberships (
     id BIGSERIAL PRIMARY KEY,
     organization_id BIGINT NOT NULL
@@ -74,6 +118,28 @@ CREATE TABLE IF NOT EXISTS oc_constituent.memberships (
 
 CREATE INDEX IF NOT EXISTS ix_oc_constituent_memberships_org_status
     ON oc_constituent.memberships (organization_id, status);
+
+CREATE TABLE IF NOT EXISTS oc_constituent.entitlements (
+    id BIGSERIAL PRIMARY KEY,
+    constituent_id BIGINT NOT NULL
+        REFERENCES oc_constituent.constituents(id) ON DELETE RESTRICT,
+    organization_id BIGINT
+        REFERENCES oc_constituent.organizations(id) ON DELETE RESTRICT,
+    entitlement_code TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('pending', 'active', 'suspended', 'expired', 'cancelled')),
+    source_kind TEXT NOT NULL,
+    source_ref TEXT,
+    limits JSONB NOT NULL DEFAULT '{}'::jsonb,
+    starts_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (expires_at IS NULL OR starts_at IS NULL OR expires_at >= starts_at)
+);
+
+CREATE INDEX IF NOT EXISTS ix_oc_constituent_entitlements_lookup
+    ON oc_constituent.entitlements (constituent_id, organization_id, entitlement_code, status);
 
 CREATE TABLE IF NOT EXISTS oc_constituent.communication_preferences (
     id BIGSERIAL PRIMARY KEY,
@@ -188,23 +254,34 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 DECLARE
+    target_snapshot_id BIGINT;
     frozen TIMESTAMPTZ;
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        target_snapshot_id := OLD.snapshot_id;
+    ELSE
+        target_snapshot_id := NEW.snapshot_id;
+    END IF;
+
     SELECT frozen_at INTO frozen
     FROM oc_communications.audience_snapshots
-    WHERE id = COALESCE(OLD.snapshot_id, NEW.snapshot_id);
+    WHERE id = target_snapshot_id;
 
     IF frozen IS NOT NULL THEN
         RAISE EXCEPTION 'FROZEN_AUDIENCE_IMMUTABLE';
     END IF;
-    RETURN COALESCE(NEW, OLD);
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
 END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_guard_frozen_audience_member
     ON oc_communications.audience_members;
 CREATE TRIGGER trg_guard_frozen_audience_member
-BEFORE UPDATE OR DELETE ON oc_communications.audience_members
+BEFORE INSERT OR UPDATE OR DELETE ON oc_communications.audience_members
 FOR EACH ROW EXECUTE FUNCTION oc_communications.guard_frozen_audience_member();
 
 CREATE OR REPLACE FUNCTION oc_communications.guard_frozen_snapshot()
@@ -238,6 +315,8 @@ COMMENT ON COLUMN oc_constituent.identity_links.auth_subject IS
     'Stable external auth subject such as supabase:<uuid>; no password or auth credential is stored here.';
 COMMENT ON TABLE oc_constituent.communication_preferences IS
     'Append-oriented preference ledger. New decisions supersede earlier rows rather than erasing consent provenance.';
+COMMENT ON TABLE oc_constituent.entitlements IS
+    'Provider-neutral service entitlement records and configurable limits; no payment credential or settlement data is stored here.';
 COMMENT ON TABLE oc_communications.approval_events IS
     'Approval audit record bound to the exact frozen audience hash. Inbound email/content is never an approval principal.';
 

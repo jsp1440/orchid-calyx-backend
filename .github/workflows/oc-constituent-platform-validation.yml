@@ -69,11 +69,21 @@ jobs:
           BEGIN
               BEGIN
                   UPDATE oc_communications.audience_members
-                  SET decision_reason = 'changed-after-approval'
+                  SET decision_reason = 'changed-after-freeze'
                   WHERE id = 1;
-                  RAISE EXCEPTION 'expected frozen audience mutation to fail';
+                  RAISE EXCEPTION 'expected frozen audience update to fail';
               EXCEPTION WHEN OTHERS THEN
-                  IF SQLERRM = 'expected frozen audience mutation to fail' THEN
+                  IF SQLERRM = 'expected frozen audience update to fail' THEN
+                      RAISE;
+                  END IF;
+              END;
+              BEGIN
+                  INSERT INTO oc_communications.audience_members (
+                      snapshot_id, constituent_id, normalized_email, allowed, decision_reason
+                  ) VALUES (1, 1, 'later@example.com', TRUE, 'late-addition');
+                  RAISE EXCEPTION 'expected frozen audience insert to fail';
+              EXCEPTION WHEN OTHERS THEN
+                  IF SQLERRM = 'expected frozen audience insert to fail' THEN
                       RAISE;
                   END IF;
               END;
