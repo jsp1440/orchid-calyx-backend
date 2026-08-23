@@ -349,6 +349,45 @@ class ConservatoryLocationStore:
             self._write(state)
             return dict(target)
 
+    def unretire_location(self, location_id: str) -> dict[str, Any]:
+        """Bring a retired location back into use.
+
+        Benches get dismantled and rebuilt, and a shade house closed for a
+        winter reopens in spring. Without this the only way back is a second
+        location with the same purpose, which splits one place's history in two
+        and makes every comparison across it wrong.
+
+        The identity is unchanged, so placements recorded before the retirement
+        still point here and the plant's earlier time on this bench remains one
+        continuous record rather than two unrelated ones.
+        """
+        with self._lock:
+            state = self._read()
+            target = next(
+                (row for row in state.locations if row["id"] == location_id), None
+            )
+            if target is None:
+                raise LocationError("LOCATION_NOT_FOUND")
+            if not target.get("retired_at"):
+                # Un-retiring something in use would append a change that never
+                # happened, and the log is meant to be a record of real events.
+                raise LocationError("LOCATION_NOT_RETIRED")
+            target["retired_at"] = None
+            target["retired_reason"] = None
+            state.location_changes.append(
+                LocationChange(
+                    id=str(uuid4()),
+                    location_id=location_id,
+                    change="unretired",
+                    previous_name=target["name"],
+                    new_name=target["name"],
+                    note=None,
+                    recorded_at=datetime.now(UTC).isoformat(),
+                ).as_dict()
+            )
+            self._write(state)
+            return dict(target)
+
     def location_history(self, location_id: str) -> list[dict[str, Any]]:
         """Everything that happened to this location, oldest first."""
         with self._lock:

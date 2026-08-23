@@ -291,6 +291,7 @@ def create_conservatory_router(
             "LOCATION_ALREADY_RETIRED",
             "LOCATION_STILL_OCCUPIED",
             "LOCATION_RETIRED",
+            "LOCATION_NOT_RETIRED",
         }
         status = 409 if code in conflicts else 422
         if code == "LOCATION_NOT_FOUND":
@@ -334,6 +335,17 @@ def create_conservatory_router(
     ) -> dict[str, Any]:
         try:
             return get_locations().retire_location(location_id, **payload.model_dump())
+        except LocationError as exc:
+            raise _location_error(exc) from exc
+
+    @router.post("/locations/{location_id}/unretire")
+    def unretire_location(
+        location_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Bring a retired location back into use, keeping its identity."""
+        try:
+            return get_locations().unretire_location(location_id)
         except LocationError as exc:
             raise _location_error(exc) from exc
 
