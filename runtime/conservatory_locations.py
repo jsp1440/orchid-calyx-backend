@@ -44,6 +44,7 @@ from uuid import uuid4
 __all__ = [
     "ConservatoryLocationStore",
     "GrowingLocation",
+    "LocationChange",
     "LocationError",
     "PlacementEvent",
 ]
@@ -54,10 +55,17 @@ __all__ = [
 LOCATION_KINDS: frozenset[str] = frozenset(
     {
         "greenhouse",
+        # A bench is where a plant actually sits, and two benches in one
+        # greenhouse can differ more than two greenhouses do. Recording only
+        # the building loses the distinction a grower is actually managing.
+        "greenhouse_bench",
         "shade_house",
+        "lath_house",
         "outdoor",
         "windowsill",
         "indoor_growing_area",
+        "shelf",
+        "zone",
         "custom",
     }
 )
@@ -77,6 +85,12 @@ class GrowingLocation:
     described_conditions: str | None
     notes: str | None
     created_at: str
+    #: When the grower stopped using this place, or None while it is in use.
+    #: Retired rather than deleted: placement history points at this location,
+    #: and deleting it would leave that history pointing at nothing — which
+    #: reads as data loss rather than as a bench that was dismantled.
+    retired_at: str | None = None
+    retired_reason: str | None = None
     #: Always "grower_description". Carried explicitly rather than implied, so
     #: a later reader cannot mistake this for sensor-derived data. When real
     #: measurements arrive they arrive under a different origin, not by
@@ -104,13 +118,43 @@ class PlacementEvent:
         return asdict(self)
 
 
-PLACEMENT_REASONS: frozenset[str] = frozenset({"initial", "move", "correction", "removed"})
+PLACEMENT_REASONS: frozenset[str] = frozenset(
+    {"initial", "move", "correction", "removed"}
+)
+
+
+@dataclass(frozen=True)
+class LocationChange:
+    """A change to the location itself, not to any plant standing in it.
+
+    Renaming a bench and moving a plant off it are completely different facts,
+    and both change what a grower sees next to that plant. Keeping them in one
+    log would make "Bench 2 became the cool bench" indistinguishable from "the
+    plant went to the cool bench", and only one of those is husbandry.
+    """
+
+    id: str
+    location_id: str
+    change: str
+    previous_name: str | None
+    new_name: str | None
+    note: str | None
+    recorded_at: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+LOCATION_CHANGES: frozenset[str] = frozenset(
+    {"created", "renamed", "retired", "unretired"}
+)
 
 
 @dataclass
 class _State:
     locations: list[dict[str, Any]] = field(default_factory=list)
     placements: list[dict[str, Any]] = field(default_factory=list)
+    location_changes: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ConservatoryLocationStore:
@@ -131,13 +175,18 @@ class ConservatoryLocationStore:
         return _State(
             locations=list(payload.get("locations") or []),
             placements=list(payload.get("placements") or []),
+            location_changes=list(payload.get("location_changes") or []),
         )
 
     def _write(self, state: _State) -> None:
         temporary = self.path.with_suffix(".json.tmp")
         temporary.write_text(
             json.dumps(
-                {"locations": state.locations, "placements": state.placements},
+                {
+                    "locations": state.locations,
+                    "placements": state.placements,
+                    "location_changes": state.location_changes,
+                },
                 indent=2,
                 sort_keys=True,
                 ensure_ascii=False,
@@ -167,7 +216,10 @@ class ConservatoryLocationStore:
             # Names are compared case-insensitively so one bench cannot become
             # three through capitalisation, which would make every
             # cross-location comparison silently wrong.
-            if any(row["name"].strip().lower() == normalized.lower() for row in state.locations):
+            if any(
+                row["name"].strip().lower() == normalized.lower()
+                for row in state.locations
+            ):
                 raise LocationError("LOCATION_NAME_ALREADY_USED")
             location = GrowingLocation(
                 id=str(uuid4()),
@@ -178,6 +230,17 @@ class ConservatoryLocationStore:
                 created_at=datetime.now(UTC).isoformat(),
             ).as_dict()
             state.locations.append(location)
+            state.location_changes.append(
+                LocationChange(
+                    id=str(uuid4()),
+                    location_id=location["id"],
+                    change="created",
+                    previous_name=None,
+                    new_name=location["name"],
+                    note=None,
+                    recorded_at=location["created_at"],
+                ).as_dict()
+            )
             self._write(state)
             return location
 
@@ -187,7 +250,114 @@ class ConservatoryLocationStore:
 
     def get_location(self, location_id: str) -> dict[str, Any] | None:
         with self._lock:
-            return next((row for row in self._read().locations if row["id"] == location_id), None)
+            return next(
+                (row for row in self._read().locations if row["id"] == location_id),
+                None,
+            )
+
+    def rename_location(
+        self, location_id: str, *, name: str, note: str | None = None
+    ) -> dict[str, Any]:
+        """Change what a location is called, keeping what it is.
+
+        The id never changes, so every placement that ever pointed here still
+        points here. A rename is emphatically not a move: no plant went
+        anywhere, and nothing may be appended to any plant's placement history
+        because of it. Recording it as a move would invent husbandry that never
+        happened and would show up later as a cause of whatever the plant did
+        next.
+        """
+        normalized = (name or "").strip()
+        if len(normalized) < 2:
+            raise LocationError("LOCATION_NAME_TOO_SHORT")
+        with self._lock:
+            state = self._read()
+            target = next(
+                (row for row in state.locations if row["id"] == location_id), None
+            )
+            if target is None:
+                raise LocationError("LOCATION_NOT_FOUND")
+            if any(
+                row["id"] != location_id
+                and row["name"].strip().lower() == normalized.lower()
+                for row in state.locations
+            ):
+                raise LocationError("LOCATION_NAME_ALREADY_USED")
+            previous = target["name"]
+            if (
+                previous.strip().lower() == normalized.lower()
+                and previous == normalized
+            ):
+                # Nothing changed. Appending a rename event would put a change
+                # in the log that never happened.
+                return dict(target)
+            target["name"] = normalized
+            state.location_changes.append(
+                LocationChange(
+                    id=str(uuid4()),
+                    location_id=location_id,
+                    change="renamed",
+                    previous_name=previous,
+                    new_name=normalized,
+                    note=(note or "").strip() or None,
+                    recorded_at=datetime.now(UTC).isoformat(),
+                ).as_dict()
+            )
+            self._write(state)
+            return dict(target)
+
+    def retire_location(
+        self, location_id: str, *, reason: str | None = None
+    ) -> dict[str, Any]:
+        """Take a location out of use without erasing it.
+
+        Retired rather than deleted, because placement history points here.
+        Deleting the bench would leave a plant's history referring to nothing,
+        which a later reader cannot distinguish from data loss — whereas a
+        retired bench correctly says "this plant was there, and that place is
+        gone now".
+        """
+        with self._lock:
+            state = self._read()
+            target = next(
+                (row for row in state.locations if row["id"] == location_id), None
+            )
+            if target is None:
+                raise LocationError("LOCATION_NOT_FOUND")
+            if target.get("retired_at"):
+                raise LocationError("LOCATION_ALREADY_RETIRED")
+            occupants = self._occupancy_from(state).get(location_id, [])
+            if occupants:
+                # Retiring an occupied bench would strand plants in a place
+                # that no longer accepts them, and nothing would say where they
+                # actually are.
+                raise LocationError("LOCATION_STILL_OCCUPIED")
+            now = datetime.now(UTC).isoformat()
+            target["retired_at"] = now
+            target["retired_reason"] = (reason or "").strip() or None
+            state.location_changes.append(
+                LocationChange(
+                    id=str(uuid4()),
+                    location_id=location_id,
+                    change="retired",
+                    previous_name=target["name"],
+                    new_name=target["name"],
+                    note=target["retired_reason"],
+                    recorded_at=now,
+                ).as_dict()
+            )
+            self._write(state)
+            return dict(target)
+
+    def location_history(self, location_id: str) -> list[dict[str, Any]]:
+        """Everything that happened to this location, oldest first."""
+        with self._lock:
+            changes = [
+                row
+                for row in self._read().location_changes
+                if row["location_id"] == location_id
+            ]
+        return sorted(changes, key=lambda row: row["recorded_at"])
 
     # ----- placement -------------------------------------------------
 
@@ -208,12 +378,24 @@ class ConservatoryLocationStore:
             raise LocationError("LOCATION_REQUIRED")
         with self._lock:
             state = self._read()
-            if location_id is not None and not any(
-                row["id"] == location_id for row in state.locations
-            ):
+            target = (
+                next((row for row in state.locations if row["id"] == location_id), None)
+                if location_id is not None
+                else None
+            )
+            if location_id is not None and target is None:
                 # Placing a plant somewhere that does not exist would produce a
                 # history pointing at nothing, which reads as data loss later.
                 raise LocationError("LOCATION_NOT_FOUND")
+            if (
+                target is not None
+                and target.get("retired_at")
+                and reason != "correction"
+            ):
+                # A retired place accepts no new arrivals, but a correction to
+                # a past record may still name it: the plant really was there,
+                # and refusing to say so would force a false history.
+                raise LocationError("LOCATION_RETIRED")
             event = PlacementEvent(
                 id=str(uuid4()),
                 plant_id=plant_id,
@@ -229,7 +411,9 @@ class ConservatoryLocationStore:
     def placement_history(self, plant_id: str) -> list[dict[str, Any]]:
         """Every recorded placement for a plant, oldest first."""
         with self._lock:
-            events = [row for row in self._read().placements if row["plant_id"] == plant_id]
+            events = [
+                row for row in self._read().placements if row["plant_id"] == plant_id
+            ]
         return sorted(events, key=lambda row: row["recorded_at"])
 
     def current_placement(self, plant_id: str) -> dict[str, Any] | None:
@@ -250,6 +434,11 @@ class ConservatoryLocationStore:
         """Plant ids currently in each location, keyed by location id."""
         with self._lock:
             state = self._read()
+        return self._occupancy_from(state)
+
+    @staticmethod
+    def _occupancy_from(state: _State) -> dict[str, list[str]]:
+        """Shared so retirement and the occupancy view can never disagree."""
         by_plant: dict[str, dict[str, Any]] = {}
         for event in sorted(state.placements, key=lambda row: row["recorded_at"]):
             by_plant[event["plant_id"]] = event

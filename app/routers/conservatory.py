@@ -41,6 +41,15 @@ class LocationCreate(BaseModel):
     notes: str | None = Field(default=None, max_length=5000)
 
 
+class LocationRename(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class LocationRetire(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
+
+
 class PlacementCreate(BaseModel):
     location_id: str | None = Field(default=None, max_length=100)
     #: "move" means the plant physically went somewhere. "correction" means
@@ -228,7 +237,16 @@ def create_conservatory_router(
         # everything else here is a malformed request. Returning one status for
         # both would make "you already have this bench" indistinguishable from
         # "that is not a kind of place".
-        status = 409 if code == "LOCATION_NAME_ALREADY_USED" else 422
+        # A conflict is something already true of the world that the caller
+        # must reconcile; 422 is a malformed request. A grower fixes them
+        # differently, so they must not share a status.
+        conflicts = {
+            "LOCATION_NAME_ALREADY_USED",
+            "LOCATION_ALREADY_RETIRED",
+            "LOCATION_STILL_OCCUPIED",
+            "LOCATION_RETIRED",
+        }
+        status = 409 if code in conflicts else 422
         if code == "LOCATION_NOT_FOUND":
             status = 404
         return HTTPException(status_code=status, detail={"code": code})
@@ -247,6 +265,44 @@ def create_conservatory_router(
             return get_locations().create_location(**payload.model_dump())
         except LocationError as exc:
             raise _location_error(exc) from exc
+
+    @router.post("/locations/{location_id}/rename")
+    def rename_location(
+        location_id: str,
+        payload: LocationRename,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Rename a location. Emphatically not a plant move: the id is
+        unchanged, every placement still points here, and no plant's history
+        is touched."""
+        try:
+            return get_locations().rename_location(location_id, **payload.model_dump())
+        except LocationError as exc:
+            raise _location_error(exc) from exc
+
+    @router.post("/locations/{location_id}/retire")
+    def retire_location(
+        location_id: str,
+        payload: LocationRetire,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        try:
+            return get_locations().retire_location(location_id, **payload.model_dump())
+        except LocationError as exc:
+            raise _location_error(exc) from exc
+
+    @router.get("/locations/{location_id}/history")
+    def location_history(
+        location_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        locations = get_locations()
+        if locations.get_location(location_id) is None:
+            raise HTTPException(status_code=404, detail={"code": "LOCATION_NOT_FOUND"})
+        return {
+            "location_id": location_id,
+            "history": locations.location_history(location_id),
+        }
 
     @router.get("/locations/occupancy")
     def location_occupancy(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
