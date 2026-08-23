@@ -62,7 +62,7 @@ def record_inbound_message(
                     envelope.content_sha256(),
                     decision.route.value,
                     decision.reason,
-                    Jsonb(envelope.trust_metadata),
+                    Jsonb(dict(envelope.trust_metadata)),
                     Jsonb(_attachment_json(envelope)),
                     intake_source_id,
                 ),
@@ -84,6 +84,26 @@ def record_inbound_message(
                 raise RuntimeError("Duplicate inbound email could not be re-read")
             existing["duplicate"] = True
             return existing
+
+
+def link_intake_source(message_id: int, source_id: int) -> dict[str, Any]:
+    """Attach the governed intelligence source once without permitting relinking."""
+
+    with psycopg.connect(database_url(), row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE oc_email.inbound_messages
+                SET intake_source_id = %s
+                WHERE id = %s AND (intake_source_id IS NULL OR intake_source_id = %s)
+                RETURNING *
+                """,
+                (source_id, message_id, source_id),
+            )
+            linked = cur.fetchone()
+            if linked is None:
+                raise RuntimeError("Inbound email is already linked to a different intake source")
+            return linked
 
 
 def ensure_operational_ticket(message_id: int, route: EmailRoute) -> dict[str, Any]:
