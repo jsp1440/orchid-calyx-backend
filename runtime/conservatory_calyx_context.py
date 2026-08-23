@@ -39,6 +39,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from runtime.conservatory_taxon_requirements import resolve_taxon_requirements
+
 __all__ = [
     "CLAIM_CLASSES",
     "build_cultivation_context",
@@ -48,6 +50,8 @@ CLAIM_CLASSES: tuple[str, ...] = (
     "identity",
     "collection_fact",
     "measured_evidence",
+    # A published or extracted claim about the taxon, not about this plant.
+    "literature_derived",
     "manual_observation",
     "inferred_context",
     "absent",
@@ -64,6 +68,24 @@ _ORIGIN_TO_CLASS = {
 }
 
 
+def _requirements_claim(resolved: dict[str, Any]) -> dict[str, Any]:
+    """Wrap resolved requirements in the envelope's claim shape.
+
+    Requirements are literature-derived, which is a stronger class than
+    anything the grower recorded and still not a verified finding. Collapsing
+    them into `measured_evidence` would let a published range sit beside a
+    thermometer reading as the same kind of thing.
+    """
+    if not resolved.get("known"):
+        return _claim(None, "absent", reason=resolved.get("reason", "NOT_RESOLVED"))
+    return _claim(
+        resolved["requirements"],
+        "literature_derived",
+        taxon=resolved.get("taxon"),
+        note=resolved.get("note"),
+    )
+
+
 def _claim(value: Any, claim_class: str, **extra: Any) -> dict[str, Any]:
     if claim_class not in CLAIM_CLASSES:
         raise ValueError("UNRECOGNISED_CLAIM_CLASS")
@@ -78,6 +100,7 @@ def build_cultivation_context(
     location: dict[str, Any] | None,
     environment: dict[str, Any] | None,
     events: dict[str, Any] | None,
+    trait_candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Assemble what is known about one plant, each claim labelled by class.
 
@@ -182,8 +205,14 @@ def build_cultivation_context(
         "literature_evidence": _claim(
             None, "absent", reason="NOT_INCLUDED_IN_COLLECTION_CONTEXT"
         ),
-        "taxon_requirements": _claim(
-            None, "absent", reason="NO_TAXON_REQUIREMENT_CONTRACT_AVAILABLE"
+        # Derived from trait evidence the Continuum holds, and absent when it
+        # holds none — which is the normal case. A default range here would be
+        # acted on by a grower, and acting on a fabricated minimum is worse
+        # than being told nothing.
+        "taxon_requirements": _requirements_claim(
+            resolve_taxon_requirements(
+                plant.get("accepted_scientific_name"), trait_candidates
+            )
         ),
         "claim_classes": list(CLAIM_CLASSES),
         # Stated about itself so no consumer can claim it did not know.

@@ -35,6 +35,7 @@ def _context(**overrides):
         "location": LOCATION,
         "environment": None,
         "events": None,
+        "trait_candidates": None,
     }
     base.update(overrides)
     return build_cultivation_context(**base)
@@ -148,10 +149,15 @@ class TestAbsenceIsRepresentedNotDropped:
         assert literature["claim_class"] == "absent"
         assert literature["value"] is None
 
-    def test_taxon_requirements_are_named_as_absent(self):
+    def test_taxon_requirements_are_absent_when_no_evidence_exists(self):
+        """Now that the requirement contract exists, absence means the
+        Continuum holds no cultivation evidence for this taxon — the normal
+        case — rather than that no contract was available. A default range
+        would be acted on by a grower."""
         requirements = _context()["taxon_requirements"]
         assert requirements["claim_class"] == "absent"
-        assert "NO_TAXON_REQUIREMENT_CONTRACT" in requirements["reason"]
+        assert requirements["reason"] == "NO_CULTIVATION_EVIDENCE_FOR_THIS_TAXON"
+        assert requirements["value"] is None
 
     def test_an_empty_history_is_absent_rather_than_an_empty_fact(self):
         context = _context(placement_history=[])
@@ -159,6 +165,49 @@ class TestAbsenceIsRepresentedNotDropped:
 
     def test_no_observations_is_absent(self):
         assert _context()["observations"]["claim_class"] == "absent"
+
+
+class TestRequirementsArriveAsLiteratureNotMeasurement:
+    def test_evidence_backed_requirements_appear_in_their_own_class(self):
+        """A published range and a thermometer reading are not the same kind of
+        thing, and collapsing them would let one stand in for the other."""
+        context = _context(
+            trait_candidates=[
+                {
+                    "predicate": "minimum_temperature",
+                    "numeric_value": 12.0,
+                    "unit": "degrees Celsius",
+                    "source_anchor_ids": [401],
+                    "source_revision_id": 41,
+                    "verification_state": "VERIFIED",
+                    "status": "ACTIVE",
+                }
+            ]
+        )
+        requirements = context["taxon_requirements"]
+        assert requirements["claim_class"] == "literature_derived"
+        assert requirements["claim_class"] != "measured_evidence"
+        bound = requirements["value"]["temperature_c"]["bounds"]["minimum"][0]
+        assert bound["value"] == 12.0
+        assert bound["evidence_strength"] == "verified"
+
+    def test_the_envelope_still_denies_being_evidence(self):
+        # Requirements are the strongest thing in here and the envelope is
+        # still not a finding.
+        context = _context(
+            trait_candidates=[
+                {
+                    "predicate": "minimum_temperature",
+                    "numeric_value": 12.0,
+                    "unit": "degrees Celsius",
+                    "source_anchor_ids": [401],
+                    "source_revision_id": 41,
+                    "status": "ACTIVE",
+                }
+            ]
+        )
+        assert context["is_scientific_evidence"] is False
+        assert context["may_be_promoted_to_evidence"] is False
 
 
 class TestObservationsStayObservations:
