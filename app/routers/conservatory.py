@@ -299,7 +299,10 @@ def create_conservatory_router(
         locations = get_locations()
         if locations.get_location(location_id) is None:
             raise HTTPException(status_code=404, detail={"code": "LOCATION_NOT_FOUND"})
-        return {"location_id": location_id, "history": locations.location_history(location_id)}
+        return {
+            "location_id": location_id,
+            "history": locations.location_history(location_id),
+        }
 
     @router.get("/locations/occupancy")
     def location_occupancy(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008

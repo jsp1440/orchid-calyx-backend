@@ -118,7 +118,9 @@ class PlacementEvent:
         return asdict(self)
 
 
-PLACEMENT_REASONS: frozenset[str] = frozenset({"initial", "move", "correction", "removed"})
+PLACEMENT_REASONS: frozenset[str] = frozenset(
+    {"initial", "move", "correction", "removed"}
+)
 
 
 @dataclass(frozen=True)
@@ -143,7 +145,9 @@ class LocationChange:
         return asdict(self)
 
 
-LOCATION_CHANGES: frozenset[str] = frozenset({"created", "renamed", "retired", "unretired"})
+LOCATION_CHANGES: frozenset[str] = frozenset(
+    {"created", "renamed", "retired", "unretired"}
+)
 
 
 @dataclass
@@ -212,7 +216,10 @@ class ConservatoryLocationStore:
             # Names are compared case-insensitively so one bench cannot become
             # three through capitalisation, which would make every
             # cross-location comparison silently wrong.
-            if any(row["name"].strip().lower() == normalized.lower() for row in state.locations):
+            if any(
+                row["name"].strip().lower() == normalized.lower()
+                for row in state.locations
+            ):
                 raise LocationError("LOCATION_NAME_ALREADY_USED")
             location = GrowingLocation(
                 id=str(uuid4()),
@@ -243,9 +250,14 @@ class ConservatoryLocationStore:
 
     def get_location(self, location_id: str) -> dict[str, Any] | None:
         with self._lock:
-            return next((row for row in self._read().locations if row["id"] == location_id), None)
+            return next(
+                (row for row in self._read().locations if row["id"] == location_id),
+                None,
+            )
 
-    def rename_location(self, location_id: str, *, name: str, note: str | None = None) -> dict[str, Any]:
+    def rename_location(
+        self, location_id: str, *, name: str, note: str | None = None
+    ) -> dict[str, Any]:
         """Change what a location is called, keeping what it is.
 
         The id never changes, so every placement that ever pointed here still
@@ -260,16 +272,22 @@ class ConservatoryLocationStore:
             raise LocationError("LOCATION_NAME_TOO_SHORT")
         with self._lock:
             state = self._read()
-            target = next((row for row in state.locations if row["id"] == location_id), None)
+            target = next(
+                (row for row in state.locations if row["id"] == location_id), None
+            )
             if target is None:
                 raise LocationError("LOCATION_NOT_FOUND")
             if any(
-                row["id"] != location_id and row["name"].strip().lower() == normalized.lower()
+                row["id"] != location_id
+                and row["name"].strip().lower() == normalized.lower()
                 for row in state.locations
             ):
                 raise LocationError("LOCATION_NAME_ALREADY_USED")
             previous = target["name"]
-            if previous.strip().lower() == normalized.lower() and previous == normalized:
+            if (
+                previous.strip().lower() == normalized.lower()
+                and previous == normalized
+            ):
                 # Nothing changed. Appending a rename event would put a change
                 # in the log that never happened.
                 return dict(target)
@@ -288,7 +306,9 @@ class ConservatoryLocationStore:
             self._write(state)
             return dict(target)
 
-    def retire_location(self, location_id: str, *, reason: str | None = None) -> dict[str, Any]:
+    def retire_location(
+        self, location_id: str, *, reason: str | None = None
+    ) -> dict[str, Any]:
         """Take a location out of use without erasing it.
 
         Retired rather than deleted, because placement history points here.
@@ -299,7 +319,9 @@ class ConservatoryLocationStore:
         """
         with self._lock:
             state = self._read()
-            target = next((row for row in state.locations if row["id"] == location_id), None)
+            target = next(
+                (row for row in state.locations if row["id"] == location_id), None
+            )
             if target is None:
                 raise LocationError("LOCATION_NOT_FOUND")
             if target.get("retired_at"):
@@ -331,7 +353,9 @@ class ConservatoryLocationStore:
         """Everything that happened to this location, oldest first."""
         with self._lock:
             changes = [
-                row for row in self._read().location_changes if row["location_id"] == location_id
+                row
+                for row in self._read().location_changes
+                if row["location_id"] == location_id
             ]
         return sorted(changes, key=lambda row: row["recorded_at"])
 
@@ -363,7 +387,11 @@ class ConservatoryLocationStore:
                 # Placing a plant somewhere that does not exist would produce a
                 # history pointing at nothing, which reads as data loss later.
                 raise LocationError("LOCATION_NOT_FOUND")
-            if target is not None and target.get("retired_at") and reason != "correction":
+            if (
+                target is not None
+                and target.get("retired_at")
+                and reason != "correction"
+            ):
                 # A retired place accepts no new arrivals, but a correction to
                 # a past record may still name it: the plant really was there,
                 # and refusing to say so would force a false history.
@@ -383,7 +411,9 @@ class ConservatoryLocationStore:
     def placement_history(self, plant_id: str) -> list[dict[str, Any]]:
         """Every recorded placement for a plant, oldest first."""
         with self._lock:
-            events = [row for row in self._read().placements if row["plant_id"] == plant_id]
+            events = [
+                row for row in self._read().placements if row["plant_id"] == plant_id
+            ]
         return sorted(events, key=lambda row: row["recorded_at"])
 
     def current_placement(self, plant_id: str) -> dict[str, Any] | None:
