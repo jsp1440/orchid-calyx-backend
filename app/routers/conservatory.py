@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
 from runtime.conservatory_calyx_context import build_cultivation_context
+from runtime.conservatory_collection_review import build_collection_review
 from runtime.conservatory_environment import (
     ConservatoryEnvironmentStore,
     EnvironmentError_,
@@ -510,6 +511,51 @@ def create_conservatory_router(
             trait_source_unavailable=trait_supply.unavailable_reason,
         )
 
+    def _assessment_for(plant: dict[str, Any]) -> dict[str, Any]:
+        """One plant's assessment, built the same way for both callers.
+
+        Shared deliberately: two comparison paths disagree eventually, and the
+        one a grower reads on the dossier must be the one the collection view
+        summarises.
+        """
+        locations = get_locations()
+        current = locations.current_placement(plant["id"])
+        location = (
+            locations.get_location(current["location_id"])
+            if current and current.get("location_id")
+            else None
+        )
+        environment = (
+            get_environment().context_for(location["id"])
+            if location is not None
+            else None
+        )
+        trait_supply = get_trait_evidence(plant.get("accepted_scientific_name"))
+        context = build_cultivation_context(
+            plant=plant,
+            placement_current=current,
+            placement_history=locations.placement_history(plant["id"]),
+            location=location,
+            environment=environment,
+            events=get_events().timeline(plant["id"]),
+            trait_candidates=trait_supply.candidates,
+            trait_source_unavailable=trait_supply.unavailable_reason,
+        )
+        return assess_placement_suitability(context)
+
+    @router.get("/collection/review")
+    def collection_review(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
+        """Every plant grouped by what its assessment established.
+
+        Owner-gated like the rest of this router. A collection listing is the
+        most sensitive shape here — it is the whole holding in one response —
+        and it must never be reachable from the public scan route.
+        """
+        plants = get_store().list()
+        return build_collection_review(
+            [(plant, _assessment_for(plant)) for plant in plants]
+        )
+
     @router.get("/plants/{plant_id}/placement-assessment")
     def placement_assessment(
         plant_id: str,
@@ -525,30 +571,7 @@ def create_conservatory_router(
         plant = get_store().get(plant_id)
         if plant is None:
             raise HTTPException(status_code=404, detail="plant not found")
-        locations = get_locations()
-        current = locations.current_placement(plant_id)
-        location = (
-            locations.get_location(current["location_id"])
-            if current and current.get("location_id")
-            else None
-        )
-        environment = (
-            get_environment().context_for(location["id"])
-            if location is not None
-            else None
-        )
-        trait_supply = get_trait_evidence(plant.get("accepted_scientific_name"))
-        context = build_cultivation_context(
-            plant=plant,
-            placement_current=current,
-            placement_history=locations.placement_history(plant_id),
-            location=location,
-            environment=environment,
-            events=get_events().timeline(plant_id),
-            trait_candidates=trait_supply.candidates,
-            trait_source_unavailable=trait_supply.unavailable_reason,
-        )
-        return assess_placement_suitability(context)
+        return _assessment_for(plant)
 
     @router.get("/locations/occupancy")
     def location_occupancy(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
