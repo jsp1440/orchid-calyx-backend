@@ -44,6 +44,7 @@ from runtime.conservatory_taxon_requirements import resolve_taxon_requirements
 __all__ = [
     "CLAIM_CLASSES",
     "build_cultivation_context",
+    "requirements_claim",
 ]
 
 CLAIM_CLASSES: tuple[str, ...] = (
@@ -68,7 +69,7 @@ _ORIGIN_TO_CLASS = {
 }
 
 
-def _requirements_claim(resolved: dict[str, Any]) -> dict[str, Any]:
+def requirements_claim(resolved: dict[str, Any]) -> dict[str, Any]:
     """Wrap resolved requirements in the envelope's claim shape.
 
     Requirements are literature-derived, which is a stronger class than
@@ -222,7 +223,7 @@ def build_cultivation_context(
         # holds none — which is the normal case. A default range here would be
         # acted on by a grower, and acting on a fabricated minimum is worse
         # than being told nothing.
-        "taxon_requirements": _requirements_claim(
+        "taxon_requirements": requirements_claim(
             resolve_taxon_requirements(
                 plant.get("accepted_scientific_name"),
                 trait_candidates,

@@ -11,11 +11,14 @@ from urllib.parse import quote
 
 import qrcode
 import qrcode.image.svg
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
-from runtime.conservatory_calyx_context import build_cultivation_context
+from runtime.conservatory_calyx_context import (
+    build_cultivation_context,
+    requirements_claim,
+)
 from runtime.conservatory_collection_review import build_collection_review
 from runtime.conservatory_environment import (
     ConservatoryEnvironmentStore,
@@ -30,6 +33,11 @@ from runtime.conservatory_readiness import (
 )
 from runtime.conservatory_store import ConservatoryStore
 from runtime.conservatory_suitability import assess_placement_suitability
+from runtime.conservatory_taxon_placement import (
+    MAX_TAXON_LENGTH,
+    build_taxon_placement_search,
+)
+from runtime.conservatory_taxon_requirements import resolve_taxon_requirements
 from runtime.conservatory_trait_supply import TraitSupply, supply_from_repository
 
 
@@ -542,6 +550,37 @@ def create_conservatory_router(
             trait_source_unavailable=trait_supply.unavailable_reason,
         )
         return assess_placement_suitability(context)
+
+    @router.get("/locations/suitability")
+    def taxon_placement_search(
+        taxon: str = Query(default="", max_length=MAX_TAXON_LENGTH),
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Where in this collection a candidate taxon's requirements are met.
+
+        The buying question, answered from what the benches actually measure.
+        Not advice about the purchase: whether a bench has room, and whether
+        the grower can hold it there through a season, are not in this data.
+
+        Owner-gated with the rest of the router. The response names every
+        location in the collection, which is private whether or not a plant is
+        standing in it.
+        """
+        supply = get_trait_evidence(taxon or None)
+        requirements = requirements_claim(
+            resolve_taxon_requirements(
+                taxon or None,
+                supply.candidates,
+                source_unavailable=supply.unavailable_reason,
+            )
+        )
+        environment = get_environment()
+        return build_taxon_placement_search(
+            taxon=taxon,
+            requirements_claim=requirements,
+            locations=get_locations().list_locations(),
+            environment_for=environment.context_for,
+        )
 
     @router.get("/collection/review")
     def collection_review(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
