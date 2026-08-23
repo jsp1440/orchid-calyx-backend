@@ -309,10 +309,24 @@ class TestThroughTheApi:
         return TestClient(app), plants, locations
 
     def test_a_real_plant_with_a_reading_and_no_taxon_evidence_is_unassessable(
-        self, tmp_path
+        self, tmp_path, monkeypatch
     ):
         # The honest common case: the Continuum knows the bench is 12C and
         # knows nothing about what this taxon needs.
+        #
+        # The candidate store is stubbed empty rather than left ambient so
+        # this asserts "read it, found nothing" in every environment. Left
+        # ambient it would assert whatever the environment's database driver
+        # happens to make possible, and an unreachable store is a different
+        # answer with a different reason.
+        import app.routers.conservatory as module
+
+        class EmptyStore:
+            def __init__(self):
+                self.candidates = []
+                self.evidence_links = []
+
+        monkeypatch.setattr(module, "_candidate_repository", lambda: EmptyStore())
         client, plants, locations = self._client(tmp_path)
         plant = plants.create(
             display_name="Cattleya", accepted_scientific_name="Cattleya skinneri"

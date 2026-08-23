@@ -64,6 +64,8 @@ def _assess_variable(
     variable: str,
     condition: dict[str, Any] | None,
     requirement: dict[str, Any] | None,
+    *,
+    requirement_source_consulted: bool = True,
 ) -> dict[str, Any]:
     """One variable, compared only when both sides genuinely exist."""
     # The envelope wraps every condition as a claim: {value, claim_class, ...}
@@ -81,7 +83,11 @@ def _assess_variable(
         return {
             "variable": variable,
             "outcome": "unassessable",
-            "reason": "NO_CONDITION_AND_NO_REQUIREMENT",
+            "reason": (
+                "NO_CONDITION_AND_NO_REQUIREMENT"
+                if requirement_source_consulted
+                else "NO_CONDITION_AND_REQUIREMENT_SOURCE_UNAVAILABLE"
+            ),
         }
     if not have_condition:
         return {
@@ -93,7 +99,14 @@ def _assess_variable(
         return {
             "variable": variable,
             "outcome": "unassessable",
-            "reason": "NO_REQUIREMENT_EVIDENCE",
+            # "No evidence exists" and "we could not read the store that holds
+            # it" are different answers. Reporting the first for the second
+            # would turn an outage into a statement about the literature.
+            "reason": (
+                "NO_REQUIREMENT_EVIDENCE"
+                if requirement_source_consulted
+                else "REQUIREMENT_SOURCE_UNAVAILABLE"
+            ),
         }
 
     value = condition.get("value")
@@ -148,10 +161,19 @@ def assess_placement_suitability(context: dict[str, Any]) -> dict[str, Any]:
     conditions = context.get("conditions") or {}
     requirements_claim = context.get("taxon_requirements") or {}
     requirements = requirements_claim.get("value") or {}
+    # Absent means the envelope carried no flag, which is the pre-existing
+    # shape and means the store was read. Only an explicit False says we never
+    # got to look.
+    source_consulted = requirements_claim.get("source_consulted", True) is not False
 
     variables = sorted(set(conditions) | set(requirements))
     assessments = [
-        _assess_variable(variable, conditions.get(variable), requirements.get(variable))
+        _assess_variable(
+            variable,
+            conditions.get(variable),
+            requirements.get(variable),
+            requirement_source_consulted=source_consulted,
+        )
         for variable in variables
     ]
 
@@ -167,6 +189,10 @@ def assess_placement_suitability(context: dict[str, Any]) -> dict[str, Any]:
         # zero "outside" must not conclude the plant is well placed when
         # nothing could be assessed at all.
         "anything_assessed": counts["within"] + counts["outside"] > 0,
+        # A run where nothing could be assessed reads identically whether the
+        # literature is silent or the store was unreachable. This is how a
+        # caller tells them apart without reading per-variable reasons.
+        "requirement_source_consulted": source_consulted,
         "is_scientific_evidence": False,
         "is_recommendation": False,
         "note": (

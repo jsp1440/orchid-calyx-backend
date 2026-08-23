@@ -132,12 +132,33 @@ def _usable(candidate: dict[str, Any]) -> bool:
 def resolve_taxon_requirements(
     taxon: str | None,
     candidates: list[dict[str, Any]] | None,
+    *,
+    source_unavailable: str | None = None,
 ) -> dict[str, Any]:
     """Assemble what the Continuum knows about a taxon's requirements.
 
     `candidates` are trait candidates already held by the evidence system. This
     function reads them; it never fetches, and it never writes.
+
+    `source_unavailable` is set by the caller when the store those candidates
+    come from could not be read. It is not a weaker form of "no evidence": it
+    means we did not look. Any candidates supplied alongside it are discarded,
+    because a partial read of an unknown fraction of the evidence can place a
+    plant inside a maximum whose matching minimum had not loaded yet.
     """
+    if source_unavailable:
+        return {
+            "taxon": (str(taxon).strip() if taxon and str(taxon).strip() else None),
+            "known": False,
+            "reason": source_unavailable,
+            "requirements": {},
+            "claim_class": "absent",
+            "is_scientific_evidence": False,
+            # Stated so a reader cannot mistake this for a finding about the
+            # literature. Nothing was consulted.
+            "source_consulted": False,
+        }
+
     if not taxon or not str(taxon).strip():
         return {
             "taxon": None,
