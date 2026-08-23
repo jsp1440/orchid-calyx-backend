@@ -5,8 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from app.intake.email_service import ingest_external_intelligence_email
+
 from .envelope import InboundEmailEnvelope
-from .repository import ensure_operational_ticket, link_intake_source, record_inbound_message
+from .repository import (
+    ensure_operational_ticket,
+    link_intake_source,
+    record_inbound_message,
+)
 from .routing import EmailRoute, route_inbound_email
 
 
