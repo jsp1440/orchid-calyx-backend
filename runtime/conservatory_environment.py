@@ -203,7 +203,9 @@ class ConservatoryEnvironmentStore:
             self._write(rows)
         return reading
 
-    def readings_for(self, location_id: str, *, variable: str | None = None) -> list[dict[str, Any]]:
+    def readings_for(
+        self, location_id: str, *, variable: str | None = None
+    ) -> list[dict[str, Any]]:
         with self._lock:
             rows = [row for row in self._read() if row["location_id"] == location_id]
         if variable is not None:
@@ -222,7 +224,11 @@ class ConservatoryEnvironmentStore:
         rows = self.readings_for(location_id)
         context: dict[str, Any] = {}
         for variable, unit in MEASURABLE_VARIABLES.items():
-            candidates = [row for row in rows if row["variable"] == variable and row["value"] is not None]
+            candidates = [
+                row
+                for row in rows
+                if row["variable"] == variable and row["value"] is not None
+            ]
             if not candidates:
                 context[variable] = {
                     "unit": unit,

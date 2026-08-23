@@ -143,7 +143,9 @@ def create_conservatory_router(
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
     get_root: Callable[[], Path] = _conservatory_root,
     get_locations: Callable[[], ConservatoryLocationStore] = _default_location_store,
-    get_environment: Callable[[], ConservatoryEnvironmentStore] = _default_environment_store,
+    get_environment: Callable[
+        [], ConservatoryEnvironmentStore
+    ] = _default_environment_store,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/conservatory", tags=["conservatory"])
 
@@ -341,7 +343,9 @@ def create_conservatory_router(
     ) -> dict[str, Any]:
         _known_location_or_404(location_id)
         try:
-            return get_environment().record(location_id=location_id, **payload.model_dump())
+            return get_environment().record(
+                location_id=location_id, **payload.model_dump()
+            )
         except EnvironmentError_ as exc:
             # Every one of these means the record would have misrepresented its
             # own origin, which is a malformed claim rather than a conflict.
