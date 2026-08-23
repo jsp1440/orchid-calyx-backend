@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
+from runtime.conservatory_locations import ConservatoryLocationStore, LocationError
 from runtime.conservatory_readiness import (
     build_conservatory_readiness,
     create_restart_probe,
@@ -28,6 +29,25 @@ class PlantCreate(BaseModel):
     accepted_scientific_name: str | None = Field(default=None, max_length=300)
     location: str | None = Field(default=None, max_length=200)
     notes: str | None = Field(default=None, max_length=5000)
+
+
+class LocationCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    kind: str = Field(min_length=2, max_length=40)
+    #: The grower's own words. Recorded as an assessment, never as a
+    #: measurement — the store stamps its origin so a later reader cannot
+    #: mistake it for sensor data.
+    described_conditions: str | None = Field(default=None, max_length=2000)
+    notes: str | None = Field(default=None, max_length=5000)
+
+
+class PlacementCreate(BaseModel):
+    location_id: str | None = Field(default=None, max_length=100)
+    #: "move" means the plant physically went somewhere. "correction" means
+    #: the record was wrong and the plant never moved. Collapsing them would
+    #: invent husbandry history.
+    reason: str = Field(default="move", max_length=40)
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class LabelRequest(BaseModel):
@@ -44,6 +64,10 @@ def _conservatory_root() -> Path:
 
 def _default_store() -> ConservatoryStore:
     return ConservatoryStore(_conservatory_root())
+
+
+def _default_location_store() -> ConservatoryLocationStore:
+    return ConservatoryLocationStore(_conservatory_root())
 
 
 def _scan_base_url() -> str | None:
@@ -85,6 +109,7 @@ def create_conservatory_router(
     get_store: Callable[[], ConservatoryStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
     get_root: Callable[[], Path] = _conservatory_root,
+    get_locations: Callable[[], ConservatoryLocationStore] = _default_location_store,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/conservatory", tags=["conservatory"])
 
@@ -196,6 +221,67 @@ def create_conservatory_router(
         manifest["qr_scannable"] = base is not None
         manifest["qr_scan_base_url"] = base
         return manifest
+
+    def _location_error(exc: LocationError) -> HTTPException:
+        code = str(exc)
+        # A name collision is a conflict with something that already exists;
+        # everything else here is a malformed request. Returning one status for
+        # both would make "you already have this bench" indistinguishable from
+        # "that is not a kind of place".
+        status = 409 if code == "LOCATION_NAME_ALREADY_USED" else 422
+        if code == "LOCATION_NOT_FOUND":
+            status = 404
+        return HTTPException(status_code=status, detail={"code": code})
+
+    @router.get("/locations")
+    def list_locations(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
+        locations = get_locations().list_locations()
+        return {"locations": locations, "count": len(locations)}
+
+    @router.post("/locations", status_code=201)
+    def create_location(
+        payload: LocationCreate,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        try:
+            return get_locations().create_location(**payload.model_dump())
+        except LocationError as exc:
+            raise _location_error(exc) from exc
+
+    @router.get("/locations/occupancy")
+    def location_occupancy(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008
+        return {"occupancy": get_locations().occupancy()}
+
+    @router.get("/plants/{plant_id}/placement")
+    def get_placement(
+        plant_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        locations = get_locations()
+        return {
+            "plant_id": plant_id,
+            # Derived from the log rather than stored beside it, so the two can
+            # never disagree about where the plant is.
+            "current": locations.current_placement(plant_id),
+            "history": locations.placement_history(plant_id),
+        }
+
+    @router.post("/plants/{plant_id}/placement", status_code=201)
+    def record_placement(
+        plant_id: str,
+        payload: PlacementCreate,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        try:
+            return get_locations().record_placement(
+                plant_id=plant_id, **payload.model_dump()
+            )
+        except LocationError as exc:
+            raise _location_error(exc) from exc
 
     return router
 
