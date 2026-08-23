@@ -1,5 +1,5 @@
-from app.email_gateway.envelope import InboundEmailEnvelope
 from app.email_gateway import service
+from app.email_gateway.envelope import InboundEmailEnvelope
 
 
 def message(recipient: str, *, provider_message_id: str = "p-1") -> InboundEmailEnvelope:
