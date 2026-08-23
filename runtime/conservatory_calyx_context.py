@@ -77,7 +77,15 @@ def _requirements_claim(resolved: dict[str, Any]) -> dict[str, Any]:
     thermometer reading as the same kind of thing.
     """
     if not resolved.get("known"):
-        return _claim(None, "absent", reason=resolved.get("reason", "NOT_RESOLVED"))
+        return _claim(
+            None,
+            "absent",
+            reason=resolved.get("reason", "NOT_RESOLVED"),
+            # Carried, not inferred from the reason string: a consumer must be
+            # able to tell "the literature is silent" from "we never asked"
+            # without pattern-matching on prose.
+            source_consulted=bool(resolved.get("source_consulted", True)),
+        )
     return _claim(
         resolved["requirements"],
         "literature_derived",
@@ -101,6 +109,7 @@ def build_cultivation_context(
     environment: dict[str, Any] | None,
     events: dict[str, Any] | None,
     trait_candidates: list[dict[str, Any]] | None = None,
+    trait_source_unavailable: str | None = None,
 ) -> dict[str, Any]:
     """Assemble what is known about one plant, each claim labelled by class.
 
@@ -211,7 +220,9 @@ def build_cultivation_context(
         # than being told nothing.
         "taxon_requirements": _requirements_claim(
             resolve_taxon_requirements(
-                plant.get("accepted_scientific_name"), trait_candidates
+                plant.get("accepted_scientific_name"),
+                trait_candidates,
+                source_unavailable=trait_source_unavailable,
             )
         ),
         "claim_classes": list(CLAIM_CLASSES),

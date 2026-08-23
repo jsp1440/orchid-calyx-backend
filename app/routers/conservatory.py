@@ -29,6 +29,7 @@ from runtime.conservatory_readiness import (
 )
 from runtime.conservatory_store import ConservatoryStore
 from runtime.conservatory_suitability import assess_placement_suitability
+from runtime.conservatory_trait_supply import TraitSupply, supply_from_repository
 
 
 class PlantCreate(BaseModel):
@@ -124,15 +125,37 @@ def _default_event_store() -> ConservatoryEventStore:
     return ConservatoryEventStore(_conservatory_root())
 
 
-def _no_trait_evidence(_taxon: str | None) -> list[dict[str, Any]]:
-    """Default trait supplier: nothing.
+def _candidate_repository() -> Any | None:
+    """The candidate knowledge store, or None if this deployment has none.
 
-    The candidate store is not wired into this router, and inventing a
-    connection here would be worse than the gap. Returning nothing makes every
-    requirement resolve to absent, which is exactly what the Continuum can
-    honestly say until a deployment supplies the real store.
+    Imported inside the function because the candidate package builds its
+    repository at import time and can fail there when no database is
+    configured. A conservatory route must not stop serving a plant's dossier
+    because a knowledge store it only consults is unreachable.
     """
-    return []
+    try:
+        from app.candidate_knowledge.dependencies import get_candidate_components
+
+        repository, _service = get_candidate_components()
+        return repository
+    except Exception:  # noqa: BLE001 - unavailable is unavailable
+        return None
+
+
+def _default_trait_evidence(taxon: str | None) -> TraitSupply:
+    """Read trait evidence for a taxon from the candidate store.
+
+    This is a read against evidence the Continuum already holds. It publishes
+    nothing, promotes nothing, and does not screen by review state: the
+    candidate store holds unreviewed extractions by design, and the resolver
+    downstream is built to label each one with the strength it actually has.
+    Filtering here would hide that labelling from the layer that carries it.
+
+    When the store cannot be reached the result says so rather than coming back
+    empty, so that "the literature is silent about this taxon" and "we could
+    not look" stay distinguishable all the way to the grower.
+    """
+    return supply_from_repository(taxon, _candidate_repository())
 
 
 def _scan_base_url() -> str | None:
@@ -179,9 +202,7 @@ def create_conservatory_router(
         [], ConservatoryEnvironmentStore
     ] = _default_environment_store,
     get_events: Callable[[], ConservatoryEventStore] = _default_event_store,
-    get_trait_evidence: Callable[
-        [str | None], list[dict[str, Any]]
-    ] = _no_trait_evidence,
+    get_trait_evidence: Callable[[str | None], TraitSupply] = _default_trait_evidence,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/conservatory", tags=["conservatory"])
 
@@ -470,6 +491,7 @@ def create_conservatory_router(
             if location is not None
             else None
         )
+        trait_supply = get_trait_evidence(plant.get("accepted_scientific_name"))
         return build_cultivation_context(
             plant=plant,
             placement_current=current,
@@ -477,7 +499,8 @@ def create_conservatory_router(
             location=location,
             environment=environment,
             events=get_events().timeline(plant_id),
-            trait_candidates=get_trait_evidence(plant.get("accepted_scientific_name")),
+            trait_candidates=trait_supply.candidates,
+            trait_source_unavailable=trait_supply.unavailable_reason,
         )
 
     @router.get("/plants/{plant_id}/placement-assessment")
@@ -507,6 +530,7 @@ def create_conservatory_router(
             if location is not None
             else None
         )
+        trait_supply = get_trait_evidence(plant.get("accepted_scientific_name"))
         context = build_cultivation_context(
             plant=plant,
             placement_current=current,
@@ -514,7 +538,8 @@ def create_conservatory_router(
             location=location,
             environment=environment,
             events=get_events().timeline(plant_id),
-            trait_candidates=get_trait_evidence(plant.get("accepted_scientific_name")),
+            trait_candidates=trait_supply.candidates,
+            trait_source_unavailable=trait_supply.unavailable_reason,
         )
         return assess_placement_suitability(context)
 

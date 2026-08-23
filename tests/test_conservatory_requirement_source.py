@@ -9,6 +9,7 @@ app/candidate_knowledge/service.py, not one that looks plausible.
 
 from runtime.conservatory_requirement_source import TRAIT_KIND, collect_trait_candidates
 from runtime.conservatory_taxon_requirements import resolve_taxon_requirements
+from runtime.conservatory_trait_supply import TraitSupply
 
 
 def stored(**overrides):
@@ -252,10 +253,12 @@ class TestThroughTheRouter:
 
     def test_supplied_evidence_turns_unassessable_into_a_real_verdict(self, tmp_path):
         def supplier(taxon):
-            return collect_trait_candidates(
-                taxon,
-                candidates=[stored(numeric_value=15.0)],
-                evidence_links=[link()],
+            return TraitSupply(
+                collect_trait_candidates(
+                    taxon,
+                    candidates=[stored(numeric_value=15.0)],
+                    evidence_links=[link()],
+                )
             )
 
         client, plants, locations = self._client(tmp_path, supplier)
@@ -275,8 +278,10 @@ class TestThroughTheRouter:
 
     def test_the_envelope_carries_the_same_evidence(self, tmp_path):
         def supplier(taxon):
-            return collect_trait_candidates(
-                taxon, candidates=[stored()], evidence_links=[link()]
+            return TraitSupply(
+                collect_trait_candidates(
+                    taxon, candidates=[stored()], evidence_links=[link()]
+                )
             )
 
         client, plants, locations = self._client(tmp_path, supplier)
@@ -292,9 +297,23 @@ class TestThroughTheRouter:
             == 12.0
         )
 
-    def test_the_default_supplier_still_yields_nothing(self, tmp_path):
-        # Inventing a connection to the candidate store here would be worse
-        # than the gap; the honest default is no evidence.
+    def test_an_empty_store_still_yields_no_evidence(self, tmp_path, monkeypatch):
+        # The default supplier now consults the real candidate store. With
+        # nothing in it the answer is still "no evidence" — but it is a read
+        # that returned nothing, not a refusal to look.
+        #
+        # The store is stubbed rather than left to the ambient default so this
+        # asserts the empty-store path in every environment, including ones
+        # where the database driver is not installed and the real default would
+        # instead report unavailability.
+        import app.routers.conservatory as module
+
+        class EmptyStore:
+            def __init__(self):
+                self.candidates = []
+                self.evidence_links = []
+
+        monkeypatch.setattr(module, "_candidate_repository", lambda: EmptyStore())
         client, plants, locations = self._client(tmp_path)
         plant = self._plant_on_a_cold_bench(client, plants, locations)
 
@@ -307,3 +326,4 @@ class TestThroughTheRouter:
         assert temperature["outcome"] == "unassessable"
         assert temperature["reason"] == "NO_REQUIREMENT_EVIDENCE"
         assert result["anything_assessed"] is False
+        assert result["requirement_source_consulted"] is True
