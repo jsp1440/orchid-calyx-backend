@@ -359,3 +359,36 @@ class TestThroughTheApi:
 def test_every_group_is_always_present_even_when_empty(group):
     # A missing key reads as zero to some callers and as an error to others.
     assert group in build_collection_review([])["groups"]
+
+
+class TestHowOldTheNumbersWere:
+    """A collection list is where a season-old reading passes as this morning's.
+
+    The per-plant panel at least shows one reading a grower might recognise. A
+    list of two hundred rows shows none of them, so if the age does not travel
+    into the row it is gone entirely.
+    """
+
+    def test_each_row_carries_the_age_behind_its_verdict(self):
+        review = build_collection_review(
+            [
+                (
+                    plant("p1"),
+                    {
+                        **assessment({"outside": 1}),
+                        "oldest_verdict_condition_age_days": 212.0,
+                    },
+                )
+            ]
+        )
+
+        assert (
+            review["groups"]["outside"][0]["oldest_verdict_condition_age_days"] == 212.0
+        )
+
+    def test_an_unknown_age_travels_as_unknown_not_as_zero(self):
+        review = build_collection_review([(plant("p1"), assessment({"outside": 1}))])
+
+        assert (
+            review["groups"]["outside"][0]["oldest_verdict_condition_age_days"] is None
+        )

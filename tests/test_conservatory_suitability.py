@@ -387,3 +387,154 @@ class TestThroughTheApi:
             client.get("/api/conservatory/plants/nope/placement-assessment").status_code
             == 404
         )
+
+
+class TestHowOldTheReadingWas:
+    """A verdict about where a plant is now, resting on a number from January.
+
+    The comparison uses the most recent reading, however old. Nothing refused
+    that before and nothing said it either, so a bench measured once in winter
+    kept producing summer verdicts with no sign on the screen that the
+    thermometer had not been near it since.
+
+    The fix is to state the age, not to invent a cutoff. Thirty days, a season —
+    any threshold here is a policy nobody agreed to, and the same mistake as
+    picking the stricter of two disagreeing bounds.
+    """
+
+    from datetime import UTC, datetime
+
+    AS_OF = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
+
+    @staticmethod
+    def _context(observed_at, *, value=8.0, minimum=15.0, **extra):
+        condition = {
+            "value": value,
+            "claim_class": "measured_evidence",
+            "unit": "degrees Celsius",
+            "origin": "measured",
+            "observed_at": observed_at,
+        }
+        condition.update(extra)
+        return {
+            "conditions": {"temperature_c": condition},
+            "taxon_requirements": {
+                "value": {
+                    "temperature_c": {
+                        "unit": "degrees Celsius",
+                        "bounds": {"minimum": [{"value": minimum}]},
+                    }
+                },
+                "claim_class": "literature_derived",
+            },
+        }
+
+    def _assess(self, context):
+        from runtime.conservatory_suitability import assess_placement_suitability
+
+        return assess_placement_suitability(context, as_of=self.AS_OF)
+
+    def test_a_verdict_carries_the_age_of_the_reading_behind_it(self):
+        result = self._assess(self._context("2026-01-23T12:00:00+00:00"))
+        row = result["assessments"][0]
+
+        assert row["outcome"] == "outside"
+        assert row["condition_age_days"] == 212.0
+        assert result["oldest_verdict_condition_age_days"] == 212.0
+
+    def test_a_stale_reading_is_reported_not_refused(self):
+        # No cutoff. A threshold here would be a policy nobody agreed to.
+        result = self._assess(self._context("2020-01-01T00:00:00+00:00"))
+
+        assert result["assessments"][0]["outcome"] == "outside"
+        assert result["anything_assessed"] is True
+        assert result["assessments"][0]["condition_age_days"] > 2000
+
+    def test_a_summary_is_aged_from_when_its_window_ended(self):
+        # A weekly mean ending yesterday describes this week. Read from its
+        # start it would look a week stale.
+        result = self._assess(
+            self._context(
+                "2026-08-16T00:00:00+00:00",
+                window_end="2026-08-22T12:00:00+00:00",
+                is_summary=True,
+                summary_kind="mean",
+            )
+        )
+
+        assert result["assessments"][0]["condition_age_days"] == 1.0
+
+    def test_an_unusable_timestamp_yields_no_age_rather_than_zero(self):
+        # Zero would say "measured just now", which is the one thing it must
+        # not say about a reading whose age nobody can establish.
+        for stamp in (None, "", "   ", "not a date", 1234):
+            result = self._assess(self._context(stamp))
+            assert result["assessments"][0]["condition_age_days"] is None, stamp
+        assert (
+            self._assess(self._context(None))["oldest_verdict_condition_age_days"]
+            is None
+        )
+
+    def test_a_z_suffixed_timestamp_is_understood(self):
+        result = self._assess(self._context("2026-08-22T12:00:00Z"))
+        assert result["assessments"][0]["condition_age_days"] == 1.0
+
+    def test_a_naive_timestamp_is_read_as_utc_not_rejected(self):
+        result = self._assess(self._context("2026-08-22T12:00:00"))
+        assert result["assessments"][0]["condition_age_days"] == 1.0
+
+    def test_a_future_reading_keeps_its_negative_age(self):
+        # A clock or data problem. Clamping it to zero would remove the only
+        # sign of it.
+        result = self._assess(self._context("2026-09-23T12:00:00+00:00"))
+        assert result["assessments"][0]["condition_age_days"] < 0
+
+    def test_an_unassessable_variable_carries_no_age(self):
+        # There is no verdict for an age to qualify.
+        from runtime.conservatory_suitability import assess_placement_suitability
+
+        result = assess_placement_suitability(
+            {
+                "conditions": {
+                    "temperature_c": {"value": None, "claim_class": "absent"}
+                },
+                "taxon_requirements": {"value": {}, "claim_class": "absent"},
+            },
+            as_of=self.AS_OF,
+        )
+
+        assert result["assessments"][0]["outcome"] == "unassessable"
+        assert "condition_age_days" not in result["assessments"][0]
+        assert result["oldest_verdict_condition_age_days"] is None
+
+    def test_the_oldest_verdict_wins_the_summary(self):
+        from runtime.conservatory_suitability import assess_placement_suitability
+
+        result = assess_placement_suitability(
+            {
+                "conditions": {
+                    "temperature_c": {
+                        "value": 20.0,
+                        "claim_class": "measured_evidence",
+                        "observed_at": "2026-08-22T12:00:00+00:00",
+                    },
+                    "relative_humidity_pct": {
+                        "value": 40.0,
+                        "claim_class": "measured_evidence",
+                        "observed_at": "2026-02-22T12:00:00+00:00",
+                    },
+                },
+                "taxon_requirements": {
+                    "value": {
+                        "temperature_c": {"bounds": {"minimum": [{"value": 15}]}},
+                        "relative_humidity_pct": {
+                            "bounds": {"minimum": [{"value": 30}]}
+                        },
+                    },
+                    "claim_class": "literature_derived",
+                },
+            },
+            as_of=self.AS_OF,
+        )
+
+        assert result["oldest_verdict_condition_age_days"] == 182.0

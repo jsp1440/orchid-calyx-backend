@@ -30,6 +30,24 @@ rather than averaging it. Two sources giving different minima cannot yield one
 verdict, and picking the stricter would silently invent a precautionary policy
 nobody agreed to.
 
+HOW OLD THE READING WAS, AND WHY NO THRESHOLD
+
+A comparison uses the most recent reading for a variable, however old that is.
+A bench measured at 8C in January and never since will still put a plant
+`outside` a 15C minimum in August — a verdict about where the plant is *now*,
+resting on a seven-month-old number. The reverse is worse: a warm spring
+reading reads `within` all summer, and nothing on the screen says the
+thermometer has not been near the bench since.
+
+So every verdict carries the age of the reading behind it. What it does not do
+is refuse one. Picking a staleness cutoff — thirty days, a season — would be a
+policy nobody agreed to, and it is the same mistake as picking the stricter of
+two disagreeing bounds: a defensible-sounding number that no source stated and
+no grower chose. The age is reported; the reader decides what it is worth.
+
+An unparseable or missing timestamp yields no age at all rather than a zero. A
+zero would read as "measured just now", which is the one thing it must not say.
+
 CONFIDENCE IS NOT COMPUTED
 
 There is no score. Both sides carry their own provenance — how the condition
@@ -40,9 +58,10 @@ literature claim produces a number that describes nothing.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
-__all__ = ["ASSESSMENT_OUTCOMES", "assess_placement_suitability"]
+__all__ = ["ASSESSMENT_OUTCOMES", "assess_placement_suitability", "condition_age_days"]
 
 ASSESSMENT_OUTCOMES: tuple[str, ...] = (
     "within",
@@ -50,6 +69,48 @@ ASSESSMENT_OUTCOMES: tuple[str, ...] = (
     "unassessable",
     "conflicting",
 )
+
+
+def _parse_instant(value: Any) -> datetime | None:
+    """A timestamp, or nothing. Never a guess."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    # fromisoformat accepts a trailing "Z" on every Python this runs on, so
+    # there is no hand-rolled suffix rewrite here to go stale.
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def condition_age_days(
+    condition: dict[str, Any] | None, as_of: datetime | None = None
+) -> float | None:
+    """How long ago the reading behind a condition was taken.
+
+    Measured from the end of a summary's window when there is one: a weekly
+    mean ending yesterday describes this week, and reading its start instead
+    would report it a week stale.
+
+    Returns None when there is no usable timestamp. A reading whose age cannot
+    be established is not a fresh one, and returning zero would say exactly
+    that.
+    """
+    if not condition:
+        return None
+    observed = _parse_instant(condition.get("window_end")) or _parse_instant(
+        condition.get("observed_at")
+    )
+    if observed is None:
+        return None
+    now = as_of or datetime.now(UTC)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+    # Negative ages are kept rather than clamped to zero. A reading stamped in
+    # the future is a clock or data problem, and hiding it as "just now" would
+    # remove the only sign of it.
+    return round((now - observed).total_seconds() / 86400.0, 2)
 
 
 def _bound_values(claims: list[dict[str, Any]] | None) -> list[float]:
@@ -66,6 +127,7 @@ def _assess_variable(
     requirement: dict[str, Any] | None,
     *,
     requirement_source_consulted: bool = True,
+    as_of: datetime | None = None,
 ) -> dict[str, Any]:
     """One variable, compared only when both sides genuinely exist."""
     # The envelope wraps every condition as a claim: {value, claim_class, ...}
@@ -143,6 +205,10 @@ def _assess_variable(
         "variable": variable,
         "outcome": "outside" if breached else "within",
         "breached": breached,
+        # How old the number behind this verdict is. None when the reading
+        # carries no usable timestamp — never zero, which would claim it was
+        # taken just now.
+        "condition_age_days": condition_age_days(condition, as_of),
         # Both provenances travel unchanged. A reader weighing this needs to
         # know it compared a hand-entered number against an unverified claim,
         # if that is what happened.
@@ -151,7 +217,23 @@ def _assess_variable(
     }
 
 
-def assess_placement_suitability(context: dict[str, Any]) -> dict[str, Any]:
+def _oldest_age(assessments: list[dict[str, Any]]) -> float | None:
+    """The oldest age among verdicts, or None if no verdict carried one."""
+    # Only verdict rows carry the key at all — an unassessable variable has no
+    # verdict for an age to qualify — so the isinstance test is the whole
+    # filter. An explicit outcome check here would look like it was excluding
+    # something and in fact exclude nothing.
+    ages = [
+        row["condition_age_days"]
+        for row in assessments
+        if isinstance(row.get("condition_age_days"), (int, float))
+    ]
+    return max(ages) if ages else None
+
+
+def assess_placement_suitability(
+    context: dict[str, Any], *, as_of: datetime | None = None
+) -> dict[str, Any]:
     """Compare a cultivation-context envelope against its taxon requirements.
 
     Takes the envelope built by `conservatory_calyx_context` so that both sides
@@ -173,6 +255,7 @@ def assess_placement_suitability(context: dict[str, Any]) -> dict[str, Any]:
             conditions.get(variable),
             requirements.get(variable),
             requirement_source_consulted=source_consulted,
+            as_of=as_of,
         )
         for variable in variables
     ]
@@ -193,6 +276,11 @@ def assess_placement_suitability(context: dict[str, Any]) -> dict[str, Any]:
         # literature is silent or the store was unreachable. This is how a
         # caller tells them apart without reading per-variable reasons.
         "requirement_source_consulted": source_consulted,
+        # The age of the oldest reading that produced a verdict. Stated at the
+        # top so a reader who trusts the summary is not trusting a season-old
+        # thermometer without being told. Deliberately not turned into a
+        # freshness flag: no cutoff here would be one anybody chose.
+        "oldest_verdict_condition_age_days": _oldest_age(assessments),
         "is_scientific_evidence": False,
         "is_recommendation": False,
         "note": (

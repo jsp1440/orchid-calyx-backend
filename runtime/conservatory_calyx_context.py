@@ -182,6 +182,10 @@ def build_cultivation_context(
             origin=origin,
             instrument=reading.get("instrument"),
             observed_at=reading.get("observed_at"),
+            # A summary's currency is when its window ended, not when it began.
+            # A weekly mean ending yesterday describes this week; read from
+            # observed_at alone it would look a week stale.
+            window_end=reading.get("window_end"),
             is_summary=reading.get("is_summary", False),
             summary_kind=reading.get("summary_kind"),
         )
