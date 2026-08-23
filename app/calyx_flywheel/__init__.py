@@ -29,6 +29,7 @@ from app.calyx_flywheel.models import (
 )
 
 __all__ = [
+    "SENSITIVE_LOCALITY_FIELDS",
     "AssertionKind",
     "AssertionOrigin",
     "GovernanceState",
@@ -40,11 +41,10 @@ __all__ = [
     "ReviewDecision",
     "ReviewOutcome",
     "ScientificAssertion",
+    "SensitiveLocalityError",
     "SimulationCase",
     "SimulationRun",
     "StepControl",
     "SupersessionRecord",
-    "SENSITIVE_LOCALITY_FIELDS",
-    "SensitiveLocalityError",
     "assert_no_sensitive_locality",
 ]
