@@ -7,6 +7,7 @@ from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import qrcode
 import qrcode.image.svg
@@ -43,6 +44,34 @@ def _conservatory_root() -> Path:
 
 def _default_store() -> ConservatoryStore:
     return ConservatoryStore(_conservatory_root())
+
+
+def _scan_base_url() -> str | None:
+    """Where a scanned tag should land, or None if nobody has configured it.
+
+    Deliberately not defaulted to a guessed host. A QR code is printed once and
+    lives on the plant for years; encoding a hostname this service invented
+    would produce tags that point somewhere wrong forever, and a wrong tag is
+    worse than an unscannable one because it looks like it worked.
+    """
+    base = os.getenv("CONSERVATORY_SCAN_BASE_URL", "").strip().rstrip("/")
+    return base or None
+
+
+def _qr_target(qr_identifier: str) -> tuple[str, bool]:
+    """What the QR image should encode, and whether a phone can follow it.
+
+    With a base URL configured the tag carries a scan URL, which any phone
+    camera resolves. Without one it carries the bare identity URN, which is
+    honest but only resolvable by something that already knows what Calyx is.
+    The boolean is returned rather than inferred by the caller so a label
+    workflow can tell a grower their tags will not scan yet, instead of letting
+    them print a hundred of them and find out in the greenhouse.
+    """
+    base = _scan_base_url()
+    if base is None:
+        return qr_identifier, False
+    return f"{base}/conservatory/scan/{quote(qr_identifier, safe='')}", True
 
 
 def _qr_svg(payload: str) -> bytes:
@@ -102,11 +131,44 @@ def create_conservatory_router(
         plant = get_store().get(plant_id)
         if plant is None:
             raise HTTPException(status_code=404, detail="plant not found")
+        target, scannable = _qr_target(plant["qr_identifier"])
         return Response(
-            content=_qr_svg(plant["qr_identifier"]),
+            content=_qr_svg(target),
             media_type="image/svg+xml",
-            headers={"Cache-Control": "private, max-age=3600"},
+            headers={
+                "Cache-Control": "private, max-age=3600",
+                # Surfaced on the response so a label workflow can warn before
+                # printing, rather than after the tags are on the plants.
+                "X-Conservatory-Qr-Scannable": "true" if scannable else "false",
+            },
         )
+
+    @router.get("/resolve/{identifier:path}")
+    def resolve_identifier(
+        identifier: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Turn a scanned tag back into the accession it names.
+
+        Owner-scoped on purpose. A QR code on a plant is visible to anyone who
+        walks past it, so an unauthenticated resolver would publish a private
+        collection to any visitor with a phone. Scanning identifies the plant;
+        it does not authorise reading about it.
+        """
+        plant = get_store().resolve(identifier)
+        if plant is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "ACCESSION_NOT_RESOLVED",
+                    "message": (
+                        "No accession in this collection carries that identifier. "
+                        "It was not matched approximately: a near miss would attach "
+                        "one plant's history to another."
+                    ),
+                },
+            )
+        return plant
 
     @router.post("/plants", status_code=201)
     def create_plant(
@@ -123,7 +185,17 @@ def create_conservatory_router(
         payload: LabelRequest,
         _: Any = Depends(require_owner),  # noqa: B008
     ) -> dict[str, Any]:
-        return get_store().label_manifest(payload.plant_ids)
+        manifest = get_store().label_manifest(payload.plant_ids)
+        base = _scan_base_url()
+        for label in manifest["labels"]:
+            target, scannable = _qr_target(label["qr_identifier"])
+            label["qr_target"] = target
+            label["qr_scannable"] = scannable
+        # Stated once for the batch: a grower about to print is the last person
+        # who can cheaply fix unscannable tags.
+        manifest["qr_scannable"] = base is not None
+        manifest["qr_scan_base_url"] = base
+        return manifest
 
     return router
 
