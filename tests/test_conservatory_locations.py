@@ -350,3 +350,210 @@ class TestThroughTheApi:
         client = TestClient(app)
         assert client.get("/api/conservatory/locations").status_code == 401
         assert client.post("/api/conservatory/locations", json={"name": "X bench", "kind": "greenhouse"}).status_code == 401
+
+
+class TestARenameIsNotAMove:
+    """Four things change what a grower sees beside a plant, and only one of
+    them is husbandry:
+
+      the plant moved            it physically went somewhere
+      the record was corrected   it never went anywhere; the record was wrong
+      the location was renamed   nothing about any plant changed at all
+      the location was retired   the place is gone; the history is not
+
+    Collapsing any of these into "move" invents husbandry that later reads as a
+    cause of whatever the plant did next.
+    """
+
+    def test_renaming_keeps_the_identity_so_history_still_points_here(self, tmp_path: Path):
+        store = _store(tmp_path)
+        bench = _bench(store, "Bench two")
+        store.record_placement(plant_id="p1", location_id=bench["id"], reason="initial")
+
+        renamed = store.rename_location(bench["id"], name="The cool bench")
+        assert renamed["id"] == bench["id"]
+        assert renamed["name"] == "The cool bench"
+        # The placement recorded before the rename still resolves here.
+        assert store.current_placement("p1")["location_id"] == bench["id"]
+
+    def test_renaming_appends_nothing_to_any_plants_placement_history(self, tmp_path: Path):
+        # The invariant this class exists for.
+        store = _store(tmp_path)
+        bench = _bench(store, "Bench two")
+        store.record_placement(plant_id="p1", location_id=bench["id"], reason="initial")
+        before = store.placement_history("p1")
+
+        store.rename_location(bench["id"], name="The cool bench")
+
+        assert store.placement_history("p1") == before
+
+    def test_a_rename_is_recorded_in_the_locations_own_history(self, tmp_path: Path):
+        store = _store(tmp_path)
+        bench = _bench(store, "Bench two")
+        store.rename_location(bench["id"], name="The cool bench", note="Clearer name")
+
+        history = store.location_history(bench["id"])
+        assert [row["change"] for row in history] == ["created", "renamed"]
+        assert history[-1]["previous_name"] == "Bench two"
+        assert history[-1]["new_name"] == "The cool bench"
+
+    def test_renaming_to_a_name_another_location_holds_is_refused(self, tmp_path: Path):
+        store = _store(tmp_path)
+        _bench(store, "Warm bench")
+        cool = store.create_location(name="Cool bench", kind="greenhouse_bench")
+        with pytest.raises(LocationError, match="LOCATION_NAME_ALREADY_USED"):
+            store.rename_location(cool["id"], name="warm bench")
+
+    def test_renaming_a_location_to_its_own_name_records_nothing(self, tmp_path: Path):
+        # A change that did not happen must not appear in the log.
+        store = _store(tmp_path)
+        bench = _bench(store, "Bench two")
+        store.rename_location(bench["id"], name="Bench two")
+        assert [row["change"] for row in store.location_history(bench["id"])] == ["created"]
+
+    def test_renaming_something_that_does_not_exist_is_refused(self, tmp_path: Path):
+        with pytest.raises(LocationError, match="LOCATION_NOT_FOUND"):
+            _store(tmp_path).rename_location("no-such-place", name="Anything")
+
+
+class TestRetirementKeepsTheHistory:
+    def test_a_retired_location_is_not_deleted(self, tmp_path: Path):
+        # Deleting it would leave placement history pointing at nothing, which
+        # a later reader cannot tell apart from data loss.
+        store = _store(tmp_path)
+        bench = _bench(store, "Old bench")
+        store.record_placement(plant_id="p1", location_id=bench["id"], reason="initial")
+        store.record_placement(plant_id="p1", location_id=None, reason="removed")
+
+        retired = store.retire_location(bench["id"], reason="Dismantled")
+        assert retired["retired_at"] is not None
+        assert store.get_location(bench["id"]) is not None
+        # The plant really was there, and still says so.
+        assert store.placement_history("p1")[0]["location_id"] == bench["id"]
+
+    def test_an_occupied_location_cannot_be_retired(self, tmp_path: Path):
+        # Retiring it would strand the plant somewhere that accepts nothing,
+        # and nothing would say where it actually is.
+        store = _store(tmp_path)
+        bench = _bench(store, "Busy bench")
+        store.record_placement(plant_id="p1", location_id=bench["id"], reason="initial")
+        with pytest.raises(LocationError, match="LOCATION_STILL_OCCUPIED"):
+            store.retire_location(bench["id"])
+
+    def test_a_retired_location_accepts_no_new_plants(self, tmp_path: Path):
+        store = _store(tmp_path)
+        bench = _bench(store, "Gone bench")
+        store.retire_location(bench["id"])
+        with pytest.raises(LocationError, match="LOCATION_RETIRED"):
+            store.record_placement(plant_id="p1", location_id=bench["id"], reason="move")
+
+    def test_a_correction_may_still_name_a_retired_location(self, tmp_path: Path):
+        # The plant really was on that bench before it was dismantled.
+        # Refusing to record that would force a false history.
+        store = _store(tmp_path)
+        bench = _bench(store, "Gone bench")
+        store.retire_location(bench["id"])
+        event = store.record_placement(
+            plant_id="p1", location_id=bench["id"], reason="correction", note="Was here all along"
+        )
+        assert event["reason"] == "correction"
+
+    def test_retiring_twice_is_refused(self, tmp_path: Path):
+        store = _store(tmp_path)
+        bench = _bench(store, "Once bench")
+        store.retire_location(bench["id"])
+        with pytest.raises(LocationError, match="LOCATION_ALREADY_RETIRED"):
+            store.retire_location(bench["id"])
+
+    def test_retirement_is_recorded_in_the_locations_history(self, tmp_path: Path):
+        store = _store(tmp_path)
+        bench = _bench(store, "Old bench")
+        store.retire_location(bench["id"], reason="Dismantled")
+        assert [row["change"] for row in store.location_history(bench["id"])] == ["created", "retired"]
+
+
+class TestRealCultivationPositions:
+    def test_a_bench_is_its_own_kind_of_place(self, tmp_path: Path):
+        # Two benches in one greenhouse can differ more than two greenhouses
+        # do, so recording only the building loses what a grower manages.
+        store = _store(tmp_path)
+        for kind in ["greenhouse_bench", "lath_house", "shelf", "zone"]:
+            location = store.create_location(name=f"A {kind}", kind=kind)
+            assert location["kind"] == kind
+
+
+class TestLifecycleThroughTheApi:
+    def test_rename_and_retire_round_trip(self, tmp_path: Path):
+        client, plants = TestThroughTheApi._client(tmp_path)
+        bench = client.post(
+            "/api/conservatory/locations", json={"name": "Bench two", "kind": "greenhouse_bench"}
+        ).json()
+        plant = plants.create(display_name="Cattleya")
+        client.post(
+            f"/api/conservatory/plants/{plant['id']}/placement",
+            json={"location_id": bench["id"], "reason": "initial"},
+        )
+
+        renamed = client.post(
+            f"/api/conservatory/locations/{bench['id']}/rename", json={"name": "The cool bench"}
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["id"] == bench["id"]
+
+        # The rename left the plant exactly where it was.
+        placement = client.get(f"/api/conservatory/plants/{plant['id']}/placement").json()
+        assert len(placement["history"]) == 1
+        assert placement["current"]["location_id"] == bench["id"]
+
+        # Occupied, so retirement is refused rather than stranding the plant.
+        occupied = client.post(f"/api/conservatory/locations/{bench['id']}/retire", json={})
+        assert occupied.status_code == 409
+        assert occupied.json()["detail"]["code"] == "LOCATION_STILL_OCCUPIED"
+
+        client.post(
+            f"/api/conservatory/plants/{plant['id']}/placement",
+            json={"location_id": None, "reason": "removed"},
+        )
+        retired = client.post(
+            f"/api/conservatory/locations/{bench['id']}/retire", json={"reason": "Dismantled"}
+        )
+        assert retired.status_code == 200
+        assert retired.json()["retired_at"] is not None
+
+    def test_the_location_history_reads_back_the_lifecycle(self, tmp_path: Path):
+        client, _ = TestThroughTheApi._client(tmp_path)
+        bench = client.post(
+            "/api/conservatory/locations", json={"name": "Bench three", "kind": "shelf"}
+        ).json()
+        client.post(f"/api/conservatory/locations/{bench['id']}/rename", json={"name": "Top shelf"})
+        client.post(f"/api/conservatory/locations/{bench['id']}/retire", json={})
+
+        history = client.get(f"/api/conservatory/locations/{bench['id']}/history").json()["history"]
+        assert [row["change"] for row in history] == ["created", "renamed", "retired"]
+
+    def test_history_of_an_unknown_location_is_a_404(self, tmp_path: Path):
+        client, _ = TestThroughTheApi._client(tmp_path)
+        assert client.get("/api/conservatory/locations/nope/history").status_code == 404
+
+    def test_lifecycle_routes_require_an_owner(self, tmp_path: Path):
+        from fastapi import FastAPI, HTTPException
+        from fastapi.testclient import TestClient
+
+        from app.routers.conservatory import create_conservatory_router
+        from runtime.conservatory_store import ConservatoryStore
+
+        def deny() -> None:
+            raise HTTPException(status_code=401, detail="owner required")
+
+        app = FastAPI()
+        app.include_router(
+            create_conservatory_router(
+                get_store=lambda: ConservatoryStore(tmp_path),
+                require_owner=deny,
+                get_locations=lambda: ConservatoryLocationStore(tmp_path),
+            )
+        )
+        client = TestClient(app)
+        assert client.post("/api/conservatory/locations/x/rename", json={"name": "Yy"}).status_code == 401
+        assert client.post("/api/conservatory/locations/x/retire", json={}).status_code == 401
+        assert client.get("/api/conservatory/locations/x/history").status_code == 401
