@@ -16,6 +16,7 @@ class EmailRoute(str, Enum):
     REVIEW = "review"
 
 
+ROUTING_DOMAIN = "orchidcontinuum.org"
 RECIPIENT_ROUTE_MAP: dict[str, EmailRoute] = {
     "research": EmailRoute.RESEARCH,
     "intake": EmailRoute.RESEARCH,
@@ -26,6 +27,7 @@ RECIPIENT_ROUTE_MAP: dict[str, EmailRoute] = {
     "admin": EmailRoute.ADMIN,
 }
 
+TWIN_PROVIDER = "gmail-twin-readonly"
 TWIN_SENDER = "twin@twin-mail.com"
 TWIN_SUBJECT_PREFIX = "orchid continuum daily briefing"
 
@@ -41,23 +43,29 @@ class EmailRoutingDecision:
     publication_allowed: bool = False
 
 
-def _local_part(address: str) -> str:
-    local = address.strip().lower().split("@", 1)[0]
-    return local.split("+", 1)[0]
+def _recognized_recipient_route(address: str) -> EmailRoute | None:
+    value = address.strip().lower()
+    if value.count("@") != 1:
+        return None
+    local, domain = value.rsplit("@", 1)
+    if domain != ROUTING_DOMAIN:
+        return None
+    local = local.split("+", 1)[0]
+    return RECIPIENT_ROUTE_MAP.get(local)
 
 
 def route_inbound_email(envelope: InboundEmailEnvelope) -> EmailRoutingDecision:
     """Route by controlled envelope metadata, never by executable message commands.
 
-    Recipient aliases are authoritative routing hints.  If a message targets
-    multiple trust domains, routing fails closed to review.  The exact historical
-    Twin sender/subject pair remains a safe compatibility path for direct
-    collection even before `research@` is provisioned.
+    Recognized aliases are valid only on the Orchid Continuum routing domain. If
+    a message targets multiple trust domains, routing fails closed to review. The
+    historical Twin compatibility path additionally requires the dedicated
+    read-only collector provider marker; a spoofed From header alone is not enough.
     """
 
     matches: list[tuple[str, EmailRoute]] = []
     for recipient in envelope.recipients:
-        route = RECIPIENT_ROUTE_MAP.get(_local_part(recipient))
+        route = _recognized_recipient_route(recipient)
         if route:
             matches.append((recipient, route))
 
@@ -76,9 +84,14 @@ def route_inbound_email(envelope: InboundEmailEnvelope) -> EmailRoutingDecision:
             reason="multiple_trust_domain_recipients",
         )
 
+    provider = envelope.provider.strip().lower()
     sender = envelope.sender.strip().lower()
     subject = envelope.subject.strip().lower()
-    if sender == TWIN_SENDER and subject.startswith(TWIN_SUBJECT_PREFIX):
+    if (
+        provider == TWIN_PROVIDER
+        and sender == TWIN_SENDER
+        and subject.startswith(TWIN_SUBJECT_PREFIX)
+    ):
         return EmailRoutingDecision(
             route=EmailRoute.RESEARCH,
             reason="validated_twin_compatibility_rule",
