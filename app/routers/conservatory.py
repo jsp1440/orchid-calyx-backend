@@ -277,7 +277,9 @@ def create_conservatory_router(
         if get_store().get(plant_id) is None:
             raise HTTPException(status_code=404, detail="plant not found")
         try:
-            return get_locations().record_placement(plant_id=plant_id, **payload.model_dump())
+            return get_locations().record_placement(
+                plant_id=plant_id, **payload.model_dump()
+            )
         except LocationError as exc:
             raise _location_error(exc) from exc
 
