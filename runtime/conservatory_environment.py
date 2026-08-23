@@ -95,6 +95,10 @@ class EnvironmentReading:
     summary_kind: str | None
     note: str | None
     recorded_at: str
+    #: The reading this one corrects, when it is a correction.
+    supersedes_id: str | None = None
+    #: Set on the reading that was corrected, so both stay readable.
+    superseded_by_id: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -146,6 +150,7 @@ class ConservatoryEnvironmentStore:
         window_end: str | None = None,
         summary_kind: str | None = None,
         note: str | None = None,
+        supersedes_id: str | None = None,
     ) -> dict[str, Any]:
         _require(bool(location_id), "LOCATION_REQUIRED")
         _require(variable in MEASURABLE_VARIABLES, "VARIABLE_UNRECOGNISED")
@@ -196,9 +201,36 @@ class ConservatoryEnvironmentStore:
             summary_kind=summary_kind,
             note=(note or "").strip() or None,
             recorded_at=datetime.now(UTC).isoformat(),
+            supersedes_id=supersedes_id,
         ).as_dict()
+        # Every check on the superseded reading happens inside the lock that
+        # guards the write. A check made outside it can be true and stale by
+        # the time the append lands, which is how two concurrent corrections of
+        # one reading both succeed and leave no way to say which stands.
         with self._lock:
             rows = self._read()
+            if supersedes_id is not None:
+                superseded = next(
+                    (row for row in rows if row["id"] == supersedes_id), None
+                )
+                _require(superseded is not None, "SUPERSEDED_READING_NOT_FOUND")
+                _require(
+                    superseded["location_id"] == location_id,
+                    "SUPERSEDED_READING_BELONGS_TO_ANOTHER_LOCATION",
+                )
+                _require(
+                    superseded.get("superseded_by_id") is None,
+                    "READING_ALREADY_SUPERSEDED",
+                )
+                # Correcting a temperature into a humidity is not a correction,
+                # it is two different claims wearing one identity.
+                _require(
+                    superseded["variable"] == variable,
+                    "CORRECTION_MUST_KEEP_THE_VARIABLE",
+                )
+                # Marked, never removed: a corrected reading is part of the
+                # record of what the grower believed at the time.
+                superseded["superseded_by_id"] = reading["id"]
             rows.append(reading)
             self._write(rows)
         return reading
@@ -227,7 +259,11 @@ class ConservatoryEnvironmentStore:
             candidates = [
                 row
                 for row in rows
-                if row["variable"] == variable and row["value"] is not None
+                if row["variable"] == variable
+                and row["value"] is not None
+                # A corrected reading must not reach the comparison: the whole
+                # point of correcting it was that the number was wrong.
+                and row.get("superseded_by_id") is None
             ]
             if not candidates:
                 context[variable] = {

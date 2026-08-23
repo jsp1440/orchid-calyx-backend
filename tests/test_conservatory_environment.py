@@ -456,3 +456,289 @@ class TestThroughTheApi:
             ).status_code
             == 401
         )
+
+
+class TestCorrectingAReading:
+    """A mistyped temperature is not a small problem: it feeds the placement
+    assessment, so a wrong number can put a plant 'outside' a bound it never
+    breached. Corrections are appended, never edited in place, so the record
+    still shows what the grower believed at the time."""
+
+    def test_a_correction_supersedes_without_deleting(self, tmp_path: Path):
+        store = _store(tmp_path)
+        wrong = store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=120.0,
+            origin="manual",
+            observed_at=AT,
+        )
+        fix = store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=12.0,
+            origin="manual",
+            observed_at=AT,
+            supersedes_id=wrong["id"],
+            note="Typo: 120 should have been 12",
+        )
+        readings = store.readings_for("loc-1")
+        assert len(readings) == 2
+        superseded = next(row for row in readings if row["id"] == wrong["id"])
+        assert superseded["superseded_by_id"] == fix["id"]
+        assert fix["supersedes_id"] == wrong["id"]
+
+    def test_the_corrected_reading_no_longer_feeds_the_context(self, tmp_path: Path):
+        # The whole point of correcting it was that the number was wrong.
+        store = _store(tmp_path)
+        wrong = store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=120.0,
+            origin="manual",
+            observed_at=AT,
+        )
+        store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=12.0,
+            origin="manual",
+            observed_at=AT,
+            supersedes_id=wrong["id"],
+        )
+        assert store.context_for("loc-1")["variables"]["temperature_c"]["value"] == 12.0
+
+    def test_a_corrected_reading_loses_even_when_it_is_the_newer_one(
+        self, tmp_path: Path
+    ):
+        """The sharp case. Correcting a reading taken later than its fix means
+        the wrong number would still be the most recent, and a context that
+        merely takes the latest value would keep reporting it. Only excluding
+        superseded readings gets this right."""
+        store = _store(tmp_path)
+        wrong = store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=120.0,
+            origin="manual",
+            observed_at=LATER,
+        )
+        store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=12.0,
+            origin="manual",
+            observed_at=AT,
+            supersedes_id=wrong["id"],
+        )
+        assert store.context_for("loc-1")["variables"]["temperature_c"]["value"] == 12.0
+
+    def test_correcting_something_that_does_not_exist_is_refused(self, tmp_path: Path):
+        with pytest.raises(EnvironmentError_, match="SUPERSEDED_READING_NOT_FOUND"):
+            _store(tmp_path).record(
+                location_id="loc-1",
+                variable="temperature_c",
+                value=12.0,
+                origin="manual",
+                observed_at=AT,
+                supersedes_id="nope",
+            )
+
+    def test_a_correction_cannot_reach_into_another_location(self, tmp_path: Path):
+        store = _store(tmp_path)
+        theirs = store.record(
+            location_id="loc-2",
+            variable="temperature_c",
+            value=20.0,
+            origin="manual",
+            observed_at=AT,
+        )
+        with pytest.raises(
+            EnvironmentError_, match="SUPERSEDED_READING_BELONGS_TO_ANOTHER_LOCATION"
+        ):
+            store.record(
+                location_id="loc-1",
+                variable="temperature_c",
+                value=12.0,
+                origin="manual",
+                observed_at=AT,
+                supersedes_id=theirs["id"],
+            )
+
+    def test_a_correction_must_keep_the_variable(self, tmp_path: Path):
+        # Correcting a temperature into a humidity is not a correction; it is
+        # two different claims wearing one identity.
+        store = _store(tmp_path)
+        original = store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=12.0,
+            origin="manual",
+            observed_at=AT,
+        )
+        with pytest.raises(
+            EnvironmentError_, match="CORRECTION_MUST_KEEP_THE_VARIABLE"
+        ):
+            store.record(
+                location_id="loc-1",
+                variable="relative_humidity_pct",
+                value=60.0,
+                origin="manual",
+                observed_at=AT,
+                supersedes_id=original["id"],
+            )
+
+    def test_a_reading_cannot_be_superseded_twice(self, tmp_path: Path):
+        store = _store(tmp_path)
+        original = store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=120.0,
+            origin="manual",
+            observed_at=AT,
+        )
+        store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=12.0,
+            origin="manual",
+            observed_at=AT,
+            supersedes_id=original["id"],
+        )
+        with pytest.raises(EnvironmentError_, match="READING_ALREADY_SUPERSEDED"):
+            store.record(
+                location_id="loc-1",
+                variable="temperature_c",
+                value=13.0,
+                origin="manual",
+                observed_at=AT,
+                supersedes_id=original["id"],
+            )
+
+    def test_a_correction_may_change_the_origin(self, tmp_path: Path):
+        # "I said the probe measured it; actually I read the wall dial" is a
+        # correction worth making, and it weakens the claim rather than the
+        # number.
+        store = _store(tmp_path)
+        original = store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=12.0,
+            origin="measured",
+            instrument="Probe A",
+            observed_at=AT,
+        )
+        store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=12.0,
+            origin="manual",
+            observed_at=AT,
+            supersedes_id=original["id"],
+        )
+        context = store.context_for("loc-1")["variables"]["temperature_c"]
+        assert context["origin"] == "manual"
+        assert context["instrument"] is None
+
+    def test_correcting_the_only_reading_leaves_the_variable_known(
+        self, tmp_path: Path
+    ):
+        store = _store(tmp_path)
+        original = store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=120.0,
+            origin="manual",
+            observed_at=AT,
+        )
+        store.record(
+            location_id="loc-1",
+            variable="temperature_c",
+            value=12.0,
+            origin="manual",
+            observed_at=AT,
+            supersedes_id=original["id"],
+        )
+        assert store.context_for("loc-1")["variables"]["temperature_c"]["known"] is True
+
+
+class TestCorrectionThroughTheApi:
+    @staticmethod
+    def _client(tmp_path):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from app.routers.conservatory import create_conservatory_router
+        from runtime.conservatory_locations import ConservatoryLocationStore
+        from runtime.conservatory_store import ConservatoryStore
+
+        locations = ConservatoryLocationStore(tmp_path)
+        app = FastAPI()
+        app.include_router(
+            create_conservatory_router(
+                get_store=lambda: ConservatoryStore(tmp_path),
+                require_owner=lambda: {"sub": "owner"},
+                get_locations=lambda: locations,
+                get_environment=lambda: ConservatoryEnvironmentStore(tmp_path),
+            )
+        )
+        return TestClient(app), locations
+
+    def test_a_mistyped_reading_can_be_corrected(self, tmp_path: Path):
+        client, locations = self._client(tmp_path)
+        bench = locations.create_location(name="Cool bench", kind="greenhouse_bench")
+        wrong = client.post(
+            f"/api/conservatory/locations/{bench['id']}/environment",
+            json={
+                "variable": "temperature_c",
+                "value": 120.0,
+                "origin": "manual",
+                "observed_at": AT,
+            },
+        ).json()
+        fixed = client.post(
+            f"/api/conservatory/locations/{bench['id']}/environment",
+            json={
+                "variable": "temperature_c",
+                "value": 12.0,
+                "origin": "manual",
+                "observed_at": AT,
+                "supersedes_id": wrong["id"],
+                "note": "Typo: 120 should have been 12",
+            },
+        )
+        assert fixed.status_code == 201
+
+        context = client.get(
+            f"/api/conservatory/locations/{bench['id']}/environment"
+        ).json()
+        assert context["variables"]["temperature_c"]["value"] == 12.0
+        # The original is still in the record, marked.
+        superseded = next(r for r in context["readings"] if r["id"] == wrong["id"])
+        assert superseded["superseded_by_id"] == fixed.json()["id"]
+
+    def test_correcting_twice_is_a_conflict(self, tmp_path: Path):
+        client, locations = self._client(tmp_path)
+        bench = locations.create_location(name="Cool bench", kind="greenhouse_bench")
+        original = client.post(
+            f"/api/conservatory/locations/{bench['id']}/environment",
+            json={
+                "variable": "temperature_c",
+                "value": 120.0,
+                "origin": "manual",
+                "observed_at": AT,
+            },
+        ).json()
+        body = {
+            "variable": "temperature_c",
+            "value": 12.0,
+            "origin": "manual",
+            "observed_at": AT,
+            "supersedes_id": original["id"],
+        }
+        client.post(f"/api/conservatory/locations/{bench['id']}/environment", json=body)
+        again = client.post(
+            f"/api/conservatory/locations/{bench['id']}/environment", json=body
+        )
+        assert again.status_code == 409
+        assert again.json()["detail"]["code"] == "READING_ALREADY_SUPERSEDED"

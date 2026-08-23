@@ -80,6 +80,8 @@ class EnvironmentReadingCreate(BaseModel):
     window_end: str | None = Field(default=None, max_length=40)
     summary_kind: str | None = Field(default=None, max_length=20)
     note: str | None = Field(default=None, max_length=2000)
+    #: The reading this corrects. The original is kept and marked, never edited.
+    supersedes_id: str | None = Field(default=None, max_length=100)
 
 
 class PlantEventCreate(BaseModel):
@@ -393,9 +395,11 @@ def create_conservatory_router(
                 location_id=location_id, **payload.model_dump()
             )
         except EnvironmentError_ as exc:
-            # Every one of these means the record would have misrepresented its
-            # own origin, which is a malformed claim rather than a conflict.
-            raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+            code = str(exc)
+            # Superseding an already-corrected reading is a conflict with the
+            # store's current state; the rest are malformed claims.
+            status = 409 if code == "READING_ALREADY_SUPERSEDED" else 422
+            raise HTTPException(status_code=status, detail={"code": code}) from exc
 
     @router.get("/locations/{location_id}/environment")
     def read_environment(
