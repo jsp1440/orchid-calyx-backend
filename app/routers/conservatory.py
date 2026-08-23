@@ -122,6 +122,17 @@ def _default_event_store() -> ConservatoryEventStore:
     return ConservatoryEventStore(_conservatory_root())
 
 
+def _no_trait_evidence(_taxon: str | None) -> list[dict[str, Any]]:
+    """Default trait supplier: nothing.
+
+    The candidate store is not wired into this router, and inventing a
+    connection here would be worse than the gap. Returning nothing makes every
+    requirement resolve to absent, which is exactly what the Continuum can
+    honestly say until a deployment supplies the real store.
+    """
+    return []
+
+
 def _scan_base_url() -> str | None:
     """Where a scanned tag should land, or None if nobody has configured it.
 
@@ -166,6 +177,9 @@ def create_conservatory_router(
         [], ConservatoryEnvironmentStore
     ] = _default_environment_store,
     get_events: Callable[[], ConservatoryEventStore] = _default_event_store,
+    get_trait_evidence: Callable[
+        [str | None], list[dict[str, Any]]
+    ] = _no_trait_evidence,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/conservatory", tags=["conservatory"])
 
@@ -459,6 +473,7 @@ def create_conservatory_router(
             location=location,
             environment=environment,
             events=get_events().timeline(plant_id),
+            trait_candidates=get_trait_evidence(plant.get("accepted_scientific_name")),
         )
 
     @router.get("/plants/{plant_id}/placement-assessment")
@@ -495,6 +510,7 @@ def create_conservatory_router(
             location=location,
             environment=environment,
             events=get_events().timeline(plant_id),
+            trait_candidates=get_trait_evidence(plant.get("accepted_scientific_name")),
         )
         return assess_placement_suitability(context)
 
