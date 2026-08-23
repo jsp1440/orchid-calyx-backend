@@ -741,3 +741,417 @@ class TestBringingALocationBack:
         again = client.post(f"/api/conservatory/locations/{bench['id']}/unretire")
         assert again.status_code == 409
         assert again.json()["detail"]["code"] == "LOCATION_NOT_RETIRED"
+
+
+class TestCorrectingAPlacement:
+    """A correction that names what it corrects.
+
+    Before this, a correction said "the record was wrong" without saying which
+    record, and it landed at the end of the timeline. Both are defects, and the
+    second is the dangerous one: correcting how a plant *started* made that
+    correction the plant's current location, teleporting it out of the bench it
+    had since moved to.
+    """
+
+    @staticmethod
+    def _store(tmp_path):
+        from runtime.conservatory_locations import ConservatoryLocationStore
+
+        return ConservatoryLocationStore(tmp_path)
+
+    def test_a_correction_records_which_placement_it_corrects(self, tmp_path):
+        store = self._store(tmp_path)
+        bench = store.create_location(name="Cool bench", kind="greenhouse_bench")
+        shelf = store.create_location(name="Warm shelf", kind="shelf")
+        wrong = store.record_placement(
+            plant_id="p1", location_id=bench["id"], reason="initial"
+        )
+
+        fix = store.record_placement(
+            plant_id="p1",
+            location_id=shelf["id"],
+            reason="correction",
+            corrects_id=wrong["id"],
+        )
+
+        assert fix["corrects_id"] == wrong["id"]
+        history = store.placement_history("p1")
+        assert history[0]["corrected_by_id"] == fix["id"]
+        # The wrong entry stays in the log. A grower checking why the records
+        # disagree with their memory needs to see what misled them.
+        assert history[0]["id"] == wrong["id"]
+        assert len(history) == 2
+
+    def test_correcting_the_start_does_not_move_a_plant_that_has_since_moved(
+        self, tmp_path
+    ):
+        """The defect this linkage exists to fix.
+
+        The plant started on the cool bench (wrongly recorded), then genuinely
+        moved to the warm shelf. Correcting the start must not claim the plant
+        is now wherever the correction names.
+        """
+        store = self._store(tmp_path)
+        bench = store.create_location(name="Cool bench", kind="greenhouse_bench")
+        shelf = store.create_location(name="Warm shelf", kind="shelf")
+        window = store.create_location(name="Windowsill", kind="windowsill")
+        start = store.record_placement(
+            plant_id="p1", location_id=bench["id"], reason="initial"
+        )
+        store.record_placement(plant_id="p1", location_id=shelf["id"], reason="move")
+
+        store.record_placement(
+            plant_id="p1",
+            location_id=window["id"],
+            reason="correction",
+            corrects_id=start["id"],
+        )
+
+        current = store.current_placement("p1")
+        assert current["location_id"] == shelf["id"]
+
+    def test_the_occupancy_view_applies_corrections_too(self, tmp_path):
+        # An occupancy list that ignored corrections would put a plant on a
+        # bench its own dossier says it never was on.
+        store = self._store(tmp_path)
+        bench = store.create_location(name="Cool bench", kind="greenhouse_bench")
+        shelf = store.create_location(name="Warm shelf", kind="shelf")
+        wrong = store.record_placement(
+            plant_id="p1", location_id=bench["id"], reason="initial"
+        )
+        store.record_placement(
+            plant_id="p1",
+            location_id=shelf["id"],
+            reason="correction",
+            corrects_id=wrong["id"],
+        )
+
+        occupancy = store.occupancy()
+        assert occupancy[bench["id"]] == []
+        assert occupancy[shelf["id"]] == ["p1"]
+
+    def test_occupancy_does_not_move_a_plant_when_only_its_past_was_corrected(
+        self, tmp_path
+    ):
+        """The occupancy counterpart of the teleport defect.
+
+        Correcting where a plant *started* must not list it there now. Reading
+        the log's last entry — which is the correction — puts the plant on a
+        bench it left long ago, and a grower doing the rounds by this list
+        would go looking in the wrong place.
+        """
+        store = self._store(tmp_path)
+        bench = store.create_location(name="Cool bench", kind="greenhouse_bench")
+        shelf = store.create_location(name="Warm shelf", kind="shelf")
+        window = store.create_location(name="Windowsill", kind="windowsill")
+        start = store.record_placement(
+            plant_id="p1", location_id=bench["id"], reason="initial"
+        )
+        store.record_placement(plant_id="p1", location_id=shelf["id"], reason="move")
+
+        store.record_placement(
+            plant_id="p1",
+            location_id=window["id"],
+            reason="correction",
+            corrects_id=start["id"],
+        )
+
+        occupancy = store.occupancy()
+        assert occupancy[shelf["id"]] == ["p1"]
+        assert occupancy[window["id"]] == []
+        assert occupancy[bench["id"]] == []
+
+    def test_correcting_the_latest_placement_still_moves_the_plant(self, tmp_path):
+        store = self._store(tmp_path)
+        bench = store.create_location(name="Cool bench", kind="greenhouse_bench")
+        shelf = store.create_location(name="Warm shelf", kind="shelf")
+        latest = store.record_placement(
+            plant_id="p1", location_id=bench["id"], reason="initial"
+        )
+
+        store.record_placement(
+            plant_id="p1",
+            location_id=shelf["id"],
+            reason="correction",
+            corrects_id=latest["id"],
+        )
+
+        assert store.current_placement("p1")["location_id"] == shelf["id"]
+
+    def test_a_correction_of_a_correction_is_the_one_that_stands(self, tmp_path):
+        store = self._store(tmp_path)
+        a = store.create_location(name="Shelf A", kind="shelf")
+        b = store.create_location(name="Shelf B", kind="shelf")
+        c = store.create_location(name="Shelf C", kind="shelf")
+        first = store.record_placement(
+            plant_id="p1", location_id=a["id"], reason="initial"
+        )
+        second = store.record_placement(
+            plant_id="p1",
+            location_id=b["id"],
+            reason="correction",
+            corrects_id=first["id"],
+        )
+
+        store.record_placement(
+            plant_id="p1",
+            location_id=c["id"],
+            reason="correction",
+            corrects_id=second["id"],
+        )
+
+        assert store.current_placement("p1")["location_id"] == c["id"]
+
+    def test_an_unlinked_correction_keeps_its_old_behaviour(self, tmp_path):
+        # Placements written before this existed name no target, and guessing
+        # one would invent a link the writer declined to make.
+        store = self._store(tmp_path)
+        bench = store.create_location(name="Cool bench", kind="greenhouse_bench")
+        shelf = store.create_location(name="Warm shelf", kind="shelf")
+        store.record_placement(plant_id="p1", location_id=bench["id"], reason="initial")
+
+        store.record_placement(
+            plant_id="p1", location_id=shelf["id"], reason="correction"
+        )
+
+        assert store.current_placement("p1")["location_id"] == shelf["id"]
+
+    def test_a_move_may_not_claim_to_correct_anything(self, tmp_path):
+        import pytest
+
+        from runtime.conservatory_locations import LocationError
+
+        store = self._store(tmp_path)
+        bench = store.create_location(name="Cool bench", kind="greenhouse_bench")
+        first = store.record_placement(
+            plant_id="p1", location_id=bench["id"], reason="initial"
+        )
+
+        with pytest.raises(LocationError) as raised:
+            store.record_placement(
+                plant_id="p1",
+                location_id=bench["id"],
+                reason="move",
+                corrects_id=first["id"],
+            )
+
+        assert str(raised.value) == "CORRECTION_TARGET_REQUIRES_CORRECTION"
+
+    def test_a_correction_cannot_name_a_placement_that_does_not_exist(self, tmp_path):
+        import pytest
+
+        from runtime.conservatory_locations import LocationError
+
+        store = self._store(tmp_path)
+        bench = store.create_location(name="Cool bench", kind="greenhouse_bench")
+
+        with pytest.raises(LocationError) as raised:
+            store.record_placement(
+                plant_id="p1",
+                location_id=bench["id"],
+                reason="correction",
+                corrects_id="no-such-placement",
+            )
+
+        assert str(raised.value) == "CORRECTION_TARGET_NOT_FOUND"
+
+    def test_a_correction_cannot_reach_into_another_plants_history(self, tmp_path):
+        import pytest
+
+        from runtime.conservatory_locations import LocationError
+
+        store = self._store(tmp_path)
+        bench = store.create_location(name="Cool bench", kind="greenhouse_bench")
+        theirs = store.record_placement(
+            plant_id="p2", location_id=bench["id"], reason="initial"
+        )
+
+        with pytest.raises(LocationError) as raised:
+            store.record_placement(
+                plant_id="p1",
+                location_id=bench["id"],
+                reason="correction",
+                corrects_id=theirs["id"],
+            )
+
+        assert str(raised.value) == "CORRECTION_TARGET_NOT_FOUND"
+
+    def test_one_placement_cannot_be_corrected_twice(self, tmp_path):
+        import pytest
+
+        from runtime.conservatory_locations import LocationError
+
+        store = self._store(tmp_path)
+        bench = store.create_location(name="Cool bench", kind="greenhouse_bench")
+        shelf = store.create_location(name="Warm shelf", kind="shelf")
+        wrong = store.record_placement(
+            plant_id="p1", location_id=bench["id"], reason="initial"
+        )
+        store.record_placement(
+            plant_id="p1",
+            location_id=shelf["id"],
+            reason="correction",
+            corrects_id=wrong["id"],
+        )
+
+        with pytest.raises(LocationError) as raised:
+            store.record_placement(
+                plant_id="p1",
+                location_id=bench["id"],
+                reason="correction",
+                corrects_id=wrong["id"],
+            )
+
+        assert str(raised.value) == "PLACEMENT_ALREADY_CORRECTED"
+
+    def test_a_correction_may_still_name_a_retired_location(self, tmp_path):
+        # The plant really was there. Refusing to say so would force a false
+        # history in exchange for a tidy rule.
+        store = self._store(tmp_path)
+        gone = store.create_location(name="Old bench", kind="greenhouse_bench")
+        shelf = store.create_location(name="Warm shelf", kind="shelf")
+        start = store.record_placement(
+            plant_id="p1", location_id=shelf["id"], reason="initial"
+        )
+        store.retire_location(gone["id"], reason="dismantled")
+
+        fix = store.record_placement(
+            plant_id="p1",
+            location_id=gone["id"],
+            reason="correction",
+            corrects_id=start["id"],
+        )
+
+        assert fix["location_id"] == gone["id"]
+
+
+class TestCorrectingAPlacementThroughTheApi:
+    """The refusals a grower actually hits, with statuses they can act on.
+
+    A 404 and a 409 are fixed differently: one means the record you named is
+    not there, the other means somebody already put this right. Collapsing
+    both into 422 would leave a grower retrying a request that can never work.
+    """
+
+    @staticmethod
+    def _client(tmp_path: Path):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from app.routers.conservatory import create_conservatory_router
+        from runtime.conservatory_store import ConservatoryStore
+
+        plants = ConservatoryStore(tmp_path)
+        locations = ConservatoryLocationStore(tmp_path)
+        app = FastAPI()
+        app.include_router(
+            create_conservatory_router(
+                get_store=lambda: plants,
+                require_owner=lambda: {"sub": "owner"},
+                get_locations=lambda: locations,
+            )
+        )
+        return TestClient(app), plants, locations
+
+    def test_a_correction_travels_through_the_route_and_fixes_the_plant(
+        self, tmp_path: Path
+    ):
+        client, plants, locations = self._client(tmp_path)
+        plant = plants.create(display_name="Cattleya skinneri")
+        bench = locations.create_location(name="Cool bench", kind="greenhouse_bench")
+        shelf = locations.create_location(name="Warm shelf", kind="shelf")
+        wrong = client.post(
+            f"/api/conservatory/plants/{plant['id']}/placement",
+            json={"location_id": bench["id"], "reason": "initial"},
+        ).json()
+
+        fixed = client.post(
+            f"/api/conservatory/plants/{plant['id']}/placement",
+            json={
+                "location_id": shelf["id"],
+                "reason": "correction",
+                "corrects_id": wrong["id"],
+            },
+        )
+
+        assert fixed.status_code == 201
+        assert fixed.json()["corrects_id"] == wrong["id"]
+        placement = client.get(
+            f"/api/conservatory/plants/{plant['id']}/placement"
+        ).json()
+        assert placement["current"]["location_id"] == shelf["id"]
+        # The wrong entry is still in the history, marked rather than erased.
+        corrected = next(
+            row for row in placement["history"] if row["id"] == wrong["id"]
+        )
+        assert corrected["corrected_by_id"] == fixed.json()["id"]
+
+    def test_naming_a_placement_that_does_not_exist_is_a_404(self, tmp_path: Path):
+        client, plants, locations = self._client(tmp_path)
+        plant = plants.create(display_name="Cattleya skinneri")
+        bench = locations.create_location(name="Cool bench", kind="greenhouse_bench")
+
+        response = client.post(
+            f"/api/conservatory/plants/{plant['id']}/placement",
+            json={
+                "location_id": bench["id"],
+                "reason": "correction",
+                "corrects_id": "no-such-placement",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"]["code"] == "CORRECTION_TARGET_NOT_FOUND"
+
+    def test_correcting_the_same_placement_twice_is_a_409(self, tmp_path: Path):
+        client, plants, locations = self._client(tmp_path)
+        plant = plants.create(display_name="Cattleya skinneri")
+        bench = locations.create_location(name="Cool bench", kind="greenhouse_bench")
+        shelf = locations.create_location(name="Warm shelf", kind="shelf")
+        wrong = client.post(
+            f"/api/conservatory/plants/{plant['id']}/placement",
+            json={"location_id": bench["id"], "reason": "initial"},
+        ).json()
+        client.post(
+            f"/api/conservatory/plants/{plant['id']}/placement",
+            json={
+                "location_id": shelf["id"],
+                "reason": "correction",
+                "corrects_id": wrong["id"],
+            },
+        )
+
+        response = client.post(
+            f"/api/conservatory/plants/{plant['id']}/placement",
+            json={
+                "location_id": bench["id"],
+                "reason": "correction",
+                "corrects_id": wrong["id"],
+            },
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "PLACEMENT_ALREADY_CORRECTED"
+
+    def test_a_move_claiming_to_correct_something_is_refused(self, tmp_path: Path):
+        client, plants, locations = self._client(tmp_path)
+        plant = plants.create(display_name="Cattleya skinneri")
+        bench = locations.create_location(name="Cool bench", kind="greenhouse_bench")
+        first = client.post(
+            f"/api/conservatory/plants/{plant['id']}/placement",
+            json={"location_id": bench["id"], "reason": "initial"},
+        ).json()
+
+        response = client.post(
+            f"/api/conservatory/plants/{plant['id']}/placement",
+            json={
+                "location_id": bench["id"],
+                "reason": "move",
+                "corrects_id": first["id"],
+            },
+        )
+
+        assert response.status_code == 422
+        assert (
+            response.json()["detail"]["code"] == "CORRECTION_TARGET_REQUIRES_CORRECTION"
+        )

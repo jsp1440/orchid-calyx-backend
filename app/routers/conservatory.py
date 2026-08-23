@@ -65,6 +65,10 @@ class PlacementCreate(BaseModel):
     #: invent husbandry history.
     reason: str = Field(default="move", max_length=40)
     note: str | None = Field(default=None, max_length=2000)
+    #: Which earlier placement this corrects. Only meaningful with
+    #: reason="correction"; a correction naming nothing says the record was
+    #: wrong without saying which record.
+    corrects_id: str | None = Field(default=None, max_length=100)
 
 
 class EnvironmentReadingCreate(BaseModel):
@@ -330,9 +334,12 @@ def create_conservatory_router(
             "LOCATION_STILL_OCCUPIED",
             "LOCATION_RETIRED",
             "LOCATION_NOT_RETIRED",
+            # Already true of the log: somebody else's correction stands, and
+            # the caller has to read it before writing another.
+            "PLACEMENT_ALREADY_CORRECTED",
         }
         status = 409 if code in conflicts else 422
-        if code == "LOCATION_NOT_FOUND":
+        if code in {"LOCATION_NOT_FOUND", "CORRECTION_TARGET_NOT_FOUND"}:
             status = 404
         return HTTPException(status_code=status, detail={"code": code})
 

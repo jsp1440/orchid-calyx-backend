@@ -113,6 +113,18 @@ class PlacementEvent:
     reason: str
     note: str | None
     recorded_at: str
+    #: For a correction, the placement it corrects.
+    #:
+    #: A correction that names nothing says "the record was wrong" without
+    #: saying which record, and a history holding three of them cannot be read
+    #: at all. Naming the target also fixes where the plant is: a correction to
+    #: an old entry replaces that entry in the sequence rather than landing at
+    #: the end of it, so correcting how a plant *started* no longer teleports
+    #: it out of the bench it moved to since.
+    #:
+    #: Optional, because placements recorded before this existed have no
+    #: target and rewriting them would be inventing one.
+    corrects_id: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -407,6 +419,7 @@ class ConservatoryLocationStore:
         location_id: str | None,
         reason: str = "move",
         note: str | None = None,
+        corrects_id: str | None = None,
     ) -> dict[str, Any]:
         """Append a placement event. Never rewrites an earlier one."""
         if not plant_id:
@@ -415,6 +428,10 @@ class ConservatoryLocationStore:
             raise LocationError("PLACEMENT_REASON_UNRECOGNISED")
         if location_id is None and reason != "removed":
             raise LocationError("LOCATION_REQUIRED")
+        if corrects_id and reason != "correction":
+            # A move that claims to correct something is two different facts at
+            # once. The plant either went somewhere or the record was wrong.
+            raise LocationError("CORRECTION_TARGET_REQUIRES_CORRECTION")
         with self._lock:
             state = self._read()
             target = (
@@ -435,6 +452,26 @@ class ConservatoryLocationStore:
                 # a past record may still name it: the plant really was there,
                 # and refusing to say so would force a false history.
                 raise LocationError("LOCATION_RETIRED")
+            if corrects_id:
+                target = next(
+                    (
+                        row
+                        for row in state.placements
+                        if row["id"] == corrects_id and row["plant_id"] == plant_id
+                    ),
+                    None,
+                )
+                if target is None:
+                    # Including when the id belongs to another plant's history.
+                    # Correcting across plants would move a record between two
+                    # collections' timelines with nothing saying it happened.
+                    raise LocationError("CORRECTION_TARGET_NOT_FOUND")
+                if any(
+                    row.get("corrects_id") == corrects_id for row in state.placements
+                ):
+                    # Two corrections of one entry leaves no way to say which
+                    # of them the history should read as true.
+                    raise LocationError("PLACEMENT_ALREADY_CORRECTED")
             event = PlacementEvent(
                 id=str(uuid4()),
                 plant_id=plant_id,
@@ -442,18 +479,68 @@ class ConservatoryLocationStore:
                 reason=reason,
                 note=(note or "").strip() or None,
                 recorded_at=datetime.now(UTC).isoformat(),
+                corrects_id=corrects_id or None,
             ).as_dict()
             state.placements.append(event)
             self._write(state)
             return event
 
     def placement_history(self, plant_id: str) -> list[dict[str, Any]]:
-        """Every recorded placement for a plant, oldest first."""
+        """Every recorded placement for a plant, oldest first.
+
+        The log itself, unedited — including entries a later correction says
+        were wrong. They are marked, not removed: a grower checking why their
+        records disagree with their memory needs to see the entry that misled
+        them, and deleting it would leave the correction explaining nothing.
+        """
         with self._lock:
             events = [
                 row for row in self._read().placements if row["plant_id"] == plant_id
             ]
-        return sorted(events, key=lambda row: row["recorded_at"])
+        ordered = sorted(events, key=lambda row: row["recorded_at"])
+        corrected_by = {
+            row["corrects_id"]: row["id"] for row in ordered if row.get("corrects_id")
+        }
+        # Derived on read rather than stamped on write: the log is append-only,
+        # and a stored back-reference would mean editing a past record to say it
+        # was wrong.
+        return [
+            {**row, "corrected_by_id": corrected_by.get(row["id"])} for row in ordered
+        ]
+
+    @staticmethod
+    def _effective_sequence(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The history as corrected: each entry replaced by what put it right.
+
+        A correction is not a later event in the plant's life. It is a claim
+        about an earlier one, so it belongs at that earlier one's position. Read
+        as an appended event instead, correcting where a plant *started* would
+        make it the plant's current location — teleporting it out of the bench
+        it has since moved to, on the strength of a record about its past.
+
+        A correction naming no target keeps its place at the end. That is what
+        the log actually says about it, and guessing a target would invent the
+        link the writer declined to make.
+        """
+        by_target = {
+            row["corrects_id"]: row for row in history if row.get("corrects_id")
+        }
+        sequence: list[dict[str, Any]] = []
+        for row in history:
+            if row.get("corrects_id"):
+                continue
+            current = row
+            seen = {current["id"]}
+            while current["id"] in by_target:
+                successor = by_target[current["id"]]
+                if successor["id"] in seen:
+                    # Only reachable if a stored log already contains a cycle.
+                    # Stopping beats looping forever over corrupt data.
+                    break
+                seen.add(successor["id"])
+                current = successor
+            sequence.append(current)
+        return sequence
 
     def current_placement(self, plant_id: str) -> dict[str, Any] | None:
         """Where the plant is now, derived from its history.
@@ -463,10 +550,10 @@ class ConservatoryLocationStore:
         right. A plant recorded as removed is not anywhere, which is a
         different answer from never having been placed.
         """
-        history = self.placement_history(plant_id)
-        if not history:
+        sequence = self._effective_sequence(self.placement_history(plant_id))
+        if not sequence:
             return None
-        latest = history[-1]
+        latest = sequence[-1]
         return None if latest["reason"] == "removed" else latest
 
     def occupancy(self) -> dict[str, list[str]]:
@@ -478,9 +565,16 @@ class ConservatoryLocationStore:
     @staticmethod
     def _occupancy_from(state: _State) -> dict[str, list[str]]:
         """Shared so retirement and the occupancy view can never disagree."""
-        by_plant: dict[str, dict[str, Any]] = {}
+        per_plant: dict[str, list[dict[str, Any]]] = {}
         for event in sorted(state.placements, key=lambda row: row["recorded_at"]):
-            by_plant[event["plant_id"]] = event
+            per_plant.setdefault(event["plant_id"], []).append(event)
+        # Corrections are applied here too. An occupancy view that ignored them
+        # would list a plant on a bench its own dossier says it never was on.
+        by_plant: dict[str, dict[str, Any]] = {}
+        for plant_id, events in per_plant.items():
+            sequence = ConservatoryLocationStore._effective_sequence(events)
+            if sequence:
+                by_plant[plant_id] = sequence[-1]
         result: dict[str, list[str]] = {row["id"]: [] for row in state.locations}
         for plant_id, event in by_plant.items():
             if event["reason"] == "removed" or event["location_id"] is None:
