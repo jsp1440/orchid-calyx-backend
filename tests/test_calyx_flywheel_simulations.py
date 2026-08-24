@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from app.calyx_flywheel.locality import SensitiveLocalityError
 from app.calyx_flywheel.models import SimulationCase
 from app.calyx_flywheel.simulations import (
     ExecutionMode,
@@ -21,7 +22,6 @@ from app.calyx_flywheel.simulations import (
     SimulationTurn,
     seed_regression_cases,
 )
-from app.calyx_flywheel.locality import SensitiveLocalityError
 
 
 def _snapshot() -> SimulationSnapshot:
@@ -241,7 +241,7 @@ def test_fixture_mode_rejects_paid_cost() -> None:
 
 def test_live_canary_is_opt_in_and_budget_capped() -> None:
     case = _case()
-    driver = lambda _case, _snapshot: (  # noqa: E731
+    driver = lambda _case, _snapshot: (
         SimulationObservation(
             turn_index=0,
             facts={"status": "SUPPORTED"},
