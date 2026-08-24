@@ -96,6 +96,12 @@ def build_collection_review(
                     if row.get("outcome") == "outside"
                 ],
                 "requirement_source_consulted": consulted,
+                # How old the number behind the oldest verdict for this plant
+                # is. A collection list is exactly where a season-old reading
+                # would otherwise pass as this morning's.
+                "oldest_verdict_condition_age_days": assessment.get(
+                    "oldest_verdict_condition_age_days"
+                ),
             }
         )
 

@@ -11,11 +11,23 @@ from urllib.parse import quote
 
 import qrcode
 import qrcode.image.svg
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+)
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
-from runtime.conservatory_calyx_context import build_cultivation_context
+from runtime.conservatory_calyx_context import (
+    build_cultivation_context,
+    requirements_claim,
+)
 from runtime.conservatory_collection_review import build_collection_review
 from runtime.conservatory_environment import (
     ConservatoryEnvironmentStore,
@@ -23,6 +35,10 @@ from runtime.conservatory_environment import (
 )
 from runtime.conservatory_events import ConservatoryEventStore, PlantEventError
 from runtime.conservatory_locations import ConservatoryLocationStore, LocationError
+from runtime.conservatory_photographs import (
+    ConservatoryPhotographStore,
+    PhotographError,
+)
 from runtime.conservatory_readiness import (
     build_conservatory_readiness,
     create_restart_probe,
@@ -30,6 +46,11 @@ from runtime.conservatory_readiness import (
 )
 from runtime.conservatory_store import ConservatoryStore
 from runtime.conservatory_suitability import assess_placement_suitability
+from runtime.conservatory_taxon_placement import (
+    MAX_TAXON_LENGTH,
+    build_taxon_placement_search,
+)
+from runtime.conservatory_taxon_requirements import resolve_taxon_requirements
 from runtime.conservatory_trait_supply import TraitSupply, supply_from_repository
 
 
@@ -130,6 +151,10 @@ def _default_event_store() -> ConservatoryEventStore:
     return ConservatoryEventStore(_conservatory_root())
 
 
+def _default_photograph_store() -> ConservatoryPhotographStore:
+    return ConservatoryPhotographStore(_conservatory_root())
+
+
 def _candidate_repository() -> Any | None:
     """The candidate knowledge store, or None if this deployment has none.
 
@@ -207,6 +232,9 @@ def create_conservatory_router(
         [], ConservatoryEnvironmentStore
     ] = _default_environment_store,
     get_events: Callable[[], ConservatoryEventStore] = _default_event_store,
+    get_photographs: Callable[
+        [], ConservatoryPhotographStore
+    ] = _default_photograph_store,
     get_trait_evidence: Callable[[str | None], TraitSupply] = _default_trait_evidence,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/conservatory", tags=["conservatory"])
@@ -542,6 +570,115 @@ def create_conservatory_router(
             trait_source_unavailable=trait_supply.unavailable_reason,
         )
         return assess_placement_suitability(context)
+
+    @router.get("/locations/suitability")
+    def taxon_placement_search(
+        taxon: str = Query(default="", max_length=MAX_TAXON_LENGTH),
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Where in this collection a candidate taxon's requirements are met.
+
+        The buying question, answered from what the benches actually measure.
+        Not advice about the purchase: whether a bench has room, and whether
+        the grower can hold it there through a season, are not in this data.
+
+        Owner-gated with the rest of the router. The response names every
+        location in the collection, which is private whether or not a plant is
+        standing in it.
+        """
+        supply = get_trait_evidence(taxon or None)
+        requirements = requirements_claim(
+            resolve_taxon_requirements(
+                taxon or None,
+                supply.candidates,
+                source_unavailable=supply.unavailable_reason,
+            )
+        )
+        environment = get_environment()
+        return build_taxon_placement_search(
+            taxon=taxon,
+            requirements_claim=requirements,
+            locations=get_locations().list_locations(),
+            environment_for=environment.context_for,
+        )
+
+    def _photograph_error(exc: PhotographError) -> HTTPException:
+        code = str(exc)
+        # A missing imaging library is not the caller's fault and not a
+        # permanent refusal: it is the service unable to guarantee the one
+        # property that makes storing a photograph safe.
+        if code == "IMAGE_PROCESSING_UNAVAILABLE":
+            return HTTPException(status_code=503, detail={"code": code})
+        if code == "PHOTOGRAPH_TOO_LARGE":
+            return HTTPException(status_code=413, detail={"code": code})
+        if code == "CONTENT_TYPE_NOT_ACCEPTED":
+            return HTTPException(status_code=415, detail={"code": code})
+        return HTTPException(status_code=422, detail={"code": code})
+
+    @router.post("/plants/{plant_id}/photographs", status_code=201)
+    async def add_photograph(
+        plant_id: str,
+        file: UploadFile = File(...),  # noqa: B008
+        caption: str | None = Form(default=None),
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Store one photograph of a plant, with its EXIF removed.
+
+        A phone photograph of an orchid on a windowsill routinely carries the
+        grower's home coordinates. Stripping them is not optional here: if it
+        cannot be done the upload is refused, because a photograph that reached
+        disk unstripped cannot be un-written.
+        """
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        content = await file.read()
+        try:
+            return get_photographs().store(
+                plant_id=plant_id,
+                content=content,
+                content_type=(file.content_type or "").split(";")[0].strip(),
+                caption=caption,
+            )
+        except PhotographError as exc:
+            raise _photograph_error(exc) from exc
+
+    @router.get("/plants/{plant_id}/photographs")
+    def list_photographs(
+        plant_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        """This plant's photographs, oldest capture first."""
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        rows = get_photographs().for_plant(plant_id)
+        return {
+            "plant_id": plant_id,
+            "photographs": rows,
+            "count": len(rows),
+            # Said about itself. A picture shows what somebody pointed a camera
+            # at, which is not a determination, a measurement or a voucher.
+            "is_scientific_evidence": False,
+        }
+
+    @router.get("/photographs/{photograph_id}")
+    def get_photograph(
+        photograph_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> Response:
+        """The image itself. Owner-gated: this is a private collection."""
+        store = get_photographs()
+        record = store.get(photograph_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="photograph not found")
+        content = store.bytes_for(photograph_id)
+        if content is None:
+            # The index knows about a file that is not on disk. Reporting that
+            # as "no such photograph" would hide a storage fault behind an
+            # answer that looks routine.
+            raise HTTPException(
+                status_code=410, detail={"code": "PHOTOGRAPH_FILE_MISSING"}
+            )
+        return Response(content=content, media_type=record["content_type"])
 
     @router.get("/collection/review")
     def collection_review(_: Any = Depends(require_owner)) -> dict[str, Any]:  # noqa: B008

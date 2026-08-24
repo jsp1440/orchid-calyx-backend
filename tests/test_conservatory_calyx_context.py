@@ -400,3 +400,43 @@ class TestTheWholeChainThroughTheApi:
             client.get("/api/conservatory/plants/nope/cultivation-context").status_code
             == 404
         )
+
+
+def test_a_summary_reading_carries_the_end_of_its_window():
+    """Without window_end a weekly mean looks a week stale.
+
+    Downstream ages a condition from the end of its window when there is one.
+    Dropping the field here does not lose a display detail; it silently ages
+    every summary by the length of its own window.
+    """
+    from runtime.conservatory_calyx_context import build_cultivation_context
+
+    context = build_cultivation_context(
+        plant={"id": "p1"},
+        placement_current=None,
+        placement_history=[],
+        location=None,
+        environment={
+            "location_id": "loc-1",
+            "variables": {
+                "temperature_c": {
+                    "unit": "degrees Celsius",
+                    "known": True,
+                    "value": 18.0,
+                    "origin": "measured",
+                    "instrument": "Probe A",
+                    "derived_from": None,
+                    "observed_at": "2026-08-16T00:00:00+00:00",
+                    "window_end": "2026-08-22T12:00:00+00:00",
+                    "is_summary": True,
+                    "summary_kind": "mean",
+                }
+            },
+        },
+        events=None,
+    )
+
+    condition = context["conditions"]["temperature_c"]
+    assert condition["window_end"] == "2026-08-22T12:00:00+00:00"
+    assert condition["observed_at"] == "2026-08-16T00:00:00+00:00"
+    assert condition["is_summary"] is True
