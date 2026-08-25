@@ -82,13 +82,7 @@ def literature_extraction_coverage_audit(
         LiteratureResultRepository, Depends(get_literature_repository)
     ],
 ) -> dict[str, Any]:
-    """Read-only literature corpus & extraction-coverage telemetry (TWO-DAY-SLICE-E).
-
-    Combines a database-level discovered-corpus measurement with a
-    filesystem-level extraction-pipeline stage count. Issues SELECT
-    statements and filesystem reads only; never writes to any table, the
-    bundle store, or the Knowledge Graph.
-    """
+    """Read-only literature corpus & extraction-coverage telemetry."""
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         return audit_literature_extraction_coverage(None, repository)
@@ -104,6 +98,36 @@ def literature_extraction_coverage_audit(
             repository,
             db_unavailable_detail=f"Database telemetry unavailable: {exc}",
         )
+
+
+@router.get("/papers")
+def list_papers(
+    repository: Annotated[
+        LiteratureResultRepository, Depends(get_literature_repository)
+    ],
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Discover which extraction results exist without releasing paper bodies."""
+    if limit < 1 or offset < 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_PAGE_BOUNDS",
+                "message": "limit must be >= 1 and offset >= 0",
+            },
+        )
+
+    summaries, total = repository.list_summaries(limit=limit, offset=offset)
+    return {
+        "papers": summaries,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "unreadable_count": sum(
+            1 for item in summaries if not item.get("readable", False)
+        ),
+    }
 
 
 @router.get("/papers/{paper_id}")
@@ -147,7 +171,11 @@ def create_source_binding(
         )
         stored, created = binding_repository.create(binding)
         response.status_code = 201 if created else 200
-        return {**stored.to_dict(), "created": created, "exact_source_integrity": True}
+        return {
+            **stored.to_dict(),
+            "created": created,
+            "exact_source_integrity": True,
+        }
     except LiteratureSourceBindingError as exc:
         raise HTTPException(
             status_code=409 if exc.code == "CONFLICTING_SOURCE_REBIND" else 422,
@@ -246,7 +274,8 @@ def handoff_candidates(
     except LiteratureSourceBindingError as exc:
         raise HTTPException(
             status_code=409
-            if exc.code in {"CONFLICTING_SOURCE_REBIND", "PERSISTED_BINDING_IS_AUTHORITATIVE"}
+            if exc.code
+            in {"CONFLICTING_SOURCE_REBIND", "PERSISTED_BINDING_IS_AUTHORITATIVE"}
             else 422,
             detail={"code": exc.code, "details": exc.details},
         ) from exc
