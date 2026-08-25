@@ -9,6 +9,13 @@ does not require editing application code.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+ROOT = str(Path(__file__).resolve().parents[1])
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
 from runtime.hassler_release_target import load_hassler_release_target
 from scripts import upload_hassler_release_guarded as uploader
 
