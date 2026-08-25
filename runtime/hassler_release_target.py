@@ -76,7 +76,7 @@ def load_hassler_release_target(path: str | Path | None = None) -> HasslerReleas
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"Hassler release manifest is unreadable: {selected}") from exc
     if not isinstance(payload, dict):
-        raise ValueError("Hassler release manifest must be a JSON object")
+        raise TypeError("Hassler release manifest must be a JSON object")
 
     filename = _required_text(payload, "filename")
     if Path(filename).name != filename:
