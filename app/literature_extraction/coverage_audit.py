@@ -102,7 +102,7 @@ def _kg_literature_doi_index(cur) -> set[str] | None:
             "SELECT doi FROM oc_graph.taxon_literature_edges WHERE doi IS NOT NULL"
         )
         rows = cur.fetchall()
-    except Exception:
+    except Exception:  # noqa: BLE001 - unavailable graph telemetry is an unknown
         return None
     return {
         str(row[0] if not isinstance(row, dict) else row["doi"])
@@ -242,7 +242,7 @@ def audit_literature_extraction_coverage(
     for paper_id in paper_ids:
         try:
             paper = repository.get(paper_id)
-        except Exception as exc:  # a malformed bundle must not sink the audit
+        except Exception as exc:  # noqa: BLE001 - one malformed bundle must not sink audit
             unreadable_papers.append(
                 {"paper_id": paper_id, "error": f"{type(exc).__name__}: {exc}"}
             )
