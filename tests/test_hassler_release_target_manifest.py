@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from runtime.hassler_release_target import load_hassler_release_target
 
 
