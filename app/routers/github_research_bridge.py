@@ -19,6 +19,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from app.calyx_engineering.github import GitHubEngineeringClient
+from app.calyx_orchestrator.github_research_feedback import (
+    upsert_research_status_comment,
+)
 from app.routers.owner_operations import (
     MEMORY,
     db_execute,
@@ -275,6 +279,33 @@ def _persist_idempotently(record: dict[str, Any]) -> tuple[dict[str, Any], bool]
     return db_execute(_write)
 
 
+def _send_feedback(
+    *,
+    repository: str,
+    issue_number: int,
+    marker: str,
+    message: str,
+) -> dict[str, object]:
+    token = os.getenv("CALYX_GITHUB_RESEARCH_FEEDBACK_TOKEN", "").strip()
+    if not token:
+        return {"status": "disabled", "configured": False}
+    try:
+        client = GitHubEngineeringClient(repository, token=token)
+        result = upsert_research_status_comment(
+            client,
+            issue_number=issue_number,
+            marker=marker,
+            body=message,
+        )
+        return {**result, "configured": True}
+    except Exception:
+        return {
+            "status": "failed",
+            "configured": True,
+            "code": "GITHUB_RESEARCH_FEEDBACK_FAILED",
+        }
+
+
 def _bridge_rows() -> list[dict[str, Any]]:
     return [
         row
@@ -384,21 +415,25 @@ async def receive_issue(request: Request) -> dict[str, Any]:
     )
     status = "queued_waiting_for_executor" if created else "duplicate"
     marker = f"<!-- calyx-research-bridge:{persisted['id']} -->"
+    message = (
+        f"{marker}\nCalyx research request **{persisted['id']}** "
+        f"was {'accepted' if created else 'already accepted'} from "
+        f"**{repo}#{provenance['source_issue_number']}**. "
+        "Current state: queued_waiting_for_executor."
+    )
+    feedback = _send_feedback(
+        repository=repo,
+        issue_number=int(provenance["source_issue_number"]),
+        marker=marker,
+        message=message,
+    )
     return {
         "status": status,
         "created": created,
         "research_request": persisted,
         "github_feedback": {
-            "configured": bool(
-                os.getenv("CALYX_GITHUB_RESEARCH_FEEDBACK_TOKEN", "").strip()
-            ),
+            **feedback,
             "marker": marker,
-            "message": (
-                f"{marker}\nCalyx research request **{persisted['id']}** "
-                f"was {'accepted' if created else 'already accepted'} from "
-                f"**{repo}#{provenance['source_issue_number']}**. "
-                "Current state: queued_waiting_for_executor."
-            ),
         },
         "authority": {
             "scientific_publication": False,
