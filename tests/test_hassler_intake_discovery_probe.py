@@ -80,11 +80,14 @@ def test_absent_release_emits_lifecycle_and_owner_exception_receipt(absent_modul
     assert module.main() == 0
     report = json.loads(report_path.read_text(encoding="utf-8"))
 
-    assert report["schema_version"] == "1.2"
+    assert report["schema_version"] == "1.3"
     assert report["upload_invoked"] is False
     assert report["staging_invoked"] is False
     assert report["lifecycle"]["lifecycle_state"] == "ABSENT"
     assert report["lifecycle"]["durably_uploaded"] is False
+    assert report["conveyor_plan"]["next_step"]["code"] == "UPLOAD_EXACT_RELEASE"
+    assert report["conveyor_plan"]["next_step"]["owner_approval_required"] is True
+    assert report["conveyor_plan"]["execution_authorized"] is False
 
     receipt = report["owner_exception_receipt"]
     assert receipt["action_executed"] is False
@@ -121,6 +124,7 @@ def test_unreadable_release_list_does_not_claim_absence(monkeypatch, tmp_path):
     assert report["lifecycle"]["lifecycle_state"] == "ABSENT"
     probes = {item["probe"] for item in report["lifecycle"]["unavailable_evidence"]}
     assert {"release_detail", "staging", "canonical_activation"} <= probes
+    assert report["conveyor_plan"]["next_step"]["code"] == "UPLOAD_EXACT_RELEASE"
 
 
 def test_present_and_staged_release_is_reported_without_activation(
@@ -171,3 +175,7 @@ def test_present_and_staged_release_is_reported_without_activation(
     assert report["status_block"]["staged_release_id"] == SHA
     assert "owner_exception_receipt" not in report
     assert report["downstream_relink_impact"]["drivers"]["added_taxa"] == 65
+    assert report["conveyor_plan"]["next_step"]["code"] == (
+        "PREPARE_OWNER_ACTIVATION_DECISION"
+    )
+    assert report["conveyor_plan"]["next_step"]["taxonomy_activation_authorized"] is False

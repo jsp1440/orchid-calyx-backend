@@ -67,6 +67,8 @@ def _lifecycle_module():
 
 def main() -> int:
     lifecycle_api = _lifecycle_module()
+    from runtime.hassler_release_conveyor import build_release_conveyor_plan
+
     Evidence = lifecycle_api.Evidence
     build_owner_exception_receipt = lifecycle_api.build_owner_exception_receipt
     build_release_status_block = lifecycle_api.build_release_status_block
@@ -140,7 +142,7 @@ def main() -> int:
         for item in matches
     )
     report = {
-        "schema_version": "1.2",
+        "schema_version": "1.3",
         "read_only": True,
         "production_mutation": False,
         "upload_invoked": False,
@@ -208,6 +210,9 @@ def main() -> int:
     )
     report["lifecycle"] = lifecycle
     report["downstream_relink_impact"] = downstream
+    report["conveyor_plan"] = build_release_conveyor_plan(
+        lifecycle=lifecycle, downstream=downstream
+    )
     report["status_block"] = build_release_status_block(
         lifecycle=lifecycle, downstream=downstream
     )
