@@ -307,13 +307,18 @@ def _send_feedback(
 
 
 def _bridge_rows() -> list[dict[str, Any]]:
-    return [
-        row
-        for row in row_list("research_requests")
-        if isinstance(row.get("provenance"), dict)
-        and row["provenance"].get("integration")
-        == "calyx-github-research-bridge/v1"
-    ]
+    records: list[dict[str, Any]] = []
+    for row in row_list("research_requests"):
+        payload = row.get("payload")
+        record = payload if isinstance(payload, dict) else row
+        provenance = record.get("provenance")
+        if (
+            isinstance(provenance, dict)
+            and provenance.get("integration")
+            == "calyx-github-research-bridge/v1"
+        ):
+            records.append(record)
+    return records
 
 
 @router.get("/readiness")
