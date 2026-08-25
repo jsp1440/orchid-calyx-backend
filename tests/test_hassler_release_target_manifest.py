@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from runtime.hassler_release_target import load_hassler_release_target
 
 
@@ -64,6 +63,13 @@ def test_malformed_or_unsafe_manifest_fails_closed(
     payload = {**VALID, **mutation}
     with pytest.raises(ValueError):
         load_hassler_release_target(_manifest(tmp_path, payload))
+
+
+def test_non_object_manifest_fails_with_type_error(tmp_path: Path) -> None:
+    path = tmp_path / "release.json"
+    path.write_text(json.dumps([VALID]), encoding="utf-8")
+    with pytest.raises(TypeError):
+        load_hassler_release_target(path)
 
 
 def test_repository_default_manifest_remains_current_verified_release() -> None:
