@@ -8,6 +8,7 @@ from app.multimodal_intelligence.routes import router as multimodal_intelligence
 from app.parallel_platform.routes import router as parallel_platform_router
 from app.routers.calyx_queue import router as calyx_queue_router
 from app.routers.conservatory import router as conservatory_router
+from app.routers.github_research_bridge import router as github_research_bridge_router
 from app.routers.graph_pipeline_readiness import (
     router as graph_pipeline_readiness_router,
 )
@@ -160,6 +161,7 @@ router.include_router(owner_session_token_router, dependencies=[Depends(add_miss
 router.include_router(live_mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(taxonomy_releases_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(graph_pipeline_readiness_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(github_research_bridge_router)
 router.include_router(conservatory_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(matrix_identification_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(matrix_relationship_router, dependencies=[Depends(add_mission_control_cors_headers)])
