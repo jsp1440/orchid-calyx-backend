@@ -8,10 +8,10 @@ from app.multimodal_intelligence.routes import router as multimodal_intelligence
 from app.parallel_platform.routes import router as parallel_platform_router
 from app.routers.calyx_queue import router as calyx_queue_router
 from app.routers.conservatory import router as conservatory_router
+from app.routers.github_research_bridge import router as github_research_bridge_router
 from app.routers.graph_pipeline_readiness import (
     router as graph_pipeline_readiness_router,
 )
-from app.routers.github_research_bridge import router as github_research_bridge_router
 from app.routers.live_mission_control import router as live_mission_control_router
 from app.routers.matrix_identification import router as matrix_identification_router
 from app.routers.matrix_relationship import router as matrix_relationship_router
