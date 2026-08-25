@@ -93,6 +93,24 @@ class GitHubEngineeringClient:
     def create_issue(self, title: str, body: str) -> dict:
         return self._request("POST", "/issues", {"title": title, "body": body})
 
+    def issue_comments(self, issue_number: int) -> list[dict]:
+        payload = self._request(
+            "GET", f"/issues/{issue_number}/comments?per_page=100"
+        )
+        if not isinstance(payload, list):
+            raise GitHubAutomationError("GITHUB_ISSUE_COMMENTS_INVALID")
+        return payload
+
+    def create_issue_comment(self, issue_number: int, body: str) -> dict:
+        return self._request(
+            "POST", f"/issues/{issue_number}/comments", {"body": body}
+        )
+
+    def update_issue_comment(self, comment_id: int, body: str) -> dict:
+        return self._request(
+            "PATCH", f"/issues/comments/{comment_id}", {"body": body}
+        )
+
     def create_branch(self, branch: str, base_sha: str) -> dict:
         if not _SAFE_BRANCH.fullmatch(branch):
             raise ValueError("UNSAFE_ENGINEERING_BRANCH")
