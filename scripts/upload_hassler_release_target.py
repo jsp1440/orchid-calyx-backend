@@ -16,8 +16,8 @@ ROOT = str(Path(__file__).resolve().parents[1])
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from runtime.hassler_release_target import load_hassler_release_target  # noqa: E402
-from scripts import upload_hassler_release_guarded as uploader  # noqa: E402
+from runtime.hassler_release_target import load_hassler_release_target
+from scripts import upload_hassler_release_guarded as uploader
 
 
 def apply_release_target() -> dict[str, object]:
