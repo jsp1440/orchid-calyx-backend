@@ -93,10 +93,12 @@ def literature_extraction_coverage_audit(
     if not database_url:
         return audit_literature_extraction_coverage(None, repository)
     try:
-        with psycopg.connect(database_url, connect_timeout=5) as conn:
-            with conn.cursor() as cur:
-                return audit_literature_extraction_coverage(cur, repository)
-    except Exception as exc:
+        with (
+            psycopg.connect(database_url, connect_timeout=5) as conn,
+            conn.cursor() as cur,
+        ):
+            return audit_literature_extraction_coverage(cur, repository)
+    except Exception as exc:  # noqa: BLE001 - telemetry must fail closed on DB errors
         return audit_literature_extraction_coverage(
             None,
             repository,
