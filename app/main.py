@@ -577,3 +577,7 @@ app.include_router(orchid_widgets.router)
 from app.routers import knowledge_graph
 
 app.include_router(knowledge_graph.router)
+
+from app.routers import calyx_evolve
+
+app.include_router(calyx_evolve.router)
