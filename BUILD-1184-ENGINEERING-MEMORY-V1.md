@@ -6,7 +6,8 @@
   read-only BUILD-report summarizer, not a storage/retrieval layer, so this
   extends the substrate rather than duplicating it).
 - **Lane:** Lane 1 (Brain mission / reasoning + engineering substrate).
-- **Integration target:** draft PR against `main` (no merge; owner-gated).
+- **Integration target:** draft PR **#1185** against `main` (no merge; owner-gated).
+- **Branch:** `claude/issue-1184-implementation-02fjt9`
 
 ## Acceptance criteria → evidence
 
