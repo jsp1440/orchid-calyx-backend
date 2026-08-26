@@ -253,3 +253,45 @@ def test_taxonomy_activation_is_read_never_inferred():
     assert TAXONOMY_RELEASE_CANDIDATES
     source = SCRIPT.read_text(encoding="utf-8")
     assert "activation state is not visible to this diagnostic" in source
+
+
+def test_the_new_input_is_not_yet_on_the_default_branch():
+    """Recorded because it decides which checkbox the owner actually ticks.
+
+    The dispatch form is built from the default branch's copy of the file, so
+    until this merges the UI offers apply_migration and verify_migration only.
+    That is precisely why the Gate 1 step is bound to verify_migration too.
+
+    Asserted against the checked-in workflow rather than the network: this is
+    a statement about why the binding exists, and it should fail loudly if
+    somebody removes the verify_migration path believing the new input is
+    already available.
+    """
+    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
+    gate1 = next(s for s in steps if "Gate 1 (read-only" in str(s.get("name", "")))
+
+    assert "inputs.verify_migration" in gate1["if"], (
+        "the Gate 1 step must remain reachable through verify_migration until "
+        "calyx_recovery_gate1 exists on the default branch"
+    )
+
+
+def test_a_verify_migration_dispatch_still_does_what_it_always_did():
+    """Adding the receipt must not quietly change an activation workflow.
+
+    A verify_migration dispatch continues to run the pre-existing read-only
+    migration check and the deployed-backend smoke test. Both predate this
+    change and neither mutates anything, but silently altering the semantics
+    of a workflow used for production activation would be a worse surprise
+    than the extra steps.
+    """
+    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
+
+    verify = next(s for s in steps if "Verify BUILD-051 migration state" in str(s.get("name", "")))
+    assert "inputs.verify_migration" in verify["if"]
+    assert "calyx_recovery_gate1" not in verify["if"]
+
+    smoke = next(s for s in steps if "Smoke-test deployed" in str(s.get("name", "")))
+    # Skipped only for an explicit gate1 dispatch, which cannot be selected
+    # from the UI yet; a verify_migration run behaves exactly as before.
+    assert smoke["if"] == "${{ !inputs.calyx_recovery_gate1 }}"
