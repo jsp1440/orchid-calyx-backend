@@ -1,0 +1,95 @@
+name: OC Constituent Platform Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/constituent_platform/**"
+      - "migrations/20260823_oc_constituent_communications_foundation.sql"
+      - "tests/test_constituent_platform_*.py"
+      - ".github/workflows/oc-constituent-platform-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orchid_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_test
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Apply constituent and communications schema
+        run: >-
+          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
+          -f migrations/20260823_oc_constituent_communications_foundation.sql
+      - name: Verify schema is idempotent
+        run: >-
+          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
+          -f migrations/20260823_oc_constituent_communications_foundation.sql
+      - name: Verify frozen audience immutability
+        run: |
+          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO oc_constituent.constituents (kind, display_name)
+          VALUES ('person', 'Test Member');
+          INSERT INTO oc_communications.intents (
+              purpose, initiating_module, initiating_principal, subject, required_auth_class
+          ) VALUES ('marketing', 'test', 'test:principal', 'Test', 'human');
+          INSERT INTO oc_communications.audience_snapshots (intent_id)
+          VALUES (1);
+          INSERT INTO oc_communications.audience_members (
+              snapshot_id, constituent_id, normalized_email, allowed, decision_reason
+          ) VALUES (1, 1, 'test@example.com', TRUE, 'subscribed');
+          UPDATE oc_communications.audience_snapshots
+          SET audience_sha256 = repeat('a', 64), frozen_at = NOW()
+          WHERE id = 1;
+          DO $$
+          BEGIN
+              BEGIN
+                  UPDATE oc_communications.audience_members
+                  SET decision_reason = 'changed-after-freeze'
+                  WHERE id = 1;
+                  RAISE EXCEPTION 'expected frozen audience update to fail';
+              EXCEPTION WHEN OTHERS THEN
+                  IF SQLERRM = 'expected frozen audience update to fail' THEN
+                      RAISE;
+                  END IF;
+              END;
+              BEGIN
+                  INSERT INTO oc_communications.audience_members (
+                      snapshot_id, constituent_id, normalized_email, allowed, decision_reason
+                  ) VALUES (1, 1, 'later@example.com', TRUE, 'late-addition');
+                  RAISE EXCEPTION 'expected frozen audience insert to fail';
+              EXCEPTION WHEN OTHERS THEN
+                  IF SQLERRM = 'expected frozen audience insert to fail' THEN
+                      RAISE;
+                  END IF;
+              END;
+          END $$;
+          SQL
+      - name: Run constituent platform regressions
+        run: pytest -q tests/test_constituent_platform_domain.py
+      - name: Compile constituent platform package
+        run: python -m compileall -q app/constituent_platform
