@@ -280,7 +280,7 @@ class PostgresRequestStore:
                 f"""
                 SELECT payload
                 FROM {self.TABLE}
-                WHERE payload->>'status' IN %s
+                WHERE payload->>'status' = ANY(%s)
                    OR (
                         payload->>'status' = %s
                         AND payload->>'lease_expires_at' IS NOT NULL
@@ -290,7 +290,7 @@ class PostgresRequestStore:
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
                 """,
-                (tuple(sorted(CLAIMABLE_STATES)), RUNNING, now),
+                (sorted(CLAIMABLE_STATES), RUNNING, now),
             )
             row = cur.fetchone()
             if row is None:
@@ -351,6 +351,11 @@ class ExecutionReport:
     blocker_code: str | None = None
     artifact_ids: tuple[str, ...] = ()
     replayed: bool = False
+    #: Set when the requester could not be told. The request is still complete
+    #: — feedback is a courtesy, not the record — but a silent failure here
+    #: once hid a name collision that stopped every blocked request reporting
+    #: back at all, so it is surfaced rather than only swallowed.
+    feedback_error: str | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -400,13 +405,14 @@ class ResearchExecutor:
             )
 
         finished = self._finish(record, outcome, now=_utc(self._clock()))
-        self._notify(finished)
+        feedback_error = self._notify(finished)
         return ExecutionReport(
             claimed=True,
             request_id=request_id,
             state=str(finished.get("status")),
             blocker_code=finished.get("blocker_code"),
             artifact_ids=tuple(finished.get("artifact_ids") or ()),
+            feedback_error=feedback_error,
         )
 
     def execute_request(self, request_id: str) -> ExecutionReport:
@@ -468,12 +474,16 @@ class ResearchExecutor:
         )
         return self._store.save(finished)
 
-    def _notify(self, record: Mapping[str, Any]) -> None:
+    def _notify(self, record: Mapping[str, Any]) -> str | None:
+        """Tell the requester, and report rather than hide a failure to do so."""
         if self._feedback is None:
-            return
+            return None
         try:
             self._feedback(dict(record))
-        except Exception:  # noqa: BLE001
-            # Feedback is a courtesy to the requester, not part of the record.
-            # A failed comment must not undo a completed research request.
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # Feedback is a courtesy to the requester, not part of the record,
+            # so a failed comment must not undo a completed research request.
+            # It must still be visible: swallowing it entirely is how a broken
+            # notification path stays broken.
+            return f"{type(exc).__name__}: {exc}"
+        return None

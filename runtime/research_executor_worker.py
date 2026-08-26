@@ -166,3 +166,121 @@ def run_once(
             notes=[f"worker disabled; set {WORKER_ENABLED_ENV}=true to enable"],
         )
     return build_executor(runner=runner, store=store, feedback=feedback, env=env).execute_once()
+
+
+# ------------------------------------------------------------------ readiness
+
+# Readiness vocabulary, deliberately prefixed. Plain BLOCKED here shadowed the
+# executor's request state of the same name, and every blocked request stopped
+# reporting back to the issue that asked for it — silently, because feedback
+# failures are swallowed by design.
+READY_WORKING = "WORKING"
+READY_DEGRADED = "DEGRADED"
+READY_BLOCKED = "BLOCKED"
+READY_UNKNOWN = "UNKNOWN"
+
+#: Domains the recovery slice will not call itself ready without. Chosen
+#: because a research answer assembled from none of these is not an answer:
+#: without taxonomy nothing is resolved, and without literature or occurrences
+#: there is no evidence to assemble.
+REQUIRED_READER_DOMAINS = ("taxonomy", "literature", "occurrences")
+
+
+def build_production_runner(*, station: Any = None, read_through: Any = None) -> Any:
+    """The runner the deployed worker uses, with real readers bound.
+
+    Constructed here rather than defaulted inside the runner, because a hidden
+    default is exactly how a worker ends up looking healthy while every one of
+    its domains answers UNAVAILABLE.
+    """
+    from runtime.research_runner import GovernedResearchRunner
+    from runtime.research_station import ResearchStationService
+    from runtime.scientific_readers import build_read_through
+
+    return GovernedResearchRunner(
+        station=station if station is not None else ResearchStationService(),
+        read_through=read_through if read_through is not None else build_read_through(),
+    )
+
+
+def executor_readiness(env: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Whether this deployment can actually do research, and what is missing.
+
+    Deliberately pessimistic. "Ready" here authorises a worker to start
+    claiming real requests, so every component it depends on has to be
+    reachable — a worker that claims a request and then finds every domain
+    unavailable has consumed the request and produced nothing.
+    """
+    from runtime.scientific_readers import bound_domains, unbound_domains
+
+    source = env if env is not None else os.environ
+    components: dict[str, Any] = {}
+
+    components["executor"] = {"state": READY_WORKING, "detail": "executor module importable"}
+
+    durable = store_persistence_mode(source)
+    components["durable_request_store"] = {
+        "state": READY_WORKING if durable == "durable_database" else READY_DEGRADED,
+        "mode": durable,
+        "detail": (
+            "requests persist in the canonical table"
+            if durable == "durable_database"
+            else "DATABASE_URL is unset; requests would live in process memory only"
+        ),
+    }
+
+    from runtime.research_station_store import persistence_mode as station_mode
+
+    station = station_mode(source)
+    components["research_station_persistence"] = {
+        "state": READY_WORKING if station == "durable_database" else READY_DEGRADED,
+        "mode": station,
+        "detail": (
+            "project state is durable"
+            if station == "durable_database"
+            else "project state would not survive a restart"
+        ),
+    }
+
+    bound = set(bound_domains())
+    missing_required = [d for d in REQUIRED_READER_DOMAINS if d not in bound]
+    components["scientific_readers"] = {
+        # Bound is not the same as reachable: these readers answer UNAVAILABLE
+        # without a database, which is why the store states above matter.
+        "state": READY_BLOCKED if missing_required else READY_WORKING,
+        "bound": sorted(bound),
+        "unbound": list(unbound_domains()),
+        "required_missing": missing_required,
+        "detail": (
+            f"no canonical reader for required domains: {', '.join(missing_required)}"
+            if missing_required
+            else "every required domain has a canonical reader bound"
+        ),
+    }
+
+    enabled = worker_enabled(source)
+    components["worker_flag"] = {
+        "state": READY_WORKING if enabled else READY_DEGRADED,
+        "enabled": enabled,
+        "detail": (
+            "executor is enabled"
+            if enabled
+            else f"{WORKER_ENABLED_ENV} is not set; the worker will not claim requests"
+        ),
+    }
+
+    states = {entry["state"] for entry in components.values()}
+    if READY_BLOCKED in states:
+        overall = READY_BLOCKED
+    elif READY_DEGRADED in states:
+        overall = READY_DEGRADED
+    else:
+        overall = READY_WORKING
+
+    return {
+        "overall": overall,
+        # Stated so nothing downstream has to infer it from the parts.
+        "can_perform_real_evidence_work": overall == READY_WORKING,
+        "components": components,
+        "required_reader_domains": list(REQUIRED_READER_DOMAINS),
+    }

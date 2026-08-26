@@ -204,6 +204,21 @@ class ResearchStationService:
         except Exception as exc:  # noqa: BLE001
             self.durability_degraded = f"{type(exc).__name__}: {exc}"
 
+    def _recover_all(self, *, owner_key: str, project_id: str, kind: str) -> list[dict[str, Any]]:
+        """Every durable record of one kind, for a workspace that is cold."""
+        singular = kind.rstrip("s") if kind.endswith("s") else kind
+        if singular not in DURABLE_KINDS:
+            return []
+        try:
+            return list(
+                self.record_store.list(
+                    owner_key=owner_key, project_id=project_id, kind=singular
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.durability_degraded = f"{type(exc).__name__}: {exc}"
+            return []
+
     def _recover(
         self, *, owner_key: str, project_id: str, kind: str, record_id: str
     ) -> dict[str, Any] | None:
@@ -258,8 +273,27 @@ class ResearchStationService:
         return json.loads(path.read_text(encoding="utf-8"))
 
     def _project(self, owner_id: str, project_id: str) -> tuple[Path, dict[str, Any]]:
+        """Load a project, from the cache or from durable storage behind it.
+
+        Every read path funnels through here, so recovering the project here
+        is what makes a restarted workspace usable rather than merely
+        recoverable by whoever remembers to call create_project again.
+        """
         root = self._root(owner_id, project_id)
-        return root, self._read(root / "project.json")
+        path = root / "project.json"
+        if path.exists():
+            return root, self._read(path)
+
+        recovered = self._recover(
+            owner_key=self._owner_key(owner_id),
+            project_id=project_id,
+            kind="project",
+            record_id=project_id,
+        )
+        if recovered is None:
+            raise FileNotFoundError("project")
+        _atomic(path, recovered)
+        return root, recovered
 
     def create_project(self, owner_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         owner_key = self._owner_key(owner_id)
@@ -532,8 +566,13 @@ class ResearchStationService:
         singular = kind.rstrip("s") if kind.endswith("s") else kind
         if singular not in DURABLE_KINDS:
             return None
+        # workspace/owners/<owner_key>/projects/<project_id>
+        #                  ^ parent.parent          ^ name
+        # This walked one level further and returned the literal "owners" as
+        # the owner key. Writes and reads agreed only because both were wrong;
+        # manifest, which derives the key properly, then found nothing.
         try:
-            return root.parent.parent.parent.name, root.name, singular
+            return root.parent.parent.name, root.name, singular
         except (AttributeError, IndexError):  # pragma: no cover - defensive
             return None
 
@@ -583,6 +622,7 @@ class ResearchStationService:
         categories = ["questions", "protocols", "samples", "datasets", "attachments", "claims", "evidence", "decisions", "tasks"]
         records: dict[str, list[dict[str, Any]]] = {}
         checksums: dict[str, str] = {}
+        owner_key = self._owner_key(owner_id)
         for category in categories:
             directory = root / category
             items = []
@@ -591,6 +631,14 @@ class ResearchStationService:
                     item = self._read(path)
                     items.append(item)
                     checksums[str(path.relative_to(root))] = _sha(_stable(item))
+            if not items:
+                # A cold workspace. The records may still be in the database,
+                # and a manifest built only from the cache would report a
+                # restarted project as empty — durable, but invisible, which
+                # for a reader is the same thing as lost.
+                items = self._recover_all(
+                    owner_key=owner_key, project_id=project_id, kind=category
+                )
             records[category] = items
         notebook = []
         notebook_root = root / "notebook"

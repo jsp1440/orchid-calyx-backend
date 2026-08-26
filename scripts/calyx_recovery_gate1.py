@@ -16,6 +16,11 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
+
+# Run as a script from anywhere: the repository root has to be importable for
+# the reader and adapter modules this reuses, and CI invokes it by path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 WORKING = "WORKING"
 DEGRADED = "DEGRADED"
@@ -28,13 +33,142 @@ UNKNOWN = "UNKNOWN"
 COVERAGE_TARGETS = (
     ("build051_research_requests", "oc_admin", "build051_research_requests"),
     ("research_station_records", "oc_admin", "research_station_records"),
+    ("artifact_registry", "oc_admin", "calyx_artifacts"),
 )
+
+#: Scientific domains, probed through the relation candidates the repository
+#: already maintains in runtime.scientific_intelligence.adapters. Reusing them
+#: keeps one definition of where a domain lives; a second list here would drift
+#: from the readers that actually query it.
+SCIENTIFIC_DOMAINS = (
+    "taxonomy",
+    "occurrences",
+    "geography",
+    "elevation",
+    "literature",
+    "pollinators",
+    "mycorrhiza",
+)
+
+#: Columns whose presence answers the geography/elevation questions directly.
+GEOMETRY_COLUMNS = ("decimal_latitude", "latitude", "lat")
+ELEVATION_COLUMNS = ("elevation", "elevation_m", "elevation_metres", "altitude")
 
 
 def _classify(available: bool, present: bool) -> str:
+    """Absent is UNKNOWN, never DEGRADED.
+
+    This script cannot tell "not deployed here" from "named differently", and
+    reporting a relation it could not find as a degraded capability would be
+    stating something it has not established.
+    """
     if not available:
         return BLOCKED
-    return WORKING if present else DEGRADED
+    return WORKING if present else UNKNOWN
+
+
+def _static_fields(fields: dict) -> None:
+    """Fields measurable without a database, so they are never left UNKNOWN."""
+    fields["deployed_release_identity"] = {
+        # This script runs in CI against a checkout, so it can attest the SHA
+        # it ran from. Whether the deployment is serving that SHA is a
+        # different question and is not answered here.
+        "state": WORKING if os.environ.get("GITHUB_SHA") else UNKNOWN,
+        "repository_sha": os.environ.get("GITHUB_SHA", UNKNOWN),
+        "detail": "repository SHA this receipt was produced from; not the served SHA",
+    }
+    try:
+        from runtime.research_executor_worker import executor_readiness
+
+        fields["executor_readiness"] = {"state": WORKING, **executor_readiness()}
+    except Exception as exc:
+        fields["executor_readiness"] = {
+            "state": UNKNOWN,
+            "detail": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def _probe_graph(cur) -> dict:
+    """Persisted graph nodes/edges, if any candidate relation exists."""
+    try:
+        from runtime.scientific_intelligence import adapters as a
+    except Exception as exc:
+        return {"state": UNKNOWN, "detail": f"adapters unavailable: {exc}"}
+
+    found: dict[str, object] = {}
+    for label, candidates in (
+        ("nodes", a._KG_ENTITY_CANDIDATES),
+        ("edges", a._KG_RELATIONSHIP_CANDIDATES),
+    ):
+        for relation in candidates:
+            cur.execute("SELECT to_regclass(%s) AS reg", (relation,))
+            if (cur.fetchone() or {}).get("reg") is None:
+                continue
+            schema, _, table = relation.partition(".")
+            from psycopg import sql as psycopg_sql
+
+            cur.execute(
+                psycopg_sql.SQL("SELECT COUNT(*) AS n FROM {}.{}").format(
+                    psycopg_sql.Identifier(schema), psycopg_sql.Identifier(table)
+                )
+            )
+            found[label] = {"relation": relation, "row_count": int((cur.fetchone() or {}).get("n", 0))}
+            break
+        else:
+            found[label] = {"state": UNKNOWN, "detail": "no candidate relation found"}
+    return {"state": WORKING if "relation" in str(found) else UNKNOWN, **found}
+
+
+def _probe_domain(cur, domain: str) -> dict:
+    """Row counts and column presence for one scientific domain."""
+    try:
+        from runtime.scientific_intelligence import adapters as a
+        from runtime.scientific_readers import _candidates
+    except Exception as exc:
+        return {"state": UNKNOWN, "detail": f"reader module unavailable: {exc}"}
+
+    candidates = _candidates().get(domain, ())
+    for relation in candidates:
+        cur.execute("SELECT to_regclass(%s) AS reg", (relation,))
+        if (cur.fetchone() or {}).get("reg") is None:
+            continue
+        schema, _, table = relation.partition(".")
+        cur.execute(
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+            """,
+            (schema, table),
+        )
+        columns = {str(row["column_name"]).lower() for row in cur.fetchall()}
+        from psycopg import sql as psycopg_sql
+
+        cur.execute(
+            psycopg_sql.SQL("SELECT COUNT(*) AS n FROM {}.{}").format(
+                psycopg_sql.Identifier(schema), psycopg_sql.Identifier(table)
+            )
+        )
+        rows = int((cur.fetchone() or {}).get("n", 0))
+        entry = {
+            "state": WORKING if rows else DEGRADED,
+            "relation": relation,
+            "row_count": rows,
+        }
+        if domain in {"occurrences", "geography"}:
+            entry["has_coordinates"] = bool(columns & set(GEOMETRY_COLUMNS))
+        if domain == "elevation":
+            entry["has_elevation"] = bool(columns & set(ELEVATION_COLUMNS))
+        if not rows:
+            entry["detail"] = "relation exists but holds no rows"
+        return entry
+
+    # No candidate relation exists. That is not "no data" — this schema does
+    # not carry the domain under any name this repository knows.
+    return {
+        "state": UNKNOWN,
+        "detail": f"no relation found among {len(candidates)} known candidates",
+        "candidates_probed": len(candidates),
+    }
 
 
 def main() -> int:
@@ -57,6 +191,12 @@ def main() -> int:
         # Everything downstream is unmeasurable, and says so rather than zero.
         for label, _, _ in COVERAGE_TARGETS:
             fields[label] = {"state": UNKNOWN, "detail": "no database connection"}
+        for domain in SCIENTIFIC_DOMAINS:
+            fields[f"domain_{domain}"] = {
+                "state": UNKNOWN,
+                "detail": "no database connection",
+            }
+        _static_fields(fields)
         json.dump(receipt, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
         return 0
@@ -135,6 +275,15 @@ def main() -> int:
                         "state": UNKNOWN,
                         "detail": "request table not present",
                     }
+
+                for domain in SCIENTIFIC_DOMAINS:
+                    fields[f"domain_{domain}"] = _probe_domain(cur, domain)
+
+                # Persisted graph against canonical sources, where both are
+                # measurable. Neither number is a completeness claim: an
+                # unmaterialised graph does not mean the database lacks data,
+                # and a materialised one is not a survey.
+                fields["knowledge_graph_materialization"] = _probe_graph(cur)
     except Exception as exc:
         # The exception type and message only. A psycopg error can carry the
         # host; the class name and a truncated message do not carry secrets.
@@ -145,6 +294,7 @@ def main() -> int:
         for label, _, _ in COVERAGE_TARGETS:
             fields.setdefault(label, {"state": UNKNOWN, "detail": "connection failed"})
 
+    _static_fields(fields)
     json.dump(receipt, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     return 0

@@ -252,3 +252,49 @@ def test_a_durable_write_failure_is_reported_not_swallowed(tmp_path):
 
     assert service.durability_degraded is not None
     assert "ConnectionError" in service.durability_degraded
+
+
+def test_the_owner_key_is_the_owner_not_the_literal_directory_name(tmp_path):
+    """_durable_key walked one level too far and returned "owners".
+
+    Writes and reads agreed only because both were wrong, so the durability
+    tests passed while manifest — which derives the key properly — found
+    nothing. The bug was invisible until a cold read went through a different
+    code path than the write.
+    """
+    store = MemoryProjectRecordStore()
+    service = _service(tmp_path, store, "run-1")
+    service.create_project(OWNER, PROJECT)
+
+    owner_key = ResearchStationService._owner_key(OWNER)
+    assert owner_key != "owners"
+    assert store.get(
+        owner_key=owner_key,
+        project_id=PROJECT["project_id"],
+        kind="project",
+        record_id=PROJECT["project_id"],
+    ) is not None
+
+
+def test_a_manifest_on_a_cold_workspace_is_not_reported_as_empty(tmp_path):
+    """Durable but invisible is, for a reader, the same thing as lost."""
+    store = MemoryProjectRecordStore()
+    service = _service(tmp_path, store, "run-1")
+    service.create_project(OWNER, PROJECT)
+    service.add_question(
+        OWNER, PROJECT["project_id"], {"text": "Which pollinators are recorded?"}
+    )
+
+    cold = _service(tmp_path, store, "run-2")
+    manifest = cold.manifest(OWNER, PROJECT["project_id"])
+
+    assert manifest["project"]["project_id"] == PROJECT["project_id"]
+    assert len(manifest["records"]["questions"]) == 1
+
+
+def test_a_project_absent_everywhere_still_raises(tmp_path):
+    """Recovery must not turn a missing project into an empty one."""
+    cold = _service(tmp_path, MemoryProjectRecordStore(), "run-1")
+
+    with pytest.raises(FileNotFoundError):
+        cold.manifest(OWNER, "no-such-project")
