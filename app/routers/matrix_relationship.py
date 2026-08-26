@@ -65,6 +65,7 @@ def contract(_: Any = Depends(verify_owner_or_api_key)) -> dict[str, Any]:  # no
             "habitat",
             "climate",
             "geography",
+            "elevation",
             "literature",
             "collection_taxon",
         ],
