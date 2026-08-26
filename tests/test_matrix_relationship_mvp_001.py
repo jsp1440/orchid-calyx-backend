@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.routers.matrix_relationship import router
+from app.security import verify_owner_or_api_key
 from runtime.matrix_relationship import (
     RelationshipAssertion,
     build_relationship_matrix,
@@ -62,6 +63,21 @@ def test_subject_comparison_preserves_states():
     report = compare_subjects(matrix, "taxon-a", "taxon-b")
     assert report["shared_present"] == 1
     assert report["present_absent_disagreements"] == 1
+
+
+def test_contract_exposes_elevation_as_governed_dimension():
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[verify_owner_or_api_key] = lambda: {"authorized": True}
+    client = TestClient(app)
+
+    response = client.get("/api/matrix-relationship/contract")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "elevation" in payload["supported_dimensions"]
+    assert payload["canonical_graph_mutation"] is False
+    assert "not_recorded is not biological absence" in payload["rules"]
 
 
 def test_api_is_owner_gated():
