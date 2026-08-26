@@ -9,6 +9,7 @@ from runtime.matrix_relationship_sources import (
 
 def test_governed_dimensions_are_only_enabled_relationship_sources():
     assert governed_source_dimensions() == [
+        "conservation_status",
         "literature",
         "mycorrhizal_partner",
         "pollinator",
@@ -109,6 +110,34 @@ def test_trait_rows_use_name_value_identity_and_preserve_support():
     assert assertion.provenance["confidence_label"] == "high"
 
 
+def test_conservation_rows_use_status_identity_and_preserve_provenance():
+    assertion = rows_to_assertions(
+        "conservation_status",
+        [
+            {
+                "source_pk": "conservation-1",
+                "taxon_pk": 505,
+                "subject_label": "Paphiopedilum rothschildianum",
+                "iucn_category": "EN",
+                "cites_appendix": "I",
+                "population_trend": "decreasing",
+                "assessment_year": 2025,
+                "region": "global",
+                "source_name": "IUCN/CITES",
+                "evidence_class": "IUCN/CITES",
+            }
+        ],
+    )[0]
+    assert assertion.object_id == "conservation:iucn=en|cites=i"
+    assert assertion.object_label == "IUCN: EN; CITES: I"
+    assert assertion.state == "present"
+    assert assertion.provenance["source_domain"] == "conservation"
+    assert assertion.provenance["source_query_id"] == "conservation_v1"
+    assert assertion.provenance["population_trend"] == "decreasing"
+    assert assertion.provenance["assessment_year"] == 2025
+    assert assertion.provenance["source_name"] == "IUCN/CITES"
+
+
 def test_source_rows_never_invent_absence_for_missing_pairs():
     assertions = rows_to_assertions(
         "pollinator",
@@ -154,6 +183,28 @@ def test_trait_source_rows_never_invent_absence_for_missing_taxa():
     assert states == {"404": "present", "999": "not_recorded"}
 
 
+def test_conservation_source_rows_never_invent_absence_for_missing_taxa():
+    assertions = rows_to_assertions(
+        "conservation_status",
+        [
+            {
+                "source_pk": "conservation-2",
+                "taxon_pk": 505,
+                "subject_label": "Taxon A",
+                "iucn_category": "VU",
+            }
+        ],
+    )
+    matrix = build_relationship_matrix(
+        assertions,
+        dimension="conservation_status",
+        subject_ids=["505", "999"],
+        object_ids=["conservation:iucn=vu"],
+    )
+    states = {cell["subject_id"]: cell["state"] for cell in matrix["cells"]}
+    assert states == {"505": "present", "999": "not_recorded"}
+
+
 def test_unsupported_or_incomplete_rows_fail_closed():
     with pytest.raises(ValueError, match="unsupported governed matrix dimension"):
         rows_to_assertions("elevation", [])
@@ -179,6 +230,18 @@ def test_unsupported_or_incomplete_rows_fail_closed():
                     "taxon_pk": 404,
                     "subject_label": "Phalaenopsis schilleriana",
                     "trait_name": "growth_habit",
+                }
+            ],
+        )
+
+    with pytest.raises(ValueError, match="missing iucn_category/cites_appendix"):
+        rows_to_assertions(
+            "conservation_status",
+            [
+                {
+                    "source_pk": "conservation-3",
+                    "taxon_pk": 505,
+                    "subject_label": "Paphiopedilum rothschildianum",
                 }
             ],
         )
