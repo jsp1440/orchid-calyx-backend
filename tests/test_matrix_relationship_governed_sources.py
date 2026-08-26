@@ -10,6 +10,8 @@ from runtime.matrix_relationship_sources import (
 def test_governed_dimensions_are_only_enabled_relationship_sources():
     assert governed_source_dimensions() == [
         "conservation_status",
+        "elevation",
+        "geography",
         "literature",
         "mycorrhizal_partner",
         "pollinator",
@@ -138,6 +140,59 @@ def test_conservation_rows_use_status_identity_and_preserve_provenance():
     assert assertion.provenance["source_name"] == "IUCN/CITES"
 
 
+def test_geography_uses_country_only_and_does_not_expose_locality_coordinates():
+    assertion = rows_to_assertions(
+        "geography",
+        [
+            {
+                "source_pk": "occ-1",
+                "taxon_pk": 606,
+                "subject_label": "Laelia anceps",
+                "country": "Mexico",
+                "locality": "Sensitive ravine",
+                "latitude": 19.1234,
+                "longitude": -99.5678,
+                "event_date": "2024-03-01",
+                "basis_of_record": "HUMAN_OBSERVATION",
+                "source_name": "GBIF",
+            }
+        ],
+    )[0]
+    assert assertion.object_id == "country:mexico"
+    assert assertion.object_label == "Mexico"
+    assert assertion.state == "present"
+    assert assertion.provenance["source_domain"] == "occurrences"
+    assert assertion.provenance["source_query_id"] == "occurrences_v1"
+    assert assertion.provenance["country"] == "Mexico"
+    assert assertion.provenance["source_name"] == "GBIF"
+    assert "locality" not in assertion.provenance
+    assert "latitude" not in assertion.provenance
+    assert "longitude" not in assertion.provenance
+
+
+def test_elevation_uses_recorded_occurrence_value_without_inferred_range():
+    assertion = rows_to_assertions(
+        "elevation",
+        [
+            {
+                "source_pk": "occ-2",
+                "taxon_pk": 707,
+                "subject_label": "Dracula lotax",
+                "elevation": "1850.0",
+                "country": "Ecuador",
+                "source_name": "iNaturalist",
+            }
+        ],
+    )[0]
+    assert assertion.object_id == "elevation_m:1850"
+    assert assertion.object_label == "Elevation: 1850 m"
+    assert assertion.state == "present"
+    assert assertion.provenance["source_domain"] == "occurrences"
+    assert assertion.provenance["source_query_id"] == "occurrences_v1"
+    assert assertion.provenance["elevation"] == "1850.0"
+    assert assertion.provenance["country"] == "Ecuador"
+
+
 def test_source_rows_never_invent_absence_for_missing_pairs():
     assertions = rows_to_assertions(
         "pollinator",
@@ -207,7 +262,7 @@ def test_conservation_source_rows_never_invent_absence_for_missing_taxa():
 
 def test_unsupported_or_incomplete_rows_fail_closed():
     with pytest.raises(ValueError, match="unsupported governed matrix dimension"):
-        rows_to_assertions("elevation", [])
+        rows_to_assertions("climate", [])
 
     with pytest.raises(ValueError, match="missing fungal_name"):
         rows_to_assertions(
@@ -242,6 +297,43 @@ def test_unsupported_or_incomplete_rows_fail_closed():
                     "source_pk": "conservation-3",
                     "taxon_pk": 505,
                     "subject_label": "Paphiopedilum rothschildianum",
+                }
+            ],
+        )
+
+    with pytest.raises(ValueError, match="missing country"):
+        rows_to_assertions(
+            "geography",
+            [
+                {
+                    "source_pk": "occ-3",
+                    "taxon_pk": 606,
+                    "subject_label": "Laelia anceps",
+                }
+            ],
+        )
+
+    with pytest.raises(ValueError, match="missing elevation"):
+        rows_to_assertions(
+            "elevation",
+            [
+                {
+                    "source_pk": "occ-4",
+                    "taxon_pk": 707,
+                    "subject_label": "Dracula lotax",
+                }
+            ],
+        )
+
+    with pytest.raises(ValueError, match="invalid elevation"):
+        rows_to_assertions(
+            "elevation",
+            [
+                {
+                    "source_pk": "occ-5",
+                    "taxon_pk": 707,
+                    "subject_label": "Dracula lotax",
+                    "elevation": "NaN",
                 }
             ],
         )
