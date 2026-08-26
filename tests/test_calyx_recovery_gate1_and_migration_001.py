@@ -142,3 +142,114 @@ def test_a_missing_relation_is_unknown_rather_than_degraded():
     from scripts.calyx_recovery_gate1 import UNKNOWN, _classify
 
     assert _classify(True, False) == UNKNOWN
+
+
+# --------------------------------------- dispatchable via the default branch
+
+BUILD051 = ROOT / ".github" / "workflows" / "build-051-production-activation.yml"
+
+
+def _build051():
+    import yaml
+
+    return yaml.safe_load(BUILD051.read_text(encoding="utf-8"))
+
+
+def test_gate1_runs_from_the_workflow_that_exists_on_the_default_branch():
+    """A workflow_dispatch input is offered by the UI from the DEFAULT branch.
+
+    calyx-recovery-001-gate1.yml exists only on this recovery branch, so it
+    cannot be dispatched until it is merged — and merging to run a diagnostic
+    is exactly backwards. The receipt is therefore also produced by the
+    BUILD-051 workflow, which is already on the default branch and already
+    holds the DATABASE_URL secret.
+    """
+    workflow = _build051()
+    steps = workflow["jobs"]["migrate-and-smoke"]["steps"]
+    names = [str(step.get("name", "")) for step in steps]
+
+    assert any("Gate 1" in name for name in names)
+
+
+def test_the_gate1_step_also_runs_under_the_existing_read_only_input():
+    """verify_migration already means "read-only, applies nothing".
+
+    Binding the receipt to it as well is what makes this dispatchable against
+    the recovery branch today, before the new input reaches the default branch.
+    """
+    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
+    gate1 = next(s for s in steps if "Gate 1 (read-only" in str(s.get("name", "")))
+
+    assert "verify_migration" in gate1["if"]
+    assert "calyx_recovery_gate1" in gate1["if"]
+
+
+def test_a_gate1_dispatch_can_never_reach_the_writing_step():
+    """The guard is on the step, not on the operator.
+
+    A dispatch that ticks both boxes performs the read and not the write.
+    """
+    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
+    apply_step = next(s for s in steps if "Apply BUILD-051 migration" in str(s.get("name", "")))
+
+    assert "!inputs.calyx_recovery_gate1" in apply_step["if"]
+
+
+def test_a_gate1_dispatch_does_not_touch_the_deployed_backend():
+    """That step carries an owner credential. A Gate 1 run reads the database
+    and nothing else."""
+    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
+    smoke = next(s for s in steps if "Smoke-test deployed" in str(s.get("name", "")))
+
+    assert smoke.get("if") == "${{ !inputs.calyx_recovery_gate1 }}"
+
+
+def test_the_new_input_is_declared_for_when_it_reaches_the_default_branch():
+    workflow = _build051()
+    triggers = workflow.get(True) or workflow.get("on")
+
+    assert "calyx_recovery_gate1" in triggers["workflow_dispatch"]["inputs"]
+
+
+def test_the_gate1_step_installs_its_driver():
+    """psql is not enough: the diagnostic is Python and needs psycopg."""
+    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
+
+    assert any("psycopg" in str(step.get("run", "")) for step in steps)
+
+
+# ------------------------------------------------------- coverage completeness
+
+
+def test_every_domain_the_recovery_requires_is_probed():
+    sys.path.insert(0, str(ROOT))
+    from scripts.calyx_recovery_gate1 import SCIENTIFIC_DOMAINS
+
+    for domain in (
+        "taxonomy", "occurrences", "geography", "elevation", "traits",
+        "literature", "pollinators", "mycorrhiza", "habitat", "climate",
+        "media", "conservation",
+    ):
+        assert domain in SCIENTIFIC_DOMAINS
+
+
+def test_no_domain_is_probed_against_an_empty_candidate_list():
+    """UNKNOWN must mean "the schema lacks it", never "nobody wrote candidates"."""
+    sys.path.insert(0, str(ROOT))
+    from scripts.calyx_recovery_gate1 import EXTRA_DOMAIN_CANDIDATES, SCIENTIFIC_DOMAINS
+    from runtime.scientific_readers import _candidates
+
+    shared = _candidates()
+    for domain in SCIENTIFIC_DOMAINS:
+        candidates = shared.get(domain) or EXTRA_DOMAIN_CANDIDATES.get(domain, ())
+        assert candidates, f"{domain} has no relation candidates anywhere"
+
+
+def test_taxonomy_activation_is_read_never_inferred():
+    """#1187: activation must not be inferred from code presence."""
+    sys.path.insert(0, str(ROOT))
+    from scripts.calyx_recovery_gate1 import TAXONOMY_RELEASE_CANDIDATES
+
+    assert TAXONOMY_RELEASE_CANDIDATES
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "activation state is not visible to this diagnostic" in source

@@ -13,6 +13,11 @@ on:
         required: false
         default: false
         type: boolean
+      calyx_recovery_gate1:
+        description: "CALYX-RECOVERY-001 Gate 1 read-only baseline (SELECT only, applies nothing)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -29,8 +34,11 @@ jobs:
       - name: Install PostgreSQL client
         if: ${{ inputs.apply_migration || inputs.verify_migration }}
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      # The one step in this workflow that writes. Gate 1 must never be able to
+      # reach it, so the guard is on the step rather than on the operator: a
+      # dispatch that ticks both boxes performs the read and not the write.
       - name: Apply BUILD-051 migration and database smoke test
-        if: ${{ inputs.apply_migration }}
+        if: ${{ inputs.apply_migration && !inputs.calyx_recovery_gate1 }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: bash scripts/apply_build_051.sh
@@ -42,7 +50,44 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/BUILD-051-owner-operations-smoke-test.sql
+      # ---------------------------------------------------------------------
+      # CALYX-RECOVERY-001 Gate 1 — read-only baseline.
+      #
+      # scripts/calyx_recovery_gate1.py issues SELECT statements only. It never
+      # writes, migrates, activates or deploys, and it never formats the
+      # connection string into its output; a connection failure is reported by
+      # exception class alone.
+      #
+      # It also runs under verify_migration, which already means "read-only,
+      # applies nothing". That is deliberate: workflow_dispatch inputs are
+      # offered by the UI from the DEFAULT branch's copy of this file, so the
+      # new calyx_recovery_gate1 checkbox will not appear until this reaches
+      # the default branch. Binding the receipt to the existing read-only input
+      # as well makes it dispatchable against this recovery branch today,
+      # without merging anything to run a diagnostic.
+      - name: Install the database driver for Gate 1
+        if: ${{ inputs.calyx_recovery_gate1 || inputs.verify_migration }}
+        run: python -m pip install --quiet "psycopg[binary]"
+
+      - name: CALYX-RECOVERY-001 Gate 1 (read-only baseline)
+        if: ${{ inputs.calyx_recovery_gate1 || inputs.verify_migration }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: python scripts/calyx_recovery_gate1.py | tee calyx-recovery-gate1.json
+
+      - name: Publish the Gate 1 receipt
+        if: ${{ inputs.calyx_recovery_gate1 || inputs.verify_migration }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-recovery-gate1-${{ github.sha }}
+          path: calyx-recovery-gate1.json
+          if-no-files-found: error
+
+      # Reaches the deployed backend with an owner credential. Skipped for a
+      # Gate 1 dispatch so that run touches the database and nothing else.
       - name: Smoke-test deployed owner backend
+        if: ${{ !inputs.calyx_recovery_gate1 }}
         env:
           CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
           CALYX_OWNER_ACCESS_CODE: ${{ secrets.CALYX_OWNER_ACCESS_CODE }}

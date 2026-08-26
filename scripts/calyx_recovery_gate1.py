@@ -48,6 +48,55 @@ SCIENTIFIC_DOMAINS = (
     "literature",
     "pollinators",
     "mycorrhiza",
+    "traits",
+    "habitat",
+    "climate",
+    "media",
+    "conservation",
+)
+
+#: Relation candidates for the domains the shared adapters do not cover.
+#: Named here because no other module in the repository names them; a domain
+#: probed against an empty candidate list would report UNKNOWN for the wrong
+#: reason — "nobody wrote candidates" rather than "the schema lacks it".
+EXTRA_DOMAIN_CANDIDATES = {
+    "traits": (
+        "oc_traits.trait_values",
+        "oc_traits.traits",
+        "public.orchid_traits",
+        "public.record_traits",
+        "public.traits",
+    ),
+    "habitat": (
+        "oc_ecology.habitat",
+        "public.orchid_habitat",
+        "public.habitat",
+    ),
+    "climate": (
+        "oc_climate.profiles",
+        "public.orchid_climate_profiles",
+        "public.climate_profiles",
+    ),
+    "media": (
+        "oc_media.images",
+        "public.orchid_images",
+        "public.image_assets",
+        "public.eol_images",
+    ),
+    "conservation": (
+        "oc_conservation.assessments",
+        "public.orchid_conservation",
+        "public.conservation_status",
+    ),
+}
+
+#: Taxonomy release identity, so active and candidate releases are reported
+#: rather than inferred from code presence.
+TAXONOMY_RELEASE_CANDIDATES = (
+    "oc_taxonomy.releases",
+    "oc_taxonomy.taxonomy_releases",
+    "oc_admin.world_plants_releases",
+    "public.taxonomy_releases",
 )
 
 #: Columns whose presence answers the geography/elevation questions directly.
@@ -86,6 +135,62 @@ def _static_fields(fields: dict) -> None:
             "state": UNKNOWN,
             "detail": f"{type(exc).__name__}: {exc}",
         }
+
+
+def _probe_taxonomy_release(cur) -> dict:
+    """Active and candidate taxonomy release, read rather than inferred.
+
+    #1187 is explicit that activation must never be inferred from code
+    presence. If no release relation exists this reports UNKNOWN, which is the
+    truthful answer: this script cannot see the release state.
+    """
+    for relation in TAXONOMY_RELEASE_CANDIDATES:
+        cur.execute("SELECT to_regclass(%s) AS reg", (relation,))
+        if (cur.fetchone() or {}).get("reg") is None:
+            continue
+        schema, _, table = relation.partition(".")
+        cur.execute(
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+            """,
+            (schema, table),
+        )
+        columns = {str(row["column_name"]).lower() for row in cur.fetchall()}
+        from psycopg import sql as psycopg_sql
+
+        state_column = next(
+            (c for c in ("state", "status", "lifecycle_state", "release_state") if c in columns),
+            None,
+        )
+        if state_column is None:
+            return {
+                "state": DEGRADED,
+                "relation": relation,
+                "detail": "release relation has no recognisable state column",
+            }
+        cur.execute(
+            psycopg_sql.SQL("SELECT {} AS s, COUNT(*) AS n FROM {}.{} GROUP BY 1 ORDER BY 1").format(
+                psycopg_sql.Identifier(state_column),
+                psycopg_sql.Identifier(schema),
+                psycopg_sql.Identifier(table),
+            )
+        )
+        counts = {str(row["s"]): int(row["n"]) for row in cur.fetchall()}
+        return {
+            "state": WORKING,
+            "relation": relation,
+            "state_column": state_column,
+            "release_states": counts,
+        }
+    return {
+        "state": UNKNOWN,
+        "detail": (
+            "no taxonomy release relation found among "
+            f"{len(TAXONOMY_RELEASE_CANDIDATES)} candidates; "
+            "activation state is not visible to this diagnostic"
+        ),
+    }
 
 
 def _probe_graph(cur) -> dict:
@@ -127,7 +232,7 @@ def _probe_domain(cur, domain: str) -> dict:
     except Exception as exc:
         return {"state": UNKNOWN, "detail": f"reader module unavailable: {exc}"}
 
-    candidates = _candidates().get(domain, ())
+    candidates = _candidates().get(domain) or EXTRA_DOMAIN_CANDIDATES.get(domain, ())
     for relation in candidates:
         cur.execute("SELECT to_regclass(%s) AS reg", (relation,))
         if (cur.fetchone() or {}).get("reg") is None:
@@ -196,6 +301,10 @@ def main() -> int:
                 "state": UNKNOWN,
                 "detail": "no database connection",
             }
+        fields["taxonomy_release_identity"] = {
+            "state": UNKNOWN,
+            "detail": "no database connection",
+        }
         _static_fields(fields)
         json.dump(receipt, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
@@ -278,6 +387,8 @@ def main() -> int:
 
                 for domain in SCIENTIFIC_DOMAINS:
                     fields[f"domain_{domain}"] = _probe_domain(cur, domain)
+
+                fields["taxonomy_release_identity"] = _probe_taxonomy_release(cur)
 
                 # Persisted graph against canonical sources, where both are
                 # measurable. Neither number is a completeness claim: an
