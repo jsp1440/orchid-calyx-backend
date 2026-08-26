@@ -8,6 +8,7 @@ biological absence.
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import psycopg
@@ -22,6 +23,8 @@ _DIMENSION_TO_DOMAIN = {
     "literature": "literature",
     "trait": "traits",
     "conservation_status": "conservation",
+    "geography": "occurrences",
+    "elevation": "occurrences",
 }
 
 
@@ -43,6 +46,19 @@ def _bounded_confidence(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return confidence if 0 <= confidence <= 1 else None
+
+
+def _normalized_decimal(value: Any, *, field: str) -> str:
+    if value is None or isinstance(value, bool):
+        raise ValueError(f"occurrence source row is missing {field}")
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise ValueError(f"occurrence source row has invalid {field}") from None
+    if not number.is_finite():
+        raise ValueError(f"occurrence source row has invalid {field}")
+    normalized = number.normalize()
+    return format(normalized, "f")
 
 
 def _object_identity(dimension: str, row: dict[str, Any]) -> tuple[str, str]:
@@ -102,6 +118,16 @@ def _object_identity(dimension: str, row: dict[str, Any]) -> tuple[str, str]:
             label_parts.append(f"CITES: {cites}")
         return "conservation:" + "|".join(identity_parts), "; ".join(label_parts)
 
+    if dimension == "geography":
+        country = str(row.get("country") or "").strip()
+        if not country:
+            raise ValueError("occurrence source row is missing country")
+        return f"country:{country.casefold()}", country
+
+    if dimension == "elevation":
+        elevation = _normalized_decimal(row.get("elevation"), field="elevation")
+        return f"elevation_m:{elevation}", f"Elevation: {elevation} m"
+
     raise ValueError(f"unsupported governed matrix dimension: {dimension}")
 
 
@@ -151,6 +177,10 @@ def rows_to_assertions(
             "assessment_year",
             "region",
             "source_name",
+            "country",
+            "event_date",
+            "basis_of_record",
+            "elevation",
         ):
             if row.get(key) not in (None, ""):
                 provenance[key] = row[key]
