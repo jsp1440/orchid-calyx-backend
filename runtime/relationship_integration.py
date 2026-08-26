@@ -90,10 +90,14 @@ class RelationshipIntegrationAudit:
                 if link.source_domain == "taxonomy" and link.target_domain == domain
             ]
             standing = [
-                link for link in domain_links if link.validation_status in STANDING_STATUSES
+                link
+                for link in domain_links
+                if link.validation_status in STANDING_STATUSES
             ]
             withdrawn = [
-                link for link in domain_links if link.validation_status in WITHDRAWN_STATUSES
+                link
+                for link in domain_links
+                if link.validation_status in WITHDRAWN_STATUSES
             ]
             result[f"taxonomy_to_{domain}"] = {
                 "present": bool(standing),
