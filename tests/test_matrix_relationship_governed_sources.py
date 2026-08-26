@@ -12,6 +12,7 @@ def test_governed_dimensions_are_only_enabled_relationship_sources():
         "literature",
         "mycorrhizal_partner",
         "pollinator",
+        "trait",
     ]
 
 
@@ -83,6 +84,31 @@ def test_literature_prefers_doi_identity_and_preserves_year():
     assert assertion.provenance["year"] == 2024
 
 
+def test_trait_rows_use_name_value_identity_and_preserve_support():
+    assertion = rows_to_assertions(
+        "trait",
+        [
+            {
+                "source_pk": "trait-row-1",
+                "taxon_pk": 404,
+                "subject_label": "Phalaenopsis schilleriana",
+                "trait_name": "growth_habit",
+                "trait_value": "epiphytic",
+                "support_count": 4,
+                "confidence_score": 0.88,
+                "confidence_label": "high",
+            }
+        ],
+    )[0]
+    assert assertion.object_id == "trait:growth_habit=epiphytic"
+    assert assertion.object_label == "growth_habit: epiphytic"
+    assert assertion.confidence == 0.88
+    assert assertion.provenance["source_domain"] == "traits"
+    assert assertion.provenance["source_query_id"] == "traits_resolved_v4"
+    assert assertion.provenance["support_count"] == 4
+    assert assertion.provenance["confidence_label"] == "high"
+
+
 def test_source_rows_never_invent_absence_for_missing_pairs():
     assertions = rows_to_assertions(
         "pollinator",
@@ -105,6 +131,29 @@ def test_source_rows_never_invent_absence_for_missing_pairs():
     assert states == {"101": "present", "999": "not_recorded"}
 
 
+def test_trait_source_rows_never_invent_absence_for_missing_taxa():
+    assertions = rows_to_assertions(
+        "trait",
+        [
+            {
+                "source_pk": "trait-row-2",
+                "taxon_pk": 404,
+                "subject_label": "Taxon A",
+                "trait_name": "growth_habit",
+                "trait_value": "epiphytic",
+            }
+        ],
+    )
+    matrix = build_relationship_matrix(
+        assertions,
+        dimension="trait",
+        subject_ids=["404", "999"],
+        object_ids=["trait:growth_habit=epiphytic"],
+    )
+    states = {cell["subject_id"]: cell["state"] for cell in matrix["cells"]}
+    assert states == {"404": "present", "999": "not_recorded"}
+
+
 def test_unsupported_or_incomplete_rows_fail_closed():
     with pytest.raises(ValueError, match="unsupported governed matrix dimension"):
         rows_to_assertions("elevation", [])
@@ -117,6 +166,19 @@ def test_unsupported_or_incomplete_rows_fail_closed():
                     "source_pk": "assoc-2",
                     "taxon_pk": 202,
                     "subject_label": "Orchis mascula",
+                }
+            ],
+        )
+
+    with pytest.raises(ValueError, match="missing trait_value"):
+        rows_to_assertions(
+            "trait",
+            [
+                {
+                    "source_pk": "trait-row-3",
+                    "taxon_pk": 404,
+                    "subject_label": "Phalaenopsis schilleriana",
+                    "trait_name": "growth_habit",
                 }
             ],
         )
