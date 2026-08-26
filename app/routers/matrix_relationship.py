@@ -50,7 +50,13 @@ class CompareRequest(MatrixRequest):
 
 
 class CanonicalSourceMatrixRequest(BaseModel):
-    dimension: Literal["pollinator", "mycorrhizal_partner", "literature", "trait"]
+    dimension: Literal[
+        "pollinator",
+        "mycorrhizal_partner",
+        "literature",
+        "trait",
+        "conservation_status",
+    ]
     subject_ids: list[str] | None = Field(default=None, max_length=1000)
     limit: int = Field(default=5000, ge=1, le=5000)
 
@@ -78,6 +84,7 @@ def contract(_: Any = Depends(verify_owner_or_api_key)) -> dict[str, Any]:  # no
             "climate",
             "geography",
             "literature",
+            "conservation_status",
             "collection_taxon",
         ],
         "governed_source_dimensions": governed_source_dimensions(),
@@ -143,6 +150,7 @@ def build_from_canonical_source(
             "mycorrhizal_partner": "mycorrhiza",
             "literature": "literature",
             "trait": "traits",
+            "conservation_status": "conservation",
         }[payload.dimension]
         return matrix
     except ValueError as exc:
