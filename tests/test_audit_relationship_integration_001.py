@@ -124,14 +124,15 @@ def test_withdrawn_is_distinguished_from_never_asserted():
     assertion was thrown out needs the rejections read. Reporting them as one
     state sends the reader to the wrong work.
     """
-    report = RelationshipIntegrationAudit(
-        [_mycorrhiza_link("rejected", "m1")]
-    ).report()
+    report = RelationshipIntegrationAudit([_mycorrhiza_link("rejected", "m1")]).report()
 
     assert report["coverage"]["taxonomy_to_mycorrhiza"]["coverage_state"] == "withdrawn"
     assert report["coverage"]["taxonomy_to_mycorrhiza"]["withdrawn_link_count"] == 1
     # Pollinators were never asserted at all in this audit.
-    assert report["coverage"]["taxonomy_to_pollinators"]["coverage_state"] == "never_asserted"
+    assert (
+        report["coverage"]["taxonomy_to_pollinators"]["coverage_state"]
+        == "never_asserted"
+    )
     assert report["coverage"]["taxonomy_to_pollinators"]["withdrawn_link_count"] == 0
 
 
