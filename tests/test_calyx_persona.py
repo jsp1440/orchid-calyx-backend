@@ -52,4 +52,12 @@ def test_generative_system_prompt_includes_persona_and_governance():
     assert "internal machinery" in prompt
     assert "answer-first rule" in prompt
     assert "fcos voice" in prompt
-    assert "do not publish" in prompt
+    # Assert the prohibitions, not their phrasing. This previously matched the
+    # literal "do not publish", which broke when the rule was folded into a
+    # compound clause - "Do not generalize beyond the evidence, convert
+    # correlation into causation, publish Candidate Knowledge, or mutate the
+    # Knowledge Graph." The governance never went anywhere; only the wording
+    # moved, and a test that cannot tell those two apart is not guarding it.
+    assert "publish candidate knowledge" in prompt
+    assert "mutate the knowledge graph" in prompt
+    assert "correlation into causation" in prompt
