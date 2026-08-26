@@ -21,6 +21,7 @@ _DIMENSION_TO_DOMAIN = {
     "mycorrhizal_partner": "mycorrhiza",
     "literature": "literature",
     "trait": "traits",
+    "conservation_status": "conservation",
 }
 
 
@@ -84,6 +85,23 @@ def _object_identity(dimension: str, row: dict[str, Any]) -> tuple[str, str]:
         object_id = f"trait:{trait_name.casefold()}={trait_value.casefold()}"
         return object_id, f"{trait_name}: {trait_value}"
 
+    if dimension == "conservation_status":
+        iucn = str(row.get("iucn_category") or "").strip()
+        cites = str(row.get("cites_appendix") or "").strip()
+        if not iucn and not cites:
+            raise ValueError(
+                "conservation source row is missing iucn_category/cites_appendix"
+            )
+        identity_parts: list[str] = []
+        label_parts: list[str] = []
+        if iucn:
+            identity_parts.append(f"iucn={iucn.casefold()}")
+            label_parts.append(f"IUCN: {iucn}")
+        if cites:
+            identity_parts.append(f"cites={cites.casefold()}")
+            label_parts.append(f"CITES: {cites}")
+        return "conservation:" + "|".join(identity_parts), "; ".join(label_parts)
+
     raise ValueError(f"unsupported governed matrix dimension: {dimension}")
 
 
@@ -127,6 +145,12 @@ def rows_to_assertions(
             "trait_value",
             "support_count",
             "confidence_label",
+            "iucn_category",
+            "cites_appendix",
+            "population_trend",
+            "assessment_year",
+            "region",
+            "source_name",
         ):
             if row.get(key) not in (None, ""):
                 provenance[key] = row[key]
