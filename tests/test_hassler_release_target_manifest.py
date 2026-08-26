@@ -4,9 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
+
 from runtime.hassler_release_target import load_hassler_release_target
-
-
 VALID = {
     "filename": "WorldOrchids 26-09 (Sep 3 2026).csv",
     "size_bytes": 12345,
