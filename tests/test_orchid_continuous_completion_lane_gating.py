@@ -196,13 +196,32 @@ def test_pipefail_paths_do_not_use_early_exit_head(scheduler_text, lane_text):
     assert "| head -1" not in lane_text
 
 
-def test_validation_dispatch_outage_does_not_requeue_claude(lane_text):
+def test_validation_dispatch_outage_does_not_redispatch_a_model(lane_text):
+    """A failed validation dispatch must not cost a second model run.
+
+    The durable PR already exists; only the dispatch failed. Re-queuing would
+    send the issue back through a lane and pay for the implementation twice.
+
+    Asserts the guarantee, not the vendor. This previously required the literal
+    "without redispatching Claude" and broke when the lane gained a Gemini
+    fallback and generalised the wording to "a model" - a change that widened
+    the guarantee rather than weakening it. A test that cannot tell those apart
+    is not guarding anything.
+    """
     marker = "Durable PR #$pr exists, but validation dispatch failed"
-    start = lane_text.index(marker)
-    window = lane_text[max(0, start - 1000) : start + 1000]
-    assert "--add-label oc-validating" in window
-    assert "--add-label oc-queued" not in window
-    assert "without redispatching Claude" in window
+    line = next(item for item in lane_text.splitlines() if marker in item)
+
+    assert "without redispatching" in line
+    assert "oc-validating" in line
+
+    # The label move sits on the line immediately above the comment.
+    lines = lane_text.splitlines()
+    edit = lines[lines.index(line) - 1]
+    assert "--add-label oc-validating" in edit
+    assert "--add-label oc-queued" not in edit
+
+    # And the lane must still report the outage rather than exiting clean.
+    assert lines[lines.index(line) + 1].strip() == "exit 1"
 
 
 def test_red_validation_authorizes_bounded_repair(scheduler_text):
