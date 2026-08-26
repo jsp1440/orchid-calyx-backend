@@ -56,6 +56,8 @@ class CanonicalSourceMatrixRequest(BaseModel):
         "literature",
         "trait",
         "conservation_status",
+        "geography",
+        "elevation",
     ]
     subject_ids: list[str] | None = Field(default=None, max_length=1000)
     limit: int = Field(default=5000, ge=1, le=5000)
@@ -83,6 +85,7 @@ def contract(_: Any = Depends(verify_owner_or_api_key)) -> dict[str, Any]:  # no
             "habitat",
             "climate",
             "geography",
+            "elevation",
             "literature",
             "conservation_status",
             "collection_taxon",
@@ -94,6 +97,8 @@ def contract(_: Any = Depends(verify_owner_or_api_key)) -> dict[str, Any]:  # no
             "present and absent assertions collapse to conflicting",
             "provenance is preserved at cell level",
             "canonical source retrieval is read-only and bounded",
+            "occurrence geography is country-level only; locality and coordinates are not exposed",
+            "occurrence elevation is recorded evidence, not an inferred taxon range",
             "all operations are read-only",
         ],
         "canonical_graph_mutation": False,
@@ -151,6 +156,8 @@ def build_from_canonical_source(
             "literature": "literature",
             "trait": "traits",
             "conservation_status": "conservation",
+            "geography": "occurrences",
+            "elevation": "occurrences",
         }[payload.dimension]
         return matrix
     except ValueError as exc:
