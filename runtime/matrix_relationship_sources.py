@@ -20,6 +20,7 @@ _DIMENSION_TO_DOMAIN = {
     "pollinator": "pollinators",
     "mycorrhizal_partner": "mycorrhiza",
     "literature": "literature",
+    "trait": "traits",
 }
 
 
@@ -73,6 +74,16 @@ def _object_identity(dimension: str, row: dict[str, Any]) -> tuple[str, str]:
             raise ValueError("literature source row is missing source identity")
         return object_id, label
 
+    if dimension == "trait":
+        trait_name = str(row.get("trait_name") or "").strip()
+        trait_value = str(row.get("trait_value") or "").strip()
+        if not trait_name:
+            raise ValueError("trait source row is missing trait_name")
+        if not trait_value:
+            raise ValueError("trait source row is missing trait_value")
+        object_id = f"trait:{trait_name.casefold()}={trait_value.casefold()}"
+        return object_id, f"{trait_name}: {trait_value}"
+
     raise ValueError(f"unsupported governed matrix dimension: {dimension}")
 
 
@@ -112,6 +123,10 @@ def rows_to_assertions(
             "created_at",
             "updated_at",
             "year",
+            "trait_name",
+            "trait_value",
+            "support_count",
+            "confidence_label",
         ):
             if row.get(key) not in (None, ""):
                 provenance[key] = row[key]
