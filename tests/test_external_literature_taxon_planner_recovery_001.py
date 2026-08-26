@@ -43,9 +43,36 @@ def test_the_fix_is_general_not_five_special_cases(binomial, genus):
 def test_an_arbitrary_binomial_the_continuum_has_never_seen_is_planned():
     # Not an orchid, and deliberately so: the rule is about scientific names,
     # not about a longer orchid list.
-    assert extract_taxa("What is known about Quercus robur mycorrhizae?") == [
-        "Quercus robur"
+    assert extract_taxa("What is known about Fagus sylvatica mycorrhizae?") == [
+        "Fagus sylvatica"
     ]
+
+
+def test_the_epithet_rule_is_conservative_and_misses_some_real_names():
+    """A known, deliberate limitation, recorded rather than hidden.
+
+    "robur" is a real epithet ending in -ur, and the ending is not accepted,
+    because -ur and -or admit too much ordinary English for a rule that has no
+    taxonomy behind it. The cost is a missed search; the alternative cost is a
+    scientific query fired at an English phrase, which returns nothing while
+    looking like a result.
+
+    The fix is not a longer suffix list. It is the resolver: canonical taxonomy
+    settles what a name is, and the test below shows it overriding the rule.
+    """
+    assert extract_taxa("What is known about Quercus robur mycorrhizae?") == []
+
+
+def test_a_resolver_recovers_a_name_the_lexical_rule_rejects():
+    """Which is the point of having one."""
+
+    class _Resolver:
+        def resolve(self, text):
+            return text if text == "Quercus robur" else None
+
+    assert extract_taxa(
+        "What is known about Quercus robur mycorrhizae?", resolver=_Resolver()
+    ) == ["Quercus robur"]
 
 
 def test_several_taxa_in_one_question_are_all_planned_in_order():
@@ -117,3 +144,38 @@ def test_a_resolver_that_declines_falls_back_to_the_lexical_rules():
     assert extract_taxa("Review Calypso bulbosa ecology", resolver=_Resolver()) == [
         "Calypso bulbosa"
     ]
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "General enquiry Could this be interesting to look at?",
+        "Regional survey of growing conditions",
+        "Seasonal watering guidance",
+        "Another question about culture",
+    ],
+)
+def test_a_denylist_alone_was_not_enough(question):
+    """"General enquiry" has the shape of a binomial and slipped the denylist.
+
+    Found by the end-to-end pipeline test, not by this file: a request naming
+    no taxon was searching for one anyway. The epithet must now also look like
+    an epithet, which is a positive signal rather than another exclusion, and
+    is why "enquiry", "conditions" and "guidance" are rejected without anyone
+    having had to think of them first.
+    """
+    assert extract_taxa(question) == []
+
+
+def test_a_bare_genus_is_not_returned_beside_its_own_binomial():
+    """Same organism. Returning both made the runner read it twice."""
+    assert extract_taxa("Could this affect Laelia anceps flowering?") == [
+        "Laelia anceps"
+    ]
+
+
+def test_a_curated_genus_named_alone_and_a_binomial_elsewhere_both_survive():
+    taxa = extract_taxa("Compare Cattleya with Calypso bulbosa")
+
+    assert "Calypso bulbosa" in taxa
+    assert "Cattleya" in taxa

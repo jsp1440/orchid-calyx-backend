@@ -174,6 +174,21 @@ _NOT_A_TAXON_WORD = frozenset(
 #: A capitalised word followed by a lowercase word: the shape of a binomial.
 _BINOMIAL = re.compile(r"\b([A-Z][a-z]{3,})\s+([a-z][a-z-]{3,})\b")
 
+#: Terminations a Latin species epithet actually takes.
+#:
+#: A denylist of English words cannot be finished — "General enquiry" has the
+#: shape of a binomial and slipped through one — so the epithet must also look
+#: like an epithet. This is a positive signal rather than another exclusion,
+#: and it is why "enquiry", "flowering" and "acquisition" are rejected without
+#: anyone having to think of them first.
+#:
+#: Still a heuristic, and the reason ``resolver`` exists: canonical taxonomy
+#: settles what a name is, and these rules are only what stands in when no
+#: resolver is available.
+_EPITHET_ENDING = re.compile(
+    r"(ae|ii|is|us|um|ense|ensis|oides|iana|ana|ata|osa|ifolia|iflora|ps|a|i)$"
+)
+
 
 def _looks_like_binomial(genus: str, epithet: str) -> bool:
     """True when a Genus-epithet pair is plausibly a scientific name.
@@ -188,7 +203,9 @@ def _looks_like_binomial(genus: str, epithet: str) -> bool:
     if epithet.casefold() in _NOT_A_TAXON_WORD:
         return False
     # A hyphen inside an epithet is legitimate; a trailing one is not a name.
-    return not epithet.endswith("-")
+    if epithet.endswith("-"):
+        return False
+    return bool(_EPITHET_ENDING.search(epithet.casefold()))
 
 
 def extract_taxa(
@@ -228,9 +245,14 @@ def extract_taxa(
             _remember(f"{genus} {epithet}")
 
     # A bare genus still counts when it is one the Continuum already knows, so
-    # existing single-genus questions keep working exactly as before.
+    # existing single-genus questions keep working exactly as before. A genus
+    # already named by a binomial is not added again: it is the same organism,
+    # and reading it twice would search for it twice and count it twice.
+    named_genera = {value.split()[0].casefold() for value in found}
     normalized = question.casefold()
     for genus in _ORCHID_GENERA:
+        if genus.casefold() in named_genera:
+            continue
         if re.search(rf"\b{re.escape(genus.casefold())}\b", normalized):
             _remember(genus)
 

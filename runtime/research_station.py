@@ -15,9 +15,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.calyx_orchestrator.artifact_registry import ImmutableArtifactRegistry
+from runtime.research_station_store import (
+    DURABLE_KINDS,
+    ProjectRecordStore,
+    build_record_store,
+)
 
-if TYPE_CHECKING:
-    from runtime.literature_acquisition import LiteratureAcquisitionService
 
 RESEARCH_SCHEMA_VERSION = "calyx-research-station/v1"
 PROJECT_STATES = {"planned", "active", "blocked", "completed", "archived"}
@@ -147,22 +150,89 @@ class ResearchStationService:
         self,
         workspace: Path | None = None,
         *,
-        literature: LiteratureAcquisitionService | None = None,
+        literature: Any | None = None,
         artifact_registry: ImmutableArtifactRegistry | None = None,
+        record_store: ProjectRecordStore | None = None,
     ) -> None:
         self.workspace = workspace or research_root()
         self._literature_override = literature
         self.artifact_registry = artifact_registry or ImmutableArtifactRegistry()
+        # The database is authoritative; the workspace directory is a cache.
+        # Before this, authoritative project state lived only under
+        # CALYX_RESEARCH_STATION_DIR — /tmp by default — and vanished on any
+        # restart that recycled it, with nothing reporting the loss.
+        self._record_store_override = record_store
+        self._record_store_instance: ProjectRecordStore | None = None
+        #: Set when a durable write could not reach the database. The cache
+        #: still holds the record, but it is no longer authoritative, and a
+        #: caller must be able to tell that rather than assume durability.
+        self.durability_degraded: str | None = None
 
     @property
-    def literature(self) -> LiteratureAcquisitionService:
+    def record_store(self) -> ProjectRecordStore:
+        """Built on first use, never in __init__.
+
+        Constructing a Research Station must not open a database connection.
+        Building the store eagerly made every construction attempt one, so a
+        service that only ever touches its workspace failed on a machine whose
+        DATABASE_URL points somewhere unreachable.
+        """
+        if self._record_store_override is not None:
+            return self._record_store_override
+        if self._record_store_instance is None:
+            self._record_store_instance = build_record_store()
+        return self._record_store_instance
+
+    def _persist(
+        self, *, owner_key: str, project_id: str, kind: str, record_id: str, record: dict[str, Any]
+    ) -> None:
+        """Write the authoritative copy, or record that it could not be written.
+
+        A durable write that fails must not destroy a workspace operation that
+        already succeeded locally — but it must not pass for durability
+        either. The failure is kept on the service so a caller can see that
+        this record is cache-only.
+        """
+        try:
+            self.record_store.put(
+                owner_key=owner_key,
+                project_id=project_id,
+                kind=kind,
+                record_id=record_id,
+                record=record,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.durability_degraded = f"{type(exc).__name__}: {exc}"
+
+    def _recover(
+        self, *, owner_key: str, project_id: str, kind: str, record_id: str
+    ) -> dict[str, Any] | None:
+        """Read the authoritative copy when the cache is cold, if reachable."""
+        try:
+            return self.record_store.get(
+                owner_key=owner_key, project_id=project_id, kind=kind, record_id=record_id
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.durability_degraded = f"{type(exc).__name__}: {exc}"
+            return None
+
+    @property
+    def literature(self) -> Any:
+        """The canonical literature/evidence retrieval path.
+
+        This used to construct ``runtime.literature_acquisition.
+        LiteratureAcquisitionService``, a module that is not present on this
+        branch, so every access raised ModuleNotFoundError. Rather than
+        recreate a second literature platform to satisfy the import, it binds
+        the retrieval path the repository already ships in
+        ``app.calyx_conversation.external_literature``.
+        """
         if self._literature_override is not None:
             return self._literature_override
         if not hasattr(self, "_literature_instance"):
-            from runtime.literature_acquisition import (
-                LiteratureAcquisitionService,
-            )
-            self._literature_instance = LiteratureAcquisitionService(literature_root())
+            from app.calyx_conversation import external_literature
+
+            self._literature_instance = external_literature
         return self._literature_instance
 
     @staticmethod
@@ -215,12 +285,33 @@ class ResearchStationService:
         }
         root = self._root(owner_id, project_id)
         path = root / "project.json"
+
+        existing: dict[str, Any] | None = None
         if path.exists():
             existing = self._read(path)
+        else:
+            # The workspace may be cold while the project still exists. Without
+            # this read a restart would recreate the project as new, and one
+            # research history would quietly become two.
+            existing = self._recover(
+                owner_key=owner_key, project_id=project_id, kind="project", record_id=project_id
+            )
+            if existing is not None:
+                _atomic(path, existing)
+
+        if existing is not None:
             if existing != record:
                 raise ValueError("RESEARCH_PROJECT_IMMUTABLE_CONFLICT")
             return {"created": False, "project": existing}
+
         _atomic(path, record)
+        self._persist(
+            owner_key=owner_key,
+            project_id=project_id,
+            kind="project",
+            record_id=project_id,
+            record=record,
+        )
         return {"created": True, "project": record}
 
     def add_question(self, owner_id: str, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -436,16 +527,55 @@ class ResearchStationService:
         _atomic(root / "tasks" / f"{task_id}.json", record)
         return record
 
-    @staticmethod
-    def _immutable_record(root: Path, kind: str, record_id: str, record: dict[str, Any]) -> dict[str, Any]:
+    def _durable_key(self, root: Path, kind: str) -> tuple[str, str, str] | None:
+        """(owner_key, project_id, durable_kind) for a workspace path, or None."""
+        singular = kind.rstrip("s") if kind.endswith("s") else kind
+        if singular not in DURABLE_KINDS:
+            return None
+        try:
+            return root.parent.parent.parent.name, root.name, singular
+        except (AttributeError, IndexError):  # pragma: no cover - defensive
+            return None
+
+    def _immutable_record(
+        self, root: Path, kind: str, record_id: str, record: dict[str, Any]
+    ) -> dict[str, Any]:
         record = {"schema_version": RESEARCH_SCHEMA_VERSION, **record}
         path = root / kind / f"{record_id}.json"
+        durable = self._durable_key(root, kind)
+
+        existing = None
         if path.exists():
             existing = json.loads(path.read_text(encoding="utf-8"))
+        elif durable is not None:
+            # A cold workspace. The record may still exist in the database,
+            # and re-creating it as new would silently fork one project's
+            # history into two.
+            owner_key, project_id, singular = durable
+            existing = self._recover(
+                owner_key=owner_key,
+                project_id=project_id,
+                kind=singular,
+                record_id=record_id,
+            )
+            if existing is not None:
+                _atomic(path, existing)
+
+        if existing is not None:
             if existing != record:
                 raise ValueError(f"RESEARCH_{kind.upper()}_IMMUTABLE_CONFLICT")
             return {"created": False, kind.rstrip("s"): existing}
+
         _atomic(path, record)
+        if durable is not None:
+            owner_key, project_id, singular = durable
+            self._persist(
+                owner_key=owner_key,
+                project_id=project_id,
+                kind=singular,
+                record_id=record_id,
+                record=record,
+            )
         return {"created": True, kind.rstrip("s"): record}
 
     def manifest(self, owner_id: str, project_id: str) -> dict[str, Any]:
