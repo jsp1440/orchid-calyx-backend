@@ -60,6 +60,7 @@ class CanonicalSourceMatrixRequest(BaseModel):
         "elevation",
     ]
     subject_ids: list[str] | None = Field(default=None, max_length=1000)
+    genus: str | None = Field(default=None, min_length=2, max_length=80, pattern=r"^[A-Z][a-z]+$")
     limit: int = Field(default=5000, ge=1, le=5000)
 
 
@@ -97,6 +98,7 @@ def contract(_: Any = Depends(verify_owner_or_api_key)) -> dict[str, Any]:  # no
             "present and absent assertions collapse to conflicting",
             "provenance is preserved at cell level",
             "canonical source retrieval is read-only and bounded",
+            "canonical source retrieval may be restricted to one validated genus",
             "occurrence geography is country-level only; locality and coordinates are not exposed",
             "occurrence elevation is recorded evidence, not an inferred taxon range",
             "all operations are read-only",
@@ -142,6 +144,7 @@ def build_from_canonical_source(
             database_url,
             dimension=payload.dimension,
             subject_ids=payload.subject_ids,
+            genus=payload.genus,
             limit=payload.limit,
         )
         matrix = build_relationship_matrix(
@@ -159,6 +162,7 @@ def build_from_canonical_source(
             "geography": "occurrences",
             "elevation": "occurrences",
         }[payload.dimension]
+        matrix["genus_scope"] = payload.genus
         return matrix
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
