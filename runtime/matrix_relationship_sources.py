@@ -9,6 +9,7 @@ biological absence.
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+import re
 from typing import Any
 
 import psycopg
@@ -27,6 +28,8 @@ _DIMENSION_TO_DOMAIN = {
     "elevation": "occurrences",
 }
 
+_CANONICAL_GENUS_RE = re.compile(r"^[A-Z][a-z]+$")
+
 
 def governed_source_dimensions() -> list[str]:
     """Return matrix dimensions backed by enabled canonical source queries."""
@@ -36,6 +39,21 @@ def governed_source_dimensions() -> list[str]:
         for dimension, domain in _DIMENSION_TO_DOMAIN.items()
         if domain in registry and registry[domain].enabled and registry[domain].sql
     )
+
+
+def canonical_genus_scope(value: str | None) -> str | None:
+    """Validate an optional canonical single-token genus scope.
+
+    The scope is intentionally strict because it is later used to constrain the
+    taxon display-label join. Invalid route-like, binomial, wildcard, or
+    lowercase values fail closed instead of widening canonical source reads.
+    """
+    if value is None:
+        return None
+    genus = value.strip()
+    if len(genus) > 80 or not _CANONICAL_GENUS_RE.fullmatch(genus):
+        raise ValueError("genus must be a canonical single-token genus")
+    return genus
 
 
 def _bounded_confidence(value: Any) -> float | None:
@@ -205,12 +223,14 @@ def load_governed_assertions(
     *,
     dimension: str,
     subject_ids: list[str] | None = None,
+    genus: str | None = None,
     limit: int = 5000,
 ) -> list[RelationshipAssertion]:
     """Load bounded canonical evidence through the existing read-only registry."""
     if limit < 1 or limit > 5000:
         raise ValueError("limit must be between 1 and 5000")
 
+    genus_scope = canonical_genus_scope(genus)
     domain = _DIMENSION_TO_DOMAIN.get(dimension)
     if not domain:
         raise ValueError(f"unsupported governed matrix dimension: {dimension}")
@@ -226,10 +246,16 @@ def load_governed_assertions(
         "join oc_graph.kg_nodes k "
         "on k.node_type='taxon' and k.source_pk=s.taxon_pk::text"
     )
+    conditions: list[str] = []
     params: list[Any] = []
     if subject_ids:
-        sql += " where s.taxon_pk::text = any(%s)"
+        conditions.append("s.taxon_pk::text = any(%s)")
         params.append([str(value) for value in subject_ids])
+    if genus_scope:
+        conditions.append("(k.display_label = %s or k.display_label like %s)")
+        params.extend([genus_scope, f"{genus_scope} %"])
+    if conditions:
+        sql += " where " + " and ".join(conditions)
     sql += " order by s.taxon_pk::text, s.source_pk::text limit %s"
     params.append(limit)
     assert_safe_sql(sql)
