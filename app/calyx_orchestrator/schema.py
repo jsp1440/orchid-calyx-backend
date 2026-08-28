@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .models import CalyxFinding, CalyxJob
 from .program_models import CalyxProgram, CalyxProgramDependency, CalyxProgramJob
+from .specialist_models import SpecialistApproval, SpecialistArtifact, SpecialistMission, SpecialistReview
 
 _SCHEMA_LOCK = Lock()
 _SCHEMA_READY_ENGINES: set[int] = set()
@@ -37,6 +38,10 @@ def ensure_orchestrator_schema(db: Session) -> None:
             CalyxProgram.__table__,
             CalyxProgramJob.__table__,
             CalyxProgramDependency.__table__,
+            SpecialistMission.__table__,
+            SpecialistArtifact.__table__,
+            SpecialistReview.__table__,
+            SpecialistApproval.__table__,
         ):
             table.create(bind=bind, checkfirst=True)
 
