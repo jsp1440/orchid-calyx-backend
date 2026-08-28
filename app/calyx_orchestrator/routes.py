@@ -16,6 +16,7 @@ from .operations import operational_status, renew_lease, seed_approved_tasks
 from .portfolio_routes import router as portfolio_router
 from .program_routes import router as program_router
 from .sandbox_supervisor_routes import router as sandbox_supervisor_router
+from .specialist_routes import router as specialist_router
 from .schema import ensure_orchestrator_schema
 from .service import (
     AUTONOMY_POLICY_CLASSES,
@@ -152,6 +153,7 @@ def requeue_dead_letter(job_id: str, auth: AuthDependency, db: DbDependency) -> 
     return CalyxOrchestrator.job_dict(job)
 
 
+router.include_router(specialist_router)
 router.include_router(program_router)
 router.include_router(autonomy_router)
 router.include_router(portfolio_router)
