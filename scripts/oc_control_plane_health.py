@@ -40,7 +40,11 @@ def classify_ci(runs: Iterable[dict]) -> dict:
             "runner_id": failed_without_runner[0].get("runner_id"),
             "executed_step_count": 0,
         }
-    if latest.get("status") == "completed" and latest.get("conclusion") == "success":
+    if latest.get("status") != "completed":
+        # A queued or in-progress run has produced no failure or execution evidence
+        # yet. Preserve UNKNOWN rather than fabricating a code failure every pulse.
+        return {"state": UNKNOWN, "reason": "run_not_completed", "run_id": latest.get("id")}
+    if latest.get("conclusion") == "success":
         return {"state": "HEALTHY", "reason": "executed_success", "run_id": latest.get("id")}
     return {"state": "CODE_OR_CHECK_FAILURE", "reason": "runner_executed_non_success", "run_id": latest.get("id")}
 

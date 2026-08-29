@@ -14,6 +14,7 @@ PLANNER = Path("scripts/oc_portfolio_scheduler.py")
 HEAL_STEP = "name: Heal portfolio queue invariants"
 DISPATCH_STEP = "name: Dispatch priority-aware portfolio workers"
 CANARY = Path(".github/workflows/orchid-claude-runtime-canary.yml")
+GEMINI_CANARY = Path(".github/workflows/orchid-gemini-runtime-canary.yml")
 
 
 @pytest.fixture(scope="module")
@@ -270,6 +271,20 @@ def test_passing_canary_closes_circuit_and_scheduler_recovers_parked_work(canary
     assert "--add-label oc-runtime-degraded" in canary_text
     assert "--label oc-runtime-backoff" in scheduler_text
     assert "--remove-label oc-runtime-backoff --add-label oc-queued" in scheduler_text
+
+
+def test_dispatched_gemini_canary_can_close_the_blocked_circuit(scheduler_text):
+    # The pause branch dispatches the gemini canary; a successful governed-fallback
+    # probe must be able to clear the provider-chain block, otherwise every later
+    # pulse re-enters the pause branch and parked work is never requeued.
+    runtime = scheduler_text[
+        scheduler_text.index("name: Manage Claude runtime circuit")
+        : scheduler_text.index("name: Dispatch priority-aware portfolio workers")
+    ]
+    assert "gh workflow run orchid-gemini-runtime-canary.yml" in runtime
+    gemini = GEMINI_CANARY.read_text()
+    assert "--remove-label oc-provider-chain-blocked" in gemini
+    assert '"$state" == PASSED' in gemini
 
 
 def test_runtime_backoff_is_excluded_from_selection(scheduler_text):

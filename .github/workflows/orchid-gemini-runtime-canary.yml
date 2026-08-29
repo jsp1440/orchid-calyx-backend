@@ -97,4 +97,12 @@ jobs:
           fi
           gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
             --body "ORCHID GEMINI CANARY — **${state}**. normalized_class=${kind}. No provider transcript or secret material persisted. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          if [[ "$state" == PASSED && "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            # A healthy governed-fallback probe is sufficient evidence that the
+            # authorized provider chain is no longer fully blocked. Close the circuit
+            # so the next scheduler pulse can requeue parked work. This mirrors the
+            # Claude runtime canary's recovery so either canary can lift the block;
+            # observational push/PR runs never mutate control-plane labels.
+            gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded --remove-label oc-provider-chain-blocked >/dev/null 2>&1 || true
+          fi
           [[ "$state" == PASSED ]]
