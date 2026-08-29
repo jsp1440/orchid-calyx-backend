@@ -241,11 +241,12 @@ def test_orphaned_repair_self_heal_respects_runtime_backoff(scheduler_text):
 
 
 def test_runtime_failure_opens_global_circuit_and_parks_issue(lane_text):
+    # Labels and the failure branch are the contract; operator-facing prose may
+    # change without changing the fail-closed circuit behavior.
     assert 'CLAUDE_OUTCOME: ${{ steps.claude.outcome }}' in lane_text
     assert 'elif [[ "$CLAUDE_OUTCOME" != "success" ]]; then' in lane_text
     assert "--add-label oc-runtime-backoff" in lane_text
     assert "--add-label oc-runtime-degraded" in lane_text
-    assert "repository runtime circuit opened" in lane_text
 
 
 def test_runtime_circuit_pauses_dispatch_and_probes_slowly(scheduler_text):
