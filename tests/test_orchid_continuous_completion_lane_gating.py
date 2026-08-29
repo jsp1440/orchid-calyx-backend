@@ -74,17 +74,20 @@ def test_planner_is_the_single_source_of_selection_policy(scheduler_text):
 
 
 def test_planner_excludes_runtime_backed_off_work_from_ranking(scheduler_text):
-    # Runtime and bounded-repair backoff are both non-executable states. Assert
-    # membership rather than the tuple's exact source formatting so adding a
-    # new fail-closed backoff state does not invalidate this regression test.
+    # Runtime and bounded-repair backoff are both non-executable states. Inspect
+    # the tuple body rather than punctuation/order so fail-closed additions do
+    # not make this regression test stale.
     source = PLANNER.read_text()
     assert 'RUNTIME_BACKOFF = "oc-runtime-backoff"' in source
     assert 'REPAIR_BACKOFF = "oc-repair-backoff"' in source
-    assert "NON_EXECUTABLE_LABELS = (" in source
-    assert "RUNTIME_BACKOFF," in source
-    assert "REPAIR_BACKOFF," in source
-    assert "if labels & set(NON_EXECUTABLE_LABELS):" in source
-    assert '[[ "$labels" == *"oc-runtime-backoff"* ]] && continue' in scheduler_text
+    tuple_start = source.index("NON_EXECUTABLE_LABELS = (")
+    tuple_end = source.index(")", tuple_start)
+    tuple_source = source[tuple_start:tuple_end]
+    assert "RUNTIME_BACKOFF" in tuple_source
+    assert "REPAIR_BACKOFF" in tuple_source
+    assert "blocking = [label for label in NON_EXECUTABLE_LABELS if label in labels]" in source
+    assert "if blocking:" in source
+    assert '[[ "$labels" == *oc-runtime-backoff* ]] && continue' in scheduler_text
 
 
 def test_scheduler_publishes_a_read_only_status_surface(scheduler_text):
