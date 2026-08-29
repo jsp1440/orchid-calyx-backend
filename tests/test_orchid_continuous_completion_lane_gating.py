@@ -14,6 +14,7 @@ PLANNER = Path("scripts/oc_portfolio_scheduler.py")
 HEAL_STEP = "name: Heal portfolio queue invariants"
 DISPATCH_STEP = "name: Dispatch priority-aware portfolio workers"
 CANARY = Path(".github/workflows/orchid-claude-runtime-canary.yml")
+GEMINI_CANARY = Path(".github/workflows/orchid-gemini-runtime-canary.yml")
 
 
 @pytest.fixture(scope="module")
@@ -74,20 +75,29 @@ def test_planner_is_the_single_source_of_selection_policy(scheduler_text):
 
 
 def test_planner_excludes_runtime_backed_off_work_from_ranking(scheduler_text):
-    # The workflow re-read also skips it, but a planner that ranked parked work
-    # would silently waste a lane on an issue the dispatch loop then refuses.
+    # Runtime and bounded-repair backoff are both non-executable states. Inspect
+    # the tuple body rather than punctuation/order so fail-closed additions do
+    # not make this regression test stale.
     source = PLANNER.read_text()
     assert 'RUNTIME_BACKOFF = "oc-runtime-backoff"' in source
-    assert "NON_EXECUTABLE_LABELS = (BLOCKED, OWNER_GATE, DONE, RUNTIME_BACKOFF)" in source
+    assert 'REPAIR_BACKOFF = "oc-repair-backoff"' in source
+    tuple_start = source.index("NON_EXECUTABLE_LABELS = (")
+    tuple_end = source.index(")", tuple_start)
+    tuple_source = source[tuple_start:tuple_end]
+    assert "RUNTIME_BACKOFF" in tuple_source
+    assert "REPAIR_BACKOFF" in tuple_source
+    assert "blocking = [label for label in NON_EXECUTABLE_LABELS if label in labels]" in source
+    assert "if blocking:" in source
+    assert '[[ "$labels" == *oc-runtime-backoff* ]] && continue' in scheduler_text
 
 
 def test_scheduler_publishes_a_read_only_status_surface(scheduler_text):
     dispatch = scheduler_text[scheduler_text.index(DISPATCH_STEP) :]
-    assert "$GITHUB_STEP_SUMMARY" in dispatch
     for field in ("active_lane_count", "available_capacity", "eligible_count",
                   ".ranking[]", ".selected[]", ".suppressed[]", "priority_source",
                   "waited_hours", "selection_reason"):
         assert field in dispatch
+    assert "$GITHUB_STEP_SUMMARY" in dispatch
 
 
 def test_a_missing_planner_fails_closed_instead_of_dispatching_blind(scheduler_text):
@@ -150,8 +160,9 @@ def test_owner_only_gate_permission_warns_instead_of_reddening_the_control_plane
     assert "main remains owner-gated either way" in gate
 
 
-def test_scheduler_caps_active_execution_width_at_three(scheduler_text):
-    assert "MAX_ACTIVE_LANES: 3" in scheduler_text
+def test_recovery_scheduler_caps_active_execution_width_at_one(scheduler_text):
+    assert "MAX_ACTIVE_LANES: 1" in scheduler_text
+    assert "STABILIZATION_ISSUE: 1193" in scheduler_text
     assert "capacity=$(( MAX_ACTIVE_LANES - running_count ))" in scheduler_text
     assert "All ${MAX_ACTIVE_LANES} implementation lanes are occupied." in scheduler_text
 
@@ -200,9 +211,10 @@ def test_validation_dispatch_outage_does_not_requeue_claude(lane_text):
     marker = "Durable PR #$pr exists, but validation dispatch failed"
     start = lane_text.index(marker)
     window = lane_text[max(0, start - 1000) : start + 1000]
+    # Labels are the authoritative behavior: validation stays durable and the
+    # implementation worker is not made dispatchable again.
     assert "--add-label oc-validating" in window
     assert "--add-label oc-queued" not in window
-    assert "without redispatching Claude" in window
 
 
 def test_red_validation_authorizes_bounded_repair(scheduler_text):
@@ -230,19 +242,26 @@ def test_orphaned_repair_self_heal_respects_runtime_backoff(scheduler_text):
 
 
 def test_runtime_failure_opens_global_circuit_and_parks_issue(lane_text):
+    # Labels and the failure branch are the contract; operator-facing prose may
+    # change without changing the fail-closed circuit behavior.
     assert 'CLAUDE_OUTCOME: ${{ steps.claude.outcome }}' in lane_text
     assert 'elif [[ "$CLAUDE_OUTCOME" != "success" ]]; then' in lane_text
     assert "--add-label oc-runtime-backoff" in lane_text
     assert "--add-label oc-runtime-degraded" in lane_text
-    assert "repository runtime circuit opened" in lane_text
 
 
 def test_runtime_circuit_pauses_dispatch_and_probes_slowly(scheduler_text):
-    assert "name: Manage Claude runtime circuit" in scheduler_text
-    assert "oc-runtime-degraded" in scheduler_text
-    assert 'echo "paused=true" >> "$GITHUB_OUTPUT"' in scheduler_text
-    assert "age >= 1800" in scheduler_text
-    assert "gh workflow run orchid-claude-runtime-canary.yml" in scheduler_text
+    runtime_start = scheduler_text.index("name: Manage Claude runtime circuit")
+    dispatch_start = scheduler_text.index("name: Dispatch priority-aware portfolio workers")
+    runtime = scheduler_text[runtime_start:dispatch_start]
+    # Preferred-provider degradation alone must not halt the portfolio. The
+    # scheduler pauses only when every authorized provider is blocked, and its
+    # slow recovery probe uses the governed provider-chain canary.
+    assert "oc-provider-chain-blocked" in runtime
+    assert 'if [[ "$tracker_labels" == *oc-provider-chain-blocked* ]]; then' in runtime
+    assert 'echo "paused=true" >> "$GITHUB_OUTPUT"' in runtime
+    assert "age >= 1800" in runtime
+    assert "gh workflow run orchid-gemini-runtime-canary.yml" in runtime
     assert "if: steps.runtime.outputs.paused != 'true'" in scheduler_text
 
 
@@ -252,6 +271,20 @@ def test_passing_canary_closes_circuit_and_scheduler_recovers_parked_work(canary
     assert "--add-label oc-runtime-degraded" in canary_text
     assert "--label oc-runtime-backoff" in scheduler_text
     assert "--remove-label oc-runtime-backoff --add-label oc-queued" in scheduler_text
+
+
+def test_dispatched_gemini_canary_can_close_the_blocked_circuit(scheduler_text):
+    # The pause branch dispatches the gemini canary; a successful governed-fallback
+    # probe must be able to clear the provider-chain block, otherwise every later
+    # pulse re-enters the pause branch and parked work is never requeued.
+    runtime = scheduler_text[
+        scheduler_text.index("name: Manage Claude runtime circuit")
+        : scheduler_text.index("name: Dispatch priority-aware portfolio workers")
+    ]
+    assert "gh workflow run orchid-gemini-runtime-canary.yml" in runtime
+    gemini = GEMINI_CANARY.read_text()
+    assert "--remove-label oc-provider-chain-blocked" in gemini
+    assert '"$state" == PASSED' in gemini
 
 
 def test_runtime_backoff_is_excluded_from_selection(scheduler_text):

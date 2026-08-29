@@ -301,13 +301,13 @@ jobs:
             # failed before durable work. Until a second fallback is implemented,
             # park this issue and fail closed at the repository circuit.
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
-            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude safe-provider failure triggered Gemini fallback, but Gemini did not produce durable work (outcome=${GEMINI_OUTCOME:-unknown}). Issue parked and repository runtime circuit opened pending provider recovery or the OpenAI fallback slice. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
             gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after Claude safe-provider failure plus unsuccessful Gemini fallback on issue #${ISSUE_NUMBER}. Portfolio dispatch paused pending recovery/OpenAI fallback. Worker: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
           elif [[ "$CLAUDE_OUTCOME" != "success" ]]; then
             # Security/auth/unknown failures do not silently bypass providers.
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
-            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude failed with non-fallback classification=${CLAUDE_KIND:-unknown} (terminal_reason=${TERMINAL_REASON:-unknown}, error_type=${ERROR_TYPE:-unknown}). Failed closed; no provider bypass was attempted. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
             gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after non-fallback Claude failure on issue #${ISSUE_NUMBER} (classification=${CLAUDE_KIND:-unknown}). Portfolio dispatch is paused pending runtime canary recovery. Worker: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
           else
