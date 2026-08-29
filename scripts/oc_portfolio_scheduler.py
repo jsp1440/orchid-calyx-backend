@@ -59,11 +59,12 @@ REPAIR = "oc-repair"
 BLOCKED = "oc-blocked"
 #: Parked by the repository-wide Claude runtime circuit; not an execution candidate.
 RUNTIME_BACKOFF = "oc-runtime-backoff"
+REPAIR_BACKOFF = "oc-repair-backoff"
 OWNER_GATE = "oc-owner-gate"
 DONE = "oc-done"
 
 #: Labels that hold an issue outside the execution portfolio entirely.
-NON_EXECUTABLE_LABELS = (BLOCKED, OWNER_GATE, DONE, RUNTIME_BACKOFF)
+NON_EXECUTABLE_LABELS = (BLOCKED, OWNER_GATE, DONE, RUNTIME_BACKOFF, REPAIR_BACKOFF)
 
 PRIORITY_LABELS = tuple(f"oc-p{level}" for level in range(LOWEST_PRIORITY + 1))
 
@@ -145,7 +146,12 @@ def _now(snapshot: dict) -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _candidate(issue: dict, durable: dict[int, int], now: datetime) -> dict:
+def _candidate(
+    issue: dict,
+    durable: dict[int, int],
+    now: datetime,
+    stabilization_issue: int | None = None,
+) -> dict:
     labels = label_names(issue)
     number = int(issue["number"])
     priority, source = resolve_priority(issue)
@@ -164,12 +170,14 @@ def _candidate(issue: dict, durable: dict[int, int], now: datetime) -> dict:
         "waited_hours": round(waited, 3),
         "repair": REPAIR in labels,
         "durable_pr": durable.get(number),
+        "canonical_stabilization": number == stabilization_issue,
         "band": 1 if priority >= IDLE_PRIORITY else 0,
     }
 
 
 def _order_key(candidate: dict) -> tuple:
     return (
+        0 if candidate["canonical_stabilization"] else 1,
         candidate["band"],
         candidate["priority"],
         # An explicit priority always outranks the same level reached by default.
@@ -204,6 +212,9 @@ def build_plan(snapshot: dict) -> dict:
     durable = durable_pr_index(snapshot.get("pull_requests") or [])
     now = _now(snapshot)
     max_lanes = int(snapshot.get("max_active_lanes") or MAX_ACTIVE_LANES)
+    stabilization_issue = snapshot.get("stabilization_issue")
+    if stabilization_issue is not None:
+        stabilization_issue = int(stabilization_issue)
 
     active: list[dict] = []
     eligible: list[dict] = []
@@ -214,7 +225,7 @@ def build_plan(snapshot: dict) -> dict:
             continue
         if str(issue.get("state") or "OPEN").upper() not in {"OPEN", ""}:
             continue
-        candidate = _candidate(issue, durable, now)
+        candidate = _candidate(issue, durable, now, stabilization_issue)
         labels = candidate["labels"]
 
         if RUNNING in labels:
@@ -235,6 +246,16 @@ def build_plan(snapshot: dict) -> dict:
 
     active.sort(key=_order_key)
     eligible.sort(key=_order_key)
+
+    # A declared canonical stabilization mission freezes ordinary portfolio
+    # expansion. It is the only selectable issue while eligible; other work is
+    # preserved in the queue and reported as suppressed rather than relabelled.
+    canonical = [c for c in eligible if c["canonical_stabilization"]]
+    if canonical:
+        for candidate in eligible:
+            if not candidate["canonical_stabilization"]:
+                suppressed.append(_public(candidate, reason="stabilization-freeze"))
+        eligible = canonical
     capacity = max(0, max_lanes - len(active))
 
     selected: list[dict] = []

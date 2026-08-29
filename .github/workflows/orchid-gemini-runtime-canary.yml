@@ -199,7 +199,7 @@ jobs:
           fi
 
           if [[ "$state" == PASSED && "$GITHUB_EVENT_NAME" == issues ]]; then
-            gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded >/dev/null 2>&1 || true
+            gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded --remove-label oc-provider-chain-blocked >/dev/null 2>&1 || true
             mapfile -t parked < <(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label oc-runtime-backoff --limit 200 --json number --jq '.[].number')
             for issue in "${parked[@]:-}"; do
               [[ -n "$issue" ]] || continue
