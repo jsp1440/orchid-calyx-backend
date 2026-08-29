@@ -150,8 +150,9 @@ def test_owner_only_gate_permission_warns_instead_of_reddening_the_control_plane
     assert "main remains owner-gated either way" in gate
 
 
-def test_scheduler_caps_active_execution_width_at_three(scheduler_text):
-    assert "MAX_ACTIVE_LANES: 3" in scheduler_text
+def test_recovery_scheduler_caps_active_execution_width_at_one(scheduler_text):
+    assert "MAX_ACTIVE_LANES: 1" in scheduler_text
+    assert "STABILIZATION_ISSUE: 1193" in scheduler_text
     assert "capacity=$(( MAX_ACTIVE_LANES - running_count ))" in scheduler_text
     assert "All ${MAX_ACTIVE_LANES} implementation lanes are occupied." in scheduler_text
 
