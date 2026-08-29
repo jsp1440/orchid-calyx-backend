@@ -74,11 +74,17 @@ def test_planner_is_the_single_source_of_selection_policy(scheduler_text):
 
 
 def test_planner_excludes_runtime_backed_off_work_from_ranking(scheduler_text):
-    # The workflow re-read also skips it, but a planner that ranked parked work
-    # would silently waste a lane on an issue the dispatch loop then refuses.
+    # Runtime and bounded-repair backoff are both non-executable states. Assert
+    # membership rather than the tuple's exact source formatting so adding a
+    # new fail-closed backoff state does not invalidate this regression test.
     source = PLANNER.read_text()
     assert 'RUNTIME_BACKOFF = "oc-runtime-backoff"' in source
-    assert "NON_EXECUTABLE_LABELS = (BLOCKED, OWNER_GATE, DONE, RUNTIME_BACKOFF)" in source
+    assert 'REPAIR_BACKOFF = "oc-repair-backoff"' in source
+    assert "NON_EXECUTABLE_LABELS = (" in source
+    assert "RUNTIME_BACKOFF," in source
+    assert "REPAIR_BACKOFF," in source
+    assert "if labels & set(NON_EXECUTABLE_LABELS):" in source
+    assert '[[ "$labels" == *"oc-runtime-backoff"* ]] && continue' in scheduler_text
 
 
 def test_scheduler_publishes_a_read_only_status_surface(scheduler_text):
