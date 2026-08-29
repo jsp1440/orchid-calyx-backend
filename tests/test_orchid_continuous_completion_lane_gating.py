@@ -250,11 +250,17 @@ def test_runtime_failure_opens_global_circuit_and_parks_issue(lane_text):
 
 
 def test_runtime_circuit_pauses_dispatch_and_probes_slowly(scheduler_text):
-    assert "name: Manage Claude runtime circuit" in scheduler_text
-    assert "oc-runtime-degraded" in scheduler_text
-    assert 'echo "paused=true" >> "$GITHUB_OUTPUT"' in scheduler_text
-    assert "age >= 1800" in scheduler_text
-    assert "gh workflow run orchid-claude-runtime-canary.yml" in scheduler_text
+    runtime_start = scheduler_text.index("name: Manage Claude runtime circuit")
+    dispatch_start = scheduler_text.index("name: Dispatch priority-aware portfolio workers")
+    runtime = scheduler_text[runtime_start:dispatch_start]
+    # Preferred-provider degradation alone must not halt the portfolio. The
+    # scheduler pauses only when every authorized provider is blocked, and its
+    # slow recovery probe uses the governed provider-chain canary.
+    assert "oc-provider-chain-blocked" in runtime
+    assert 'if [[ "$tracker_labels" == *oc-provider-chain-blocked* ]]; then' in runtime
+    assert 'echo "paused=true" >> "$GITHUB_OUTPUT"' in runtime
+    assert "age >= 1800" in runtime
+    assert "gh workflow run orchid-gemini-runtime-canary.yml" in runtime
     assert "if: steps.runtime.outputs.paused != 'true'" in scheduler_text
 
 
