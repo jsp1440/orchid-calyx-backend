@@ -1,0 +1,29 @@
+"""Run the existing read-only Hassler discovery against a manifest-selected release."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = str(Path(__file__).resolve().parents[1])
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from runtime.hassler_release_target import load_hassler_release_target
+from scripts import discover_hassler_release_intake as discovery
+
+
+def apply_release_target() -> dict[str, object]:
+    target = load_hassler_release_target()
+    discovery.EXPECTED_FILENAME = target.filename
+    discovery.EXPECTED_SHA256 = target.sha256
+    return target.as_dict()
+
+
+def main() -> int:
+    apply_release_target()
+    return discovery.main()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
