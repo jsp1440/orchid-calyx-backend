@@ -117,6 +117,38 @@ def test_p0_outranks_p1():
     assert result["selected_numbers"] == [201]
 
 
+def test_canonical_stabilization_outranks_older_p0_and_freezes_expansion():
+    result = sched.build_plan(
+        {
+            "issues": [
+                issue(1177, title="P0 older security work", created="2026-08-25T00:00:00Z"),
+                issue(1193, title="P0 canonical stabilization", created="2026-08-26T00:00:00Z"),
+                issue(1195, title="P0 optional expansion", created="2026-08-24T00:00:00Z"),
+            ],
+            "max_active_lanes": 3,
+            "stabilization_issue": 1193,
+            "now": NOW,
+        }
+    )
+    assert result["selected_numbers"] == [1193]
+    assert {row["number"] for row in result["suppressed"] if row["reason"] == "stabilization-freeze"} == {1177, 1195}
+
+
+def test_stabilization_freeze_releases_when_canonical_mission_is_not_eligible():
+    result = sched.build_plan(
+        {
+            "issues": [
+                issue(1193, labels=("oc-validating",), title="P0 canonical stabilization"),
+                issue(1177, title="P0 next work"),
+            ],
+            "max_active_lanes": 1,
+            "stabilization_issue": 1193,
+            "now": NOW,
+        }
+    )
+    assert result["selected_numbers"] == [1177]
+
+
 def test_p1_outranks_p2():
     result = plan(
         [
@@ -242,6 +274,14 @@ def test_runtime_backed_off_work_is_not_ranked_or_selected():
     assert {"number": 1900, "reason": "oc-runtime-backoff"}.items() <= next(
         row for row in result["suppressed"] if row["number"] == 1900
     ).items()
+
+
+def test_repair_backoff_is_not_ranked_or_selected():
+    parked = issue(1902, title="P0 exhausted repair",
+                   labels=("oc-queued", "oc-repair", "oc-repair-backoff"))
+    result = plan([parked, issue(1903, title="P3 eligible")])
+    assert result["selected_numbers"] == [1903]
+    assert next(row for row in result["suppressed"] if row["number"] == 1902)["reason"] == "oc-repair-backoff"
 
 
 def test_oc_blocked_and_owner_gate_do_not_consume_an_execution_slot():
