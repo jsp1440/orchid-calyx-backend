@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Build a truthful machine-readable Orchid control-plane health receipt."""
 
 from __future__ import annotations
@@ -91,7 +90,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default="-")
     args = parser.parse_args()
-    raw = sys.stdin.read() if args.input == "-" else open(args.input, encoding="utf-8").read()
+    if args.input == "-":
+        raw = sys.stdin.read()
+    else:
+        with open(args.input, encoding="utf-8") as handle:
+            raw = handle.read()
     json.dump(build_health(json.loads(raw)), sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0
