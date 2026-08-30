@@ -60,7 +60,9 @@ class CanonicalSourceMatrixRequest(BaseModel):
         "elevation",
     ]
     subject_ids: list[str] | None = Field(default=None, max_length=1000)
-    genus: str | None = Field(default=None, min_length=2, max_length=80, pattern=r"^[A-Z][a-z]+$")
+    genus: str | None = Field(
+        default=None, min_length=2, max_length=80, pattern=r"^[A-Z][a-z]+$"
+    )
     limit: int = Field(default=5000, ge=1, le=5000)
 
 
