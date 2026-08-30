@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from app.routers import matrix_relationship as router
 from app.routers.matrix_relationship import CanonicalSourceMatrixRequest
@@ -47,7 +48,7 @@ def test_invalid_genus_cannot_reach_canonical_source_read(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
     monkeypatch.setattr(router, "load_governed_assertions", fake_load)
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         CanonicalSourceMatrixRequest(dimension="trait", genus="Phalaenopsis amabilis")
 
     assert called is False
