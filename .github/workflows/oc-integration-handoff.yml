@@ -1,0 +1,71 @@
+name: OC Integration Handoff
+
+on:
+  push:
+    branches: [oc-autonomous-integration]
+  workflow_dispatch:
+
+concurrency:
+  group: oc-integration-handoff-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+  pull-requests: read
+
+jobs:
+  validate-integration-head:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+
+      - name: Compile backend sources
+        run: python -m compileall -q app runtime harvesters scripts
+
+      - name: Validate governed Matrix integration
+        run: |
+          ruff check app/routers/matrix_relationship.py runtime/matrix_relationship_sources.py \
+            tests/test_matrix_relationship_genus_scope.py \
+            tests/test_matrix_relationship_genus_scope_attestation.py \
+            tests/test_matrix_relationship_governed_sources.py
+          python -m pytest -q --maxfail=1 \
+            tests/test_matrix_relationship_genus_scope.py \
+            tests/test_matrix_relationship_genus_scope_attestation.py \
+            tests/test_matrix_relationship_governed_sources.py
+
+      - name: Record exact-head integration receipt
+        shell: bash
+        run: |
+          {
+            echo "## OC backend integration receipt"
+            echo "- head: \`${GITHUB_SHA}\`"
+            echo "- branch: \`${GITHUB_REF_NAME}\`"
+            echo "- compile: passed"
+            echo "- Matrix governed-source tests: passed"
+            echo "- next action: dispatch continuous completion supervisor"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch same-repo completion supervisor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run orchid-continuous-completion.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref oc-autonomous-integration
