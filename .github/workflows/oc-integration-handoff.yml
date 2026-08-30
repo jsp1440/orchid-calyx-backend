@@ -1,6 +1,8 @@
 name: OC Integration Handoff
 
 on:
+  schedule:
+    - cron: '*/5 * * * *'
   push:
     branches: [oc-autonomous-integration]
   workflow_dispatch:
@@ -22,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: oc-autonomous-integration
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -53,10 +55,11 @@ jobs:
       - name: Record exact-head integration receipt
         shell: bash
         run: |
+          head_sha=$(git rev-parse HEAD)
           {
             echo "## OC backend integration receipt"
-            echo "- head: \`${GITHUB_SHA}\`"
-            echo "- branch: \`${GITHUB_REF_NAME}\`"
+            echo "- head: \`${head_sha}\`"
+            echo "- branch: \`oc-autonomous-integration\`"
             echo "- compile: passed"
             echo "- Matrix governed-source tests: passed"
             echo "- next action: dispatch continuous completion supervisor"
