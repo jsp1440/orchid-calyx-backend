@@ -2,6 +2,8 @@
 
 These rules apply to every coding-agent session in this repository.
 
+Read `docs/AGENT-OPERATING-MEMORY.md` at startup. It contains durable corrections learned from repeated convergence failures and applies to every coding agent. Current repository truth and explicit owner decisions outrank stale memory.
+
 ## Mission
 
 Advance the Calyx accelerated completion program to a working, review-governed scientific system. GitHub issues and pull requests are the durable control plane. The repository owner must never be used as a prompt relay, CI monitor, branch coordinator, or copy-and-paste message bus.
@@ -9,10 +11,11 @@ Advance the Calyx accelerated completion program to a working, review-governed s
 ## Authoritative work selection
 
 1. Read the linked issue, parent issue #384, current `main`, all open pull requests, issue comments, review comments, and required checks before changing code.
-2. Search for an existing branch or pull request for the same acceptance criterion.
-3. Exactly one pull request may be authoritative for a given issue. Reuse it whenever technically possible.
-4. Never create a duplicate pull request merely because an earlier session stopped. Continue the existing branch or clearly supersede and close the older draft in the same session.
-5. Treat closed duplicate PRs as historical only. Do not target or revive them unless explicitly instructed.
+2. Read `docs/AGENT-OPERATING-MEMORY.md` and apply any relevant durable corrections before editing.
+3. Search for an existing branch or pull request for the same acceptance criterion.
+4. Exactly one pull request may be authoritative for a given issue. Reuse it whenever technically possible.
+5. Never create a duplicate pull request merely because an earlier session stopped. Continue the existing branch or clearly supersede and close the older draft in the same session.
+6. Treat closed duplicate PRs as historical only. Do not target or revive them unless explicitly instructed.
 
 ## Parallel execution lanes
 
@@ -56,15 +59,18 @@ A session must never fail silently. A red or timed-out cloud-agent run without a
 4. The coordinator may maintain up to five independent active coding lanes, but only one active implementation per issue.
 5. Prefer several non-overlapping tasks in one coordinator run when tool and session limits permit. Do not serialize independent lanes unnecessarily.
 6. When `main` advances, rebase or update active branches before further implementation when safe.
+7. Completing one bounded PR is not completion of a larger mission when additional acceptance criteria remain executable; immediately dispatch or continue the next missing slice.
 
 ## CI policy
 
 1. Distinguish failures introduced by the PR from failures that reproduce on current `main`.
-2. Fix PR-introduced failures.
-3. Do not alter unrelated legacy modules solely to make an unrelated PR green.
-4. For baseline failures, record exact workflow, job, step, file, and reproduction evidence in the PR.
-5. A baseline-failure waiver must be explicit and evidence-based; never label a failure "pre-existing" without checking current `main`.
-6. Do not weaken tests, authentication, review gates, publication safeguards, or provenance requirements.
+2. Distinguish executed code failures from runner non-execution. A job with no runner and zero executed steps is `CI_INFRASTRUCTURE_BLOCKED`, not a repository-code failure and not green validation.
+3. Fix PR-introduced failures.
+4. Do not alter unrelated legacy modules solely to make an unrelated PR green.
+5. For baseline failures, record exact workflow, job, step, file, and reproduction evidence in the PR.
+6. A baseline-failure waiver must be explicit and evidence-based; never label a failure "pre-existing" without checking current `main`.
+7. Do not weaken tests, authentication, review gates, publication safeguards, or provenance requirements.
+8. After three unsuccessful attempts on the same deterministic failure class, stop speculative repair commits and diagnose the exact failing command/output before continuing.
 
 ## Scientific and governance boundaries
 
@@ -75,6 +81,8 @@ A session must never fail silently. A red or timed-out cloud-agent run without a
 - Do not store or expose private chain-of-thought.
 - No direct production database credentials in GitHub.
 - Bounded, resumable, idempotent operations only for production-facing jobs.
+- Generic genus navigation context is not evidence; reject governed arrivals that violate the applicable trust contract rather than silently reinterpreting contaminated scientific/private context.
+- Do not imply a formal NAOCC/Smithsonian partnership unless explicitly confirmed and authorized by the owner.
 
 ## Hassler taxonomy acceptance
 
