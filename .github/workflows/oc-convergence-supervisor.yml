@@ -1,6 +1,8 @@
 name: OC Convergence Supervisor
 
 on:
+  schedule:
+    - cron: '*/5 * * * *'
   push:
     branches: [oc-autonomous-integration]
   workflow_dispatch:
