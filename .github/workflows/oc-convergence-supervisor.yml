@@ -1,12 +1,14 @@
 name: OC Convergence Supervisor
 
 on:
+  schedule:
+    - cron: '*/5 * * * *'
   push:
     branches: [oc-autonomous-integration]
   workflow_dispatch:
   pull_request:
     branches: [oc-autonomous-integration]
-    types: [synchronize, ready_for_review, reopened]
+    types: [opened, synchronize, ready_for_review, reopened]
 
 concurrency:
   group: oc-convergence-supervisor-${{ github.repository }}
