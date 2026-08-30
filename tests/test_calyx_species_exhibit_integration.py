@@ -34,9 +34,9 @@ from urllib.parse import urlparse
 import pytest
 
 psycopg = pytest.importorskip("psycopg")
-from psycopg.rows import dict_row  # noqa: E402
+from psycopg.rows import dict_row
 
-from app.species_exhibit.service import build_species_exhibit  # noqa: E402
+from app.species_exhibit.service import build_species_exhibit
 
 DSN = os.getenv("CALYX_SPECIES_EXHIBIT_TEST_DSN")
 
@@ -118,25 +118,29 @@ DROP TABLE IF EXISTS public.orchid_taxonomy CASCADE;
 
 @pytest.fixture(scope="module")
 def seeded_dsn():
-    with psycopg.connect(DSN, row_factory=dict_row, autocommit=True) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
+    with (
+        psycopg.connect(DSN, row_factory=dict_row, autocommit=True) as conn,
+        conn.cursor() as cur,
+    ):
+        cur.execute(
                 "SELECT to_regclass('public.orchid_taxonomy') AS a, "
                 "to_regclass('public.orchid_images') AS b"
             )
-            existing = cur.fetchone()
-            if existing and (existing["a"] or existing["b"]):
-                pytest.skip(
-                    "canonical orchid tables already exist on target DSN; refusing to "
-                    "seed over a non-disposable database"
-                )
-            cur.execute(_FIXTURE_SQL)
+        existing = cur.fetchone()
+        if existing and (existing["a"] or existing["b"]):
+            pytest.skip(
+                "canonical orchid tables already exist on target DSN; refusing to "
+                "seed over a non-disposable database"
+            )
+        cur.execute(_FIXTURE_SQL)
     try:
         yield DSN
     finally:
-        with psycopg.connect(DSN, autocommit=True) as conn:
-            with conn.cursor() as cur:
-                cur.execute(_TEARDOWN_SQL)
+        with (
+            psycopg.connect(DSN, autocommit=True) as conn,
+            conn.cursor() as cur,
+        ):
+            cur.execute(_TEARDOWN_SQL)
 
 
 def _by_name(result, needle):
