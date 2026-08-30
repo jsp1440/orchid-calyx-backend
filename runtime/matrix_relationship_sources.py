@@ -8,8 +8,8 @@ biological absence.
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import psycopg
@@ -260,9 +260,11 @@ def load_governed_assertions(
     params.append(limit)
     assert_safe_sql(sql)
 
-    with psycopg.connect(database_url, row_factory=dict_row) as connection:
-        with connection.transaction():
-            connection.execute("set transaction read only")
-            rows = connection.execute(sql, params).fetchall()
+    with (
+        psycopg.connect(database_url, row_factory=dict_row) as connection,
+        connection.transaction(),
+    ):
+        connection.execute("set transaction read only")
+        rows = connection.execute(sql, params).fetchall()
 
     return rows_to_assertions(dimension, list(rows))
