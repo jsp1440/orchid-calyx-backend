@@ -90,7 +90,7 @@ jobs:
 
           case "$verdict" in
             pass)
-              gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded >/dev/null 2>&1 || true
+              gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded --remove-label oc-provider-chain-blocked >/dev/null 2>&1 || true
               gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID AUTOMATION CANARY — **PASSED**. Claude Code executed and returned a clean result record. Runtime circuit closed; the next scheduler pulse may recover parked workers. Run: ${RUN_URL}"
               ;;
             fail)

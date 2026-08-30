@@ -387,17 +387,17 @@ jobs:
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude and Gemini were safely unavailable; OpenAI completed without durable changes. Issue returned to bounded repair without opening the global circuit." >/dev/null
           elif [[ "$CLAUDE_FALLBACK" == "true" && "$GEMINI_FALLBACK" != "true" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
-            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was safely unavailable but Gemini failed with non-substitutable classification=${GEMINI_KIND:-unknown}. Failed closed; OpenAI was not attempted." >/dev/null
             gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after Gemini non-substitutable failure on issue #${ISSUE_NUMBER}." >/dev/null
           elif [[ "$GEMINI_FALLBACK" == "true" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
-            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude and Gemini were safely unavailable and OpenAI did not produce durable work (classification=${OPENAI_KIND:-unknown}, outcome=${OPENAI_OUTCOME:-unknown}). All eligible providers exhausted; issue parked without provider thrashing." >/dev/null
             gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after all eligible providers failed on issue #${ISSUE_NUMBER}." >/dev/null
           elif [[ "$CLAUDE_OUTCOME" != "success" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
-            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude failed with non-fallback classification=${CLAUDE_KIND:-unknown}. Failed closed; no provider bypass attempted." >/dev/null
             gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after non-fallback Claude failure on issue #${ISSUE_NUMBER}." >/dev/null
           else
