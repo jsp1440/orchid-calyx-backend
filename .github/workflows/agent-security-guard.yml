@@ -1,0 +1,25 @@
+name: Agent Security Guard
+
+on:
+  pull_request:
+    branches:
+      - main
+      - oc-autonomous-integration
+
+permissions:
+  contents: read
+
+jobs:
+  agent-security-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard agent governance and permission modes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/agent_security_guard.py --base "$BASE_SHA" --head "$HEAD_SHA"
