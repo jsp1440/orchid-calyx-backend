@@ -49,7 +49,7 @@ def main() -> int:
             failures.append({"dimension": dimension, "error_type": type(exc).__name__, "detail": str(exc)[:300]})
             continue
 
-        serialized = json.dumps(matrix, sort_keys=True).lower()
+        serialized = json.dumps(matrix, sort_keys=True, default=str).lower()
         leaked = [token for token in FORBIDDEN if token in serialized]
         if leaked:
             raise AssertionError(f"sensitive locality field leaked for {dimension}: {leaked}")
@@ -101,14 +101,14 @@ def main() -> int:
         "dimension_failures": failures,
     }
     out = Path(os.environ.get("OC_REAL_CANONICAL_PROOF", "real-canonical-matrix-proof.json"))
-    out.write_text(json.dumps(evidence, indent=2, sort_keys=True), encoding="utf-8")
+    out.write_text(json.dumps(evidence, indent=2, sort_keys=True, default=str), encoding="utf-8")
     print(json.dumps({
         "contract": evidence["contract"],
         "genus": GENUS,
         "total_present_cells": total_present,
         "successful_dimensions": [r["dimension"] for r in results if r["present_count"]],
         "failed_dimensions": failures,
-    }, sort_keys=True))
+    }, sort_keys=True, default=str))
     return 0
 
 
