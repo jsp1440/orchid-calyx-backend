@@ -2,12 +2,6 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.calyx_orchestrator.specialist_models import (
-    SpecialistApproval,
-    SpecialistArtifact,
-    SpecialistMission,
-    SpecialistReview,
-)
 from app.calyx_orchestrator.specialist_service import (
     MissionSpec,
     SpecialistMissionRepository,
