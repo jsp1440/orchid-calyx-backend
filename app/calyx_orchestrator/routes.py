@@ -22,6 +22,7 @@ from .service import (
     READ_ONLY_JOB_TYPES,
     CalyxOrchestrator,
 )
+from .specialist_routes import router as specialist_router
 
 router = APIRouter(prefix="/orchestrator", tags=["calyx-orchestrator"])
 
@@ -152,6 +153,7 @@ def requeue_dead_letter(job_id: str, auth: AuthDependency, db: DbDependency) -> 
     return CalyxOrchestrator.job_dict(job)
 
 
+router.include_router(specialist_router)
 router.include_router(program_router)
 router.include_router(autonomy_router)
 router.include_router(portfolio_router)
