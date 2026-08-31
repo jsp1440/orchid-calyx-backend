@@ -4,13 +4,17 @@ This script calls the actual owner-gated canonical-source handler directly on th
 integration code path. DATABASE_URL is read from the existing repository secret.
 The loader itself opens a read-only transaction; this script performs no writes.
 """
+
 from __future__ import annotations
 
 import json
 import os
 from pathlib import Path
 
-from app.routers.matrix_relationship import CanonicalSourceMatrixRequest, build_from_canonical_source
+from app.routers.matrix_relationship import (
+    CanonicalSourceMatrixRequest,
+    build_from_canonical_source,
+)
 
 GENUS = "Phalaenopsis"
 DIMENSIONS = (
@@ -42,23 +46,37 @@ def main() -> int:
     for dimension in DIMENSIONS:
         try:
             matrix = build_from_canonical_source(
-                CanonicalSourceMatrixRequest(dimension=dimension, genus=GENUS, limit=100),
+                CanonicalSourceMatrixRequest(
+                    dimension=dimension,
+                    genus=GENUS,
+                    limit=100,
+                ),
                 _={"convergence_proof": True},
             )
-        except Exception as exc:  # retain exact failing boundary without hiding it
-            failures.append({"dimension": dimension, "error_type": type(exc).__name__, "detail": str(exc)[:300]})
+        except Exception as exc:  # noqa: BLE001 -- receipt must identify each source boundary
+            failures.append(
+                {
+                    "dimension": dimension,
+                    "error_type": type(exc).__name__,
+                    "detail": str(exc)[:300],
+                }
+            )
             continue
 
         serialized = json.dumps(matrix, sort_keys=True, default=str).lower()
         leaked = [token for token in FORBIDDEN if token in serialized]
         if leaked:
-            raise AssertionError(f"sensitive locality field leaked for {dimension}: {leaked}")
+            raise AssertionError(
+                f"sensitive locality field leaked for {dimension}: {leaked}"
+            )
 
         cells = list(matrix.get("cells") or [])
         present = [cell for cell in cells if cell.get("state") == "present"]
         total_present += len(present)
         if any(cell.get("state") == "absent" for cell in cells):
-            raise AssertionError(f"canonical missingness became biological absence for {dimension}")
+            raise AssertionError(
+                f"canonical missingness became biological absence for {dimension}"
+            )
 
         sample = None
         if present:
@@ -100,15 +118,33 @@ def main() -> int:
         "dimensions": results,
         "dimension_failures": failures,
     }
-    out = Path(os.environ.get("OC_REAL_CANONICAL_PROOF", "real-canonical-matrix-proof.json"))
-    out.write_text(json.dumps(evidence, indent=2, sort_keys=True, default=str), encoding="utf-8")
-    print(json.dumps({
-        "contract": evidence["contract"],
-        "genus": GENUS,
-        "total_present_cells": total_present,
-        "successful_dimensions": [r["dimension"] for r in results if r["present_count"]],
-        "failed_dimensions": failures,
-    }, sort_keys=True, default=str))
+    out = Path(
+        os.environ.get(
+            "OC_REAL_CANONICAL_PROOF",
+            "real-canonical-matrix-proof.json",
+        )
+    )
+    out.write_text(
+        json.dumps(evidence, indent=2, sort_keys=True, default=str),
+        encoding="utf-8",
+    )
+    print(
+        json.dumps(
+            {
+                "contract": evidence["contract"],
+                "genus": GENUS,
+                "total_present_cells": total_present,
+                "successful_dimensions": [
+                    result["dimension"]
+                    for result in results
+                    if result["present_count"]
+                ],
+                "failed_dimensions": failures,
+            },
+            sort_keys=True,
+            default=str,
+        )
+    )
     return 0
 
 
