@@ -200,9 +200,16 @@ jobs:
 
           if [[ "$state" == PASSED && "$GITHUB_EVENT_NAME" == issues ]]; then
             gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded --remove-label oc-provider-chain-blocked >/dev/null 2>&1 || true
-            mapfile -t parked < <(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label oc-runtime-backoff --limit 200 --json number --jq '.[].number')
-            for issue in "${parked[@]:-}"; do
-              [[ -n "$issue" ]] || continue
+            mapfile -t parked < <(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label oc-runtime-backoff --limit 200 --json number,labels --jq '.[] | [.number, ([.labels[].name] | join(" "))] | @tsv')
+            for row in "${parked[@]:-}"; do
+              [[ -n "$row" ]] || continue
+              issue=${row%%$'\t'*}
+              labels=${row#*$'\t'}
+              if [[ "$labels" == *oc-repair-backoff* ]]; then
+                gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --remove-label oc-queued --remove-label oc-running --remove-label oc-repair >/dev/null 2>&1 || true
+                gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Provider recovery canary passed via ${provider}, but repair backoff remains authoritative; issue was not returned to the execution queue." >/dev/null 2>&1 || true
+                continue
+              fi
               gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
               gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Provider recovery canary passed via ${provider}. Global breaker cleared; issue returned to bounded repair without weakening acceptance or owner gates." >/dev/null 2>&1 || true
             done

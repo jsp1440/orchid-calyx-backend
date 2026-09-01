@@ -2,10 +2,15 @@ from pathlib import Path  # noqa: I001 -- standalone workflow contract test keep
 
 
 WORKFLOW = Path(".github/workflows/orchid-continuous-completion.yml")
+CANARY_WORKFLOW = Path(".github/workflows/orchid-gemini-runtime-canary.yml")
 
 
 def workflow_text() -> str:
     return WORKFLOW.read_text(encoding="utf-8")
+
+
+def canary_workflow_text() -> str:
+    return CANARY_WORKFLOW.read_text(encoding="utf-8")
 
 
 def section(text: str, start: str, end: str) -> str:
@@ -120,5 +125,23 @@ def test_dispatch_failure_cannot_requeue_concurrent_repair_backoff():
         failure.index("else", failure.index('if [[ "$latest_labels" == *oc-repair-backoff* ]]; then'))
     ]
     assert "--remove-label oc-running" in guarded
+    assert "--remove-label oc-queued" in guarded
+    assert "--add-label oc-queued" not in guarded
+
+
+def test_provider_recovery_canary_never_requeues_repair_backoff():
+    text = canary_workflow_text()
+    recovery = section(
+        text,
+        'if [[ "$state" == PASSED && "$GITHUB_EVENT_NAME" == issues ]]; then',
+        '[[ "$state" == PASSED ]]',
+    )
+    assert "--json number,labels" in recovery
+    assert 'if [[ "$labels" == *oc-repair-backoff* ]]; then' in recovery
+    guarded = recovery[
+        recovery.index('if [[ "$labels" == *oc-repair-backoff* ]]; then') :
+        recovery.index("continue", recovery.index('if [[ "$labels" == *oc-repair-backoff* ]]; then'))
+    ]
+    assert "--remove-label oc-runtime-backoff" in guarded
     assert "--remove-label oc-queued" in guarded
     assert "--add-label oc-queued" not in guarded
