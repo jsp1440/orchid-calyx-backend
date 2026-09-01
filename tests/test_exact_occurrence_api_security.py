@@ -1,43 +1,45 @@
+import asyncio
+
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from api_occurrence_points import require_exact_occurrence_access
+from app.security import create_owner_session_token
 
 
-def test_exact_occurrence_api_is_disabled_by_default(monkeypatch):
-    monkeypatch.delenv("OC_ALLOW_EXACT_OCCURRENCE_API", raising=False)
+def _request(*, authorization: str | None = None) -> Request:
+    headers = []
+    if authorization:
+        headers.append((b"authorization", authorization.encode("utf-8")))
+    return Request({"type": "http", "headers": headers})
+
+
+def test_exact_occurrence_api_accepts_configured_backend_key(monkeypatch):
+    monkeypatch.setenv("CALYX_API_KEY", "expected")
+    result = asyncio.run(require_exact_occurrence_access(_request(), "expected"))
+    assert result["auth_type"] == "api_key"
+
+
+def test_exact_occurrence_api_rejects_wrong_backend_key(monkeypatch):
     monkeypatch.setenv("CALYX_API_KEY", "expected")
     with pytest.raises(HTTPException) as exc:
-        require_exact_occurrence_access("expected")
-    assert exc.value.status_code == 503
-
-
-def test_exact_occurrence_api_requires_configured_api_key(monkeypatch):
-    monkeypatch.setenv(
-        "OC_ALLOW_EXACT_OCCURRENCE_API",
-        "YES_I_UNDERSTAND_THIS_EXPOSES_EXACT_ORCHID_LOCATIONS",
-    )
-    monkeypatch.delenv("CALYX_API_KEY", raising=False)
-    with pytest.raises(HTTPException) as exc:
-        require_exact_occurrence_access("anything")
-    assert exc.value.status_code == 503
-
-
-def test_exact_occurrence_api_rejects_wrong_api_key(monkeypatch):
-    monkeypatch.setenv(
-        "OC_ALLOW_EXACT_OCCURRENCE_API",
-        "YES_I_UNDERSTAND_THIS_EXPOSES_EXACT_ORCHID_LOCATIONS",
-    )
-    monkeypatch.setenv("CALYX_API_KEY", "expected")
-    with pytest.raises(HTTPException) as exc:
-        require_exact_occurrence_access("wrong")
+        asyncio.run(require_exact_occurrence_access(_request(), "wrong"))
     assert exc.value.status_code == 401
 
 
-def test_exact_occurrence_api_requires_both_explicit_enable_and_key(monkeypatch):
-    monkeypatch.setenv(
-        "OC_ALLOW_EXACT_OCCURRENCE_API",
-        "YES_I_UNDERSTAND_THIS_EXPOSES_EXACT_ORCHID_LOCATIONS",
-    )
-    monkeypatch.setenv("CALYX_API_KEY", "expected")
-    assert require_exact_occurrence_access("expected") is None
+def test_exact_occurrence_api_fails_closed_when_no_auth_is_configured(monkeypatch):
+    monkeypatch.delenv("CALYX_API_KEY", raising=False)
+    monkeypatch.delenv("CALYX_OWNER_SESSION_SECRET", raising=False)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(require_exact_occurrence_access(_request(), None))
+    assert exc.value.status_code == 401
+
+
+def test_exact_occurrence_api_accepts_signed_owner_session(monkeypatch):
+    monkeypatch.delenv("CALYX_API_KEY", raising=False)
+    monkeypatch.setenv("CALYX_OWNER_SESSION_SECRET", "test-owner-session-secret")
+    session = create_owner_session_token("owner")
+    request = _request(authorization=f"Bearer {session['token']}")
+    result = asyncio.run(require_exact_occurrence_access(request, None))
+    assert result["actor"] == "owner"
+    assert result["auth_type"] == "owner_session"
