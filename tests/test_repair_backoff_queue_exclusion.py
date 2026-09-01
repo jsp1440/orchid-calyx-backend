@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path  # noqa: I001 -- standalone workflow contract test keeps only stdlib Path
 
 
 WORKFLOW = Path(".github/workflows/orchid-continuous-completion.yml")
