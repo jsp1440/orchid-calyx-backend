@@ -93,6 +93,19 @@ def test_entering_repair_backoff_releases_all_execution_labels():
     assert "--add-label oc-repair-backoff" in parking
 
 
+def test_dispatch_rechecks_repair_backoff_immediately_before_leasing():
+    text = workflow_text()
+    dispatch = section(
+        text,
+        "- name: Dispatch priority-aware portfolio workers",
+        "- name: Maintain integration-to-main owner gate",
+    )
+    state_read = dispatch.index('labels=$(gh issue view "$issue"')
+    backoff_guard = dispatch.index('[[ "$labels" == *oc-repair-backoff* ]] && continue', state_read)
+    lease = dispatch.index('gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-validating --add-label oc-running', state_read)
+    assert state_read < backoff_guard < lease
+
+
 def test_dispatch_failure_cannot_requeue_concurrent_repair_backoff():
     text = workflow_text()
     dispatch = section(
