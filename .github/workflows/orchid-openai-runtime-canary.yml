@@ -1,0 +1,59 @@
+name: Orchid OpenAI Runtime Canary
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe-openai:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      RUNTIME_TRACKER_ISSUE: 1031
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - name: Probe OpenAI authentication and clear stale provider-chain block
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          labels=$(gh issue view "$RUNTIME_TRACKER_ISSUE" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
+          if [[ "$labels" != *oc-provider-chain-blocked* ]]; then
+            echo "Provider chain is not blocked; OpenAI recovery probe not needed."
+            exit 0
+          fi
+
+          if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+            echo "::error::OPENAI_API_KEY is unavailable to this workflow."
+            exit 1
+          fi
+
+          status=$(curl --silent --show-error --output "$RUNNER_TEMP/openai-models.json" \
+            --write-out '%{http_code}' \
+            --connect-timeout 10 --max-time 30 \
+            -H "Authorization: Bearer $OPENAI_API_KEY" \
+            https://api.openai.com/v1/models || true)
+
+          if [[ "$status" != "200" ]]; then
+            echo "::error::OpenAI authentication probe failed with HTTP $status."
+            case "$status" in
+              401) echo "Classification: authentication/key failure" ;;
+              403) echo "Classification: project/permission failure" ;;
+              429) echo "Classification: rate-limit/quota failure" ;;
+              000) echo "Classification: network/transport failure" ;;
+              *) echo "Classification: OpenAI API failure" ;;
+            esac
+            # Intentionally do not print the response body; provider responses may
+            # contain account/project detail and are not required for diagnosis.
+            exit 1
+          fi
+
+          gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$REPO" --remove-label oc-provider-chain-blocked >/dev/null
+          gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$REPO" --body "[OC-AUTO] OpenAI runtime canary authenticated successfully. Cleared stale oc-provider-chain-blocked state; the next scheduler pass may resume governed portfolio dispatch. Canary run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          echo "OpenAI authentication succeeded; stale provider-chain block cleared."
