@@ -29,10 +29,13 @@ async def require_exact_occurrence_access(
     return await verify_owner_or_api_key(request, api_key)
 
 
+exact_occurrence_access = Depends(require_exact_occurrence_access)
+
+
 @app.get("/orchid_points")
 def orchid_points(
     response: Response,
-    _identity: dict[str, object] = Depends(require_exact_occurrence_access),
+    _identity: dict[str, object] = exact_occurrence_access,
 ):
     if not DB:
         raise HTTPException(status_code=503, detail="Database is not configured")
