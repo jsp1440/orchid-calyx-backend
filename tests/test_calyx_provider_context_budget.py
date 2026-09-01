@@ -33,9 +33,9 @@ def test_governed_context_compacts_large_retrieval_objects():
         "epistemic_policy": {"external_literature_requires_review": True},
     }
     compact = compact_governed_context(governed)
-    records = compact["retrieval"]["external_literature"]["results"]
-    assert len(records) == 9
-    assert records[-1]["_additional_items_omitted"] == 12
+    packet = compact["synthesis_packet"]
+    assert packet["contract_version"] == "CALYX-EVIDENCE-SYNTHESIS-002"
+    assert len(packet["evidence_items"]) <= 16
     assert compact["epistemic_policy"]["external_literature_requires_review"] is True
 
 
@@ -47,4 +47,4 @@ def test_model_context_text_has_hard_character_budget():
     }
     text = provider._governed_context_text(governed)
     assert len(text) <= _MAX_CONTEXT_CHARS + 200
-    assert "Governed Calyx context for this turn:" in text
+    assert "Governed Calyx semantic synthesis context for this turn:" in text
