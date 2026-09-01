@@ -264,9 +264,7 @@ class EngineeringMemoryRetrieval(Base):
     """A retrieval event, its results, feedback, and usage telemetry."""
 
     __tablename__ = "engineering_memory_retrievals"
-    __table_args__ = (
-        Index("idx_eng_mem_retrievals_scope", "workspace_scope"),
-    )
+    __table_args__ = (Index("idx_eng_mem_retrievals_scope", "workspace_scope"),)
 
     retrieval_id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=_new_id
@@ -290,9 +288,7 @@ class EngineeringMemoryRetrieval(Base):
 
     # Telemetry.  NULL == unavailable, 0 == measured zero.
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    estimated_tokens_saved: Mapped[int | None] = mapped_column(
-        Integer, nullable=True
-    )
+    estimated_tokens_saved: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow

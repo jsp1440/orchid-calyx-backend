@@ -50,20 +50,29 @@ def _guard(db: Session, fn):
         return result
     except (MemoryValidationError, ProtectedLocalityError) as exc:
         db.rollback()
-        raise HTTPException(status_code=422, detail={"code": "INVALID", "message": str(exc)})
+        raise HTTPException(
+            status_code=422, detail={"code": "INVALID", "message": str(exc)}
+        )
     except ScopeViolationError as exc:
         db.rollback()
-        raise HTTPException(status_code=403, detail={"code": "SCOPE_VIOLATION", "message": str(exc)})
+        raise HTTPException(
+            status_code=403, detail={"code": "SCOPE_VIOLATION", "message": str(exc)}
+        )
     except MemoryNotFoundError as exc:
         db.rollback()
-        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
+        raise HTTPException(
+            status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)}
+        )
 
 
 @router.post("/runs", status_code=201)
 def create_run(body: RunCreateIn, db: Db, _auth: Auth):
     run = _guard(db, lambda: _service.capture_run(db, body.model_dump()))
-    return {"run_id": run.run_id, "redaction_status": run.redaction_status,
-            "evidence_class": run.evidence_class}
+    return {
+        "run_id": run.run_id,
+        "redaction_status": run.redaction_status,
+        "evidence_class": run.evidence_class,
+    }
 
 
 @router.post("/lessons", status_code=201)
@@ -76,7 +85,9 @@ def create_lesson(body: LessonCreateIn, db: Db, _auth: Auth):
 def verify_lesson(lesson_id: str, body: LessonVerifyIn, db: Db, _auth: Auth):
     lesson = _guard(
         db,
-        lambda: _service.verify_lesson(db, lesson_id, body.workspace_scope, body.evidence),
+        lambda: _service.verify_lesson(
+            db, lesson_id, body.workspace_scope, body.evidence
+        ),
     )
     return lesson_to_public_dict(lesson)
 
@@ -85,7 +96,9 @@ def verify_lesson(lesson_id: str, body: LessonVerifyIn, db: Db, _auth: Auth):
 def invalidate_lesson(lesson_id: str, body: LessonInvalidateIn, db: Db, _auth: Auth):
     lesson = _guard(
         db,
-        lambda: _service.invalidate_lesson(db, lesson_id, body.workspace_scope, body.reason),
+        lambda: _service.invalidate_lesson(
+            db, lesson_id, body.workspace_scope, body.reason
+        ),
     )
     return lesson_to_public_dict(lesson)
 
@@ -101,7 +114,11 @@ def retrieve(body: RetrieveIn, db: Db, _auth: Auth):
         "evidence_class": "non_scientific_evidence",
         "disclaimer": NON_SCIENTIFIC_DISCLAIMER,
         "lessons": [
-            {**lesson_to_public_dict(s.lesson), "rank": s.rank, "score": round(s.score, 6)}
+            {
+                **lesson_to_public_dict(s.lesson),
+                "rank": s.rank,
+                "score": round(s.score, 6),
+            }
             for s in result.scored
         ],
     }
@@ -127,4 +144,6 @@ def metrics(workspace_scope: str, db: Db, _auth: Auth):
     try:
         return _service.metrics(db, workspace_scope)
     except MemoryValidationError as exc:
-        raise HTTPException(status_code=422, detail={"code": "INVALID", "message": str(exc)})
+        raise HTTPException(
+            status_code=422, detail={"code": "INVALID", "message": str(exc)}
+        )

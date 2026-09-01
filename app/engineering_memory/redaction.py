@@ -98,9 +98,7 @@ _SECRETY_KEY = re.compile(
 # Examples: "-0.1807, -78.4678", "lat: 4.5709 lon: -74.2973".
 # ---------------------------------------------------------------------------
 
-_COORD_PAIR = re.compile(
-    r"[-+]?\d{1,3}\.\d{3,}\s*[,;/ ]\s*[-+]?\d{1,3}\.\d{3,}"
-)
+_COORD_PAIR = re.compile(r"[-+]?\d{1,3}\.\d{3,}\s*[,;/ ]\s*[-+]?\d{1,3}\.\d{3,}")
 _LABELED_COORD = re.compile(
     r"(?i)\b(?:lat(?:itude)?)\b\s*[:=]?\s*[-+]?\d{1,3}\.\d{3,}"
     r".{0,40}?\b(?:lon(?:gitude)?|lng)\b\s*[:=]?\s*[-+]?\d{1,3}\.\d{3,}"
@@ -126,6 +124,7 @@ def _redact_secrets(text: str) -> tuple[str, list[str]]:
     labels: list[str] = []
     out = text
     for label, pattern in _SECRET_RULES:
+
         def _sub(match: re.Match[str], _label: str = label) -> str:
             labels.append(_label)
             return SECRET_PLACEHOLDER.format(label=_label)
@@ -230,7 +229,9 @@ def redact_payload(
         total_locality += result.locality_count
         all_labels.update(result.secret_labels)
 
-    status = REDACTION_REDACTED if (total_secrets or total_locality) else REDACTION_CLEAN
+    status = (
+        REDACTION_REDACTED if (total_secrets or total_locality) else REDACTION_CLEAN
+    )
     report = {
         "status": status,
         "secret_count": total_secrets,

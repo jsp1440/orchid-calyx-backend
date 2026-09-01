@@ -79,10 +79,22 @@ SEED_LESSONS: tuple[SeedLesson, ...] = (
 )
 
 EVAL_TASKS: tuple[EvalTask, ...] = (
-    EvalTask("t1", "the test suite fails because the fastapi module is missing", "fastapi_ci"),
-    EvalTask("t2", "too many database connections, pool ran out during heavy traffic", "pool_exhausted"),
-    EvalTask("t3", "rollback fails with a foreign key error deleting memory tables", "migration_order"),
-    EvalTask("t4", "sqlite does not understand the jsonb type during tests", "jsonb_sqlite"),
+    EvalTask(
+        "t1", "the test suite fails because the fastapi module is missing", "fastapi_ci"
+    ),
+    EvalTask(
+        "t2",
+        "too many database connections, pool ran out during heavy traffic",
+        "pool_exhausted",
+    ),
+    EvalTask(
+        "t3",
+        "rollback fails with a foreign key error deleting memory tables",
+        "migration_order",
+    ),
+    EvalTask(
+        "t4", "sqlite does not understand the jsonb type during tests", "jsonb_sqlite"
+    ),
 )
 
 SCOPE = "eval/engineering-memory"
@@ -174,7 +186,9 @@ def run_evaluation(
             "enabled": {
                 "memory_enabled": True,
                 "relevance_hit_rate": round(enabled_hits / n, 4) if n else None,
-                "mean_reciprocal_rank": round(sum(reciprocal_ranks) / n, 4) if n else None,
+                "mean_reciprocal_rank": round(sum(reciprocal_ranks) / n, 4)
+                if n
+                else None,
                 "successful_completion": True,
                 "elapsed_ms": enabled_elapsed_ms,
             },

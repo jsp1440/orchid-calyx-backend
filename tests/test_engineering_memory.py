@@ -137,9 +137,7 @@ def test_lesson_requires_provenance():
     db, _ = _session()
     svc = _svc()
     with pytest.raises(MemoryValidationError):
-        svc.create_lesson(
-            db, _lesson_payload(github_provenance={}, source_run_id=None)
-        )
+        svc.create_lesson(db, _lesson_payload(github_provenance={}, source_run_id=None))
 
 
 def test_engineering_memory_cannot_be_relabeled_as_scientific():
@@ -179,7 +177,12 @@ def test_scope_isolation_prevents_cross_repository_retrieval():
         ),
     )
     result = svc.retrieve(
-        db, {"workspace_scope": "tenant/b", "repository": REPO, "query": "alpha special token"}
+        db,
+        {
+            "workspace_scope": "tenant/b",
+            "repository": REPO,
+            "query": "alpha special token",
+        },
     )
     assert result.scored == []
 
@@ -394,7 +397,9 @@ def test_end_to_end_vertical_slice():
             tags=["ci", "pytest", "dependencies"],
         ),
     )
-    svc.verify_lesson(db, lesson.lesson_id, SCOPE, {"ci_run": "green", "commit": "abc123"})
+    svc.verify_lesson(
+        db, lesson.lesson_id, SCOPE, {"ci_run": "green", "commit": "abc123"}
+    )
 
     # 3. Retrieve from a semantically related, differently-phrased task.
     result = svc.retrieve(

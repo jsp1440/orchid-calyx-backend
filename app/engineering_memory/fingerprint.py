@@ -29,7 +29,9 @@ def dependency_fingerprint(dependencies: Mapping[str, str] | None) -> str | None
 
     if not dependencies:
         return None
-    normalized = {str(k).strip().lower(): str(v).strip() for k, v in dependencies.items()}
+    normalized = {
+        str(k).strip().lower(): str(v).strip() for k, v in dependencies.items()
+    }
     return _stable_hash(normalized)
 
 

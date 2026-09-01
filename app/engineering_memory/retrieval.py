@@ -76,7 +76,7 @@ class _Corpus:
     avg_len: float = 0.0
 
     @classmethod
-    def build(cls, documents: list[str]) -> "_Corpus":
+    def build(cls, documents: list[str]) -> _Corpus:
         docs = [tokenize(d) for d in documents]
         df: Counter = Counter()
         for tokens in docs:
@@ -123,7 +123,9 @@ def rank_lessons(
     """
 
     query_terms = tokenize(query)
-    corpus = _Corpus.build([getattr(les, "lexical_document", "") or "" for les in lessons])
+    corpus = _Corpus.build(
+        [getattr(les, "lexical_document", "") or "" for les in lessons]
+    )
 
     scored: list[ScoredLesson] = []
     for idx, lesson in enumerate(lessons):

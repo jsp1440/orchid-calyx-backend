@@ -268,7 +268,10 @@ class EngineeringMemoryService:
         tags = [redact_text(t).text for t in tags]
 
         assert_no_residual_secret(
-            fields["problem"], fields["cause"], fields["solution"], fields["applicability"]
+            fields["problem"],
+            fields["cause"],
+            fields["solution"],
+            fields["applicability"],
         )
 
         lexical_document = self._build_lexical_document(
@@ -300,7 +303,9 @@ class EngineeringMemoryService:
             status=LESSON_CANDIDATE,
             verification_status="unverified",
             confidence=(payload.get("confidence") or "low"),
-            dependency_fingerprint=fp.dependency_fingerprint(payload.get("dependencies")),
+            dependency_fingerprint=fp.dependency_fingerprint(
+                payload.get("dependencies")
+            ),
             schema_fingerprint=fp.schema_fingerprint(payload.get("schema_marker")),
             file_fingerprints=fp.file_fingerprints(payload.get("files")),
             data_classification=classification,
@@ -510,7 +515,10 @@ class EngineeringMemoryService:
         outcome = payload.get("outcome")
         retrieval.feedback_outcome = dict(outcome) if outcome else None
         # NULL stays NULL (unavailable) unless a value is explicitly supplied.
-        if "estimated_tokens_saved" in payload and payload["estimated_tokens_saved"] is not None:
+        if (
+            "estimated_tokens_saved" in payload
+            and payload["estimated_tokens_saved"] is not None
+        ):
             retrieval.estimated_tokens_saved = int(payload["estimated_tokens_saved"])
         db.flush()
         return retrieval
