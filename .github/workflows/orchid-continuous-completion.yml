@@ -108,13 +108,17 @@ jobs:
         run: |
           set -euo pipefail
           now=$(date -u +%s)
-          mapfile -t running < <(gh issue list --repo "$REPO" --state open --label oc-running --limit 100 --json number,updatedAt --jq '.[] | "\(.number) \(.updatedAt)"')
+          mapfile -t running < <(gh issue list --repo "$REPO" --state open --label oc-running --limit 100 --json number,updatedAt,labels --jq '.[] | [.number, .updatedAt, ([.labels[].name] | join(" "))] | @tsv')
           for row in "${running[@]:-}"; do
             [[ -n "$row" ]] || continue
-            issue=${row%% *}
-            updated=${row#* }
+            IFS=$'\t' read -r issue updated labels <<<"$row"
             epoch=$(date -u -d "$updated" +%s 2>/dev/null || echo "$now")
             if (( now - epoch <= 4800 )); then
+              continue
+            fi
+            if [[ "$labels" == *oc-repair-backoff* ]]; then
+              gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair >/dev/null 2>&1 || true
+              gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Stale lease released while repair backoff remains authoritative; issue was not requeued." >/dev/null 2>&1 || true
               continue
             fi
             marker="OC-AUTO-ISSUE: #${issue}"
@@ -142,6 +146,7 @@ jobs:
             [[ -n "$issue" ]] || continue
             labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
             [[ "$labels" == *oc-running* ]] && continue
+            [[ "$labels" == *oc-repair-backoff* ]] && continue
             gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-runtime-backoff --add-label oc-validating >/dev/null 2>&1 || true
 
             head=$(jq -r '.headRefName' <<<"$data")
@@ -154,7 +159,12 @@ jobs:
             fi
             [[ "$result" == completed* ]] || continue
             if [[ "$result" != "completed success" ]]; then
-              gh issue edit "$issue" --repo "$REPO" --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+              latest_labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
+              if [[ "$latest_labels" == *oc-repair-backoff* ]]; then
+                gh issue edit "$issue" --repo "$REPO" --remove-label oc-validating --remove-label oc-running --remove-label oc-queued --remove-label oc-repair >/dev/null 2>&1 || true
+              else
+                gh issue edit "$issue" --repo "$REPO" --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+              fi
               continue
             fi
 
@@ -164,7 +174,12 @@ jobs:
               continue
             fi
             if [[ "$merge_state" == "DIRTY" ]]; then
-              gh issue edit "$issue" --repo "$REPO" --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+              latest_labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
+              if [[ "$latest_labels" == *oc-repair-backoff* ]]; then
+                gh issue edit "$issue" --repo "$REPO" --remove-label oc-validating --remove-label oc-running --remove-label oc-queued --remove-label oc-repair >/dev/null 2>&1 || true
+              else
+                gh issue edit "$issue" --repo "$REPO" --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+              fi
               continue
             fi
             if [[ $(jq -r '.isDraft' <<<"$data") == "true" ]]; then
@@ -180,7 +195,8 @@ jobs:
               if [[ "$blocked" == true ]]; then
                 gh issue edit "$issue" --repo "$REPO" --add-label oc-blocked >/dev/null 2>&1 || true
               elif [[ "$requeue" == true ]]; then
-                gh issue edit "$issue" --repo "$REPO" --add-label oc-queued >/dev/null 2>&1 || true
+                latest_labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
+                [[ "$latest_labels" == *oc-repair-backoff* ]] || gh issue edit "$issue" --repo "$REPO" --add-label oc-queued >/dev/null 2>&1 || true
               else
                 gh issue edit "$issue" --repo "$REPO" --add-label oc-done >/dev/null 2>&1 || true
                 gh issue close "$issue" --repo "$REPO" --comment "[OC-AUTO] Validated slice integrated into $INTEGRATION_BRANCH. Protected main/production decisions remain governed." >/dev/null 2>&1 || true
@@ -204,6 +220,7 @@ jobs:
             [[ -n "$labels" ]] || continue
             [[ "$labels" == *oc-running* ]] && continue
             [[ "$labels" == *oc-repair* ]] && continue
+            [[ "$labels" == *oc-repair-backoff* ]] && continue
             if [[ "$labels" == *oc-queued* || "$labels" != *oc-validating* ]]; then
               gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-runtime-backoff --add-label oc-validating >/dev/null 2>&1 || true
               gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Reconciled stale queue state to durable integration PR #$pr; duplicate worker dispatch suppressed." >/dev/null 2>&1 || true
@@ -251,6 +268,20 @@ jobs:
             gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-repair >/dev/null 2>&1 || true
           done
 
+          # Repair backoff is a hard non-executable state. Strip every execution
+          # lease/authorization before any healer can make the issue selectable.
+          mapfile -t backed_off < <(
+            {
+              gh issue list --repo "$REPO" --state open --label oc-repair-backoff --label oc-queued --limit 200 --json number --jq '.[].number'
+              gh issue list --repo "$REPO" --state open --label oc-repair-backoff --label oc-running --limit 200 --json number --jq '.[].number'
+              gh issue list --repo "$REPO" --state open --label oc-repair-backoff --label oc-repair --limit 200 --json number --jq '.[].number'
+            } | sort -u
+          )
+          for issue in "${backed_off[@]:-}"; do
+            [[ -n "$issue" ]] || continue
+            gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-running --remove-label oc-repair >/dev/null 2>&1 || true
+          done
+
           # oc-repair is a positive one-pass authorization and must never become a
           # terminal state by itself. Heal every orphaned repair back to selectable
           # queue state, without spending a request per repair.
@@ -259,7 +290,7 @@ jobs:
             [[ -n "$row" ]] || continue
             issue=${row%%$'\t'*}
             labels=${row#*$'\t'}
-            if [[ "$labels" == *oc-repair* && "$labels" != *oc-running* && "$labels" != *oc-queued* && "$labels" != *oc-runtime-backoff* ]]; then
+            if [[ "$labels" == *oc-repair* && "$labels" != *oc-running* && "$labels" != *oc-queued* && "$labels" != *oc-runtime-backoff* && "$labels" != *oc-repair-backoff* ]]; then
               gh issue edit "$issue" --repo "$REPO" --remove-label oc-validating --add-label oc-queued >/dev/null 2>&1 || true
             fi
           done
@@ -284,9 +315,16 @@ jobs:
             exit 0
           fi
 
-          mapfile -t parked < <(gh issue list --repo "$REPO" --state open --label oc-runtime-backoff --limit 200 --json number --jq '.[].number')
-          for issue in "${parked[@]:-}"; do
-            [[ -n "$issue" ]] || continue
+          mapfile -t parked < <(gh issue list --repo "$REPO" --state open --label oc-runtime-backoff --limit 200 --json number,labels --jq '.[] | [.number, ([.labels[].name] | join(" "))] | @tsv')
+          for row in "${parked[@]:-}"; do
+            [[ -n "$row" ]] || continue
+            issue=${row%%$'\t'*}
+            labels=${row#*$'\t'}
+            if [[ "$labels" == *oc-repair-backoff* ]]; then
+              gh issue edit "$issue" --repo "$REPO" --remove-label oc-runtime-backoff --remove-label oc-queued --remove-label oc-running --remove-label oc-repair >/dev/null 2>&1 || true
+              gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Runtime backoff cleared, but repair backoff remains authoritative; issue was not returned to the execution queue." >/dev/null 2>&1 || true
+              continue
+            fi
             gh issue edit "$issue" --repo "$REPO" --remove-label oc-runtime-backoff --add-label oc-queued >/dev/null 2>&1 || true
             gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Claude runtime canary is healthy again. Runtime backoff cleared and issue returned to the priority portfolio." >/dev/null 2>&1 || true
           done
@@ -360,7 +398,7 @@ jobs:
             if [[ "$repair" == true ]]; then
               attempts=$(gh api --paginate "repos/$REPO/issues/$issue/comments?per_page=100" --jq '[.[] | select(.body | contains("[OC-AUTO] BOUNDED_REPAIR_ATTEMPT"))] | length' | awk '{total += $1} END {print total + 0}')
               if (( attempts >= MAX_REPAIR_ATTEMPTS )); then
-                gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-repair --add-label oc-repair-backoff >/dev/null 2>&1 || true
+                gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair --add-label oc-repair-backoff >/dev/null 2>&1 || true
                 gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Bounded repair limit (${MAX_REPAIR_ATTEMPTS}) reached. Parked without retry thrash until a material code, provider, or CI-infrastructure change." >/dev/null 2>&1 || true
                 continue
               fi
@@ -379,7 +417,12 @@ jobs:
               fi
               gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Priority-aware scheduler dispatched completion worker. Active-width ceiling: ${MAX_ACTIVE_LANES}. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
             else
-              gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
+              latest_labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
+              if [[ "$latest_labels" == *oc-repair-backoff* ]]; then
+                gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair >/dev/null 2>&1 || true
+              else
+                gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
+              fi
             fi
           done
           if (( ${#dispatched[@]} > 0 )); then
