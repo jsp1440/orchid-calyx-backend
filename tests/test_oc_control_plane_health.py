@@ -21,6 +21,15 @@ def test_executed_failure_is_kept_separate_from_infrastructure_failure():
     assert result["state"] == "CODE_OR_CHECK_FAILURE"
 
 
+def test_in_progress_run_is_unknown_not_fabricated_code_failure():
+    # A queued/in-progress run has no failure evidence yet; classifying it as a
+    # code failure would fabricate production status on every active pulse.
+    for status in ("queued", "in_progress"):
+        result = classify_ci([{"id": 45, "status": status, "conclusion": None, "jobs": []}])
+        assert result["state"] == UNKNOWN
+        assert result["run_id"] == 45
+
+
 def test_unknown_values_are_not_fabricated_as_zero():
     health = build_health({"issues": []})
     assert health["stale_lease_count"] == UNKNOWN

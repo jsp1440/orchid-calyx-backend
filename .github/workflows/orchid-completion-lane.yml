@@ -292,10 +292,11 @@ jobs:
           )
 
           set +e
+          npx -y @openai/codex@0.151.0 --version 2>> "$RUNNER_TEMP/openai-stderr.log"
           env -u GH_TOKEN OPENAI_API_KEY="$OPENAI_API_KEY" timeout 35m \
-            npx -y @openai/codex@latest --ask-for-approval never exec \
+            npx -y @openai/codex@0.151.0 --ask-for-approval never exec \
             --sandbox workspace-write --skip-git-repo-check --ephemeral -C "$GITHUB_WORKSPACE" "$prompt" \
-            > "$RUNNER_TEMP/openai-stdout.log" 2> "$RUNNER_TEMP/openai-stderr.log"
+            > "$RUNNER_TEMP/openai-stdout.log" 2>> "$RUNNER_TEMP/openai-stderr.log"
           status=$?
           set -e
           echo "$status" > "$RUNNER_TEMP/openai-exit.txt"
@@ -334,19 +335,40 @@ jobs:
         run: |
           set -euo pipefail
           kind=healthy
+          stderr_log="$RUNNER_TEMP/openai-stderr.log"
+          exit_code="$(cat "$RUNNER_TEMP/openai-exit.txt" 2>/dev/null || true)"
           if [[ "$OPENAI_OUTCOME" != "success" ]]; then
             if [[ -f "$RUNNER_TEMP/openai-status.txt" ]] && grep -q 'config_missing' "$RUNNER_TEMP/openai-status.txt"; then
               kind=config
-            elif grep -Eqi '401|403|unauthor|forbidden|invalid.?api.?key|authentication|permission' "$RUNNER_TEMP/openai-stderr.log" "$RUNNER_TEMP/openai-stdout.log" 2>/dev/null; then
+            elif grep -Eqi '(^|[^0-9])(401|403)([^0-9]|$)|unauthori[sz]ed|invalid.?api.?key|authentication (failed|required)|missing scopes?:|insufficient permissions.*operation' "$stderr_log" 2>/dev/null; then
               kind=security
-            elif grep -Eqi '429|quota|rate.?limit|billing|credit|overloaded|service unavailable|temporarily unavailable|timeout|timed out|connection' "$RUNNER_TEMP/openai-stderr.log" "$RUNNER_TEMP/openai-stdout.log" 2>/dev/null || [[ "$(cat "$RUNNER_TEMP/openai-exit.txt" 2>/dev/null || true)" == "124" ]]; then
+            elif grep -Eqi '429|quota|rate.?limit|billing|credit|overloaded|service unavailable|temporarily unavailable|timeout|timed out|connection|websocket.*(reset|closed|failed)' "$stderr_log" 2>/dev/null || [[ "$exit_code" == "124" ]]; then
               kind=safe_provider
+            elif grep -Eqi 'unknown (argument|option)|unexpected argument|unrecognized option|usage:|config.*(invalid|error)|failed to (load|parse).*config|permission denied|operation not permitted|sandbox.*(denied|permission)|workspace.*trust' "$stderr_log" 2>/dev/null; then
+              kind=runtime_config
             else
               kind=unknown
             fi
           fi
           echo "kind=$kind" >> "$GITHUB_OUTPUT"
-          echo "OpenAI classification: kind=$kind"
+          echo "OpenAI classification: kind=$kind exit=${exit_code:-unknown}"
+
+          if [[ "$OPENAI_OUTCOME" != "success" && -f "$stderr_log" ]]; then
+            {
+              echo "### OpenAI fallback diagnostic"
+              echo
+              echo "classification: \`$kind\`"
+              echo "exit: \`${exit_code:-unknown}\`"
+              echo
+              echo '```text'
+              tail -c 4000 "$stderr_log" \
+                | sed -E \
+                    -e 's/sk-[A-Za-z0-9_-]{16,}/[REDACTED_OPENAI_KEY]/g' \
+                    -e 's/(Authorization:[[:space:]]*Bearer)[[:space:]]+[^[:space:]]+/\1 [REDACTED]/Ig' \
+                    -e 's/(OPENAI_API_KEY=)[^[:space:]]+/\1[REDACTED]/g'
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Classify result, dispatch validation, release slot
         if: always() && steps.lease.outputs.execute == 'true'
