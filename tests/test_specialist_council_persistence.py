@@ -2,6 +2,12 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from app.calyx_orchestrator.specialist_models import (
+    SpecialistApproval,
+    SpecialistArtifact,
+    SpecialistMission,
+    SpecialistReview,
+)
 from app.calyx_orchestrator.specialist_service import (
     MissionSpec,
     SpecialistMissionRepository,
@@ -9,11 +15,18 @@ from app.calyx_orchestrator.specialist_service import (
 )
 from app.database import Base
 
+TABLES = (
+    SpecialistMission.__table__,
+    SpecialistArtifact.__table__,
+    SpecialistReview.__table__,
+    SpecialistApproval.__table__,
+)
+
 
 @pytest.fixture()
 def db():
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(engine, tables=TABLES)
     with Session(engine) as session:
         yield session
 
@@ -132,7 +145,12 @@ def test_budget_excess_fails_closed_without_charging_mission(db):
 def test_publication_requires_independent_review_and_owner_approval(db):
     mission = create_publication_mission(db)
     repository = SpecialistMissionRepository(db)
-    assert repository.snapshot(owner="owner", mission_id=mission.mission_id)["promotion"]["eligible"] is False
+    assert (
+        repository.snapshot(owner="owner", mission_id=mission.mission_id)["promotion"][
+            "eligible"
+        ]
+        is False
+    )
 
     with pytest.raises(ValueError, match="INDEPENDENT_SCIENTIFIC_REVIEWER_REQUIRED"):
         repository.record_review(
@@ -154,7 +172,12 @@ def test_publication_requires_independent_review_and_owner_approval(db):
         findings={"blockers": []},
         provenance={"reviewed_artifact_keys": ["evidence-1"]},
     )
-    assert repository.snapshot(owner="owner", mission_id=mission.mission_id)["promotion"]["eligible"] is False
+    assert (
+        repository.snapshot(owner="owner", mission_id=mission.mission_id)["promotion"][
+            "eligible"
+        ]
+        is False
+    )
 
     with pytest.raises(PermissionError, match="OWNER_APPROVAL_ACTOR_MISMATCH"):
         repository.record_approval(
@@ -174,7 +197,9 @@ def test_publication_requires_independent_review_and_owner_approval(db):
         decision="approved",
         note="Reviewed for promotion.",
     )
-    promotion = repository.snapshot(owner="owner", mission_id=mission.mission_id)["promotion"]
+    promotion = repository.snapshot(owner="owner", mission_id=mission.mission_id)[
+        "promotion"
+    ]
     assert promotion == {
         "eligible": True,
         "automatic_publication": False,
@@ -186,4 +211,6 @@ def test_publication_requires_independent_review_and_owner_approval(db):
 def test_owner_isolation_hides_missions(db):
     mission = create_publication_mission(db)
     with pytest.raises(LookupError, match="SPECIALIST_MISSION_NOT_FOUND"):
-        SpecialistMissionRepository(db).snapshot(owner="different-owner", mission_id=mission.mission_id)
+        SpecialistMissionRepository(db).snapshot(
+            owner="different-owner", mission_id=mission.mission_id
+        )
