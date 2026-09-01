@@ -18,7 +18,7 @@ jobs:
     env:
       PYTHONPATH: .
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      FRONTEND_SHA: 7b781cf3916b412502b4654e4bff0937ca6d3738
+      FRONTEND_SHA: 986e7c630050851d497ddb3c8745d64ce26e80ef
     steps:
       - name: Checkout exact backend head
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
