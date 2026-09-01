@@ -26,7 +26,12 @@ repo's actual schema and harvester conventions:
     ``collectionCode`` / ``catalogNumber`` so a consumer (e.g. GBIF's own
     ingestion review) can trace each exported record back to the harvester
     run that produced it, consistent with this repo's provenance-first
-    conventions.
+    conventions;
+  * exact decimal coordinates are omitted by default. Exporting exact
+    coordinates requires both an explicit function argument and a high-
+    friction server/operator acknowledgement. This is defense-in-depth for
+    legacy/public-harvester export paths and is not a substitute for record-
+    level policy and database RLS on future partner-restricted datasets.
 
 Bounded by design: ``limit`` defaults to a finite cap so this cannot become
 an unbounded full-table export by accident.
@@ -38,14 +43,16 @@ import csv
 import logging
 import os
 import zipfile
+from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Any, Iterable, Optional
+from typing import Any
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("darwin_core_export")
 
 DEFAULT_EXPORT_LIMIT = 20_000
 UNKNOWN_LICENSE_MARKER = "UNKNOWN_LICENSE_SEE_SOURCE"
+EXACT_COORDINATE_EXPORT_ACK = "YES_I_UNDERSTAND_THIS_EXPORTS_EXACT_ORCHID_LOCATIONS"
 
 
 # harvesters.gbif_api raises at import time when DATABASE_URL is unset (see
@@ -55,17 +62,32 @@ UNKNOWN_LICENSE_MARKER = "UNKNOWN_LICENSE_SEE_SOURCE"
 # lazily, only once a DB call is actually made.
 def _get_conn():
     from harvesters.gbif_api import get_conn
+
     return get_conn()
 
 
 def _table_exists(conn, name: str, schema: str = "public") -> bool:
     from harvesters.gbif_api import table_exists
+
     return table_exists(conn, name, schema)
 
 
 def _get_columns(conn, name: str, schema: str = "public") -> list[str]:
     from harvesters.gbif_api import get_columns
+
     return get_columns(conn, name, schema)
+
+
+def _require_exact_coordinate_export() -> None:
+    """Require deliberate operator acknowledgement before exact-site export."""
+
+    if os.getenv("OC_ALLOW_EXACT_DWC_EXPORT") != EXACT_COORDINATE_EXPORT_ACK:
+        raise PermissionError(
+            "Exact Darwin Core coordinates are disabled by security policy. "
+            "Use the default redacted export unless exact locality disclosure "
+            "has been separately authorized."
+        )
+
 
 DWC_FIELDS = [
     "occurrenceID",
@@ -140,16 +162,16 @@ def _fetch_merged_rows(conn, limit: int) -> list[dict[str, Any]]:
             SELECT
                 COALESCE(o.source, i.source) AS source,
                 COALESCE(o.source_id, i.source_id) AS source_id,
-                COALESCE({occ('scientific_name')}, {img('scientific_name')}) AS scientific_name,
-                COALESCE({occ('genus')}, {img('genus')}) AS genus,
-                COALESCE({occ('species')}, {img('species')}) AS species,
-                {occ('taxon_rank')} AS taxon_rank,
-                {img('country')} AS country,
-                {img('latitude')} AS latitude,
-                {img('longitude')} AS longitude,
-                {img('photographer')} AS photographer,
-                {img('license')} AS license,
-                {img('url')} AS url
+                COALESCE({occ("scientific_name")}, {img("scientific_name")}) AS scientific_name,
+                COALESCE({occ("genus")}, {img("genus")}) AS genus,
+                COALESCE({occ("species")}, {img("species")}) AS species,
+                {occ("taxon_rank")} AS taxon_rank,
+                {img("country")} AS country,
+                {img("latitude")} AS latitude,
+                {img("longitude")} AS longitude,
+                {img("photographer")} AS photographer,
+                {img("license")} AS license,
+                {img("url")} AS url
             FROM public.occurrences o
             FULL OUTER JOIN public.images i
                 ON i.source = o.source AND i.source_id = o.source_id
@@ -160,10 +182,10 @@ def _fetch_merged_rows(conn, limit: int) -> list[dict[str, Any]]:
             SELECT
                 o.source AS source,
                 o.source_id AS source_id,
-                {occ('scientific_name')} AS scientific_name,
-                {occ('genus')} AS genus,
-                {occ('species')} AS species,
-                {occ('taxon_rank')} AS taxon_rank,
+                {occ("scientific_name")} AS scientific_name,
+                {occ("genus")} AS genus,
+                {occ("species")} AS species,
+                {occ("taxon_rank")} AS taxon_rank,
                 NULL AS country, NULL AS latitude, NULL AS longitude,
                 NULL AS photographer, NULL AS license, NULL AS url
             FROM public.occurrences o
@@ -174,16 +196,16 @@ def _fetch_merged_rows(conn, limit: int) -> list[dict[str, Any]]:
             SELECT
                 i.source AS source,
                 i.source_id AS source_id,
-                {img('scientific_name')} AS scientific_name,
-                {img('genus')} AS genus,
-                {img('species')} AS species,
+                {img("scientific_name")} AS scientific_name,
+                {img("genus")} AS genus,
+                {img("species")} AS species,
                 NULL AS taxon_rank,
-                {img('country')} AS country,
-                {img('latitude')} AS latitude,
-                {img('longitude')} AS longitude,
-                {img('photographer')} AS photographer,
-                {img('license')} AS license,
-                {img('url')} AS url
+                {img("country")} AS country,
+                {img("latitude")} AS latitude,
+                {img("longitude")} AS longitude,
+                {img("photographer")} AS photographer,
+                {img("license")} AS license,
+                {img("url")} AS url
             FROM public.images i
             LIMIT %s
         """
@@ -195,14 +217,21 @@ def _fetch_merged_rows(conn, limit: int) -> list[dict[str, Any]]:
     return rows
 
 
-def to_dwc_record(row: dict[str, Any], *, institution_code: str, dataset_name: str) -> dict[str, str]:
+def to_dwc_record(
+    row: dict[str, Any],
+    *,
+    institution_code: str,
+    dataset_name: str,
+    include_exact_coordinates: bool = False,
+) -> dict[str, str]:
     """Map one merged occurrence/image row to a Darwin Core Occurrence record.
 
     License is preserved verbatim from the source row -- GBIF and
     iNaturalist both supply a per-record license -- and only falls back to
-    ``UNKNOWN_LICENSE_MARKER`` when the harvested row genuinely has none, so
-    downstream consumers can tell "known permissive license" apart from
-    "license was never captured" instead of one field silently meaning both.
+    ``UNKNOWN_LICENSE_MARKER`` when the harvested row genuinely has none.
+
+    Exact coordinates are intentionally omitted unless the caller asks for
+    them and the process has the explicit exact-locality acknowledgement.
     """
     source = (row.get("source") or "").strip()
     source_id = str(row.get("source_id") or "").strip()
@@ -213,17 +242,27 @@ def to_dwc_record(row: dict[str, Any], *, institution_code: str, dataset_name: s
     lon = row.get("longitude")
     license_value = (row.get("license") or "").strip() or UNKNOWN_LICENSE_MARKER
 
+    if include_exact_coordinates:
+        _require_exact_coordinate_export()
+        latitude = "" if lat is None else str(lat)
+        longitude = "" if lon is None else str(lon)
+    else:
+        latitude = ""
+        longitude = ""
+
     return {
         "occurrenceID": f"{source}:{source_id}" if source and source_id else "",
-        "basisOfRecord": "HumanObservation" if source == "inaturalist" else "Occurrence",
+        "basisOfRecord": "HumanObservation"
+        if source == "inaturalist"
+        else "Occurrence",
         "scientificName": scientific_name,
         "taxonRank": (row.get("taxon_rank") or "").strip(),
         "kingdom": "Plantae",
         "family": "Orchidaceae",
         "genus": genus,
         "specificEpithet": species,
-        "decimalLatitude": "" if lat is None else str(lat),
-        "decimalLongitude": "" if lon is None else str(lon),
+        "decimalLatitude": latitude,
+        "decimalLongitude": longitude,
         "country": (row.get("country") or "").strip(),
         "locality": "",
         "recordedBy": (row.get("photographer") or "").strip(),
@@ -252,7 +291,9 @@ def write_occurrence_txt(records: Iterable[dict[str, str]], output_file: str) ->
 def build_meta_xml() -> str:
     field_lines = []
     for index, field in enumerate(DWC_FIELDS):
-        field_lines.append(f'    <field index="{index + 1}" term="{_term_uri(field)}"/>')
+        field_lines.append(
+            f'    <field index="{index + 1}" term="{_term_uri(field)}"/>'
+        )
     fields_xml = "\n".join(field_lines)
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <archive xmlns="http://rs.tdwg.org/dwc/text/" metadata="eml.xml">
@@ -266,27 +307,38 @@ def build_meta_xml() -> str:
 </archive>"""
 
 
-def build_eml_xml(*, dataset_name: str, contact_org: str, contact_email: str, record_count: int) -> str:
+def build_eml_xml(
+    *,
+    dataset_name: str,
+    contact_org: str,
+    contact_email: str,
+    record_count: int,
+    exact_coordinates_included: bool = False,
+) -> str:
     now = datetime.now(timezone.utc)
+    location_statement = (
+        "Exact decimal coordinates are included under explicit locality-disclosure authorization."
+        if exact_coordinates_included
+        else "Exact decimal coordinates are omitted by the exporter security default."
+    )
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <eml:eml xmlns:eml="eml://ecoinformatics.org/eml-2.1.1"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="eml://ecoinformatics.org/eml-2.1.1 http://rs.gbif.org/schema/eml-gbif-profile/1.1/eml.xsd"
-         packageId="orchid-continuum-calyx-{now.strftime('%Y%m%d%H%M%S')}" system="Orchid Continuum / Calyx">
+         packageId="orchid-continuum-calyx-{now.strftime("%Y%m%d%H%M%S")}" system="Orchid Continuum / Calyx">
   <dataset>
     <title>{dataset_name}</title>
     <creator>
       <organizationName>{contact_org}</organizationName>
       <electronicMailAddress>{contact_email}</electronicMailAddress>
     </creator>
-    <pubDate>{now.strftime('%Y-%m-%d')}</pubDate>
+    <pubDate>{now.strftime("%Y-%m-%d")}</pubDate>
     <language>en</language>
     <abstract>
       <para>Darwin Core occurrence export of {record_count} record(s) harvested by the Orchid
       Continuum's governed GBIF and iNaturalist harvesters (BUILD-093). Each record retains
-      its original source and per-record license; this export republishes nothing beyond what
-      the upstream source already made available and preserves collectionCode/catalogNumber
-      for traceability back to the originating harvester run.</para>
+      its original source and per-record license and preserves collectionCode/catalogNumber
+      for traceability back to the originating harvester run. {location_statement}</para>
     </abstract>
     <keywordSet>
       <keyword>Orchidaceae</keyword>
@@ -321,10 +373,11 @@ def export_to_dwc_archive(
     output_dir: str = "dwc_export",
     *,
     limit: int = DEFAULT_EXPORT_LIMIT,
-    institution_code: Optional[str] = None,
-    dataset_name: Optional[str] = None,
-    contact_org: Optional[str] = None,
-    contact_email: Optional[str] = None,
+    institution_code: str | None = None,
+    dataset_name: str | None = None,
+    contact_org: str | None = None,
+    contact_email: str | None = None,
+    include_exact_coordinates: bool = False,
     conn=None,
 ) -> dict[str, Any]:
     """Export harvested occurrence/image data to a Darwin Core Archive zip.
@@ -332,13 +385,26 @@ def export_to_dwc_archive(
     Read-only against ``public.occurrences`` / ``public.images``; makes no
     external API calls and performs no writes. ``limit`` bounds the export
     (default 20,000 rows) so a single call cannot become an unbounded dump.
+
+    Exact coordinates are omitted by default. Opting in requires both
+    ``include_exact_coordinates=True`` and the explicit environment
+    acknowledgement enforced by ``_require_exact_coordinate_export``.
     """
-    institution_code = institution_code or os.environ.get("DWC_INSTITUTION_CODE", "FCOS")
+    if include_exact_coordinates:
+        _require_exact_coordinate_export()
+
+    institution_code = institution_code or os.environ.get(
+        "DWC_INSTITUTION_CODE", "FCOS"
+    )
     dataset_name = dataset_name or os.environ.get(
         "DWC_DATASET_NAME", "Orchid Continuum Harvested Occurrence Index"
     )
-    contact_org = contact_org or os.environ.get("DWC_CONTACT_ORG", "Five Cities Orchid Society")
-    contact_email = contact_email or os.environ.get("DWC_CONTACT_EMAIL", "info@fivecitiescalifornia.org")
+    contact_org = contact_org or os.environ.get(
+        "DWC_CONTACT_ORG", "Five Cities Orchid Society"
+    )
+    contact_email = contact_email or os.environ.get(
+        "DWC_CONTACT_EMAIL", "info@fivecitiescalifornia.org"
+    )
 
     owns_conn = conn is None
     conn = conn or _get_conn()
@@ -349,7 +415,12 @@ def export_to_dwc_archive(
             conn.close()
 
     records = [
-        to_dwc_record(row, institution_code=institution_code, dataset_name=dataset_name)
+        to_dwc_record(
+            row,
+            institution_code=institution_code,
+            dataset_name=dataset_name,
+            include_exact_coordinates=include_exact_coordinates,
+        )
         for row in rows
         if row.get("source") and row.get("source_id")
     ]
@@ -362,18 +433,31 @@ def export_to_dwc_archive(
         f.write(build_meta_xml())
 
     with open(os.path.join(output_dir, "eml.xml"), "w", encoding="utf-8") as f:
-        f.write(build_eml_xml(
-            dataset_name=dataset_name,
-            contact_org=contact_org,
-            contact_email=contact_email,
-            record_count=written,
-        ))
+        f.write(
+            build_eml_xml(
+                dataset_name=dataset_name,
+                contact_org=contact_org,
+                contact_email=contact_email,
+                record_count=written,
+                exact_coordinates_included=include_exact_coordinates,
+            )
+        )
 
     archive_file = os.path.join(output_dir, "orchid_continuum_dwc_archive.zip")
     create_zip_archive(output_dir, archive_file)
 
-    logger.info("Darwin Core Archive exported: %s records -> %s", written, archive_file)
-    return {"record_count": written, "archive_file": archive_file, "output_dir": output_dir}
+    logger.info(
+        "Darwin Core Archive exported: %s records -> %s (exact_coordinates=%s)",
+        written,
+        archive_file,
+        include_exact_coordinates,
+    )
+    return {
+        "record_count": written,
+        "archive_file": archive_file,
+        "output_dir": output_dir,
+        "exact_coordinates_included": include_exact_coordinates,
+    }
 
 
 if __name__ == "__main__":
