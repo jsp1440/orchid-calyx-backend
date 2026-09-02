@@ -245,6 +245,10 @@ jobs:
               kind=config
             elif grep -Eqi '401|403|unauthor|forbidden|invalid.?api.?key|authentication|permission' "$RUNNER_TEMP/gemini-stderr.log" "$RUNNER_TEMP/gemini-result.json" 2>/dev/null; then
               kind=security
+              # Preserve the hard Gemini credential finding, but do not turn one
+              # provider's configuration failure into a product-wide outage.
+              # OpenAI/Codex has its own authentication and security classifier.
+              fallback=true
             elif grep -Eqi '429|quota|rate.?limit|billing|credit|overloaded|service unavailable|temporarily unavailable|timeout|timed out|connection' "$RUNNER_TEMP/gemini-stderr.log" "$RUNNER_TEMP/gemini-result.json" 2>/dev/null; then
               kind=safe_provider
               fallback=true
@@ -311,7 +315,7 @@ jobs:
             git commit -m "feat(auto): OpenAI fallback slice for #${ISSUE_NUMBER}"
             git push origin "HEAD:$branch"
             body=$(cat <<EOF
-          Governed OpenAI second-fallback slice after safe Claude and Gemini provider failures.
+          Governed OpenAI fallback slice after Claude unavailability and a terminal Gemini classification.
 
           Provider: OpenAI fallback
           Claude classification: ${{ steps.claude_provider.outputs.kind }}
@@ -417,7 +421,7 @@ jobs:
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was safely unavailable; Gemini completed without durable changes. Issue returned to bounded repair without opening the global circuit." >/dev/null
           elif [[ "$GEMINI_FALLBACK" == "true" && "$OPENAI_OUTCOME" == "success" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude and Gemini were safely unavailable; OpenAI completed without durable changes. Issue returned to bounded repair without opening the global circuit." >/dev/null
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was unavailable and Gemini ended with classification=${GEMINI_KIND:-unknown}; independently authorized OpenAI completed without durable changes. The Gemini credential/security finding remains visible, while the issue returned to bounded repair without opening the global circuit." >/dev/null
           elif [[ "$CLAUDE_FALLBACK" == "true" && "$GEMINI_FALLBACK" != "true" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
             gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
@@ -426,7 +430,7 @@ jobs:
           elif [[ "$GEMINI_FALLBACK" == "true" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
             gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude and Gemini were safely unavailable and OpenAI did not produce durable work (classification=${OPENAI_KIND:-unknown}, outcome=${OPENAI_OUTCOME:-unknown}). All eligible providers exhausted; issue parked without provider thrashing." >/dev/null
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was unavailable, Gemini ended with classification=${GEMINI_KIND:-unknown}, and independently authorized OpenAI did not produce durable work (classification=${OPENAI_KIND:-unknown}, outcome=${OPENAI_OUTCOME:-unknown}). All eligible providers exhausted; issue parked without provider thrashing." >/dev/null
             gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after all eligible providers failed on issue #${ISSUE_NUMBER}." >/dev/null
           elif [[ "$CLAUDE_OUTCOME" != "success" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
