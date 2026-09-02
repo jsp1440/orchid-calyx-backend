@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 WORKFLOW = Path(".github/workflows/calyx-mvp-staging-readiness.yml")
+PRODUCTION_HOST = "orchid-calyx-backend.onrender.com"
 
 
 def source() -> str:
@@ -20,17 +21,32 @@ def test_staging_readiness_is_manual_and_staging_scoped():
 
 def test_staging_readiness_rejects_the_canonical_production_backend():
     text = source()
-    assert '[[ "$CALYX_STAGING_BACKEND_URL" != *"orchid-calyx-backend.onrender.com"* ]]' in text
+    rejection = (
+        '[[ "$CALYX_STAGING_BACKEND_URL" != *'
+        f'"{PRODUCTION_HOST}"* ]]'
+    )
+    assert rejection in text
     assert "Production backend URL is forbidden" in text
 
 
 def test_staging_readiness_is_read_only_and_submits_no_provider_turn():
     text = source()
     assert "/api/scientific-interpretation/synthesis/health" in text
-    assert "/api/mission-control/taxonomy/hassler-release-status" in text
+    taxonomy_status = (
+        "/api/mission-control/taxonomy/hassler-release-status"
+    )
+    assert taxonomy_status in text
     assert "/api/calyx/speak/conversations" not in text
-    assert "activate" not in text.lower().replace("no taxonomy activation", "")
-    assert "publish" not in text.lower().replace("no knowledge graph publication", "")
+
+    without_boundary_receipts = text.lower().replace(
+        "no taxonomy activation",
+        "",
+    ).replace(
+        "no knowledge graph publication",
+        "",
+    )
+    assert "activate" not in without_boundary_receipts
+    assert "publish" not in without_boundary_receipts
     assert "paid_calyx_turn_submitted: false" in text
     assert "mutation_performed: false" in text
 
