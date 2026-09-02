@@ -13,6 +13,12 @@ Oasis research discovery, Calyx recall, and Research Station project scope.
 4. Calyx recalls a structured packet in which those classes remain separate.
 5. Review, rejection, invalidation, and correction are append-only decisions.
 
+Calyx Speak performs project-scoped recall through this service and receives
+the same separated packet. A recall failure contributes no scientific-memory
+context; it never converts conversation history into evidence. Owner sessions
+remain owner-scoped, while backend API-key access follows the existing
+privileged Research Station project-access contract.
+
 The MVP accepts only open-access, explicitly authorized, user-provided, or
 metadata-only source material. It does not fetch or store arbitrary publisher
 PDFs and does not infer that API access grants redistribution rights.
