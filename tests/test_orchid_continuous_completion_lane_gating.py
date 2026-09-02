@@ -220,7 +220,11 @@ def test_validation_dispatch_outage_does_not_requeue_claude(lane_text):
 def test_red_validation_authorizes_bounded_repair(scheduler_text):
     red = 'if [[ "$result" != "completed success" ]]; then'
     start = scheduler_text.index(red)
-    assert "--add-label oc-queued --add-label oc-repair" in scheduler_text[start : start + 500]
+    end = scheduler_text.index("merge_state=", start)
+    repair_branch = scheduler_text[start:end]
+    assert 'if [[ "$latest_labels" == *oc-repair-backoff* ]]; then' in repair_branch
+    assert "--remove-label oc-queued --remove-label oc-repair" in repair_branch
+    assert "--add-label oc-queued --add-label oc-repair" in repair_branch
 
 
 def test_durable_pr_suppression_exempts_explicit_repair(scheduler_text):
