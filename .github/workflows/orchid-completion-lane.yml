@@ -45,7 +45,10 @@ jobs:
         run: |
           set -euo pipefail
           labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(" ")' 2>/dev/null || true)
-          if [[ "$labels" == *oc-running* ]]; then
+          if [[ "$labels" == *oc-repair-backoff* ]]; then
+            echo "execute=false" >> "$GITHUB_OUTPUT"
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair --remove-label oc-validating >/dev/null 2>&1 || true
+          elif [[ "$labels" == *oc-running* ]]; then
             echo "execute=true" >> "$GITHUB_OUTPUT"
           else
             echo "execute=false" >> "$GITHUB_OUTPUT"
@@ -387,6 +390,12 @@ jobs:
           marker="OC-AUTO-ISSUE: #${ISSUE_NUMBER}"
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq "[.[] | select(.body != null and (.body | contains(\"$marker\")))][0].number // empty")
           gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running >/dev/null 2>&1 || true
+
+          latest_labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
+          if [[ "$latest_labels" == *oc-repair-backoff* ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair --remove-label oc-validating >/dev/null 2>&1 || true
+            exit 0
+          fi
 
           if [[ -n "$pr" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --remove-label oc-blocked --remove-label oc-runtime-backoff --add-label oc-validating >/dev/null 2>&1 || true
