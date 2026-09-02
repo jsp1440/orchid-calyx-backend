@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.calyx_flywheel.locality import (
@@ -41,15 +42,17 @@ class ScientificMemoryService:
         except ValueError as exc:
             raise ScientificMemoryError(code, 404) from exc
 
-    def _project(self, db: Session, project_id: str, owner: str) -> Project:
+    def _project(
+        self, db: Session, project_id: str, owner: str, privileged: bool = False
+    ) -> Project:
         identifier = self._uuid(project_id, "PROJECT_NOT_FOUND")
-        project = db.scalar(
-            select(Project).where(
-                Project.project_id == identifier,
-                Project.owner_subject == owner,
-                Project.archived_at.is_(None),
-            )
+        statement = select(Project).where(
+            Project.project_id == identifier,
+            Project.archived_at.is_(None),
         )
+        if not privileged:
+            statement = statement.where(Project.owner_subject == owner)
+        project = db.scalar(statement)
         if project is None:
             raise ScientificMemoryError("PROJECT_NOT_FOUND", 404)
         return project
@@ -89,9 +92,14 @@ class ScientificMemoryService:
         }
 
     def create_capture(
-        self, db: Session, project_id: str, owner: str, payload: CaptureCreate
+        self,
+        db: Session,
+        project_id: str,
+        owner: str,
+        payload: CaptureCreate,
+        privileged: bool = False,
     ) -> dict[str, Any]:
-        project = self._project(db, project_id, owner)
+        project = self._project(db, project_id, owner, privileged)
         try:
             assert_no_sensitive_locality(payload.filters, path="capture.filters")
             for index, body in enumerate(payload.items):
@@ -112,49 +120,68 @@ class ScientificMemoryService:
             )
         )
         if existing is not None:
-            result = self.capture(db, project_id, owner, existing.capture_id)
+            result = self.capture(
+                db, project_id, owner, existing.capture_id, privileged
+            )
             result["idempotent_replay"] = True
             return result
 
-        search_name = payload.name
-        duplicate_name = db.scalar(
-            select(SavedSearch).where(
-                SavedSearch.project_id == project.project_id,
-                func.lower(SavedSearch.name) == search_name.lower(),
-                SavedSearch.archived_at.is_(None),
+        try:
+            with db.begin_nested():
+                search_name = payload.name
+                duplicate_name = db.scalar(
+                    select(SavedSearch).where(
+                        SavedSearch.project_id == project.project_id,
+                        func.lower(SavedSearch.name) == search_name.lower(),
+                        SavedSearch.archived_at.is_(None),
+                    )
+                )
+                if duplicate_name is not None:
+                    search_name = f"{search_name[:151]} [{fingerprint[:6]}]"
+                saved_search = SavedSearch(
+                    project_id=project.project_id,
+                    owner_subject=owner,
+                    name=search_name,
+                    query_json={
+                        "contract_version": CONTRACT_VERSION,
+                        "origin": payload.origin,
+                        "query": payload.query,
+                        "filters": payload.filters,
+                    },
+                    result_count_snapshot=payload.result_count_snapshot,
+                )
+                db.add(saved_search)
+                db.flush()
+                capture = ScientificMemoryCapture(
+                    project_id=project.project_id,
+                    saved_search_id=saved_search.saved_search_id,
+                    owner_subject=owner,
+                    origin=payload.origin,
+                    conversation_id=payload.conversation_id,
+                    query_text=payload.query,
+                    fingerprint=fingerprint,
+                )
+                db.add(capture)
+                db.flush()
+                for body in payload.items:
+                    self._add_item(db, capture, body)
+                db.flush()
+        except IntegrityError:
+            existing = db.scalar(
+                select(ScientificMemoryCapture).where(
+                    ScientificMemoryCapture.project_id == project.project_id,
+                    ScientificMemoryCapture.fingerprint == fingerprint,
+                )
             )
-        )
-        if duplicate_name is not None:
-            search_name = f"{search_name[:151]} [{fingerprint[:6]}]"
-        saved_search = SavedSearch(
-            project_id=project.project_id,
-            owner_subject=owner,
-            name=search_name,
-            query_json={
-                "contract_version": CONTRACT_VERSION,
-                "origin": payload.origin,
-                "query": payload.query,
-                "filters": payload.filters,
-            },
-            result_count_snapshot=payload.result_count_snapshot,
-        )
-        db.add(saved_search)
-        db.flush()
-        capture = ScientificMemoryCapture(
-            project_id=project.project_id,
-            saved_search_id=saved_search.saved_search_id,
-            owner_subject=owner,
-            origin=payload.origin,
-            conversation_id=payload.conversation_id,
-            query_text=payload.query,
-            fingerprint=fingerprint,
-        )
-        db.add(capture)
-        db.flush()
-        for body in payload.items:
-            self._add_item(db, capture, body)
-        db.flush()
-        result = self.capture(db, project_id, owner, capture.capture_id)
+            if existing is None:
+                raise
+            result = self.capture(
+                db, project_id, owner, existing.capture_id, privileged
+            )
+            result["idempotent_replay"] = True
+            return result
+
+        result = self.capture(db, project_id, owner, capture.capture_id, privileged)
         result["idempotent_replay"] = False
         return result
 
@@ -201,9 +228,14 @@ class ScientificMemoryService:
         return item
 
     def capture(
-        self, db: Session, project_id: str, owner: str, capture_id: str
+        self,
+        db: Session,
+        project_id: str,
+        owner: str,
+        capture_id: str,
+        privileged: bool = False,
     ) -> dict[str, Any]:
-        project = self._project(db, project_id, owner)
+        project = self._project(db, project_id, owner, privileged)
         identifier = self._uuid(capture_id, "SCIENTIFIC_MEMORY_CAPTURE_NOT_FOUND")
         capture = db.scalar(
             select(ScientificMemoryCapture).where(
@@ -213,7 +245,9 @@ class ScientificMemoryService:
         )
         if capture is None:
             raise ScientificMemoryError("SCIENTIFIC_MEMORY_CAPTURE_NOT_FOUND", 404)
-        packet = self.recall(db, project_id, owner, capture_id=identifier)
+        packet = self.recall(
+            db, project_id, owner, capture_id=identifier, privileged=privileged
+        )
         return {
             "contract_version": CONTRACT_VERSION,
             "capture_id": capture.capture_id,
@@ -266,8 +300,9 @@ class ScientificMemoryService:
         query: str | None = None,
         capture_id: str | None = None,
         limit: int = 100,
+        privileged: bool = False,
     ) -> dict[str, Any]:
-        project = self._project(db, project_id, owner)
+        project = self._project(db, project_id, owner, privileged)
         statement = select(ScientificMemoryItem).where(
             ScientificMemoryItem.project_id == project.project_id
         )
@@ -346,8 +381,9 @@ class ScientificMemoryService:
         owner: str,
         item_id: str,
         payload: DecisionCreate,
+        privileged: bool = False,
     ) -> dict[str, Any]:
-        project = self._project(db, project_id, owner)
+        project = self._project(db, project_id, owner, privileged)
         item = self._item(db, project.project_id, item_id)
         replacement = None
         if payload.replacement_item_id:

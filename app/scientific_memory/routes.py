@@ -25,6 +25,10 @@ def _subject(auth: dict[str, Any]) -> str:
     return actor
 
 
+def _privileged(auth: dict[str, Any]) -> bool:
+    return auth.get("auth_type") == "api_key"
+
+
 def _invoke(db: Session, operation: Callable[[], object]):
     try:
         result = operation()
@@ -37,11 +41,11 @@ def _invoke(db: Session, operation: Callable[[], object]):
 
 @router.post("/{project_id}/scientific-memory/captures", status_code=201)
 def create_capture(project_id: str, payload: CaptureCreate, auth: Auth, db: Db):
-    actor = _subject(auth)
+    actor, privileged = _subject(auth), _privileged(auth)
     return _invoke(
         db,
         lambda: ScientificMemoryService().create_capture(
-            db, project_id, actor, payload
+            db, project_id, actor, payload, privileged
         ),
     )
 
@@ -54,11 +58,11 @@ def recall_memory(
     query: str | None = Query(default=None, max_length=500),
     limit: int = Query(default=100, ge=1, le=500),
 ):
-    actor = _subject(auth)
+    actor, privileged = _subject(auth), _privileged(auth)
     return _invoke(
         db,
         lambda: ScientificMemoryService().recall(
-            db, project_id, actor, query=query, limit=limit
+            db, project_id, actor, query=query, limit=limit, privileged=privileged
         ),
     )
 
@@ -69,10 +73,10 @@ def recall_memory(
 def record_decision(
     project_id: str, item_id: str, payload: DecisionCreate, auth: Auth, db: Db
 ):
-    actor = _subject(auth)
+    actor, privileged = _subject(auth), _privileged(auth)
     return _invoke(
         db,
         lambda: ScientificMemoryService().record_decision(
-            db, project_id, actor, item_id, payload
+            db, project_id, actor, item_id, payload, privileged
         ),
     )

@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.calyx_conversation.evidence_synthesis import provider_context
+from app.calyx_conversation.speak_routes import _scientific_memory_context
 from app.database import Base
 from app.research_workspace.models import Project, SavedSearch
 from app.scientific_memory.models import (
@@ -131,6 +132,48 @@ def test_capture_is_idempotent_and_does_not_duplicate_saved_search(db):
     assert len(db.scalars(select(SavedSearch)).all()) == 1
 
 
+def test_capture_reloads_existing_record_after_atomic_conflict(db, monkeypatch):
+    workspace = project(db)
+    service = ScientificMemoryService()
+    first = service.create_capture(
+        db, workspace.project_id, "owner-a", capture_payload()
+    )
+    db.commit()
+    original_scalar = db.scalar
+    capture_lookups = 0
+
+    def race_scalar(statement, *args, **kwargs):
+        nonlocal capture_lookups
+        if ScientificMemoryCapture.__table__ in statement.get_final_froms():
+            capture_lookups += 1
+            if capture_lookups == 1:
+                return None
+        return original_scalar(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db, "scalar", race_scalar)
+    replay = service.create_capture(
+        db, workspace.project_id, "owner-a", capture_payload()
+    )
+
+    assert replay["capture_id"] == first["capture_id"]
+    assert replay["idempotent_replay"] is True
+    assert len(db.scalars(select(SavedSearch)).all()) == 1
+
+
+def test_speak_recall_context_uses_owner_scoped_project_memory(db):
+    workspace = project(db)
+    service = ScientificMemoryService()
+    service.create_capture(db, workspace.project_id, "owner-a", capture_payload())
+    db.commit()
+
+    recalled = _scientific_memory_context(
+        db, workspace.project_id, "owner-a", privileged=False
+    )
+
+    assert recalled["project_id"] == workspace.project_id
+    assert len(recalled["calyx_context"]["source_evidence"]) == 1
+
+
 def test_exact_source_anchor_is_required_for_source_evidence():
     payload = capture_payload().model_dump()
     payload["items"][0]["source"]["locator"] = {}
@@ -144,6 +187,25 @@ def test_owner_scope_is_fail_closed(db):
         ScientificMemoryService().create_capture(
             db, workspace.project_id, "owner-b", capture_payload()
         )
+
+
+def test_api_key_privilege_can_access_project_scoped_memory(db):
+    workspace = project(db)
+    service = ScientificMemoryService()
+
+    created = service.create_capture(
+        db,
+        workspace.project_id,
+        "backend_api_key",
+        capture_payload(),
+        privileged=True,
+    )
+    db.commit()
+
+    recalled = service.recall(
+        db, workspace.project_id, "backend_api_key", privileged=True
+    )
+    assert recalled["items"][0]["capture_id"] == created["capture_id"]
 
 
 def test_structured_protected_locality_fails_closed(db):
