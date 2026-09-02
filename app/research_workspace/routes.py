@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.routers.health import add_mission_control_cors_headers
+from app.scientific_memory.routes import router as scientific_memory_router
 from app.security import verify_owner_or_api_key
 
 from .models import ProjectDocument, ProjectEvidence, ProjectTaxon
@@ -328,3 +329,6 @@ def activity(
             project_id, actor, limit, offset, privileged
         ),
     )
+
+
+router.include_router(scientific_memory_router)
