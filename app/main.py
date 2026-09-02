@@ -46,7 +46,6 @@ from app.reasoning_ledger.routes import (
 from app.reasoning_publication.routes import router as reasoning_publication_router
 from app.review_api.routes import router as review_api_router
 from app.engineering_memory.routes import router as engineering_memory_router
-from app.scientific_memory.routes import router as scientific_memory_router
 from app.vision_lexicon.routes import router as vision_lexicon_router
 from app.atlas_intelligence.api import router as atlas_intelligence_router
 from app.mission_control_briefing.routes import router as mission_control_briefing_router
@@ -557,7 +556,6 @@ app.include_router(reasoning_ledger_project_router)
 app.include_router(reasoning_publication_router)
 app.include_router(review_api_router)
 app.include_router(engineering_memory_router)
-app.include_router(scientific_memory_router)
 app.include_router(vision_lexicon_router)
 app.include_router(atlas_intelligence_router)
 app.include_router(mission_control_briefing_router)

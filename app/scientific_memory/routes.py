@@ -7,17 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.routers.health import add_mission_control_cors_headers
 from app.security import verify_owner_or_api_key
 
 from .schemas import CaptureCreate, DecisionCreate
 from .service import ScientificMemoryError, ScientificMemoryService
 
-router = APIRouter(
-    prefix="/api/research/projects",
-    tags=["scientific-memory"],
-    dependencies=[Depends(add_mission_control_cors_headers)],
-)
+router = APIRouter(tags=["scientific-memory"])
 
 Db = Annotated[Session, Depends(get_db)]
 Auth = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
