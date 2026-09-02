@@ -20,6 +20,10 @@ from app.knowledge_publication import (
 )
 
 
+def test_agent_007_autonomous_repair_certification():
+    assert False, "CALYX-AGENT-007_CERTIFICATION_EXPECTED_FAILURE"
+
+
 def test_readiness_contract_is_structured_immutable_and_fail_closed():
     finding = ReadinessFinding(
         "provenance", "MISSING", ReadinessSeverity.CRITICAL, "quarantine", 1
