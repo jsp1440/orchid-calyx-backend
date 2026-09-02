@@ -35,7 +35,14 @@ def test_governed_context_compacts_large_retrieval_objects():
     compact = compact_governed_context(governed)
     packet = compact["synthesis_packet"]
     assert packet["contract_version"] == "CALYX-EVIDENCE-SYNTHESIS-002"
-    assert len(packet["evidence_items"]) <= 16
+    evidence_items = packet["evidence_items"]
+    assert any(
+        item.get("source_family") == "external_literature"
+        for item in evidence_items
+        if isinstance(item, dict)
+    )
+    assert evidence_items[-1]["_additional_items_omitted"] > 0
+    assert len(evidence_items) <= 17
     assert compact["epistemic_policy"]["external_literature_requires_review"] is True
 
 
