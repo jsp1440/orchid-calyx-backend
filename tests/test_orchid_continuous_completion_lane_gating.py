@@ -306,6 +306,18 @@ def test_runtime_backoff_is_excluded_from_selection(scheduler_text):
     assert '[[ "$labels" == *oc-runtime-backoff* ]] && continue' in dispatch
 
 
+def test_gemini_security_failure_remains_classified_but_does_not_block_codex(lane_text):
+    classifier = lane_text[
+        lane_text.index("- name: Classify Gemini terminal state")
+        : lane_text.index("- name: Execute bounded OpenAI fallback")
+    ]
+    security = classifier[classifier.index("kind=security") : classifier.index("kind=safe_provider")]
+    assert "fallback=true" in security
+    assert "kind=security" in security
+    assert "if: steps.gemini_provider.outputs.fallback_allowed == 'true'" in lane_text
+    assert "independently authorized OpenAI" in lane_text
+
+
 def test_state_is_reread_immediately_before_dispatch(scheduler_text):
     dispatch = scheduler_text[scheduler_text.index("name: Dispatch priority-aware portfolio workers") :]
     assert '[[ "$labels" == *oc-queued* ]] || continue' in dispatch
