@@ -117,6 +117,11 @@ jobs:
             if (( now - epoch <= 4800 )); then
               continue
             fi
+            current_labels=$(gh issue view "$issue" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
+            if [[ "$current_labels" == *oc-repair-backoff* ]]; then
+              gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair --remove-label oc-validating >/dev/null 2>&1 || true
+              continue
+            fi
             marker="OC-AUTO-ISSUE: #${issue}"
             durable=$(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq "[.[] | select(.body != null and (.body | contains(\"$marker\")))][0].number // empty")
             gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --remove-label oc-repair >/dev/null 2>&1 || true
@@ -251,6 +256,20 @@ jobs:
             gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-repair >/dev/null 2>&1 || true
           done
 
+          # Repair backoff is a hard non-executable state. Remove every stale
+          # execution label before the orphan-repair healer can requeue it.
+          mapfile -t backed_off < <(
+            {
+              gh issue list --repo "$REPO" --state open --label oc-repair-backoff --label oc-queued --limit 200 --json number --jq '.[].number'
+              gh issue list --repo "$REPO" --state open --label oc-repair-backoff --label oc-running --limit 200 --json number --jq '.[].number'
+              gh issue list --repo "$REPO" --state open --label oc-repair-backoff --label oc-repair --limit 200 --json number --jq '.[].number'
+            } | sort -u
+          )
+          for issue in "${backed_off[@]:-}"; do
+            [[ -n "$issue" ]] || continue
+            gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-running --remove-label oc-repair --remove-label oc-validating >/dev/null 2>&1 || true
+          done
+
           # oc-repair is a positive one-pass authorization and must never become a
           # terminal state by itself. Heal every orphaned repair back to selectable
           # queue state, without spending a request per repair.
@@ -259,7 +278,7 @@ jobs:
             [[ -n "$row" ]] || continue
             issue=${row%%$'\t'*}
             labels=${row#*$'\t'}
-            if [[ "$labels" == *oc-repair* && "$labels" != *oc-running* && "$labels" != *oc-queued* && "$labels" != *oc-runtime-backoff* ]]; then
+            if [[ "$labels" == *oc-repair* && "$labels" != *oc-running* && "$labels" != *oc-queued* && "$labels" != *oc-runtime-backoff* && "$labels" != *oc-repair-backoff* ]]; then
               gh issue edit "$issue" --repo "$REPO" --remove-label oc-validating --add-label oc-queued >/dev/null 2>&1 || true
             fi
           done
@@ -284,9 +303,259 @@ jobs:
             exit 0
           fi
 
-          mapfile -t parked < <(gh issue list --repo "$REPO" --state open --label oc-runtime-backoff --limit 200 --json number --jq '.[].number')
-          for issue in "${parked[@]:-}"; do
+          mapfile -t parked < <(gh issue list --repo "$REPO" --state open --label oc-runtime-backoff --limit 200 --json number,labels --jq '.[] | [.number, ([.labels[].name] | join(" "))] | @tsv')
+          for row in "${parked[@]:-}"; do
+            [[ -n "$row" ]] || continue
+            issue=${row%%
+            gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Claude runtime canary is healthy again. Runtime backoff cleared and issue returned to the priority portfolio." >/dev/null 2>&1 || true
+          done
+          echo "paused=false" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch priority-aware portfolio workers
+        if: steps.runtime.outputs.paused != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          running_count=$(gh issue list --repo "$REPO" --state open --label oc-running --limit 200 --json number --jq 'length')
+          capacity=$(( MAX_ACTIVE_LANES - running_count ))
+          if (( capacity <= 0 )); then
+            echo "All ${MAX_ACTIVE_LANES} implementation lanes are occupied."
+            exit 0
+          fi
+
+          #
+          # Fail closed, never red: without the planner there is no authoritative
+          # ranking, so this cycle dispatches nothing rather than guessing.
+          if [[ ! -f "$PLANNER" ]]; then
+            echo "::warning::$PLANNER absent from this checkout; no worker dispatched this cycle."
+            exit 0
+          fi
+
+          # Ranking, durable-PR suppression, reserved repair capacity, bounded
+          # fairness and P5 idle admission are decided by one deterministic
+          # planner, so the policy is provable by unit test rather than by
+          # grepping bash: tests/test_oc_portfolio_scheduler.py.
+          issues=$(gh issue list --repo "$REPO" --state open --limit 500 --json number,title,labels,createdAt)
+          prs=$(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body)
+          jq -n --argjson issues "$issues" --argjson prs "$prs" --argjson max "$MAX_ACTIVE_LANES" --argjson stabilization "$STABILIZATION_ISSUE" \
+            '{max_active_lanes: $max, stabilization_issue: $stabilization, issues: $issues, pull_requests: $prs}' > "$RUNNER_TEMP/oc-plan-input.json"
+          python3 "$PLANNER" \
+            --input "$RUNNER_TEMP/oc-plan-input.json" --mode plan > "$RUNNER_TEMP/oc-plan.json"
+
+          # Read-only status surface: active width, queue order with priority and
+          # its source, wait time, and why each selection was made.
+          {
+            jq -r '"active_width=\(.active_lane_count)/\(.max_active_lanes) available=\(.available_capacity) eligible=\(.eligible_count)"' "$RUNNER_TEMP/oc-plan.json"
+            echo '### queue order'
+            jq -r '.ranking[] | "  P\(.priority) #\(.number) [\(.priority_source)] waited=\(.waited_hours)h"' "$RUNNER_TEMP/oc-plan.json"
+            echo '### selected'
+            jq -r '.selected[] | "  #\(.number) P\(.priority) via \(.selection_reason)"' "$RUNNER_TEMP/oc-plan.json"
+            echo '### suppressed'
+            jq -r '.suppressed[] | "  #\(.number) \(.reason)"' "$RUNNER_TEMP/oc-plan.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Durable integration PR lineage suppresses ordinary dispatch.
+          while read -r issue; do
             [[ -n "$issue" ]] || continue
+            gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --add-label oc-validating >/dev/null 2>&1 || true
+          done < <(jq -r '.suppressed[] | select(.reason == "durable-pr") | .number' "$RUNNER_TEMP/oc-plan.json")
+
+          mapfile -t selected < <(jq -r '.selected[].number' "$RUNNER_TEMP/oc-plan.json")
+
+          dispatched=()
+          for issue in "${selected[@]:-}"; do
+            [[ -n "$issue" ]] || continue
+            labels=$(gh issue view "$issue" --repo "$REPO" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(" ")' 2>/dev/null || true)
+            [[ "$labels" == *oc-queued* ]] || continue
+            [[ "$labels" == *oc-running* ]] && continue
+            [[ "$labels" == *oc-validating* ]] && continue
+            [[ "$labels" == *oc-blocked* ]] && continue
+            [[ "$labels" == *oc-owner-gate* ]] && continue
+            [[ "$labels" == *oc-done* ]] && continue
+            [[ "$labels" == *oc-runtime-backoff* ]] && continue
+            [[ "$labels" == *oc-repair-backoff* ]] && continue
+            repair=false
+            [[ "$labels" == *oc-repair* ]] && repair=true
+            if [[ "$repair" == true ]]; then
+              attempts=$(gh api --paginate "repos/$REPO/issues/$issue/comments?per_page=100" --jq '[.[] | select(.body | contains("[OC-AUTO] BOUNDED_REPAIR_ATTEMPT"))] | length' | awk '{total += $1} END {print total + 0}')
+              if (( attempts >= MAX_REPAIR_ATTEMPTS )); then
+                gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair --remove-label oc-validating --add-label oc-repair-backoff >/dev/null 2>&1 || true
+                gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Bounded repair limit (${MAX_REPAIR_ATTEMPTS}) reached. Parked without retry thrash until a material code, provider, or CI-infrastructure change." >/dev/null 2>&1 || true
+                continue
+              fi
+            fi
+            marker="OC-AUTO-ISSUE: #${issue}"
+            durable=$(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq "[.[] | select(.body != null and (.body | contains(\"$marker\")))][0].number // empty")
+            if [[ -n "$durable" && "$repair" != true ]]; then
+              gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --add-label oc-validating >/dev/null 2>&1 || true
+              continue
+            fi
+            gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-validating --add-label oc-running >/dev/null
+            if gh workflow run orchid-completion-lane.yml --repo "$REPO" --ref main -f issue_number="$issue" >/dev/null; then
+              dispatched+=("$issue")
+              if [[ "$repair" == true ]]; then
+                gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] BOUNDED_REPAIR_ATTEMPT $((attempts + 1))/${MAX_REPAIR_ATTEMPTS}." >/dev/null
+              fi
+              gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Priority-aware scheduler dispatched completion worker. Active-width ceiling: ${MAX_ACTIVE_LANES}. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            else
+              gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
+            fi
+          done
+          if (( ${#dispatched[@]} > 0 )); then
+            joined=$(IFS=,; echo "${dispatched[*]}")
+            gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$REPO" --body "ORCHID CONTINUOUS ENGINE — priority-aware dispatch for issue(s) ${joined}; active-width ceiling ${MAX_ACTIVE_LANES}. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          fi
+
+      - name: Maintain integration-to-main owner gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main "$INTEGRATION_BRANCH" || exit 0
+          (( $(git rev-list --count "origin/main..origin/$INTEGRATION_BRANCH") > 0 )) || exit 0
+          pr=$(gh pr list --repo "$REPO" --state open --base main --head "$INTEGRATION_BRANCH" --json number --jq '.[0].number // empty')
+          body='Autonomously validated backend integration batch. Routine green reversible engineering may continue automatically. Protected scientific truth, sensitive locality, credentials/security, spending, destructive operations, and constitutional governance remain exception-gated. OC-AUTO-INTEGRATION-GATE'
+          if [[ -z "$pr" ]]; then
+            # Opening the gate PR needs "Allow GitHub Actions to create and approve
+            # pull requests", which only the owner can enable. That is an owner
+            # decision about the gate itself, not an implementation failure, so it
+            # must not leave the whole control plane red every five minutes.
+            if ! gh pr create --repo "$REPO" --base main --head "$INTEGRATION_BRANCH" --draft --title "OC autonomous backend integration batch" --body "$body" >/dev/null 2>&1; then
+              echo "::warning::Could not open the integration->main gate PR. GitHub Actions is not permitted to create pull requests in this repository; the owner must open it, or enable Settings > Actions > General > 'Allow GitHub Actions to create and approve pull requests'. Integration stays isolated and main remains owner-gated either way."
+              exit 0
+            fi
+            pr=$(gh pr list --repo "$REPO" --state open --base main --head "$INTEGRATION_BRANCH" --json number --jq '.[0].number // empty')
+          else
+            gh pr edit "$pr" --repo "$REPO" --body "$body" >/dev/null
+          fi
+          [[ -z "$pr" ]] || gh pr edit "$pr" --repo "$REPO" --add-label oc-owner-gate >/dev/null 2>&1 || true
+\t'*}
+            labels=${row#*
+            gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Claude runtime canary is healthy again. Runtime backoff cleared and issue returned to the priority portfolio." >/dev/null 2>&1 || true
+          done
+          echo "paused=false" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch priority-aware portfolio workers
+        if: steps.runtime.outputs.paused != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          running_count=$(gh issue list --repo "$REPO" --state open --label oc-running --limit 200 --json number --jq 'length')
+          capacity=$(( MAX_ACTIVE_LANES - running_count ))
+          if (( capacity <= 0 )); then
+            echo "All ${MAX_ACTIVE_LANES} implementation lanes are occupied."
+            exit 0
+          fi
+
+          #
+          # Fail closed, never red: without the planner there is no authoritative
+          # ranking, so this cycle dispatches nothing rather than guessing.
+          if [[ ! -f "$PLANNER" ]]; then
+            echo "::warning::$PLANNER absent from this checkout; no worker dispatched this cycle."
+            exit 0
+          fi
+
+          # Ranking, durable-PR suppression, reserved repair capacity, bounded
+          # fairness and P5 idle admission are decided by one deterministic
+          # planner, so the policy is provable by unit test rather than by
+          # grepping bash: tests/test_oc_portfolio_scheduler.py.
+          issues=$(gh issue list --repo "$REPO" --state open --limit 500 --json number,title,labels,createdAt)
+          prs=$(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body)
+          jq -n --argjson issues "$issues" --argjson prs "$prs" --argjson max "$MAX_ACTIVE_LANES" --argjson stabilization "$STABILIZATION_ISSUE" \
+            '{max_active_lanes: $max, stabilization_issue: $stabilization, issues: $issues, pull_requests: $prs}' > "$RUNNER_TEMP/oc-plan-input.json"
+          python3 "$PLANNER" \
+            --input "$RUNNER_TEMP/oc-plan-input.json" --mode plan > "$RUNNER_TEMP/oc-plan.json"
+
+          # Read-only status surface: active width, queue order with priority and
+          # its source, wait time, and why each selection was made.
+          {
+            jq -r '"active_width=\(.active_lane_count)/\(.max_active_lanes) available=\(.available_capacity) eligible=\(.eligible_count)"' "$RUNNER_TEMP/oc-plan.json"
+            echo '### queue order'
+            jq -r '.ranking[] | "  P\(.priority) #\(.number) [\(.priority_source)] waited=\(.waited_hours)h"' "$RUNNER_TEMP/oc-plan.json"
+            echo '### selected'
+            jq -r '.selected[] | "  #\(.number) P\(.priority) via \(.selection_reason)"' "$RUNNER_TEMP/oc-plan.json"
+            echo '### suppressed'
+            jq -r '.suppressed[] | "  #\(.number) \(.reason)"' "$RUNNER_TEMP/oc-plan.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Durable integration PR lineage suppresses ordinary dispatch.
+          while read -r issue; do
+            [[ -n "$issue" ]] || continue
+            gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --add-label oc-validating >/dev/null 2>&1 || true
+          done < <(jq -r '.suppressed[] | select(.reason == "durable-pr") | .number' "$RUNNER_TEMP/oc-plan.json")
+
+          mapfile -t selected < <(jq -r '.selected[].number' "$RUNNER_TEMP/oc-plan.json")
+
+          dispatched=()
+          for issue in "${selected[@]:-}"; do
+            [[ -n "$issue" ]] || continue
+            labels=$(gh issue view "$issue" --repo "$REPO" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(" ")' 2>/dev/null || true)
+            [[ "$labels" == *oc-queued* ]] || continue
+            [[ "$labels" == *oc-running* ]] && continue
+            [[ "$labels" == *oc-validating* ]] && continue
+            [[ "$labels" == *oc-blocked* ]] && continue
+            [[ "$labels" == *oc-owner-gate* ]] && continue
+            [[ "$labels" == *oc-done* ]] && continue
+            [[ "$labels" == *oc-runtime-backoff* ]] && continue
+            [[ "$labels" == *oc-repair-backoff* ]] && continue
+            repair=false
+            [[ "$labels" == *oc-repair* ]] && repair=true
+            if [[ "$repair" == true ]]; then
+              attempts=$(gh api --paginate "repos/$REPO/issues/$issue/comments?per_page=100" --jq '[.[] | select(.body | contains("[OC-AUTO] BOUNDED_REPAIR_ATTEMPT"))] | length' | awk '{total += $1} END {print total + 0}')
+              if (( attempts >= MAX_REPAIR_ATTEMPTS )); then
+                gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair --remove-label oc-validating --add-label oc-repair-backoff >/dev/null 2>&1 || true
+                gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Bounded repair limit (${MAX_REPAIR_ATTEMPTS}) reached. Parked without retry thrash until a material code, provider, or CI-infrastructure change." >/dev/null 2>&1 || true
+                continue
+              fi
+            fi
+            marker="OC-AUTO-ISSUE: #${issue}"
+            durable=$(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq "[.[] | select(.body != null and (.body | contains(\"$marker\")))][0].number // empty")
+            if [[ -n "$durable" && "$repair" != true ]]; then
+              gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --add-label oc-validating >/dev/null 2>&1 || true
+              continue
+            fi
+            gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-validating --add-label oc-running >/dev/null
+            if gh workflow run orchid-completion-lane.yml --repo "$REPO" --ref main -f issue_number="$issue" >/dev/null; then
+              dispatched+=("$issue")
+              if [[ "$repair" == true ]]; then
+                gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] BOUNDED_REPAIR_ATTEMPT $((attempts + 1))/${MAX_REPAIR_ATTEMPTS}." >/dev/null
+              fi
+              gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Priority-aware scheduler dispatched completion worker. Active-width ceiling: ${MAX_ACTIVE_LANES}. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            else
+              gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
+            fi
+          done
+          if (( ${#dispatched[@]} > 0 )); then
+            joined=$(IFS=,; echo "${dispatched[*]}")
+            gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$REPO" --body "ORCHID CONTINUOUS ENGINE — priority-aware dispatch for issue(s) ${joined}; active-width ceiling ${MAX_ACTIVE_LANES}. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          fi
+
+      - name: Maintain integration-to-main owner gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main "$INTEGRATION_BRANCH" || exit 0
+          (( $(git rev-list --count "origin/main..origin/$INTEGRATION_BRANCH") > 0 )) || exit 0
+          pr=$(gh pr list --repo "$REPO" --state open --base main --head "$INTEGRATION_BRANCH" --json number --jq '.[0].number // empty')
+          body='Autonomously validated backend integration batch. Routine green reversible engineering may continue automatically. Protected scientific truth, sensitive locality, credentials/security, spending, destructive operations, and constitutional governance remain exception-gated. OC-AUTO-INTEGRATION-GATE'
+          if [[ -z "$pr" ]]; then
+            # Opening the gate PR needs "Allow GitHub Actions to create and approve
+            # pull requests", which only the owner can enable. That is an owner
+            # decision about the gate itself, not an implementation failure, so it
+            # must not leave the whole control plane red every five minutes.
+            if ! gh pr create --repo "$REPO" --base main --head "$INTEGRATION_BRANCH" --draft --title "OC autonomous backend integration batch" --body "$body" >/dev/null 2>&1; then
+              echo "::warning::Could not open the integration->main gate PR. GitHub Actions is not permitted to create pull requests in this repository; the owner must open it, or enable Settings > Actions > General > 'Allow GitHub Actions to create and approve pull requests'. Integration stays isolated and main remains owner-gated either way."
+              exit 0
+            fi
+            pr=$(gh pr list --repo "$REPO" --state open --base main --head "$INTEGRATION_BRANCH" --json number --jq '.[0].number // empty')
+          else
+            gh pr edit "$pr" --repo "$REPO" --body "$body" >/dev/null
+          fi
+          [[ -z "$pr" ]] || gh pr edit "$pr" --repo "$REPO" --add-label oc-owner-gate >/dev/null 2>&1 || true
+\t'}
+            if [[ "$labels" == *oc-repair-backoff* ]]; then
+              gh issue edit "$issue" --repo "$REPO" --remove-label oc-runtime-backoff --remove-label oc-queued --remove-label oc-running --remove-label oc-repair >/dev/null 2>&1 || true
+              continue
+            fi
             gh issue edit "$issue" --repo "$REPO" --remove-label oc-runtime-backoff --add-label oc-queued >/dev/null 2>&1 || true
             gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Claude runtime canary is healthy again. Runtime backoff cleared and issue returned to the priority portfolio." >/dev/null 2>&1 || true
           done
@@ -360,7 +629,7 @@ jobs:
             if [[ "$repair" == true ]]; then
               attempts=$(gh api --paginate "repos/$REPO/issues/$issue/comments?per_page=100" --jq '[.[] | select(.body | contains("[OC-AUTO] BOUNDED_REPAIR_ATTEMPT"))] | length' | awk '{total += $1} END {print total + 0}')
               if (( attempts >= MAX_REPAIR_ATTEMPTS )); then
-                gh issue edit "$issue" --repo "$REPO" --remove-label oc-queued --remove-label oc-repair --add-label oc-repair-backoff >/dev/null 2>&1 || true
+                gh issue edit "$issue" --repo "$REPO" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair --remove-label oc-validating --add-label oc-repair-backoff >/dev/null 2>&1 || true
                 gh issue comment "$issue" --repo "$REPO" --body "[OC-AUTO] Bounded repair limit (${MAX_REPAIR_ATTEMPTS}) reached. Parked without retry thrash until a material code, provider, or CI-infrastructure change." >/dev/null 2>&1 || true
                 continue
               fi
