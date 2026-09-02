@@ -296,7 +296,7 @@ jobs:
           )
 
           set +e
-          npx -y @openai/codex@0.151.0 --version 2>> "$RUNNER_TEMP/openai-stderr.log"
+          timeout 30s npx -y @openai/codex@0.151.0 --version 2>> "$RUNNER_TEMP/openai-stderr.log"
           env -u GH_TOKEN OPENAI_API_KEY="$OPENAI_API_KEY" timeout 35m \
             npx -y @openai/codex@0.151.0 --ask-for-approval never exec \
             --sandbox workspace-write --skip-git-repo-check --ephemeral -C "$GITHUB_WORKSPACE" "$prompt" \

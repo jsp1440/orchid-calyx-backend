@@ -195,6 +195,16 @@ def test_stale_reclaim_exceeds_worker_timeout(lane_text, scheduler_text):
     assert 4800 > 70 * 60
 
 
+def test_codex_version_probe_is_bounded_before_guarded_execution(lane_text):
+    probe = "timeout 30s npx -y @openai/codex@0.151.0 --version"
+    execution = "env -u GH_TOKEN OPENAI_API_KEY=\"$OPENAI_API_KEY\" timeout 35m"
+    exit_receipt = 'echo "$status" > "$RUNNER_TEMP/openai-exit.txt"'
+
+    assert probe in lane_text
+    assert "\n          npx -y @openai/codex@0.151.0 --version" not in lane_text
+    assert lane_text.index(probe) < lane_text.index(execution) < lane_text.index(exit_receipt)
+
+
 def test_durable_pr_lineage_is_reconciled_before_dispatch(scheduler_text):
     reconcile_pos = scheduler_text.index("name: Reconcile queue labels against durable PR lineage")
     dispatch_pos = scheduler_text.index("name: Dispatch priority-aware portfolio workers")
