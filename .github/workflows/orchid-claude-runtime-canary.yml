@@ -26,9 +26,6 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: "github-actions"
-          # A circuit breaker whose probe cannot say why it failed is not
-          # observable. Actions masks the secret regardless; this only reveals
-          # the SDK's own error text, which is what classification needs.
           show_full_output: true
           prompt: |
             ORCHID CONTINUUM AUTOMATION CANARY.
@@ -46,13 +43,6 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-
-          # The action exits outcome=success when it SKIPS execution - notably
-          # "Workflow validation failed ... identical content to the version on the
-          # repository's default branch". Trusting outcome alone therefore closes the
-          # circuit on a canary that never called Claude at all. The verdict must come
-          # from positive proof of execution: the SDK result record.
-          # Overridable so the verdict logic itself is testable off-runner.
           log="${CLAUDE_EXECUTION_LOG:-/home/runner/work/_temp/claude-execution-output.json}"
           verdict=indeterminate
           detail="no Claude execution record was produced"
@@ -80,27 +70,28 @@ jobs:
             esac
           fi
 
-          # A failed step is a failure even if a record exists; never upgrade it.
           if [[ "$OUTCOME" != "success" ]]; then
             verdict=fail
             detail="claude step outcome=${OUTCOME}; ${detail}"
           fi
 
-          echo "canary verdict: ${verdict} (${detail})"
+          {
+            echo "### Orchid Claude Runtime Canary"
+            echo ""
+            echo "Verdict: **${verdict}**"
+            echo "Detail: ${detail}"
+            echo "Run: ${RUN_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
           case "$verdict" in
             pass)
               gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded --remove-label oc-provider-chain-blocked >/dev/null 2>&1 || true
-              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID AUTOMATION CANARY — **PASSED**. Claude Code executed and returned a clean result record. Runtime circuit closed; the next scheduler pulse may recover parked workers. Run: ${RUN_URL}"
               ;;
             fail)
               gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
-              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID AUTOMATION CANARY — **FAILED**. ${detail}. Runtime circuit remains open; ordinary worker dispatch stays paused. Run: ${RUN_URL}"
               exit 1
               ;;
             *)
-              # Never move the circuit on an inconclusive probe, in either direction.
-              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID AUTOMATION CANARY — **INDETERMINATE**. ${detail}, so this run proves nothing about the Claude runtime and the circuit is left exactly as it was. This is what a workflow-validation skip looks like: the action exits success without calling Claude, which is why the verdict is no longer taken from step outcome. Run: ${RUN_URL}"
               exit 1
               ;;
           esac
