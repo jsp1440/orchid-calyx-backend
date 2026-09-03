@@ -1,0 +1,44 @@
+name: CALYX-RECOVERY-001 Gate 1 (read-only baseline)
+
+# Read-only recovery baseline for issue #1187.
+#
+# SELECT statements only: this workflow applies no migration, activates no
+# taxonomy, mutates no Knowledge Graph state and writes nothing. It reuses the
+# DATABASE_URL secret the BUILD-051 activation workflow already uses rather
+# than introducing a second credential path, and the diagnostic never prints a
+# connection string.
+#
+# Manual dispatch only. Nothing here runs on push.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate1-baseline:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the database driver only
+        run: python -m pip install --quiet "psycopg[binary]"
+
+      - name: Collect the read-only recovery baseline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: python scripts/calyx_recovery_gate1.py | tee calyx-recovery-gate1.json
+
+      - name: Publish the receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: calyx-recovery-gate1-${{ github.sha }}
+          path: calyx-recovery-gate1.json
+          if-no-files-found: error
