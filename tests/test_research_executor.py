@@ -27,9 +27,7 @@ import pytest
 from app.calyx_orchestrator.artifact_registry import ImmutableArtifactRegistry
 from app.calyx_orchestrator.research_executor import (
     GovervedResearchExecutor,
-    ResearchExecutorResult,
     ResearchRequestStore,
-    _AUTHORITY,
     _VALID_TRANSITIONS,
 )
 from runtime.research_station import ResearchStationService
