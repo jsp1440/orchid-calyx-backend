@@ -11,7 +11,6 @@ from app.calyx_orchestrator.task_intent import (
     duplicate_material_state,
 )
 
-
 BASE_SHA = "a" * 40
 HEAD_SHA = "b" * 40
 
