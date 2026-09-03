@@ -17,14 +17,13 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from app.calyx_orchestrator.meta_orchestrator import (
-    HIGH_CONSEQUENCE_CLASSES,
     MANDATORY_REAUTHORIZATION,
     SCHEMA_VERSION,
-    plan as meta_plan,
 )
+from app.calyx_orchestrator.meta_orchestrator import plan as meta_plan
 
 
 # ---------------------------------------------------------------------------

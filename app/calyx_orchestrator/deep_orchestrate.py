@@ -129,7 +129,7 @@ class TaskLeaf:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "TaskLeaf":
+    def from_dict(cls, d: dict[str, Any]) -> TaskLeaf:
         leaf = cls(
             key=d["key"],
             title=d["title"],
@@ -460,7 +460,7 @@ class DeepOrchestrate:
             }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "DeepOrchestrate":
+    def from_dict(cls, d: dict[str, Any]) -> DeepOrchestrate:
         orch = cls(configured_width=d.get("configured_width", 5))
         for task_dict in d.get("tasks", {}).values():
             orch._tasks[task_dict["key"]] = TaskLeaf.from_dict(task_dict)
