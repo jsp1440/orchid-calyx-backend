@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 from typing import Any
+from urllib.parse import unquote
 from uuid import uuid4
 
 _ACCESSION_RE = re.compile(r"^OC-(\d{4})-(\d{4})$")
@@ -102,6 +103,69 @@ class ConservatoryStore:
             rows.append(plant)
             self._write(rows)
             return plant
+
+    def resolve(self, identifier: str) -> dict[str, Any] | None:
+        """Return the accession a scanned or typed identifier denotes, or None.
+
+        A QR tag is glued to a plant for years. The thing it encodes therefore
+        has to keep meaning the same accession across every redesign of this
+        application, which is why the tag carries an identity and not a page
+        address. This is the function that turns that identity back into a
+        plant, and it accepts every durable form the same accession is written
+        in out in the world:
+
+          calyx:plant:<uuid>          the URN already printed on existing tags
+          <uuid>                      the bare accession id
+          OC-YYYY-NNNN                the number a human reads off the label
+          https://.../scan/<any>      a scan URL wrapping one of the above
+
+        The last two matter for recovery. A tag that has been rained on, faded
+        or chewed is the normal case in a greenhouse, and a grower who can read
+        "OC-2026-0007" through the damage should not lose the record.
+
+        Matching is exact after normalisation. There is deliberately no prefix,
+        fuzzy or nearest match: returning the wrong plant for a damaged tag
+        would silently attach one plant's history to another, which is worse
+        than returning nothing and asking the grower to look it up.
+        """
+        candidate = self._normalise_identifier(identifier)
+        if candidate is None:
+            return None
+        with self._lock:
+            rows = self._read()
+        for row in rows:
+            if str(row.get("id", "")).lower() == candidate:
+                return row
+            if str(row.get("accession_number", "")).lower() == candidate:
+                return row
+            if str(row.get("qr_identifier", "")).lower() == candidate:
+                return row
+        return None
+
+    @staticmethod
+    def _normalise_identifier(identifier: str) -> str | None:
+        """Reduce a scanned string to the token it identifies, or None."""
+        if not isinstance(identifier, str):
+            return None
+        value = unquote(identifier.strip())
+        if not value:
+            return None
+        # A scan URL is a wrapper around the identity, not the identity. Take
+        # the last non-empty path segment, discarding any query or fragment.
+        if "://" in value:
+            value = value.split("#", 1)[0].split("?", 1)[0]
+            segments = [segment for segment in value.split("/") if segment]
+            if not segments:
+                return None
+            value = unquote(segments[-1])
+        value = value.strip()
+        if not value:
+            return None
+        # Bound the comparison: an identifier is a short token, and an
+        # unbounded string here would only ever be a malformed scan.
+        if len(value) > 200:
+            return None
+        return value.lower()
 
     def label_manifest(self, plant_ids: list[str] | None = None) -> dict[str, Any]:
         with self._lock:

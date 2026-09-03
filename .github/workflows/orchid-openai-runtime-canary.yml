@@ -53,6 +53,8 @@ jobs:
               000) echo "Classification: network/transport failure" ;;
               *) echo "Classification: OpenAI API failure" ;;
             esac
+            # Intentionally do not print the response body; provider responses may
+            # contain account/project detail and are not required for diagnosis.
             exit 1
           fi
 
