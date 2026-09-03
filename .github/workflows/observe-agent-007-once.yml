@@ -24,7 +24,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "$CALYX_API_KEY" ]]; then
-            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "AGENT-007 LIVE OBSERVER — **missing_api_key_secret**. No usable API-key secret reached the observer job."
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "AGENT-007 OWNER ACTION REQUIRED — **missing_api_key_secret**. No usable API-key secret reached the observer job."
             exit 1
           fi
           last_signature=""
@@ -36,7 +36,7 @@ jobs:
             if [[ "$code" != "200" ]]; then
               signature="http_${code}"
               if [[ "$signature" != "$last_signature" ]]; then
-                gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "AGENT-007 LIVE OBSERVER — endpoint HTTP ${code}; continuing to watch."
+                echo "Observer state: endpoint HTTP ${code}; continuing to watch." >> "$GITHUB_STEP_SUMMARY"
                 last_signature="$signature"
               fi
               sleep 20
@@ -53,7 +53,7 @@ PY
             if [[ "$count" == "0" ]]; then
               signature="no_job"
               if [[ "$signature" != "$last_signature" ]]; then
-                gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "AGENT-007 LIVE OBSERVER — certification workflow dispatched, but no persisted completion job is visible yet. Continuing to watch."
+                echo "Observer state: certification dispatched; no persisted completion job visible yet." >> "$GITHUB_STEP_SUMMARY"
                 last_signature="$signature"
               fi
               sleep 20
@@ -61,18 +61,18 @@ PY
             fi
             signature="${job_id}:${status}:${state}:${attempts}:${error_code}:${next_action}"
             if [[ "$signature" != "$last_signature" ]]; then
-              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "AGENT-007 LIVE OBSERVER — job \`${job_id}\`: status=\`${status}\`, state=\`${state}\`, attempts=\`${attempts}\`, next_action=\`${next_action}\`, error=\`${error_code}\`."
+              echo "Observer state: job ${job_id}; status=${status}; state=${state}; attempts=${attempts}; next_action=${next_action}; error=${error_code}." >> "$GITHUB_STEP_SUMMARY"
               last_signature="$signature"
             fi
             if [[ "$state" == "ready_for_merge" ]]; then
-              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "AGENT-007 CERTIFICATION — **PASSED**. Persisted governor reached \`READY_FOR_MERGE\` and stopped without merge or deployment authority."
+              echo "AGENT-007 CERTIFICATION PASSED: persisted governor reached READY_FOR_MERGE and stopped without merge or deployment authority." >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             if [[ "$state" == halted_* || "$status" == "dead_letter" || "$status" == "blocked_approval" ]]; then
-              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "AGENT-007 CERTIFICATION — **HALTED**. job=\`${job_id}\`, status=\`${status}\`, state=\`${state}\`, error=\`${error_code}\`."
+              echo "AGENT-007 CERTIFICATION HALTED: job=${job_id}; status=${status}; state=${state}; error=${error_code}." >> "$GITHUB_STEP_SUMMARY"
               exit 1
             fi
             sleep 20
           done
-          gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "AGENT-007 LIVE OBSERVER — **timeout after 20 minutes** without terminal governor state. Last observed signature: \`${last_signature}\`."
+          echo "AGENT-007 LIVE OBSERVER timeout after 20 minutes. Last observed signature: ${last_signature}." >> "$GITHUB_STEP_SUMMARY"
           exit 1
