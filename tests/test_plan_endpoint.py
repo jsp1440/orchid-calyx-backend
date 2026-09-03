@@ -25,7 +25,6 @@ from app.calyx_orchestrator.meta_orchestrator import (
 )
 from app.calyx_orchestrator.meta_orchestrator import plan as meta_plan
 
-
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
