@@ -64,6 +64,7 @@ jobs:
           set -euo pipefail
           title=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json title --jq '.title')
           body=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json body --jq '.body')
+          labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name] | join(" ")')
           {
             echo 'title<<EOF'
             echo "$title"
@@ -71,8 +72,26 @@ jobs:
             echo 'body<<EOF'
             echo "$body"
             echo EOF
+            echo "labels=$labels"
           } >> "$GITHUB_OUTPUT"
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Completion worker started from ${GITHUB_EVENT_NAME}; provider order=Claude→Gemini→OpenAI. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+
+      - name: Select bounded Claude route
+        if: steps.lease.outputs.execute == 'true'
+        id: route
+        env:
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          ISSUE_BODY: ${{ steps.issue.outputs.body }}
+          ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/oc_model_router.py \
+            --title "$ISSUE_TITLE" \
+            --body "$ISSUE_BODY" \
+            --labels "$ISSUE_LABELS" \
+            --github-output "$GITHUB_OUTPUT"
+          route_telemetry="tier=$(grep '^tier=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-); model=$(grep '^model=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-); reason=$(grep '^reason=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Completion worker started from ${GITHUB_EVENT_NAME}; provider order=Claude→Gemini→OpenAI; route=${route_telemetry}. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
 
       - name: Execute issue with Claude Code
         if: steps.lease.outputs.execute == 'true'
@@ -107,7 +126,8 @@ jobs:
             - Never merge to `main`, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create/disclose credentials, spend funds, force-push, or delete branches/repos.
             - Final output: DONE, VALIDATION, PR/HEAD SHA, REMAINING, OWNER GATE if any.
           claude_args: |
-            --max-turns 75
+            --model "${{ steps.route.outputs.model }}"
+            --max-turns ${{ steps.route.outputs.max_turns }}
             --allowedTools "Edit,Read,Write,Bash(git diff:*),Bash(git status:*),Bash(git ls-files:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git branch:*),Bash(git fetch:*),Bash(git merge:*),Bash(python:*),Bash(python3:*),Bash(pytest:*),Bash(ruff:*),Bash(npm:*),Bash(npx:*),Bash(test:*),Bash(gh pr:*),Bash(gh issue:*),Bash(gh run:*)"
             --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative. BLOCKED DOES NOT MEAN STOPPED FOR THE PROGRAM. Deliver durable GitHub work, never runner-local-only claims."
 
@@ -384,6 +404,9 @@ jobs:
           CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
           CLAUDE_KIND: ${{ steps.claude_provider.outputs.kind }}
           CLAUDE_FALLBACK: ${{ steps.claude_provider.outputs.fallback_allowed }}
+          ROUTE_TIER: ${{ steps.route.outputs.tier }}
+          ROUTE_MODEL: ${{ steps.route.outputs.model }}
+          ROUTE_REASON: ${{ steps.route.outputs.reason }}
           GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
           GEMINI_KIND: ${{ steps.gemini_provider.outputs.kind }}
           GEMINI_FALLBACK: ${{ steps.gemini_provider.outputs.fallback_allowed }}
@@ -393,6 +416,7 @@ jobs:
         run: |
           set -euo pipefail
           marker="OC-AUTO-ISSUE: #${ISSUE_NUMBER}"
+          route_telemetry="tier=${ROUTE_TIER:-unknown}; model=${ROUTE_MODEL:-unknown}; reason=${ROUTE_REASON:-unknown}"
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq "[.[] | select(.body != null and (.body | contains(\"$marker\")))][0].number // empty")
           gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running >/dev/null 2>&1 || true
 
@@ -407,7 +431,7 @@ jobs:
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --remove-label oc-blocked --remove-label oc-runtime-backoff --add-label oc-validating >/dev/null 2>&1 || true
             head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefName --jq '.headRefName')
             if gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$head" >/dev/null; then
-              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered/updated integration PR #$pr, dispatched independent backend validation, and released its execution slot. Claude=${CLAUDE_KIND:-unknown}; Gemini=${GEMINI_KIND:-not-run}; OpenAI=${OPENAI_KIND:-not-run}. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered/updated integration PR #$pr, dispatched independent backend validation, and released its execution slot. Route=${route_telemetry}; Claude=${CLAUDE_KIND:-unknown}; Gemini=${GEMINI_KIND:-not-run}; OpenAI=${OPENAI_KIND:-not-run}. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
             else
               gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --add-label oc-validating >/dev/null 2>&1 || true
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Durable PR #$pr exists, but validation dispatch failed. Kept in oc-validating; scheduler will retry validation without redispatching a model. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
