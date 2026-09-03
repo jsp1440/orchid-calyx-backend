@@ -10950,6 +10950,23 @@
         "datetime",
         "typing"
       ],
+      "description": "HarvesterBinding provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "HarvesterBinding"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "typing"
+      ],
       "description": "Metric provides: Provide runtime component",
       "health": "healthy",
       "inputs": [],
@@ -12401,6 +12418,7 @@
       "dependencies": [
         "__future__",
         "app.missions.dependencies",
+        "app.readiness.harvester_productivity",
         "datetime",
         "fastapi",
         "os",
@@ -24195,7 +24213,7 @@
         "module": "Awards"
       }
     ],
-    "node_count": 834,
+    "node_count": 835,
     "nodes": [
       {
         "category": "Runtime",
@@ -28781,6 +28799,13 @@
         "name": "PublicationService",
         "path": "app/publication/services.py",
         "type": "service"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "HarvesterBinding",
+        "path": "app/readiness/harvester_productivity.py",
+        "type": "python_module"
       },
       {
         "category": "Runtime",
@@ -50172,6 +50197,39 @@
       ],
       "category": "Runtime",
       "classes": [
+        "HarvesterBinding"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "typing"
+      ],
+      "functions": [
+        "_metric",
+        "_coerce_count",
+        "read_counter",
+        "_sum_counter",
+        "_normalise_status",
+        "summarise_window",
+        "_instrumentation_state",
+        "_review_flags",
+        "_fetch_runs",
+        "_last_successful_yield",
+        "harvester_productivity"
+      ],
+      "module_type": "python_module",
+      "name": "HarvesterBinding",
+      "path": "app/readiness/harvester_productivity.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
         "Metric"
       ],
       "dependencies": [
@@ -52665,6 +52723,7 @@
       "dependencies": [
         "__future__",
         "app.missions.dependencies",
+        "app.readiness.harvester_productivity",
         "datetime",
         "fastapi",
         "os",
@@ -52691,13 +52750,13 @@
         "mission_control_subsystems",
         "mission_control_audit",
         "mission_control_harvesters",
+        "mission_control_harvester_productivity",
         "mission_control_runtime",
         "mission_control_repositories",
         "mission_control_builds",
         "mission_control_deployments",
         "mission_control_metrics",
-        "mission_control_completeness",
-        "mission_control_recommendations"
+        "mission_control_completeness"
       ],
       "module_type": "api_router",
       "name": "MissionControl",
@@ -52708,6 +52767,7 @@
         "GET /subsystems",
         "GET /audit",
         "GET /harvesters",
+        "GET /harvesters/productivity",
         "GET /runtime",
         "GET /repositories",
         "GET /builds",
@@ -56501,12 +56561,12 @@
   "status": "discovered",
   "summary": {
     "brain_connected": true,
-    "capabilities": 686,
+    "capabilities": 687,
     "degraded": 1,
     "graph_edges": 1863,
-    "graph_nodes": 834,
-    "healthy": 598,
-    "modules": 834,
+    "graph_nodes": 835,
+    "healthy": 599,
+    "modules": 835,
     "recommendations": 3
   }
 }
