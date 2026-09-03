@@ -7,7 +7,7 @@ on:
 permissions:
   actions: write
   contents: read
-  issues: write
+  issues: read
 
 jobs:
   pulse:
@@ -23,8 +23,19 @@ jobs:
           output=$(gh workflow run orchid-continuous-completion.yml --repo "$GITHUB_REPOSITORY" --ref main 2>&1)
           code=$?
           if [[ $code -eq 0 ]]; then
-            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID CONTINUOUS PULSE — **DISPATCHED**. workflow_dispatch accepted for Orchid Continuous Completion. Source pulse run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            {
+              echo "### Orchid Continuous Pulse"
+              echo ""
+              echo "DISPATCHED: workflow_dispatch accepted for Orchid Continuous Completion."
+              echo "Source pulse run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            } >> "$GITHUB_STEP_SUMMARY"
           else
-            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID CONTINUOUS PULSE — **FAILED**. workflow_dispatch was rejected with exit code ${code}. Source pulse run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. Diagnostic: ${output}"
+            {
+              echo "### Orchid Continuous Pulse"
+              echo ""
+              echo "FAILED: workflow_dispatch was rejected with exit code ${code}."
+              echo "Source pulse run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              echo "Diagnostic: ${output}"
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
           exit $code
