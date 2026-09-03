@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from enum import StrEnum
-from typing import Iterable
 
 
 class IntentDecision(StrEnum):
@@ -207,9 +207,12 @@ class LeastAgencyGuard:
             return BehaviorDecision(IntentDecision.BLOCK, "PROTECTED_GOVERNANCE_PATH_WRITE")
         if request.tool_name and self.contract.allowed_tools and request.tool_name not in self.contract.allowed_tools:
             return BehaviorDecision(IntentDecision.BLOCK, "TOOL_OUTSIDE_TASK_SCOPE")
-        if request.kind == BehaviorKind.FILE_WRITE and self.contract.allowed_paths:
-            if not self._path_allowed(resource_lower):
-                return BehaviorDecision(IntentDecision.BLOCK, "PATH_OUTSIDE_TASK_SCOPE")
+        if (
+            request.kind == BehaviorKind.FILE_WRITE
+            and self.contract.allowed_paths
+            and not self._path_allowed(resource_lower)
+        ):
+            return BehaviorDecision(IntentDecision.BLOCK, "PATH_OUTSIDE_TASK_SCOPE")
 
         privileged = request.kind in {
             BehaviorKind.FILE_WRITE,
