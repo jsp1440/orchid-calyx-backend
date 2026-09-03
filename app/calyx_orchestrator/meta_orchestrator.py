@@ -39,7 +39,6 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from enum import Enum
 from typing import Any
 
 SCHEMA_VERSION = "calyx-meta-orchestrator/1"

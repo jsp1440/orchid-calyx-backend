@@ -20,10 +20,9 @@ import pytest
 from app.calyx_orchestrator.meta_orchestrator import (
     HIGH_CONSEQUENCE_CLASSES,
     MANDATORY_REAUTHORIZATION,
-    POLICY_PROHIBITION,
     SCHEMA_VERSION,
-    plan,
     is_deterministic,
+    plan,
 )
 
 # ---------------------------------------------------------------------------
