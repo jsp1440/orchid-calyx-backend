@@ -17,10 +17,10 @@ from __future__ import annotations
 import pytest
 
 from app.calyx_conversation.external_literature import (
+    _ORCHID_GENERA,
     _extract_potential_genera,
     _mentioned_genera,
     _query_plan,
-    _ORCHID_GENERA,
 )
 
 # ---------------------------------------------------------------------------
@@ -203,6 +203,7 @@ def test_literature_acquisition_readiness_unavailable(tmp_path):
 
 def test_literature_acquisition_readiness_available(tmp_path):
     import json
+
     from runtime.literature_acquisition import LiteratureAcquisitionService
     svc = LiteratureAcquisitionService(tmp_path)
     run_dir = svc._run_dir("run-test-001")
