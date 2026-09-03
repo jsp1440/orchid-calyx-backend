@@ -45,4 +45,6 @@ python -m scripts.ingest_odontalliance_corpus \
 
 Neither command writes to the production database, publishes to the Knowledge
 Graph, changes taxonomy, or deploys an application. Re-running identical
-culture bytes produces the same paper identity and projection path.
+culture bytes produces the same paper identity and projection path. Discovery
+writes an atomic checkpoint after each completed index page; a retry skips
+completed seeds and resumes at the interrupted page.

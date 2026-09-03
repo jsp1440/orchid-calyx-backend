@@ -13,6 +13,7 @@ from app.literature_extraction.odontalliance import (
     canonical_url,
     discover_resources,
     ingest_culture_page,
+    live_discovery,
     project_culture_page,
 )
 
@@ -61,6 +62,43 @@ def test_discovery_limits_fail_closed() -> None:
             [(CULTURE_URL, FIXTURE.read_bytes())],
             limits=IntakeLimits(max_resources=1),
         )
+
+
+def test_live_discovery_resumes_from_atomic_checkpoint(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "discovery.json"
+    first_calls: list[str] = []
+
+    def interrupted_fetcher(url: str, limits: IntakeLimits | None) -> bytes:
+        first_calls.append(url)
+        if len(first_calls) == 2:
+            raise RuntimeError("simulated network interruption")
+        return FIXTURE.read_bytes()
+
+    with pytest.raises(RuntimeError, match="simulated network interruption"):
+        live_discovery(checkpoint, fetcher=interrupted_fetcher)
+
+    partial = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert partial["complete"] is False
+    assert partial["completed_seeds"] == [first_calls[0]]
+
+    resumed_calls: list[str] = []
+
+    def resumed_fetcher(url: str, limits: IntakeLimits | None) -> bytes:
+        resumed_calls.append(url)
+        return FIXTURE.read_bytes()
+
+    resources = live_discovery(checkpoint, fetcher=resumed_fetcher)
+    final = json.loads(checkpoint.read_text(encoding="utf-8"))
+
+    assert first_calls[0] not in resumed_calls
+    assert final["complete"] is True
+    assert len(final["completed_seeds"]) == len(set(final["completed_seeds"]))
+    assert final["resource_count"] == len(resources)
+
+    def unexpected_fetcher(url: str, limits: IntakeLimits | None) -> bytes:
+        raise AssertionError(f"completed discovery refetched {url}")
+
+    assert live_discovery(checkpoint, fetcher=unexpected_fetcher) == resources
 
 
 def test_culture_projection_is_deterministic_and_marks_governance() -> None:

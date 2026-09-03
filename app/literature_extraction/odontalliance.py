@@ -357,24 +357,55 @@ def live_discovery(
     fetcher: Callable[[str, IntakeLimits | None], bytes] = fetch_url,
 ) -> list[DiscoveredResource]:
     bounded = limits or IntakeLimits()
-    pages = [(url, fetcher(url, bounded)) for url in DISCOVERY_SEEDS]
-    resources = discover_resources(pages, limits=bounded)
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps(
-            {
-                "source_id": SOURCE_ID,
-                "generated_at": datetime.now(timezone.utc).isoformat(),
-                "rights_status": "unknown_requires_review",
-                "automatic_publication": False,
-                "resource_count": len(resources),
-                "resources": [asdict(resource) for resource in resources],
-            },
-            indent=2,
-            sort_keys=True,
+    completed_seeds: set[str] = set()
+    resources_by_url: dict[str, DiscoveredResource] = {}
+
+    if target.is_file():
+        try:
+            checkpoint = json.loads(target.read_text(encoding="utf-8"))
+            if checkpoint.get("source_id") != SOURCE_ID:
+                raise ValueError("source identity mismatch")
+            completed_seeds = {
+                canonical_url(value) for value in checkpoint.get("completed_seeds", [])
+            }
+            resources_by_url = {
+                item["url"]: DiscoveredResource(**item)
+                for item in checkpoint.get("resources", [])
+            }
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise OdontAllianceIntakeError("DISCOVERY_CHECKPOINT_INVALID") from exc
+
+    def save_checkpoint() -> None:
+        resources = [resources_by_url[url] for url in sorted(resources_by_url)]
+        payload = {
+            "source_id": SOURCE_ID,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "rights_status": "unknown_requires_review",
+            "automatic_publication": False,
+            "complete": completed_seeds == set(DISCOVERY_SEEDS),
+            "completed_seeds": sorted(completed_seeds),
+            "resource_count": len(resources),
+            "resources": [asdict(resource) for resource in resources],
+        }
+        temporary = target.with_suffix(target.suffix + ".tmp")
+        temporary.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
-        + "\n",
-        encoding="utf-8",
-    )
-    return resources
+        temporary.replace(target)
+
+    for url in DISCOVERY_SEEDS:
+        if url in completed_seeds:
+            continue
+        page_resources = discover_resources(
+            [(url, fetcher(url, bounded))], limits=bounded
+        )
+        for resource in page_resources:
+            resources_by_url[resource.url] = resource
+        if len(resources_by_url) > bounded.max_resources:
+            raise OdontAllianceIntakeError("RESOURCE_COUNT_LIMIT_EXCEEDED")
+        completed_seeds.add(url)
+        save_checkpoint()
+
+    return [resources_by_url[url] for url in sorted(resources_by_url)]
