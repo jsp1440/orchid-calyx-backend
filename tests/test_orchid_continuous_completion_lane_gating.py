@@ -189,6 +189,26 @@ def test_stale_duplicate_dispatch_is_suppressed_before_claude(lane_text):
     assert lane_text.index("name: Verify scheduler lease") < lane_text.index("uses: anthropics/claude-code-action@v1")
 
 
+def test_claude_uses_deterministic_cost_aware_route(lane_text):
+    context = lane_text[lane_text.index("name: Load issue context") : lane_text.index("name: Classify Claude terminal state")]
+    assert "json labels" in context
+    assert "name: Select bounded Claude route" in context
+    assert "scripts/oc_model_router.py" in context
+    assert "--labels \"$ISSUE_LABELS\"" in context
+    assert '--model "${{ steps.route.outputs.model }}"' in context
+    assert "--max-turns ${{ steps.route.outputs.max_turns }}" in context
+    assert "route=${route_telemetry}" in context
+
+
+def test_cost_aware_route_preserves_provider_fallback_chain(lane_text):
+    assert "Execute bounded Gemini fallback" in lane_text
+    assert "Execute bounded OpenAI fallback" in lane_text
+    assert 'if: steps.claude_provider.outputs.fallback_allowed == \'true\'' in lane_text
+    assert 'if: steps.gemini_provider.outputs.fallback_allowed == \'true\'' in lane_text
+    assert "ROUTE_TIER: ${{ steps.route.outputs.tier }}" in lane_text
+    assert "Route=${route_telemetry}" in lane_text
+
+
 def test_stale_reclaim_exceeds_worker_timeout(lane_text, scheduler_text):
     assert "timeout-minutes: 70" in lane_text
     assert "4800" in scheduler_text
