@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -112,14 +113,15 @@ def test_culture_projection_is_deterministic_and_marks_governance() -> None:
     assert "Odontoglossum: Temperature" in first
 
 
-@pytest.mark.asyncio
-async def test_culture_page_enters_review_only_literature_pipeline(
+def test_culture_page_enters_review_only_literature_pipeline(
     tmp_path: Path,
 ) -> None:
-    acquired, paper = await ingest_culture_page(
-        FIXTURE.read_bytes(),
-        tmp_path,
-        retrieved_at=datetime(2026, 9, 3, tzinfo=timezone.utc),
+    acquired, paper = asyncio.run(
+        ingest_culture_page(
+            FIXTURE.read_bytes(),
+            tmp_path,
+            retrieved_at=datetime(2026, 9, 3, tzinfo=timezone.utc),
+        )
     )
 
     assert acquired.text_path.is_file()
