@@ -75,13 +75,16 @@ jobs:
             detail="claude step outcome=${OUTCOME}; ${detail}"
           fi
 
+          summary_file="${GITHUB_STEP_SUMMARY:-/dev/null}"
           {
             echo "### Orchid Claude Runtime Canary"
             echo ""
             echo "Verdict: **${verdict}**"
             echo "Detail: ${detail}"
             echo "Run: ${RUN_URL}"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } >> "$summary_file"
+          echo "verdict: ${verdict}"
+          echo "detail: ${detail}"
 
           case "$verdict" in
             pass)
