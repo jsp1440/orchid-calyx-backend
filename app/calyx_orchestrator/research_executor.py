@@ -157,7 +157,7 @@ class ResearchExecutorResult:
             "provenance": self.provenance,
             "external_literature_summary": {
                 "result_count": len(
-                    (self.external_literature.get("results") or [])
+                    self.external_literature.get("results") or []
                 ),
                 "status": self.external_literature.get("status", "not_attempted"),
                 "review_required": self.external_literature.get("review_required", True),
@@ -209,8 +209,8 @@ class GovervedResearchExecutor:
     def _get_station(self) -> Any:
         if self._station is not None:
             return self._station
-        from runtime.research_station import ResearchStationService
         from app.calyx_orchestrator.artifact_registry import ImmutableArtifactRegistry
+        from runtime.research_station import ResearchStationService
         return ResearchStationService(
             workspace=self._workspace,
             artifact_registry=self._artifact_registry or ImmutableArtifactRegistry(),
@@ -240,7 +240,7 @@ class GovervedResearchExecutor:
             raise ValueError("RESEARCH_REQUEST_ID_REQUIRED")
 
         # Idempotency: insert or retrieve existing record.
-        record, created = self._store.upsert(request)
+        record, _created = self._store.upsert(request)
         current_status = record.get("status", "queued_waiting_for_executor")
 
         if current_status in _TERMINAL_STATES:
@@ -298,7 +298,7 @@ class GovervedResearchExecutor:
                     "rationale": "Sourced from BUILD-051 research request intake",
                 },
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - fail closed on station binding failures
             blocker = str(exc)
             self._store.update_status(
                 request_id, status="blocked",
@@ -335,7 +335,7 @@ class GovervedResearchExecutor:
                     "External literature search returned no results for the "
                     f"given taxa {taxa!r}. Evidence acquisition incomplete."
                 )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - fail closed on retrieval failures
             # Network or other failure — mark explicitly unavailable.
             external_lit = {
                 "status": "UNAVAILABLE",
@@ -385,7 +385,9 @@ class GovervedResearchExecutor:
         artifact_id = f"research-result:{_sha(_stable(result_payload))[:32]}"
 
         try:
-            from app.calyx_orchestrator.artifact_registry import ArtifactRegistration  # noqa: PLC0415
+            from app.calyx_orchestrator.artifact_registry import (
+                ArtifactRegistration,
+            )
             registration = ArtifactRegistration(
                 artifact_id=artifact_id,
                 content=content,
@@ -420,7 +422,7 @@ class GovervedResearchExecutor:
                     "note": "Research result artifact — requires human review before use",
                 },
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - fail closed on artifact registration failures
             self._store.update_status(
                 request_id, status="blocked",
                 blocker=f"Artifact registration failed: {exc}",
@@ -475,8 +477,8 @@ def build_executor(
     store: ResearchRequestStore | None = None,
 ) -> GovervedResearchExecutor:
     """Factory: create a governed research executor with canonical defaults."""
-    from runtime.research_station import ResearchStationService, research_root
     from app.calyx_orchestrator.artifact_registry import ImmutableArtifactRegistry
+    from runtime.research_station import ResearchStationService, research_root
 
     registry = ImmutableArtifactRegistry()
     station = ResearchStationService(
