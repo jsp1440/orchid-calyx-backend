@@ -14,7 +14,6 @@ import re
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 
-
 TIERS = ("cheap", "standard", "deep")
 DEFAULT_MODELS = {
     "cheap": "claude-haiku-4-5",
