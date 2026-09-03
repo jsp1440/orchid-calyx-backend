@@ -43,13 +43,13 @@ jobs:
               continue
             fi
             read -r count job_id status state attempts error_code next_action < <(python - <<'PY'
-import json
-p=json.load(open('/tmp/jobs.json'))
-j=(p.get('jobs') or [{}])[0]
-vals=[p.get('count',0),j.get('job_id','-'),j.get('status','-'),j.get('state','-'),j.get('attempt_count',0),j.get('error_code') or '-',j.get('next_action') or '-']
-print(*[str(v).replace(' ','_') for v in vals])
-PY
-)
+          import json
+          p=json.load(open('/tmp/jobs.json'))
+          j=(p.get('jobs') or [{}])[0]
+          vals=[p.get('count',0),j.get('job_id','-'),j.get('status','-'),j.get('state','-'),j.get('attempt_count',0),j.get('error_code') or '-',j.get('next_action') or '-']
+          print(*[str(v).replace(' ','_') for v in vals])
+          PY
+          )
             if [[ "$count" == "0" ]]; then
               signature="no_job"
               if [[ "$signature" != "$last_signature" ]]; then

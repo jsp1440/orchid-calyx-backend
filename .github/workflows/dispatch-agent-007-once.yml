@@ -54,15 +54,15 @@ jobs:
               detail="Completion-job observation endpoint returned HTTP ${code}."
             else
               active=$(python - <<'PY'
-import json
-p=json.load(open('/tmp/jobs.json'))
-for j in p.get('jobs') or []:
-    if j.get('status') in {'queued','running'}:
-        vals=[j.get('job_id','-'),j.get('status','-'),j.get('state') or '-',j.get('attempt_count',0),j.get('next_action') or '-',j.get('error_code') or '-',j.get('lease_expires_at') or '-']
-        print('\t'.join(str(v).replace('\n',' ') for v in vals))
-        break
-PY
-)
+          import json
+          p=json.load(open('/tmp/jobs.json'))
+          for j in p.get('jobs') or []:
+              if j.get('status') in {'queued','running'}:
+                  vals=[j.get('job_id','-'),j.get('status','-'),j.get('state') or '-',j.get('attempt_count',0),j.get('next_action') or '-',j.get('error_code') or '-',j.get('lease_expires_at') or '-']
+                  print('\t'.join(str(v).replace('\n',' ') for v in vals))
+                  break
+          PY
+          )
               if [[ -n "$active" ]]; then
                 IFS=$'\t' read -r job_id job_status job_state job_attempts job_next job_error job_lease <<< "$active"
                 outcome="existing_governor_job"
