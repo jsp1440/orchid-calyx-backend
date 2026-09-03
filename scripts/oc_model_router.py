@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Cost-aware Claude routing for Orchid Continuum autonomous completion lanes.
 
 The router is deliberately deterministic and repository-local. It does not call a
@@ -12,8 +11,8 @@ import argparse
 import json
 import os
 import re
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import Iterable
 
 
 TIERS = ("cheap", "standard", "deep")
