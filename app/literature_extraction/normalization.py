@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from hashlib import sha256
-import re
 
 from .models import (
     Claim,
@@ -11,7 +11,6 @@ from .models import (
     PaperKnowledge,
     ReconciliationRelation,
 )
-
 
 _CLAIM_DOMAIN_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("taxonomy", ("species", "genus", "taxon", "synonym", "classified")),
@@ -34,6 +33,8 @@ def _stable_id(prefix: str, *parts: str) -> str:
 
 
 def _classify_domain(claim: Claim) -> str:
+    if claim.predicate == "cultivation_guidance":
+        return "cultivation"
     text = _normalized_text(claim.statement)
     for domain, markers in _CLAIM_DOMAIN_RULES:
         if any(marker in text for marker in markers):
@@ -41,7 +42,9 @@ def _classify_domain(claim: Claim) -> str:
     return "other"
 
 
-def _resolve_entities(paper: PaperKnowledge, claim: Claim) -> tuple[list[str], list[str]]:
+def _resolve_entities(
+    paper: PaperKnowledge, claim: Claim
+) -> tuple[list[str], list[str]]:
     entity_by_id = {entity.entity_id: entity for entity in paper.entities}
     resolved: list[str] = []
     unresolved: list[str] = []
@@ -65,11 +68,19 @@ def _record_for_claim(
     claim: Claim,
     evidence_by_id: dict[str, Evidence],
 ) -> NormalizedEvidenceRecord:
-    linked = [evidence_by_id[item] for item in claim.evidence_ids if item in evidence_by_id]
+    linked = [
+        evidence_by_id[item] for item in claim.evidence_ids if item in evidence_by_id
+    ]
     excerpts = [item.excerpt for item in linked]
     evidence_ids = [item.evidence_id for item in linked]
     resolved_ids, unresolved_entities = _resolve_entities(paper, claim)
-    normalization_confidence = 1.0 if resolved_ids and not unresolved_entities else 0.5 if unresolved_entities else 0.75
+    normalization_confidence = (
+        1.0
+        if resolved_ids and not unresolved_entities
+        else 0.5
+        if unresolved_entities
+        else 0.75
+    )
     fingerprint = _normalized_text(claim.statement)
     record_id = _stable_id("record", paper.paper_id, claim.claim_id, fingerprint)
     return NormalizedEvidenceRecord(
@@ -96,7 +107,9 @@ def _record_for_claim(
 
 def normalize_and_reconcile(paper: PaperKnowledge) -> PaperKnowledge:
     evidence_by_id = {item.evidence_id: item for item in paper.evidence}
-    records = [_record_for_claim(paper, claim, evidence_by_id) for claim in paper.claims]
+    records = [
+        _record_for_claim(paper, claim, evidence_by_id) for claim in paper.claims
+    ]
 
     by_statement: dict[str, list[NormalizedEvidenceRecord]] = defaultdict(list)
     for record in records:
@@ -112,7 +125,12 @@ def normalize_and_reconcile(paper: PaperKnowledge) -> PaperKnowledge:
             for duplicate in group[1:]:
                 relations.append(
                     ReconciliationRelation(
-                        relation_id=_stable_id("relation", anchor.record_id, duplicate.record_id, "duplicate"),
+                        relation_id=_stable_id(
+                            "relation",
+                            anchor.record_id,
+                            duplicate.record_id,
+                            "duplicate",
+                        ),
                         subject_record_id=anchor.record_id,
                         object_record_id=duplicate.record_id,
                         relation_type="duplicate",
