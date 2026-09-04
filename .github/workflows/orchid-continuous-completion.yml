@@ -72,6 +72,7 @@ jobs:
           ensure_label oc-repair-backoff 6e7781 "Bounded repair attempts exhausted; parked pending material change"
           ensure_label oc-runtime-degraded cf222e "Preferred Claude runtime degraded; authorized fallback may remain available"
           ensure_label oc-provider-chain-blocked 5319e7 "All authorized providers unavailable or fail-closed; scheduler parked"
+          ensure_label oc-provider-billing-exhausted e4e669 "Anthropic API billing exhausted; top up credits at console.anthropic.com/settings/billing"
           ensure_label oc-p0 b60205 "Portfolio priority P0 — completion/control-plane critical"
           ensure_label oc-p1 d93f0b "Portfolio priority P1 — core scientific/product integration"
           ensure_label oc-p2 fbca04 "Portfolio priority P2 — major application completion"
