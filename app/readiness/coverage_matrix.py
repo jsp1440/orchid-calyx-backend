@@ -121,7 +121,7 @@ def _kg_domain_readiness(cur) -> dict[str, Any]:
             row = cur.fetchone()
             present = bool(row[0] if not isinstance(row, dict) else row["present"])
             if present:
-                cur.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
+                cur.execute(f"SELECT COUNT(*) FROM {table}")
                 count_row = cur.fetchone()
                 count = int(
                     count_row[0] if not isinstance(count_row, dict)
@@ -155,7 +155,7 @@ def _taxonomy_summary(cur) -> dict[str, Any]:
             row = cur.fetchone()
             if not (row[0] if not isinstance(row, dict) else row["present"]):
                 continue
-            cur.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
+            cur.execute(f"SELECT COUNT(*) FROM {table}")
             count_row = cur.fetchone()
             count = int(
                 count_row[0] if not isinstance(count_row, dict)
@@ -167,7 +167,7 @@ def _taxonomy_summary(cur) -> dict[str, Any]:
                 "evidence_state": "live_count",
                 "state": "measured",
             }
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S112
             continue
     return _unavailable(
         "taxonomy",
