@@ -37,12 +37,39 @@ Policy summary
 from __future__ import annotations
 
 import argparse
+import importlib.util as _importlib_util
 import json
+import os as _os
 import re
 import sys
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 from typing import Any
+
+
+def _load_classify_lane():
+    """Load _classify_lane from the sibling oc_lane_manifest script at runtime."""
+    here = _os.path.dirname(_os.path.abspath(__file__))
+    path = _os.path.join(here, "oc_lane_manifest.py")
+    spec = _importlib_util.spec_from_file_location("_oc_lane_manifest_mod", path)
+    if spec is None or spec.loader is None:
+        return None
+    mod = _importlib_util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        return getattr(mod, "_classify_lane", None)
+    except Exception:  # pragma: no cover
+        return None
+
+
+_manifest_classify_lane = _load_classify_lane()
+
+
+def _issue_lane_id(issue: dict) -> str:
+    """Return the canonical lane ID (L1–L5 or 'UNASSIGNED') for an issue."""
+    if _manifest_classify_lane is not None:
+        return _manifest_classify_lane(issue)
+    return "UNASSIGNED"  # pragma: no cover
 
 MAX_ACTIVE_LANES = 5
 REPAIR_RESERVED_LANES = 1
@@ -163,6 +190,7 @@ def _candidate(
         "number": number,
         "title": issue.get("title") or "",
         "labels": labels,
+        "lane_id": _issue_lane_id(issue),
         "priority": priority,
         "priority_source": source,
         "priority_label": priority_label(priority),
@@ -258,14 +286,29 @@ def build_plan(snapshot: dict) -> dict:
         eligible = canonical
     capacity = max(0, max_lanes - len(active))
 
+    # Lanes already occupied by oc-running issues cannot accept a second
+    # active implementation in the same cycle.  UNASSIGNED is never a canonical
+    # lane and is not subject to this constraint.
+    active_lane_set: set[str] = {
+        c["lane_id"] for c in active if c["lane_id"] != "UNASSIGNED"
+    }
+    occupied_lanes: set[str] = set(active_lane_set)
+
     selected: list[dict] = []
     taken: set[int] = set()
 
-    def take(candidate: dict, reason: str) -> None:
+    def take(candidate: dict, reason: str) -> bool:
+        """Claim a candidate for dispatch; returns True if actually taken."""
         if candidate["number"] in taken:
-            return
+            return False
+        lane = candidate.get("lane_id", "UNASSIGNED")
+        if lane != "UNASSIGNED" and lane in occupied_lanes:
+            return False
         taken.add(candidate["number"])
+        if lane != "UNASSIGNED":
+            occupied_lanes.add(lane)
         selected.append(_public(candidate, selection_reason=reason))
+        return True
 
     band0 = [c for c in eligible if c["band"] == 0]
     idle = [c for c in eligible if c["band"] == 1]
@@ -295,14 +338,15 @@ def build_plan(snapshot: dict) -> dict:
             )
             remaining -= FAIRNESS_RESERVED_LANES
 
-    # 3. Strict priority fill.
+    # 3. Strict priority fill.  Only decrement remaining when take() succeeds;
+    #    a lane-conflict no-op must not consume a slot.
     for candidate in pool:
         if len(selected) >= capacity or remaining <= 0:
             break
         if fairness is not None and candidate["number"] == fairness["number"]:
             continue
-        take(candidate, "priority")
-        remaining -= 1
+        if take(candidate, "priority"):
+            remaining -= 1
 
     if fairness is not None and len(selected) < capacity:
         take(fairness, "fairness")
@@ -320,6 +364,7 @@ def build_plan(snapshot: dict) -> dict:
         "max_active_lanes": max_lanes,
         "active_lanes": [_public(c) for c in active],
         "active_lane_count": len(active),
+        "active_lane_ids": sorted(active_lane_set),
         "available_capacity": capacity,
         "ranking": [_public(c) for c in eligible],
         "eligible_count": len(eligible),

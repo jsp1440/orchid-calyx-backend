@@ -17,6 +17,7 @@ object from ``gh issue list --json number,title,labels,state``.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections.abc import Sequence
 from typing import Any
@@ -117,13 +118,41 @@ def _orchestrator_state(labels: list[str]) -> str:
     return "UNKNOWN"
 
 
+_WORD_ONLY_RE = re.compile(r"^\w+$")
+
+
+def _matches_pattern(pattern: str, text: str) -> bool:
+    """True if *pattern* occurs in *text* with token-safe boundary rules.
+
+    Pure-word patterns (no hyphens, spaces, or punctuation) use word-boundary
+    anchors to prevent incidental substring matches.  Short patterns (≤ 3 chars,
+    e.g. ``ui``, ``api``) use full ``\\b…\\b`` anchoring so they cannot match
+    as mid-word or word-start substrings of longer words (e.g. ``fluid``,
+    ``rapid``, ``apiary``).  Longer pure-word patterns use a leading-only anchor
+    so that intentional prefix patterns (e.g. ``deploy`` → ``deployment``,
+    ``orchestrat`` → ``orchestration``) continue to match.  Hyphenated or
+    multi-word patterns fall back to plain substring matching.
+    """
+    p = pattern.lower()
+    if _WORD_ONLY_RE.match(p):
+        escaped = re.escape(p)
+        if len(p) <= 3:
+            # Full word boundary: prevents 'ui' from matching 'fluid',
+            # 'api' from matching 'rapid' or 'apiary'.
+            return bool(re.search(r"\b" + escaped + r"\b", text))
+        # Leading boundary only: allows 'deploy' to match 'deployment',
+        # 'orchestrat' to match 'orchestration', etc.
+        return bool(re.search(r"\b" + escaped, text))
+    return p in text
+
+
 def _classify_lane(issue: dict) -> str:
     title_lower = (issue.get("title") or "").lower()
     body_lower = (issue.get("body") or "").lower()
     text = title_lower + " " + body_lower
     for lane in LANES:
         for pattern in lane["keyword_patterns"]:
-            if pattern.lower() in text:
+            if _matches_pattern(pattern, text):
                 return lane["lane_id"]
     return "UNASSIGNED"
 

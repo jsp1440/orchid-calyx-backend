@@ -206,8 +206,13 @@ def live_portfolio() -> list[dict]:
 def test_new_p0_work_is_not_starved_by_the_former_legacy_backlog():
     result = plan(live_portfolio())
     selected = result["selected_numbers"]
-    assert {1083, 1084, 1085} <= set(selected)
-    # The legacy backlog no longer takes the first three lanes by fiat.
+    # Both P0 issues in distinct canonical lanes (L5 scheduler, L2 Hassler) must be
+    # dispatched.  Under lane-aware enforcement 1085 (also L2) cannot run
+    # simultaneously with 1084, so only two of the three original P0s are selected.
+    assert 1083 in selected   # P0 L5 — portfolio scheduler
+    assert 1084 in selected   # P0 L2 — Hassler release
+    assert 1085 not in selected  # P0 L2 — blocked: L2 already held by 1084
+    # The legacy backlog still does not capture the first three dispatch slots.
     legacy_first_three = [n for n in selected[:3] if n in LEGACY_BACKLOG]
     assert legacy_first_three == []
 
@@ -404,3 +409,86 @@ def test_cli_emits_a_json_plan_and_a_selected_number_list(tmp_path):
         capture_output=True, text=True, check=True,
     ).stdout
     assert [int(line) for line in selected_out.split()] == parsed["selected_numbers"]
+
+
+# --- recovery-width regression contract ---------------------------------------
+
+def test_max_active_lanes_constant_is_five():
+    """Lock the five-lane capacity restored in the PR that fixed the dispatch freeze."""
+    assert sched.MAX_ACTIVE_LANES == 5
+
+
+# --- lane-aware capacity enforcement -----------------------------------------
+
+def test_five_issues_in_the_same_lane_cannot_all_be_selected():
+    # Five L1 (Brain) issues compete for five available slots.
+    # Lane enforcement caps L1 at one active execution at a time.
+    issues = [
+        issue(2000 + n, title=f"P0 brain reasoning ledger work {n}",
+              created=f"2026-08-20T0{n}:00:00Z")
+        for n in range(5)
+    ]
+    result = plan(issues)
+    assert result["available_capacity"] == 5
+    assert len(result["selected_numbers"]) == 1
+    assert result["selected_numbers"] == [2000]
+
+
+def test_independent_issues_across_five_lanes_fill_all_slots():
+    # One issue per canonical lane — all five slots can be filled simultaneously.
+    issues = [
+        issue(2100, title="P0 brain reasoning ledger mission"),
+        issue(2101, title="P0 taxonomy occurrence hassler pipeline"),
+        issue(2102, title="P0 literature image mycorrhiza pipeline"),
+        issue(2103, title="P0 frontend atlas vision operator"),
+        issue(2104, title="P0 deploy scheduler orchestrat canary"),
+    ]
+    result = plan(issues)
+    assert result["available_capacity"] == 5
+    assert set(result["selected_numbers"]) == {2100, 2101, 2102, 2103, 2104}
+
+
+def test_already_running_lane_blocks_same_lane_from_being_selected():
+    running = issue(2200, title="P0 brain reasoning active", labels=("oc-running",))
+    queued_same_lane = issue(2201, title="P0 brain ledger queued")
+    queued_other_lane = issue(2202, title="P0 taxonomy occurrence queued")
+    result = plan([running, queued_same_lane, queued_other_lane])
+    assert result["active_lane_count"] == 1
+    assert 2201 not in result["selected_numbers"], "L1 already held by oc-running issue"
+    assert 2202 in result["selected_numbers"], "L2 is free and must be selected"
+
+
+def test_no_duplicate_leases_under_lane_enforcement():
+    # Three L1 issues: at most one gets a lease; no issue number appears twice.
+    issues = [issue(2300 + n, title=f"P0 brain reasoning work {n}") for n in range(3)]
+    result = plan(issues, max_active_lanes=5)
+    selected = result["selected_numbers"]
+    assert len(selected) == len(set(selected)), "each issue leased at most once"
+    assert len(selected) <= 1, "lane enforcement: at most one L1 issue dispatched"
+
+
+def test_repair_backoff_still_excluded_with_lane_enforcement():
+    parked = issue(2400, title="P0 brain reasoning exhausted",
+                   labels=("oc-queued", "oc-repair-backoff"))
+    eligible_other = issue(2401, title="P0 taxonomy occurrence work")
+    result = plan([parked, eligible_other])
+    assert 2400 not in result["selected_numbers"]
+    assert 2401 in result["selected_numbers"]
+
+
+def test_fairness_still_works_across_lane_boundaries():
+    # A P3 L2 issue starved for six days competes against nine fresh P0 L1 issues.
+    # Lane enforcement limits L1 to one slot; fairness reserves a slot for the
+    # P3 L2 issue that strict priority would otherwise leave behind.
+    starved_l2 = issue(2500, title="P3 taxonomy occurrence starved",
+                       created="2026-08-15T00:00:00Z")
+    flood_l1 = [
+        issue(2510 + n, title=f"P0 brain reasoning fresh {n}",
+              created=f"2026-08-21T0{n}:00:00Z")
+        for n in range(9)
+    ]
+    result = plan([starved_l2] + flood_l1)
+    assert 2500 in result["selected_numbers"]
+    assert result["fairness_reservation"] == 2500
+    l1_selected = [n for n in result["selected_numbers"] if 2510 <= n < 2519]
+    assert len(l1_selected) == 1, "lane enforcement caps L1 at one concurrent dispatch"
