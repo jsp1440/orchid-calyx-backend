@@ -34,9 +34,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       INTEGRATION_BRANCH: oc-autonomous-integration
-      # Recovery mode intentionally admits one authoritative implementation
-      # lease. Expand only after #1193 is delivered or truthfully blocked.
-      MAX_ACTIVE_LANES: 1
+      # #1193 (OC-STABILIZE-001) reached oc-repair-backoff on 2026-09-04;
+      # stabilization condition met. Restored to five-lane model per AGENTS.md.
+      MAX_ACTIVE_LANES: 5
       STABILIZATION_ISSUE: 1193
       MAX_REPAIR_ATTEMPTS: 2
       RUNTIME_TRACKER_ISSUE: 1031
