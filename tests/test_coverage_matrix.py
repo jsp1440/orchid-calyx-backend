@@ -148,9 +148,11 @@ def test_prioritized_backfill_flags_masking_warnings():
             "state": "measured",
             "linked_object_count": 26,
             "masking_warnings": [
-                "public.orchid_occurrence exists with approximately 580,612 row(s), "
-                "far more than the measured source (26 row(s)); "
-                "this relationship measurement may be reading a non-authoritative relation."
+                (
+                    "public.orchid_occurrence exists with approximately 580,612 row(s), "
+                    "far more than the measured source (26 row(s)); "
+                    "this relationship measurement may be reading a non-authoritative relation."
+                )
             ],
         }
     }
@@ -357,10 +359,7 @@ def test_no_literature_repo_reports_unavailable():
 
 def test_measure_declared_relationships_isolation():
     """measure_declared_relationships wraps each spec; one exception → unavailable."""
-    from app.readiness.relationship_measurement import (
-        measure_declared_relationships,
-        _unavailable,
-    )
+    from app.readiness.relationship_measurement import measure_declared_relationships
 
     cur = MagicMock()
     # Raise on every query so all specs fail.
