@@ -23,7 +23,6 @@ from app.readiness.coverage_matrix import (
 )
 from app.readiness.relationship_measurement import _unavailable
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
