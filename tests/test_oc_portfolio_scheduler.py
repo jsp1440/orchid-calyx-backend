@@ -492,3 +492,25 @@ def test_fairness_still_works_across_lane_boundaries():
     assert result["fairness_reservation"] == 2500
     l1_selected = [n for n in result["selected_numbers"] if 2510 <= n < 2519]
     assert len(l1_selected) == 1, "lane enforcement caps L1 at one concurrent dispatch"
+
+
+def test_lane_blocked_fairness_candidate_releases_slot_to_other_eligible_work():
+    # Regression: when the fairness candidate shares a lane with a priority
+    # selection, the reserved slot must be released to the next eligible
+    # conflict-free candidate rather than left idle.
+    #
+    # Setup: 4 P0 issues fill L1/L2/L3/L5, leaving L4 free.  The only
+    # long-waiting (P4) issue is also in L5, so its fairness slot is blocked.
+    # The reclaim loop must fill capacity with the eligible L4 issue.
+    fairness_l5 = issue(3000, title="P4 canary provider dispatch long-wait",
+                        created="2026-08-01T00:00:00Z")
+    priority_l5 = issue(3001, title="P0 deploy scheduler canary")
+    priority_l2 = issue(3002, title="P0 taxonomy occurrence hassler")
+    priority_l3 = issue(3003, title="P0 literature image media pipeline")
+    priority_l1 = issue(3004, title="P0 brain reasoning ledger")
+    eligible_l4 = issue(3005, title="P2 frontend atlas vision operator")
+    result = plan([fairness_l5, priority_l5, priority_l2, priority_l3, priority_l1, eligible_l4])
+    assert result["fairness_reservation"] == 3000, "long-waiting L5 issue must be identified as fairness candidate"
+    assert 3000 not in result["selected_numbers"], "blocked fairness candidate must not be force-inserted"
+    assert set(result["selected_numbers"]) == {3001, 3002, 3003, 3004, 3005}
+    assert len(result["selected_numbers"]) == 5, "reclaimed slot must fill eligible L4 work; capacity must not be wasted"
