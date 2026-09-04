@@ -8,7 +8,6 @@ endpoint and that the supervisor does not bypass the canonical scheduler.
 
 from pathlib import Path
 
-
 WORKFLOW = Path(".github/workflows/orchid-continuation-supervisor.yml")
 POLICY = Path("docs/governance/CONTINUOUS_EXECUTION_RULE.md")
 
