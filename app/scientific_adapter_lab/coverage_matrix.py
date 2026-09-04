@@ -343,11 +343,11 @@ def compute_backfill_priority(matrix: CoverageMatrix) -> list[BackfillTask]:
 
 
 def classify_source_precedence(
-    canonical_value: int | float | None,
-    external_value: int | float | None,
+    canonical_value: float | None,
+    external_value: float | None,
     *,
     canonical_reviewed: bool,
-) -> tuple[int | float | None, str]:
+) -> tuple[float | None, str]:
     """Return (chosen_value, rationale) per source-precedence rules.
 
     Canonical reviewed data outranks external discovery.
