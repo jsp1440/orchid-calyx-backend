@@ -11,7 +11,12 @@ Verifies:
 
 from __future__ import annotations
 
-from scripts.oc_lane_manifest import LANES, SCHEMA_VERSION, _classify_lane, build_lane_manifest
+from scripts.oc_lane_manifest import (
+    LANES,
+    SCHEMA_VERSION,
+    _classify_lane,
+    build_lane_manifest,
+)
 
 
 def _issue(number: int, title: str, labels: list[str]) -> dict:
