@@ -58,7 +58,7 @@ def _load_classify_lane():
     try:
         spec.loader.exec_module(mod)  # type: ignore[union-attr]
         return getattr(mod, "_classify_lane", None)
-    except Exception:  # pragma: no cover
+    except Exception:  # noqa: BLE001  # pragma: no cover
         return None
 
 
