@@ -26,7 +26,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.calyx_conversation.interaction_discovery_ingest import document_from_globi_interaction
+from app.calyx_conversation.interaction_discovery_ingest import (
+    document_from_globi_interaction,
+)
 
 PROOF_SCHEMA_VERSION = "oc-globi-pipeline-proof/v1"
 

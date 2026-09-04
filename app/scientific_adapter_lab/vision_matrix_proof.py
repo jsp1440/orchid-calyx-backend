@@ -24,7 +24,7 @@ Scientific guards (ALL must hold at every stage output):
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from app.multimodal_intelligence.contracts import (
@@ -283,11 +283,7 @@ def _score_candidate(
 
     for obs in observations:
         expected = profile.states.get(obs.character_id)
-        if expected is None:
-            unknown += 1
-            outcome = "UNKNOWN"
-            weighted = 0.0
-        elif obs.state is None:
+        if expected is None or obs.state is None:
             unknown += 1
             outcome = "UNKNOWN"
             weighted = 0.0
