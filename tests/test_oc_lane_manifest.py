@@ -11,7 +11,12 @@ Verifies:
 
 from __future__ import annotations
 
-from scripts.oc_lane_manifest import LANES, SCHEMA_VERSION, build_lane_manifest
+from scripts.oc_lane_manifest import (
+    LANES,
+    SCHEMA_VERSION,
+    _classify_lane,
+    build_lane_manifest,
+)
 
 
 def _issue(number: int, title: str, labels: list[str]) -> dict:
@@ -179,3 +184,42 @@ def test_summary_counts_add_up():
     assert s["ready"] == 1
     assert s["blocked"] == 1
     assert s["validating"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Word-boundary false-positive guards
+# ---------------------------------------------------------------------------
+
+
+def _ti(title: str) -> dict:
+    """Minimal issue dict for _classify_lane testing."""
+    return {"number": 0, "title": title, "labels": []}
+
+
+def test_ui_keyword_does_not_match_fluid():
+    # "ui" is a substring of "fluid" but must not classify it as L4.
+    assert _classify_lane(_ti("hydraulic fluid dynamics study")) != "L4"
+
+
+def test_ui_keyword_does_not_match_build():
+    # "ui" is a substring of "build" but must not classify it as L4.
+    assert _classify_lane(_ti("build pipeline optimisation")) != "L4"
+
+
+def test_ui_keyword_matches_when_standalone():
+    assert _classify_lane(_ti("UI redesign for operator interface")) == "L4"
+
+
+def test_api_keyword_does_not_match_rapid():
+    # "api" is a substring of "rapid" but must not classify it as L4.
+    assert _classify_lane(_ti("rapid response workflow")) != "L4"
+
+
+def test_api_keyword_does_not_match_apiary():
+    # "api" at the start of a word "apiary" must not classify it as L4.
+    # "apiary" contains no other L4 keyword, so result must not be L4.
+    assert _classify_lane(_ti("apiary management practices")) != "L4"
+
+
+def test_api_keyword_matches_when_standalone():
+    assert _classify_lane(_ti("REST api endpoint certification")) == "L4"
