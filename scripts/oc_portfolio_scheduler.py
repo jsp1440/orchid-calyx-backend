@@ -349,7 +349,13 @@ def build_plan(snapshot: dict) -> dict:
             remaining -= 1
 
     if fairness is not None and len(selected) < capacity:
-        take(fairness, "fairness")
+        if not take(fairness, "fairness"):
+            # Fairness candidate is lane-blocked by a priority selection;
+            # reclaim the reserved slot for the next eligible conflict-free work.
+            for candidate in pool:
+                if len(selected) >= capacity:
+                    break
+                take(candidate, "priority")
 
     # 4. P5 idle-capacity work is admitted only when no higher-priority eligible
     #    work is still waiting for a lane.
