@@ -33,6 +33,7 @@ LANES: list[dict[str, Any]] = [
             "brain", "reasoning", "ledger", "synthesis", "calyx-synthesis",
             "calyx-recovery", "calyx-superstructure", "meta-orchestrator",
             "research-executor", "calyx-gh-research",
+            "knowledge graph", "knowledge_graph", "oc-kg", "materialization",
         ],
     },
     {
@@ -52,6 +53,8 @@ LANES: list[dict[str, Any]] = [
             "literature", "image", "media", "pollination", "pollinator",
             "mycorrhiza", "trait", "federation", "source", "corpus",
             "oc-complete-004", "oc-complete-009", "interaction", "science",
+            "conservation", "molecular", "sequence", "genbank", "accession",
+            "habitat", "geospatial", "elevation", "its accession",
         ],
     },
     {
@@ -68,9 +71,10 @@ LANES: list[dict[str, Any]] = [
         "name": "Deployment / Observability / Orchestration",
         "description": "Deployment QA, CI, provider routing, event dispatch, cost controls.",
         "keyword_patterns": [
-            "deploy", "ci", "provider", "canary", "dispatch", "event", "orchestrat",
-            "scheduler", "cost", "budget", "economy", "oc-cost", "oc-runtime",
-            "orchestration-event", "calyx-evolve",
+            "deploy", "check-run", "github-actions", "provider", "canary",
+            "dispatch", "event", "orchestrat", "scheduler", "cost", "budget",
+            "economy", "oc-cost", "oc-runtime", "orchestration-event", "calyx-evolve",
+            "flywheel", "regression library",
         ],
     },
 ]
