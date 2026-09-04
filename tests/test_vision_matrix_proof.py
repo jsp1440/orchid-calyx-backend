@@ -37,7 +37,6 @@ from app.scientific_adapter_lab.vision_matrix_proof import (
     stage_review_handoff,
 )
 
-
 # ---------------------------------------------------------------------------
 # Inventory: capability/readiness audit
 # ---------------------------------------------------------------------------
