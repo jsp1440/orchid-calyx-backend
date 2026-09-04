@@ -199,7 +199,11 @@ jobs:
           fi
 
           if [[ "$state" == PASSED && "$GITHUB_EVENT_NAME" == issues ]]; then
-            gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded --remove-label oc-provider-chain-blocked >/dev/null 2>&1 || true
+            gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
+              --remove-label oc-runtime-degraded \
+              --remove-label oc-provider-chain-blocked \
+              --remove-label oc-provider-billing-exhausted \
+              >/dev/null 2>&1 || true
             mapfile -t parked < <(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label oc-runtime-backoff --limit 200 --json number,labels --jq '.[] | [.number, ([.labels[].name] | join(" "))] | @tsv')
             for row in "${parked[@]:-}"; do
               [[ -n "$row" ]] || continue
@@ -214,6 +218,23 @@ jobs:
               gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Provider recovery canary passed via ${provider}. Global breaker cleared; issue returned to bounded repair without weakening acceptance or owner gates." >/dev/null 2>&1 || true
             done
             gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **RECOVERED VIA ${provider^^}**. Bounded edit canary passed; parked issues returned to repair and ordinary scheduler dispatch may resume." >/dev/null
+          fi
+
+          # When both providers had genuine failures (not CLI infra issues), park the
+          # full provider chain so the scheduler stops dispatching and the continuous-
+          # completion circuit routes all retries through this canary.  Only set on
+          # an issues-event invocation (real recovery attempt, not CI on a PR/push).
+          if [[ "$state" == FAILED && "$GITHUB_EVENT_NAME" == issues ]]; then
+            gemini_genuine=false
+            openai_genuine=false
+            [[ "${GEMINI_KIND:-}" =~ ^(quota_or_billing_error|authentication_or_permission_error|provider_or_cli_error|timeout)$ ]] && gemini_genuine=true || true
+            [[ "${OPENAI_OUTCOME:-}" != "skipped" && "${OPENAI_KIND:-}" =~ ^(quota_or_billing_error|authentication_or_permission_error|provider_or_cli_error|timeout)$ ]] && openai_genuine=true || true
+            if [[ "$gemini_genuine" == true && "$openai_genuine" == true ]]; then
+              gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
+                --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
+              gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
+                --body "ORCHID PROVIDER RECOVERY CANARY — **ALL PROVIDERS BLOCKED**. gemini=${GEMINI_KIND:-not_run}; openai=${OPENAI_KIND:-not_run}. Dispatch parked via oc-provider-chain-blocked until recovery. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+            fi
           fi
 
           [[ "$state" == PASSED ]]
