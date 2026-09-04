@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 LANE = Path(".github/workflows/orchid-completion-lane.yml")
 
 
