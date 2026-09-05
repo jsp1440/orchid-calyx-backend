@@ -44,7 +44,6 @@ class SequenceRecord:
     def to_public_dict(self) -> dict[str, object]:
         payload = asdict(self)
         payload["binding_state"] = self.binding_state.value
-        # Unpublished sequence data is never serialized as an accession claim.
         if self.unpublished:
             payload["accession_id"] = None
             payload["binding_state"] = SequenceBindingState.UNKNOWN.value
@@ -52,7 +51,8 @@ class SequenceRecord:
 
 
 class MolecularRepository(Protocol):
-    def records_for_taxon(self, taxon_name: str) -> Iterable[SequenceRecord]: ...
+    def records_for_taxon(self, taxon_name: str) -> Iterable[SequenceRecord]:
+        ...
 
 
 @dataclass(frozen=True)
