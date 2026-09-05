@@ -144,11 +144,17 @@ jobs:
           result_text=""
           error_type=""
           subtype=""
+          is_error="false"
+          num_turns=""
+          model_usage_count="0"
           if [[ -f "$execution_log" ]]; then
             terminal_reason=$(jq -r '[.. | objects | select(.type == "result")] | last | .terminal_reason // ""' "$execution_log" 2>/dev/null || true)
             result_text=$(jq -r '[.. | objects | select(.type == "result")] | last | .result // ""' "$execution_log" 2>/dev/null || true)
             error_type=$(jq -r '[.. | objects | select(.type == "assistant" and .is_api_error_message == true)] | last | .error // ""' "$execution_log" 2>/dev/null || true)
             subtype=$(jq -r '[.. | objects | select(.type == "result")] | last | .subtype // ""' "$execution_log" 2>/dev/null || true)
+            is_error=$(jq -r '[.. | objects | select(.type == "result")] | last | .is_error // false' "$execution_log" 2>/dev/null || true)
+            num_turns=$(jq -r '[.. | objects | select(.type == "result")] | last | .num_turns // ""' "$execution_log" 2>/dev/null || true)
+            model_usage_count=$(jq -r '[.. | objects | select(.type == "result")] | last | (.modelUsage // {}) | length' "$execution_log" 2>/dev/null || true)
           fi
           normalized=$(printf '%s %s %s %s' "$terminal_reason" "$result_text" "$error_type" "$subtype" | tr '[:upper:]' '[:lower:]')
           kind=healthy
@@ -161,6 +167,13 @@ jobs:
             elif [[ "$normalized" == *"billing_error"* || "$normalized" == *"credit balance"* || "$normalized" == *"insufficient credit"* || "$normalized" == *"rate_limit"* || "$normalized" == *"rate limit"* || "$normalized" == *"overloaded"* || "$normalized" == *"service unavailable"* || "$normalized" == *"connection_error"* || "$normalized" == *"timeout"* ]]; then
               kind=safe_provider
               fallback=true
+            elif [[ "$is_error" == "true" && "$subtype" == "success" && "$num_turns" =~ ^[0-9]+$ && "$num_turns" -le 1 && "$model_usage_count" == "0" ]]; then
+              # Claude Code can surface an opaque provider-side failure as
+              # subtype=success + is_error=true with no model usage. That is the
+              # observed degraded-runtime signature: no repository work ran and
+              # there is no security/permission evidence to fail closed on.
+              kind=safe_provider
+              fallback=true
             else
               kind=unknown
             fi
@@ -170,6 +183,9 @@ jobs:
             echo "fallback_allowed=$fallback"
             echo "terminal_reason=${terminal_reason:-unknown}"
             echo "error_type=${error_type:-unknown}"
+            echo "is_error=${is_error:-unknown}"
+            echo "num_turns=${num_turns:-unknown}"
+            echo "model_usage_count=${model_usage_count:-unknown}"
           } >> "$GITHUB_OUTPUT"
           echo "Claude classification: kind=$kind fallback_allowed=$fallback"
 
