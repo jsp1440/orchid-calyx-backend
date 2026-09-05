@@ -530,6 +530,7 @@ def build_synthesis_packet(
 def provider_context(governed_context: dict[str, Any]) -> dict[str, Any]:
     return {
         "synthesis_packet": governed_context.get("synthesis_packet") or {},
+        "scientific_memory": governed_context.get("scientific_memory") or {},
         "epistemic_policy": governed_context.get("epistemic_policy") or {},
         "deliverable_capabilities": governed_context.get("deliverable_capabilities") or {},
         "provider_configuration": governed_context.get("provider_configuration") or {},

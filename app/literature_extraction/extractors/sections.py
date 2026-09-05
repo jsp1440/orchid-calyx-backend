@@ -23,7 +23,7 @@ class SectionExtractor(Extractor):
     version = "0.1.0"
 
     _heading_pattern = re.compile(
-        r"(?im)^(?P<heading>abstract|introduction|background|materials and methods|methods|methodology|results|discussion|conclusion|conclusions|acknowledg(?:e)?ments|references|bibliography|supplementary information|supplement)\s*$"
+        r"(?im)^(?P<heading>abstract|introduction|background|materials and methods|methods|methodology|results|discussion|conclusion|conclusions|recommendations|cultivation guidance|acknowledg(?:e)?ments|references|bibliography|supplementary information|supplement)\s*$"
     )
 
     _canonical: ClassVar[dict[str, str]] = {
@@ -37,6 +37,8 @@ class SectionExtractor(Extractor):
         "discussion": "discussion",
         "conclusion": "conclusion",
         "conclusions": "conclusion",
+        "recommendations": "other",
+        "cultivation guidance": "other",
         "acknowledgements": "acknowledgements",
         "acknowledgments": "acknowledgements",
         "references": "references",

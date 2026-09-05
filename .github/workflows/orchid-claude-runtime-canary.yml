@@ -46,6 +46,7 @@ jobs:
           log="${CLAUDE_EXECUTION_LOG:-/home/runner/work/_temp/claude-execution-output.json}"
           verdict=indeterminate
           detail="no Claude execution record was produced"
+          error_kind="unknown"
 
           if [[ -f "$log" ]]; then
             echo "--- claude-execution-output.json ---"
@@ -53,7 +54,31 @@ jobs:
             is_error=$(jq -r '[.. | objects | select(.type == "result")] | last | .is_error' "$log" 2>/dev/null || echo null)
             case "$is_error" in
               false) verdict=pass; detail="Claude executed and returned is_error:false" ;;
-              true)  verdict=fail; detail=$(jq -r '[.. | objects | select(.type == "result")] | last | (.error // .subtype // "is_error:true")' "$log" 2>/dev/null || echo "is_error:true") ;;
+              true)
+                verdict=fail
+                # The message lives in .result for an api_error record; .subtype is
+                # "success" even on failure, so preferring it reported nothing useful.
+                # This detail is what lands on the tracker issue, so it must name the
+                # actual cause - e.g. "api_error 400: Credit balance is too low".
+                detail=$(jq -r '
+                  [.. | objects | select(.type == "result")] | last
+                  | ((.terminal_reason // "error")
+                     + (if .api_error_status then " " + (.api_error_status | tostring) else "" end)
+                     + ": "
+                     + (.result // .error // "is_error:true"))
+                ' "$log" 2>/dev/null || echo "is_error:true")
+                # Classify the root cause so the owner sees a specific label and
+                # actionable message rather than a generic FAILED signal.
+                error_field=$(jq -r '[.. | objects | select(.type == "result")] | last | .error // ""' "$log" 2>/dev/null || echo "")
+                api_status=$(jq -r '[.. | objects | select(.type == "result")] | last | (.api_error_status // 0) | tostring' "$log" 2>/dev/null || echo "0")
+                if [[ "$error_field" == "billing_error" ]]; then
+                  error_kind="billing_exhausted"
+                elif [[ "$api_status" == "401" || "$api_status" == "403" ]]; then
+                  error_kind="authentication_error"
+                else
+                  error_kind="provider_or_transient"
+                fi
+                ;;
             esac
           fi
 
@@ -62,20 +87,50 @@ jobs:
             detail="claude step outcome=${OUTCOME}; ${detail}"
           fi
 
+          summary_file="${GITHUB_STEP_SUMMARY:-/dev/null}"
           {
             echo "### Orchid Claude Runtime Canary"
             echo ""
             echo "Verdict: **${verdict}**"
             echo "Detail: ${detail}"
             echo "Run: ${RUN_URL}"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } >> "$summary_file"
+          echo "verdict: ${verdict}"
+          echo "detail: ${detail}"
 
           case "$verdict" in
             pass)
-              gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-degraded --remove-label oc-provider-chain-blocked >/dev/null 2>&1 || true
+              gh issue edit 1031 --repo "$GITHUB_REPOSITORY" \
+                --remove-label oc-runtime-degraded \
+                --remove-label oc-provider-chain-blocked \
+                --remove-label oc-provider-billing-exhausted \
+                >/dev/null 2>&1 || true
               ;;
             fail)
-              gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded >/dev/null 2>&1 || true
+              case "$error_kind" in
+                billing_exhausted)
+                  owner_action="Top up Anthropic API credits at console.anthropic.com/settings/billing. The circuit closes automatically once the next canary passes."
+                  gh issue edit 1031 --repo "$GITHUB_REPOSITORY" \
+                    --add-label oc-runtime-degraded \
+                    --add-label oc-provider-billing-exhausted \
+                    >/dev/null 2>&1 || true
+                  ;;
+                authentication_error)
+                  owner_action="Verify the ANTHROPIC_API_KEY repository secret (Settings > Secrets and variables > Actions) is valid and not expired."
+                  gh issue edit 1031 --repo "$GITHUB_REPOSITORY" \
+                    --add-label oc-runtime-degraded \
+                    >/dev/null 2>&1 || true
+                  ;;
+                *)
+                  owner_action="Transient; canary will retry automatically."
+                  gh issue edit 1031 --repo "$GITHUB_REPOSITORY" \
+                    --add-label oc-runtime-degraded \
+                    >/dev/null 2>&1 || true
+                  ;;
+              esac
+              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" \
+                --body "ORCHID CLAUDE RUNTIME CANARY — **FAILED** (${error_kind}). ${detail}. Owner action: ${owner_action}. Run: ${RUN_URL}." \
+                >/dev/null 2>&1 || true
               exit 1
               ;;
             *)
