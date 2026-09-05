@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
-from app.semantic_index import routes as semantic_index_routes
 from app.semantic_index.provider import DeterministicLocalProvider
+from app.semantic_index.repository_runtime import get_repository_runtime
 
 from .engine import RetrievalEngine
 from .models import RetrievalQuery
@@ -13,19 +13,14 @@ router = APIRouter(
     tags=["evidence-retrieval"],
     dependencies=[Depends(verify_owner_or_api_key)],
 )
-try:
-    REPO = semantic_index_routes.get_repository_for_read()
-except HTTPException:
-    REPO = semantic_index_routes.REPO
-ENGINE = RetrievalEngine(REPO, DeterministicLocalProvider())
 
 
 def _repo():
-    global REPO
-    repository = semantic_index_routes.get_repository_for_read()
-    REPO = repository
-    ENGINE.repo = repository
-    return repository
+    return get_repository_runtime().read()
+
+
+def _engine():
+    return RetrievalEngine(_repo(), DeterministicLocalProvider())
 
 
 class SearchIn(BaseModel):
@@ -51,9 +46,8 @@ def run(p, mode, extra=None):
         (extra or {}).get("object_types", values["object_types"])
     )
     values["document_classes"] = tuple(values["document_classes"])
-    _repo()
     try:
-        return ENGINE.search(RetrievalQuery(**values))
+        return _engine().search(RetrievalQuery(**values))
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     except RuntimeError as e:
@@ -128,8 +122,9 @@ def one(index_document_id: int):
 
 @router.get("/configuration")
 def configuration():
+    engine = _engine()
     return {
-        "ranking_version": ENGINE.ranking_version,
+        "ranking_version": engine.ranking_version,
         "modes": ["LEXICAL", "SEMANTIC", "HYBRID"],
         "expansions": sorted(
             __import__(
@@ -143,20 +138,22 @@ def configuration():
 
 @router.get("/health")
 def health():
+    engine = _engine()
     return {
         "status": "ok",
         "read_only": True,
-        "active_models": len(_repo().models),
-        "ranking_version": ENGINE.ranking_version,
+        "active_models": len(engine.repo.models),
+        "ranking_version": engine.ranking_version,
     }
 
 
 @router.get("/status")
 def status():
+    runtime = get_repository_runtime()
     try:
-        _repo()
+        runtime.read()
     except HTTPException:
         pass
-    payload = semantic_index_routes.retrieval_backend_status()
-    payload["ranking_version"] = ENGINE.ranking_version
+    payload = runtime.status()
+    payload["ranking_version"] = _engine().ranking_version if not payload["unavailable"] else None
     return payload
