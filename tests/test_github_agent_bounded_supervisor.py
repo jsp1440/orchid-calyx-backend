@@ -25,7 +25,7 @@ class FakeCycle:
         return self.results.pop(0)
 
 
-def test_supervisor_is_preflight_only_by_default_and_stops_after_one_ready_candidate() -> None:
+def test_preflight_default_stops_after_ready_candidate() -> None:
     cycle = FakeCycle(
         [DispatchCycleResult(state="preflight_ready", program_job_id="job-1")]
     )
@@ -39,7 +39,7 @@ def test_supervisor_is_preflight_only_by_default_and_stops_after_one_ready_candi
     ]
 
 
-def test_supervisor_stops_deterministically_when_queue_is_idle() -> None:
+def test_idle_queue_stops_deterministically() -> None:
     cycle = FakeCycle([DispatchCycleResult(state="idle_no_candidate")])
 
     result = run_bounded_dispatch_supervisor(
@@ -54,7 +54,7 @@ def test_supervisor_stops_deterministically_when_queue_is_idle() -> None:
     assert result.cycles_attempted == 1
 
 
-def test_supervisor_stops_on_owner_review_without_consuming_later_cycles() -> None:
+def test_owner_review_stops_before_later_cycles() -> None:
     cycle = FakeCycle(
         [
             DispatchCycleResult(
@@ -79,7 +79,7 @@ def test_supervisor_stops_on_owner_review_without_consuming_later_cycles() -> No
     assert len(cycle.calls) == 1
 
 
-def test_supervisor_never_exceeds_hard_cycle_limit_and_emits_receipts() -> None:
+def test_hard_cycle_limit_emits_receipts() -> None:
     cycle = FakeCycle(
         [
             DispatchCycleResult(
@@ -110,7 +110,7 @@ def test_supervisor_never_exceeds_hard_cycle_limit_and_emits_receipts() -> None:
     assert len(cycle.calls) == 3
 
 
-def test_supervisor_rejects_non_positive_cycle_limit_before_dispatch() -> None:
+def test_non_positive_cycle_limit_is_rejected_before_dispatch() -> None:
     cycle = FakeCycle([])
 
     try:
