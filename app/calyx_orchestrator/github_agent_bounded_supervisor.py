@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
-from .github_agent_dispatch_cycle import DispatchCycleResult, GitHubCodingAgentDispatchCycle
+from .github_agent_dispatch_cycle import (
+    DispatchCycleResult,
+    GitHubCodingAgentDispatchCycle,
+)
 
 
 class SupervisorStopReason(str, Enum):
@@ -106,7 +109,8 @@ def run_bounded_dispatch_supervisor(
                 receipts=tuple(receipts),
             )
 
-        if result.state in {"rejected_admission", "blocked"} or result.action == "escalate":
+        is_blocked = result.state in {"rejected_admission", "blocked"}
+        if is_blocked or result.action == "escalate":
             return BoundedSupervisorResult(
                 stop_reason=SupervisorStopReason.BLOCKED,
                 cycles_attempted=cycle_number,
