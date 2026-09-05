@@ -65,7 +65,8 @@ class ImageIdentificationCandidate:
 
 
 class ImageRepository(Protocol):
-    def records_for_taxon(self, taxon_name: str) -> Iterable[ImageRecord]: ...
+    def records_for_taxon(self, taxon_name: str) -> Iterable[ImageRecord]:
+        ...
 
 
 @dataclass(frozen=True)
