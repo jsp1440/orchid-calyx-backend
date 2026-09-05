@@ -39,6 +39,16 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
     leases = list(snapshot.get("leases") or [])
     fingerprints = list(snapshot.get("dispatch_fingerprints") or [])
 
+    # Accept both supported snapshot shapes: a canonical top-level `leases`
+    # collection and a lease embedded on the running issue. Normalize the latter
+    # into the same invariant checks without weakening lease cardinality.
+    for issue in issues:
+        inline_lease = issue.get("lease")
+        if isinstance(inline_lease, dict):
+            normalized = dict(inline_lease)
+            normalized.setdefault("issue", _issue_id(issue))
+            leases.append(normalized)
+
     buckets = {
         "queued": [],
         "running": [],
