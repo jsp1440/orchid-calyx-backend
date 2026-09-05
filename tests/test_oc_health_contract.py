@@ -46,6 +46,19 @@ def test_single_running_lease_is_healthy():
     assert report["healthy"] is True
 
 
+def test_inline_running_lease_is_healthy():
+    report = evaluate({
+        "issues": [
+            issue(
+                8,
+                "oc-running",
+                lease={"id": "lease-8", "owner": "lane-8"},
+            )
+        ]
+    })
+    assert report["healthy"] is True
+
+
 def test_orphan_and_stale_leases_fail_closed():
     report = evaluate({
         "issues": [issue(5, "oc-queued")],
