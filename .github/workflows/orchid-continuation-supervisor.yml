@@ -1,0 +1,114 @@
+name: Orchid Continuation Supervisor
+
+# Event-driven companion to the five-minute recovery heartbeat. A completion
+# report is an execution checkpoint, not an endpoint: when a bounded worker
+# finishes, immediately wake the canonical scheduler so it can repair the
+# current item or lease the next eligible DeepOrchestrate/portfolio task.
+
+on:
+  workflow_run:
+    workflows: ["Orchid Completion Lane"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_conclusion:
+        description: "Optional conclusion to record for a manual continuation canary"
+        required: false
+        default: "manual"
+  push:
+    branches: [oc-autonomous-integration]
+    paths:
+      - '.github/workflows/orchid-continuation-supervisor.yml'
+      - 'docs/governance/CONTINUOUS_EXECUTION_RULE.md'
+      - 'tests/test_orchid_continuation_supervisor.py'
+
+concurrency:
+  group: orchid-continuation-supervisor-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  actions: write
+
+jobs:
+  continue:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      INTEGRATION_BRANCH: oc-autonomous-integration
+      SCHEDULER_WORKFLOW: orchid-continuous-completion.yml
+    steps:
+      - name: Record checkpoint and continuation decision
+        id: checkpoint
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion || inputs.source_conclusion || 'integration-update' }}
+          SOURCE_NAME: ${{ github.event.workflow_run.name || 'manual/integration checkpoint' }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+          SOURCE_HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          SOURCE_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          decision="SELECT_NEXT_TASK"
+          error="none"
+          cause="none"
+          correction="Wake the canonical continuous-completion scheduler immediately."
+
+          case "$SOURCE_CONCLUSION" in
+            success|manual|integration-update)
+              ;;
+            cancelled|skipped)
+              decision="CONTINUE"
+              error="Source execution ended without a successful implementation result: ${SOURCE_CONCLUSION}."
+              cause="The bounded source run did not reach a verifiable success state."
+              correction="Re-enter scheduler reconciliation; durable labels decide whether the current item remains runnable, validating, blocked, or repair-authorized."
+              ;;
+            *)
+              decision="REPAIR"
+              error="Source execution reported ${SOURCE_CONCLUSION}."
+              cause="A failed bounded execution requires exact-head/job evidence before a code, CI-infrastructure, provider, or backoff diagnosis is authoritative."
+              correction="Re-enter canonical reconciliation now. Existing repair/backoff policy authorizes a bounded repair when safe and parks repeated failures instead of thrashing."
+              ;;
+          esac
+
+          source_url=""
+          if [[ -n "$SOURCE_RUN_ID" ]]; then
+            source_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}"
+          fi
+
+          {
+            echo "## Orchid Continuous Execution checkpoint"
+            echo
+            echo "**Rule:** status reports are execution checkpoints, not endpoints."
+            echo
+            echo "- Source: ${SOURCE_NAME}"
+            echo "- Source conclusion: ${SOURCE_CONCLUSION}"
+            echo "- Head: ${SOURCE_HEAD_BRANCH}@${SOURCE_HEAD_SHA}"
+            if [[ -n "$source_url" ]]; then echo "- Evidence: ${source_url}"; fi
+            echo "- Error/failure: ${error}"
+            echo "- Likely cause: ${cause}"
+            echo "- Correction: ${correction}"
+            echo "- Continuation decision: **${decision}**"
+            echo "- Next action: dispatch ${SCHEDULER_WORKFLOW} on ${INTEGRATION_BRANCH}; scheduler chooses repair or the highest-priority eligible unblocked task."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger canonical scheduler
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The durable scheduler is authoritative for leases, priority, duplicate
+          # suppression, owner gates, provider backoff, and bounded repair. The
+          # supervisor never bypasses those controls; it only removes the idle gap
+          # between a terminal worker event and the next reconciliation cycle.
+          gh workflow run "$SCHEDULER_WORKFLOW" \
+            --repo "$REPO" \
+            --ref "$INTEGRATION_BRANCH"
+
+          echo "Canonical scheduler dispatch requested; continuation is now owned by durable GitHub state." >> "$GITHUB_STEP_SUMMARY"
