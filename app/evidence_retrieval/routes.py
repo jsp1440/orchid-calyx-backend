@@ -155,5 +155,7 @@ def status():
     except HTTPException:
         pass
     payload = runtime.status()
-    payload["ranking_version"] = _engine().ranking_version if not payload["unavailable"] else None
+    payload["ranking_version"] = (
+        _engine().ranking_version if not payload["unavailable"] else None
+    )
     return payload
