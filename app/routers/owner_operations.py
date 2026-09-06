@@ -51,6 +51,7 @@ from app.security import OWNER_SESSION_COOKIE, REVOKED_OWNER_NONCES, create_owne
 from app.routers.mission_control import completeness_rows, harvester_rows, metric_snapshot
 from app.readiness.live_graph_audit import run_live_graph_audit
 from app.readiness.relationship_measurement import measure_declared_relationships
+from runtime.audit_followthrough import ActionableFinding, run_followthrough
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
 
 router = APIRouter(prefix="/api/mission-control/owner", tags=["BUILD-051 Owner Operations"])
@@ -969,6 +970,60 @@ def derived_next_actions(
     return actions or ["No action derived from current measurements."]
 
 
+def _followthrough_findings(
+    audit_id: str,
+    audit_type: str,
+    *,
+    unresolved_failures: list[str],
+    measured_absent: list[str],
+    unmeasured: list[str],
+    unavailable: list[str],
+    observed_at: str,
+    provenance: dict[str, Any],
+) -> list[ActionableFinding]:
+    """Map this audit's own signals onto actionable-finding follow-through.
+
+    ``unresolved_failures`` (degraded subsystems plus any other blockers) are
+    code/config problems a remediation task can act on. Missing, unmeasured,
+    or unavailable relationship evidence is a scientific-measurement gap, not
+    something a code task resolves -- it is reported ``scientific_data_gap``
+    rather than fabricated as queued engineering work.
+
+    ``observed_at``/``provenance`` are this run's own generation timestamp and
+    source context, carried into the durable task so the remediation stays
+    traceable back to the audit that produced it.
+    """
+
+    findings: list[ActionableFinding] = []
+    for failure in unresolved_failures:
+        findings.append(
+            ActionableFinding(
+                finding_key=f"unresolved_failure:{failure}",
+                title=f"Unresolved failure: {failure}",
+                audit_source=audit_type,
+                audit_id=audit_id,
+                evidence={"failure": failure},
+                observed_at=observed_at,
+                provenance=dict(provenance),
+            )
+        )
+    for relation in measured_absent + unmeasured + unavailable:
+        findings.append(
+            ActionableFinding(
+                finding_key=f"relationship_evidence_gap:{relation}",
+                title=f"Relationship evidence gap: {relation}",
+                audit_source=audit_type,
+                audit_id=audit_id,
+                evidence={"relationship": relation},
+                actionable=False,
+                non_actionable_reason="scientific_data_gap",
+                observed_at=observed_at,
+                provenance=dict(provenance),
+            )
+        )
+    return findings
+
+
 def live_audit_payload(audit_type: str) -> dict[str, Any]:
     metrics = metric_snapshot()
     subsystems = completeness_rows()
@@ -1001,10 +1056,31 @@ def live_audit_payload(audit_type: str) -> dict[str, Any]:
         for name, entry in evidence.items()
         for warning in (entry.get("source_warnings") or [])
     )
+    audit_id = f"AUD-{uuid4().hex[:12].upper()}"
+    generated_at = utc_now()
+    unresolved_failures = degraded + list(metrics.get("blockers", []))
+    followthrough = run_followthrough(
+        _followthrough_findings(
+            audit_id,
+            audit_type,
+            unresolved_failures=unresolved_failures,
+            measured_absent=measured_absent,
+            unmeasured=unmeasured,
+            unavailable=unavailable,
+            observed_at=generated_at,
+            provenance={
+                "audit_type": audit_type,
+                "data_freshness": (
+                    "live_query" if metrics.get("database_connected") else "database_unavailable"
+                ),
+                "database_connected": bool(metrics.get("database_connected")),
+            },
+        )
+    )
     return {
-        "audit_id": f"AUD-{uuid4().hex[:12].upper()}",
+        "audit_id": audit_id,
         "audit_type": audit_type,
-        "generated_at": utc_now(),
+        "generated_at": generated_at,
         "source_systems": ["mission_control_metrics", "subsystem_completeness", "harvester_registry"],
         "record_counts": {name: metric.get("count", 0) for name, metric in (metrics.get("metrics") or {}).items()},
         "metric_source_warnings": source_warnings,
@@ -1015,11 +1091,20 @@ def live_audit_payload(audit_type: str) -> dict[str, Any]:
         "missing_relationships": measured_absent,
         "unmeasured_relationships": unmeasured,
         "unavailable_relationships": unavailable,
-        "unresolved_failures": degraded + list(metrics.get("blockers", [])),
+        "unresolved_failures": unresolved_failures,
         "confidence": "medium" if metrics.get("database_connected") else "low",
         "strengths": ["Mission Control backend telemetry is queryable.", "Harvester registry is visible."],
         "weaknesses": ["Deep source-specific provenance coverage still needs expansion."],
         "recommended_next_actions": derived_next_actions(metrics, subsystems, evidence),
+        "next_actions_created": followthrough["next_actions_created"],
+        # An audit that still owes remediation reports
+        # ``follow_through_pending``, never "complete", however complete the
+        # narrative above reads.
+        "followthrough_completion_state": followthrough["completion_state"],
+        # Ordered fixed -> in flight -> owner-required -> blocked/data-gap, so a
+        # consumer rendering it in order leads with the owner's actual decisions
+        # instead of the narrative fields above.
+        "followthrough_owner_summary": followthrough["owner_facing_summary"],
         "grant_relevance": "Current audit can support readiness narratives after owner review.",
         "collaboration_relevance": "Partner packets can cite operational versus planned capabilities explicitly.",
         "harvesters": harvesters,
