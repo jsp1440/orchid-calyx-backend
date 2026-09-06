@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
+from app.calyx_engineering.event_dispatcher import MAX_TRANSIENT_RETRIES
+
 
 class CompletionEventKind(StrEnum):
     WORKFLOW_RUN = "workflow_run"
@@ -21,6 +23,7 @@ class ContinuationAction(StrEnum):
     CONTINUE_PROVIDER_FREE = "continue_provider_free"
     PREPARE_REPAIR = "prepare_repair"
     PARK_PROVIDER_REQUIRED = "park_provider_required"
+    PARK_INFRASTRUCTURE = "park_infrastructure"
     OWNER_GATE = "owner_gate"
     AWAIT_TERMINAL_EVENT = "await_terminal_event"
 
@@ -65,6 +68,14 @@ class ContinuationPolicy:
     no_api_mode: bool = True
     owner_gate_required: bool = False
     provider_required: bool = False
+    repair_attempt_count: int = 0
+    max_repair_attempts: int = MAX_TRANSIENT_RETRIES
+
+    def __post_init__(self) -> None:
+        if self.repair_attempt_count < 0:
+            raise ValueError("REPAIR_ATTEMPT_COUNT_INVALID")
+        if self.max_repair_attempts <= 0:
+            raise ValueError("MAX_REPAIR_ATTEMPTS_INVALID")
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,17 +160,6 @@ def reconcile_completion_event(
             reason="OWNER_GATED_CONTINUATION",
         )
 
-    if active_policy.provider_required:
-        return ContinuationDecision(
-            action=ContinuationAction.PARK_PROVIDER_REQUIRED,
-            fingerprint=fingerprint,
-            reason=(
-                "NO_API_PROVIDER_CONTINUATION_PARKED"
-                if active_policy.no_api_mode
-                else "PROVIDER_CONTINUATION_REQUIRES_SEPARATE_AUTHORIZATION"
-            ),
-        )
-
     conclusion = (event.conclusion or "").lower()
     if conclusion in {"", "queued", "in_progress", "requested", "waiting", "pending"}:
         return ContinuationDecision(
@@ -167,7 +167,15 @@ def reconcile_completion_event(
             fingerprint=fingerprint,
             reason="EVENT_NOT_TERMINAL",
         )
+    if conclusion in {"cancelled", "timed_out", "action_required", "stale"}:
+        return ContinuationDecision(
+            action=ContinuationAction.PARK_INFRASTRUCTURE,
+            fingerprint=fingerprint,
+            reason=f"CI_INFRASTRUCTURE_BLOCKED:{conclusion}",
+        )
     if conclusion == "success":
+        if active_policy.provider_required:
+            return _park_provider_required(fingerprint, active_policy)
         return ContinuationDecision(
             action=ContinuationAction.CONTINUE_PROVIDER_FREE,
             fingerprint=fingerprint,
@@ -179,14 +187,18 @@ def reconcile_completion_event(
             fingerprint=fingerprint,
             reason=f"NON_SUCCESS_TERMINAL:{conclusion}",
         )
-    if conclusion in {
-        "failure",
-        "timed_out",
-        "cancelled",
-        "action_required",
-        "startup_failure",
-        "stale",
-    }:
+    if conclusion in {"failure", "startup_failure"}:
+        if active_policy.repair_attempt_count >= active_policy.max_repair_attempts:
+            return ContinuationDecision(
+                action=ContinuationAction.OWNER_GATE,
+                fingerprint=fingerprint,
+                reason=(
+                    "REPAIR_ATTEMPT_LIMIT_REACHED:"
+                    f"{active_policy.repair_attempt_count}"
+                ),
+            )
+        if active_policy.provider_required:
+            return _park_provider_required(fingerprint, active_policy)
         return ContinuationDecision(
             action=ContinuationAction.PREPARE_REPAIR,
             fingerprint=fingerprint,
@@ -196,6 +208,20 @@ def reconcile_completion_event(
         action=ContinuationAction.OWNER_GATE,
         fingerprint=fingerprint,
         reason=f"UNKNOWN_EVENT_CONCLUSION:{conclusion}",
+    )
+
+
+def _park_provider_required(
+    fingerprint: str, policy: ContinuationPolicy
+) -> ContinuationDecision:
+    return ContinuationDecision(
+        action=ContinuationAction.PARK_PROVIDER_REQUIRED,
+        fingerprint=fingerprint,
+        reason=(
+            "NO_API_PROVIDER_CONTINUATION_PARKED"
+            if policy.no_api_mode
+            else "PROVIDER_CONTINUATION_REQUIRES_SEPARATE_AUTHORIZATION"
+        ),
     )
 
 
