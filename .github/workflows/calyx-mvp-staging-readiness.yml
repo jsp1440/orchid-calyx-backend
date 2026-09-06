@@ -1,0 +1,84 @@
+name: Calyx MVP Staging Readiness
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calyx-mvp-staging-readiness
+  cancel-in-progress: false
+
+jobs:
+  readiness:
+    name: Read-only staging contract check
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 10
+    env:
+      CALYX_STAGING_BACKEND_URL: ${{ vars.CALYX_STAGING_BACKEND_URL }}
+      CALYX_STAGING_OWNER_ACCESS_CODE: ${{ secrets.CALYX_STAGING_OWNER_ACCESS_CODE }}
+    steps:
+      - name: Verify staging configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${CALYX_STAGING_BACKEND_URL:-}" ]] || {
+            echo "::error::Set staging variable CALYX_STAGING_BACKEND_URL."
+            exit 2
+          }
+          [[ "$CALYX_STAGING_BACKEND_URL" != *"orchid-calyx-backend.onrender.com"* ]] || {
+            echo "::error::Production backend URL is forbidden in the staging readiness workflow."
+            exit 2
+          }
+          [[ -n "${CALYX_STAGING_OWNER_ACCESS_CODE:-}" ]] || {
+            echo "::error::Set staging secret CALYX_STAGING_OWNER_ACCESS_CODE."
+            exit 2
+          }
+
+      - name: Authenticate staging owner session
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${CALYX_STAGING_BACKEND_URL%/}"
+          response=$(curl --fail-with-body --silent --show-error             --cookie-jar "$RUNNER_TEMP/calyx-staging.cookies"             --header "Content-Type: application/json"             --data "$(jq -nc --arg code "$CALYX_STAGING_OWNER_ACCESS_CODE" '{access_code: $code}')"             "$base/api/mission-control/owner/session")
+          jq -e '.authenticated == true' <<<"$response" >/dev/null
+
+      - name: Verify read-only Calyx and taxonomy contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${CALYX_STAGING_BACKEND_URL%/}"
+          cookies="$RUNNER_TEMP/calyx-staging.cookies"
+
+          verifier=$(curl --fail-with-body --silent --show-error             --cookie "$cookies"             "$base/api/scientific-interpretation/synthesis/health")
+          jq -e '
+            .check_calyx == true and
+            .verification_version == "CALYX-VERIFY-001"
+          ' <<<"$verifier" >/dev/null
+
+          taxonomy=$(curl --fail-with-body --silent --show-error             --cookie "$cookies"             "$base/api/mission-control/taxonomy/hassler-release-status")
+          jq -e '
+            type == "object" and
+            (.state // .lifecycle_state // .status) != null
+          ' <<<"$taxonomy" >/dev/null
+
+          jq -n             --arg verifier_version "$(jq -r '.verification_version' <<<"$verifier")"             --arg taxonomy_state "$(jq -r '.state // .lifecycle_state // .status' <<<"$taxonomy")"             '{
+              schema: "orchid.calyx-mvp-staging-readiness.v1",
+              environment: "staging",
+              mutation_performed: false,
+              paid_calyx_turn_submitted: false,
+              verifier_version: $verifier_version,
+              taxonomy_state: $taxonomy_state
+            }' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve scope boundaries
+        shell: bash
+        run: |
+          {
+            echo "No taxonomy activation was requested."
+            echo "No Knowledge Graph publication was requested."
+            echo "No Calyx conversation or provider turn was submitted."
+            echo "No production endpoint is permitted by this workflow."
+          } >> "$GITHUB_STEP_SUMMARY"

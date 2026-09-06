@@ -189,10 +189,40 @@ def test_stale_duplicate_dispatch_is_suppressed_before_claude(lane_text):
     assert lane_text.index("name: Verify scheduler lease") < lane_text.index("uses: anthropics/claude-code-action@v1")
 
 
+def test_claude_uses_deterministic_cost_aware_route(lane_text):
+    context = lane_text[lane_text.index("name: Load issue context") : lane_text.index("name: Classify Claude terminal state")]
+    assert "json labels" in context
+    assert "name: Select bounded Claude route" in context
+    assert "scripts/oc_model_router.py" in context
+    assert "--labels \"$ISSUE_LABELS\"" in context
+    assert '--model "${{ steps.route.outputs.model }}"' in context
+    assert "--max-turns ${{ steps.route.outputs.max_turns }}" in context
+    assert "route=${route_telemetry}" in context
+
+
+def test_cost_aware_route_preserves_provider_fallback_chain(lane_text):
+    assert "Execute bounded Gemini fallback" in lane_text
+    assert "Execute bounded OpenAI fallback" in lane_text
+    assert 'if: steps.claude_provider.outputs.fallback_allowed == \'true\'' in lane_text
+    assert 'if: steps.gemini_provider.outputs.fallback_allowed == \'true\'' in lane_text
+    assert "ROUTE_TIER: ${{ steps.route.outputs.tier }}" in lane_text
+    assert "Route=${route_telemetry}" in lane_text
+
+
 def test_stale_reclaim_exceeds_worker_timeout(lane_text, scheduler_text):
     assert "timeout-minutes: 70" in lane_text
     assert "4800" in scheduler_text
     assert 4800 > 70 * 60
+
+
+def test_codex_version_probe_is_bounded_before_guarded_execution(lane_text):
+    probe = "timeout 30s npx -y @openai/codex@0.151.0 --version"
+    execution = "env -u GH_TOKEN OPENAI_API_KEY=\"$OPENAI_API_KEY\" timeout 35m"
+    exit_receipt = 'echo "$status" > "$RUNNER_TEMP/openai-exit.txt"'
+
+    assert probe in lane_text
+    assert "\n          npx -y @openai/codex@0.151.0 --version" not in lane_text
+    assert lane_text.index(probe) < lane_text.index(execution) < lane_text.index(exit_receipt)
 
 
 def test_durable_pr_lineage_is_reconciled_before_dispatch(scheduler_text):
@@ -220,7 +250,11 @@ def test_validation_dispatch_outage_does_not_requeue_claude(lane_text):
 def test_red_validation_authorizes_bounded_repair(scheduler_text):
     red = 'if [[ "$result" != "completed success" ]]; then'
     start = scheduler_text.index(red)
-    assert "--add-label oc-queued --add-label oc-repair" in scheduler_text[start : start + 500]
+    end = scheduler_text.index("merge_state=", start)
+    repair_branch = scheduler_text[start:end]
+    assert 'if [[ "$latest_labels" == *oc-repair-backoff* ]]; then' in repair_branch
+    assert "--remove-label oc-queued --remove-label oc-repair" in repair_branch
+    assert "--add-label oc-queued --add-label oc-repair" in repair_branch
 
 
 def test_durable_pr_suppression_exempts_explicit_repair(scheduler_text):
@@ -290,6 +324,18 @@ def test_dispatched_gemini_canary_can_close_the_blocked_circuit(scheduler_text):
 def test_runtime_backoff_is_excluded_from_selection(scheduler_text):
     dispatch = scheduler_text[scheduler_text.index("name: Dispatch priority-aware portfolio workers") :]
     assert '[[ "$labels" == *oc-runtime-backoff* ]] && continue' in dispatch
+
+
+def test_gemini_security_failure_remains_classified_but_does_not_block_codex(lane_text):
+    classifier = lane_text[
+        lane_text.index("- name: Classify Gemini terminal state")
+        : lane_text.index("- name: Execute bounded OpenAI fallback")
+    ]
+    security = classifier[classifier.index("kind=security") : classifier.index("kind=safe_provider")]
+    assert "fallback=true" in security
+    assert "kind=security" in security
+    assert "if: steps.gemini_provider.outputs.fallback_allowed == 'true'" in lane_text
+    assert "independently authorized OpenAI" in lane_text
 
 
 def test_state_is_reread_immediately_before_dispatch(scheduler_text):

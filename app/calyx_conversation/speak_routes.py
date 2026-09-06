@@ -5,8 +5,11 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.brain_mission.routes import SERVICE as BRAIN_MISSION_SERVICE
+from app.database import get_db
+from app.scientific_memory.service import ScientificMemoryError, ScientificMemoryService
 from app.security import verify_owner_or_api_key
 
 from .climate_context import build_seasonal_climate_context
@@ -24,6 +27,7 @@ from .routes import STORE, _retrieval
 configured_reply_provider = configured_runtime_provider
 
 AuthDependency = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
+Db = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/calyx/speak", tags=["calyx-speak"])
 
 MAX_USER_TURN_CHARS = 100000
@@ -49,6 +53,19 @@ def _subject(auth: dict[str, Any]) -> str:
     if not subject:
         raise HTTPException(401, detail={"code": "AUTHENTICATED_SUBJECT_REQUIRED"})
     return subject
+
+
+def _scientific_memory_context(
+    db: Session | None, project_id: str, owner: str, privileged: bool
+) -> dict[str, Any]:
+    if db is None:
+        return {}
+    try:
+        return ScientificMemoryService().recall(
+            db, project_id, owner, privileged=privileged
+        )
+    except ScientificMemoryError:
+        return {}
 
 
 def _is_casual(message: str) -> bool:
@@ -475,7 +492,12 @@ def get_conversation(
 
 
 @router.post("/conversations/{conversation_id}/turns")
-def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: AuthDependency) -> dict[str, Any]:
+def append_turn(
+    conversation_id: str,
+    payload: ConversationTurnRequest,
+    auth: AuthDependency,
+    db: Db = None,
+) -> dict[str, Any]:
     owner = _subject(auth)
     existing = STORE.get(conversation_id, owner=owner)
     if existing is None:
@@ -537,6 +559,9 @@ def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: Au
         "casual": casual, "conversation_id": conversation_id, "project_id": project_id,
         "interaction_context": interaction_context, "retrieval": retrieval, "continuum": continuum,
         "climate": climate, "mission": mission, "mission_error": mission_error,
+        "scientific_memory": _scientific_memory_context(
+            db, project_id, owner, auth.get("auth_type") == "api_key"
+        ),
         # The investigation subject this turn continues, resolved server-side
         # from persistent conversation state. Interaction context, not evidence.
         "resolved_subject": retrieval.get("resolved_subject"),
@@ -603,7 +628,7 @@ def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: Au
         "research": {
             "casual": casual, "mission": mission, "mission_error": mission_error,
             "retrieval": retrieval, "continuum": continuum, "climate": climate,
-            "citations": citations,
+            "citations": citations, "scientific_memory": governed_context["scientific_memory"],
         },
         "workspace_outputs": _workspace_outputs(
             mission=mission, citations=citations, calyx_message=calyx_message,
