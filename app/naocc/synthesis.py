@@ -18,11 +18,11 @@ Rules:
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from app.naocc.evidence_schema import NAOCCEvidenceRecord, ProvenanceAnchor
+from app.naocc.evidence_schema import NAOCCEvidenceRecord
 
 SCHEMA_VERSION = "naocc-synthesis/v1"
 
