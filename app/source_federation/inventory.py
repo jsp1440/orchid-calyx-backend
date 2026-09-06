@@ -7,9 +7,9 @@ rights, access, provenance, taxonomy, and locality review.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from enum import StrEnum
-import hashlib
 
 
 class RightsState(StrEnum):
