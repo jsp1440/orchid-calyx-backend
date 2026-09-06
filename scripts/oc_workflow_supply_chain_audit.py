@@ -31,7 +31,7 @@ class RepositoryAudit:
 def classify_action(action: str) -> str:
     if action.startswith("./"):
         return "local"
-    if action.startswith("actions/") or action.startswith("github/"):
+    if action.startswith(("actions/", "github/")):
         return "first_party"
     return "third_party"
 
@@ -74,6 +74,7 @@ def audit_repository(repository: str, root: Path) -> RepositoryAudit:
 
 
 def remediation_manifest(audits: tuple[RepositoryAudit, ...]) -> dict[str, object]:
+    unknown = any(audit.state != "AVAILABLE" for audit in audits)
     mutable = [
         asdict(reference)
         for audit in audits
@@ -92,9 +93,24 @@ def remediation_manifest(audits: tuple[RepositoryAudit, ...]) -> dict[str, objec
             for audit in audits
         ],
         "mutable_remote_references": mutable,
-        "remediation_state": "REVIEW_REQUIRED" if mutable else "NO_MUTABLE_REFS_FOUND",
+        "remediation_state": (
+            "UNKNOWN"
+            if unknown
+            else "REVIEW_REQUIRED"
+            if mutable
+            else "NO_MUTABLE_REFS_FOUND"
+        ),
         "workflow_rewrites_performed": False,
     }
+
+
+def audit_exit_code(audits: tuple[RepositoryAudit, ...]) -> int:
+    return int(
+        any(
+            audit.state != "AVAILABLE" or bool(audit.mutable_count)
+            for audit in audits
+        )
+    )
 
 
 def main() -> int:
@@ -110,9 +126,10 @@ def main() -> int:
             parser.error("roots must use NAME=PATH")
         audits.append(audit_repository(name, Path(path)))
 
-    manifest = remediation_manifest(tuple(audits))
+    audited = tuple(audits)
+    manifest = remediation_manifest(audited)
     print(json.dumps(manifest, sort_keys=True, indent=2))
-    return 1 if any(audit.mutable_count for audit in audits) else 0
+    return audit_exit_code(audited)
 
 
 if __name__ == "__main__":

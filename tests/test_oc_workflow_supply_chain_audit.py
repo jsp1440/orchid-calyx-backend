@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.oc_workflow_supply_chain_audit import (
+    audit_exit_code,
     audit_repository,
     classify_action,
     remediation_manifest,
@@ -85,3 +86,23 @@ def test_remediation_manifest_lists_mutable_refs_without_rewriting(tmp_path: Pat
     assert len(mutable) == 1
     assert mutable[0]["action"] == "actions/checkout"
     assert mutable[0]["ref"] == "v4"
+
+
+def test_unknown_repository_fails_closed_in_manifest_and_exit(tmp_path: Path) -> None:
+    unknown = audit_repository("frontend", tmp_path / "not-mounted")
+
+    manifest = remediation_manifest((unknown,))
+
+    assert manifest["remediation_state"] == "UNKNOWN"
+    assert audit_exit_code((unknown,)) == 1
+
+
+def test_clean_available_repository_exits_successfully(tmp_path: Path) -> None:
+    _write_workflow(
+        tmp_path,
+        "steps:\n  - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567\n",
+    )
+    clean = audit_repository("backend", tmp_path)
+
+    assert remediation_manifest((clean,))["remediation_state"] == "NO_MUTABLE_REFS_FOUND"
+    assert audit_exit_code((clean,)) == 0
