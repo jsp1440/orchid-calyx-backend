@@ -86,6 +86,21 @@ def test_non_success_terminal_state_cannot_advance_continuation(conclusion: str)
     assert decision.side_effects_authorized is False
 
 
+@pytest.mark.parametrize(
+    "conclusion", ["cancelled", "timed_out", "action_required", "stale"]
+)
+def test_infrastructure_conclusion_parks_without_preparing_repair(
+    conclusion: str,
+) -> None:
+    event = normalize_completion_event(_payload(conclusion=conclusion))
+
+    decision = reconcile_completion_event(event, current_head_sha="abc123")
+
+    assert decision.action is ContinuationAction.PARK_INFRASTRUCTURE
+    assert decision.reason == f"CI_INFRASTRUCTURE_BLOCKED:{conclusion}"
+    assert decision.side_effects_authorized is False
+
+
 def test_failure_prepares_one_bounded_repair_lineage_without_dispatch() -> None:
     event = normalize_completion_event(_payload(conclusion="failure"))
 
@@ -94,6 +109,54 @@ def test_failure_prepares_one_bounded_repair_lineage_without_dispatch() -> None:
     assert decision.action is ContinuationAction.PREPARE_REPAIR
     assert decision.reason == "TERMINAL_FAILURE:failure"
     assert decision.side_effects_authorized is False
+
+
+def test_failure_halts_at_configured_repair_attempt_ceiling() -> None:
+    event = normalize_completion_event(_payload(conclusion="failure"))
+    policy = ContinuationPolicy(repair_attempt_count=3, max_repair_attempts=3)
+
+    decision = reconcile_completion_event(
+        event, current_head_sha="abc123", policy=policy
+    )
+
+    assert decision.action is ContinuationAction.OWNER_GATE
+    assert decision.reason == "REPAIR_ATTEMPT_LIMIT_REACHED:3"
+    assert decision.side_effects_authorized is False
+
+
+def test_failure_below_repair_attempt_ceiling_can_prepare_repair() -> None:
+    event = normalize_completion_event(_payload(conclusion="failure"))
+    policy = ContinuationPolicy(repair_attempt_count=2, max_repair_attempts=3)
+
+    decision = reconcile_completion_event(
+        event, current_head_sha="abc123", policy=policy
+    )
+
+    assert decision.action is ContinuationAction.PREPARE_REPAIR
+
+
+def test_provider_requirement_does_not_mask_infrastructure_state() -> None:
+    event = normalize_completion_event(_payload(conclusion="cancelled"))
+
+    decision = reconcile_completion_event(
+        event,
+        current_head_sha="abc123",
+        policy=ContinuationPolicy(no_api_mode=True, provider_required=True),
+    )
+
+    assert decision.action is ContinuationAction.PARK_INFRASTRUCTURE
+
+
+def test_provider_requirement_does_not_mask_non_terminal_state() -> None:
+    event = normalize_completion_event(_payload(conclusion="in_progress"))
+
+    decision = reconcile_completion_event(
+        event,
+        current_head_sha="abc123",
+        policy=ContinuationPolicy(no_api_mode=True, provider_required=True),
+    )
+
+    assert decision.action is ContinuationAction.AWAIT_TERMINAL_EVENT
 
 
 def test_provider_required_continuation_is_parked_in_no_api_mode() -> None:
@@ -155,6 +218,20 @@ def test_unknown_conclusion_fails_closed_to_owner_gate() -> None:
         ({"pull_request_number": 0}, "PULL_REQUEST_NUMBER_INVALID"),
     ],
 )
+@pytest.mark.parametrize(
+    ("kwargs", "error"),
+    [
+        ({"repair_attempt_count": -1}, "REPAIR_ATTEMPT_COUNT_INVALID"),
+        ({"max_repair_attempts": 0}, "MAX_REPAIR_ATTEMPTS_INVALID"),
+    ],
+)
+def test_invalid_repair_policy_fails_closed(
+    kwargs: dict[str, int], error: str
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        ContinuationPolicy(**kwargs)
+
+
 def test_invalid_or_ambiguous_identity_fails_closed(
     overrides: dict[str, object], error: str
 ) -> None:
