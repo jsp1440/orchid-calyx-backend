@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from hashlib import sha256
-from collections.abc import Iterable
 from typing import Any
 
 SCHEMA_VERSION = "oc.knowledge-source-registry.v1"
