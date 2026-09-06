@@ -55,19 +55,26 @@ def _manifest(
     )
 
 
-def _invocation(**changes: object) -> BoundaryInvocation:
-    values: dict[str, object] = {
-        "request_id": "req-1",
-        "agent_id": "calyx",
-        "server_id": "internal.science",
-        "tool_name": "science.lookup",
-        "data_class": DataClass.PUBLIC,
-        "resource": None,
-        "provider": None,
-        "cost_units": 0,
-    }
-    values.update(changes)
-    return BoundaryInvocation(**values)  # type: ignore[arg-type]
+def _invocation(
+    *,
+    server_id: str = "internal.science",
+    tool_name: str = "science.lookup",
+    data_class: DataClass = DataClass.PUBLIC,
+    provider: str | None = None,
+    untrusted_context: bool = False,
+    argument_count: int = 0,
+) -> BoundaryInvocation:
+    return BoundaryInvocation(
+        request_id="req-1",
+        agent_id="calyx",
+        server_id=server_id,
+        tool_name=tool_name,
+        data_class=data_class,
+        provider=provider,
+        untrusted_context=untrusted_context,
+        cost_units=0,
+        argument_count=argument_count,
+    )
 
 
 def _boundary(
