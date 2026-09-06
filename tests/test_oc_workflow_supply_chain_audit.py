@@ -41,6 +41,19 @@ def test_inventory_records_file_line_action_and_ref(tmp_path: Path) -> None:
     assert audit.references[1].immutable is True
 
 
+def test_yaml_valid_spacing_around_uses_colon_is_detected(tmp_path: Path) -> None:
+    _write_workflow(tmp_path, "steps:\n  - uses : vendor/action@v1\n")
+
+    audit = audit_repository("backend", tmp_path)
+
+    assert audit.state == "AVAILABLE"
+    assert audit.mutable_count == 1
+    assert len(audit.references) == 1
+    assert audit.references[0].action == "vendor/action"
+    assert audit.references[0].ref == "v1"
+    assert audit_exit_code((audit,)) == 1
+
+
 def test_local_actions_are_excluded_from_remote_inventory(tmp_path: Path) -> None:
     _write_workflow(
         tmp_path,
