@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from hashlib import sha256
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 SCHEMA_VERSION = "oc.knowledge-source-registry.v1"
 
@@ -69,7 +70,7 @@ def _safe(value: Any) -> Any:
 
 
 def stable_idempotency_key(source_id: str, action: str, subject: str) -> str:
-    material = f"{source_id}\n{action}\n{subject}".encode("utf-8")
+    material = f"{source_id}\n{action}\n{subject}".encode()
     return sha256(material).hexdigest()
 
 
