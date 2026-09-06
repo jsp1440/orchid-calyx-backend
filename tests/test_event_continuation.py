@@ -209,16 +209,6 @@ def test_unknown_conclusion_fails_closed_to_owner_gate() -> None:
 
 
 @pytest.mark.parametrize(
-    ("overrides", "error"),
-    [
-        ({"repository": ""}, "REPOSITORY_REQUIRED"),
-        ({"head_sha": ""}, "HEAD_SHA_REQUIRED"),
-        ({"event_id": ""}, "EVENT_ID_REQUIRED"),
-        ({"kind": "unsupported"}, "UNSUPPORTED_COMPLETION_EVENT_KIND"),
-        ({"pull_request_number": 0}, "PULL_REQUEST_NUMBER_INVALID"),
-    ],
-)
-@pytest.mark.parametrize(
     ("kwargs", "error"),
     [
         ({"repair_attempt_count": -1}, "REPAIR_ATTEMPT_COUNT_INVALID"),
@@ -232,6 +222,16 @@ def test_invalid_repair_policy_fails_closed(
         ContinuationPolicy(**kwargs)
 
 
+@pytest.mark.parametrize(
+    ("overrides", "error"),
+    [
+        ({"repository": ""}, "REPOSITORY_REQUIRED"),
+        ({"head_sha": ""}, "HEAD_SHA_REQUIRED"),
+        ({"event_id": ""}, "EVENT_ID_REQUIRED"),
+        ({"kind": "unsupported"}, "UNSUPPORTED_COMPLETION_EVENT_KIND"),
+        ({"pull_request_number": 0}, "PULL_REQUEST_NUMBER_INVALID"),
+    ],
+)
 def test_invalid_or_ambiguous_identity_fails_closed(
     overrides: dict[str, object], error: str
 ) -> None:
