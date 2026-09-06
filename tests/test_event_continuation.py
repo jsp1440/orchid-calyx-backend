@@ -75,6 +75,17 @@ def test_success_can_only_admit_provider_free_reconciliation() -> None:
     assert decision.side_effects_authorized is False
 
 
+@pytest.mark.parametrize("conclusion", ["neutral", "skipped"])
+def test_non_success_terminal_state_cannot_advance_continuation(conclusion: str) -> None:
+    event = normalize_completion_event(_payload(conclusion=conclusion))
+
+    decision = reconcile_completion_event(event, current_head_sha="abc123")
+
+    assert decision.action is ContinuationAction.OWNER_GATE
+    assert decision.reason == f"NON_SUCCESS_TERMINAL:{conclusion}"
+    assert decision.side_effects_authorized is False
+
+
 def test_failure_prepares_one_bounded_repair_lineage_without_dispatch() -> None:
     event = normalize_completion_event(_payload(conclusion="failure"))
 
