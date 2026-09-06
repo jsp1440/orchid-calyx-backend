@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping
 
 
 class CompletionEventKind(StrEnum):
@@ -118,7 +118,7 @@ def reconcile_completion_event(
     *,
     current_head_sha: str,
     seen_fingerprints: frozenset[str] = frozenset(),
-    policy: ContinuationPolicy = ContinuationPolicy(),
+    policy: ContinuationPolicy | None = None,
 ) -> ContinuationDecision:
     """Classify the next bounded action for one exact completion event.
 
@@ -126,6 +126,7 @@ def reconcile_completion_event(
     deployment, publication, and production mutation remain outside this module.
     """
 
+    active_policy = policy if policy is not None else ContinuationPolicy()
     fingerprint = event.material_fingerprint
     if fingerprint in seen_fingerprints:
         return ContinuationDecision(
@@ -141,20 +142,20 @@ def reconcile_completion_event(
             reason="EVENT_HEAD_DOES_NOT_MATCH_CURRENT_HEAD",
         )
 
-    if policy.owner_gate_required:
+    if active_policy.owner_gate_required:
         return ContinuationDecision(
             action=ContinuationAction.OWNER_GATE,
             fingerprint=fingerprint,
             reason="OWNER_GATED_CONTINUATION",
         )
 
-    if policy.provider_required:
+    if active_policy.provider_required:
         return ContinuationDecision(
             action=ContinuationAction.PARK_PROVIDER_REQUIRED,
             fingerprint=fingerprint,
             reason=(
                 "NO_API_PROVIDER_CONTINUATION_PARKED"
-                if policy.no_api_mode
+                if active_policy.no_api_mode
                 else "PROVIDER_CONTINUATION_REQUIRES_SEPARATE_AUTHORIZATION"
             ),
         )
@@ -166,11 +167,17 @@ def reconcile_completion_event(
             fingerprint=fingerprint,
             reason="EVENT_NOT_TERMINAL",
         )
-    if conclusion in {"success", "neutral", "skipped"}:
+    if conclusion == "success":
         return ContinuationDecision(
             action=ContinuationAction.CONTINUE_PROVIDER_FREE,
             fingerprint=fingerprint,
             reason="TERMINAL_EVENT_READY_FOR_DETERMINISTIC_RECONCILIATION",
+        )
+    if conclusion in {"neutral", "skipped"}:
+        return ContinuationDecision(
+            action=ContinuationAction.OWNER_GATE,
+            fingerprint=fingerprint,
+            reason=f"NON_SUCCESS_TERMINAL:{conclusion}",
         )
     if conclusion in {
         "failure",
