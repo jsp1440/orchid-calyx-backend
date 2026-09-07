@@ -5,7 +5,10 @@ import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-USES_RE = re.compile(r"^\s*(?:-\s*)?uses\s*:\s*([^\s@]+)@([^\s#]+)")
+USES_RE = re.compile(
+    r"""^\s*(?:-\s*)?uses\s*:\s*(?P<quote>[\"']?)(?P<action>[^\s@\"']+)"""
+    r"""@(?P<ref>[^\s#\"']+)(?P=quote)"""
+)
 FULL_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
@@ -49,7 +52,7 @@ def audit_repository(repository: str, root: Path) -> RepositoryAudit:
             match = USES_RE.match(line)
             if match is None:
                 continue
-            action, ref = match.groups()
+            _, action, ref = match.groups()
             classification = classify_action(action)
             if classification == "local":
                 continue
