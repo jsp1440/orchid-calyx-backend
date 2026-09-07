@@ -428,7 +428,13 @@ jobs:
           done
           if (( ${#dispatched[@]} > 0 )); then
             joined=$(IFS=,; echo "${dispatched[*]}")
-            gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$REPO" --body "ORCHID CONTINUOUS ENGINE — priority-aware dispatch for issue(s) ${joined}; active-width ceiling ${MAX_ACTIVE_LANES}. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            # scripts/oc_tracker.py classifies TRACKER_EXHAUSTED (GitHub 2500-comment
+            # ceiling) separately from auth/permission errors and auto-rotates to a
+            # successor tracker issue when needed.  Auth errors propagate as exit 1.
+            python3 scripts/oc_tracker.py \
+              --repo "$REPO" \
+              --tracker "$RUNTIME_TRACKER_ISSUE" \
+              --body "ORCHID CONTINUOUS ENGINE — priority-aware dispatch for issue(s) ${joined}; active-width ceiling ${MAX_ACTIVE_LANES}. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
           fi
 
       - name: Maintain integration-to-main owner gate
