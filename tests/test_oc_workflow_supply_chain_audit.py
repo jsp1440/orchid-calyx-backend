@@ -41,6 +41,38 @@ def test_inventory_records_file_line_action_and_ref(tmp_path: Path) -> None:
     assert audit.references[1].immutable is True
 
 
+def test_yaml_valid_spacing_around_uses_colon_is_detected(tmp_path: Path) -> None:
+    _write_workflow(tmp_path, "steps:\n  - uses : vendor/action@v1\n")
+
+    audit = audit_repository("backend", tmp_path)
+
+    assert audit.state == "AVAILABLE"
+    assert audit.mutable_count == 1
+    assert len(audit.references) == 1
+    assert audit.references[0].action == "vendor/action"
+    assert audit.references[0].ref == "v1"
+    assert audit_exit_code((audit,)) == 1
+
+
+def test_quoted_immutable_uses_values_are_normalized(tmp_path: Path) -> None:
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    _write_workflow(
+        tmp_path,
+        f"steps:\n  - uses : \"vendor/action@{sha}\"\n"
+        f"  - uses: 'actions/checkout@{sha}'\n",
+    )
+
+    audit = audit_repository("backend", tmp_path)
+
+    assert audit.mutable_count == 0
+    assert [reference.action for reference in audit.references] == [
+        "vendor/action",
+        "actions/checkout",
+    ]
+    assert all(reference.ref == sha for reference in audit.references)
+    assert all(reference.immutable for reference in audit.references)
+    assert audit_exit_code((audit,)) == 0
+
 def test_local_actions_are_excluded_from_remote_inventory(tmp_path: Path) -> None:
     _write_workflow(
         tmp_path,
