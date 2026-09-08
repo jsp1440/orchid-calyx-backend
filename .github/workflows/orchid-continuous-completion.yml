@@ -34,9 +34,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       INTEGRATION_BRANCH: oc-autonomous-integration
-      # #1193 (OC-STABILIZE-001) reached oc-repair-backoff on 2026-09-04;
-      # stabilization condition met. Restored to five-lane model per AGENTS.md.
-      MAX_ACTIVE_LANES: 5
+      # Recovery remains serialized while control-plane invariants are being
+      # re-proven. Widen only after the stabilization contract is intentionally
+      # updated and its exact-head regression suite is green.
+      MAX_ACTIVE_LANES: 1
       STABILIZATION_ISSUE: 1193
       MAX_REPAIR_ATTEMPTS: 2
       RUNTIME_TRACKER_ISSUE: 1031
