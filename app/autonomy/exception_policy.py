@@ -33,6 +33,7 @@ ENGINEERING_ANOMALIES = frozenset(
         "repair_backoff_contradiction",
         "provider_disabled",
         "lane_blocked",
+        "invalid_completion_snapshot",
     }
 )
 

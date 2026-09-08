@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
 """Build a redacted, read-only operations status payload for Calyx monitors.
 
-The canonical health decision remains in ``oc_health_contract.evaluate``. This
+The canonical health decision remains in oc_health_contract.evaluate. This
 module only projects that result plus explicitly allow-listed operational fields
 into a stable public payload; unknown input fields are intentionally discarded.
 """
@@ -17,9 +16,16 @@ from scripts.oc_health_contract import evaluate
 SCHEMA_VERSION = "oc.operations-status.v1"
 
 
+def _records(snapshot: dict[str, Any], field: str) -> list[dict[str, Any]]:
+    value = snapshot.get(field)
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
 def _lease_status(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
-    leases = list(snapshot.get("leases") or [])
-    for issue in snapshot.get("issues") or []:
+    leases = list(_records(snapshot, "leases"))
+    for issue in _records(snapshot, "issues"):
         inline = issue.get("lease")
         if isinstance(inline, dict):
             item = dict(inline)
@@ -42,21 +48,20 @@ def _lease_status(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _autonomous_prs(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
-    public: list[dict[str, Any]] = []
-    for pr in snapshot.get("autonomous_prs") or []:
-        public.append(
-            {
-                "number": pr.get("number"),
-                "head_sha": pr.get("head_sha"),
-                "ci_state": pr.get("ci_state"),
-                "mergeable": pr.get("mergeable"),
-            }
-        )
-    return public
+    return [
+        {
+            "number": pr.get("number"),
+            "head_sha": pr.get("head_sha"),
+            "ci_state": pr.get("ci_state"),
+            "mergeable": pr.get("mergeable"),
+        }
+        for pr in _records(snapshot, "autonomous_prs")
+    ]
 
 
 def _provider_status(snapshot: dict[str, Any]) -> dict[str, Any]:
-    provider = snapshot.get("provider") or {}
+    raw = snapshot.get("provider")
+    provider = raw if isinstance(raw, dict) else {}
     return {
         "status": provider.get("status"),
         "degraded": bool(provider.get("degraded", False)),
@@ -65,7 +70,8 @@ def _provider_status(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 
 def _integration_status(snapshot: dict[str, Any]) -> dict[str, Any]:
-    integration = snapshot.get("integration") or {}
+    raw = snapshot.get("integration")
+    integration = raw if isinstance(raw, dict) else {}
     return {
         "ready": bool(integration.get("ready", False)),
         "target": integration.get("target"),
@@ -101,26 +107,31 @@ def build_operations_status(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _invalid_snapshot(error: str) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "healthy": False,
+        "error": "invalid_snapshot",
+        "detail": error,
+    }
+
+
 def main() -> int:
     try:
         snapshot = json.load(sys.stdin)
-    except Exception as exc:
-        json.dump(
-            {
-                "schema_version": SCHEMA_VERSION,
-                "healthy": False,
-                "error": "invalid_snapshot",
-                "detail": type(exc).__name__,
-            },
-            sys.stdout,
-            sort_keys=True,
-        )
+    except json.JSONDecodeError as exc:
+        json.dump(_invalid_snapshot(type(exc).__name__), sys.stdout, sort_keys=True)
+        sys.stdout.write("\n")
+        return 2
+    if not isinstance(snapshot, dict):
+        json.dump(_invalid_snapshot("top-level JSON must be an object"), sys.stdout)
         sys.stdout.write("\n")
         return 2
 
-    json.dump(build_operations_status(snapshot), sys.stdout, sort_keys=True)
+    status = build_operations_status(snapshot)
+    json.dump(status, sys.stdout, sort_keys=True)
     sys.stdout.write("\n")
-    return 0
+    return 0 if status["healthy"] else 2
 
 
 if __name__ == "__main__":

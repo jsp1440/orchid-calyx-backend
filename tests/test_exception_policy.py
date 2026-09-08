@@ -80,3 +80,12 @@ def test_healthy_progress_does_not_notify_owner():
     decision = classify_exception(None)
     assert decision.exception_class == "none"
     assert decision.should_interrupt_owner is False
+
+
+def test_invalid_completion_snapshot_is_repairable_engineering_work():
+    decision = classify_exception(
+        "invalid_completion_snapshot", autonomous_repair_available=True
+    )
+    assert decision.exception_class == "engineering_exception"
+    assert decision.action == "repair"
+    assert decision.should_interrupt_owner is False

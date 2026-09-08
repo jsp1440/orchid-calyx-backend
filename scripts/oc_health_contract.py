@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
 """Machine-checkable continuous-completion health contract.
 
 Consumes a JSON snapshot on stdin and emits a normalized health report on stdout.
 Exit code 0 means the control plane is internally consistent. Exit code 2 means
-one or more structural contract invariants are violated. Exception classification
-is delegated to the canonical autonomy exception policy so detection is never
-silently promoted to an owner interruption.
+one or more contract invariants are violated. This checker is deliberately
+provider-independent and side-effect free so workflows, observers, and phone
+monitoring can share one definition of health.
 """
 
 from __future__ import annotations
@@ -21,6 +20,14 @@ EXECUTABLE = {"oc-queued", "oc-running", "oc-validating"}
 NON_EXECUTABLE = {"oc-runtime-backoff", "oc-repair-backoff", "oc-blocked"}
 
 VIOLATION_TO_ANOMALY = {
+    "missing_snapshot_field": "invalid_completion_snapshot",
+    "invalid_snapshot_field": "invalid_completion_snapshot",
+    "invalid_issue_record": "invalid_completion_snapshot",
+    "invalid_lease_record": "invalid_completion_snapshot",
+    "invalid_dispatch_fingerprint": "invalid_completion_snapshot",
+    "invalid_autonomous_pr_record": "invalid_completion_snapshot",
+    "lease_without_owner": "invalid_completion_snapshot",
+    "lease_without_material_fingerprint": "invalid_completion_snapshot",
     "multiple_executable_states": "queue_backoff_contradiction",
     "executable_parked_conflict": "queue_backoff_contradiction",
     "running_lease_cardinality": "stale_lease",
@@ -32,7 +39,6 @@ VIOLATION_TO_ANOMALY = {
     "exact_head_ci_error": "exact_head_ci_error",
     "exact_head_ci_skipped": "exact_head_ci_skipped",
 }
-
 AUTO_REPAIR_VIOLATIONS = frozenset(VIOLATION_TO_ANOMALY)
 
 
@@ -68,8 +74,8 @@ def _first_inferred_anomaly(
         anomaly = VIOLATION_TO_ANOMALY.get(str(violation.get("type") or ""))
         if anomaly:
             return anomaly
-
-    provider = snapshot.get("provider") or {}
+    raw_provider = snapshot.get("provider")
+    provider = raw_provider if isinstance(raw_provider, dict) else {}
     status = str(provider.get("status") or "").strip().lower()
     if provider.get("disabled") is True or status in {"disabled", "unavailable", "no_api"}:
         return "provider_disabled"
@@ -81,47 +87,65 @@ def _exception_decision(
 ) -> dict[str, Any]:
     raw_context = snapshot.get("exception_context")
     context = raw_context if isinstance(raw_context, dict) else {}
-
     explicit_anomaly = context.get("anomaly")
     anomaly = explicit_anomaly if isinstance(explicit_anomaly, str) else None
     if not anomaly:
         anomaly = _first_inferred_anomaly(violations, snapshot)
-
     protected_boundary = context.get("protected_boundary")
     if not isinstance(protected_boundary, str):
         protected_boundary = None
-
     inferred_repair = any(
         str(violation.get("type") or "") in AUTO_REPAIR_VIOLATIONS
         for violation in violations
     )
-    autonomous_repair_available = _bool_context(
-        context,
-        snapshot,
-        "autonomous_repair_available",
-        default=inferred_repair,
-    )
-    independent_authorized_work_available = _bool_context(
-        context, snapshot, "independent_authorized_work_available"
-    )
-    deterministic_work_available = _bool_context(
-        context, snapshot, "deterministic_work_available"
-    )
-
     return classify_exception(
         anomaly,
         protected_boundary=protected_boundary,
-        autonomous_repair_available=autonomous_repair_available,
-        independent_authorized_work_available=independent_authorized_work_available,
-        deterministic_work_available=deterministic_work_available,
+        autonomous_repair_available=_bool_context(
+            context, snapshot, "autonomous_repair_available", default=inferred_repair
+        ),
+        independent_authorized_work_available=_bool_context(
+            context, snapshot, "independent_authorized_work_available"
+        ),
+        deterministic_work_available=_bool_context(
+            context, snapshot, "deterministic_work_available"
+        ),
     ).as_dict()
 
 
 def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
-    issues = list(snapshot.get("issues") or [])
-    leases = list(snapshot.get("leases") or [])
-    fingerprints = list(snapshot.get("dispatch_fingerprints") or [])
+    required_collections = {
+        "issues": list,
+        "leases": list,
+        "dispatch_fingerprints": list,
+    }
+    violations: list[dict[str, Any]] = []
+    for field, expected_type in required_collections.items():
+        if field not in snapshot:
+            violations.append({"type": "missing_snapshot_field", "field": field})
+        elif not isinstance(snapshot[field], expected_type):
+            violations.append({"type": "invalid_snapshot_field", "field": field})
 
+    raw_issues = snapshot.get("issues")
+    raw_leases = snapshot.get("leases")
+    raw_fingerprints = snapshot.get("dispatch_fingerprints")
+    issues = [item for item in raw_issues if isinstance(item, dict)] if isinstance(raw_issues, list) else []
+    leases = [item for item in raw_leases if isinstance(item, dict)] if isinstance(raw_leases, list) else []
+    fingerprints = (
+        [item for item in raw_fingerprints if isinstance(item, str)]
+        if isinstance(raw_fingerprints, list)
+        else []
+    )
+    if isinstance(raw_issues, list) and len(issues) != len(raw_issues):
+        violations.append({"type": "invalid_issue_record"})
+    if isinstance(raw_leases, list) and len(leases) != len(raw_leases):
+        violations.append({"type": "invalid_lease_record"})
+    if isinstance(raw_fingerprints, list) and len(fingerprints) != len(raw_fingerprints):
+        violations.append({"type": "invalid_dispatch_fingerprint"})
+
+    # Accept both supported snapshot shapes: a canonical top-level `leases`
+    # collection and a lease embedded on the running issue. Normalize the latter
+    # into the same invariant checks without weakening lease cardinality.
     for issue in issues:
         inline_lease = issue.get("lease")
         if isinstance(inline_lease, dict):
@@ -137,8 +161,6 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
         "repair_backoff": [],
         "blocked": [],
     }
-    violations: list[dict[str, Any]] = []
-
     for issue in issues:
         labels = _labels(issue)
         ident = _issue_id(issue)
@@ -157,67 +179,33 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
         executable = labels & EXECUTABLE
         parked = labels & NON_EXECUTABLE
         if len(executable) > 1:
-            violations.append(
-                {
-                    "type": "multiple_executable_states",
-                    "issue": ident,
-                    "labels": sorted(executable),
-                }
-            )
+            violations.append({"type": "multiple_executable_states", "issue": ident, "labels": sorted(executable)})
         if executable and parked:
-            violations.append(
-                {
-                    "type": "executable_parked_conflict",
-                    "issue": ident,
-                    "executable": sorted(executable),
-                    "parked": sorted(parked),
-                }
-            )
+            violations.append({"type": "executable_parked_conflict", "issue": ident, "executable": sorted(executable), "parked": sorted(parked)})
 
-    lease_issue_counts = Counter(
-        lease.get("issue") for lease in leases if lease.get("active", True)
-    )
-    running_ids = {ident for ident in buckets["running"] if ident is not None}
+    lease_issue_counts = Counter(l.get("issue") for l in leases if l.get("active", True))
+    running_ids = {i for i in buckets["running"] if i is not None}
     for issue_id in running_ids:
         count = lease_issue_counts.get(issue_id, 0)
         if count != 1:
-            violations.append(
-                {
-                    "type": "running_lease_cardinality",
-                    "issue": issue_id,
-                    "active_leases": count,
-                }
-            )
+            violations.append({"type": "running_lease_cardinality", "issue": issue_id, "active_leases": count})
 
     for lease in leases:
         if not lease.get("active", True):
             continue
         issue_id = lease.get("issue")
         if issue_id not in running_ids:
-            violations.append(
-                {
-                    "type": "orphan_active_lease",
-                    "issue": issue_id,
-                    "lease": lease.get("id") or lease.get("owner"),
-                }
-            )
+            violations.append({"type": "orphan_active_lease", "issue": issue_id, "lease": lease.get("id") or lease.get("owner")})
+        if not lease.get("owner"):
+            violations.append({"type": "lease_without_owner", "issue": issue_id})
+        if not (lease.get("material_fingerprint") or lease.get("fingerprint")):
+            violations.append({"type": "lease_without_material_fingerprint", "issue": issue_id})
         if lease.get("stale") is True:
-            violations.append(
-                {
-                    "type": "stale_lease",
-                    "issue": issue_id,
-                    "lease": lease.get("id") or lease.get("owner"),
-                }
-            )
+            violations.append({"type": "stale_lease", "issue": issue_id, "lease": lease.get("id") or lease.get("owner")})
 
-    for fingerprint, count in Counter(fingerprints).items():
-        if fingerprint and count > 1:
-            violations.append(
-                {
-                    "type": "duplicate_dispatch_fingerprint",
-                    "fingerprint": fingerprint,
-                }
-            )
+    for fp, count in Counter(fingerprints).items():
+        if fp and count > 1:
+            violations.append({"type": "duplicate_dispatch_fingerprint", "fingerprint": fp})
 
     validating_targets = []
     for issue in issues:
@@ -226,40 +214,30 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
         target = issue.get("validation_target") or {}
         head = target.get("head_sha") or issue.get("head_sha")
         pr = target.get("pr") or issue.get("pr")
-        validating_targets.append(
-            {"issue": _issue_id(issue), "pr": pr, "head_sha": head}
-        )
+        validating_targets.append({"issue": _issue_id(issue), "pr": pr, "head_sha": head})
         if not head:
-            violations.append(
-                {
-                    "type": "validating_without_exact_head",
-                    "issue": _issue_id(issue),
-                    "pr": pr,
-                }
-            )
+            violations.append({"type": "validating_without_exact_head", "issue": _issue_id(issue), "pr": pr})
 
-    for pr in snapshot.get("autonomous_prs") or []:
+    raw_prs = snapshot.get("autonomous_prs") or []
+    if not isinstance(raw_prs, list):
+        violations.append({"type": "invalid_snapshot_field", "field": "autonomous_prs"})
+        raw_prs = []
+    for pr in raw_prs:
+        if not isinstance(pr, dict):
+            violations.append({"type": "invalid_autonomous_pr_record"})
+            continue
         state = str(pr.get("ci_state") or "").strip().lower()
-        if state in {"failure", "failed"}:
+        violation_type = {
+            "failure": "exact_head_ci_failure",
+            "failed": "exact_head_ci_failure",
+            "error": "exact_head_ci_error",
+            "errored": "exact_head_ci_error",
+            "skipped": "exact_head_ci_skipped",
+        }.get(state)
+        if violation_type:
             violations.append(
                 {
-                    "type": "exact_head_ci_failure",
-                    "pr": pr.get("number"),
-                    "head_sha": pr.get("head_sha"),
-                }
-            )
-        elif state in {"error", "errored"}:
-            violations.append(
-                {
-                    "type": "exact_head_ci_error",
-                    "pr": pr.get("number"),
-                    "head_sha": pr.get("head_sha"),
-                }
-            )
-        elif state == "skipped":
-            violations.append(
-                {
-                    "type": "exact_head_ci_skipped",
+                    "type": violation_type,
                     "pr": pr.get("number"),
                     "head_sha": pr.get("head_sha"),
                 }
@@ -274,6 +252,7 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
         "validating_targets": validating_targets,
         "provider": snapshot.get("provider") or {},
         "integration": snapshot.get("integration") or {},
+        "exceptions": snapshot.get("exceptions") or [],
         "exception_decision": exception_decision,
         "violations": violations,
     }
@@ -282,11 +261,20 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
 def main() -> int:
     try:
         snapshot = json.load(sys.stdin)
-    except Exception as exc:
+    except json.JSONDecodeError as exc:
+        json.dump(
+            {"healthy": False, "violations": [{"type": "invalid_snapshot", "error": str(exc)}]},
+            sys.stdout,
+        )
+        sys.stdout.write("\n")
+        return 2
+    if not isinstance(snapshot, dict):
         json.dump(
             {
                 "healthy": False,
-                "violations": [{"type": "invalid_snapshot", "error": str(exc)}],
+                "violations": [
+                    {"type": "invalid_snapshot", "error": "top-level JSON must be an object"}
+                ],
             },
             sys.stdout,
         )

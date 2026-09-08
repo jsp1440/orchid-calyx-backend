@@ -10,7 +10,7 @@ An issue may occupy at most one executable lifecycle state at a time:
 - `oc-running` — atomically leased to exactly one execution lane.
 - `oc-validating` — execution output exists and exact-head validation is pending or in progress.
 
-The following labels are non-executable and must exclude `oc-queued`, `oc-running`, and `oc-validating` unless a repository-specific transition is performed atomically in the same operation:
+The following labels are non-executable and MUST exclude `oc-queued`, `oc-running`, and `oc-validating` unless a repository-specific transition is performed atomically in the same operation:
 
 - `oc-runtime-backoff`
 - `oc-repair-backoff`
@@ -18,77 +18,97 @@ The following labels are non-executable and must exclude `oc-queued`, `oc-runnin
 
 ## Queue and lease invariants
 
-1. `oc-queued` must not coexist with `oc-running`.
-2. `oc-queued` must not coexist with `oc-validating`.
-3. Executable states must not coexist with runtime/repair backoff or blocked states.
-4. A backoff or blocked issue must not be selected for execution.
-5. Selection must atomically transition the selected issue from `oc-queued` to `oc-running` before execution output is emitted.
-6. Every `oc-running` issue must have exactly one current lease owner.
-7. A lease must identify its issue and should carry the material-change lineage used by the scheduler.
-8. The same material-change fingerprint must not be dispatched twice concurrently or repeatedly without material change.
-9. Stale/orphan leases must be recoverable without creating duplicate dispatch.
+1. `oc-queued` MUST NOT coexist with `oc-running`.
+2. `oc-queued` MUST NOT coexist with `oc-validating`.
+3. `oc-queued` MUST NOT coexist with `oc-runtime-backoff`.
+4. `oc-queued` MUST NOT coexist with `oc-repair-backoff`.
+5. A backoff or blocked issue MUST NOT be selected for execution.
+6. Selection MUST atomically transition the selected issue from `oc-queued` to `oc-running` before execution output is emitted.
+7. Every `oc-running` issue MUST have exactly one current lease owner.
+8. A lease MUST identify the issue and a material-change fingerprint (issue state plus expected PR/head when applicable).
+9. The same material-change fingerprint MUST NOT be dispatched twice concurrently or repeatedly without a material change.
+10. Stale leases MUST be recoverable without creating duplicate dispatch.
 
 ## Validation invariants
 
-1. `oc-validating` must correspond to a concrete PR/head or equivalent immutable validation target.
-2. CI used for advancement must be exact-head CI; stale success on an earlier head is insufficient.
-3. A changed PR head invalidates prior validation evidence.
-4. Failed, errored, or skipped exact-head CI on routine reversible work is an engineering exception and should enter bounded repair/revalidation without owner interruption.
-
-## Detection is not escalation
-
-Every completion-health snapshot exposes the canonical exception-policy decision. A detected anomaly is classified as one of:
-
-- `none`
-- `informational`
-- `engineering_exception`
-- `owner_exception`
-
-The machine-readable decision fields are:
-
-- `exception_class`
-- `owner_decision_required`
-- `owner_exception_category`
-- `autonomous_repair_available`
-- `independent_authorized_work_available`
-- `should_interrupt_owner`
-
-`should_interrupt_owner` may be true only when an owner-only protected boundary is the actual blocker and neither bounded autonomous repair nor independent authorized work can continue safely.
-
-Routine queue contradictions, exact-head CI failures, stale/orphan leases, duplicate fingerprints, provider-disabled state with deterministic work available, and one blocked lane while other authorized lanes remain are engineering exceptions. They must not be promoted to owner interruptions merely because they were detected.
-
-## Owner-only boundaries
-
-The canonical exception policy recognizes these owner-only categories when they are the actual blocking decision:
-
-- governance/constitutional authority change;
-- scientific truth or provenance activation/mutation;
-- sensitive-locality disclosure or policy change;
-- credential or security authority change;
-- new spending or paid-provider restoration;
-- destructive or irreversible operation;
-- production activation/health judgment;
-- explicit integration-to-main promotion gate where current policy still requires it.
-
-Integration-branch merges of green, reversible engineering remain governed by existing pre-authorization and are not owner exceptions by default.
+1. `oc-validating` MUST correspond to a concrete PR/head or equivalent immutable validation target.
+2. CI used for advancement MUST be exact-head CI; stale success on an earlier head is insufficient.
+3. A changed PR head MUST invalidate prior validation evidence.
+4. Failed validation may enter repair/backoff, but MUST NOT leave the item advertised as queued simultaneously.
 
 ## Provider-health invariants
 
 1. Provider capacity failure is a provider-health condition, not a queue-state condition.
-2. An unavailable provider must not cause a tight redispatch loop.
-3. New spending must not be authorized by the autonomous control plane.
-4. Provider degradation must not weaken scientific, provenance, sensitive-locality, security, destructive-operation, or governance safeguards.
-5. If deterministic/no-API work remains, provider-disabled state is parked and that work continues without owner interruption.
-6. Paid-provider restoration becomes an owner exception only when no safe authorized work remains and restoration is actually required to proceed.
+2. An unavailable provider MUST NOT cause a tight redispatch loop.
+3. Already-authorized provider fallback MAY be used when repository policy permits it.
+4. New spending MUST NOT be authorized by the autonomous control plane.
+5. Provider degradation MUST NOT weaken scientific, provenance, sensitive-locality, security, destructive-operation, or governance safeguards.
+6. When no provider can safely execute eligible work, the control plane MUST remain internally consistent and report a truthful parked/degraded state.
 
-## Operations-status projection
+## Integration and promotion invariants
 
-`scripts/oc_operations_status.py` exposes a stable, redacted `oc.operations-status.v1` payload suitable for Calyx/phone monitoring. It consumes the canonical health evaluation rather than reimplementing state logic.
+1. Routine green, mergeable, reversible engineering work is not an owner exception.
+2. Integration-branch convergence may proceed under existing repository policy.
+3. Integration-to-main promotion MUST preserve any explicit owner or constitutional gate already encoded by policy.
+4. A green workflow conclusion alone is not sufficient evidence of healthy autonomy; queue, lease, duplicate-dispatch, and exact-head invariants must also hold.
 
-The projection includes queue/running/validating/backoff IDs and counts, active lane/lease age data, exact-head validation targets, autonomous PR CI state, provider degradation, integration readiness, structural violations, and the six machine-readable exception decision fields above.
+## Owner-exception taxonomy
 
-Unknown fields are discarded. Provider credentials, secrets, private provenance, sensitive locality, internal exception details, and other non-allowlisted input are not surfaced.
+The autonomous system SHOULD continue without owner interruption unless one of these conditions is reached:
 
-## Operating consequence
+- owner policy or constitutional judgment is genuinely required;
+- the autonomous control plane is stalled after reasonable self-repair;
+- scientific or provenance integrity would be weakened;
+- sensitive locality could be exposed;
+- a security boundary is implicated;
+- new paid spending is required;
+- a destructive or irreversible operation is required;
+- production health requires an owner decision;
+- an existing explicit integration-to-main owner gate is reached.
 
-Repair first. Continue independent authorized work second. Escalate only when a protected owner-only boundary is the actual blocker.
+Everything else should be handled as normal autonomous engineering work.
+
+## Required health snapshot
+
+Every completion pulse should be able to produce or derive a machine-readable snapshot containing at least:
+
+- queued count and issue IDs;
+- running count, issue IDs, lease IDs/owners, and lease ages;
+- validating count, issue IDs, PR numbers, and exact head SHAs;
+- runtime-backoff count and issue IDs;
+- repair-backoff count and issue IDs;
+- contradictory-state violations;
+- stale leases;
+- duplicate material-change fingerprints;
+- provider availability/degradation state;
+- open autonomous PRs and exact-head CI status;
+- integration-to-main readiness;
+- production/governance/protected-boundary exceptions.
+
+A healer MUST NOT report success while any contradictory executable/backoff state remains. If an invariant cannot be restored safely, the health snapshot must fail closed and identify the blocking invariant.
+
+## Snapshot evidence requirements
+
+The top-level `issues`, `leases`, and `dispatch_fingerprints` collections are mandatory. Missing or incorrectly typed collections are contract violations rather than invented empty state. Every active lease must identify its owner and carry a material fingerprint (accepted keys: `material_fingerprint` or `fingerprint`) so attribution and duplicate suppression can be verified.
+
+
+## Canonical exception decision and read-only operations status
+
+The health report includes an exception_decision produced by the canonical
+autonomy exception policy. Structural completion evidence failures, contradictory
+queue state, incomplete or stale leases, duplicate fingerprints, and exact-head
+CI failures are engineering exceptions. They never become owner interruptions
+merely because they were detected.
+
+A protected boundary becomes an owner exception only when bounded repair and
+independent authorized work are both unavailable. In NO-API mode, provider work
+is parked while deterministic work remains eligible; prepared inventory is not
+provider or spending authorization.
+
+The scripts/oc_operations_status.py module projects the canonical report into
+the stable oc.operations-status.v1 read-only schema. The projection allow-lists
+queue counts and identities, active lane age and staleness, validating PR/head
+identity, autonomous PR CI state, redacted provider status, integration readiness,
+and the six direct exception-decision fields. It discards credentials, private
+connector data, sensitive locality details, raw exception details, and unknown
+input fields. Malformed or incomplete snapshots fail closed with a nonzero exit.
