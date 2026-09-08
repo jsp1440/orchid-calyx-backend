@@ -1,0 +1,50 @@
+name: Security SBOM
+
+on:
+  pull_request:
+    paths:
+      - "requirements*.txt"
+      - "app/**"
+      - "runtime/**"
+      - "scripts/generate_cyclonedx_sbom.py"
+      - ".github/workflows/security-sbom.yml"
+  push:
+    branches: [oc-autonomous-integration, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-sbom-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install production dependency graph
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Generate CycloneDX inventory and checksum
+        run: python scripts/generate_cyclonedx_sbom.py
+      - name: Verify readiness contracts
+        run: python -m unittest tests.test_security_readiness -v
+      - name: Upload immutable evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: orchid-calyx-backend-sbom-${{ github.sha }}
+          path: |
+            artifacts/orchid-calyx-backend.cdx.json
+            artifacts/orchid-calyx-backend.cdx.json.sha256
+          if-no-files-found: error
+          retention-days: 30
