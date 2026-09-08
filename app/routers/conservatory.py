@@ -21,7 +21,7 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.security import verify_owner_or_api_key
 from runtime.conservatory_calyx_context import (
@@ -32,6 +32,10 @@ from runtime.conservatory_collection_review import build_collection_review
 from runtime.conservatory_environment import (
     ConservatoryEnvironmentStore,
     EnvironmentError_,
+)
+from runtime.conservatory_evaluations import (
+    ConservatoryEvaluationStore,
+    EvaluationError,
 )
 from runtime.conservatory_events import ConservatoryEventStore, PlantEventError
 from runtime.conservatory_locations import ConservatoryLocationStore, LocationError
@@ -115,6 +119,20 @@ class EnvironmentReadingCreate(BaseModel):
     supersedes_id: str | None = Field(default=None, max_length=100)
 
 
+class EvaluationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cultivated_identity: str = Field(min_length=2, max_length=240)
+    species_consulted: str | None = Field(default=None, max_length=300)
+    relationship: str = Field(min_length=2, max_length=40)
+    # Deliberately a closed kind rather than the grower's location name.
+    location_kind: str = Field(min_length=2, max_length=40)
+    standing_observations: list[str] = Field(default_factory=list, max_length=40)
+    alternatives_considered: list[str] = Field(default_factory=list, max_length=40)
+    is_scientific_evidence: Literal[False] = False
+    observations_are_evidence: Literal[False] = False
+
+
 class MeasurementCreate(BaseModel):
     trait: str = Field(min_length=2, max_length=60)
     value: float
@@ -172,6 +190,10 @@ def _default_event_store() -> ConservatoryEventStore:
 
 def _default_measurement_store() -> ConservatoryMeasurementStore:
     return ConservatoryMeasurementStore(_conservatory_root())
+
+
+def _default_evaluation_store() -> ConservatoryEvaluationStore:
+    return ConservatoryEvaluationStore(_conservatory_root())
 
 
 def _default_photograph_store() -> ConservatoryPhotographStore:
@@ -258,6 +280,9 @@ def create_conservatory_router(
     get_measurements: Callable[
         [], ConservatoryMeasurementStore
     ] = _default_measurement_store,
+    get_evaluations: Callable[
+        [], ConservatoryEvaluationStore
+    ] = _default_evaluation_store,
     get_photographs: Callable[
         [], ConservatoryPhotographStore
     ] = _default_photograph_store,
@@ -572,6 +597,33 @@ def create_conservatory_router(
         if get_store().get(plant_id) is None:
             raise HTTPException(status_code=404, detail="plant not found")
         return get_measurements().ledger(plant_id)
+
+    @router.post("/plants/{plant_id}/evaluations", status_code=201)
+    def record_plant_evaluation(
+        plant_id: str,
+        payload: EvaluationCreate,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        values = payload.model_dump(
+            exclude={"is_scientific_evidence", "observations_are_evidence"}
+        )
+        try:
+            return get_evaluations().record(plant_id=plant_id, **values)
+        except EvaluationError as exc:
+            raise HTTPException(
+                status_code=422, detail={"code": str(exc)}
+            ) from exc
+
+    @router.get("/plants/{plant_id}/evaluations")
+    def read_plant_evaluations(
+        plant_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        return get_evaluations().history(plant_id)
 
     @router.get("/plants/{plant_id}/cultivation-context")
     def cultivation_context(
