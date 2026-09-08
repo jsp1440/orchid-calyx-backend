@@ -25,6 +25,8 @@ from app.scientific_adapter_lab.coverage_matrix import (
     CoverageState,
     DomainMetric,
     build_unavailable_matrix,
+    classify_source_precedence,
+    compute_backfill_priority,
 )
 
 
@@ -376,7 +378,6 @@ class TestSerializationSafety:
 
 class TestComputeBackfillPriority:
     def test_backfill_required_maps_to_critical(self):
-        from app.scientific_adapter_lab.coverage_matrix import compute_backfill_priority
         mat = CoverageMatrix(metrics=[
             _metric(state=CoverageState.BACKFILL_REQUIRED, key="m1")
         ])
@@ -385,7 +386,6 @@ class TestComputeBackfillPriority:
         assert tasks[0].priority == BackfillPriority.CRITICAL
 
     def test_stale_maps_to_high(self):
-        from app.scientific_adapter_lab.coverage_matrix import compute_backfill_priority
         mat = CoverageMatrix(metrics=[
             _metric(state=CoverageState.STALE, key="m1")
         ])
@@ -393,7 +393,6 @@ class TestComputeBackfillPriority:
         assert tasks[0].priority == BackfillPriority.HIGH
 
     def test_unknown_with_source_maps_to_medium(self):
-        from app.scientific_adapter_lab.coverage_matrix import compute_backfill_priority
         mat = CoverageMatrix(metrics=[
             _metric(state=CoverageState.UNKNOWN, key="m1", source_relation="db:taxonomy")
         ])
@@ -401,7 +400,6 @@ class TestComputeBackfillPriority:
         assert tasks[0].priority == BackfillPriority.MEDIUM
 
     def test_unknown_without_source_maps_to_low(self):
-        from app.scientific_adapter_lab.coverage_matrix import compute_backfill_priority
         mat = CoverageMatrix(metrics=[
             _metric(state=CoverageState.UNKNOWN, key="m1")
         ])
@@ -409,7 +407,6 @@ class TestComputeBackfillPriority:
         assert tasks[0].priority == BackfillPriority.LOW
 
     def test_measured_metrics_excluded(self):
-        from app.scientific_adapter_lab.coverage_matrix import compute_backfill_priority
         mat = CoverageMatrix(metrics=[
             _metric(state=CoverageState.MEASURED, key="m1", value=100, source_relation="db:t"),
         ])
@@ -417,7 +414,6 @@ class TestComputeBackfillPriority:
         assert tasks == []
 
     def test_unavailable_metrics_excluded(self):
-        from app.scientific_adapter_lab.coverage_matrix import compute_backfill_priority
         mat = CoverageMatrix(metrics=[
             _metric(state=CoverageState.UNAVAILABLE, key="m1"),
         ])
@@ -425,7 +421,6 @@ class TestComputeBackfillPriority:
         assert tasks == []
 
     def test_deduplication_by_domain_and_key(self):
-        from app.scientific_adapter_lab.coverage_matrix import compute_backfill_priority
         mat = CoverageMatrix(metrics=[
             _metric(state=CoverageState.UNKNOWN, key="same_key"),
             _metric(state=CoverageState.UNKNOWN, key="same_key"),
@@ -434,7 +429,6 @@ class TestComputeBackfillPriority:
         assert len(tasks) == 1
 
     def test_tasks_sorted_critical_first(self):
-        from app.scientific_adapter_lab.coverage_matrix import compute_backfill_priority
         mat = CoverageMatrix(metrics=[
             _metric(state=CoverageState.UNKNOWN, key="low"),
             _metric(state=CoverageState.BACKFILL_REQUIRED, key="crit"),
@@ -447,19 +441,16 @@ class TestComputeBackfillPriority:
         assert priorities[-1] == BackfillPriority.LOW
 
     def test_all_tasks_have_no_auto_publication(self):
-        from app.scientific_adapter_lab.coverage_matrix import compute_backfill_priority
         mat = build_unavailable_matrix()
         tasks = compute_backfill_priority(mat)
         assert all(t.automatic_publication is False for t in tasks)
 
     def test_all_tasks_have_no_kg_mutation(self):
-        from app.scientific_adapter_lab.coverage_matrix import compute_backfill_priority
         mat = build_unavailable_matrix()
         tasks = compute_backfill_priority(mat)
         assert all(t.knowledge_graph_mutation is False for t in tasks)
 
     def test_idempotency_key_uses_domain_metric(self):
-        from app.scientific_adapter_lab.coverage_matrix import compute_backfill_priority
         mat = CoverageMatrix(metrics=[
             _metric(domain=CoverageDomain.TAXONOMY, key="canonical_taxon_count",
                     state=CoverageState.UNKNOWN)
@@ -475,37 +466,31 @@ class TestComputeBackfillPriority:
 
 class TestClassifySourcePrecedence:
     def test_canonical_reviewed_beats_external(self):
-        from app.scientific_adapter_lab.coverage_matrix import classify_source_precedence
         value, rationale = classify_source_precedence(42.0, 99.0, canonical_reviewed=True)
         assert value == 42.0
         assert rationale == "canonical_db_read_through"
 
     def test_canonical_unreviewed_returned_when_not_reviewed(self):
-        from app.scientific_adapter_lab.coverage_matrix import classify_source_precedence
         value, rationale = classify_source_precedence(42.0, 99.0, canonical_reviewed=False)
         assert value == 42.0
         assert rationale == "canonical_unreviewed"
 
     def test_external_fallback_when_no_canonical(self):
-        from app.scientific_adapter_lab.coverage_matrix import classify_source_precedence
         value, rationale = classify_source_precedence(None, 99.0, canonical_reviewed=False)
         assert value == 99.0
         assert rationale == "external_discovery_fallback"
 
     def test_unavailable_when_both_none(self):
-        from app.scientific_adapter_lab.coverage_matrix import classify_source_precedence
         value, rationale = classify_source_precedence(None, None, canonical_reviewed=True)
         assert value is None
         assert rationale == "unavailable"
 
     def test_canonical_reviewed_none_falls_through_to_external(self):
-        from app.scientific_adapter_lab.coverage_matrix import classify_source_precedence
         value, rationale = classify_source_precedence(None, 77.0, canonical_reviewed=True)
         assert value == 77.0
         assert rationale == "external_discovery_fallback"
 
     def test_zero_canonical_not_treated_as_none(self):
-        from app.scientific_adapter_lab.coverage_matrix import classify_source_precedence
         value, rationale = classify_source_precedence(0.0, 99.0, canonical_reviewed=True)
         assert value == 0.0
         assert rationale == "canonical_db_read_through"
