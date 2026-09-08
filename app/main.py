@@ -597,10 +597,10 @@ app.include_router(kernel_router)
 app.include_router(orchestrator_router)
 app.include_router(planner_router)
 
-from app.routers import orchid_widgets  # noqa: E402
+from app.routers import orchid_widgets
 
 app.include_router(orchid_widgets.router)
 
-from app.routers import knowledge_graph  # noqa: E402
+from app.routers import knowledge_graph
 
 app.include_router(knowledge_graph.router)

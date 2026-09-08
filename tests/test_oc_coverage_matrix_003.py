@@ -29,7 +29,6 @@ from app.scientific_adapter_lab.coverage_matrix import (
     compute_backfill_priority,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -38,7 +37,7 @@ def _metric(
     domain: CoverageDomain = CoverageDomain.TAXONOMY,
     key: str = "test_metric",
     state: CoverageState = CoverageState.UNKNOWN,
-    value: int | float | str | None = None,
+    value: float | str | None = None,
     source_relation: str = "",
 ) -> DomainMetric:
     return DomainMetric(
