@@ -27,7 +27,6 @@ from app.scientific_adapter_lab.vision_image_pipeline import (
     build_unavailable_image_matrix,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

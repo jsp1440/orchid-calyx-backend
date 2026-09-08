@@ -25,7 +25,6 @@ from app.scientific_adapter_lab.conservation_status import (
     build_unavailable_conservation_matrix,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

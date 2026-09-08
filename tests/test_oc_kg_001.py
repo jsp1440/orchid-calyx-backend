@@ -9,6 +9,7 @@ Covers:
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 
 import pytest
@@ -24,7 +25,6 @@ from app.scientific_adapter_lab.kg_materialization import (
     SourceDomain,
     build_unavailable_kg_stubs,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -142,7 +142,7 @@ class TestKGMaterializationRecordValidation:
 
     def test_record_is_immutable(self):
         rec = _record()
-        with pytest.raises(Exception):
+        with pytest.raises((AttributeError, TypeError, dataclasses.FrozenInstanceError)):
             rec.record_id = "mutated"  # type: ignore[misc]
 
 

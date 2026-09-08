@@ -25,7 +25,6 @@ from app.scientific_adapter_lab.molecular_sequence import (
     build_unavailable_molecular_matrix,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

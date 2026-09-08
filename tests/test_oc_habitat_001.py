@@ -25,7 +25,6 @@ from app.scientific_adapter_lab.habitat_elevation import (
     classify_elevation_source,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -101,7 +100,7 @@ class TestElevationState:
             elevation_max_m=None,
             elevation_typical_m=None,
         )
-        with pytest.raises(ValueError, match="ElevationState.UNKNOWN"):
+        with pytest.raises(ValueError, match=r"ElevationState\.UNKNOWN"):
             rec.validate()
 
     def test_valid_record_passes_validate(self):

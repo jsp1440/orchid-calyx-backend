@@ -20,7 +20,6 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-
 BRIDGE_SCHEMA_VERSION = "oc-glossary-intake-bridge/v1"
 
 
@@ -156,7 +155,7 @@ def stage_glossary_terms_for_intake(
                 "term_id": getattr(term, "term_id", f"glossary-{norm[:40]}"),
                 "term": getattr(term, "term", norm),
                 "normalized_term": norm,
-                "confidence": float(getattr(term, "provenance", None) and getattr(term.provenance, "confidence", 0.0) or 0.0),
+                "confidence": float((getattr(term, "provenance", None) and getattr(term.provenance, "confidence", 0.0)) or 0.0),
                 "mention_count": len(getattr(term, "mentions", []) or []),
                 "provenance_chain": [
                     f"source:{source_hash[:16]}",
@@ -166,8 +165,8 @@ def stage_glossary_terms_for_intake(
         else:
             existing = deduped[norm]
             new_conf = float(
-                getattr(term, "provenance", None)
-                and getattr(term.provenance, "confidence", 0.0)
+                (getattr(term, "provenance", None)
+                and getattr(term.provenance, "confidence", 0.0))
                 or 0.0
             )
             existing["confidence"] = max(existing["confidence"], new_conf)
