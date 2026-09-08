@@ -18,6 +18,8 @@ from app.routers import (
     health,
     judging,
     reference_docs,
+    shows,
+    volunteer_ops,
 )
 from app.intake.routes import router as intake_router
 from app.semantic.routers import router as semantic_router
@@ -525,6 +527,8 @@ def shutdown_event():
 
 app.include_router(health.router)
 app.include_router(calyx_core.router)
+app.include_router(shows.router)
+app.include_router(volunteer_ops.router)
 app.include_router(awards.router)
 app.include_router(entries.router)
 app.include_router(feedback.router)
