@@ -536,7 +536,11 @@ def create_conservatory_router(
             raise HTTPException(status_code=404, detail="plant not found")
 
         if payload.flowering_event_id is not None:
-            event_ids = {row["id"] for row in get_events().events_for(plant_id)}
+            event_ids = {
+                row["id"]
+                for row in get_events().events_for(plant_id)
+                if row["kind"] == "flowering_observed"
+            }
             if payload.flowering_event_id not in event_ids:
                 raise HTTPException(
                     status_code=404,
