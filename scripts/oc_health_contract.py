@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Machine-checkable continuous-completion health contract.
 
 Consumes a JSON snapshot on stdin and emits a normalized health report on stdout.
@@ -35,9 +34,34 @@ def _issue_id(issue: dict[str, Any]) -> Any:
 
 
 def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
-    issues = list(snapshot.get("issues") or [])
-    leases = list(snapshot.get("leases") or [])
-    fingerprints = list(snapshot.get("dispatch_fingerprints") or [])
+    required_collections = {
+        "issues": list,
+        "leases": list,
+        "dispatch_fingerprints": list,
+    }
+    violations: list[dict[str, Any]] = []
+    for field, expected_type in required_collections.items():
+        if field not in snapshot:
+            violations.append({"type": "missing_snapshot_field", "field": field})
+        elif not isinstance(snapshot[field], expected_type):
+            violations.append({"type": "invalid_snapshot_field", "field": field})
+
+    raw_issues = snapshot.get("issues")
+    raw_leases = snapshot.get("leases")
+    raw_fingerprints = snapshot.get("dispatch_fingerprints")
+    issues = [item for item in raw_issues if isinstance(item, dict)] if isinstance(raw_issues, list) else []
+    leases = [item for item in raw_leases if isinstance(item, dict)] if isinstance(raw_leases, list) else []
+    fingerprints = (
+        [item for item in raw_fingerprints if isinstance(item, str)]
+        if isinstance(raw_fingerprints, list)
+        else []
+    )
+    if isinstance(raw_issues, list) and len(issues) != len(raw_issues):
+        violations.append({"type": "invalid_issue_record"})
+    if isinstance(raw_leases, list) and len(leases) != len(raw_leases):
+        violations.append({"type": "invalid_lease_record"})
+    if isinstance(raw_fingerprints, list) and len(fingerprints) != len(raw_fingerprints):
+        violations.append({"type": "invalid_dispatch_fingerprint"})
 
     # Accept both supported snapshot shapes: a canonical top-level `leases`
     # collection and a lease embedded on the running issue. Normalize the latter
@@ -57,8 +81,6 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
         "repair_backoff": [],
         "blocked": [],
     }
-    violations: list[dict[str, Any]] = []
-
     for issue in issues:
         labels = _labels(issue)
         ident = _issue_id(issue)
@@ -94,6 +116,10 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
         issue_id = lease.get("issue")
         if issue_id not in running_ids:
             violations.append({"type": "orphan_active_lease", "issue": issue_id, "lease": lease.get("id") or lease.get("owner")})
+        if not lease.get("owner"):
+            violations.append({"type": "lease_without_owner", "issue": issue_id})
+        if not (lease.get("material_fingerprint") or lease.get("fingerprint")):
+            violations.append({"type": "lease_without_material_fingerprint", "issue": issue_id})
         if lease.get("stale") is True:
             violations.append({"type": "stale_lease", "issue": issue_id, "lease": lease.get("id") or lease.get("owner")})
 
@@ -127,8 +153,23 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
 def main() -> int:
     try:
         snapshot = json.load(sys.stdin)
-    except Exception as exc:
-        json.dump({"healthy": False, "violations": [{"type": "invalid_snapshot", "error": str(exc)}]}, sys.stdout)
+    except json.JSONDecodeError as exc:
+        json.dump(
+            {"healthy": False, "violations": [{"type": "invalid_snapshot", "error": str(exc)}]},
+            sys.stdout,
+        )
+        sys.stdout.write("\n")
+        return 2
+    if not isinstance(snapshot, dict):
+        json.dump(
+            {
+                "healthy": False,
+                "violations": [
+                    {"type": "invalid_snapshot", "error": "top-level JSON must be an object"}
+                ],
+            },
+            sys.stdout,
+        )
         sys.stdout.write("\n")
         return 2
     report = evaluate(snapshot)

@@ -86,3 +86,7 @@ Every completion pulse should be able to produce or derive a machine-readable sn
 - production/governance/protected-boundary exceptions.
 
 A healer MUST NOT report success while any contradictory executable/backoff state remains. If an invariant cannot be restored safely, the health snapshot must fail closed and identify the blocking invariant.
+
+## Snapshot evidence requirements
+
+The top-level `issues`, `leases`, and `dispatch_fingerprints` collections are mandatory. Missing or incorrectly typed collections are contract violations rather than invented empty state. Every active lease must identify its owner and carry a material fingerprint (accepted keys: `material_fingerprint` or `fingerprint`) so attribution and duplicate suppression can be verified.
