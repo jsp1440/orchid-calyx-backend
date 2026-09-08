@@ -134,6 +134,13 @@ jobs:
               exit 1
               ;;
             *)
+              # Inconclusive probes do not open or close the provider circuit, but
+              # they must leave durable evidence so operators can distinguish an
+              # actual provider failure from a workflow-validation skip or malformed
+              # execution record.
+              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" \
+                --body "ORCHID CLAUDE RUNTIME CANARY — **INDETERMINATE**. ${detail}. Circuit state unchanged. Run: ${RUN_URL}." \
+                >/dev/null 2>&1 || true
               exit 1
               ;;
           esac
