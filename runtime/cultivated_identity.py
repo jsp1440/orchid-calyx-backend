@@ -12,9 +12,9 @@ import re
 from dataclasses import dataclass
 
 MAX_IDENTITY_CHARACTERS = 240
-_UNSAFE_PUNCTUATION = re.compile(r"[<>{}\\\\]")
-_HYBRID_SEPARATOR = re.compile(r"\\s(?:×|x|X)\\s")
-_CULTIVAR_EPITHET = re.compile(r"""\\s*(?:'[^']*'|‘[^’]*’|"[^"]*")\\s*""")
+_UNSAFE_PUNCTUATION = re.compile(r"[<>{}\\]")
+_HYBRID_SEPARATOR = re.compile(r"\s(?:×|x|X)\s")
+_CULTIVAR_EPITHET = re.compile(r"""\s*(?:'[^']*'|‘[^’]*’|\"[^\"]*\")\s*""")
 _GENUS = re.compile(r"^[A-Z][a-z-]+$")
 _SPECIES_EPITHET = re.compile(r"^[a-z][a-z-]+$")
 
@@ -87,7 +87,7 @@ def _one_parent(
 
 
 def _cross_parts(cultivated: str) -> tuple[list[str], str | None]:
-    bracketed = re.fullmatch(r"(.*?)\\s*\\(([^()]+)\\)\\s*", cultivated)
+    bracketed = re.fullmatch(r"(.*?)\s*\(([^()]+)\)\s*", cultivated)
     if not bracketed or not _HYBRID_SEPARATOR.search(bracketed.group(2)):
         return [part.strip() for part in _HYBRID_SEPARATOR.split(cultivated)], None
 
