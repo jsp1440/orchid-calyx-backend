@@ -19,6 +19,13 @@ from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.reasoning_ledger import routes
+from app.reasoning_ledger.models import (
+    LedgerEntry,
+    LedgerEntryKind,
+    LedgerProvenance,
+    ReasoningLedger,
+)
+from app.reasoning_ledger.serialization import ledger_to_dict
 
 
 class FakeDb:
@@ -207,3 +214,47 @@ def test_enforces_the_owner_boundary_through_the_shared_path(monkeypatch):
     call(ledger_id="ledger-9", version=1)
 
     assert calls == [("ledger-9", "owner@example.com")]
+
+
+def test_withheld_evidence_keeps_its_reference_identity_and_hash(monkeypatch):
+    """Withheld content is not absent evidence; its provenance must remain inspectable."""
+
+    content_hash = "a" * 64
+    withheld = LedgerEntry(
+        kind=LedgerEntryKind.SUPPORT,
+        text="[evidence body withheld by source policy]",
+        author="owner@example.com",
+        tenant_id="owner@example.com",
+        project_id="project-1",
+        provenance=LedgerProvenance(
+            source_kind="literature",
+            source_id="literature-record-42",
+            literature_record_id="literature-record-42",
+            content_hash=content_hash,
+            extra={"evidence_state": "withheld", "body_available": False},
+        ),
+        attributes={"evidence_state": "withheld"},
+    )
+    ledger = ReasoningLedger(
+        tenant_id="owner@example.com",
+        project_id="project-1",
+        title="Ledger with withheld evidence",
+        version=2,
+        entries=(withheld,),
+        created_by="owner@example.com",
+    )
+    install_service(monkeypatch, revisions=[ledger])
+    monkeypatch.setattr(routes, "ledger_to_dict", ledger_to_dict)
+
+    body = call(ledger_id=str(ledger.ledger_id), version=2)
+
+    entry = body["revision"]["entries"][0]
+    assert entry["text"] == "[evidence body withheld by source policy]"
+    assert entry["attributes"]["evidence_state"] == "withheld"
+    assert entry["provenance"]["source_id"] == "literature-record-42"
+    assert entry["provenance"]["literature_record_id"] == "literature-record-42"
+    assert entry["provenance"]["content_hash"] == content_hash
+    assert entry["provenance"]["extra"] == {
+        "evidence_state": "withheld",
+        "body_available": False,
+    }
