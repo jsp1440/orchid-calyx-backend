@@ -209,3 +209,66 @@ def test_non_object_json_returns_machine_readable_failure(monkeypatch, capsys):
     report = json.loads(capsys.readouterr().out)
     assert report["healthy"] is False
     assert report["violations"][0]["type"] == "invalid_snapshot"
+
+
+def test_health_exposes_no_exception_for_a_valid_snapshot():
+    report = evaluate(snapshot())
+    assert report["exception_decision"]["exception_class"] == "none"
+    assert report["exception_decision"]["should_interrupt_owner"] is False
+
+
+def test_missing_evidence_is_an_engineering_exception():
+    report = evaluate({})
+    assert report["healthy"] is False
+    assert report["exception_decision"]["exception_class"] == "engineering_exception"
+    assert report["exception_decision"]["autonomous_repair_available"] is True
+    assert report["exception_decision"]["should_interrupt_owner"] is False
+
+
+def test_failed_autonomous_pr_is_exact_head_engineering_exception():
+    report = evaluate(
+        snapshot(
+            autonomous_prs=[
+                {"number": 77, "head_sha": "abc", "ci_state": "failure"}
+            ]
+        )
+    )
+    assert report["healthy"] is False
+    assert {"exact_head_ci_failure"} == {
+        item["type"] for item in report["violations"]
+    }
+    assert report["exception_decision"]["exception_class"] == "engineering_exception"
+
+
+def test_provider_disabled_parks_without_interrupt_when_deterministic_work_remains():
+    report = evaluate(
+        snapshot(provider={"status": "no_api"}, deterministic_work_available=True)
+    )
+    decision = report["exception_decision"]
+    assert report["healthy"] is True
+    assert decision["exception_class"] == "engineering_exception"
+    assert decision["action"] == "park_provider_and_continue_deterministic_work"
+    assert decision["should_interrupt_owner"] is False
+
+
+def test_protected_provider_restoration_interrupts_only_when_work_is_depleted():
+    context = {
+        "anomaly": "provider_disabled",
+        "protected_boundary": "paid_provider_restoration",
+    }
+    blocked = evaluate(
+        snapshot(provider={"status": "disabled"}, exception_context=context)
+    )["exception_decision"]
+    assert blocked["exception_class"] == "owner_exception"
+    assert blocked["owner_exception_category"] == "spending_provider_restoration"
+    assert blocked["should_interrupt_owner"] is True
+
+    continuing = evaluate(
+        snapshot(
+            provider={"status": "disabled"},
+            deterministic_work_available=True,
+            exception_context=context,
+        )
+    )["exception_decision"]
+    assert continuing["exception_class"] == "engineering_exception"
+    assert continuing["should_interrupt_owner"] is False

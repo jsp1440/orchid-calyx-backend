@@ -14,8 +14,32 @@ import sys
 from collections import Counter
 from typing import Any
 
+from app.autonomy.exception_policy import classify_exception
+
 EXECUTABLE = {"oc-queued", "oc-running", "oc-validating"}
 NON_EXECUTABLE = {"oc-runtime-backoff", "oc-repair-backoff", "oc-blocked"}
+
+VIOLATION_TO_ANOMALY = {
+    "missing_snapshot_field": "invalid_completion_snapshot",
+    "invalid_snapshot_field": "invalid_completion_snapshot",
+    "invalid_issue_record": "invalid_completion_snapshot",
+    "invalid_lease_record": "invalid_completion_snapshot",
+    "invalid_dispatch_fingerprint": "invalid_completion_snapshot",
+    "invalid_autonomous_pr_record": "invalid_completion_snapshot",
+    "lease_without_owner": "invalid_completion_snapshot",
+    "lease_without_material_fingerprint": "invalid_completion_snapshot",
+    "multiple_executable_states": "queue_backoff_contradiction",
+    "executable_parked_conflict": "queue_backoff_contradiction",
+    "running_lease_cardinality": "stale_lease",
+    "orphan_active_lease": "orphan_lease",
+    "stale_lease": "stale_lease",
+    "duplicate_dispatch_fingerprint": "duplicate_fingerprint",
+    "validating_without_exact_head": "exact_head_ci_failure",
+    "exact_head_ci_failure": "exact_head_ci_failure",
+    "exact_head_ci_error": "exact_head_ci_error",
+    "exact_head_ci_skipped": "exact_head_ci_skipped",
+}
+AUTO_REPAIR_VIOLATIONS = frozenset(VIOLATION_TO_ANOMALY)
 
 
 def _labels(issue: dict[str, Any]) -> set[str]:
@@ -31,6 +55,62 @@ def _labels(issue: dict[str, Any]) -> set[str]:
 
 def _issue_id(issue: dict[str, Any]) -> Any:
     return issue.get("number", issue.get("id"))
+
+
+def _bool_context(
+    context: dict[str, Any], snapshot: dict[str, Any], key: str, default: bool = False
+) -> bool:
+    if key in context:
+        return bool(context.get(key))
+    if key in snapshot:
+        return bool(snapshot.get(key))
+    return default
+
+
+def _first_inferred_anomaly(
+    violations: list[dict[str, Any]], snapshot: dict[str, Any]
+) -> str | None:
+    for violation in violations:
+        anomaly = VIOLATION_TO_ANOMALY.get(str(violation.get("type") or ""))
+        if anomaly:
+            return anomaly
+    raw_provider = snapshot.get("provider")
+    provider = raw_provider if isinstance(raw_provider, dict) else {}
+    status = str(provider.get("status") or "").strip().lower()
+    if provider.get("disabled") is True or status in {"disabled", "unavailable", "no_api"}:
+        return "provider_disabled"
+    return None
+
+
+def _exception_decision(
+    snapshot: dict[str, Any], violations: list[dict[str, Any]]
+) -> dict[str, Any]:
+    raw_context = snapshot.get("exception_context")
+    context = raw_context if isinstance(raw_context, dict) else {}
+    explicit_anomaly = context.get("anomaly")
+    anomaly = explicit_anomaly if isinstance(explicit_anomaly, str) else None
+    if not anomaly:
+        anomaly = _first_inferred_anomaly(violations, snapshot)
+    protected_boundary = context.get("protected_boundary")
+    if not isinstance(protected_boundary, str):
+        protected_boundary = None
+    inferred_repair = any(
+        str(violation.get("type") or "") in AUTO_REPAIR_VIOLATIONS
+        for violation in violations
+    )
+    return classify_exception(
+        anomaly,
+        protected_boundary=protected_boundary,
+        autonomous_repair_available=_bool_context(
+            context, snapshot, "autonomous_repair_available", default=inferred_repair
+        ),
+        independent_authorized_work_available=_bool_context(
+            context, snapshot, "independent_authorized_work_available"
+        ),
+        deterministic_work_available=_bool_context(
+            context, snapshot, "deterministic_work_available"
+        ),
+    ).as_dict()
 
 
 def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -138,6 +218,33 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
         if not head:
             violations.append({"type": "validating_without_exact_head", "issue": _issue_id(issue), "pr": pr})
 
+    raw_prs = snapshot.get("autonomous_prs") or []
+    if not isinstance(raw_prs, list):
+        violations.append({"type": "invalid_snapshot_field", "field": "autonomous_prs"})
+        raw_prs = []
+    for pr in raw_prs:
+        if not isinstance(pr, dict):
+            violations.append({"type": "invalid_autonomous_pr_record"})
+            continue
+        state = str(pr.get("ci_state") or "").strip().lower()
+        violation_type = {
+            "failure": "exact_head_ci_failure",
+            "failed": "exact_head_ci_failure",
+            "error": "exact_head_ci_error",
+            "errored": "exact_head_ci_error",
+            "skipped": "exact_head_ci_skipped",
+        }.get(state)
+        if violation_type:
+            violations.append(
+                {
+                    "type": violation_type,
+                    "pr": pr.get("number"),
+                    "head_sha": pr.get("head_sha"),
+                }
+            )
+
+    exception_decision = _exception_decision(snapshot, violations)
+
     return {
         "healthy": not violations,
         "counts": {name: len(ids) for name, ids in buckets.items()},
@@ -146,6 +253,7 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
         "provider": snapshot.get("provider") or {},
         "integration": snapshot.get("integration") or {},
         "exceptions": snapshot.get("exceptions") or [],
+        "exception_decision": exception_decision,
         "violations": violations,
     }
 

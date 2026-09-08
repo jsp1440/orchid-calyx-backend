@@ -90,3 +90,25 @@ A healer MUST NOT report success while any contradictory executable/backoff stat
 ## Snapshot evidence requirements
 
 The top-level `issues`, `leases`, and `dispatch_fingerprints` collections are mandatory. Missing or incorrectly typed collections are contract violations rather than invented empty state. Every active lease must identify its owner and carry a material fingerprint (accepted keys: `material_fingerprint` or `fingerprint`) so attribution and duplicate suppression can be verified.
+
+
+## Canonical exception decision and read-only operations status
+
+The health report includes an exception_decision produced by the canonical
+autonomy exception policy. Structural completion evidence failures, contradictory
+queue state, incomplete or stale leases, duplicate fingerprints, and exact-head
+CI failures are engineering exceptions. They never become owner interruptions
+merely because they were detected.
+
+A protected boundary becomes an owner exception only when bounded repair and
+independent authorized work are both unavailable. In NO-API mode, provider work
+is parked while deterministic work remains eligible; prepared inventory is not
+provider or spending authorization.
+
+The scripts/oc_operations_status.py module projects the canonical report into
+the stable oc.operations-status.v1 read-only schema. The projection allow-lists
+queue counts and identities, active lane age and staleness, validating PR/head
+identity, autonomous PR CI state, redacted provider status, integration readiness,
+and the six direct exception-decision fields. It discards credentials, private
+connector data, sensitive locality details, raw exception details, and unknown
+input fields. Malformed or incomplete snapshots fail closed with a nonzero exit.
