@@ -104,11 +104,12 @@ def _cross_parts(cultivated: str) -> tuple[list[str], str | None]:
 def resolve_cultivated_identity(stored: str | None) -> CultivatedIdentity | None:
     """Return a defensible species binding, or an explicit non-binding result."""
 
-    cultivated = " ".join((stored or "").split())
+    raw = stored or ""
+    cultivated = " ".join(raw.split())
     if (
         not cultivated
         or len(cultivated) > MAX_IDENTITY_CHARACTERS
-        or any(ord(character) <= 31 or ord(character) == 127 for character in cultivated)
+        or any(ord(character) <= 31 or ord(character) == 127 for character in raw)
         or _UNSAFE_PUNCTUATION.search(cultivated)
     ):
         return None
