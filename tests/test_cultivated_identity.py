@@ -78,5 +78,6 @@ def test_malformed_or_unsafe_identity_is_rejected() -> None:
     assert resolve_cultivated_identity(None) is None
     assert resolve_cultivated_identity("") is None
     assert resolve_cultivated_identity("<script>") is None
-    assert resolve_cultivated_identity("Phragmipedium\\nkovachii") is not None
+    assert resolve_cultivated_identity("Phragmipedium\nkovachii") is None
+    assert resolve_cultivated_identity("Phragmipedium\\\\nkovachii") is None
     assert resolve_cultivated_identity("x" * 241) is None
