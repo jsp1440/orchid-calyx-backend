@@ -117,11 +117,12 @@ class ConservatoryMeasurementStore:
         _require(unit in TRAIT_UNITS[trait], "UNIT_NOT_ALLOWED_FOR_TRAIT")
         _require(method in MEASUREMENT_METHODS, "METHOD_UNRECOGNISED")
         _require(bool(observed_at), "OBSERVED_AT_REQUIRED")
-        _require(math.isfinite(value), "VALUE_MUST_BE_FINITE")
-        _require(value >= 0, "VALUE_MUST_NOT_BE_NEGATIVE")
+        numeric_value = float(value)
+        _require(math.isfinite(numeric_value), "VALUE_MUST_BE_FINITE")
+        _require(numeric_value >= 0, "VALUE_MUST_NOT_BE_NEGATIVE")
         if trait == "flower_count":
             _require(method == "manual_count", "COUNT_REQUIRES_MANUAL_COUNT")
-            _require(value.is_integer(), "COUNT_MUST_BE_AN_INTEGER")
+            _require(numeric_value.is_integer(), "COUNT_MUST_BE_AN_INTEGER")
         else:
             _require(method != "manual_count", "MANUAL_COUNT_REQUIRES_COUNT_TRAIT")
 
@@ -129,7 +130,7 @@ class ConservatoryMeasurementStore:
             id=str(uuid4()),
             plant_id=plant_id,
             trait=trait,
-            value=value,
+            value=numeric_value,
             unit=unit,
             method=method,
             observed_at=observed_at,
