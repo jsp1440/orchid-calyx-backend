@@ -8,8 +8,8 @@ parent/nearest taxon for an interspecific cross.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 MAX_IDENTITY_CHARACTERS = 240
 _UNSAFE_PUNCTUATION = re.compile(r"[<>{}\\\\]")
