@@ -31,7 +31,6 @@ from app.scientific_adapter_lab.matrix_vision_canonical_path import (
     guard_vision_analysis_entry,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures — minimal GlossaryTerm stubs (matches literature_extraction shape)
 # ---------------------------------------------------------------------------

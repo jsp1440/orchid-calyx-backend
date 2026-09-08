@@ -2,11 +2,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from typing import Optional, Any
 import os
-import re
-from datetime import datetime, timezone
 
-import psycopg
-from psycopg.types.json import Jsonb
 from starlette.responses import Response as StarletteResponse
 
 from app.routers import (
@@ -53,9 +49,8 @@ from app.atlas_intelligence.api import router as atlas_intelligence_router
 from app.mission_control_briefing.routes import router as mission_control_briefing_router
 from app.mission_control_release.routes import router as mission_control_release_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
-from app.missions.dependencies import get_mission_service
 from app.missions.routers import router as missions_router, runtime_queue_router, templates_router
-from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, owner_cookie_secure, verify_owner_or_api_key
+from app.security import get_api_key, get_owner_access_code, get_owner_session_secret, verify_owner_or_api_key
 from app.routers.health import add_mission_control_cors_headers, allowed_mission_control_origins
 from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
 from runtime.router_fastapi import router as runtime_router, science_router
@@ -68,7 +63,6 @@ from runtime.autonomous_runner import (
     enqueue_default_jobs,
     execute_all_pending_jobs,
     execute_next_job,
-    run_job_logic,
 )
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
@@ -576,10 +570,10 @@ app.include_router(kernel_router)
 app.include_router(orchestrator_router)
 app.include_router(planner_router)
 
-from app.routers import orchid_widgets
+from app.routers import orchid_widgets  # noqa: E402
 
 app.include_router(orchid_widgets.router)
 
-from app.routers import knowledge_graph
+from app.routers import knowledge_graph  # noqa: E402
 
 app.include_router(knowledge_graph.router)

@@ -42,7 +42,6 @@ from app.multimodal_intelligence.contracts import (
 )
 from app.multimodal_intelligence.engine import matrix_observations_from_vision
 
-
 PATH_SCHEMA_VERSION = "oc-matrix-vision-path/v1"
 
 CANONICAL_PATH_DESCRIPTION = {
