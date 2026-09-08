@@ -215,6 +215,9 @@ def _create_successor_issue(
         f"Predecessor: #{exhausted_issue}"
     )
 
+    # Create the issue without labels first — gh issue create fails entirely if
+    # a label doesn't exist in the repo.  Label application is best-effort
+    # below; the HTML-comment successor record is the primary chain mechanism.
     rc, out, err = run(
         "issue",
         "create",
@@ -224,10 +227,6 @@ def _create_successor_issue(
         title,
         "--body",
         body,
-        "--label",
-        TRACKER_BASE_LABEL,
-        "--label",
-        TRACKER_ACTIVE_LABEL,
     )
     if rc != 0:
         exc_cls = _classify_error(err) or TrackerError
@@ -237,11 +236,23 @@ def _create_successor_issue(
     # https://github.com/owner/repo/issues/1234
     url = out.strip()
     try:
-        return int(url.rstrip("/").split("/")[-1])
+        issue_num = int(url.rstrip("/").split("/")[-1])
     except (ValueError, IndexError) as exc:
         raise TrackerError(
             f"Unexpected response creating successor issue: {url!r}"
         ) from exc
+
+    # Ensure labels exist (idempotent --force), then apply them.  Failures are
+    # swallowed: label-based discovery is a speed optimisation; the HTML comment
+    # chain provides correctness even without these labels.
+    for label in (TRACKER_BASE_LABEL, TRACKER_ACTIVE_LABEL):
+        run("label", "create", label, "--repo", repo, "--color", "0075ca", "--force")
+    run(
+        "issue", "edit", str(issue_num), "--repo", repo,
+        "--add-label", TRACKER_BASE_LABEL, "--add-label", TRACKER_ACTIVE_LABEL,
+    )
+
+    return issue_num
 
 
 def _rotate_tracker(
