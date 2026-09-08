@@ -17,9 +17,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import sys
 from pathlib import Path
-from typing import Callable
 
 import pytest
 
@@ -64,7 +62,8 @@ def _active_tracker(issue_num: int) -> tuple[int, str, str]:
 
 
 def _successor_created(issue_num: int) -> tuple[int, str, str]:
-    return _ok(json.dumps({"number": issue_num}))
+    # gh issue create outputs the new issue URL on stdout
+    return _ok(f"https://github.com/jsp1440/orchid-calyx-backend/issues/{issue_num}\n")
 
 
 def _no_successor_comments() -> tuple[int, str, str]:

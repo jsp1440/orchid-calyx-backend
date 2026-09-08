@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 
@@ -105,7 +104,7 @@ def _parse_successor_comment(body: str) -> int | None:
 
 
 def _default_run(*args: str) -> tuple[int, str, str]:
-    result = subprocess.run(["gh", *args], capture_output=True, text=True)
+    result = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
     return result.returncode, result.stdout, result.stderr
 
 
@@ -168,7 +167,7 @@ def _find_existing_successor(
     """
     run = _run or _default_run
 
-    rc, out, err = run(
+    rc, out, _err = run(
         "api",
         "--paginate",
         f"repos/{repo}/issues/{exhausted_issue}/comments?per_page=100",
@@ -229,18 +228,19 @@ def _create_successor_issue(
         TRACKER_BASE_LABEL,
         "--label",
         TRACKER_ACTIVE_LABEL,
-        "--json",
-        "number",
     )
     if rc != 0:
         exc_cls = _classify_error(err) or TrackerError
         raise exc_cls(f"Failed to create successor tracker issue: {err.strip()}")
 
+    # gh issue create outputs the new issue URL, e.g.:
+    # https://github.com/owner/repo/issues/1234
+    url = out.strip()
     try:
-        return int(json.loads(out)["number"])
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        return int(url.rstrip("/").split("/")[-1])
+    except (ValueError, IndexError) as exc:
         raise TrackerError(
-            f"Unexpected response creating successor issue: {out!r}"
+            f"Unexpected response creating successor issue: {url!r}"
         ) from exc
 
 
