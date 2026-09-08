@@ -139,7 +139,7 @@ def test_location_name_and_evidence_promotion_fields_fail_closed(tmp_path: Path)
     }
 
     for forbidden in [
-        {"location_name": "Jeff's greenhouse bench 2"},
+        {"location_name": "private greenhouse bench 2"},
         {"is_scientific_evidence": True},
         {"observations_are_evidence": True},
         {"supersedes_id": "earlier-evaluation"},
