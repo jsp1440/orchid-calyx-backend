@@ -612,9 +612,7 @@ def create_conservatory_router(
         try:
             return get_evaluations().record(plant_id=plant_id, **values)
         except EvaluationError as exc:
-            raise HTTPException(
-                status_code=422, detail={"code": str(exc)}
-            ) from exc
+            raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
 
     @router.get("/plants/{plant_id}/evaluations")
     def read_plant_evaluations(
