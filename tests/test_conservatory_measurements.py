@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.routers.conservatory import create_conservatory_router
+from runtime.conservatory_events import ConservatoryEventStore
 from runtime.conservatory_measurements import (
     ConservatoryMeasurementStore,
     MeasurementError,
@@ -11,14 +12,18 @@ from runtime.conservatory_measurements import (
 from runtime.conservatory_store import ConservatoryStore
 
 
-def _client(tmp_path: Path) -> TestClient:
+def _client(
+    tmp_path: Path, *, events: ConservatoryEventStore | None = None
+) -> TestClient:
     plants = ConservatoryStore(tmp_path)
     measurements = ConservatoryMeasurementStore(tmp_path)
+    events = events or ConservatoryEventStore(tmp_path)
     app = FastAPI()
     app.include_router(
         create_conservatory_router(
             get_store=lambda: plants,
             get_measurements=lambda: measurements,
+            get_events=lambda: events,
             require_owner=lambda: {"sub": "owner"},
         )
     )
@@ -175,3 +180,42 @@ def test_measurement_routes_require_an_existing_plant(tmp_path: Path) -> None:
 
     assert get_response.status_code == 404
     assert post_response.status_code == 404
+
+
+def test_flowering_binding_rejects_nonflowering_event(tmp_path: Path) -> None:
+    events = ConservatoryEventStore(tmp_path)
+    client = _client(tmp_path, events=events)
+    plant_id = _plant(client)
+    watered = events.record(
+        plant_id=plant_id,
+        kind="watered",
+        occurred_at="2026-09-07",
+    )
+    flowering = events.record(
+        plant_id=plant_id,
+        kind="flowering_observed",
+        occurred_at="2026-09-08",
+    )
+    payload = {
+        "trait": "flower_vertical_span",
+        "value": 3.9,
+        "unit": "in",
+        "method": "ruler",
+        "observed_at": "2026-09-08",
+        "flowering_event_id": watered["id"],
+    }
+
+    rejected = client.post(
+        f"/api/conservatory/plants/{plant_id}/measurements",
+        json=payload,
+    )
+    assert rejected.status_code == 404
+    assert rejected.json()["detail"]["code"] == "FLOWERING_EVENT_NOT_FOUND_FOR_PLANT"
+
+    payload["flowering_event_id"] = flowering["id"]
+    accepted = client.post(
+        f"/api/conservatory/plants/{plant_id}/measurements",
+        json=payload,
+    )
+    assert accepted.status_code == 201
+    assert accepted.json()["flowering_event_id"] == flowering["id"]
