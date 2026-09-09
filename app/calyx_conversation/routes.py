@@ -38,7 +38,7 @@ router = APIRouter(
 _ENGINE: RetrievalEngine | None = None
 
 
-def _get_engine() -> RetrievalEngine:
+def get_engine() -> RetrievalEngine:
     global _ENGINE
     if _ENGINE is None:
         _ENGINE = RetrievalEngine(get_repository_runtime().read(), DeterministicLocalProvider())
@@ -404,7 +404,7 @@ def _retrieval(message: str, mode: str, limit: int, internal_access: bool) -> di
         parent_expansion="AUTO",
         internal_access=internal_access,
     )
-    return _get_engine().search(query)
+    return get_engine().search(query)
 
 
 def _compose_answer(
