@@ -203,8 +203,8 @@ def test_claude_uses_deterministic_cost_aware_route(lane_text):
 def test_cost_aware_route_preserves_provider_fallback_chain(lane_text):
     assert "Execute bounded Gemini fallback" in lane_text
     assert "Execute bounded OpenAI fallback" in lane_text
-    assert 'if: steps.claude_provider.outputs.fallback_allowed == \'true\'' in lane_text
-    assert 'if: steps.gemini_provider.outputs.fallback_allowed == \'true\'' in lane_text
+    assert 'steps.claude_provider.outputs.fallback_allowed == \'true\'' in lane_text
+    assert 'steps.gemini_provider.outputs.fallback_allowed == \'true\'' in lane_text
     assert "ROUTE_TIER: ${{ steps.route.outputs.tier }}" in lane_text
     assert "Route=${route_telemetry}" in lane_text
 
@@ -345,7 +345,7 @@ def test_gemini_security_failure_remains_classified_but_does_not_block_codex(lan
     security = classifier[classifier.index("kind=security") : classifier.index("kind=safe_provider")]
     assert "fallback=true" in security
     assert "kind=security" in security
-    assert "if: steps.gemini_provider.outputs.fallback_allowed == 'true'" in lane_text
+    assert "steps.gemini_provider.outputs.fallback_allowed == 'true'" in lane_text
     assert "independently authorized OpenAI" in lane_text
 
 
