@@ -13,6 +13,8 @@ import pytest
 
 from app.naocc.corpus_manifest import (
     SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
+)
+from app.naocc.corpus_manifest import (
     AccessStatus,
     EvidenceClass,
     NAOCCSource,
@@ -21,6 +23,8 @@ from app.naocc.corpus_manifest import (
 )
 from app.naocc.evidence_schema import (
     SCHEMA_VERSION as EVIDENCE_SCHEMA_VERSION,
+)
+from app.naocc.evidence_schema import (
     ConfidenceLevel,
     ConservationThreatCategory,
     NAOCCEvidenceRecord,
@@ -29,13 +33,14 @@ from app.naocc.evidence_schema import (
 )
 from app.naocc.synthesis import (
     SCHEMA_VERSION as SYNTHESIS_SCHEMA_VERSION,
+)
+from app.naocc.synthesis import (
     NAOCCSynthesis,
     ScientistReviewItem,
     SynthesisCategory,
     SynthesisItem,
     build_provenance_aware_synthesis,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
