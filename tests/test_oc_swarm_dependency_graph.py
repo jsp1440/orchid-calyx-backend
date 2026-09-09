@@ -78,6 +78,14 @@ def test_dependency_cycle_fails_closed():
     assert graph["status"][2]["ready"] is False
 
 
+def test_self_dependency_is_a_cycle_and_fails_closed():
+    graph = deps.build_dependency_graph(
+        [issue(1, body="OC-SWARM-DEPENDS-ON: #1")]
+    )
+    assert graph["cycle_nodes"] == [1]
+    assert graph["status"][1]["ready"] is False
+
+
 def test_filter_ready_candidates_reports_block_reason():
     graph = deps.build_dependency_graph(
         [

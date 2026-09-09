@@ -126,7 +126,10 @@ def build_swarm_plan(snapshot: dict, *, worker_slots: int = DEFAULT_WORKER_SLOTS
     # A later wave can make progress when queued work exists but is blocked only
     # by active workers or unresolved dependencies. The workflow uses this as an
     # observability/refill hint; it never bypasses the dependency graph.
-    waiting_count = len(dependency_suppressed) + len(lock_suppressed)
+    # Every dependency-ready candidate not selected remains live work for a
+    # later wave. ``select_with_resource_locks`` stops once capacity is full,
+    # so its suppression list alone cannot account for compatible overflow.
+    waiting_count = len(dependency_suppressed) + max(0, len(candidates) - len(selected))
     refill_recommended = bool(active_count or workers) and waiting_count > 0
 
     return {

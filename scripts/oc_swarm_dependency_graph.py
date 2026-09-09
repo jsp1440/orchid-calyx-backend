@@ -39,10 +39,7 @@ def dependencies(issue: dict) -> list[int]:
     match = DEPENDS_MARKER.search(body)
     if not match:
         return []
-    current = issue.get("number")
     refs = sorted({int(value) for value in ISSUE_REF.findall(match.group(1))})
-    if current is not None:
-        refs = [number for number in refs if number != int(current)]
     return refs
 
 

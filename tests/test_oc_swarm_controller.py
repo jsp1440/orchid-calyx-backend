@@ -114,6 +114,14 @@ def test_swarm_v4_can_schedule_two_workers_from_same_coarse_lane(monkeypatch):
     assert plan["workers"][1]["dependencies"] == [99]
 
 
+def test_swarm_v4_refills_when_compatible_work_exceeds_current_capacity(monkeypatch):
+    monkeypatch.setattr(swarm, "_load_sibling", _loader)
+    plan = swarm.build_swarm_plan(_snapshot(), worker_slots=2)
+    assert plan["launch_count"] == 2
+    assert plan["waiting_count"] == 1
+    assert plan["refill_recommended"] is True
+
+
 def test_swarm_plan_strips_stabilization_freeze(monkeypatch):
     captured = {}
 
