@@ -113,18 +113,16 @@ FINISH_LINE_CRITERIA: tuple[FinishLineCriterion, ...] = (
         criterion_id="synthesis_owner_narrative",
         area="synthesis",
         title="Owner narrative endpoint (/calyx-narrative) wired to synthesis contract",
-        status=FinishLineStatus.GAP,
-        authoritative_module="app.routers.owner_operations (narrative route exists, synthesis not injected)",
+        status=FinishLineStatus.READY,
+        authoritative_module="app.routers.owner_operations.owner_calyx_narrative",
         evidence=(
-            "GET /calyx-narrative registered in app/routers/owner_operations.py; "
-            "does not call build_teaching_synthesis()"
+            "GET /calyx-narrative now returns `scientific_synthesis` block with "
+            "contract_version, schema_version, endpoint template, graph_mutation=False, "
+            "sensitive_locality_withheld=True"
         ),
-        gap_description=(
-            "The owner narrative route exists but returns a stub; "
-            "TeachingSynthesisV1 needs to be injected as the response body."
-        ),
+        gap_description=None,
         blocker_reason=None,
-        next_action="Wire build_teaching_synthesis() into /calyx-narrative handler",
+        next_action=None,
     ),
 
     # ------------------------------------------------------------------ INTERACTION

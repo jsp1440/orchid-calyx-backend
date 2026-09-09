@@ -1985,11 +1985,35 @@ def owner_calyx_narrative(auth: dict[str, object] = Depends(verify_owner_or_api_
     what it is waiting for, what it recommends next, and what decision
     it needs from the owner.
     """
+    from app.calyx_conversation.teaching_synthesis import (
+        CONTRACT_VERSION as _SYNTHESIS_CONTRACT_VERSION,
+    )
+    from app.calyx_conversation.teaching_synthesis import (
+        SCHEMA_VERSION as _SYNTHESIS_SCHEMA_VERSION,
+    )
+
     narrative = _build_calyx_narrative()
     return {
         "build": "BUILD-065",
         "owner": actor(auth),
         "narrative": narrative,
+        "scientific_synthesis": {
+            "contract_version": _SYNTHESIS_CONTRACT_VERSION,
+            "schema_version": _SYNTHESIS_SCHEMA_VERSION,
+            "endpoint": "GET /api/calyx/synthesis/{taxon_id}",
+            "query_params": {
+                "taxon_name": "required — canonical taxon name",
+                "audience": "optional — public | student | researcher | educator",
+                "depth": "optional — overview | standard | detailed",
+            },
+            "graph_mutation": False,
+            "sensitive_locality_withheld": True,
+            "note": (
+                "Call /api/calyx/synthesis/{taxon_id} to retrieve a full TeachingSynthesisV1 "
+                "teaching payload for any taxon. UNAVAILABLE states appear where domain "
+                "providers are not yet connected."
+            ),
+        },
         "orientation": {
             "what_is_this": "Calyx operational intelligence briefing in first-person executive officer voice.",
             "why_it_matters": "Transforms passive dashboards into an active advisory relationship with clear accountability.",
