@@ -80,6 +80,7 @@ class ConversationRequest(BaseModel):
     dataset_analysis: DatasetAnalysisRequest | None = None
     graph_context: GraphContextRequest | None = None
     brain_query: BrainQueryRequest | None = None
+    epistemic_projection: dict[str, Any] | None = None
     retrieval_mode: Literal["LEXICAL", "SEMANTIC", "HYBRID"] = "HYBRID"
     limit: int = Field(8, ge=1, le=25)
     internal_access: bool = True
@@ -399,6 +400,7 @@ def _compose_answer(
     dataset: dict[str, Any] | None,
     graph: dict[str, Any] | None,
     brain: dict[str, Any] | None,
+    epistemic: dict[str, Any] | None = None,
 ) -> str:
     results = retrieval.get("results", [])
     lines = ["Calyx searched the Orchid Continuum before answering."]
@@ -414,6 +416,13 @@ def _compose_answer(
     if brain is not None:
         lines.append("")
         lines.append(f"Brain graph query: nodes={len(brain.get('nodes', []))}; edges={len(brain.get('edges', []))}.")
+    if epistemic is not None:
+        lines.append("")
+        lines.append(
+            f"Epistemic memory: nodes={len(epistemic.get('nodes', []))}; "
+            f"edges={len(epistemic.get('edges', []))}; "
+            f"authority=institutional_record; canonical_knowledge=False."
+        )
     if analysis is not None:
         lines.append("")
         lines.append(f"Mathematical analysis: {analysis['operation']} = {analysis['result']}")
@@ -510,7 +519,7 @@ def _execute(payload: ConversationRequest) -> dict[str, Any]:
     except (ValueError, TypeError, SyntaxError, ZeroDivisionError, OverflowError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     with trace.span("calyx.synthesis", generative_claims_without_evidence=False):
-        answer_text = _compose_answer(payload.message, retrieval, analysis, dataset, graph, brain)
+        answer_text = _compose_answer(payload.message, retrieval, analysis, dataset, graph, brain, payload.epistemic_projection)
     evidence_summary = {
         "eligible_results": retrieval.get("total_eligible_results"),
         "shown_results": len(retrieval.get("results", [])),
@@ -518,6 +527,7 @@ def _execute(payload: ConversationRequest) -> dict[str, Any]:
         "graph_nodes": len((graph or {}).get("nodes", [])),
         "graph_edges": len((graph or {}).get("edges", [])),
         "brain_nodes": len((brain or {}).get("nodes", [])),
+        "epistemic_nodes": len((payload.epistemic_projection or {}).get("nodes", [])),
     }
     with trace.span("calyx.conversation.persist_result", knowledge_graph_mutation=False):
         calyx_message = STORE.append(
@@ -536,6 +546,7 @@ def _execute(payload: ConversationRequest) -> dict[str, Any]:
         "dataset_analysis": dataset,
         "knowledge_graph": graph,
         "brain": brain,
+        "epistemic_projection": payload.epistemic_projection,
         "retrieval": retrieval,
         "context": payload.context,
         "history_context": history,
