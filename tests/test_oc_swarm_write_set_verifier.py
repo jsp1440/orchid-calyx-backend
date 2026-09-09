@@ -14,10 +14,7 @@ SPEC.loader.exec_module(verifier)
 
 
 def lease(reads=(), writes=()):
-    return {
-        "reads": list(reads),
-        "writes": list(writes),
-    }
+    return {"reads": list(reads), "writes": list(writes)}
 
 
 def test_parse_lease_claim_from_v2_receipt():
@@ -27,6 +24,15 @@ def test_parse_lease_claim_from_v2_receipt():
     )
     claim = verifier.parse_lease_claim(comment)
     assert claim == {"reads": ["taxonomy"], "writes": ["literature"]}
+
+
+def test_parse_lease_claim_from_v4_dependency_resource_receipt():
+    comment = (
+        '[OC-SWARM-V4] Dependency/resource lease claimed: '
+        '`{"reads":["taxonomy"],"writes":["atlas"],"dependencies":[1201]}`. Wave 2/4.'
+    )
+    claim = verifier.parse_lease_claim(comment)
+    assert claim == {"reads": ["taxonomy"], "writes": ["atlas"]}
 
 
 def test_declared_write_allows_matching_runtime_change():
