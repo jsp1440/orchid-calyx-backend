@@ -29,7 +29,6 @@ BUILD-075 additions:
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -39,19 +38,38 @@ from typing import Any
 from uuid import uuid4
 
 import psycopg
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
+from app.executive_intelligence.repository import (
+    decide as executive_intelligence_decide,
+)
 from app.executive_intelligence.repository import executive_intelligence_snapshot
-from app.executive_intelligence.repository import decide as executive_intelligence_decide
 from app.executive_intelligence.schemas import RecommendationDecisionRequest
-from app.security import OWNER_SESSION_COOKIE, REVOKED_OWNER_NONCES, create_owner_session_token, owner_cookie_samesite, owner_cookie_secure, owner_session_ttl_seconds, verify_owner_access_code, verify_owner_or_api_key, verify_owner_session
-from app.routers.mission_control import completeness_rows, harvester_rows, metric_snapshot
 from app.readiness.live_graph_audit import run_live_graph_audit
 from app.readiness.relationship_measurement import measure_declared_relationships
-from runtime.constitutional_orchestrator import AutonomyLevel, orchestrator as constitutional_orchestrator
+from app.routers.mission_control import (
+    completeness_rows,
+    harvester_rows,
+    metric_snapshot,
+)
+from app.security import (
+    OWNER_SESSION_COOKIE,
+    REVOKED_OWNER_NONCES,
+    create_owner_session_token,
+    owner_cookie_samesite,
+    owner_cookie_secure,
+    owner_session_ttl_seconds,
+    verify_owner_access_code,
+    verify_owner_or_api_key,
+    verify_owner_session,
+)
+from runtime.constitutional_orchestrator import AutonomyLevel
+from runtime.constitutional_orchestrator import (
+    orchestrator as constitutional_orchestrator,
+)
 
 router = APIRouter(prefix="/api/mission-control/owner", tags=["BUILD-051 Owner Operations"])
 
@@ -410,7 +428,8 @@ def create_session(request: OwnerLoginRequest, response: Response) -> dict[str, 
 
 @router.get("/session")
 async def inspect_session(request: Request) -> dict[str, Any]:
-    try: auth = await verify_owner_session(request)
+    try:
+        auth = await verify_owner_session(request)
     except HTTPException as exc:
         reasons = {"Owner session expired": "expired", "Owner session ended": "signed_out", "Invalid owner session": "invalid_session"}
         return {"authenticated": False, "status": "unauthenticated", "expires_at": None, "allowedActions": allowed_actions(False), "reason": reasons.get(str(exc.detail), "missing_session"), "credential_transport": "httponly_cookie"}
@@ -431,7 +450,8 @@ async def delete_session(request: Request, response: Response) -> dict[str, Any]
         auth = await verify_owner_session(request)
         if auth.get("nonce"):
             persist_revoked_nonce(str(auth["nonce"]))
-    except HTTPException: pass
+    except HTTPException:
+        pass
     response.delete_cookie(OWNER_SESSION_COOKIE, path="/api/", secure=owner_cookie_secure(), httponly=True, samesite=owner_cookie_samesite())
     return {"authenticated": False, "status": "signed_out", "reason": "owner_signed_out"}
 
@@ -663,7 +683,7 @@ async def refresh_session(request: Request, response: Response) -> dict[str, Any
     signed session with a new TTL.  Returns 401 if the current session is
     expired, revoked, or missing.
     """
-    auth = await verify_owner_session(request)  # raises 401 on failure
+    await verify_owner_session(request)  # raises 401 on failure
     # The refresh always issues a new session for the "owner" principal.
     # Using a fixed constant avoids taint-flow from the verified session payload
     # into the new cookie value (defence-in-depth; the payload is HMAC-verified).
@@ -1166,7 +1186,7 @@ def audit_pdf(payload: dict[str, Any]) -> bytes:
       "/Contents 4 0 R /Resources << /Font << /F1 3 0 R >> >> >>\nendobj\n")
 
     xref_pos = buf.tell()
-    w(f"xref\n0 6\n0000000000 65535 f \n")
+    w("xref\n0 6\n0000000000 65535 f \n")
     for off in offsets:
         w(f"{off:010d} 00000 n \n")
 
@@ -1784,7 +1804,10 @@ def owner_decisions(auth: dict[str, object] = Depends(verify_owner_or_api_key)) 
 
 def _build_priority_queue() -> list[dict[str, Any]]:
     """Build a unified ranked priority queue from all available recommendation sources."""
-    from app.routers.mission_control import completeness_rows, mission_control_recommendations
+    from app.routers.mission_control import (
+        completeness_rows,
+        mission_control_recommendations,
+    )
     from runtime.executive.dependencies import dependency_graph, reverse_dependencies
 
     graph = dependency_graph()
@@ -1902,7 +1925,6 @@ def _build_calyx_narrative() -> dict[str, Any]:
 
     # What I'm doing
     running = [h for h in harvesters if h.get("state") == "running"]
-    idle_enabled = [h for h in harvesters if h.get("state") == "idle" and h.get("enabled")]
     doing = (
         f"Running {len(running)} active harvester(s): {', '.join(h['name'] for h in running[:3])}."
         if running
@@ -2014,14 +2036,12 @@ def owner_eos_state(auth: dict[str, object] = Depends(verify_owner_or_api_key)) 
         completeness_rows,
         mission_control_executive_flow,
         mission_control_governance,
-        mission_control_health,
         mission_control_readiness,
         mission_control_relationships,
         mission_control_status,
     )
 
     status = mission_control_status()
-    health = mission_control_health()
     rows = completeness_rows()
 
     blocked_subsystems = [r for r in rows if r.get("status") in {"warning", "stub", "error"}]
