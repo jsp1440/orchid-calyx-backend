@@ -1,5 +1,5 @@
-import os
 import hashlib
+import os
 import re
 import tempfile
 from dataclasses import dataclass
@@ -76,10 +76,23 @@ def save_file(data: bytes, filename: str) -> str:
     return str(file_path)
 
 
+def _confine_to_storage(file_path: str) -> Path:
+    resolved = Path(file_path).resolve()
+    storage_resolved = STORAGE_DIR.resolve()
+    if not str(resolved).startswith(str(storage_resolved) + "/") and resolved != storage_resolved:
+        raise ValueError(f"STORAGE_PATH_TRAVERSAL_BLOCKED: {file_path!r}")
+    return resolved
+
+
 def read_file(file_path: str) -> bytes:
-    with open(file_path, "rb") as f:
+    safe_path = _confine_to_storage(file_path)
+    with open(safe_path, "rb") as f:
         return f.read()
 
 
 def file_exists(file_path: str) -> bool:
+    try:
+        _confine_to_storage(file_path)
+    except ValueError:
+        return False
     return Path(file_path).exists()

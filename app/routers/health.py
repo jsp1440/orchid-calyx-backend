@@ -6,6 +6,7 @@ from app.archive.routes import router as archive_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
 from app.multimodal_intelligence.routes import router as multimodal_intelligence_router
 from app.parallel_platform.routes import router as parallel_platform_router
+from app.research_traits.routes import router as research_traits_router
 from app.routers.calyx_queue import router as calyx_queue_router
 from app.routers.conservatory import router as conservatory_router
 from app.routers.github_research_bridge import router as github_research_bridge_router
@@ -135,6 +136,12 @@ def trait_genomics_options(full_path: str, request: Request, response: Response)
     return {"status": "ok", "path": full_path}
 
 
+@router.options("/api/research/{full_path:path}")
+def research_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
 @router.options("/archive/{full_path:path}")
 def archive_options(full_path: str, request: Request, response: Response):
     add_mission_control_cors_headers(request, response)
@@ -172,6 +179,7 @@ router.include_router(multimodal_intelligence_router, dependencies=[Depends(add_
 router.include_router(archive_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(parallel_platform_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(trait_genomics_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(research_traits_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(workflow_router)
 router.include_router(executive_intelligence_router)
 router.include_router(connector_router)

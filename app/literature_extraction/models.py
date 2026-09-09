@@ -35,7 +35,9 @@ class Provenance(StrictModel):
     confidence: float = Field(ge=0, le=1)
     extractor: str | None = None
     extractor_version: str | None = None
-    review_status: Literal["unreviewed", "accepted", "corrected", "rejected"] = "unreviewed"
+    review_status: Literal["unreviewed", "accepted", "corrected", "rejected"] = (
+        "unreviewed"
+    )
     reviewer_note: str | None = None
 
 
@@ -47,6 +49,19 @@ class SourceDocument(StrictModel):
     ingested_at: datetime | None = None
     ocr_applied: bool = False
     language: str | None = None
+    origin_uri: str | None = None
+    origin_content_hash: str | None = None
+    origin_media_type: str | None = None
+    acquisition_method: str | None = None
+    rights_status: Literal[
+        "open_license",
+        "public_domain",
+        "permission_granted",
+        "unknown_requires_review",
+        "restricted",
+    ] = "unknown_requires_review"
+    redistribution_allowed: bool = False
+    historical_taxonomy_requires_resolution: bool = False
 
 
 class PaperMetadata(StrictModel):
@@ -157,7 +172,9 @@ class Evidence(StrictModel):
     evidence_id: str
     excerpt: str
     span: SourceSpan
-    evidence_type: Literal["text", "table", "figure", "caption", "reference", "supplement"]
+    evidence_type: Literal[
+        "text", "table", "figure", "caption", "reference", "supplement"
+    ]
     supports_ids: list[str] = Field(default_factory=list)
     contradicts_ids: list[str] = Field(default_factory=list)
 
@@ -183,7 +200,9 @@ class NormalizedEvidenceRecord(StrictModel):
     unresolved_entities: list[str] = Field(default_factory=list)
     extraction_confidence: float = Field(ge=0, le=1)
     normalization_confidence: float = Field(ge=0, le=1)
-    review_status: Literal["unreviewed", "accepted", "corrected", "rejected"] = "unreviewed"
+    review_status: Literal["unreviewed", "accepted", "corrected", "rejected"] = (
+        "unreviewed"
+    )
     validation_notes: list[str] = Field(default_factory=list)
     source_excerpts: list[str] = Field(default_factory=list)
     reconciliation_group_id: str | None = None
@@ -203,13 +222,15 @@ class ReviewItem(StrictModel):
     source_record_id: str
     reconciliation_group_id: str | None = None
     priority: int = Field(ge=0)
-    priority_reasons: list[Literal[
-        "unresolved_entities",
-        "potential_contradiction",
-        "low_normalization_confidence",
-        "duplicate_group",
-        "standard_review",
-    ]] = Field(default_factory=list)
+    priority_reasons: list[
+        Literal[
+            "unresolved_entities",
+            "potential_contradiction",
+            "low_normalization_confidence",
+            "duplicate_group",
+            "standard_review",
+        ]
+    ] = Field(default_factory=list)
     source_record_fingerprint: str
     status: Literal["pending", "decided"] = "pending"
 
@@ -322,7 +343,9 @@ class AnalysisManifest(StrictModel):
     model_name: str | None = None
     prompt_bundle_version: str | None = None
     extractors: list[ExtractorRun] = Field(default_factory=list)
-    status: Literal["pending", "running", "completed", "completed_with_warnings", "failed"]
+    status: Literal[
+        "pending", "running", "completed", "completed_with_warnings", "failed"
+    ]
     warnings: list[str] = Field(default_factory=list)
     input_fingerprint: str | None = None
     configuration_fingerprint: str | None = None
@@ -339,7 +362,9 @@ class PaperKnowledge(StrictModel):
     measurements: list[Measurement] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
-    normalized_evidence_records: list[NormalizedEvidenceRecord] = Field(default_factory=list)
+    normalized_evidence_records: list[NormalizedEvidenceRecord] = Field(
+        default_factory=list
+    )
     reconciliation_relations: list[ReconciliationRelation] = Field(default_factory=list)
     review_items: list[ReviewItem] = Field(default_factory=list)
     review_decisions: list[ReviewDecision] = Field(default_factory=list)

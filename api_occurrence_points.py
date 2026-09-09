@@ -1,47 +1,49 @@
-import hmac
 import os
 
 import psycopg2
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, Security
+
+from app.security import api_key_header, verify_owner_or_api_key
 
 app = FastAPI()
 
 DB = os.getenv("DATABASE_URL")
-_EXACT_LOCATION_ENABLE_VALUE = "YES_I_UNDERSTAND_THIS_EXPOSES_EXACT_ORCHID_LOCATIONS"
 
 
-def require_exact_occurrence_access(
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-) -> None:
-    """Fail closed for the legacy exact-coordinate occurrence endpoint.
+async def require_exact_occurrence_access(
+    request: Request,
+    api_key: str | None = Security(api_key_header),
+) -> dict[str, object]:
+    """Authorize internal exact-coordinate use without making it public.
 
-    This standalone API predates partner-data governance and returns raw latitude
-    and longitude from the legacy occurrence table.  It must never become public
-    merely because somebody starts the FastAPI module.
+    Exact coordinates are a legitimate scientific input for Orchid Continuum.
+    This legacy endpoint therefore remains available to an authenticated owner
+    session or the configured backend API key. It is not protected by a blanket
+    kill switch because internal scientific use and public disclosure are
+    different operations.
+
+    Future partner-restricted records must still be filtered by their own
+    record/project policy before reaching this legacy table or endpoint.
     """
 
-    if os.getenv("OC_ALLOW_EXACT_OCCURRENCE_API") != _EXACT_LOCATION_ENABLE_VALUE:
-        raise HTTPException(
-            status_code=503,
-            detail="Exact occurrence API is disabled by security policy",
-        )
-
-    expected = os.getenv("CALYX_API_KEY")
-    if not expected:
-        raise HTTPException(
-            status_code=503,
-            detail="Exact occurrence API authentication is not configured",
-        )
-    if not x_api_key or not hmac.compare_digest(
-        x_api_key.encode("utf-8"), expected.encode("utf-8")
-    ):
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return await verify_owner_or_api_key(request, api_key)
 
 
-@app.get("/orchid_points", dependencies=[Depends(require_exact_occurrence_access)])
-def orchid_points():
+exact_occurrence_access = Depends(require_exact_occurrence_access)
+
+
+@app.get("/orchid_points")
+def orchid_points(
+    response: Response,
+    _identity: dict[str, object] = exact_occurrence_access,
+):
     if not DB:
         raise HTTPException(status_code=503, detail="Database is not configured")
+
+    # Raw exact coordinates must not be cached by browsers, proxies, or CDNs.
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
 
     conn = psycopg2.connect(DB)
     try:
@@ -62,5 +64,9 @@ def orchid_points():
     points = [{"lat": r[0], "lon": r[1]} for r in rows]
     return {
         "points": points,
-        "warning": "Exact orchid locations; restricted legacy endpoint",
+        "visibility": "authenticated_internal",
+        "warning": (
+            "Exact orchid locations for authorized internal scientific use; "
+            "do not expose this response through a public client or cache."
+        ),
     }

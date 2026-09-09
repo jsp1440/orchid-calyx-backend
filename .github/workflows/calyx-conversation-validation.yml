@@ -13,6 +13,12 @@ on:
       - 'tests/test_calyx_live_runtime_repairs.py'
       - 'tests/test_calyx_anti_robot_conversation.py'
       - 'tests/test_calyx_phalaenopsis_thermal_traits.py'
+      # The persona governance and provider-budget guards cover files this job
+      # already builds (persona.py, provider.py, provider_runtime.py) but were
+      # listed by no workflow, so they never ran in CI and drifted out of step
+      # with the code they guard.
+      - 'tests/test_calyx_persona.py'
+      - 'tests/test_calyx_provider_context_budget.py'
       - 'migrations/610_calyx_conversations.sql'
       - 'migrations/611_calyx_conversation_owner_scope.sql'
       - '.github/workflows/calyx-conversation-validation.yml'
@@ -54,9 +60,13 @@ jobs:
           tests/test_calyx_live_runtime_repairs.py
           tests/test_calyx_anti_robot_conversation.py
           tests/test_calyx_phalaenopsis_thermal_traits.py
+          tests/test_calyx_persona.py
+          tests/test_calyx_provider_context_budget.py
       - name: Run focused regression tests
         run: >-
           python -m pytest -q
+          tests/test_calyx_persona.py
+          tests/test_calyx_provider_context_budget.py
           tests/test_calyx_conversation.py
           tests/test_calyx_file_analysis.py
           tests/test_build_613_calyx_reasoning_context.py

@@ -1,0 +1,197 @@
+name: Orchid Swarm Controller
+
+on:
+  workflow_dispatch:
+    inputs:
+      worker_slots:
+        description: Maximum concurrent implementation workers (1-12)
+        required: false
+        default: "8"
+        type: string
+      wave:
+        description: Internal bounded refill wave ordinal
+        required: false
+        default: "1"
+        type: string
+      max_waves:
+        description: Maximum self-refill waves per activation
+        required: false
+        default: "4"
+        type: string
+  workflow_call:
+    inputs:
+      worker_slots:
+        required: false
+        default: "8"
+        type: string
+      wave:
+        required: false
+        default: "1"
+        type: string
+      max_waves:
+        required: false
+        default: "4"
+        type: string
+  schedule:
+    - cron: "*/5 * * * *"
+  issues:
+    types: [closed, reopened, labeled, unlabeled]
+  pull_request:
+    types: [closed]
+
+concurrency:
+  group: orchid-swarm-controller-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      launch_count: ${{ steps.plan.outputs.launch_count }}
+      selected_numbers: ${{ steps.plan.outputs.selected_numbers }}
+      refill_recommended: ${{ steps.plan.outputs.refill_recommended }}
+      summary: ${{ steps.plan.outputs.summary }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      INTEGRATION_BRANCH: oc-autonomous-integration
+      WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
+      WAVE: ${{ inputs.wave || '1' }}
+      MAX_WAVES: ${{ inputs.max_waves || '4' }}
+    steps:
+      - name: Checkout integration control plane
+        uses: actions/checkout@v4
+        with:
+          ref: oc-autonomous-integration
+          fetch-depth: 1
+
+      - name: Build repository snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Swarm v4 needs closed dependency issues as well as the open execution
+          # portfolio. The canonical scheduler itself still ignores closed work.
+          gh issue list --repo "$REPO" --state all --limit 1000 \
+            --json number,title,body,labels,createdAt,updatedAt,state > "$RUNNER_TEMP/issues.json"
+          gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 200 \
+            --json number,title,body,headRefName,headRefOid,mergeStateStatus,isDraft > "$RUNNER_TEMP/prs.json"
+          jq -n \
+            --slurpfile issues "$RUNNER_TEMP/issues.json" \
+            --slurpfile prs "$RUNNER_TEMP/prs.json" \
+            '{issues: $issues[0], pull_requests: $prs[0]}' > "$RUNNER_TEMP/swarm-snapshot.json"
+
+      - name: Plan dependency-aware resource wave
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/oc_swarm_controller.py \
+            --input "$RUNNER_TEMP/swarm-snapshot.json" \
+            --worker-slots "$WORKER_SLOTS" \
+            --github-output "$GITHUB_OUTPUT" \
+            | tee "$RUNNER_TEMP/swarm-plan.json"
+
+      - name: Claim selected worker leases
+        if: steps.plan.outputs.launch_count != '0'
+        shell: bash
+        env:
+          SELECTED: ${{ steps.plan.outputs.selected_numbers }}
+          PLAN: ${{ steps.plan.outputs.summary }}
+        run: |
+          set -euo pipefail
+          for issue in $(jq -r '.[]' <<<"$SELECTED"); do
+            labels=$(gh issue view "$issue" --repo "$REPO" --json state,labels \
+              --jq 'select(.state == "OPEN") | [.labels[].name] | join(" ")' 2>/dev/null || true)
+            [[ -n "$labels" ]] || continue
+            [[ "$labels" == *oc-queued* ]] || continue
+            [[ "$labels" != *oc-running* ]] || continue
+            [[ "$labels" != *oc-owner-gate* ]] || continue
+            [[ "$labels" != *oc-blocked* ]] || continue
+            [[ "$labels" != *oc-runtime-backoff* ]] || continue
+            [[ "$labels" != *oc-repair-backoff* ]] || continue
+            claim=$(jq -c --argjson issue "$issue" '.workers[] | select(.issue_number == $issue) | {reads,writes,dependencies}' <<<"$PLAN")
+            gh issue edit "$issue" --repo "$REPO" \
+              --remove-label oc-validating --add-label oc-running >/dev/null
+            gh issue comment "$issue" --repo "$REPO" \
+              --body "[OC-SWARM-V4] Dependency/resource lease claimed: \`$claim\`. Wave ${WAVE}/${MAX_WAVES}. Controller run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          done
+
+      - name: Publish swarm summary
+        shell: bash
+        env:
+          PLAN: ${{ steps.plan.outputs.summary }}
+        run: |
+          {
+            echo "## Orchid Swarm v4 Wave ${WAVE}/${MAX_WAVES}"
+            echo
+            echo "- launch_count: $(jq -r '.launch_count' <<<\"$PLAN\")"
+            echo "- active workers: $(jq -r '.active_worker_count' <<<\"$PLAN\")"
+            echo "- capacity: $(jq -r '.available_capacity' <<<\"$PLAN\")"
+            echo "- selected: $(jq -c '.selected_numbers' <<<\"$PLAN\")"
+            echo "- dependency edges: $(jq -r '.dependency_graph.edge_count' <<<\"$PLAN\")"
+            echo "- dependency blocked: $(jq -r '.dependency_suppressed | length' <<<\"$PLAN\")"
+            echo "- dependency cycles: $(jq -c '.dependency_graph.cycle_nodes' <<<\"$PLAN\")"
+            echo "- resource conflicts suppressed: $(jq -r '.resource_lock_suppressed | length' <<<\"$PLAN\")"
+            echo "- refill recommended: $(jq -r '.refill_recommended' <<<\"$PLAN\")"
+            echo "- integration target: \`oc-autonomous-integration\`"
+            echo "- main merge: disabled"
+            echo "- production deploy: disabled"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  workers:
+    needs: plan
+    if: needs.plan.outputs.launch_count != '0'
+    # Reusable workflows cannot elevate GITHUB_TOKEN permissions above their
+    # caller. Scope the implementation authority to worker jobs so planning and
+    # refill retain the workflow-level read-biased control-plane permissions.
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/orchid-completion-lane.yml
+    with:
+      issue_number: ${{ format('{0}', matrix.issue_number) }}
+    secrets: inherit
+
+  refill:
+    needs: [plan, workers]
+    if: always() && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.plan.outputs.refill_recommended == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      WAVE: ${{ inputs.wave || '1' }}
+      MAX_WAVES: ${{ inputs.max_waves || '4' }}
+      WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
+    steps:
+      - name: Dispatch bounded refill wave
+        shell: bash
+        run: |
+          set -euo pipefail
+          current=$((10#$WAVE))
+          maximum=$((10#$MAX_WAVES))
+          if (( current >= maximum )); then
+            echo "Bounded refill limit reached at wave $current/$maximum." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          next=$((current + 1))
+          gh workflow run orchid-swarm-controller.yml \
+            --repo "$REPO" \
+            --ref oc-autonomous-integration \
+            -f worker_slots="$WORKER_SLOTS" \
+            -f wave="$next" \
+            -f max_waves="$MAX_WAVES"
+          echo "Dispatched bounded refill wave $next/$maximum." >> "$GITHUB_STEP_SUMMARY"

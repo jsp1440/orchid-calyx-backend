@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
-from typing import Annotated
+from typing import Annotated, Any
 
+import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
@@ -13,6 +14,7 @@ from .candidate_handoff import (
     LiteratureCandidateHandoffService,
     LiteratureSourceBinding,
 )
+from .coverage_audit import audit_literature_extraction_coverage
 from .repository import LiteratureResultRepository
 from .source_binding import (
     CanonicalLiteratureSourceBinding,
@@ -72,6 +74,57 @@ def _raw_source_or_error(
             "RAW_SOURCE_NOT_FOUND", {"paper_id": paper_id}
         )
     return raw_bytes
+
+
+@router.get("/coverage-audit")
+def literature_extraction_coverage_audit(
+    repository: Annotated[
+        LiteratureResultRepository, Depends(get_literature_repository)
+    ],
+) -> dict[str, Any]:
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        return audit_literature_extraction_coverage(None, repository)
+    try:
+        with (
+            psycopg.connect(database_url, connect_timeout=5) as conn,
+            conn.cursor() as cur,
+        ):
+            return audit_literature_extraction_coverage(cur, repository)
+    except Exception as exc:  # noqa: BLE001 - telemetry must fail closed on DB errors
+        return audit_literature_extraction_coverage(
+            None,
+            repository,
+            db_unavailable_detail=f"Database telemetry unavailable: {exc}",
+        )
+
+
+@router.get("/papers")
+def list_papers(
+    repository: Annotated[
+        LiteratureResultRepository, Depends(get_literature_repository)
+    ],
+    limit: int = 50,
+    offset: int = 0,
+):
+    if limit < 1 or offset < 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_PAGE_BOUNDS",
+                "message": "limit must be >= 1 and offset >= 0",
+            },
+        )
+    summaries, total = repository.list_summaries(limit=limit, offset=offset)
+    return {
+        "papers": summaries,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "unreadable_count": sum(
+            1 for item in summaries if not item.get("readable", False)
+        ),
+    }
 
 
 @router.get("/papers/{paper_id}")

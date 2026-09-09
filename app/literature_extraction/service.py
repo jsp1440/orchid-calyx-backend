@@ -5,7 +5,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from .context import PipelineConfig, PipelineContext
-from .ingest import build_empty_paper, ingest_text
+from .ingest import WebSourceMetadata, build_empty_paper, ingest_text
 from .models import PaperKnowledge
 from .normalization import normalize_and_reconcile
 from .pipeline import PipelineRunner
@@ -51,6 +51,7 @@ async def extract_and_persist(
     *,
     registry: ExtractorRegistry = DEFAULT_REGISTRY,
     config: PipelineConfig | None = None,
+    web_source: WebSourceMetadata | None = None,
 ) -> PaperKnowledge:
     source_path = Path(source)
     document = ingest_text(source_path)
@@ -60,7 +61,9 @@ async def extract_and_persist(
         config=config or PipelineConfig(),
     )
     paper = build_empty_paper(
-        document, pipeline_version=context.config.pipeline_version
+        document,
+        pipeline_version=context.config.pipeline_version,
+        web_source=web_source,
     )
     configuration_fingerprint = sha256(
         json.dumps(
