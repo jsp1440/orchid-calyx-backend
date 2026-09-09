@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       worker_slots:
-        description: Maximum concurrent implementation workers (1-8)
+        description: Maximum concurrent implementation workers (1-12)
         required: false
-        default: "5"
+        default: "8"
         type: string
   workflow_call:
     inputs:
       worker_slots:
         required: false
-        default: "5"
+        default: "8"
         type: string
 
 concurrency:
@@ -32,11 +32,12 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
       launch_count: ${{ steps.plan.outputs.launch_count }}
       selected_numbers: ${{ steps.plan.outputs.selected_numbers }}
+      summary: ${{ steps.plan.outputs.summary }}
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       INTEGRATION_BRANCH: oc-autonomous-integration
-      WORKER_SLOTS: ${{ inputs.worker_slots || '5' }}
+      WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
     steps:
       - name: Checkout integration control plane
         uses: actions/checkout@v4
@@ -57,7 +58,7 @@ jobs:
             --slurpfile prs "$RUNNER_TEMP/prs.json" \
             '{issues: $issues[0], pull_requests: $prs[0]}' > "$RUNNER_TEMP/swarm-snapshot.json"
 
-      - name: Plan bounded parallel wave
+      - name: Plan resource-aware parallel wave
         id: plan
         shell: bash
         run: |
@@ -73,6 +74,7 @@ jobs:
         shell: bash
         env:
           SELECTED: ${{ steps.plan.outputs.selected_numbers }}
+          PLAN: ${{ steps.plan.outputs.summary }}
         run: |
           set -euo pipefail
           for issue in $(jq -r '.[]' <<<"$SELECTED"); do
@@ -85,23 +87,26 @@ jobs:
             [[ "$labels" != *oc-blocked* ]] || continue
             [[ "$labels" != *oc-runtime-backoff* ]] || continue
             [[ "$labels" != *oc-repair-backoff* ]] || continue
+            claim=$(jq -c --argjson issue "$issue" '.workers[] | select(.issue_number == $issue) | {reads,writes}' <<<"$PLAN")
             gh issue edit "$issue" --repo "$REPO" \
               --remove-label oc-validating --add-label oc-running >/dev/null
             gh issue comment "$issue" --repo "$REPO" \
-              --body "[OC-SWARM] Worker lease claimed for bounded parallel execution. Controller run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+              --body "[OC-SWARM-V2] Resource-aware worker lease claimed: \`$claim\`. Controller run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
           done
 
       - name: Publish swarm summary
         shell: bash
         env:
-          COUNT: ${{ steps.plan.outputs.launch_count }}
-          SELECTED: ${{ steps.plan.outputs.selected_numbers }}
+          PLAN: ${{ steps.plan.outputs.summary }}
         run: |
           {
-            echo "## Orchid Swarm Wave"
+            echo "## Orchid Swarm v2 Wave"
             echo
-            echo "- launch_count: $COUNT"
-            echo "- selected: $SELECTED"
+            echo "- launch_count: $(jq -r '.launch_count' <<<\"$PLAN\")"
+            echo "- active workers: $(jq -r '.active_worker_count' <<<\"$PLAN\")"
+            echo "- capacity: $(jq -r '.available_capacity' <<<\"$PLAN\")"
+            echo "- selected: $(jq -c '.selected_numbers' <<<\"$PLAN\")"
+            echo "- resource conflicts suppressed: $(jq -r '.resource_lock_suppressed | length' <<<\"$PLAN\")"
             echo "- integration target: \`oc-autonomous-integration\`"
             echo "- main merge: disabled"
             echo "- production deploy: disabled"
@@ -112,7 +117,7 @@ jobs:
     if: needs.plan.outputs.launch_count != '0'
     strategy:
       fail-fast: false
-      max-parallel: 8
+      max-parallel: 12
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     uses: ./.github/workflows/orchid-completion-lane.yml
     with:
