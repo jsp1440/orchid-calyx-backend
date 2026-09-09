@@ -14,8 +14,8 @@ import pytest
 
 from app.scientific_adapter_lab.interaction_laboratory import (
     SCHEMA_VERSION,
-    CapabilityCandidateMatrix,
     CandidateTool,
+    CapabilityCandidateMatrix,
     InteractionEvidenceState,
     InteractionGateway,
     InteractionSource,
