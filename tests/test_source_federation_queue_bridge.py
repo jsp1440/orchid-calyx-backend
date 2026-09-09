@@ -28,6 +28,9 @@ def _admitted_candidate(**overrides: object) -> FederationCandidate:
         implementation_cost="low",
         requested_disposition=CandidateDisposition.ADD,
         license_identifier="CC-BY-4.0",
+        source_url="https://example.org/dataset",
+        update_cadence="annual",
+        metadata_evidence=("https://example.org/metadata",),
     )
     return replace(candidate, **overrides)
 
@@ -63,6 +66,9 @@ def test_child_task_preserves_governance_and_provenance_contract() -> None:
     assert f"OC-QUEUE-CAPABILITY: {task.task_key}" in task.body
     assert f"OC-SOURCE-FINGERPRINT: {candidate.fingerprint}" in task.body
     assert "OC-SOURCE-LICENSE: CC-BY-4.0" in task.body
+    assert "OC-SOURCE-URL: https://example.org/dataset" in task.body
+    assert "OC-SOURCE-UPDATE-CADENCE: annual" in task.body
+    assert "OC-SOURCE-METADATA-EVIDENCE: https://example.org/metadata" in task.body
     assert "OC-PROVENANCE-CONTRACT: Preserve DOI, release" in task.body
     assert "OC-LOCALITY-CONTROLS: strip_precise_coordinates" in task.body
     assert "OC-SWARM-READS: taxonomy" in task.body
