@@ -50,6 +50,10 @@ class FederationCandidate:
     requested_disposition: CandidateDisposition
     license_identifier: str | None = None
     locality_controls: tuple[str, ...] = ()
+    source_url: str | None = None
+    update_cadence: str = "unknown"
+    metadata_evidence: tuple[str, ...] = ()
+    verification_note: str = ""
 
     @property
     def fingerprint(self) -> str:
@@ -92,6 +96,15 @@ class FederationCandidate:
                 blockers.append("source_identifier_missing")
             if not self.provenance_contract.strip():
                 blockers.append("provenance_contract_missing")
+            if not self.source_url or not self.source_url.strip():
+                blockers.append("source_url_missing")
+            if not self.metadata_evidence:
+                blockers.append("metadata_evidence_missing")
+            if (
+                not self.update_cadence.strip()
+                or self.update_cadence.strip().casefold() == "unknown"
+            ):
+                blockers.append("update_cadence_unknown")
 
             locality_risk = self.locality_risk.strip().casefold()
             risk_levels = ("negligible", "low", "medium", "high", "unknown")
@@ -127,22 +140,65 @@ def build_default_candidate_inventory() -> tuple[FederationCandidate, ...]:
     """
     candidates = (
         FederationCandidate(
-            source_owner="Zenodo depositors",
-            source_name="Global Orchid Pollination Database 2024",
+            source_owner="Ackerman et al.",
+            source_name=(
+                "Beyond the various contrivances by which orchids are pollinated"
+            ),
             identity="doi:10.5281/zenodo.14601785",
             access=AccessState.REPOSITORY,
             rights=RightsState.UNKNOWN,
             domains=("pollination", "interactions", "traits"),
-            identifiers=("10.5281/zenodo.14601785",),
-            overlap="Requires comparison with canonical GloBI and curated pollination evidence",
-            incremental_value="Potential orchid-specific breeding-system and pollinator coverage",
-            taxonomy_reconciliation="Resolve source-reported orchid names through canonical taxonomy with source string retained",
-            provenance_contract="Preserve DOI, record version, file identity/hash, row-level source anchors where available",
-            locality_risk="Review geography fields before any public exposure",
+            identifiers=(
+                "10.5281/zenodo.14601785",
+                "10.5281/zenodo.7263689",
+                "10.1093/botlinnean/boac082",
+            ),
+            overlap=(
+                "Compare orchid-pollinator relationships with canonical GloBI and "
+                "curated evidence; do not create a second interaction store"
+            ),
+            incremental_value=(
+                "Orchid-specific breeding system, attraction mechanism, and named "
+                "pollinator coverage across more than 2,900 species"
+            ),
+            taxonomy_reconciliation=(
+                "Retain verbatim orchid and pollinator names, map through pinned "
+                "canonical releases, and preserve unresolved names as uncertain"
+            ),
+            provenance_contract=(
+                "Preserve version and concept DOIs, record timestamp, file checksum, "
+                "row identity, cited literature, verbatim taxa/locality, authorship, "
+                "and license; never publish source coordinates by default"
+            ),
+            locality_risk=(
+                "high: source and ongoing derivative work contain locality and "
+                "coordinate fields for orchid-pollinator records"
+            ),
             implementation_cost="medium",
             requested_disposition=CandidateDisposition.ADD,
-        ),
-        FederationCandidate(
+            locality_controls=(
+                "strip_precise_coordinates",
+                "respect_source_obscuring",
+                "publish_generalized_region_only",
+            ),
+            source_url="https://zenodo.org/records/14601785",
+            update_cadence=(
+                "irregular depositor-driven versions; no guaranteed schedule"
+            ),
+            metadata_evidence=(
+                "https://zenodo.org/records/14601785",
+                (
+                    "https://github.com/RaymondLTremblay/"
+                    "Global_Orchid_Pollinators/blob/main/README.md"
+                ),
+                "https://hdl.handle.net/10669/89284",
+            ),
+            verification_note=(
+                "The maintainer project identifies concept DOI 10.5281/zenodo.7263689 "
+                "as CC-BY-4.0, but the exact 14601785 version license was not directly "
+                "retrievable during verification; rights remain UNKNOWN and DEFER"
+            ),
+        ),        FederationCandidate(
             source_owner="Zenodo depositors",
             source_name="Caladenia huegelii mycorrhizal/environment dataset",
             identity="doi:10.5281/zenodo.15426257",

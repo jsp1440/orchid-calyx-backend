@@ -55,6 +55,7 @@ def _priority(candidate: FederationCandidate) -> str:
 
 def _task_body(candidate: FederationCandidate, task_key: str) -> str:
     controls = ", ".join(candidate.locality_controls) or "none"
+    evidence = ", ".join(candidate.metadata_evidence)
     identifiers = ", ".join(candidate.identifiers)
     domains = ", ".join(candidate.domains)
     return f"""Parent: #{_PARENT_ISSUE}
@@ -67,10 +68,13 @@ OC-QUEUE-CAPABILITY: {task_key}
 OC-SOURCE-FINGERPRINT: {candidate.fingerprint}
 OC-SOURCE-OWNER: {candidate.source_owner}
 OC-SOURCE-IDENTITY: {candidate.identity}
+OC-SOURCE-URL: {candidate.source_url}
 OC-SOURCE-IDENTIFIERS: {identifiers}
 OC-SOURCE-ACCESS: {candidate.access.value}
 OC-SOURCE-RIGHTS: {candidate.rights.value}
 OC-SOURCE-LICENSE: {candidate.license_identifier}
+OC-SOURCE-UPDATE-CADENCE: {candidate.update_cadence}
+OC-SOURCE-METADATA-EVIDENCE: {evidence}
 OC-SOURCE-DOMAINS: {domains}
 OC-SOURCE-OVERLAP: {candidate.overlap}
 OC-SOURCE-INCREMENTAL-VALUE: {candidate.incremental_value}
