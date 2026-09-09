@@ -2,85 +2,83 @@
 
 The Swarm Controller converts the continuously refilling Orchid Continuum portfolio into bounded parallel implementation waves.
 
-## Swarm v3 operating envelope
+## Current operating envelope — Swarm v4
 
-- hard maximum: 12 implementation workers per wave;
-- default requested capacity: 8 workers;
-- canonical `oc-queued` portfolio and existing priority policy remain authoritative;
-- durable PR suppression, owner gates, repair/backoff and blocked states remain authoritative;
-- each worker uses the existing `orchid-completion-lane.yml` contract;
+- default capacity: 8 implementation workers;
+- hard maximum: 12 workers per wave;
+- bounded self-refill: at most 4 waves per activation by default;
+- canonical `oc-queued` portfolio and priority policy remain authoritative;
+- explicit issue dependencies gate dispatch before resource locking;
+- fine-grained read/write resources govern safe concurrency;
+- exact-head validation verifies actual changed files against each worker lease;
 - workers target `oc-autonomous-integration`, never `main`;
-- the planner performs no provider call, deployment, merge, scientific publication, taxonomy activation, credential change or production mutation;
-- exact-head validation now verifies the worker's actual PR write-set against the resource lease that authorized the worker.
+- the planner performs no provider call, deployment, merge, scientific publication, taxonomy activation, credential change, spending, or production mutation.
 
-## Why resource locks
+## Evolution
 
-Swarm v1 conservatively allowed one worker per coarse product lane. That prevented collision storms, but it also meant two unrelated L3 jobs such as literature provenance and image provenance could not run together.
+**v1 — bounded parallelism.** Multiple completion workers run concurrently instead of serially.
 
-Swarm v2 separated **product lanes** from **resources**. Product lanes remain useful for reporting and fallback safety, while resource claims determine whether work can execute concurrently.
+**v2 — resource locking.** Product lanes are separated from semantic resources. Read/read work may run together; write/write and read/write conflicts are suppressed. Explicit `OC-SWARM-READS:` and `OC-SWARM-WRITES:` markers or `oc-resource-*` labels can replace inference.
+
+**v3 — post-build enforcement.** Exact-head validation maps the PR's actual changed files back to semantic resources and rejects runtime/configuration writes outside the worker's durable write lease. Read authority never authorizes a write. Control-plane, schema, repo-global, and unknown-path changes fail closed unless explicitly authorized.
+
+**v4 — dependency graph and continuous refill.** Work may declare durable issue dependencies, and newly available capacity is continuously re-evaluated through bounded refill waves plus repository state-change triggers.
+
+## Swarm v4 dependency contract
+
+An issue can declare:
+
+```text
+OC-SWARM-DEPENDS-ON: #1201, #1202
+```
+
+A dependency is satisfied only when the referenced issue is closed or carries `oc-done`. A missing referenced issue fails closed. Dependency cycles are detected; every cycle member remains blocked and the cycle is surfaced in the wave summary.
+
+Dependency readiness is evaluated before resource locking. Therefore priority alone can never launch work whose prerequisite has not completed.
+
+## Resource contract
 
 Examples of resource keys include:
 
 `taxonomy`, `occurrence`, `literature`, `images`, `molecular`, `habitat`, `geospatial`, `atlas`, `knowledge-graph`, `brain-reasoning`, `scientific-memory`, `research-station`, `frontend-api`, `security-observability`, `pollinator`, `mycorrhiza`, `traits`, and `conservation`.
 
-The control plane itself has a special exclusive `control-plane` resource.
+The control plane has an exclusive `control-plane` resource. Unknown work falls back to a conservative coarse `lane-*` write lock.
 
-## Lock semantics
+Lock semantics:
 
 - write + write on the same resource: conflict;
-- read + write on the same resource: conflict;
-- read + read on the same resource: safe to run in parallel;
-- a candidate that conflicts with an active worker or an earlier selected worker is skipped for that wave, not destroyed or relabelled;
-- unclassified work falls back to an exclusive coarse-lane lock such as `lane-l4`, preserving the conservative v1 behavior;
-- control-plane work is globally exclusive.
+- read + write: conflict;
+- read + read: allowed;
+- conflicting candidates remain queued for a later wave;
+- active `oc-running` workers reconstruct their resource locks before every new plan.
 
-Issue authors can override inference with explicit durable body markers:
+## Continuous refill
 
-```text
-OC-SWARM-READS: taxonomy, literature
-OC-SWARM-WRITES: atlas, geospatial
-```
+Swarm v4 is designed so a completed worker does not leave capacity idle until a person starts another run.
 
-A label such as `oc-resource-literature` can also declare an exclusive resource. Explicit body markers take precedence over labels and keyword inference.
+The controller responds to issue state/label changes, closed integration PRs, and a five-minute reconciliation pulse. Within one activation it may also dispatch another bounded wave when waiting work exists and workers have just completed. The refill chain has an explicit maximum-wave counter, so it cannot recurse indefinitely.
 
-## Swarm v3 — post-build write-set enforcement
+This is not permission to bypass dependencies or locks. Every refill reconstructs the repository snapshot from scratch and repeats canonical eligibility -> dependency readiness -> resource locking.
 
-Pre-build resource classification is only a scheduling prediction. Swarm v3 closes that gap by enforcing the lease after code exists.
+## End-to-end architecture
 
-When the swarm claims a worker, it publishes a durable issue receipt containing the exact `reads` and `writes` resources granted to that worker. After the worker opens or updates its PR, `orchid-autonomous-validation.yml` retrieves the latest Swarm lease receipt, enumerates the PR's actual changed files, and invokes `scripts/oc_swarm_write_set_verifier.py` before the normal exact-head test suite.
+1. Read open and closed issue state plus open integration PRs.
+2. Apply canonical queue, priority, blocked-state, owner-gate, repair, and durable-PR policy.
+3. Build the explicit dependency DAG and fail closed on missing prerequisites or cycles.
+4. Filter to dependency-ready candidates.
+5. Reconstruct active semantic resource locks.
+6. Admit only resource-compatible candidates up to bounded capacity.
+7. Publish durable worker receipts containing reads, writes, and dependencies.
+8. Run implementation workers in parallel on isolated branches.
+9. Verify actual PR changed files against the worker's write lease.
+10. Run ordinary exact-head tests and governance checks.
+11. Let the independent integration supervisor decide whether validated reversible work may enter `oc-autonomous-integration`.
+12. Reconcile again and refill newly free capacity.
 
-The verifier maps changed paths back to semantic resources and requires every runtime/configuration write to be covered by the worker's **write** lease. A read claim never authorizes a write. Examples:
+## Protected boundary
 
-- a `literature` worker changing `app/literature_extraction/...` passes;
-- the same worker changing an Atlas runtime module fails;
-- changing `.github/workflows/...` requires `control-plane`;
-- a migration requires `database-schema` plus any identifiable scientific/domain resource;
-- globally shared dependency files such as `requirements.txt` require `repo-global`;
-- unknown runtime/configuration paths fail closed unless the worker held an explicit `repo-global` write or the conservative `lane-*` fallback lock;
-- ancillary tests and documentation do not independently expand runtime authority.
-
-A failed write-set verification makes the exact-head validation fail, so the existing integration supervisor cannot classify that head as green and merge it. This turns resource locking from an advisory scheduler heuristic into an enforceable integration contract.
-
-Legacy or manually-created PRs that have no Swarm resource-lease receipt are not retroactively blocked; v3 enforcement applies to work actually dispatched by the swarm.
-
-## Architecture
-
-1. **Portfolio snapshot** — read open issues and open integration PRs.
-2. **Canonical eligibility** — reuse `oc_portfolio_scheduler.py` for priority, durable-PR suppression, blocked states, repair state and owner gates.
-3. **Resource classification** — `oc_swarm_resource_locks.py` derives explicit or inferred read/write claims.
-4. **Active-lock reconstruction** — every existing `oc-running` issue contributes its resource claims before new work is selected.
-5. **Resource-aware planning** — process the canonical ranked queue in order and admit only candidates whose claims do not conflict.
-6. **Bounded fan-out** — convert up to 12 selected tasks into a GitHub Actions matrix; default eight.
-7. **Lease acquisition** — mark only still-eligible selected issues `oc-running` immediately before launch and publish their claims in the issue receipt.
-8. **Parallel implementation** — invoke one existing reusable completion lane per leased issue.
-9. **Post-build write-set verification** — compare actual changed files with the durable lease before exact-head validation can become green.
-10. **Independent validation/integration** — the existing continuous-completion supervisor remains responsible for exact-head validation and integration into `oc-autonomous-integration`.
-11. **Protected boundary** — main/production/scientific-authority decisions remain outside the swarm.
-
-## Defense in depth
-
-Swarm v3 does not assume file-path classification is perfect. It combines semantic resource locking with isolated worker branches, conservative fallback locks for unknown work, exact-head CI, mergeability checks, durable PR suppression and the existing independent integration supervisor. Known resource drift is rejected; unknown runtime drift is rejected unless the worker held a deliberately broad fallback authority.
+Swarm execution does not authorize merge to `main`, production deployment, taxonomy activation, scientific publication, authoritative Knowledge Graph mutation, sensitive-locality disclosure, credential changes, spending, or destructive operations. Those boundaries remain governed independently.
 
 ## Activation
 
-The workflow is intentionally introduced on `oc-autonomous-integration` first. Making it the primary scheduled dispatcher requires normal governed promotion of this control-plane change to the repository default branch after exact-head validation. Until then it can be reviewed and validated without silently changing production orchestration.
+The controller is being developed on `oc-autonomous-integration`. Scheduled/event-driven swarm execution becomes operational only after the control-plane change is validated and intentionally promoted to the repository default branch. Until that promotion, the implementation can be tested without silently changing production orchestration.
