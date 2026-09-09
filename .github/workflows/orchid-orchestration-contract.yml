@@ -1,0 +1,86 @@
+name: Orchid Orchestration Contract
+
+# The autonomous scheduler and lane are shell inside YAML. Nothing type-checks
+# them and nothing ran their contract tests: tests/test_orchid_continuous_completion_lane_gating.py
+# was listed by no workflow, and no workflow in this repository runs the whole
+# suite - every one names an explicit set of files. So the assertions guarding
+# how issues are claimed, released and requeued only ever ran locally.
+#
+# Read-only. This validates the orchestration definition; it never dispatches it.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/orchid-continuous-completion.yml'
+      - '.github/workflows/orchid-completion-lane.yml'
+      - '.github/workflows/orchid-orchestration-contract.yml'
+      - 'tests/test_orchid_continuous_completion_lane_gating.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  orchestration-contract:
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest ruff pyyaml
+
+      - name: Ruff
+        run: ruff check tests/test_orchid_continuous_completion_lane_gating.py
+
+      - name: Orchestration contract tests
+        run: pytest -q tests/test_orchid_continuous_completion_lane_gating.py
+
+      - name: Every orchestration run block is valid shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          # bash -n catches a broken heredoc or an unbalanced quote before the
+          # scheduler runs it against live issues, where the only symptom would
+          # be a step that fails with no readable reason.
+          python - <<'PY'
+          import subprocess
+          import sys
+          import tempfile
+
+          import yaml
+
+          failures = []
+          for path in (
+              ".github/workflows/orchid-continuous-completion.yml",
+              ".github/workflows/orchid-completion-lane.yml",
+          ):
+              with open(path, encoding="utf-8") as handle:
+                  document = yaml.safe_load(handle)
+              for job, spec in (document.get("jobs") or {}).items():
+                  for step in spec.get("steps") or []:
+                      run = step.get("run")
+                      if not isinstance(run, str):
+                          continue
+                      with tempfile.NamedTemporaryFile("w", suffix=".sh") as script:
+                          script.write(run)
+                          script.flush()
+                          result = subprocess.run(
+                              ["bash", "-n", script.name],
+                              capture_output=True,
+                              text=True,
+                          )
+                      if result.returncode:
+                          failures.append(f"{path} :: {job} :: {step.get('name')}\n{result.stderr}")
+
+          if failures:
+              print("\n".join(failures))
+              sys.exit(1)
+          print("all orchestration run blocks parse")
+          PY

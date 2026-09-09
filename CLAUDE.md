@@ -8,6 +8,7 @@ Claude Code is an executor, not the source of truth for project state.
 
 - Read `AGENTS.md` first. It is the repository's primary coding-agent operating system.
 - Read `docs/AGENT-OPERATING-MEMORY.md` next. It contains durable corrections learned from repeated convergence failures. Current repository truth and explicit owner decisions outrank stale memory.
+- Read `docs/SOFTWARE-FACTORY-V1.md` for the maker/checker, durable-state, risk-gate, and NO-API execution contract.
 - Orchid Continuum Brain owns architecture, governance, mission intent, scientific-integrity rules, and durable completion records.
 - GitHub owns code, issues, branches, pull requests, CI, reviews, and merge state.
 - When a mission references Brain records, inspect those records before implementation.
@@ -15,12 +16,13 @@ Claude Code is an executor, not the source of truth for project state.
 ## Startup sequence
 
 Before editing:
-1. Read the linked mission/issue, `AGENTS.md`, and `docs/AGENT-OPERATING-MEMORY.md` completely.
+1. Read the linked mission/issue, `AGENTS.md`, `docs/AGENT-OPERATING-MEMORY.md`, and `docs/SOFTWARE-FACTORY-V1.md` completely.
 2. Inspect current `main`, parent/related issues, open pull requests, review comments, and required checks.
 3. Search for an existing authoritative branch/PR for the same acceptance criterion.
 4. Identify relevant Brain architecture/governance records.
 5. Classify the mission as `NEW`, `CONTINUE`, `CONVERGE`, `SUPERSEDE`, or `ALREADY_DONE`.
 6. Reuse or converge existing work instead of creating duplicate implementation lineages.
+7. Record the maker identity and ensure an independent checker is used before any automatic integration decision.
 
 ## Implementation posture
 
@@ -31,6 +33,14 @@ Before editing:
 - Do not weaken authentication, tests, review gates, publication safeguards, or provenance requirements.
 - Add focused tests for changed behavior.
 - When a repeated correction materially prevents wasted work, scientific error, privacy leakage, branch drift, or governance mistakes, persist it in repository instructions/tests instead of relying on chat memory.
+
+## Maker/checker execution
+
+- The implementation session is the maker and cannot self-certify an automatic integration.
+- The checker must validate the exact maker head SHA and required checks and must have a different logical identity from the maker.
+- Checker PASS plus exact-head verification is necessary but not sufficient: the factory risk gate must also return `AUTO_INTEGRATE`.
+- Checker FAIL routes to bounded repair. Pending/inconclusive validation remains in validation rather than asking the owner to monitor it.
+- Safe, reversible low/moderate-risk changes targeting a non-`main` integration branch may advance without owner relay when `app/calyx_orchestrator/factory_policy.py` authorizes integration.
 
 ## Validation
 
@@ -47,10 +57,12 @@ End each mission in exactly one of the repository-defined states:
 - `BLOCKED`: exact blocker and next executable action recorded, useful branch/commit preserved;
 - `NO-OP`: acceptance criteria already satisfied with exact evidence and no duplicate branch/PR.
 
-Continue routine implementation, testing, and repair autonomously. Completing one bounded PR is not completion of a larger mission if additional safe acceptance criteria remain executable. Stop after three unsuccessful attempts on the same deterministic failure class and escalate rather than consuming additional model budget.
+Continue routine implementation, testing, repair, validation routing, and safe non-`main` integration autonomously. Completing one bounded PR is not completion of a larger mission if additional safe acceptance criteria remain executable. Stop after three unsuccessful attempts on the same deterministic failure class and escalate rather than consuming additional model budget.
 
 ## Owner-governed boundaries
 
-Do not merge/auto-merge, deploy/activate production changes, mutate production DB/KG, activate taxonomy, publish scientific knowledge, expose/create/rotate privileged credentials, spend funds, force-push, rewrite history destructively, or delete branches/repos without required owner authorization.
+Do not merge/integrate to `main` or `master`, deploy/activate production changes, mutate production DB/KG, activate taxonomy, publish governed scientific knowledge, expose/create/rotate privileged credentials, spend funds, force-push, rewrite history destructively, disclose sensitive locality, or perform destructive/non-reversible operations without required owner authorization.
+
+A safe non-`main` integration action is not owner-gated when the independent checker has passed the exact head, required checks are proven, and `factory_policy.evaluate_factory_gate()` returns `AUTO_INTEGRATE`.
 
 Do not use the repository owner as a prompt relay, CI monitor, branch coordinator, or copy/paste message bus.

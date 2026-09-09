@@ -203,8 +203,8 @@ def test_claude_uses_deterministic_cost_aware_route(lane_text):
 def test_cost_aware_route_preserves_provider_fallback_chain(lane_text):
     assert "Execute bounded Gemini fallback" in lane_text
     assert "Execute bounded OpenAI fallback" in lane_text
-    assert 'if: steps.claude_provider.outputs.fallback_allowed == \'true\'' in lane_text
-    assert 'if: steps.gemini_provider.outputs.fallback_allowed == \'true\'' in lane_text
+    assert 'steps.claude_provider.outputs.fallback_allowed == \'true\'' in lane_text
+    assert 'steps.gemini_provider.outputs.fallback_allowed == \'true\'' in lane_text
     assert "ROUTE_TIER: ${{ steps.route.outputs.tier }}" in lane_text
     assert "Route=${route_telemetry}" in lane_text
 
@@ -237,7 +237,18 @@ def test_pipefail_paths_do_not_use_early_exit_head(scheduler_text, lane_text):
     assert "| head -1" not in lane_text
 
 
-def test_validation_dispatch_outage_does_not_requeue_claude(lane_text):
+def test_validation_dispatch_outage_does_not_redispatch_a_model(lane_text):
+    """A failed validation dispatch must not cost a second model run.
+
+    The durable PR already exists; only the dispatch failed. Re-queuing would
+    send the issue back through a lane and pay for the implementation twice.
+
+    Asserts the guarantee, not the vendor. This previously required the literal
+    "without redispatching Claude" and broke when the lane gained a Gemini
+    fallback and generalised the wording to "a model" - a change that widened
+    the guarantee rather than weakening it. A test that cannot tell those apart
+    is not guarding anything.
+    """
     marker = "Durable PR #$pr exists, but validation dispatch failed"
     start = lane_text.index(marker)
     window = lane_text[max(0, start - 1000) : start + 1000]
@@ -334,7 +345,7 @@ def test_gemini_security_failure_remains_classified_but_does_not_block_codex(lan
     security = classifier[classifier.index("kind=security") : classifier.index("kind=safe_provider")]
     assert "fallback=true" in security
     assert "kind=security" in security
-    assert "if: steps.gemini_provider.outputs.fallback_allowed == 'true'" in lane_text
+    assert "steps.gemini_provider.outputs.fallback_allowed == 'true'" in lane_text
     assert "independently authorized OpenAI" in lane_text
 
 

@@ -6,9 +6,10 @@ calling external sequence services, mutating taxonomy, or publishing scientific 
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Iterable, Protocol
+from typing import Protocol
 
 
 class SequenceBindingState(str, Enum):
@@ -35,10 +36,14 @@ class SequenceRecord:
     unpublished: bool = False
 
     def __post_init__(self) -> None:
-        if self.binding_state is SequenceBindingState.ACCESSION_VERIFIED:
-            if not self.accession_id or not self.accession_verified:
-                raise ValueError("verified binding requires a verified accession id")
-        if self.binding_state is SequenceBindingState.CONFLICT and self.accession_verified:
+        if self.binding_state is SequenceBindingState.ACCESSION_VERIFIED and (
+            not self.accession_id or not self.accession_verified
+        ):
+            raise ValueError("verified binding requires a verified accession id")
+        if (
+            self.binding_state is SequenceBindingState.CONFLICT
+            and self.accession_verified
+        ):
             raise ValueError("conflicting evidence cannot be promoted as verified")
 
     def to_public_dict(self) -> dict[str, object]:
@@ -51,8 +56,7 @@ class SequenceRecord:
 
 
 class MolecularRepository(Protocol):
-    def records_for_taxon(self, taxon_name: str) -> Iterable[SequenceRecord]:
-        ...
+    def records_for_taxon(self, taxon_name: str) -> Iterable[SequenceRecord]: ...
 
 
 @dataclass(frozen=True)

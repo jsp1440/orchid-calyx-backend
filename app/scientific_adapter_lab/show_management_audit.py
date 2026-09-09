@@ -247,6 +247,18 @@ CAPABILITY_INVENTORY: list[dict] = [
             "align with the existing verify_api_key constant-time HMAC pattern in security.py"
         ),
         "security_risk": "HIGH",
+        "owner_gated": True,
+        "owner_gate_reason": (
+            "INVESTIGATED 2026-09-08: No existing canonical per-judge auth mechanism. "
+            "Judge model (app/models.py:370) has id/show_id/name/email/role/created_at — "
+            "no access_token, pin, or secret field. verify_api_key covers all callers with "
+            "a shared CALYX_API_KEY (floor guard); it does not distinguish between judges. "
+            "Fix requires: (1) new Judge.access_token column + DB migration, (2) token "
+            "issuance at judge creation/check-in, (3) HMAC verification in require_judge "
+            "with DB access. All three steps change the public caller contract for judge "
+            "endpoints and require a schema migration — owner decision required on token "
+            "model (per-judge vs. per-session), issuance flow, and migration timing."
+        ),
     },
     {
         "capability_id": "legacy_score_submissions",

@@ -16,7 +16,7 @@ def test_unverified_local_hits_do_not_suppress_targeted_external_literature(monk
 
     calls: list[str] = []
 
-    def _search(query: str, *, limit: int = 8):
+    def _search(query: str, *, limit: int = 8, taxa: list[str] | None = None):
         calls.append(query)
         return {
             "provider": "Europe PMC",
