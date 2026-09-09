@@ -29,6 +29,8 @@ def _get_continuum() -> ContinuumConversationService:
     if _continuum is None:
         _continuum = ContinuumConversationService()
     return _continuum
+
+
 OwnerIdentity = Annotated[dict[str, object], Depends(verify_owner_or_api_key)]
 Db = Annotated[Session, Depends(get_db)]
 
