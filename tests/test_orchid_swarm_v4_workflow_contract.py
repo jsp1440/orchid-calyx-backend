@@ -40,3 +40,25 @@ def test_v4_does_not_merge_or_deploy():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "gh pr merge" not in text
     assert "production deploy: disabled" in text.lower()
+
+
+def test_v4_reusable_workers_receive_the_completion_lane_permission_ceiling():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    header, jobs = text.split("\njobs:", maxsplit=1)
+    workers = jobs.split("\n  workers:", maxsplit=1)[1].split(
+        "\n  refill:", maxsplit=1
+    )[0]
+
+    # Planning/refill keep the read-biased workflow ceiling. Only reusable
+    # implementation workers receive the mutation authority their callee
+    # declares, because a called workflow cannot elevate its caller's token.
+    assert "contents: read" in header
+    assert "pull-requests: read" in header
+    for permission in (
+        "contents: write",
+        "issues: write",
+        "pull-requests: write",
+        "actions: write",
+        "id-token: write",
+    ):
+        assert permission in workers

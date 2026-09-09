@@ -148,6 +148,15 @@ jobs:
   workers:
     needs: plan
     if: needs.plan.outputs.launch_count != '0'
+    # Reusable workflows cannot elevate GITHUB_TOKEN permissions above their
+    # caller. Scope the implementation authority to worker jobs so planning and
+    # refill retain the workflow-level read-biased control-plane permissions.
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+      id-token: write
     strategy:
       fail-fast: false
       max-parallel: 12
