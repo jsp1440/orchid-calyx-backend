@@ -26,21 +26,27 @@ def _record(source: str, state: ElevationState, typical: int | None) -> HabitatR
         habitat_type="terrestrial",
         climate_zone="montane cloud forest",
         measurement_source=source,
-        evidence_state=HabitatEvidenceState.VERIFIED if source == "reviewed_occurrence" else HabitatEvidenceState.REVIEW_REQUIRED,
+        evidence_state=HabitatEvidenceState.VERIFIED
+        if source == "reviewed_occurrence"
+        else HabitatEvidenceState.REVIEW_REQUIRED,
     )
 
 
 def test_unknown_elevation_never_collapses_to_zero() -> None:
-    with pytest.raises(ValueError, match="UNKNOWN elevation cannot carry numeric values"):
+    with pytest.raises(
+        ValueError, match="UNKNOWN elevation cannot carry numeric values"
+    ):
         _record("estimated_external", ElevationState.UNKNOWN, 0)
 
 
 def test_measured_source_outranks_derived_and_estimated() -> None:
-    selected = classify_elevation_source([
-        _record("estimated_external", ElevationState.ESTIMATED, 2500),
-        _record("derived_model", ElevationState.DERIVED, 2550),
-        _record("reviewed_occurrence", ElevationState.MEASURED, 2600),
-    ])
+    selected = classify_elevation_source(
+        [
+            _record("estimated_external", ElevationState.ESTIMATED, 2500),
+            _record("derived_model", ElevationState.DERIVED, 2550),
+            _record("reviewed_occurrence", ElevationState.MEASURED, 2600),
+        ]
+    )
     assert selected is not None
     assert selected.measurement_source == "reviewed_occurrence"
     assert selected.elevation_state is ElevationState.MEASURED
@@ -58,12 +64,41 @@ def test_protected_locality_is_removed_before_serialization() -> None:
         {"latitude": -6.1, "longitude": -77.2, "region": "Amazonas"},
         protected=True,
     )
-    assert payload == {"state": "UNKNOWN", "payload": None, "reason": "protected_locality_withheld"}
+    assert payload == {
+        "state": "UNKNOWN",
+        "payload": None,
+        "reason": "protected_locality_withheld",
+    }
+
+
+def test_protected_snapshot_redacts_elevation_values() -> None:
+    payload = serialize_habitat_snapshot(
+        [_record("reviewed_occurrence", ElevationState.MEASURED, 2600)],
+        geospatial={"region": "Amazonas"},
+        geospatial_available=True,
+        protected_locality=True,
+    )
+
+    assert payload["record"]["elevation"] == {
+        "min_m": None,
+        "max_m": None,
+        "typical_m": None,
+        "state": "MEASURED",
+    }
+    assert payload["geospatial"] == {
+        "state": "UNKNOWN",
+        "payload": None,
+        "reason": "protected_locality_withheld",
+    }
 
 
 def test_nonprotected_payload_still_strips_raw_coordinates() -> None:
     payload = GeospatialGateway(available=True).serialize(
-        {"region": "Amazonas", "coordinates": [-6.1, -77.2], "nested": {"gps": "secret", "summary": "regional only"}}
+        {
+            "region": "Amazonas",
+            "coordinates": [-6.1, -77.2],
+            "nested": {"gps": "secret", "summary": "regional only"},
+        }
     )
     encoded = json.dumps(payload).casefold()
     assert payload["state"] == "AVAILABLE"

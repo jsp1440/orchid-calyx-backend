@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any
+
+from app.calyx_flywheel.locality import SENSITIVE_LOCALITY_FIELDS
 
 SCHEMA_VERSION = "oc.habitat-geospatial.v1"
-_SOURCE_PRECEDENCE = {"reviewed_occurrence": 0, "derived_model": 1, "estimated_external": 2}
-_SENSITIVE_KEYS = {"latitude", "longitude", "lat", "lon", "lng", "coordinates", "gps", "exact_location", "private_locality", "locality", "site", "grid_reference"}
+_SOURCE_PRECEDENCE = {
+    "reviewed_occurrence": 0,
+    "derived_model": 1,
+    "estimated_external": 2,
+}
+_SENSITIVE_KEYS = SENSITIVE_LOCALITY_FIELDS | {
+    "exact_location",
+    "private_locality",
+    "grid_reference",
+}
 
 
 class ElevationState(str, Enum):
@@ -37,26 +48,35 @@ class HabitatRecord:
 
     def __post_init__(self) -> None:
         if self.measurement_source not in _SOURCE_PRECEDENCE:
-            raise ValueError(f"unsupported measurement_source: {self.measurement_source}")
+            raise ValueError(
+                f"unsupported measurement_source: {self.measurement_source}"
+            )
         if not self.taxon_id or not self.scientific_name:
             raise ValueError("taxon binding is required")
         values = (self.elevation_min_m, self.elevation_max_m, self.elevation_typical_m)
-        if self.elevation_state is ElevationState.UNKNOWN and any(value is not None for value in values):
+        if self.elevation_state is ElevationState.UNKNOWN and any(
+            value is not None for value in values
+        ):
             raise ValueError("UNKNOWN elevation cannot carry numeric values")
-        if self.elevation_state is not ElevationState.UNKNOWN and all(value is None for value in values):
+        if self.elevation_state is not ElevationState.UNKNOWN and all(
+            value is None for value in values
+        ):
             raise ValueError("known elevation state requires at least one value")
 
     @property
     def precedence(self) -> int:
         return _SOURCE_PRECEDENCE[self.measurement_source]
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, *, protected_locality: bool = False) -> dict[str, Any]:
         return {
-            "taxon_binding": {"taxon_id": self.taxon_id, "scientific_name": self.scientific_name},
+            "taxon_binding": {
+                "taxon_id": self.taxon_id,
+                "scientific_name": self.scientific_name,
+            },
             "elevation": {
-                "min_m": self.elevation_min_m,
-                "max_m": self.elevation_max_m,
-                "typical_m": self.elevation_typical_m,
+                "min_m": None if protected_locality else self.elevation_min_m,
+                "max_m": None if protected_locality else self.elevation_max_m,
+                "typical_m": None if protected_locality else self.elevation_typical_m,
                 "state": self.elevation_state.value,
             },
             "habitat_type": self.habitat_type,
@@ -67,13 +87,19 @@ class HabitatRecord:
 
 
 def classify_elevation_source(records: Iterable[HabitatRecord]) -> HabitatRecord | None:
-    ordered = sorted(records, key=lambda item: (item.precedence, item.taxon_id, item.scientific_name))
+    ordered = sorted(
+        records, key=lambda item: (item.precedence, item.taxon_id, item.scientific_name)
+    )
     return ordered[0] if ordered else None
 
 
 def _safe(value: Any) -> Any:
     if isinstance(value, dict):
-        return {str(k): _safe(v) for k, v in value.items() if str(k).casefold() not in _SENSITIVE_KEYS}
+        return {
+            str(k): _safe(v)
+            for k, v in value.items()
+            if str(k).casefold() not in _SENSITIVE_KEYS
+        }
     if isinstance(value, (list, tuple)):
         return [_safe(item) for item in value]
     return value
@@ -83,13 +109,26 @@ def _safe(value: Any) -> Any:
 class GeospatialGateway:
     available: bool
 
-    def serialize(self, payload: dict[str, Any] | None, *, protected: bool = False) -> dict[str, Any]:
+    def serialize(
+        self, payload: dict[str, Any] | None, *, protected: bool = False
+    ) -> dict[str, Any]:
         if not self.available:
-            return {"state": ElevationState.UNKNOWN.value, "payload": None, "reason": "geospatial_layer_unavailable"}
+            return {
+                "state": ElevationState.UNKNOWN.value,
+                "payload": None,
+                "reason": "geospatial_layer_unavailable",
+            }
         if protected:
-            return {"state": ElevationState.UNKNOWN.value, "payload": None, "reason": "protected_locality_withheld"}
+            return {
+                "state": ElevationState.UNKNOWN.value,
+                "payload": None,
+                "reason": "protected_locality_withheld",
+            }
         safe_payload = _safe(payload or {})
-        return {"state": "AVAILABLE" if safe_payload else ElevationState.UNKNOWN.value, "payload": safe_payload or None}
+        return {
+            "state": "AVAILABLE" if safe_payload else ElevationState.UNKNOWN.value,
+            "payload": safe_payload or None,
+        }
 
 
 def build_unavailable_habitat_matrix(*, taxon_id: str | None = None) -> dict[str, Any]:
@@ -105,7 +144,13 @@ def build_unavailable_habitat_matrix(*, taxon_id: str | None = None) -> dict[str
     }
 
 
-def serialize_habitat_snapshot(records: Iterable[HabitatRecord], *, geospatial: dict[str, Any] | None = None, geospatial_available: bool = False, protected_locality: bool = False) -> dict[str, Any]:
+def serialize_habitat_snapshot(
+    records: Iterable[HabitatRecord],
+    *,
+    geospatial: dict[str, Any] | None = None,
+    geospatial_available: bool = False,
+    protected_locality: bool = False,
+) -> dict[str, Any]:
     selected = classify_elevation_source(records)
     if selected is None:
         result = build_unavailable_habitat_matrix()
@@ -115,9 +160,11 @@ def serialize_habitat_snapshot(records: Iterable[HabitatRecord], *, geospatial: 
             "taxon_id": selected.taxon_id,
             "evidence_state": selected.evidence_state.value,
             "elevation_state": selected.elevation_state.value,
-            "record": selected.to_dict(),
+            "record": selected.to_dict(protected_locality=protected_locality),
             "production_mutation": False,
             "taxonomy_activation": False,
         }
-    result["geospatial"] = GeospatialGateway(available=geospatial_available).serialize(geospatial, protected=protected_locality)
+    result["geospatial"] = GeospatialGateway(available=geospatial_available).serialize(
+        geospatial, protected=protected_locality
+    )
     return result

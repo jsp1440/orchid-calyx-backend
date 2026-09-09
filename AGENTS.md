@@ -29,6 +29,18 @@ Keep independent work in separate lanes:
 
 Do not modify another lane's files unless a shared contract change is unavoidable. When a shared contract must change, document it in the PR body and notify the affected issues.
 
+## Maker/checker and risk contract
+
+Read `docs/SOFTWARE-FACTORY-V1.md` and use `app/calyx_orchestrator/factory_policy.py` for bounded factory decisions.
+
+1. The implementation worker is the maker. The maker may run focused tests but cannot be the independent acceptance checker for automatic integration.
+2. The checker must validate the exact maker head SHA and required checks. Maker and checker identities must differ.
+3. Checker failure routes to one bounded repair lineage; checker pending/inconclusive remains in validation.
+4. Low- or moderate-risk, reversible work targeting a non-`main` integration branch may advance automatically only after independent checker PASS evidence and required checks are proven passing.
+5. `main`/`master`, production mutation/deployment, credentials/security authority, spending, destructive operations, scientific-authority/taxonomy activation/publication, sensitive-locality exposure, or non-reversible work always remains owner-gated.
+6. NO-API mode parks work that requires a separately billed provider call; deterministic repository-native work may continue.
+7. `integration_authorized` is authority only for the bounded non-`main` integration action admitted by the factory policy. It is never production/main/scientific/spending authority.
+
 ## Session completion contract
 
 Every session must end in exactly one of these states:
@@ -104,6 +116,8 @@ Ask the owner only for genuine authority or unavailable private inputs:
 - production publication authorization;
 - a missing private credential or external file;
 - spending approval;
+- destructive/non-reversible authority;
+- integration to `main`/`master` or production deployment;
 - a product decision that cannot be inferred from the issue.
 
-Do not ask the owner to relay prompts, copy hashes, monitor checks, choose routine next tasks, or restart failed sessions.
+Do not ask the owner to relay prompts, copy hashes, monitor checks, choose routine next tasks, restart failed sessions, or approve a safe non-`main` integration action that already satisfies the factory policy.

@@ -53,6 +53,36 @@ _DOMAIN_HEADINGS: dict[str, str] = {
     "conservation": "Conservation Status",
 }
 
+_DOMAIN_RESEARCH_QUESTIONS: dict[str, str] = {
+    "morphology_anatomy_physiology": (
+        "What are the morphological, anatomical, and physiological characteristics of {taxon_name}?"
+    ),
+    "habitat": "What habitats and ecological conditions does {taxon_name} occupy?",
+    "geography": "What is the geographic range and distribution of {taxon_name}?",
+    "pollination": "What are the pollination mechanisms and pollinators of {taxon_name}?",
+    "mycorrhizae": "What mycorrhizal associations does {taxon_name} form?",
+    "literature": "What primary scientific literature exists describing {taxon_name}?",
+    "neighboring_taxa_community": (
+        "What plant community does {taxon_name} inhabit and what are the neighboring taxa?"
+    ),
+    "conservation": "What is the conservation status and primary threats facing {taxon_name}?",
+}
+
+
+def knowledge_gap_to_research_question(domain: str, taxon_name: str) -> str | None:
+    """Return a bounded research question for a knowledge gap domain, or None if unknown.
+
+    Converts a domain-level evidence gap into a question that can be submitted to
+    BrainMissionService.start(). No model API calls; purely template-based.
+    Returns None for unknown domains so callers can filter without crashing.
+    """
+    template = _DOMAIN_RESEARCH_QUESTIONS.get(domain)
+    if not template:
+        return None
+    name = taxon_name.strip() or "the taxon"
+    return template.format(taxon_name=name)
+
+
 # Fields that must never appear in outputs (locality safety).
 _FORBIDDEN_FIELDS = frozenset(
     {"latitude", "longitude", "lat", "lon", "lng", "coordinates", "coord", "exact_location"}
