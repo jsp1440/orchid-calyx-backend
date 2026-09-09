@@ -21,6 +21,12 @@ from runtime.knowledge_graph import PostgresGraphRepository, canonical_key, trav
 
 from .observability import ScientificTrace
 from .store import ConversationStore
+from .teaching_synthesis import (
+    AudienceLevel,
+    DepthLevel,
+    SubjectIdentity,
+    build_teaching_synthesis,
+)
 
 router = APIRouter(
     prefix="/calyx",
@@ -622,6 +628,69 @@ def report(payload: ConversationRequest) -> PlainTextResponse:
     )
 
 
+@router.get("/synthesis/{taxon_id}")
+def teaching_synthesis(
+    taxon_id: str,
+    taxon_name: str = Query(..., min_length=1, max_length=300),
+    audience: str = Query("public"),
+    depth: str = Query("standard"),
+    taxon_rank: str = Query("species", max_length=50),
+    canonical_source: str = Query("pending", max_length=200),
+) -> dict[str, Any]:
+    """Return a TeachingSynthesisV1 for the given taxon.
+
+    All domain data is fetched from available sources; UNAVAILABLE states appear
+    where providers are not connected. No KG mutation, no live model calls.
+    """
+    audience_level = AudienceLevel.PUBLIC
+    try:
+        audience_level = AudienceLevel(audience)
+    except ValueError:
+        pass
+
+    depth_level = DepthLevel.STANDARD
+    try:
+        depth_level = DepthLevel(depth)
+    except ValueError:
+        pass
+
+    subject = SubjectIdentity(
+        taxon_name=taxon_name,
+        taxon_id=taxon_id,
+        common_names=(),
+        taxon_rank=taxon_rank,
+        canonical_source=canonical_source,
+        synonym_names=(),
+        authority=None,
+    )
+
+    # All domains return None (UNAVAILABLE) until domain providers are wired.
+    # build_teaching_synthesis() produces correct UNAVAILABLE states — no fabrication.
+    domain_data: dict[str, dict[str, Any] | None] = {
+        "morphology_anatomy_physiology": None,
+        "habitat": None,
+        "geography": None,
+        "pollination": None,
+        "mycorrhizae": None,
+        "literature": None,
+        "neighboring_taxa_community": None,
+        "conservation": None,
+    }
+
+    try:
+        synthesis = build_teaching_synthesis(
+            subject,
+            domain_data,
+            audience=audience_level.value,
+            depth=depth_level.value,
+            sensitive_locality_withheld=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"synthesis_error: {exc}") from exc
+
+    return synthesis.to_dict()
+
+
 @router.get("/capabilities")
 def capabilities() -> dict[str, Any]:
     return {
@@ -635,6 +704,7 @@ def capabilities() -> dict[str, Any]:
             "/api/calyx/brain-query",
             "/api/calyx/conversations",
             "/api/calyx/report",
+            "/api/calyx/synthesis/{taxon_id}",
         ],
         "retrieval": ["LEXICAL", "SEMANTIC", "HYBRID"],
         "analysis": [

@@ -99,15 +99,15 @@ FINISH_LINE_CRITERIA: tuple[FinishLineCriterion, ...] = (
         criterion_id="synthesis_http_endpoint",
         area="synthesis",
         title="HTTP endpoint exposing TeachingSynthesisV1 to frontend/mobile",
-        status=FinishLineStatus.GAP,
-        authoritative_module="app.calyx_conversation.routes (not yet wired)",
-        evidence="build_teaching_synthesis() exists but no /calyx/synthesis/{taxon} route registered",
-        gap_description=(
-            "No HTTP route exposes the synthesis contract. "
-            "Frontend/iPad cannot retrieve a synthesized teaching payload without a bound endpoint."
+        status=FinishLineStatus.READY,
+        authoritative_module="app.calyx_conversation.routes.teaching_synthesis",
+        evidence=(
+            "GET /calyx/synthesis/{taxon_id} registered; returns TeachingSynthesisV1.to_dict(); "
+            "UNAVAILABLE states for all domains when no provider is connected; 15 tests"
         ),
+        gap_description=None,
         blocker_reason=None,
-        next_action="Add GET /calyx/synthesis/{taxon_id} route in app/calyx_conversation/routes.py",
+        next_action=None,
     ),
     FinishLineCriterion(
         criterion_id="synthesis_owner_narrative",

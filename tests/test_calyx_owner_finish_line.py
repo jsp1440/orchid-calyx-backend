@@ -116,8 +116,8 @@ def test_gap_criteria_have_next_action():
         assert c.next_action, f"{c.criterion_id} GAP but missing next_action"
 
 
-def test_synthesis_http_endpoint_is_gap():
-    ids = {c.criterion_id for c in _AUDIT.by_status(FinishLineStatus.GAP)}
+def test_synthesis_http_endpoint_is_ready():
+    ids = {c.criterion_id for c in _AUDIT.by_status(FinishLineStatus.READY)}
     assert "synthesis_http_endpoint" in ids
 
 
