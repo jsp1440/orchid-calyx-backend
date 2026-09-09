@@ -187,8 +187,10 @@ def build_default_candidate_inventory() -> tuple[FederationCandidate, ...]:
             ),
             metadata_evidence=(
                 "https://zenodo.org/records/14601785",
-                "https://github.com/RaymondLTremblay/"
-                "Global_Orchid_Pollinators/blob/main/README.md",
+                (
+                    "https://github.com/RaymondLTremblay/"
+                    "Global_Orchid_Pollinators/blob/main/README.md"
+                ),
                 "https://hdl.handle.net/10669/89284",
             ),
             verification_note=(
