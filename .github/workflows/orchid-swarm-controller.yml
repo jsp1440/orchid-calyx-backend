@@ -1,0 +1,120 @@
+name: Orchid Swarm Controller
+
+on:
+  workflow_dispatch:
+    inputs:
+      worker_slots:
+        description: Maximum concurrent implementation workers (1-8)
+        required: false
+        default: "5"
+        type: string
+  workflow_call:
+    inputs:
+      worker_slots:
+        required: false
+        default: "5"
+        type: string
+
+concurrency:
+  group: orchid-swarm-controller-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      launch_count: ${{ steps.plan.outputs.launch_count }}
+      selected_numbers: ${{ steps.plan.outputs.selected_numbers }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      INTEGRATION_BRANCH: oc-autonomous-integration
+      WORKER_SLOTS: ${{ inputs.worker_slots || '5' }}
+    steps:
+      - name: Checkout integration control plane
+        uses: actions/checkout@v4
+        with:
+          ref: oc-autonomous-integration
+          fetch-depth: 1
+
+      - name: Build repository snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue list --repo "$REPO" --state open --limit 500 \
+            --json number,title,body,labels,createdAt,updatedAt,state > "$RUNNER_TEMP/issues.json"
+          gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 200 \
+            --json number,title,body,headRefName,headRefOid,mergeStateStatus,isDraft > "$RUNNER_TEMP/prs.json"
+          jq -n \
+            --slurpfile issues "$RUNNER_TEMP/issues.json" \
+            --slurpfile prs "$RUNNER_TEMP/prs.json" \
+            '{issues: $issues[0], pull_requests: $prs[0]}' > "$RUNNER_TEMP/swarm-snapshot.json"
+
+      - name: Plan bounded parallel wave
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/oc_swarm_controller.py \
+            --input "$RUNNER_TEMP/swarm-snapshot.json" \
+            --worker-slots "$WORKER_SLOTS" \
+            --github-output "$GITHUB_OUTPUT" \
+            | tee "$RUNNER_TEMP/swarm-plan.json"
+
+      - name: Claim selected worker leases
+        if: steps.plan.outputs.launch_count != '0'
+        shell: bash
+        env:
+          SELECTED: ${{ steps.plan.outputs.selected_numbers }}
+        run: |
+          set -euo pipefail
+          for issue in $(jq -r '.[]' <<<"$SELECTED"); do
+            labels=$(gh issue view "$issue" --repo "$REPO" --json state,labels \
+              --jq 'select(.state == "OPEN") | [.labels[].name] | join(" ")' 2>/dev/null || true)
+            [[ -n "$labels" ]] || continue
+            [[ "$labels" == *oc-queued* ]] || continue
+            [[ "$labels" != *oc-running* ]] || continue
+            [[ "$labels" != *oc-owner-gate* ]] || continue
+            [[ "$labels" != *oc-blocked* ]] || continue
+            [[ "$labels" != *oc-runtime-backoff* ]] || continue
+            [[ "$labels" != *oc-repair-backoff* ]] || continue
+            gh issue edit "$issue" --repo "$REPO" \
+              --remove-label oc-validating --add-label oc-running >/dev/null
+            gh issue comment "$issue" --repo "$REPO" \
+              --body "[OC-SWARM] Worker lease claimed for bounded parallel execution. Controller run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          done
+
+      - name: Publish swarm summary
+        shell: bash
+        env:
+          COUNT: ${{ steps.plan.outputs.launch_count }}
+          SELECTED: ${{ steps.plan.outputs.selected_numbers }}
+        run: |
+          {
+            echo "## Orchid Swarm Wave"
+            echo
+            echo "- launch_count: $COUNT"
+            echo "- selected: $SELECTED"
+            echo "- integration target: \`oc-autonomous-integration\`"
+            echo "- main merge: disabled"
+            echo "- production deploy: disabled"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  workers:
+    needs: plan
+    if: needs.plan.outputs.launch_count != '0'
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/orchid-completion-lane.yml
+    with:
+      issue_number: ${{ format('{0}', matrix.issue_number) }}
+    secrets: inherit
