@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Bounded parallel execution planner for the Orchid Continuum software factory.
 
-Swarm v2 keeps the canonical queue, priority, durable-PR suppression and owner
-gates, but replaces coarse one-worker-per-product-lane scheduling with explicit
-resource locks. Independent tasks inside the same product lane may therefore run
-concurrently when their read/write claims do not overlap.
+Swarm v4 composes three independent safety layers:
+1. canonical queue/priority/durable-PR eligibility;
+2. explicit dependency readiness;
+3. semantic read/write resource locking.
 
-This planner is pure: it does not call model providers, mutate GitHub, merge,
-deploy, spend money, or cross owner gates.
+Only dependency-ready, resource-compatible work is admitted. The planner is
+pure: it does not call model providers, mutate GitHub, merge, deploy, spend
+money, or cross owner gates.
 """
 
 from __future__ import annotations
@@ -53,19 +54,23 @@ def _issue_index(snapshot: dict) -> dict[int, dict]:
 
 
 def build_swarm_plan(snapshot: dict, *, worker_slots: int = DEFAULT_WORKER_SLOTS) -> dict:
-    """Return a bounded resource-aware worker matrix from canonical portfolio state."""
+    """Return a dependency- and resource-aware worker matrix."""
     slots = _bounded_slots(worker_slots)
     scheduler = _load_sibling("oc_portfolio_scheduler", "oc_portfolio_scheduler.py")
     locks = _load_sibling("oc_swarm_resource_locks", "oc_swarm_resource_locks.py")
+    deps = _load_sibling("oc_swarm_dependency_graph", "oc_swarm_dependency_graph.py")
 
     canonical_input = dict(snapshot)
-    # Ask the canonical scheduler for enough capacity that its ranking contains
-    # every candidate we may need. Resource-lock selection happens below.
     canonical_input["max_active_lanes"] = slots
     canonical_input.pop("stabilization_issue", None)
     plan = scheduler.build_plan(canonical_input)
 
     issues = _issue_index(snapshot)
+    graph = deps.build_dependency_graph(snapshot.get("issues") or [])
+    ready_ranked, dependency_suppressed = deps.filter_ready_candidates(
+        plan.get("ranking") or [], graph
+    )
+
     active_rows = []
     for item in plan.get("active_lanes") or []:
         number = item.get("number")
@@ -79,7 +84,7 @@ def build_swarm_plan(snapshot: dict, *, worker_slots: int = DEFAULT_WORKER_SLOTS
 
     candidates = []
     malformed = []
-    for ranked in plan.get("ranking") or []:
+    for ranked in ready_ranked:
         number = ranked.get("number")
         if number is None or int(number) not in issues:
             malformed.append(ranked)
@@ -102,21 +107,30 @@ def build_swarm_plan(snapshot: dict, *, worker_slots: int = DEFAULT_WORKER_SLOTS
 
     workers = []
     for ordinal, item in enumerate(selected, start=1):
+        issue_number = int(item["issue_number"])
+        dep_status = (graph.get("status") or {}).get(issue_number) or {}
         workers.append(
             {
                 "slot": ordinal,
-                "issue_number": int(item["issue_number"]),
+                "issue_number": issue_number,
                 "lane_id": str(item.get("lane_id") or "UNASSIGNED"),
                 "priority": int(item.get("priority", 4)),
-                "selection_reason": str(item.get("selection_reason") or "resource-aware-priority"),
+                "selection_reason": str(item.get("selection_reason") or "dependency-resource-priority"),
                 "repair": bool(item.get("repair")),
                 "reads": list(item.get("reads") or []),
                 "writes": list(item.get("writes") or []),
+                "dependencies": list(dep_status.get("dependencies") or []),
             }
         )
 
+    # A later wave can make progress when queued work exists but is blocked only
+    # by active workers or unresolved dependencies. The workflow uses this as an
+    # observability/refill hint; it never bypasses the dependency graph.
+    waiting_count = len(dependency_suppressed) + len(lock_suppressed)
+    refill_recommended = bool(active_count or workers) and waiting_count > 0
+
     return {
-        "schema": "oc.swarm-plan.v2",
+        "schema": "oc.swarm-plan.v4",
         "requested_worker_slots": int(worker_slots),
         "effective_worker_slots": slots,
         "active_worker_count": active_count,
@@ -125,10 +139,17 @@ def build_swarm_plan(snapshot: dict, *, worker_slots: int = DEFAULT_WORKER_SLOTS
         "workers": workers,
         "matrix": {"include": workers},
         "selected_numbers": [worker["issue_number"] for worker in workers],
+        "dependency_graph": {
+            "edge_count": int(graph.get("edge_count") or 0),
+            "cycle_nodes": list(graph.get("cycle_nodes") or []),
+        },
+        "dependency_suppressed": dependency_suppressed,
         "active_resource_locks": active_locks,
         "resource_lock_suppressed": lock_suppressed,
         "canonical_suppressed": list(plan.get("suppressed") or []),
         "eligible_count": int(plan.get("eligible_count") or 0),
+        "waiting_count": waiting_count,
+        "refill_recommended": refill_recommended,
         "generated_at": plan.get("generated_at"),
         "safety": {
             "merge_to_main": False,
@@ -136,6 +157,9 @@ def build_swarm_plan(snapshot: dict, *, worker_slots: int = DEFAULT_WORKER_SLOTS
             "provider_calls_in_planner": False,
             "owner_gates_preserved": True,
             "bounded": True,
+            "dependency_graph": True,
+            "dependency_cycles_fail_closed": True,
+            "missing_dependencies_fail_closed": True,
             "resource_locking": True,
             "read_read_parallelism": True,
             "write_conflicts_fail_closed": True,
@@ -150,6 +174,7 @@ def _write_github_output(path: str, plan: dict) -> None:
         handle.write(f"matrix={matrix}\n")
         handle.write(f"launch_count={plan['launch_count']}\n")
         handle.write(f"selected_numbers={json.dumps(plan['selected_numbers'], separators=(',', ':'))}\n")
+        handle.write(f"refill_recommended={str(plan['refill_recommended']).lower()}\n")
         handle.write(f"summary={summary}\n")
 
 
