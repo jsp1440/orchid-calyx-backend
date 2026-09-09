@@ -33,7 +33,7 @@ PATH_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("brain-reasoning", ("brain", "reasoning", "synthesis", "cognitive")),
     ("scientific-memory", ("scientific_memory", "scientific-memory", "memory_ledger", "ledger")),
     ("research-station", ("research_station", "research-station", "research_executor", "research-executor")),
-    ("frontend-api", ("frontend", "operator_ui", "router", "routes.py", "showos", "show_companion")),
+    ("frontend-api", ("frontend", "operator_ui", "router", "showos", "show_companion")),
     ("security-observability", ("security", "observability", "telemetry", "sbom", "audit")),
     ("pollinator", ("pollinator", "pollination")),
     ("mycorrhiza", ("mycorrhiza", "fungal")),
@@ -67,11 +67,11 @@ def parse_lease_claim(comment: str) -> dict[str, list[str]]:
     except json.JSONDecodeError as exc:
         raise ValueError("lease resource claim is invalid JSON") from exc
     if not isinstance(raw, dict):
-        raise ValueError("lease resource claim must be an object")
+        raise TypeError("lease resource claim must be an object")
     reads = raw.get("reads") or []
     writes = raw.get("writes") or []
     if not isinstance(reads, list) or not isinstance(writes, list):
-        raise ValueError("lease reads/writes must be arrays")
+        raise TypeError("lease reads/writes must be arrays")
     if not all(isinstance(item, str) and item for item in reads + writes):
         raise ValueError("lease resources must be non-empty strings")
     writes_set = set(writes)
@@ -158,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(files, list) or not all(isinstance(path, str) for path in files):
             raise ValueError("files-json must be a JSON array of strings")
         result = verify_write_set(files, claim)
-    except (ValueError, json.JSONDecodeError) as exc:
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
         result = {
             "schema": "oc.swarm-write-set-verification.v2",
             "passed": False,
