@@ -21,7 +21,14 @@ from runtime.operator_chat import GovernedOperatorChat
 
 router = APIRouter(prefix="/brain/mission-control/chat", tags=["mission-control-chat"])
 _chat = GovernedOperatorChat()
-_continuum = ContinuumConversationService()
+_continuum: ContinuumConversationService | None = None
+
+
+def _get_continuum() -> ContinuumConversationService:
+    global _continuum
+    if _continuum is None:
+        _continuum = ContinuumConversationService()
+    return _continuum
 OwnerIdentity = Annotated[dict[str, object], Depends(verify_owner_or_api_key)]
 Db = Annotated[Session, Depends(get_db)]
 
@@ -128,7 +135,7 @@ def ask_the_continuum(
 ) -> dict[str, Any]:
     owner = _owner(identity)
     try:
-        result = _continuum.ask(
+        result = _get_continuum().ask(
             request.question,
             context=request.context,
             limit=request.limit,
@@ -234,7 +241,7 @@ def ask_persistent_conversation(
     stored = _memory_call(db, lambda: memory.get_session(conversation_id, owner))
     context = _resolved_context(stored, request.context)
     try:
-        result = _continuum.ask(
+        result = _get_continuum().ask(
             request.question,
             context=context,
             limit=request.limit,
