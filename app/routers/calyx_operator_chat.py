@@ -16,17 +16,18 @@ from app.conversation_memory.service import (
 )
 from app.database import get_db
 from app.security import verify_owner_or_api_key
-from runtime.continuum_conversation import ContinuumConversationService
 from runtime.operator_chat import GovernedOperatorChat
 
 router = APIRouter(prefix="/brain/mission-control/chat", tags=["mission-control-chat"])
 _chat = GovernedOperatorChat()
-_continuum: ContinuumConversationService | None = None
+_continuum = None
 
 
-def _get_continuum() -> ContinuumConversationService:
+def _get_continuum():
     global _continuum
     if _continuum is None:
+        from runtime.continuum_conversation import ContinuumConversationService
+
         _continuum = ContinuumConversationService()
     return _continuum
 
