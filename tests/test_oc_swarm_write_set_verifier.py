@@ -70,6 +70,17 @@ def test_control_plane_change_requires_control_plane_write():
     assert result["violations"][0]["missing_writes"] == ["control-plane"]
 
 
+def test_provider_economy_registry_uses_control_plane_lease():
+    path = "scripts/oc_provider_economy.py"
+    passed = verifier.verify_write_set([path], lease(writes=["control-plane"]))
+    assert passed["passed"] is True
+    assert passed["checked"][0]["required_writes"] == ["control-plane"]
+
+    failed = verifier.verify_write_set([path], lease(writes=["repo-global"]))
+    assert failed["passed"] is False
+    assert failed["violations"][0]["missing_writes"] == ["control-plane"]
+
+
 def test_migration_requires_database_schema_plus_domain_when_classified():
     result = verifier.verify_write_set(
         ["migrations/116_literature_source_binding.sql"],

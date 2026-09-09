@@ -20,7 +20,7 @@ LEASE_RECEIPT = re.compile(r"^\[OC-SWARM-V\d+\].*lease claimed:", re.IGNORECASE)
 _JSON_IN_BACKTICKS = re.compile(r"`(\{.*?\})`", re.DOTALL)
 
 PATH_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("control-plane", (".github/workflows/", "scripts/oc_swarm", "scripts/oc_portfolio_", "scripts/oc_control_plane", "scripts/oc_operations_", "scripts/oc_lane_", "scripts/oc_model_router", "scripts/oc_no_api_")),
+    ("control-plane", (".github/workflows/", "scripts/oc_swarm", "scripts/oc_portfolio_", "scripts/oc_provider_", "scripts/oc_control_plane", "scripts/oc_operations_", "scripts/oc_lane_", "scripts/oc_model_router", "scripts/oc_no_api_")),
     ("taxonomy", ("taxonomy", "hassler", "world_plants", "world-orchids")),
     ("occurrence", ("occurrence", "gbif", "idigbio", "inaturalist", "inat_")),
     ("literature", ("literature", "document_intelligence", "citation", "bibliograph", "source_binding")),
