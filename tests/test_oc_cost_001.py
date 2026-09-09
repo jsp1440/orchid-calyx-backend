@@ -19,12 +19,12 @@ import json
 import os
 import tempfile
 
-from scripts.oc_model_router import DEFAULT_MAX_TURNS, choose_route
 from scripts.oc_cost_telemetry import (
     extract_usage_from_execution_log,
     format_telemetry_comment,
     safe_telemetry_summary,
 )
+from scripts.oc_model_router import DEFAULT_MAX_TURNS, choose_route
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +111,7 @@ def test_repair_label_on_deep_stays_capped():
 
 def test_router_is_pure_deterministic():
     """Calling choose_route twice with identical inputs must return identical output."""
-    kwargs = dict(title="Implement integration", body="Integrate the service", labels="oc-p1")
+    kwargs = {"title": "Implement integration", "body": "Integrate the service", "labels": "oc-p1"}
     r1 = choose_route(**kwargs)
     r2 = choose_route(**kwargs)
     assert r1 == r2
@@ -123,6 +123,7 @@ def test_router_does_not_import_anthropic():
     spec = importlib.util.find_spec("scripts.oc_model_router")
     assert spec is not None
     import sys
+
     import scripts.oc_model_router  # noqa: F401 -- intentional side-effect import to verify SDK isolation
     loaded = set(sys.modules.keys())
     assert "anthropic" not in loaded, "oc_model_router imported the Anthropic SDK"
