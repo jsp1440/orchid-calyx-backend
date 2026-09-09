@@ -1,5 +1,5 @@
 """OC-COMPLETE-009 — Scientific Adapter Laboratory: GloBI interaction adapter
-and open-source capability candidate matrix.
+and open-source capability candidate matrix (issue #1089).
 
 Governed interaction schema and normalization pipeline binding Global Biotic
 Interactions (GloBI) dataset records to canonical orchid taxonomy and evidence
