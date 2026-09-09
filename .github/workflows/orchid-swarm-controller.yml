@@ -1,0 +1,50 @@
+name: Orchid Swarm Controller
+
+on:
+  workflow_dispatch:
+    inputs:
+      worker_slots:
+        description: Maximum concurrent implementation workers (1-12)
+        required: false
+        default: "8"
+        type: string
+      wave:
+        description: Internal bounded refill wave ordinal
+        required: false
+        default: "1"
+        type: string
+      max_waves:
+        description: Maximum self-refill waves per activation
+        required: false
+        default: "4"
+        type: string
+  schedule:
+    - cron: "*/5 * * * *"
+  issues:
+    types: [closed, reopened, labeled, unlabeled]
+  pull_request:
+    types: [closed]
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
+      WAVE: ${{ inputs.wave || '1' }}
+      MAX_WAVES: ${{ inputs.max_waves || '4' }}
+    steps:
+      - name: Dispatch governed integration controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run orchid-swarm-controller.yml \
+            --repo "$REPO" \
+            --ref oc-autonomous-integration \
+            -f worker_slots="$WORKER_SLOTS" \
+            -f wave="$WAVE" \
+            -f max_waves="$MAX_WAVES"
