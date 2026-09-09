@@ -48,6 +48,8 @@ class FederationCandidate:
     locality_risk: str
     implementation_cost: str
     requested_disposition: CandidateDisposition
+    license_identifier: str | None = None
+    locality_controls: tuple[str, ...] = ()
 
     @property
     def fingerprint(self) -> str:
@@ -62,12 +64,45 @@ class FederationCandidate:
 
     @property
     def disposition(self) -> CandidateDisposition:
-        """Fail closed when rights or access have not been established."""
-        if self.rights is RightsState.UNKNOWN or self.access is AccessState.UNKNOWN:
-            return CandidateDisposition.DEFER
+        """Fail closed until an ADD candidate has an auditable admission contract."""
         if self.rights is RightsState.RESTRICTED:
             return CandidateDisposition.REJECT
+        if self.admission_blockers:
+            return CandidateDisposition.DEFER
         return self.requested_disposition
+
+    @property
+    def admission_blockers(self) -> tuple[str, ...]:
+        """Return stable reasons that prevent automatic adapter admission.
+
+        Candidate discovery may retain incomplete metadata, but an ADD decision must
+        not advance without explicit rights, access, provenance, and locality
+        controls.  These are policy facts, not scientific conclusions.
+        """
+        blockers: list[str] = []
+        if self.rights is RightsState.UNKNOWN:
+            blockers.append("rights_unknown")
+        if self.access is AccessState.UNKNOWN:
+            blockers.append("access_unknown")
+
+        if self.requested_disposition is CandidateDisposition.ADD:
+            if not self.license_identifier or not self.license_identifier.strip():
+                blockers.append("license_identifier_missing")
+            if not self.identifiers:
+                blockers.append("source_identifier_missing")
+            if not self.provenance_contract.strip():
+                blockers.append("provenance_contract_missing")
+
+            locality_risk = self.locality_risk.strip().casefold()
+            risk_levels = ("negligible", "low", "medium", "high", "unknown")
+            if not locality_risk.startswith(risk_levels):
+                blockers.append("locality_risk_unclassified")
+            elif locality_risk.startswith("unknown"):
+                blockers.append("locality_risk_unknown")
+            elif locality_risk.startswith("high") and not self.locality_controls:
+                blockers.append("locality_controls_missing")
+
+        return tuple(blockers)
 
 
 def deduplicate_candidates(

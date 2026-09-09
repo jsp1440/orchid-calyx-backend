@@ -18,7 +18,7 @@ def lease(reads=(), writes=()):
 
 def test_parse_lease_claim_from_v2_receipt():
     comment = (
-        '[OC-SWARM-V2] Resource-aware worker lease claimed: '
+        "[OC-SWARM-V2] Resource-aware worker lease claimed: "
         '`{"reads":["taxonomy"],"writes":["literature"]}`. Controller run: x'
     )
     claim = verifier.parse_lease_claim(comment)
@@ -27,7 +27,7 @@ def test_parse_lease_claim_from_v2_receipt():
 
 def test_parse_lease_claim_from_v4_dependency_resource_receipt():
     comment = (
-        '[OC-SWARM-V4] Dependency/resource lease claimed: '
+        "[OC-SWARM-V4] Dependency/resource lease claimed: "
         '`{"reads":["taxonomy"],"writes":["atlas"],"dependencies":[1201]}`. Wave 2/4.'
     )
     claim = verifier.parse_lease_claim(comment)
@@ -81,6 +81,17 @@ def test_provider_economy_registry_uses_control_plane_lease():
     assert failed["violations"][0]["missing_writes"] == ["control-plane"]
 
 
+def test_source_federation_runtime_uses_narrow_semantic_lease():
+    path = "app/source_federation/inventory.py"
+    passed = verifier.verify_write_set([path], lease(writes=["source-federation"]))
+    assert passed["passed"] is True
+    assert passed["checked"][0]["required_writes"] == ["source-federation"]
+
+    failed = verifier.verify_write_set([path], lease(writes=["repo-global"]))
+    assert failed["passed"] is False
+    assert failed["violations"][0]["missing_writes"] == ["source-federation"]
+
+
 def test_migration_requires_database_schema_plus_domain_when_classified():
     result = verifier.verify_write_set(
         ["migrations/116_literature_source_binding.sql"],
@@ -119,14 +130,19 @@ def test_ancillary_docs_and_tests_do_not_expand_runtime_authority():
 
 
 def test_global_dependency_file_requires_repo_global():
-    failed = verifier.verify_write_set(["requirements.txt"], lease(writes=["literature"]))
+    failed = verifier.verify_write_set(
+        ["requirements.txt"], lease(writes=["literature"])
+    )
     assert failed["passed"] is False
     assert failed["violations"][0]["missing_writes"] == ["repo-global"]
 
 
 def test_write_claim_dominates_duplicate_read_claim():
     comment = (
-        '[OC-SWARM-V2] Resource-aware worker lease claimed: '
+        "[OC-SWARM-V2] Resource-aware worker lease claimed: "
         '`{"reads":["literature"],"writes":["literature"]}`. Controller run: x'
     )
-    assert verifier.parse_lease_claim(comment) == {"reads": [], "writes": ["literature"]}
+    assert verifier.parse_lease_claim(comment) == {
+        "reads": [],
+        "writes": ["literature"],
+    }

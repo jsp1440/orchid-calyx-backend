@@ -20,21 +20,61 @@ LEASE_RECEIPT = re.compile(r"^\[OC-SWARM-V\d+\].*lease claimed:", re.IGNORECASE)
 _JSON_IN_BACKTICKS = re.compile(r"`(\{.*?\})`", re.DOTALL)
 
 PATH_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("control-plane", (".github/workflows/", "scripts/oc_swarm", "scripts/oc_portfolio_", "scripts/oc_provider_", "scripts/oc_control_plane", "scripts/oc_operations_", "scripts/oc_lane_", "scripts/oc_model_router", "scripts/oc_no_api_")),
+    (
+        "control-plane",
+        (
+            ".github/workflows/",
+            "scripts/oc_swarm",
+            "scripts/oc_portfolio_",
+            "scripts/oc_provider_",
+            "scripts/oc_control_plane",
+            "scripts/oc_operations_",
+            "scripts/oc_lane_",
+            "scripts/oc_model_router",
+            "scripts/oc_no_api_",
+        ),
+    ),
+    ("source-federation", ("app/source_federation/",)),
     ("taxonomy", ("taxonomy", "hassler", "world_plants", "world-orchids")),
     ("occurrence", ("occurrence", "gbif", "idigbio", "inaturalist", "inat_")),
-    ("literature", ("literature", "document_intelligence", "citation", "bibliograph", "source_binding")),
+    (
+        "literature",
+        (
+            "literature",
+            "document_intelligence",
+            "citation",
+            "bibliograph",
+            "source_binding",
+        ),
+    ),
     ("images", ("image", "vision", "media")),
     ("molecular", ("molecular", "genbank", "sequence", "accession")),
     ("habitat", ("habitat", "elevation", "climate")),
     ("geospatial", ("geospatial", "mapbox", "google_earth", "locality", "coordinate")),
     ("atlas", ("atlas", "planetary", "tour")),
-    ("knowledge-graph", ("knowledge_graph", "knowledge-graph", "kg_material", "graph_")),
+    (
+        "knowledge-graph",
+        ("knowledge_graph", "knowledge-graph", "kg_material", "graph_"),
+    ),
     ("brain-reasoning", ("brain", "reasoning", "synthesis", "cognitive")),
-    ("scientific-memory", ("scientific_memory", "scientific-memory", "memory_ledger", "ledger")),
-    ("research-station", ("research_station", "research-station", "research_executor", "research-executor")),
+    (
+        "scientific-memory",
+        ("scientific_memory", "scientific-memory", "memory_ledger", "ledger"),
+    ),
+    (
+        "research-station",
+        (
+            "research_station",
+            "research-station",
+            "research_executor",
+            "research-executor",
+        ),
+    ),
     ("frontend-api", ("frontend", "operator_ui", "router", "showos", "show_companion")),
-    ("security-observability", ("security", "observability", "telemetry", "sbom", "audit")),
+    (
+        "security-observability",
+        ("security", "observability", "telemetry", "sbom", "audit"),
+    ),
     ("pollinator", ("pollinator", "pollination")),
     ("mycorrhiza", ("mycorrhiza", "fungal")),
     ("traits", ("trait", "phenotype")),
@@ -105,7 +145,9 @@ def _path_resources(path: str) -> tuple[set[str], str]:
     return {"repo-global"}, "unclassified-runtime"
 
 
-def verify_write_set(files: Iterable[str], claim: dict[str, list[str]]) -> dict[str, Any]:
+def verify_write_set(
+    files: Iterable[str], claim: dict[str, list[str]]
+) -> dict[str, Any]:
     writes = set(claim.get("writes") or [])
     reads = set(claim.get("reads") or [])
     coarse_fallback = any(resource.startswith("lane-") for resource in writes)
@@ -148,14 +190,18 @@ def verify_write_set(files: Iterable[str], claim: dict[str, list[str]]) -> dict[
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lease-comment", required=True)
-    parser.add_argument("--files-json", required=True, help="JSON array of changed paths")
+    parser.add_argument(
+        "--files-json", required=True, help="JSON array of changed paths"
+    )
     parser.add_argument("--issue-number", type=int)
     args = parser.parse_args(argv)
 
     try:
         claim = parse_lease_claim(args.lease_comment)
         files = json.loads(args.files_json)
-        if not isinstance(files, list) or not all(isinstance(path, str) for path in files):
+        if not isinstance(files, list) or not all(
+            isinstance(path, str) for path in files
+        ):
             raise ValueError("files-json must be a JSON array of strings")
         result = verify_write_set(files, claim)
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
