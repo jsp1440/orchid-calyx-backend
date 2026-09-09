@@ -261,6 +261,45 @@ def normalize_interaction(
     )
 
 
+def _canonical_resolution_id(resolution: Any) -> str:
+    """Return an ID only for an unambiguous canonical resolution."""
+
+    if getattr(resolution, "status", None) != "resolved":
+        return ""
+    target = getattr(resolution, "target", None)
+    canonical_id = getattr(target, "canonical_taxon_id", "") if target else ""
+    return str(canonical_id) if canonical_id else ""
+
+
+def normalize_interaction_with_canonical_taxa(
+    raw: RawInteractionRecord,
+    *,
+    resolver: Any | None = None,
+) -> NormalizedInteraction:
+    """Resolve both participants through OC's canonical taxonomy, then normalize.
+
+    The established TIG resolver is reused instead of introducing a second name
+    matcher. Unresolved and ambiguous names remain PROVISIONAL; resolver
+    unavailability raises and therefore fails closed.
+    """
+
+    if resolver is None:
+        from app.trait_genomics.taxon_target_resolver import (
+            CanonicalTaxonTargetResolver,
+        )
+
+        resolver = CanonicalTaxonTargetResolver()
+
+    raw.validate()
+    source_resolution = resolver.resolve(raw.source_taxon_name)
+    target_resolution = resolver.resolve(raw.target_taxon_name)
+    return normalize_interaction(
+        raw,
+        source_taxon_id=_canonical_resolution_id(source_resolution),
+        target_taxon_id=_canonical_resolution_id(target_resolution),
+    )
+
+
 def build_unavailable_interaction(taxon_name: str) -> NormalizedInteraction:
     """Return UNKNOWN sentinel when interaction data is absent. Never fabricate."""
     return NormalizedInteraction(
