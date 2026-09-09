@@ -2,7 +2,7 @@
 
 The Swarm Controller converts the continuously refilling Orchid Continuum portfolio into bounded parallel implementation waves.
 
-## Swarm v2 operating envelope
+## Swarm v3 operating envelope
 
 - hard maximum: 12 implementation workers per wave;
 - default requested capacity: 8 workers;
@@ -10,13 +10,14 @@ The Swarm Controller converts the continuously refilling Orchid Continuum portfo
 - durable PR suppression, owner gates, repair/backoff and blocked states remain authoritative;
 - each worker uses the existing `orchid-completion-lane.yml` contract;
 - workers target `oc-autonomous-integration`, never `main`;
-- the planner performs no provider call, deployment, merge, scientific publication, taxonomy activation, credential change or production mutation.
+- the planner performs no provider call, deployment, merge, scientific publication, taxonomy activation, credential change or production mutation;
+- exact-head validation now verifies the worker's actual PR write-set against the resource lease that authorized the worker.
 
 ## Why resource locks
 
 Swarm v1 conservatively allowed one worker per coarse product lane. That prevented collision storms, but it also meant two unrelated L3 jobs such as literature provenance and image provenance could not run together.
 
-Swarm v2 separates **product lanes** from **resources**. Product lanes remain useful for reporting and fallback safety, while resource claims determine whether work can execute concurrently.
+Swarm v2 separated **product lanes** from **resources**. Product lanes remain useful for reporting and fallback safety, while resource claims determine whether work can execute concurrently.
 
 Examples of resource keys include:
 
@@ -42,6 +43,26 @@ OC-SWARM-WRITES: atlas, geospatial
 
 A label such as `oc-resource-literature` can also declare an exclusive resource. Explicit body markers take precedence over labels and keyword inference.
 
+## Swarm v3 — post-build write-set enforcement
+
+Pre-build resource classification is only a scheduling prediction. Swarm v3 closes that gap by enforcing the lease after code exists.
+
+When the swarm claims a worker, it publishes a durable issue receipt containing the exact `reads` and `writes` resources granted to that worker. After the worker opens or updates its PR, `orchid-autonomous-validation.yml` retrieves the latest Swarm lease receipt, enumerates the PR's actual changed files, and invokes `scripts/oc_swarm_write_set_verifier.py` before the normal exact-head test suite.
+
+The verifier maps changed paths back to semantic resources and requires every runtime/configuration write to be covered by the worker's **write** lease. A read claim never authorizes a write. Examples:
+
+- a `literature` worker changing `app/literature_extraction/...` passes;
+- the same worker changing an Atlas runtime module fails;
+- changing `.github/workflows/...` requires `control-plane`;
+- a migration requires `database-schema` plus any identifiable scientific/domain resource;
+- globally shared dependency files such as `requirements.txt` require `repo-global`;
+- unknown runtime/configuration paths fail closed unless the worker held an explicit `repo-global` write or the conservative `lane-*` fallback lock;
+- ancillary tests and documentation do not independently expand runtime authority.
+
+A failed write-set verification makes the exact-head validation fail, so the existing integration supervisor cannot classify that head as green and merge it. This turns resource locking from an advisory scheduler heuristic into an enforceable integration contract.
+
+Legacy or manually-created PRs that have no Swarm resource-lease receipt are not retroactively blocked; v3 enforcement applies to work actually dispatched by the swarm.
+
 ## Architecture
 
 1. **Portfolio snapshot** — read open issues and open integration PRs.
@@ -52,14 +73,13 @@ A label such as `oc-resource-literature` can also declare an exclusive resource.
 6. **Bounded fan-out** — convert up to 12 selected tasks into a GitHub Actions matrix; default eight.
 7. **Lease acquisition** — mark only still-eligible selected issues `oc-running` immediately before launch and publish their claims in the issue receipt.
 8. **Parallel implementation** — invoke one existing reusable completion lane per leased issue.
-9. **Independent validation/integration** — the existing continuous-completion supervisor remains responsible for exact-head validation and integration into `oc-autonomous-integration`.
-10. **Protected boundary** — main/production/scientific-authority decisions remain outside the swarm.
+9. **Post-build write-set verification** — compare actual changed files with the durable lease before exact-head validation can become green.
+10. **Independent validation/integration** — the existing continuous-completion supervisor remains responsible for exact-head validation and integration into `oc-autonomous-integration`.
+11. **Protected boundary** — main/production/scientific-authority decisions remain outside the swarm.
 
-## Important limitation
+## Defense in depth
 
-Resource locking prevents known semantic resource conflicts; it cannot know the exact file write-set of code that has not been generated yet. Therefore the system remains fail-closed for unclassified work and continues to rely on isolated branches, exact-head CI, mergeability checks and independent integration validation as defense in depth.
-
-The next hardening step is **post-build write-set verification**: compare each delivered PR's actual changed files against its declared/inferred resource claim and reject or reclassify any worker that escaped its lease. That provides a measurable enforcement loop rather than trusting pre-build classification alone.
+Swarm v3 does not assume file-path classification is perfect. It combines semantic resource locking with isolated worker branches, conservative fallback locks for unknown work, exact-head CI, mergeability checks, durable PR suppression and the existing independent integration supervisor. Known resource drift is rejected; unknown runtime drift is rejected unless the worker held a deliberately broad fallback authority.
 
 ## Activation
 
