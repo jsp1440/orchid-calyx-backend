@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 from fastapi import HTTPException
 
