@@ -5,11 +5,11 @@ ROOT = Path(__file__).resolve().parents[1]
 VALIDATION = ROOT / ".github" / "workflows" / "orchid-autonomous-validation.yml"
 
 
-def test_exact_head_validation_enforces_swarm_write_set():
+def test_exact_head_validation_enforces_versioned_swarm_write_set():
     text = VALIDATION.read_text(encoding="utf-8")
-    assert "Swarm v3 post-build write-set verification" in text
+    assert "Swarm post-build write-set verification" in text
     assert "oc_swarm_write_set_verifier.py" in text
-    assert "[OC-SWARM-V2] Resource-aware worker lease claimed:" in text
+    assert "OC-SWARM-V[0-9]+" in text
     assert "gh pr view" in text
     assert "--json files" in text
 
@@ -22,4 +22,6 @@ def test_legacy_or_manual_prs_are_not_retroactively_blocked():
 
 def test_verifier_runs_before_normal_validation_suite():
     text = VALIDATION.read_text(encoding="utf-8")
-    assert text.index("Swarm v3 post-build write-set verification") < text.index("Install runtime and validation dependencies")
+    assert text.index("Swarm post-build write-set verification") < text.index(
+        "Install runtime and validation dependencies"
+    )
