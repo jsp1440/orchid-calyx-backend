@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
-"""Swarm v3 post-build write-set verifier.
+"""Swarm post-build write-set verifier.
 
-Compares a worker's durable Swarm v2 lease claim with the files actually changed
-in its integration PR.  The verifier is deterministic, provider-free, and
-fail-closed for runtime/configuration paths it cannot classify.
-
-A changed file may require one or more write resources.  Reads never authorize a
-write.  Test/docs-only ancillary changes are allowed without an additional lock;
-unknown production/configuration files require the worker's exclusive coarse
-``lane-*`` fallback or an explicit ``repo-global`` write claim.
+Compares a worker's durable Swarm lease claim with the files actually changed in
+its integration PR. The verifier is deterministic, provider-free, and fail-closed
+for runtime/configuration paths it cannot classify.
 """
 
 from __future__ import annotations
@@ -21,10 +16,9 @@ from collections.abc import Iterable
 from pathlib import PurePosixPath
 from typing import Any
 
-LEASE_PREFIX = "[OC-SWARM-V2] Resource-aware worker lease claimed:"
+LEASE_RECEIPT = re.compile(r"^\[OC-SWARM-V\d+\].*lease claimed:", re.IGNORECASE)
 _JSON_IN_BACKTICKS = re.compile(r"`(\{.*?\})`", re.DOTALL)
 
-# Ordered from most specific to broadest. A path may map to multiple resources.
 PATH_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("control-plane", (".github/workflows/", "scripts/oc_swarm", "scripts/oc_portfolio_", "scripts/oc_control_plane", "scripts/oc_operations_", "scripts/oc_lane_", "scripts/oc_model_router", "scripts/oc_no_api_")),
     ("taxonomy", ("taxonomy", "hassler", "world_plants", "world-orchids")),
@@ -61,9 +55,10 @@ GLOBAL_FILES = {
 
 
 def parse_lease_claim(comment: str) -> dict[str, list[str]]:
-    """Extract and validate the resource claim from a Swarm v2 lease comment."""
-    if LEASE_PREFIX not in (comment or ""):
-        raise ValueError("not a Swarm v2 lease receipt")
+    """Extract and validate resources from any versioned Swarm lease receipt."""
+    first_line = (comment or "").splitlines()[0] if comment else ""
+    if not LEASE_RECEIPT.search(first_line):
+        raise ValueError("not a versioned Swarm lease receipt")
     match = _JSON_IN_BACKTICKS.search(comment)
     if not match:
         raise ValueError("lease receipt has no JSON resource claim")
@@ -87,7 +82,6 @@ def parse_lease_claim(comment: str) -> dict[str, list[str]]:
 
 
 def _path_resources(path: str) -> tuple[set[str], str]:
-    """Return (required resources, classification) for one changed path."""
     normal = str(PurePosixPath(path)).lower()
     basename = PurePosixPath(normal).name
     resources: set[str] = set()
@@ -104,27 +98,20 @@ def _path_resources(path: str) -> tuple[set[str], str]:
 
     if resources:
         return resources, "classified"
-
-    # Non-runtime collateral is allowed to follow an otherwise authorized write.
     if normal.startswith("tests/") or "/tests/" in normal:
         return set(), "ancillary-test"
     if normal.startswith("docs/") or normal.endswith(".md"):
         return set(), "ancillary-doc"
-
-    # Unknown runtime/configuration change: fail closed unless the worker held a
-    # coarse fallback lane lock or explicitly declared repo-global.
     return {"repo-global"}, "unclassified-runtime"
 
 
 def verify_write_set(files: Iterable[str], claim: dict[str, list[str]]) -> dict[str, Any]:
-    """Verify changed paths against the worker's write resources."""
     writes = set(claim.get("writes") or [])
     reads = set(claim.get("reads") or [])
     coarse_fallback = any(resource.startswith("lane-") for resource in writes)
 
     checked: list[dict[str, Any]] = []
     violations: list[dict[str, Any]] = []
-
     for raw_path in files:
         path = str(raw_path)
         required, classification = _path_resources(path)
@@ -143,7 +130,7 @@ def verify_write_set(files: Iterable[str], claim: dict[str, list[str]]) -> dict[
             violations.append(row)
 
     return {
-        "schema": "oc.swarm-write-set-verification.v1",
+        "schema": "oc.swarm-write-set-verification.v2",
         "passed": not violations,
         "lease": {"reads": sorted(reads), "writes": sorted(writes)},
         "changed_file_count": len(checked),
@@ -173,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
         result = verify_write_set(files, claim)
     except (ValueError, json.JSONDecodeError) as exc:
         result = {
-            "schema": "oc.swarm-write-set-verification.v1",
+            "schema": "oc.swarm-write-set-verification.v2",
             "passed": False,
             "issue_number": args.issue_number,
             "error": str(exc),
