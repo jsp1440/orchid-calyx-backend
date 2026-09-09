@@ -31,7 +31,14 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: NO-API mode guard
+        id: no_api
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+        run: python3 scripts/oc_no_api_guard.py
+
       - name: Run Claude Code
+        if: steps.no_api.outputs.blocked == 'false'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}

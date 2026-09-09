@@ -20,7 +20,7 @@ def test_deep_concurrency_problem_routes_to_deep():
     route = choose_route(title="Repair atomic lease race condition", body="Cross-repo concurrency failure")
     assert route.tier == "deep"
     assert route.model == "claude-opus-5"
-    assert route.max_turns == 70
+    assert route.max_turns == 75
 
 
 def test_repair_retry_escalates_one_tier_only():

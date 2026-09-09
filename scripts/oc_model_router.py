@@ -20,7 +20,7 @@ DEFAULT_MODELS = {
     "standard": "claude-sonnet-5",
     "deep": "claude-opus-5",
 }
-DEFAULT_MAX_TURNS = {"cheap": 24, "standard": 45, "deep": 70}
+DEFAULT_MAX_TURNS = {"cheap": 24, "standard": 45, "deep": 75}
 
 DEEP_SIGNALS = (
     "architecture",
@@ -117,6 +117,12 @@ def choose_route(
     if explicit:
         tier = max(explicit, key=_rank)
         reasons = [f"explicit-label=oc-model-{tier}"]
+    elif "oc-p0" in labels_set:
+        tier = "deep"
+        reasons = ["p0-priority-deep"]
+    elif "oc-p4" in labels_set:
+        tier = "cheap"
+        reasons = ["p4-priority-cheap"]
     else:
         if any(signal in combined for signal in DEEP_SIGNALS):
             tier = "deep"

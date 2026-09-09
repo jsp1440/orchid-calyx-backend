@@ -34,9 +34,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       INTEGRATION_BRANCH: oc-autonomous-integration
-      # #1193 (OC-STABILIZE-001) reached oc-repair-backoff on 2026-09-04;
-      # stabilization condition met. Restored to five-lane model per AGENTS.md.
-      MAX_ACTIVE_LANES: 5
+      # Recovery remains serialized while control-plane invariants are being
+      # re-proven. Widen only after the stabilization contract is intentionally
+      # updated and its exact-head regression suite is green.
+      MAX_ACTIVE_LANES: 1
       STABILIZATION_ISSUE: 1193
       MAX_REPAIR_ATTEMPTS: 2
       RUNTIME_TRACKER_ISSUE: 1031
@@ -428,7 +429,13 @@ jobs:
           done
           if (( ${#dispatched[@]} > 0 )); then
             joined=$(IFS=,; echo "${dispatched[*]}")
-            gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$REPO" --body "ORCHID CONTINUOUS ENGINE — priority-aware dispatch for issue(s) ${joined}; active-width ceiling ${MAX_ACTIVE_LANES}. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            # scripts/oc_tracker.py classifies TRACKER_EXHAUSTED (GitHub 2500-comment
+            # ceiling) separately from auth/permission errors and auto-rotates to a
+            # successor tracker issue when needed.  Auth errors propagate as exit 1.
+            python3 scripts/oc_tracker.py \
+              --repo "$REPO" \
+              --tracker "$RUNTIME_TRACKER_ISSUE" \
+              --body "ORCHID CONTINUOUS ENGINE — priority-aware dispatch for issue(s) ${joined}; active-width ceiling ${MAX_ACTIVE_LANES}. Scheduler run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
           fi
 
       - name: Maintain integration-to-main owner gate

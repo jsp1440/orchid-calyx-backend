@@ -66,7 +66,9 @@ def test_broken_image_state_is_preserved():
 
 
 def test_curator_reviewed_binding_has_precedence():
-    automated = image(image_id="auto", curator_reviewed_binding=False, evidence_state="candidate")
+    automated = image(
+        image_id="auto", curator_reviewed_binding=False, evidence_state="candidate"
+    )
     reviewed = image(image_id="reviewed", curator_reviewed_binding=True)
     matrix = ImageGateway(Repo([automated, reviewed])).read_taxon("Cattleya labiata")
     assert matrix.records[0].image_id == "reviewed"

@@ -6,7 +6,7 @@ import os
 from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 import qrcode
@@ -21,7 +21,7 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.security import verify_owner_or_api_key
 from runtime.conservatory_calyx_context import (
@@ -33,8 +33,16 @@ from runtime.conservatory_environment import (
     ConservatoryEnvironmentStore,
     EnvironmentError_,
 )
+from runtime.conservatory_evaluations import (
+    ConservatoryEvaluationStore,
+    EvaluationError,
+)
 from runtime.conservatory_events import ConservatoryEventStore, PlantEventError
 from runtime.conservatory_locations import ConservatoryLocationStore, LocationError
+from runtime.conservatory_measurements import (
+    ConservatoryMeasurementStore,
+    MeasurementError,
+)
 from runtime.conservatory_photographs import (
     ConservatoryPhotographStore,
     PhotographError,
@@ -111,6 +119,35 @@ class EnvironmentReadingCreate(BaseModel):
     supersedes_id: str | None = Field(default=None, max_length=100)
 
 
+class EvaluationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cultivated_identity: str = Field(min_length=2, max_length=240)
+    species_consulted: str | None = Field(default=None, max_length=300)
+    relationship: str = Field(min_length=2, max_length=40)
+    # Deliberately a closed kind rather than the grower's location name.
+    location_kind: str = Field(min_length=2, max_length=40)
+    standing_observations: list[str] = Field(default_factory=list, max_length=40)
+    alternatives_considered: list[str] = Field(default_factory=list, max_length=40)
+    is_scientific_evidence: Literal[False] = False
+    observations_are_evidence: Literal[False] = False
+
+
+class MeasurementCreate(BaseModel):
+    trait: str = Field(min_length=2, max_length=60)
+    value: float
+    unit: str = Field(min_length=1, max_length=20)
+    method: str = Field(min_length=2, max_length=40)
+    observed_at: str = Field(min_length=4, max_length=40)
+    note: str | None = Field(default=None, max_length=2000)
+    flowering_event_id: str | None = Field(default=None, max_length=100)
+    photograph_id: str | None = Field(default=None, max_length=100)
+    supersedes_id: str | None = Field(default=None, max_length=100)
+    # A caller may state false explicitly, but can never promote this private
+    # grower record into scientific evidence through the write contract.
+    is_scientific_evidence: Literal[False] = False
+
+
 class PlantEventCreate(BaseModel):
     kind: str = Field(min_length=2, max_length=40)
     #: When it happened in the world. Never inferred from the request time.
@@ -149,6 +186,14 @@ def _default_environment_store() -> ConservatoryEnvironmentStore:
 
 def _default_event_store() -> ConservatoryEventStore:
     return ConservatoryEventStore(_conservatory_root())
+
+
+def _default_measurement_store() -> ConservatoryMeasurementStore:
+    return ConservatoryMeasurementStore(_conservatory_root())
+
+
+def _default_evaluation_store() -> ConservatoryEvaluationStore:
+    return ConservatoryEvaluationStore(_conservatory_root())
 
 
 def _default_photograph_store() -> ConservatoryPhotographStore:
@@ -232,6 +277,12 @@ def create_conservatory_router(
         [], ConservatoryEnvironmentStore
     ] = _default_environment_store,
     get_events: Callable[[], ConservatoryEventStore] = _default_event_store,
+    get_measurements: Callable[
+        [], ConservatoryMeasurementStore
+    ] = _default_measurement_store,
+    get_evaluations: Callable[
+        [], ConservatoryEvaluationStore
+    ] = _default_evaluation_store,
     get_photographs: Callable[
         [], ConservatoryPhotographStore
     ] = _default_photograph_store,
@@ -499,6 +550,78 @@ def create_conservatory_router(
         # The timeline states its own provenance and that it is not scientific
         # evidence, so a consumer cannot pick these up as findings by accident.
         return get_events().timeline(plant_id)
+
+    @router.post("/plants/{plant_id}/measurements", status_code=201)
+    def record_plant_measurement(
+        plant_id: str,
+        payload: MeasurementCreate,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+
+        if payload.flowering_event_id is not None:
+            event_ids = {
+                row["id"]
+                for row in get_events().events_for(plant_id)
+                if row["kind"] == "flowering_observed"
+            }
+            if payload.flowering_event_id not in event_ids:
+                raise HTTPException(
+                    status_code=404,
+                    detail={"code": "FLOWERING_EVENT_NOT_FOUND_FOR_PLANT"},
+                )
+        if payload.photograph_id is not None:
+            photograph = get_photographs().get(payload.photograph_id)
+            if photograph is None or photograph.get("plant_id") != plant_id:
+                raise HTTPException(
+                    status_code=404,
+                    detail={"code": "PHOTOGRAPH_NOT_FOUND_FOR_PLANT"},
+                )
+
+        values = payload.model_dump(exclude={"is_scientific_evidence"})
+        try:
+            return get_measurements().record(plant_id=plant_id, **values)
+        except MeasurementError as exc:
+            code = str(exc)
+            status = 409 if code == "MEASUREMENT_ALREADY_SUPERSEDED" else 422
+            if code == "SUPERSEDED_MEASUREMENT_NOT_FOUND":
+                status = 404
+            raise HTTPException(status_code=status, detail={"code": code}) from exc
+
+    @router.get("/plants/{plant_id}/measurements")
+    def read_plant_measurements(
+        plant_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        return get_measurements().ledger(plant_id)
+
+    @router.post("/plants/{plant_id}/evaluations", status_code=201)
+    def record_plant_evaluation(
+        plant_id: str,
+        payload: EvaluationCreate,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        values = payload.model_dump(
+            exclude={"is_scientific_evidence", "observations_are_evidence"}
+        )
+        try:
+            return get_evaluations().record(plant_id=plant_id, **values)
+        except EvaluationError as exc:
+            raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+    @router.get("/plants/{plant_id}/evaluations")
+    def read_plant_evaluations(
+        plant_id: str,
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        if get_store().get(plant_id) is None:
+            raise HTTPException(status_code=404, detail="plant not found")
+        return get_evaluations().history(plant_id)
 
     @router.get("/plants/{plant_id}/cultivation-context")
     def cultivation_context(

@@ -20,8 +20,15 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: NO-API mode guard
+        id: no_api
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+        run: python3 scripts/oc_no_api_guard.py
+
       - name: Verify Claude Code runtime and API credential
         id: claude
+        if: steps.no_api.outputs.blocked == 'false'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -40,9 +47,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OUTCOME: ${{ steps.claude.outcome }}
+          NO_API_BLOCKED: ${{ steps.no_api.outputs.blocked }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # NO-API mode: provider was intentionally skipped — do not affect circuit state.
+          if [[ "${NO_API_BLOCKED:-true}" == "true" ]]; then
+            echo "[OC-CANARY] NO-API mode active; canary provider step was skipped. Circuit state unchanged."
+            exit 0
+          fi
           log="${CLAUDE_EXECUTION_LOG:-/home/runner/work/_temp/claude-execution-output.json}"
           verdict=indeterminate
           detail="no Claude execution record was produced"
@@ -134,6 +147,13 @@ jobs:
               exit 1
               ;;
             *)
+              # Inconclusive probes do not open or close the provider circuit, but
+              # they must leave durable evidence so operators can distinguish an
+              # actual provider failure from a workflow-validation skip or malformed
+              # execution record.
+              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" \
+                --body "ORCHID CLAUDE RUNTIME CANARY — **INDETERMINATE**. ${detail}. Circuit state unchanged. Run: ${RUN_URL}." \
+                >/dev/null 2>&1 || true
               exit 1
               ;;
           esac

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Iterable, Protocol
+from typing import Protocol
 
 
 class ImageType(str, Enum):
@@ -65,8 +66,7 @@ class ImageIdentificationCandidate:
 
 
 class ImageRepository(Protocol):
-    def records_for_taxon(self, taxon_name: str) -> Iterable[ImageRecord]:
-        ...
+    def records_for_taxon(self, taxon_name: str) -> Iterable[ImageRecord]: ...
 
 
 @dataclass(frozen=True)
