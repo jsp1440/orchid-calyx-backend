@@ -26,7 +26,6 @@ from scripts.oc_cost_telemetry import (
 )
 from scripts.oc_model_router import DEFAULT_MAX_TURNS, choose_route
 
-
 # ---------------------------------------------------------------------------
 # Validation #1 — trivial leaf gets lower ceiling than P0
 # ---------------------------------------------------------------------------

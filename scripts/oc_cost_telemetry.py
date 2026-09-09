@@ -18,7 +18,6 @@ import os
 import re
 from typing import Any
 
-
 _UNKNOWN = "UNKNOWN"
 
 # Fields that are safe to surface in a GitHub issue comment.
