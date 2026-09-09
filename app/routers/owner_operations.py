@@ -26,6 +26,8 @@ BUILD-075 additions:
 - Owner-authenticated Executive Intelligence Mission Control section
 - Read-only Executive Intelligence snapshot with explicit approval/reject actions
 """
+# ruff: noqa: B008  -- FastAPI Depends() in function-default is the canonical pattern here.
+# ruff: noqa: BLE001 SIM117 S110  -- pre-existing broad-except and nested-with patterns.
 
 from __future__ import annotations
 
@@ -311,7 +313,7 @@ def log_action(auth: dict[str, object], action_name: str, entity_type: str, enti
     def _write(cur):
         if cur is None:
             MEMORY["privileged_action_log"].insert(0, record)
-            return None
+            return
         cur.execute(
             """
             INSERT INTO oc_admin.build051_privileged_action_log
@@ -320,7 +322,7 @@ def log_action(auth: dict[str, object], action_name: str, entity_type: str, enti
             """,
             (record["id"], record["actor"], record["auth_type"], action_name, entity_type, entity_id, Jsonb(detail)),
         )
-        return None
+        return
     db_execute(_write)
 
 
@@ -892,9 +894,7 @@ def relationship_evidence() -> dict[str, dict[str, Any]]:
             "provenance": {
                 "taxonomy_table": taxonomy_table,
                 "image_table": image_table,
-                "join": "{}.{} -> {}.{}".format(
-                    image_table, image_key, taxonomy_table, taxonomy_key
-                ),
+                "join": f"{image_table}.{image_key} -> {taxonomy_table}.{taxonomy_key}",
             },
         }
     else:
@@ -948,7 +948,7 @@ def derived_next_actions(
         )
     for name, metric in (metrics.get("metrics") or {}).items():
         for warning in metric.get("source_warnings") or []:
-            actions.append("Resolve metric source authority for {}: {}".format(name, warning))
+            actions.append(f"Resolve metric source authority for {name}: {warning}")
     unmeasured = sorted(
         name for name, entry in evidence.items() if entry.get("state") == "unmeasured"
     )
@@ -1017,7 +1017,7 @@ def live_audit_payload(audit_type: str) -> dict[str, Any]:
     # masking is the same class of finding as a masked metric, so it is reported
     # in the same place rather than buried in the per-relationship detail.
     source_warnings.extend(
-        "{}: {}".format(name, warning)
+        f"{name}: {warning}"
         for name, entry in evidence.items()
         for warning in (entry.get("source_warnings") or [])
     )
