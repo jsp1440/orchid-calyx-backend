@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from app.calyx_conversation.provider_runtime import (
     _MAX_CONTEXT_CHARS,
@@ -36,24 +35,16 @@ def test_governed_context_compacts_large_retrieval_objects():
         "epistemic_policy": {"external_literature_requires_review": True},
     }
     compact = compact_governed_context(governed)
-
-    # Raw retrieval is deliberately no longer forwarded. compact_governed_context
-    # now adapts every source family into the canonical evidence contract and
-    # hands the model a synthesis packet instead, so asserting the old
-    # compact["retrieval"]["external_literature"]["results"] path was asserting a
-    # shape the code had stopped producing on purpose. Pinning its absence keeps
-    # unadapted payloads from being re-added by accident.
-    assert "retrieval" not in compact
-    assert "synthesis_packet" in compact
-
-    # The property that actually matters: oversized collections are still
-    # truncated, and the truncation is declared rather than silent.
-    markers = _find_key(compact, "_additional_items_omitted")
-    assert markers, "large collections must still be truncated with an explicit marker"
-    assert all(isinstance(count, int) and count > 0 for count in markers)
-
-    # Epistemic labels survive compaction unchanged - the one thing that must
-    # never be summarized away.
+    packet = compact["synthesis_packet"]
+    assert packet["contract_version"] == "CALYX-EVIDENCE-SYNTHESIS-002"
+    evidence_items = packet["evidence_items"]
+    assert any(
+        item.get("source_family") == "external_literature"
+        for item in evidence_items
+        if isinstance(item, dict)
+    )
+    assert evidence_items[-1]["_additional_items_omitted"] > 0
+    assert len(evidence_items) <= 17
     assert compact["epistemic_policy"]["external_literature_requires_review"] is True
 
     assert len(json.dumps(compact, default=str)) <= _MAX_CONTEXT_CHARS
@@ -67,11 +58,7 @@ def test_model_context_text_has_hard_character_budget():
     }
     text = provider._governed_context_text(governed)
     assert len(text) <= _MAX_CONTEXT_CHARS + 200
-    # Matched loosely on purpose. The header gained "semantic synthesis" when the
-    # packet was introduced; what this test is for is the budget and the fact
-    # that the block is labelled as governed context, not the exact wording.
-    assert text.startswith("Governed Calyx")
-    assert "context for this turn:" in text
+    assert "Governed Calyx semantic synthesis context for this turn:" in text
 
 
 def test_the_character_budget_actually_truncates_when_it_is_reached(monkeypatch):
@@ -103,22 +90,3 @@ def test_the_character_budget_actually_truncates_when_it_is_reached(monkeypatch)
     assert len(text) <= _MAX_CONTEXT_CHARS + 200
     assert "additional governed context omitted" in text
     assert "full provenance remains server-side" in text
-
-
-def _find_key(value: Any, key: str) -> list[Any]:
-    """Collect every value stored under `key`, at any depth.
-
-    The compactor is free to move where it truncates; it is not free to stop
-    declaring that it truncated. Searching by key rather than by path keeps this
-    test measuring the guarantee instead of the layout.
-    """
-    found: list[Any] = []
-    if isinstance(value, dict):
-        for name, item in value.items():
-            if name == key:
-                found.append(item)
-            found.extend(_find_key(item, key))
-    elif isinstance(value, list):
-        for item in value:
-            found.extend(_find_key(item, key))
-    return found

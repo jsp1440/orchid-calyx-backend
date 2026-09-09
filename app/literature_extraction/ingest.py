@@ -15,6 +15,17 @@ class IngestedDocument:
     content_hash: str
 
 
+@dataclass(frozen=True, slots=True)
+class WebSourceMetadata:
+    origin_uri: str
+    origin_content_hash: str
+    origin_media_type: str = "text/html"
+    acquisition_method: str = "bounded_https_fetch"
+    rights_status: str = "unknown_requires_review"
+    redistribution_allowed: bool = False
+    historical_taxonomy_requires_resolution: bool = False
+
+
 def ingest_text(path: str | Path) -> IngestedDocument:
     source_path = Path(path)
     raw_bytes = source_path.read_bytes()
@@ -41,6 +52,7 @@ def build_empty_paper(
     document: IngestedDocument,
     *,
     pipeline_version: str = "0.2.0",
+    web_source: WebSourceMetadata | None = None,
 ) -> PaperKnowledge:
     paper_id = f"paper-{document.content_hash}"
     analysis_id = sha256(
@@ -53,6 +65,21 @@ def build_empty_paper(
             media_type="text/plain",
             original_filename=document.source_path.name,
             storage_uri=str(document.source_path),
+            **(
+                {
+                    "origin_uri": web_source.origin_uri,
+                    "origin_content_hash": web_source.origin_content_hash,
+                    "origin_media_type": web_source.origin_media_type,
+                    "acquisition_method": web_source.acquisition_method,
+                    "rights_status": web_source.rights_status,
+                    "redistribution_allowed": web_source.redistribution_allowed,
+                    "historical_taxonomy_requires_resolution": (
+                        web_source.historical_taxonomy_requires_resolution
+                    ),
+                }
+                if web_source is not None
+                else {}
+            ),
         ),
         metadata=PaperMetadata(),
         analysis_manifest=AnalysisManifest(

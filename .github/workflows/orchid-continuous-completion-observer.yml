@@ -7,7 +7,7 @@ on:
 
 permissions:
   actions: read
-  issues: write
+  contents: read
 
 jobs:
   report:
@@ -25,4 +25,13 @@ jobs:
           failed=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")' 2>/dev/null || true)
           detail=""
           [[ -z "$failed" ]] || detail=" Failed jobs: ${failed}."
-          gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID CONTINUOUS ENGINE — **${RESULT}**. event=${EVENT}, head=\`${SHA}\`, run=${RUN_ID}.${detail} ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
+          {
+            echo "### Orchid Continuous Engine"
+            echo ""
+            echo "Result: **${RESULT}**"
+            echo "Event: ${EVENT}"
+            echo "Head: \`${SHA}\`"
+            echo "Run: ${RUN_ID}"
+            [[ -z "$detail" ]] || echo "${detail}"
+            echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
+          } >> "$GITHUB_STEP_SUMMARY"

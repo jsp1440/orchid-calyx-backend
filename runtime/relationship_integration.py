@@ -6,6 +6,11 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from typing import Any
 
+#: Statuses under which a link still asserts something about the Continuum.
+STANDING_STATUSES = frozenset({"provisional", "verified"})
+#: Statuses under which a link asserts nothing, having been withdrawn.
+WITHDRAWN_STATUSES = frozenset({"rejected", "superseded"})
+
 AUDIT_TARGET_DOMAINS = (
     "images",
     "occurrences",
@@ -63,20 +68,54 @@ class RelationshipIntegrationAudit:
     def __init__(self, links: Iterable[RelationshipLink]) -> None:
         self._links = tuple(link.validated() for link in links)
 
-    def coverage(self) -> dict[str, dict[str, int | bool]]:
-        result: dict[str, dict[str, int | bool]] = {}
+    def coverage(self) -> dict[str, dict[str, int | bool | str]]:
+        """Coverage a domain actually has, counting only links that still stand.
+
+        A rejected or superseded link is not coverage. It is a relationship
+        somebody asserted and the record then withdrew, and counting it reports
+        knowledge the Continuum does not hold — the exact failure this audit
+        exists to detect, occurring inside the audit itself.
+
+        Withdrawn links are still counted and reported, under their own keys.
+        Dropping them would replace one false statement with another: that
+        nobody ever asserted the relationship. "Never asserted" and "asserted
+        and withdrawn" are different findings, and a reader deciding where to
+        direct curation needs to tell them apart.
+        """
+        result: dict[str, dict[str, int | bool | str]] = {}
         for domain in AUDIT_TARGET_DOMAINS:
             domain_links = [
                 link
                 for link in self._links
                 if link.source_domain == "taxonomy" and link.target_domain == domain
             ]
+            standing = [
+                link
+                for link in domain_links
+                if link.validation_status in STANDING_STATUSES
+            ]
+            withdrawn = [
+                link
+                for link in domain_links
+                if link.validation_status in WITHDRAWN_STATUSES
+            ]
             result[f"taxonomy_to_{domain}"] = {
-                "present": bool(domain_links),
-                "link_count": len(domain_links),
-                "linked_taxa": len({link.taxon_id for link in domain_links}),
+                "present": bool(standing),
+                "link_count": len(standing),
+                "linked_taxa": len({link.taxon_id for link in standing}),
                 "verified_links": sum(
-                    link.validation_status == "verified" for link in domain_links
+                    link.validation_status == "verified" for link in standing
+                ),
+                "withdrawn_link_count": len(withdrawn),
+                # Distinguishes a domain nobody has worked on from one whose
+                # every assertion was thrown out. Both have no coverage; they
+                # call for opposite next actions.
+                "coverage_state": (
+                    "present"
+                    if standing
+                    else "withdrawn"
+                    if withdrawn
+                    else "never_asserted"
                 ),
             }
         return result

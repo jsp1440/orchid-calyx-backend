@@ -46,6 +46,10 @@ class EntityExtractor(Extractor):
                 re.IGNORECASE,
             ),
         ),
+        EntityRule(
+            entity_type="taxon",
+            pattern=re.compile(r"\bOdontoglossums?\b", re.IGNORECASE),
+        ),
     )
 
     async def run(
