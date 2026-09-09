@@ -21,6 +21,7 @@ from app.calyx_conversation.teaching_synthesis import (
     DepthLevel,
     SubjectIdentity,
     build_teaching_synthesis,
+    knowledge_gap_to_research_question,
 )
 
 _SUBJECT = SubjectIdentity(
@@ -139,3 +140,57 @@ def test_synthesis_endpoint_in_capabilities():
 
     caps = capabilities()
     assert any("/synthesis/" in ep for ep in caps.get("endpoints", []))
+
+
+def test_knowledge_gap_to_research_question_known_domain():
+    q = knowledge_gap_to_research_question("habitat", "Epidendrum radicans")
+    assert q is not None
+    assert "Epidendrum radicans" in q
+    assert "?" in q
+
+
+def test_knowledge_gap_to_research_question_unknown_domain():
+    q = knowledge_gap_to_research_question("nonexistent_domain", "Epidendrum radicans")
+    assert q is None
+
+
+def test_knowledge_gap_to_research_question_all_domains():
+    domains = [
+        "morphology_anatomy_physiology",
+        "habitat",
+        "geography",
+        "pollination",
+        "mycorrhizae",
+        "literature",
+        "neighboring_taxa_community",
+        "conservation",
+    ]
+    for domain in domains:
+        q = knowledge_gap_to_research_question(domain, "Laelia anceps")
+        assert q is not None, f"No question template for domain '{domain}'"
+        assert "Laelia anceps" in q
+
+
+def test_research_questions_endpoint_returns_questions_for_all_gaps():
+    from app.calyx_conversation.routes import synthesis_research_questions
+
+    result = synthesis_research_questions(
+        taxon_id="test-001",
+        taxon_name="Laelia anceps",
+    )
+    assert result["graph_mutation"] is False
+    assert result["taxon_id"] == "test-001"
+    questions = result["research_questions"]
+    assert len(questions) > 0
+    for item in questions:
+        assert "domain" in item
+        assert "research_question" in item
+        assert item["graph_mutation"] is False
+        assert "?" in item["research_question"]
+
+
+def test_research_questions_endpoint_in_capabilities():
+    from app.calyx_conversation.routes import capabilities
+
+    caps = capabilities()
+    assert any("research-questions" in ep for ep in caps.get("endpoints", []))

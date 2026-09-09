@@ -17,8 +17,8 @@ from app.candidate_knowledge.service import CandidateExtractionService
 from app.evidence_aggregation.models import CandidateInput
 from app.evidence_aggregation.repository import MemoryAggregateRepository
 from app.evidence_aggregation.service import EvidenceAggregationService
+from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
-from app.evidence_retrieval.routes import ENGINE
 from app.reasoning_ledger import gate as publication_gate
 from app.reasoning_ledger.models import (
     LedgerEntry,
@@ -38,6 +38,7 @@ from app.scientific_interpretation.models import (
 from app.scientific_interpretation.repository import MemoryInterpretationRepository
 from app.scientific_interpretation.service import ScientificInterpretationService
 from app.semantic_index import routes as semantic_index_routes
+from app.semantic_index.provider import DeterministicLocalProvider
 
 from .dependencies import build_durable_mission_repository
 from .service import BrainMissionService, MemoryMissionRepository, MissionComponents
@@ -57,11 +58,12 @@ def _retrieve(context: dict[str, Any]) -> dict[str, Any]:
     results_by_id: dict[str, dict[str, Any]] = {}
     source_budget = int(context["limits"]["max_sources"])
     per_query = max(1, int(context["plan"]["per_domain_source_budget"]))
-    ENGINE.repo = semantic_index_routes.get_repository_for_read()
+    repo = semantic_index_routes.get_repository_for_read()
+    engine = RetrievalEngine(repo, DeterministicLocalProvider())
     for query in context["plan"]["retrieval_queries"]:
         if len(results_by_id) >= source_budget:
             break
-        response = ENGINE.search(
+        response = engine.search(
             RetrievalQuery(
                 text=query,
                 mode="HYBRID",
@@ -94,7 +96,7 @@ class ExistingBrainMissionAdapter:
 
     @staticmethod
     def _canonical_document(result: dict[str, Any]) -> dict[str, Any]:
-        ENGINE.repo = semantic_index_routes.get_repository_for_read()
+        repo = semantic_index_routes.get_repository_for_read()
         citation = result.get("citation") or {}
         revision_id = citation.get("revision_id")
         anchor_ids = tuple(citation.get("source_anchor_ids") or ())
@@ -110,7 +112,7 @@ class ExistingBrainMissionAdapter:
         object_type = str(result.get("object_type") or "").strip()
         matches = [
             document
-            for document in ENGINE.repo.documents
+            for document in repo.documents
             if document.get("active", False)
             and document.get("source_object_type") == object_type
             and document.get("revision_id") == revision_id
