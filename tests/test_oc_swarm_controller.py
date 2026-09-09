@@ -50,20 +50,46 @@ class FakeLocks:
         return selected, []
 
 
+class FakeDeps:
+    @staticmethod
+    def build_dependency_graph(issues):
+        rows = list(issues)
+        return {
+            "edge_count": 1,
+            "cycle_nodes": [],
+            "status": {
+                int(issue["number"]): {
+                    "issue_number": int(issue["number"]),
+                    "dependencies": [99] if int(issue["number"]) == 101 else [],
+                    "ready": True,
+                }
+                for issue in rows
+                if issue.get("number") is not None
+            },
+        }
+
+    @staticmethod
+    def filter_ready_candidates(ranked, graph):
+        return list(ranked), []
+
+
 def _loader(name, filename):
     if filename == "oc_portfolio_scheduler.py":
         return FakeScheduler
     if filename == "oc_swarm_resource_locks.py":
         return FakeLocks
+    if filename == "oc_swarm_dependency_graph.py":
+        return FakeDeps
     raise AssertionError(filename)
 
 
 def _snapshot():
     return {
         "issues": [
-            {"number": 100, "title": "Literature work", "body": "", "labels": ["oc-queued"]},
-            {"number": 101, "title": "Image work", "body": "", "labels": ["oc-queued"]},
-            {"number": 102, "title": "Atlas work", "body": "", "labels": ["oc-queued"]},
+            {"number": 99, "title": "Prior work", "body": "", "labels": ["oc-done"], "state": "CLOSED"},
+            {"number": 100, "title": "Literature work", "body": "", "labels": ["oc-queued"], "state": "OPEN"},
+            {"number": 101, "title": "Image work", "body": "OC-SWARM-DEPENDS-ON: #99", "labels": ["oc-queued"], "state": "OPEN"},
+            {"number": 102, "title": "Atlas work", "body": "", "labels": ["oc-queued"], "state": "OPEN"},
         ]
     }
 
@@ -73,17 +99,20 @@ def test_swarm_plan_is_bounded_to_hard_max(monkeypatch):
     plan = swarm.build_swarm_plan(_snapshot(), worker_slots=99)
     assert plan["effective_worker_slots"] == 12
     assert plan["launch_count"] == 3
+    assert plan["schema"] == "oc.swarm-plan.v4"
     assert plan["safety"]["bounded"] is True
     assert plan["safety"]["resource_locking"] is True
+    assert plan["safety"]["dependency_graph"] is True
 
 
-def test_swarm_v2_can_schedule_two_workers_from_same_coarse_lane(monkeypatch):
+def test_swarm_v4_can_schedule_two_workers_from_same_coarse_lane(monkeypatch):
     monkeypatch.setattr(swarm, "_load_sibling", _loader)
     plan = swarm.build_swarm_plan(_snapshot(), worker_slots=8)
     assert plan["selected_numbers"][:2] == [100, 101]
     assert plan["workers"][0]["lane_id"] == "L3"
     assert plan["workers"][1]["lane_id"] == "L3"
     assert plan["workers"][0]["writes"] != plan["workers"][1]["writes"]
+    assert plan["workers"][1]["dependencies"] == [99]
 
 
 def test_swarm_plan_strips_stabilization_freeze(monkeypatch):
@@ -102,7 +131,13 @@ def test_swarm_plan_strips_stabilization_freeze(monkeypatch):
             }
 
     def loader(name, filename):
-        return CapturingScheduler if filename == "oc_portfolio_scheduler.py" else FakeLocks
+        if filename == "oc_portfolio_scheduler.py":
+            return CapturingScheduler
+        if filename == "oc_swarm_resource_locks.py":
+            return FakeLocks
+        if filename == "oc_swarm_dependency_graph.py":
+            return FakeDeps
+        raise AssertionError(filename)
 
     monkeypatch.setattr(swarm, "_load_sibling", loader)
     plan = swarm.build_swarm_plan({"stabilization_issue": 1193, "issues": []}, worker_slots=8)
