@@ -29,5 +29,5 @@ def test_swarm_claims_only_queue_leases_and_reports_resources():
     assert "oc-blocked" in text
     assert "oc-runtime-backoff" in text
     assert "oc-repair-backoff" in text
-    assert "Resource-aware worker lease claimed" in text
+    assert "Dependency/resource lease claimed" in text
     assert "resource conflicts suppressed" in text
