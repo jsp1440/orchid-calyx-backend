@@ -20,15 +20,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Swarm v3 post-build write-set verification
+      - name: Swarm post-build write-set verification
         shell: bash
         env:
           HEAD_REF: ${{ github.head_ref || github.ref_name }}
         run: |
           set -euo pipefail
 
-          # Only PRs that were actually dispatched by Swarm v2/v3 carry a
-          # durable resource-lease receipt. Legacy/manual PRs remain valid.
+          # Only PRs actually dispatched by a versioned Swarm controller carry a
+          # durable lease receipt. Legacy/manual PRs remain valid.
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             pr="${{ github.event.pull_request.number }}"
           else
@@ -49,9 +49,9 @@ jobs:
           fi
 
           lease=$(gh issue view "$issue" --repo "$GITHUB_REPOSITORY" --json comments \
-            --jq '[.comments[].body | select(startswith("[OC-SWARM-V2] Resource-aware worker lease claimed:"))] | last // ""')
+            --jq '[.comments[].body | select(test("^\\[OC-SWARM-V[0-9]+\\].*lease claimed:"; "i"))] | last // ""')
           if [[ -z "$lease" ]]; then
-            echo "Issue #$issue has no Swarm resource lease receipt; treating as legacy/manual work."
+            echo "Issue #$issue has no versioned Swarm lease receipt; treating as legacy/manual work."
             exit 0
           fi
 
