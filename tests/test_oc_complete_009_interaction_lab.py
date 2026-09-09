@@ -28,6 +28,7 @@ from app.scientific_adapter_lab.interaction_laboratory import (
     build_unavailable_interaction,
     map_interaction_type,
     normalize_interaction,
+    normalize_interaction_with_canonical_taxa,
     resolve_interaction_precedence,
     stage_interaction_for_review,
 )
@@ -579,3 +580,94 @@ class TestPipelineEndToEnd:
         # GloBI data is FEDERATE; nomer/RO are ADAPT
         assert len(federate) >= 1
         assert len(adapt) >= 2
+
+
+
+# ---------------------------------------------------------------------------
+# TestCanonicalTaxonResolverBridge
+# ---------------------------------------------------------------------------
+
+class _ResolutionTarget:
+    def __init__(self, canonical_taxon_id: str) -> None:
+        self.canonical_taxon_id = canonical_taxon_id
+
+
+class _Resolution:
+    def __init__(
+        self,
+        status: str,
+        canonical_taxon_id: str = "",
+    ) -> None:
+        self.status = status
+        self.target = (
+            _ResolutionTarget(canonical_taxon_id)
+            if canonical_taxon_id
+            else None
+        )
+
+
+class _Resolver:
+    def __init__(self, resolutions: dict[str, _Resolution]) -> None:
+        self.resolutions = resolutions
+        self.calls: list[str] = []
+
+    def resolve(self, scientific_name: str) -> _Resolution:
+        self.calls.append(scientific_name)
+        return self.resolutions[scientific_name]
+
+
+class TestCanonicalTaxonResolverBridge:
+    def test_exact_canonical_resolutions_produce_verified_interaction(self):
+        raw = _raw_pollinator()
+        resolver = _Resolver(
+            {
+                raw.source_taxon_name: _Resolution("resolved", "oc-orchid-1"),
+                raw.target_taxon_name: _Resolution("resolved", "oc-partner-1"),
+            }
+        )
+
+        result = normalize_interaction_with_canonical_taxa(
+            raw,
+            resolver=resolver,
+        )
+
+        assert result.evidence_state is InteractionEvidenceState.VERIFIED
+        assert result.source_taxon_id == "oc-orchid-1"
+        assert result.target_taxon_id == "oc-partner-1"
+        assert resolver.calls == [
+            raw.source_taxon_name,
+            raw.target_taxon_name,
+        ]
+
+    @pytest.mark.parametrize("status", ["unresolved", "ambiguous", "invalid"])
+    def test_non_resolved_partner_never_becomes_verified(self, status):
+        raw = _raw_pollinator()
+        resolver = _Resolver(
+            {
+                raw.source_taxon_name: _Resolution("resolved", "oc-orchid-1"),
+                raw.target_taxon_name: _Resolution(status),
+            }
+        )
+
+        result = normalize_interaction_with_canonical_taxa(
+            raw,
+            resolver=resolver,
+        )
+
+        assert result.evidence_state is InteractionEvidenceState.PROVISIONAL
+        assert result.source_taxon_id == "oc-orchid-1"
+        assert result.target_taxon_id == ""
+        assert result.taxon_resolved is False
+
+    def test_resolver_unavailability_fails_closed(self):
+        raw = _raw_pollinator()
+
+        class UnavailableResolver:
+            def resolve(self, scientific_name):
+                raise RuntimeError("canonical taxonomy unavailable")
+
+        with pytest.raises(RuntimeError, match="canonical taxonomy unavailable"):
+            normalize_interaction_with_canonical_taxa(
+                raw,
+                resolver=UnavailableResolver(),
+            )
