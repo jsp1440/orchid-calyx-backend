@@ -14,9 +14,9 @@ from pydantic import BaseModel, Field
 
 from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
-from app.evidence_retrieval.routes import REPO
 from app.security import verify_owner_or_api_key
 from app.semantic_index.provider import DeterministicLocalProvider
+from app.semantic_index.repository_runtime import get_repository_runtime
 from runtime.knowledge_graph import PostgresGraphRepository, canonical_key, traverse
 
 from .observability import ScientificTrace
@@ -26,6 +26,7 @@ from .teaching_synthesis import (
     DepthLevel,
     SubjectIdentity,
     build_teaching_synthesis,
+    knowledge_gap_to_research_question,
 )
 
 router = APIRouter(
@@ -34,7 +35,14 @@ router = APIRouter(
     dependencies=[Depends(verify_owner_or_api_key)],
 )
 
-ENGINE = RetrievalEngine(REPO, DeterministicLocalProvider())
+_ENGINE: RetrievalEngine | None = None
+
+
+def _get_engine() -> RetrievalEngine:
+    global _ENGINE
+    if _ENGINE is None:
+        _ENGINE = RetrievalEngine(get_repository_runtime().read(), DeterministicLocalProvider())
+    return _ENGINE
 STORE = ConversationStore()
 
 
@@ -396,7 +404,7 @@ def _retrieval(message: str, mode: str, limit: int, internal_access: bool) -> di
         parent_expansion="AUTO",
         internal_access=internal_access,
     )
-    return ENGINE.search(query)
+    return _get_engine().search(query)
 
 
 def _compose_answer(
@@ -700,6 +708,85 @@ def teaching_synthesis(
     return synthesis.to_dict()
 
 
+@router.get("/synthesis/{taxon_id}/research-questions")
+def synthesis_research_questions(
+    taxon_id: str,
+    taxon_name: str = Query(..., min_length=1, max_length=300),
+    audience: str = Query("public"),
+    depth: str = Query("standard"),
+    taxon_rank: str = Query("species", max_length=50),
+    canonical_source: str = Query("pending", max_length=200),
+) -> dict[str, Any]:
+    """Return researchable questions derived from knowledge gaps in the synthesis.
+
+    Builds a TeachingSynthesisV1 for the taxon (all domains UNAVAILABLE until providers
+    are connected) and converts each gap domain to a bounded research question template.
+    No model API calls; no KG mutation. Questions may be submitted to the Calyx speak
+    endpoint to initiate BrainMission research cycles.
+    """
+    audience_level = AudienceLevel.PUBLIC
+    try:
+        audience_level = AudienceLevel(audience)
+    except ValueError:
+        pass
+    depth_level = DepthLevel.STANDARD
+    try:
+        depth_level = DepthLevel(depth)
+    except ValueError:
+        pass
+    subject = SubjectIdentity(
+        taxon_name=taxon_name,
+        taxon_id=taxon_id,
+        common_names=(),
+        taxon_rank=taxon_rank,
+        canonical_source=canonical_source,
+        synonym_names=(),
+        authority=None,
+    )
+    domain_data: dict[str, dict[str, Any] | None] = {
+        "morphology_anatomy_physiology": None,
+        "habitat": None,
+        "geography": None,
+        "pollination": None,
+        "mycorrhizae": None,
+        "literature": None,
+        "neighboring_taxa_community": None,
+        "conservation": None,
+    }
+    try:
+        synthesis = build_teaching_synthesis(
+            subject,
+            domain_data,
+            audience=audience_level.value,
+            depth=depth_level.value,
+            sensitive_locality_withheld=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"synthesis_error: {exc}") from exc
+
+    research_questions = []
+    for gap in synthesis.knowledge_gaps:
+        domain = gap.split(":")[0].strip() if ":" in gap else gap.strip()
+        question = knowledge_gap_to_research_question(domain, taxon_name)
+        if question:
+            research_questions.append(
+                {
+                    "domain": domain,
+                    "gap_description": gap,
+                    "research_question": question,
+                    "graph_mutation": False,
+                }
+            )
+
+    return {
+        "taxon_id": taxon_id,
+        "taxon_name": taxon_name,
+        "research_questions": research_questions,
+        "graph_mutation": False,
+        "contract_version": synthesis.contract_version,
+    }
+
+
 @router.get("/capabilities")
 def capabilities() -> dict[str, Any]:
     return {
@@ -710,6 +797,7 @@ def capabilities() -> dict[str, Any]:
             "/api/calyx/analyze",
             "/api/calyx/dataset/analyze",
             "/api/calyx/synthesis/{taxon_id}",
+            "/api/calyx/synthesis/{taxon_id}/research-questions",
             "/api/calyx/knowledge-graph",
             "/api/calyx/brain-query",
             "/api/calyx/conversations",
