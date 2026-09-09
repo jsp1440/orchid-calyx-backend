@@ -1,5 +1,6 @@
 from app.evidence_retrieval import routes as evidence_routes
-from app.semantic_index import repository_runtime, routes as semantic_routes
+from app.semantic_index import repository_runtime
+from app.semantic_index import routes as semantic_routes
 from app.semantic_index.memory_repository import MemoryIndexRepository
 from app.semantic_index.repository_runtime import SemanticIndexRepositoryRuntime
 
