@@ -19,7 +19,7 @@ import json
 import os
 import tempfile
 
-from scripts.oc_model_router import DEFAULT_MAX_TURNS, TIERS, choose_route
+from scripts.oc_model_router import DEFAULT_MAX_TURNS, choose_route
 from scripts.oc_cost_telemetry import (
     extract_usage_from_execution_log,
     format_telemetry_comment,
@@ -122,8 +122,8 @@ def test_router_does_not_import_anthropic():
     import importlib
     spec = importlib.util.find_spec("scripts.oc_model_router")
     assert spec is not None
-    import scripts.oc_model_router as router_module
     import sys
+    import scripts.oc_model_router  # noqa: F401 -- intentional side-effect import to verify SDK isolation
     loaded = set(sys.modules.keys())
     assert "anthropic" not in loaded, "oc_model_router imported the Anthropic SDK"
 
