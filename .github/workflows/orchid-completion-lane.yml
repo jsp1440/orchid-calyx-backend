@@ -229,7 +229,7 @@ jobs:
           claude_args: |
             --model "${{ steps.route.outputs.model }}"
             --max-turns ${{ steps.route.outputs.max_turns }}
-            --allowedTools "Edit,Read,Write,Bash(git diff:*),Bash(git status:*),Bash(git ls-files:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git branch:*),Bash(git fetch:*),Bash(git merge:*),Bash(python:*),Bash(python3:*),Bash(pytest:*),Bash(ruff:*),Bash(npm:*),Bash(npx:*),Bash(test:*),Bash(gh pr:*),Bash(gh issue:*),Bash(gh run:*)"
+            --allowedTools "Edit,Read,Write,Bash(git diff *),Bash(git status *),Bash(git ls-files *),Bash(git log *),Bash(git rev-parse *),Bash(git add *),Bash(git commit *),Bash(git push *),Bash(git checkout *),Bash(git switch *),Bash(git branch *),Bash(git fetch *),Bash(git merge *),Bash(python *),Bash(python3 *),Bash(pytest *),Bash(ruff *),Bash(npm *),Bash(npx *),Bash(test *),Bash(gh pr *),Bash(gh issue *),Bash(gh run *)"
             --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative. BLOCKED DOES NOT MEAN STOPPED FOR THE PROGRAM. Deliver durable GitHub work, never runner-local-only claims."
 
       - name: Classify Claude terminal state
