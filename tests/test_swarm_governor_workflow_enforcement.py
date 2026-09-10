@@ -43,6 +43,7 @@ GOVERNOR_PRECHECK_SCRIPT = "swarm_governor_precheck.py"
 WORKFLOWS_WITH_GOVERNOR_PRECHECK = {
     "orchid-openai-runtime-canary.yml",
     "orchid-gemini-runtime-canary.yml",
+    "orchid-completion-lane.yml",
 }
 
 # All five workflows must have the global concurrency group and NO-API guard
