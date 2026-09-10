@@ -112,7 +112,13 @@ def _acceptance(lines: list[str]) -> tuple[str, ...]:
         if in_acceptance and line.endswith(":") and not _BULLET_RE.match(line):
             in_acceptance = False
         match = _BULLET_RE.match(line)
-        if match and (in_acceptance or any(k in match.group(1).lower() for k in ("must", "should", "verify", "test", "do not"))):
+        if match and (
+            in_acceptance
+            or any(
+                k in match.group(1).lower()
+                for k in ("must", "should", "verify", "test", "do not")
+            )
+        ):
             value = match.group(1).strip()
             if value not in values:
                 values.append(value)
@@ -125,7 +131,16 @@ def _constraints(lines: list[str]) -> tuple[str, ...]:
     values: list[str] = []
     for line in lines:
         lower = line.lower()
-        if any(token in lower for token in ("do not ", "must not ", "never ", "without owner", "owner-gated")):
+        if any(
+            token in lower
+            for token in (
+                "do not ",
+                "must not ",
+                "never ",
+                "without owner",
+                "owner-gated",
+            )
+        ):
             value = _BULLET_RE.sub(r"\1", line).strip()
             if value not in values:
                 values.append(value)
@@ -155,9 +170,13 @@ def build_work_packet(
 ) -> WorkPacket:
     """Build a bounded packet without any model call."""
     if isinstance(labels, str):
-        parsed_labels = tuple(sorted({x for x in re.split(r"[\s,]+", labels.strip()) if x}))
+        parsed_labels = tuple(
+            sorted({x for x in re.split(r"[\s,]+", labels.strip()) if x})
+        )
     else:
-        parsed_labels = tuple(sorted({str(x).strip() for x in labels if str(x).strip()}))
+        parsed_labels = tuple(
+            sorted({str(x).strip() for x in labels if str(x).strip()})
+        )
 
     lines = _clean_lines(body)
     summary = _compact_summary(lines)
