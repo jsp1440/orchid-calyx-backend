@@ -593,3 +593,25 @@ def test_completion_lane_exhausted_retry_parks_in_backoff() -> None:
     text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
     assert "Retry budget exhausted; issue parked in oc-runtime-backoff." in text
     assert "automatic refill remains disabled unless explicitly authorized." in text
+
+
+def test_completion_lane_uses_explicit_github_token_for_claude_action() -> None:
+    wf = load_workflow("orchid-completion-lane.yml")
+    steps = all_steps(wf)
+    claude = next(s for s in steps if s.get("name") == "Execute issue with Claude Code")
+    inputs = claude.get("with", {}) or {}
+    assert inputs.get("github_token") == "${{ github.token }}"
+
+
+def test_completion_lane_classifier_uses_action_execution_file_output() -> None:
+    text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
+    assert "CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}" in text
+    assert 'kind=no_execution' in text
+    assert 'kind=no_model_usage' in text
+    assert 'kind=workflow_validation_skip' in text
+
+
+def test_no_execution_is_parked_without_paid_retry() -> None:
+    text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
+    assert '"$CLAUDE_KIND" == "no_execution"' in text
+    assert "Parked in oc-runtime-backoff; no automatic paid retry." in text
