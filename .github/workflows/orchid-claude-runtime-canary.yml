@@ -12,6 +12,12 @@ permissions:
   issues: write
   id-token: write
 
+# Global paid-execution concurrency — enforces PAID_WORKER_CONCURRENCY=1 across
+# all provider workflows.  cancel-in-progress: false queues rather than kills.
+concurrency:
+  group: swarm-paid-execution-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   canary:
     # Fail closed before the provider action is initialized or downloaded.

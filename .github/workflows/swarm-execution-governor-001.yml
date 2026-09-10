@@ -1,0 +1,41 @@
+name: Swarm Execution Governor
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/swarm/**'
+      - 'tests/test_swarm_execution_governor.py'
+      - '.github/workflows/swarm-execution-governor-001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  swarm-governor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+
+      - name: Install test dependencies
+        run: pip install pytest ruff
+
+      - name: Compile swarm package
+        run: python -m compileall -q runtime/swarm
+
+      - name: Ruff lint
+        run: ruff check runtime/swarm tests/test_swarm_execution_governor.py
+
+      - name: Ruff format check
+        run: ruff format --check runtime/swarm tests/test_swarm_execution_governor.py
+
+      - name: Swarm Governor tests
+        run: pytest -q tests/test_swarm_execution_governor.py

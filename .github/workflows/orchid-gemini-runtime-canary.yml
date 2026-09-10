@@ -12,6 +12,12 @@ on:
   issues:
     types: [labeled]
 
+# Global paid-execution concurrency — enforces PAID_WORKER_CONCURRENCY=1 across
+# all provider workflows.  cancel-in-progress: false queues rather than kills.
+concurrency:
+  group: swarm-paid-execution-${{ github.repository }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   issues: write
@@ -30,8 +36,23 @@ jobs:
         with:
           ref: main
 
+      - name: NO-API mode guard
+        id: no_api
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+        run: python3 scripts/oc_no_api_guard.py
+
+      - name: Swarm governor precheck
+        id: governor
+        if: steps.no_api.outputs.blocked == 'false'
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+        run: python3 scripts/swarm_governor_precheck.py
+
       - name: Execute bounded Gemini edit canary
         id: gemini
+        if: steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         continue-on-error: true
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -101,7 +122,7 @@ jobs:
 
       - name: Execute bounded OpenAI edit canary
         id: openai
-        if: always() && steps.gemini.outcome != 'success' && (steps.gemini.outputs.kind == 'quota_or_billing_error' || steps.gemini.outputs.kind == 'timeout' || steps.gemini.outputs.kind == 'provider_or_cli_error')
+        if: always() && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true' && steps.gemini.outcome != 'success' && (steps.gemini.outputs.kind == 'quota_or_billing_error' || steps.gemini.outputs.kind == 'timeout' || steps.gemini.outputs.kind == 'provider_or_cli_error')
         continue-on-error: true
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -177,9 +198,23 @@ jobs:
           GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
           OPENAI_KIND: ${{ steps.openai.outputs.kind }}
           OPENAI_OUTCOME: ${{ steps.openai.outcome }}
+          NO_API_BLOCKED: ${{ steps.no_api.outputs.blocked }}
+          GOVERNOR_AUTHORIZED: ${{ steps.governor.outputs.authorized }}
         shell: bash
         run: |
           set -euo pipefail
+
+          # NO-API mode or governor block: provider was intentionally skipped — do not
+          # affect circuit state or post a misleading failure comment.
+          if [[ "${NO_API_BLOCKED:-true}" == "true" ]]; then
+            echo "[OC-CANARY] NO-API mode active; provider steps skipped. Circuit state unchanged."
+            exit 0
+          fi
+          if [[ "${GOVERNOR_AUTHORIZED:-false}" != "true" ]]; then
+            echo "[OC-CANARY] Governor precheck blocked; provider steps skipped. Circuit state unchanged."
+            exit 0
+          fi
+
           provider="none"
           state=FAILED
           if [[ "${GEMINI_KIND:-}" == healthy_edit && "${GEMINI_OUTCOME:-}" == success ]]; then
