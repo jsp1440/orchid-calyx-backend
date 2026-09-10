@@ -342,14 +342,16 @@ def test_precheck_no_api_mode_absent_blocks() -> None:
     assert out.get("reason") == "BLOCKED_NO_API_MODE"
 
 
-def test_precheck_no_api_mode_set_to_false_allows() -> None:
+def test_precheck_no_api_mode_set_to_false_still_requires_paid_policy() -> None:
     _, out = _run_precheck({"NO_API_MODE": "false"})
-    assert out.get("authorized") == "true"
+    assert out.get("authorized") == "false"
+    assert out.get("reason") == "BLOCKED_PAID_EXECUTION_DISABLED"
 
 
-def test_precheck_no_api_mode_disabled_allows() -> None:
+def test_precheck_no_api_mode_disabled_still_requires_paid_policy() -> None:
     _, out = _run_precheck({"NO_API_MODE": "disabled"})
-    assert out.get("authorized") == "true"
+    assert out.get("authorized") == "false"
+    assert out.get("reason") == "BLOCKED_PAID_EXECUTION_DISABLED"
 
 
 def test_precheck_emergency_kill_switch_blocks() -> None:
@@ -368,10 +370,10 @@ def test_precheck_kill_switch_case_insensitive() -> None:
     assert out.get("reason") == "BLOCKED_KILL_SWITCH"
 
 
-def test_precheck_probe_mode_authorizes_without_paid_vars() -> None:
+def test_precheck_probe_mode_never_authorizes_provider_execution() -> None:
     _, out = _run_precheck({"NO_API_MODE": "false"})
-    assert out.get("authorized") == "true"
-    assert "PROBE_MODE" in (out.get("reason") or "")
+    assert out.get("authorized") == "false"
+    assert out.get("reason") == "BLOCKED_PAID_EXECUTION_DISABLED"
 
 
 def test_precheck_paid_mode_no_allowlist_blocks() -> None:
