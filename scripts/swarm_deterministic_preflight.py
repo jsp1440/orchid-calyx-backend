@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Run cheap repository-local diagnostics before any paid model call.
 
 This script never edits files, never invokes a provider, and never executes
