@@ -19,7 +19,7 @@ _SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-import oc_no_api_guard as _guard  # noqa: E402
+import oc_no_api_guard as _guard
 
 
 class SwarmExecutionGovernor:
@@ -201,11 +201,13 @@ class SwarmExecutionGovernor:
             estimated = request.estimated_cost_usd or Decimal(0)
             now = datetime.now(timezone.utc)
 
-            if self._policy.per_run_budget is not None:
-                if estimated > self._policy.per_run_budget:
-                    return GovernorDecision(
-                        False, "BLOCKED_PER_RUN_BUDGET_EXCEEDED", active_workers=active
-                    )
+            if (
+                self._policy.per_run_budget is not None
+                and estimated > self._policy.per_run_budget
+            ):
+                return GovernorDecision(
+                    False, "BLOCKED_PER_RUN_BUDGET_EXCEEDED", active_workers=active
+                )
 
             if self._policy.daily_budget is not None:
                 daily_spent = self._daily_spent(now)

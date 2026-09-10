@@ -42,7 +42,7 @@ _SCRIPTS_DIR = Path(__file__).parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-import oc_no_api_guard  # noqa: E402
+import oc_no_api_guard
 
 
 def _env(name: str) -> str | None:

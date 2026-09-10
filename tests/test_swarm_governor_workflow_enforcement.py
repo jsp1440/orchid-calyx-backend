@@ -207,7 +207,7 @@ def _provider_step_indices(steps: list[dict], workflow_name: str) -> list[int]:
         run = step.get("run", "") or ""
         with_block = str(step.get("with", "") or "")
         uses = step.get("uses", "") or ""
-        text = " ".join([run, with_block, uses])
+        text = f"{run} {with_block} {uses}"
         # Skip the precheck and guard steps themselves
         if step_runs_script(step, NO_API_GUARD_SCRIPT):
             continue

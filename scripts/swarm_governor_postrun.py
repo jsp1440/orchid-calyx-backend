@@ -31,8 +31,8 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 
 
 def _env(name: str) -> str | None:
@@ -54,6 +54,7 @@ def _gh_var_set(name: str, value: str, repo: str) -> bool:
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
         if result.returncode != 0:
             print(
@@ -64,7 +65,7 @@ def _gh_var_set(name: str, value: str, repo: str) -> bool:
             )
             return False
         return True
-    except Exception as exc:
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
         print(
             f"[OC-GOVERNOR-POSTRUN] WARNING: gh variable set {name} raised: {exc}",
             flush=True,

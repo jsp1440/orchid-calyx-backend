@@ -142,7 +142,7 @@ class TestPolicyValidation:
             monthly_budget=50,
         )
         assert isinstance(p.per_run_budget, Decimal)
-        assert p.per_run_budget == Decimal("2")
+        assert p.per_run_budget == Decimal(2)
 
     def test_default_concurrency_is_1(self):
         assert GovernorPolicy().paid_worker_concurrency == 1
