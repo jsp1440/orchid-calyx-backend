@@ -1,122 +1,84 @@
-# Swarm Governor — Canary Preparation: Issue #1085
+# Swarm Governor — Canary Preparation
 
-**Status:** PREPARED — do NOT execute without explicit owner authorization.
+**Status:** ISSUE #1085 RETIRED AS CANARY — do not execute it as a provider canary.
 
-This document captures the exact policy and prerequisite state required to run
-issue #1085 as the first controlled canary under the Swarm Execution Governor.
-It is a planning document only. No provider call, dispatch, or activation is
-initiated by this document.
+## Correction
 
----
+A current repository check shows issue #1085 is an `oc-owner-gate` P0 mission whose remaining acceptance criterion requires live production measurements / telemetry and explicit owner authority. It is therefore **not** an appropriate low-blast-radius provider canary.
 
-## Issue #1085 profile
+Do not use #1085 to validate paid Swarm execution.
 
-- **Purpose:** First real paid execution under governor control (canary)
-- **Recommended provider:** Anthropic Claude (lowest blast radius; most mature tooling)
-- **Why #1085:** Small, bounded scope; does not touch production DB, taxonomy,
-  or scientific data; does not require deploy access; can be reviewed as a draft PR.
-- **Verify before proceeding:** Confirm issue #1085 is still open, has an `oc-queued`
-  label, and does not carry `oc-repair-backoff`, `oc-runtime-degraded`, or any
-  credential-touching label.
+## Canary eligibility contract
 
----
+The first real provider canary must be a current issue that is all of the following:
 
-## Required policy state (GitHub Variables)
+- open and explicitly runnable;
+- not `oc-owner-gate`, `oc-blocked`, `oc-repair-backoff`, or `oc-runtime-backoff`;
+- not already `oc-validating` with implementation delivered;
+- reversible repository-local engineering only;
+- no production deployment or production DB/KG mutation;
+- no credentials/security-authority change;
+- no spending action beyond the explicitly authorized provider call;
+- no taxonomy/scientific-authority activation or scientific publication;
+- no sensitive-locality exposure;
+- small enough to finish in one bounded provider run;
+- has objective tests / acceptance criteria and can yield a draft PR;
+- has no existing authoritative implementation PR that should be converged instead.
 
-Set these repository variables before enabling the canary. All values are strings.
+If no current issue satisfies this contract, the truthful state is:
 
-| Variable | Required value | Purpose |
-|---|---|---|
-| `NO_API_MODE` | `false` | Enable paid execution |
-| `OC_GOVERNOR_EMERGENCY_KILL_SWITCH` | (absent or `false`) | Kill switch must be off |
-| `OC_GOVERNOR_PAID_EXECUTION_ENABLED` | `true` | Full governor enforcement |
-| `OC_GOVERNOR_PROVIDER_ALLOWLIST` | `anthropic` | Only Claude for canary |
-| `OC_GOVERNOR_PER_RUN_BUDGET_USD` | `2.00` | Max cost per run (conservative) |
-| `OC_GOVERNOR_DAILY_BUDGET_USD` | `5.00` | Daily ceiling |
-| `OC_GOVERNOR_MONTHLY_BUDGET_USD` | `20.00` | Monthly ceiling |
-| `OC_GOVERNOR_MAX_RETRIES` | `1` | Canary: single retry max |
-| `OC_GOVERNOR_DAILY_SPEND_USD` | `0` | Reset before canary |
-| `OC_GOVERNOR_MONTHLY_SPEND_USD` | `0` | Reset before canary |
-| `OC_GOVERNOR_LAST_RUN_DATE` | today (YYYY-MM-DD UTC) | Baseline |
-| `OC_GOVERNOR_LAST_RUN_MONTH` | this month (YYYY-MM UTC) | Baseline |
+`CANARY_CANDIDATE_UNAVAILABLE`
 
----
+Do not create artificial busywork merely to exercise the provider.
 
-## GovernorPolicy snapshot for #1085 canary
+## Initial live policy once an eligible candidate exists
 
-```python
-GovernorPolicy(
-    paid_worker_concurrency=1,          # enforced by GitHub concurrency group
-    max_retries=1,
-    stop_on_provider_error=True,
-    stop_on_budget_threshold=True,
-    auto_refill=False,                   # always False
-    per_run_budget=Decimal("2.00"),
-    daily_budget=Decimal("5.00"),
-    monthly_budget=Decimal("20.00"),
-    emergency_kill_switch=False,
-    provider_allowlist=frozenset({"anthropic"}),
-    provider_priority=("anthropic",),
-    paid_execution_enabled=True,
-)
-```
+Use exactly one paid provider and one worker:
 
----
+| Variable | Initial value |
+|---|---|
+| `NO_API_MODE` | `false` only for the authorized canary window |
+| `OC_GOVERNOR_PAID_EXECUTION_ENABLED` | `true` |
+| `OC_GOVERNOR_PROVIDER_ALLOWLIST` | one provider only |
+| `OC_GOVERNOR_PER_RUN_BUDGET_USD` | conservative owner-approved ceiling |
+| `OC_GOVERNOR_DAILY_BUDGET_USD` | conservative owner-approved ceiling |
+| `OC_GOVERNOR_MONTHLY_BUDGET_USD` | conservative owner-approved ceiling |
+| `OC_GOVERNOR_MAX_RETRIES` | `1` |
+| `OC_GOVERNOR_EMERGENCY_KILL_SWITCH` | `false` during the canary |
+| cross-provider fallback | disabled |
+| paid-worker concurrency | 1 |
 
-## Pre-flight checklist (verify each before dispatch)
+The Economy Controller must prepare a compact work packet and deterministic preflight before the provider step.
 
-- [ ] `NO_API_MODE` is set to `false` in repo Variables
-- [ ] `OC_GOVERNOR_EMERGENCY_KILL_SWITCH` is absent or `false`
-- [ ] `OC_GOVERNOR_PAID_EXECUTION_ENABLED` is `true`
-- [ ] `OC_GOVERNOR_PROVIDER_ALLOWLIST` is `anthropic` (only)
-- [ ] Budget variables are set to conservative canary values (see table above)
-- [ ] Spend counters reset to `0` with today's date/month
-- [ ] CI is green on `oc-autonomous-integration` (no pre-existing failures)
-- [ ] PR #1325 (Swarm Execution Governor) is merged to `oc-autonomous-integration`
-- [ ] Issue #1085 is open, has `oc-queued`, lacks `oc-repair-backoff`
-- [ ] Owner has explicitly authorized this canary execution in writing
-- [ ] A second person (human or independent checker) is ready to monitor
+## Kill procedure
 
----
+If provider usage is abnormal:
 
-## Execution plan (do NOT execute without authorization)
+1. Set `NO_API_MODE` back to a blocking value for new runs.
+2. Set `OC_GOVERNOR_EMERGENCY_KILL_SWITCH=true`.
+3. Cancel any in-progress GitHub Actions provider run.
+4. Verify no new provider workflow enters an authorized provider step.
 
-1. Set all GitHub Variables per the table above.
-2. Manually dispatch `Orchid Completion Lane` workflow with `issue_number=1085`.
-3. Monitor the run in the Actions tab:
-   - Step "NO-API mode guard" should show `providers ALLOWED`
-   - Step "Swarm governor precheck" should show `AUTHORIZED_PROBE_MODE` (or
-     `AUTHORIZED` if `OC_GOVERNOR_PAID_EXECUTION_ENABLED=true`)
-   - Step "Execute issue with Claude Code" runs
-4. Review the draft PR opened by the workflow.
-5. Do NOT merge or auto-integrate without independent checker pass + factory gate.
+See `docs/SWARM-GOVERNOR-KILL-PROCEDURE.md` for the full procedure.
 
----
+## Post-canary acceptance
 
-## Abort procedure
+Do not expand concurrency after one successful call. First verify several sequential tasks and record:
 
-If the canary is running and must be stopped immediately:
+- provider and model;
+- work-packet fingerprint / estimated prompt size;
+- turns;
+- input/output tokens when available;
+- elapsed time;
+- actual cost when available, otherwise conservative reserved cost;
+- tests / checker outcome;
+- durable PR created or not;
+- cost per successfully completed task.
 
-1. Set `NO_API_MODE` to `enabled` in repository Variables (takes effect on
-   any NEW run immediately).
-2. Cancel the in-progress Actions run manually (Actions tab → Cancel workflow).
-3. Set `OC_GOVERNOR_EMERGENCY_KILL_SWITCH` to `true` to block future runs.
+Only measured evidence should justify raising concurrency or enabling another provider.
 
-Full procedure: `docs/SWARM-GOVERNOR-KILL-PROCEDURE.md`
+## Current candidate status
 
----
+As of the correction that retired #1085, no replacement canary is named in this document. The scheduler / owner should select the next **naturally occurring eligible bounded engineering issue** that satisfies the contract above.
 
-## Post-canary review criteria
-
-The canary is successful if ALL of the following are true:
-
-- The workflow completed without exceeding the per-run budget.
-- A draft PR was opened for issue #1085.
-- The PR does not touch production DB, taxonomy, scientific records, credentials,
-  or main branch.
-- `OC_GOVERNOR_DAILY_SPEND_USD` was updated by `swarm_governor_postrun.py` (or
-  the actual cost was manually verified from Anthropic billing console).
-- No unexpected provider errors or circuit-breaker events on issue #1031.
-
-If any criterion fails, set `OC_GOVERNOR_EMERGENCY_KILL_SWITCH=true` and file a
-post-mortem before the next canary attempt.
+Do not reinterpret #1085 as eligible unless its owner-gated production acceptance criteria materially change and the issue is explicitly reclassified.
