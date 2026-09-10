@@ -2,7 +2,9 @@ from scripts.oc_model_router import choose_route
 
 
 def test_cheap_is_the_default():
-    route = choose_route(title="Update issue receipt", body="Tight bounded status change")
+    route = choose_route(
+        title="Update issue receipt", body="Tight bounded status change"
+    )
     assert route.tier == "cheap"
     assert route.model == "claude-haiku-4-5"
     assert route.max_turns == 24
@@ -10,14 +12,20 @@ def test_cheap_is_the_default():
 
 
 def test_normal_implementation_promotes_to_standard():
-    route = choose_route(title="Implement dossier endpoint", body="Integrate the existing service and tests")
+    route = choose_route(
+        title="Implement dossier endpoint",
+        body="Integrate the existing service and tests",
+    )
     assert route.tier == "standard"
     assert route.model == "claude-sonnet-5"
     assert route.escalated is True
 
 
 def test_deep_concurrency_problem_routes_to_deep():
-    route = choose_route(title="Repair atomic lease race condition", body="Cross-repo concurrency failure")
+    route = choose_route(
+        title="Repair atomic lease race condition",
+        body="Cross-repo concurrency failure",
+    )
     assert route.tier == "deep"
     assert route.model == "claude-opus-5"
     assert route.max_turns == 75
@@ -30,13 +38,17 @@ def test_repair_retry_escalates_one_tier_only():
 
 
 def test_standard_repair_escalates_to_deep():
-    route = choose_route(title="Implement workflow repair", body="retry", labels="oc-repair")
+    route = choose_route(
+        title="Implement workflow repair", body="retry", labels="oc-repair"
+    )
     assert route.tier == "deep"
     assert "repair-escalation=standard->deep" in route.reason
 
 
 def test_deep_repair_stays_capped():
-    route = choose_route(title="Atomic concurrency architecture", body="retry", labels="oc-repair")
+    route = choose_route(
+        title="Atomic concurrency architecture", body="retry", labels="oc-repair"
+    )
     assert route.tier == "deep"
     assert "repair-escalation=capped" in route.reason
 
