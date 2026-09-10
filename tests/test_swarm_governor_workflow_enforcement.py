@@ -574,3 +574,22 @@ def test_all_provider_workflows_require_explicit_paid_execution_policy() -> None
             assert "OC_GOVERNOR_PER_RUN_BUDGET_USD" in env, workflow_name
             assert "OC_GOVERNOR_DAILY_BUDGET_USD" in env, workflow_name
             assert "OC_GOVERNOR_MONTHLY_BUDGET_USD" in env, workflow_name
+
+
+def test_swarm_controller_refill_requires_explicit_authorization() -> None:
+    text = (WORKFLOWS_DIR / "orchid-swarm-controller.yml").read_text()
+    assert "vars.OC_GOVERNOR_AUTO_REFILL == 'true'" in text
+
+
+def test_completion_lane_uses_durable_github_ledger() -> None:
+    text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
+    assert "swarm_governor_github_ledger.py" in text
+    assert "steps.ledger.outputs.daily_spend_usd" in text
+    assert "steps.ledger.outputs.monthly_spend_usd" in text
+    assert "--ledger-issue 1330" in text
+
+
+def test_completion_lane_exhausted_retry_parks_in_backoff() -> None:
+    text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
+    assert "Retry budget exhausted; issue parked in oc-runtime-backoff." in text
+    assert "automatic refill remains disabled unless explicitly authorized." in text
