@@ -59,7 +59,7 @@ def _decimal_strict(name: str, raw: str | None, *, required: bool = False) -> De
     if raw is None:
         if required:
             raise ValueError(f"MISSING_{name}")
-        return Decimal("0")
+        return Decimal(0)
     try:
         value = Decimal(raw)
     except InvalidOperation as exc:
