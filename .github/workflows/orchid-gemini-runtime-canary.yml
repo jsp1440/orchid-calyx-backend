@@ -18,7 +18,8 @@ permissions:
 
 jobs:
   canary:
-    if: github.event_name != 'issues' || (github.event.issue.number == 1031 && github.event.label.name == 'oc-runtime-degraded')
+    # Fail closed before npm can download either provider CLI.
+    if: vars.NO_API_MODE == 'false' && (github.event_name != 'issues' || (github.event.issue.number == 1031 && github.event.label.name == 'oc-runtime-degraded'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:

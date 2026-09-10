@@ -14,6 +14,8 @@ permissions:
 
 jobs:
   canary:
+    # Fail closed before the provider action is initialized or downloaded.
+    if: vars.NO_API_MODE == 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

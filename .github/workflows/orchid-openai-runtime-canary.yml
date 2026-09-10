@@ -15,6 +15,8 @@ permissions:
 
 jobs:
   probe-openai:
+    # Fail closed before any provider credential or network path is initialized.
+    if: vars.NO_API_MODE == 'false'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
