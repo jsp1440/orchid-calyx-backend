@@ -21,6 +21,10 @@ DEFAULT_MODELS = {
     "deep": "claude-opus-5",
 }
 DEFAULT_MAX_TURNS = {"cheap": 24, "standard": 45, "deep": 75}
+# Conservative reservation amounts used by the governor before provider execution.
+# They are not claims about final provider billing; post-run telemetry may replace
+# them with provider-reported actual cost when available.
+DEFAULT_ESTIMATED_COST_USD = {"cheap": "0.50", "standard": "1.25", "deep": "2.00"}
 
 DEEP_SIGNALS = (
     "architecture",
@@ -59,6 +63,7 @@ class Route:
     max_turns: int
     reason: str
     escalated: bool
+    estimated_cost_usd: str
 
 
 def _labels(raw: str | Iterable[str]) -> set[str]:
@@ -93,6 +98,7 @@ def choose_route(
     maximum_tier: str = "deep",
     models: dict[str, str] | None = None,
     max_turns: dict[str, int] | None = None,
+    estimated_cost_usd: dict[str, str] | None = None,
 ) -> Route:
     """Choose the least-expensive tier justified by task evidence.
 
@@ -104,7 +110,9 @@ def choose_route(
     """
 
     if default_tier not in TIERS or maximum_tier not in TIERS:
-        raise ValueError("default_tier and maximum_tier must be cheap, standard, or deep")
+        raise ValueError(
+            "default_tier and maximum_tier must be cheap, standard, or deep"
+        )
     if _rank(default_tier) > _rank(maximum_tier):
         raise ValueError("default_tier cannot exceed maximum_tier")
 
@@ -142,12 +150,14 @@ def choose_route(
 
     configured_models = {**DEFAULT_MODELS, **(models or {})}
     configured_turns = {**DEFAULT_MAX_TURNS, **(max_turns or {})}
+    configured_costs = {**DEFAULT_ESTIMATED_COST_USD, **(estimated_cost_usd or {})}
     return Route(
         tier=tier,
         model=configured_models[tier],
         max_turns=int(configured_turns[tier]),
         reason=";".join(reasons),
         escalated=(tier != default_tier),
+        estimated_cost_usd=str(configured_costs[tier]),
     )
 
 
@@ -160,13 +170,24 @@ def _env_turns(tier: str) -> int:
     return int(raw) if raw else DEFAULT_MAX_TURNS[tier]
 
 
+def _env_estimated_cost(tier: str) -> str:
+    return os.getenv(
+        f"OC_CLAUDE_{tier.upper()}_ESTIMATED_COST_USD",
+        DEFAULT_ESTIMATED_COST_USD[tier],
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--title", default="")
     parser.add_argument("--body", default="")
     parser.add_argument("--labels", default="")
-    parser.add_argument("--default-tier", default=os.getenv("OC_CLAUDE_DEFAULT_TIER", "cheap"))
-    parser.add_argument("--maximum-tier", default=os.getenv("OC_CLAUDE_MAXIMUM_TIER", "deep"))
+    parser.add_argument(
+        "--default-tier", default=os.getenv("OC_CLAUDE_DEFAULT_TIER", "cheap")
+    )
+    parser.add_argument(
+        "--maximum-tier", default=os.getenv("OC_CLAUDE_MAXIMUM_TIER", "deep")
+    )
     parser.add_argument("--github-output", default="")
     args = parser.parse_args()
 
@@ -178,6 +199,7 @@ def main() -> int:
         maximum_tier=args.maximum_tier,
         models={tier: _env_model(tier) for tier in TIERS},
         max_turns={tier: _env_turns(tier) for tier in TIERS},
+        estimated_cost_usd={tier: _env_estimated_cost(tier) for tier in TIERS},
     )
     payload = asdict(route)
     print(json.dumps(payload, sort_keys=True))

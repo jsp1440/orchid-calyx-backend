@@ -21,9 +21,10 @@ Requires:
 Exits 0 always — spend-tracking failure must not block jobs that already
 completed successfully, and must not surface as a false provider failure.
 
-OC_GOVERNOR_ACTUAL_COST_USD is the authoritative cost for this run. Workflows
-that cannot determine the actual cost should set it to "0" (no-op) or leave it
-unset (skip tracking).
+OC_GOVERNOR_ACTUAL_COST_USD is preferred when the provider reports it.
+OC_GOVERNOR_RESERVED_COST_USD is the conservative pre-run reservation. When
+actual cost is unavailable, the reservation is recorded instead of silently
+counting zero. This intentionally biases accounting toward safety.
 """
 
 from __future__ import annotations
@@ -88,14 +89,18 @@ def main() -> None:
         return
 
     actual_cost_raw = _env("OC_GOVERNOR_ACTUAL_COST_USD")
-    if not actual_cost_raw:
+    reserved_cost_raw = _env("OC_GOVERNOR_RESERVED_COST_USD")
+    selected_cost_raw = actual_cost_raw or reserved_cost_raw
+    source = "actual" if actual_cost_raw else "reserved"
+    if not selected_cost_raw:
         print(
-            "[OC-GOVERNOR-POSTRUN] OC_GOVERNOR_ACTUAL_COST_USD not set; skipping.",
+            "[OC-GOVERNOR-POSTRUN] No actual or reserved cost is available; "
+            "accounting cannot be updated safely.",
             flush=True,
         )
         return
 
-    actual_cost = _decimal(actual_cost_raw)
+    actual_cost = _decimal(selected_cost_raw)
     if actual_cost <= 0:
         print(f"[OC-GOVERNOR-POSTRUN] Cost {actual_cost!s} <= 0; skipping.", flush=True)
         return
@@ -129,7 +134,7 @@ def main() -> None:
     new_monthly = monthly_spend + actual_cost
 
     print(
-        f"[OC-GOVERNOR-POSTRUN] cost={actual_cost!s} "
+        f"[OC-GOVERNOR-POSTRUN] cost={actual_cost!s} source={source} "
         f"daily={daily_spend!s}→{new_daily!s} "
         f"monthly={monthly_spend!s}→{new_monthly!s}",
         flush=True,

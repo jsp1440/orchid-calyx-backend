@@ -54,11 +54,19 @@ def _bool_env(name: str) -> bool:
     return (_env(name) or "").lower() in ("true", "1", "yes", "on")
 
 
-def _decimal(raw: str | None, default: str = "0") -> Decimal:
+def _decimal_strict(name: str, raw: str | None, *, required: bool = False) -> Decimal:
+    """Parse a money value and fail closed on missing/malformed/negative input."""
+    if raw is None:
+        if required:
+            raise ValueError(f"MISSING_{name}")
+        return Decimal(0)
     try:
-        return Decimal(raw or default)
-    except InvalidOperation:
-        return Decimal(default)
+        value = Decimal(raw)
+    except InvalidOperation as exc:
+        raise ValueError(f"INVALID_{name}") from exc
+    if not value.is_finite() or value < 0:
+        raise ValueError(f"INVALID_{name}")
+    return value
 
 
 def _write_output(key: str, value: str) -> None:
@@ -94,25 +102,26 @@ def main() -> None:
         block("BLOCKED_KILL_SWITCH")
         return
 
-    # Probe/canary mode: only NO_API_MODE + kill switch apply; no paid budget checks.
-    # Set OC_GOVERNOR_PAID_EXECUTION_ENABLED=true to enable full policy enforcement.
+    # Provider-capable workflows must never treat "probe mode" as execution
+    # authority. A dry-run can call this script and observe the blocked reason,
+    # but paid execution requires the full budget/allowlist policy explicitly.
     if not paid_execution_enabled:
-        authorize("AUTHORIZED_PROBE_MODE")
+        block("BLOCKED_PAID_EXECUTION_DISABLED", is_warning=True)
         return
 
     # 3. Full policy checks for paid execution lanes
     provider = _env("OC_GOVERNOR_PROVIDER") or ""
     allowlist_raw = _env("OC_GOVERNOR_PROVIDER_ALLOWLIST") or ""
     allowlist = frozenset(p.strip() for p in allowlist_raw.split(",") if p.strip())
-    retry_count = int(_env("OC_GOVERNOR_RETRY_COUNT") or "0")
-    max_retries = int(_env("OC_GOVERNOR_MAX_RETRIES") or "1")
-
-    per_run_estimated = _decimal(_env("OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD"))
-    per_run_budget = _decimal(_env("OC_GOVERNOR_PER_RUN_BUDGET_USD"))
-    daily_budget = _decimal(_env("OC_GOVERNOR_DAILY_BUDGET_USD"))
-    monthly_budget = _decimal(_env("OC_GOVERNOR_MONTHLY_BUDGET_USD"))
-    daily_spend = _decimal(_env("OC_GOVERNOR_DAILY_SPEND_USD"))
-    monthly_spend = _decimal(_env("OC_GOVERNOR_MONTHLY_SPEND_USD"))
+    try:
+        retry_count = int(_env("OC_GOVERNOR_RETRY_COUNT") or "0")
+        max_retries = int(_env("OC_GOVERNOR_MAX_RETRIES") or "1")
+    except ValueError:
+        block("BLOCKED_INVALID_RETRY_CONFIGURATION")
+        return
+    if retry_count < 0 or max_retries < 0:
+        block("BLOCKED_INVALID_RETRY_CONFIGURATION")
+        return
 
     if not allowlist:
         block("BLOCKED_NO_PROVIDER_ALLOWLIST")
@@ -126,15 +135,50 @@ def main() -> None:
         block("BLOCKED_RETRY_LIMIT_EXCEEDED")
         return
 
-    if per_run_budget > 0 and per_run_estimated > per_run_budget:
+    try:
+        per_run_estimated = _decimal_strict(
+            "PER_RUN_ESTIMATED_COST_USD",
+            _env("OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD"),
+            required=True,
+        )
+        per_run_budget = _decimal_strict(
+            "PER_RUN_BUDGET_USD",
+            _env("OC_GOVERNOR_PER_RUN_BUDGET_USD"),
+            required=True,
+        )
+        daily_budget = _decimal_strict(
+            "DAILY_BUDGET_USD",
+            _env("OC_GOVERNOR_DAILY_BUDGET_USD"),
+            required=True,
+        )
+        monthly_budget = _decimal_strict(
+            "MONTHLY_BUDGET_USD",
+            _env("OC_GOVERNOR_MONTHLY_BUDGET_USD"),
+            required=True,
+        )
+        daily_spend = _decimal_strict(
+            "DAILY_SPEND_USD", _env("OC_GOVERNOR_DAILY_SPEND_USD")
+        )
+        monthly_spend = _decimal_strict(
+            "MONTHLY_SPEND_USD", _env("OC_GOVERNOR_MONTHLY_SPEND_USD")
+        )
+    except ValueError as exc:
+        block(f"BLOCKED_{exc}")
+        return
+
+    if per_run_budget <= 0 or daily_budget <= 0 or monthly_budget <= 0:
+        block("BLOCKED_NON_POSITIVE_BUDGET")
+        return
+
+    if per_run_estimated > per_run_budget:
         block("BLOCKED_PER_RUN_BUDGET_EXCEEDED")
         return
 
-    if daily_budget > 0 and (daily_spend + per_run_estimated) > daily_budget:
+    if (daily_spend + per_run_estimated) > daily_budget:
         block("BLOCKED_DAILY_BUDGET_EXCEEDED")
         return
 
-    if monthly_budget > 0 and (monthly_spend + per_run_estimated) > monthly_budget:
+    if (monthly_spend + per_run_estimated) > monthly_budget:
         block("BLOCKED_MONTHLY_BUDGET_EXCEEDED")
         return
 

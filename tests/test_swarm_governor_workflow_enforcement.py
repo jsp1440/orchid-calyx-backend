@@ -40,10 +40,7 @@ GOVERNOR_PRECHECK_SCRIPT = "swarm_governor_precheck.py"
 
 # Workflows that have governor precheck step
 # (canary/recovery workflows + all new guarded ones)
-WORKFLOWS_WITH_GOVERNOR_PRECHECK = {
-    "orchid-openai-runtime-canary.yml",
-    "orchid-gemini-runtime-canary.yml",
-}
+WORKFLOWS_WITH_GOVERNOR_PRECHECK = set(PROVIDER_WORKFLOWS)
 
 # All five workflows must have the global concurrency group and NO-API guard
 WORKFLOWS_REQUIRING_NO_API_GUARD = set(PROVIDER_WORKFLOWS)
@@ -341,14 +338,16 @@ def test_precheck_no_api_mode_absent_blocks() -> None:
     assert out.get("reason") == "BLOCKED_NO_API_MODE"
 
 
-def test_precheck_no_api_mode_set_to_false_allows() -> None:
+def test_precheck_no_api_mode_set_to_false_still_requires_paid_policy() -> None:
     _, out = _run_precheck({"NO_API_MODE": "false"})
-    assert out.get("authorized") == "true"
+    assert out.get("authorized") == "false"
+    assert out.get("reason") == "BLOCKED_PAID_EXECUTION_DISABLED"
 
 
-def test_precheck_no_api_mode_disabled_allows() -> None:
+def test_precheck_no_api_mode_disabled_still_requires_paid_policy() -> None:
     _, out = _run_precheck({"NO_API_MODE": "disabled"})
-    assert out.get("authorized") == "true"
+    assert out.get("authorized") == "false"
+    assert out.get("reason") == "BLOCKED_PAID_EXECUTION_DISABLED"
 
 
 def test_precheck_emergency_kill_switch_blocks() -> None:
@@ -367,10 +366,10 @@ def test_precheck_kill_switch_case_insensitive() -> None:
     assert out.get("reason") == "BLOCKED_KILL_SWITCH"
 
 
-def test_precheck_probe_mode_authorizes_without_paid_vars() -> None:
+def test_precheck_probe_mode_never_authorizes_provider_execution() -> None:
     _, out = _run_precheck({"NO_API_MODE": "false"})
-    assert out.get("authorized") == "true"
-    assert "PROBE_MODE" in (out.get("reason") or "")
+    assert out.get("authorized") == "false"
+    assert out.get("reason") == "BLOCKED_PAID_EXECUTION_DISABLED"
 
 
 def test_precheck_paid_mode_no_allowlist_blocks() -> None:
@@ -405,6 +404,10 @@ def test_precheck_paid_mode_provider_in_allowlist_authorizes() -> None:
             "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
             "OC_GOVERNOR_PROVIDER": "anthropic",
             "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
+            "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.50",
+            "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
+            "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
+            "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
         }
     )
     assert out.get("authorized") == "true"
@@ -435,6 +438,8 @@ def test_precheck_daily_budget_blocks() -> None:
             "OC_GOVERNOR_PROVIDER": "anthropic",
             "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
             "OC_GOVERNOR_DAILY_SPEND_USD": "4.80",
+            "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
+            "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
             "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.30",
         }
     )
@@ -449,8 +454,10 @@ def test_precheck_monthly_budget_blocks() -> None:
             "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
             "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
             "OC_GOVERNOR_PROVIDER": "anthropic",
+            "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
             "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
             "OC_GOVERNOR_MONTHLY_SPEND_USD": "19.90",
+            "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
             "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.20",
         }
     )
@@ -467,6 +474,8 @@ def test_precheck_per_run_budget_blocks() -> None:
             "OC_GOVERNOR_PROVIDER": "anthropic",
             "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
             "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "2.00",
+            "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
+            "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
         }
     )
     assert out.get("authorized") == "false"
@@ -490,3 +499,78 @@ def test_precheck_within_budget_authorizes() -> None:
     )
     assert out.get("authorized") == "true"
     assert out.get("reason") == "AUTHORIZED"
+
+
+def test_precheck_paid_mode_missing_budget_blocks_fail_closed() -> None:
+    _, out = _run_precheck(
+        {
+            "NO_API_MODE": "false",
+            "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
+            "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
+            "OC_GOVERNOR_PROVIDER": "anthropic",
+            "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.50",
+        }
+    )
+    assert out.get("authorized") == "false"
+    assert out.get("reason", "").startswith("BLOCKED_MISSING_")
+
+
+def test_precheck_paid_mode_malformed_budget_blocks_fail_closed() -> None:
+    _, out = _run_precheck(
+        {
+            "NO_API_MODE": "false",
+            "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
+            "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
+            "OC_GOVERNOR_PROVIDER": "anthropic",
+            "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.50",
+            "OC_GOVERNOR_PER_RUN_BUDGET_USD": "not-money",
+            "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
+            "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
+        }
+    )
+    assert out.get("authorized") == "false"
+    assert out.get("reason") == "BLOCKED_INVALID_PER_RUN_BUDGET_USD"
+
+
+def test_completion_lane_uses_compact_packet_and_primary_governor() -> None:
+    path = WORKFLOWS_DIR / "orchid-completion-lane.yml"
+    text = path.read_text()
+    assert "swarm_prepare_work_packet.py" in text
+    assert "steps.packet.outputs.packet" in text
+    assert "Swarm governor precheck — primary provider" in text
+    assert "steps.governor.outputs.authorized == 'true'" in text
+
+
+def test_completion_lane_cross_provider_fallback_is_disabled() -> None:
+    wf = load_workflow("orchid-completion-lane.yml")
+    steps = all_steps(wf)
+    by_name = {s.get("name"): s for s in steps}
+    assert by_name["Execute bounded Gemini fallback"]["if"] == "${{ false }}"
+    assert by_name["Execute bounded OpenAI fallback"]["if"] == "${{ false }}"
+
+
+def test_completion_lane_runs_deterministic_preflight_before_provider() -> None:
+    wf = load_workflow("orchid-completion-lane.yml")
+    steps = all_steps(wf)
+    names = [s.get("name", "") for s in steps]
+    assert names.index("Prepare compact work packet") < names.index(
+        "Run deterministic preflight"
+    )
+    assert names.index("Run deterministic preflight") < names.index(
+        "Execute issue with Claude Code"
+    )
+
+
+def test_all_provider_workflows_require_explicit_paid_execution_policy() -> None:
+    for workflow_name in PROVIDER_WORKFLOWS:
+        wf = load_workflow(workflow_name)
+        steps = all_steps(wf)
+        prechecks = [s for s in steps if step_runs_script(s, GOVERNOR_PRECHECK_SCRIPT)]
+        assert prechecks, workflow_name
+        for step in prechecks:
+            env = step.get("env", {}) or {}
+            assert "OC_GOVERNOR_PAID_EXECUTION_ENABLED" in env, workflow_name
+            assert "OC_GOVERNOR_PROVIDER_ALLOWLIST" in env, workflow_name
+            assert "OC_GOVERNOR_PER_RUN_BUDGET_USD" in env, workflow_name
+            assert "OC_GOVERNOR_DAILY_BUDGET_USD" in env, workflow_name
+            assert "OC_GOVERNOR_MONTHLY_BUDGET_USD" in env, workflow_name

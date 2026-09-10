@@ -48,8 +48,18 @@ jobs:
         env:
           NO_API_MODE: ${{ vars.NO_API_MODE }}
           OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: gemini
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_RETRY_COUNT: "0"
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD: ${{ vars.OC_GOVERNOR_CANARY_ESTIMATED_COST_USD || '0.10' }}
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ vars.OC_GOVERNOR_DAILY_SPEND_USD }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ vars.OC_GOVERNOR_MONTHLY_SPEND_USD }}
         run: python3 scripts/swarm_governor_precheck.py
-
       - name: Execute bounded Gemini edit canary
         id: gemini
         if: steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
@@ -122,7 +132,7 @@ jobs:
 
       - name: Execute bounded OpenAI edit canary
         id: openai
-        if: always() && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true' && steps.gemini.outcome != 'success' && (steps.gemini.outputs.kind == 'quota_or_billing_error' || steps.gemini.outputs.kind == 'timeout' || steps.gemini.outputs.kind == 'provider_or_cli_error')
+        if: ${{ false }}
         continue-on-error: true
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
