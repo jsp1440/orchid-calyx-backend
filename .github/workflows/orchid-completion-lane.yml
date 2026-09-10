@@ -528,6 +528,10 @@ jobs:
           ROUTE_TIER: ${{ steps.route.outputs.tier }}
           ROUTE_MODEL: ${{ steps.route.outputs.model }}
           ROUTE_REASON: ${{ steps.route.outputs.reason }}
+          ROUTE_RESERVED_COST: ${{ steps.route.outputs.estimated_cost_usd }}
+          PACKET_FINGERPRINT: ${{ steps.packet.outputs.fingerprint }}
+          PACKET_ESTIMATED_TOKENS: ${{ steps.packet.outputs.estimated_prompt_tokens }}
+          PACKET_EXECUTION_CLASS: ${{ steps.packet.outputs.execution_class }}
           GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
           GEMINI_KIND: ${{ steps.gemini_provider.outputs.kind }}
           GEMINI_FALLBACK: ${{ steps.gemini_provider.outputs.fallback_allowed }}
@@ -537,7 +541,7 @@ jobs:
         run: |
           set -euo pipefail
           marker="OC-AUTO-ISSUE: #${ISSUE_NUMBER}"
-          route_telemetry="tier=${ROUTE_TIER:-unknown}; model=${ROUTE_MODEL:-unknown}; reason=${ROUTE_REASON:-unknown}"
+          route_telemetry="tier=${ROUTE_TIER:-unknown}; model=${ROUTE_MODEL:-unknown}; reason=${ROUTE_REASON:-unknown}; reserved_cost_usd=${ROUTE_RESERVED_COST:-unknown}; packet=${PACKET_FINGERPRINT:-unknown}; packet_est_tokens=${PACKET_ESTIMATED_TOKENS:-unknown}; execution_class=${PACKET_EXECUTION_CLASS:-unknown}"
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq "[.[] | select(.body != null and (.body | contains(\"$marker\")))][0].number // empty")
           gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running >/dev/null 2>&1 || true
 
