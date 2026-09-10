@@ -122,6 +122,18 @@ def main() -> None:
         block("BLOCKED_INVALID_RETRY_CONFIGURATION")
         return
 
+    if not allowlist:
+        block("BLOCKED_NO_PROVIDER_ALLOWLIST")
+        return
+
+    if provider and provider not in allowlist:
+        block("BLOCKED_PROVIDER_NOT_ALLOWED")
+        return
+
+    if retry_count > max_retries:
+        block("BLOCKED_RETRY_LIMIT_EXCEEDED")
+        return
+
     try:
         per_run_estimated = _decimal_strict(
             "PER_RUN_ESTIMATED_COST_USD",
@@ -155,18 +167,6 @@ def main() -> None:
 
     if per_run_budget <= 0 or daily_budget <= 0 or monthly_budget <= 0:
         block("BLOCKED_NON_POSITIVE_BUDGET")
-        return
-
-    if not allowlist:
-        block("BLOCKED_NO_PROVIDER_ALLOWLIST")
-        return
-
-    if provider and provider not in allowlist:
-        block("BLOCKED_PROVIDER_NOT_ALLOWED")
-        return
-
-    if retry_count > max_retries:
-        block("BLOCKED_RETRY_LIMIT_EXCEEDED")
         return
 
     if per_run_estimated > per_run_budget:
