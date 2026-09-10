@@ -82,12 +82,31 @@ jobs:
             echo "labels=$labels"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Prepare compact work packet
+        if: steps.lease.outputs.execute == 'true'
+        id: packet
+        env:
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          ISSUE_BODY: ${{ steps.packet.outputs.routing_text }}
+          ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_prepare_work_packet.py \
+            --issue-number "$ISSUE_NUMBER" \
+            --title "$ISSUE_TITLE" \
+            --body "$ISSUE_BODY" \
+            --labels "$ISSUE_LABELS" \
+            --packet-file "$RUNNER_TEMP/swarm-work-packet.md" \
+            --github-output "$GITHUB_OUTPUT"
+          echo "Work packet fingerprint=${{ steps.packet.outputs.fingerprint }} class=${{ steps.packet.outputs.execution_class }} estimated_prompt_tokens=${{ steps.packet.outputs.estimated_prompt_tokens }}" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Select bounded Claude route
         if: steps.lease.outputs.execute == 'true'
         id: route
         env:
           ISSUE_TITLE: ${{ steps.issue.outputs.title }}
-          ISSUE_BODY: ${{ steps.issue.outputs.body }}
+          ISSUE_BODY: ${{ steps.packet.outputs.packet }}
           ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
         shell: bash
         run: |
@@ -107,6 +126,33 @@ jobs:
           NO_API_MODE: ${{ vars.NO_API_MODE }}
         run: python3 scripts/oc_no_api_guard.py
 
+      - name: Swarm governor precheck — primary provider
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false'
+        id: governor
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: anthropic
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_RETRY_COUNT: ${{ contains(steps.issue.outputs.labels, 'oc-repair') && '1' || '0' }}
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD: ${{ steps.route.outputs.estimated_cost_usd }}
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ vars.OC_GOVERNOR_DAILY_SPEND_USD }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ vars.OC_GOVERNOR_MONTHLY_SPEND_USD }}
+        run: python3 scripts/swarm_governor_precheck.py
+
+      - name: Return issue to queue when governor blocks primary provider
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Swarm governor blocked provider execution before credentials were initialized. reason=${{ steps.governor.outputs.reason }}; packet=${{ steps.packet.outputs.fingerprint }}. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+
       - name: Return issue to queue when NO-API mode blocks all providers
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'true'
         env:
@@ -118,7 +164,7 @@ jobs:
             --body "[OC-AUTO] NO-API mode active; all provider steps skipped. Issue returned to queue. Set NO_API_MODE=false (repository variable) to enable provider execution. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
 
       - name: Execute issue with Claude Code
-        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false'
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         id: claude
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
@@ -132,10 +178,10 @@ jobs:
             Integration base: oc-autonomous-integration
             Source issue: #${{ inputs.issue_number }} — ${{ steps.issue.outputs.title }}
 
-            Issue requirements:
-            ${{ steps.issue.outputs.body }}
+            Prepared work packet:
+            ${{ steps.packet.outputs.packet }}
 
-            EXECUTE BEFORE EXPLAINING. This lane is part of a continuously refilling completion system.
+            EXECUTE BEFORE EXPLAINING. Complete this bounded packet end-to-end. Do not re-read or summarize unrelated repository areas.
 
             Rules:
             - Start from current `oc-autonomous-integration`, inspect current `main` and overlapping PRs, and converge instead of duplicating work.
@@ -214,7 +260,7 @@ jobs:
           echo "Claude classification: kind=$kind fallback_allowed=$fallback"
 
       - name: Execute bounded Gemini fallback
-        if: steps.no_api.outputs.blocked == 'false' && steps.claude_provider.outputs.fallback_allowed == 'true'
+        if: steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true' && vars.OC_GOVERNOR_ALLOW_CROSS_PROVIDER_FALLBACK == 'true' && contains(vars.OC_GOVERNOR_PROVIDER_ALLOWLIST, 'gemini') && steps.claude_provider.outputs.fallback_allowed == 'true'
         id: gemini
         continue-on-error: true
         env:
@@ -326,7 +372,7 @@ jobs:
           echo "Gemini classification: kind=$kind fallback_allowed=$fallback"
 
       - name: Execute bounded OpenAI fallback
-        if: steps.no_api.outputs.blocked == 'false' && steps.gemini_provider.outputs.fallback_allowed == 'true'
+        if: steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true' && vars.OC_GOVERNOR_ALLOW_CROSS_PROVIDER_FALLBACK == 'true' && contains(vars.OC_GOVERNOR_PROVIDER_ALLOWLIST, 'openai') && steps.gemini_provider.outputs.fallback_allowed == 'true'
         id: openai
         continue-on-error: true
         env:
@@ -438,8 +484,20 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Record conservative provider cost reservation
+        if: always() && steps.governor.outputs.authorized == 'true' && steps.claude.outcome != 'skipped'
+        env:
+          OC_GOVERNOR_RUN_AUTHORIZED: "true"
+          OC_GOVERNOR_RESERVED_COST_USD: ${{ steps.route.outputs.estimated_cost_usd }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ vars.OC_GOVERNOR_DAILY_SPEND_USD }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ vars.OC_GOVERNOR_MONTHLY_SPEND_USD }}
+          OC_GOVERNOR_LAST_RUN_DATE: ${{ vars.OC_GOVERNOR_LAST_RUN_DATE }}
+          OC_GOVERNOR_LAST_RUN_MONTH: ${{ vars.OC_GOVERNOR_LAST_RUN_MONTH }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/swarm_governor_postrun.py
+
       - name: Classify result, dispatch validation, release slot
-        if: always() && steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false'
+        if: always() && steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         env:
           CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
           CLAUDE_KIND: ${{ steps.claude_provider.outputs.kind }}
