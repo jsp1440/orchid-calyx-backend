@@ -405,6 +405,10 @@ def test_precheck_paid_mode_provider_in_allowlist_authorizes() -> None:
             "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
             "OC_GOVERNOR_PROVIDER": "anthropic",
             "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
+            "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.50",
+            "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
+            "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
+            "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
         }
     )
     assert out.get("authorized") == "true"
@@ -435,6 +439,8 @@ def test_precheck_daily_budget_blocks() -> None:
             "OC_GOVERNOR_PROVIDER": "anthropic",
             "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
             "OC_GOVERNOR_DAILY_SPEND_USD": "4.80",
+            "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
+            "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
             "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.30",
         }
     )
@@ -449,8 +455,10 @@ def test_precheck_monthly_budget_blocks() -> None:
             "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
             "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
             "OC_GOVERNOR_PROVIDER": "anthropic",
+            "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
             "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
             "OC_GOVERNOR_MONTHLY_SPEND_USD": "19.90",
+            "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
             "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.20",
         }
     )
@@ -467,6 +475,8 @@ def test_precheck_per_run_budget_blocks() -> None:
             "OC_GOVERNOR_PROVIDER": "anthropic",
             "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
             "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "2.00",
+            "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
+            "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
         }
     )
     assert out.get("authorized") == "false"
@@ -490,3 +500,51 @@ def test_precheck_within_budget_authorizes() -> None:
     )
     assert out.get("authorized") == "true"
     assert out.get("reason") == "AUTHORIZED"
+
+
+def test_precheck_paid_mode_missing_budget_blocks_fail_closed() -> None:
+    _, out = _run_precheck(
+        {
+            "NO_API_MODE": "false",
+            "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
+            "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
+            "OC_GOVERNOR_PROVIDER": "anthropic",
+            "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.50",
+        }
+    )
+    assert out.get("authorized") == "false"
+    assert out.get("reason", "").startswith("BLOCKED_MISSING_")
+
+
+def test_precheck_paid_mode_malformed_budget_blocks_fail_closed() -> None:
+    _, out = _run_precheck(
+        {
+            "NO_API_MODE": "false",
+            "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
+            "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
+            "OC_GOVERNOR_PROVIDER": "anthropic",
+            "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.50",
+            "OC_GOVERNOR_PER_RUN_BUDGET_USD": "not-money",
+            "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
+            "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
+        }
+    )
+    assert out.get("authorized") == "false"
+    assert out.get("reason") == "BLOCKED_INVALID_PER_RUN_BUDGET_USD"
+
+
+def test_completion_lane_uses_compact_packet_and_primary_governor() -> None:
+    path = WORKFLOWS_DIR / "orchid-completion-lane.yml"
+    text = path.read_text()
+    assert "swarm_prepare_work_packet.py" in text
+    assert "steps.packet.outputs.packet" in text
+    assert "Swarm governor precheck — primary provider" in text
+    assert "steps.governor.outputs.authorized == 'true'" in text
+
+
+def test_completion_lane_cross_provider_fallback_is_disabled() -> None:
+    wf = load_workflow("orchid-completion-lane.yml")
+    steps = all_steps(wf)
+    by_name = {s.get("name"): s for s in steps}
+    assert by_name["Execute bounded Gemini fallback"]["if"] == "${{ false }}"
+    assert by_name["Execute bounded OpenAI fallback"]["if"] == "${{ false }}"
