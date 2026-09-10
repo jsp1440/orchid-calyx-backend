@@ -102,10 +102,11 @@ def main() -> None:
         block("BLOCKED_KILL_SWITCH")
         return
 
-    # Probe/canary mode: only NO_API_MODE + kill switch apply; no paid budget checks.
-    # Set OC_GOVERNOR_PAID_EXECUTION_ENABLED=true to enable full policy enforcement.
+    # Provider-capable workflows must never treat "probe mode" as execution
+    # authority. A dry-run can call this script and observe the blocked reason,
+    # but paid execution requires the full budget/allowlist policy explicitly.
     if not paid_execution_enabled:
-        authorize("AUTHORIZED_PROBE_MODE")
+        block("BLOCKED_PAID_EXECUTION_DISABLED", is_warning=True)
         return
 
     # 3. Full policy checks for paid execution lanes
