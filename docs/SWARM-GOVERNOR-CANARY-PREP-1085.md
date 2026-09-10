@@ -79,6 +79,19 @@ Only measured evidence should justify raising concurrency or enabling another pr
 
 ## Current candidate status
 
-As of the correction that retired #1085, no replacement canary is named in this document. The scheduler / owner should select the next **naturally occurring eligible bounded engineering issue** that satisfies the contract above.
+**Candidate: issue #1264 — Wire health contract into continuous-completion observer and fail-closed healer.**
+
+Repository recheck found the issue's original dependency is now satisfied: `scripts/oc_health_contract.py` and its regression tests are present on current `oc-autonomous-integration`. No open implementation PR for #1264 was found, and the issue has been reclassified from `oc-blocked` to `oc-queued`.
+
+Why #1264 qualifies as the first canary candidate:
+
+- it is routine, reversible repository-local engineering;
+- its acceptance criteria are deterministic and testable;
+- it explicitly forbids production/scientific data mutation;
+- it does not require credential, taxonomy, publication, sensitive-locality, or destructive authority;
+- it has an existing canonical health-contract dependency rather than requiring new architecture;
+- it can produce one bounded draft PR for independent validation.
+
+This names #1264 as the **candidate only**. It does not authorize provider spending or activation.
 
 Do not reinterpret #1085 as eligible unless its owner-gated production acceptance criteria materially change and the issue is explicitly reclassified.
