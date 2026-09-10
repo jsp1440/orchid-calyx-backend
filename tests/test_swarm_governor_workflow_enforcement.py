@@ -623,3 +623,20 @@ def test_claude_workflows_do_not_use_deprecated_colon_wildcard_syntax() -> None:
         assert ":*)" not in text, workflow_name
         assert "Bash(git add *)" in text, workflow_name
         assert "Bash(git push *)" in text, workflow_name
+
+
+def test_completion_lane_extracts_result_level_provider_error_fields() -> None:
+    text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
+    assert "result_error=$(jq -r" in text
+    assert "api_error_status=$(jq -r" in text
+    assert "kind=billing_exhausted" in text
+    assert 'api_error_status' in text
+
+
+def test_billing_and_auth_errors_precede_generic_no_model_usage() -> None:
+    text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
+    billing = text.index('kind=billing_exhausted')
+    security = text.index('kind=security')
+    no_model = text.index('kind=no_model_usage')
+    assert billing < no_model
+    assert security < no_model
