@@ -553,8 +553,12 @@ def test_completion_lane_runs_deterministic_preflight_before_provider() -> None:
     wf = load_workflow("orchid-completion-lane.yml")
     steps = all_steps(wf)
     names = [s.get("name", "") for s in steps]
-    assert names.index("Prepare compact work packet") < names.index("Run deterministic preflight")
-    assert names.index("Run deterministic preflight") < names.index("Execute issue with Claude Code")
+    assert names.index("Prepare compact work packet") < names.index(
+        "Run deterministic preflight"
+    )
+    assert names.index("Run deterministic preflight") < names.index(
+        "Execute issue with Claude Code"
+    )
 
 
 def test_all_provider_workflows_require_explicit_paid_execution_policy() -> None:
