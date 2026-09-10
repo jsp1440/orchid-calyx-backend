@@ -13,6 +13,8 @@ permissions:
 
 jobs:
   canary:
+    # Fail closed before npm can download the provider CLI.
+    if: vars.NO_API_MODE == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

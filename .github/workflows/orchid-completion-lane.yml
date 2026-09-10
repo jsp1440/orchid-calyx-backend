@@ -26,6 +26,10 @@ permissions:
 
 jobs:
   execute:
+    # Fail closed before GitHub initializes this provider-capable job or
+    # downloads its provider actions. Only the governed integration controller
+    # may call this workflow, and it does so on oc-autonomous-integration.
+    if: vars.NO_API_MODE == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 70
     env:
