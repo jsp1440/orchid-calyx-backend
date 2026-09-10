@@ -87,7 +87,7 @@ jobs:
         id: packet
         env:
           ISSUE_TITLE: ${{ steps.issue.outputs.title }}
-          ISSUE_BODY: ${{ steps.packet.outputs.routing_text }}
+          ISSUE_BODY: ${{ steps.issue.outputs.body }}
           ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
         shell: bash
         run: |
@@ -106,7 +106,7 @@ jobs:
         id: route
         env:
           ISSUE_TITLE: ${{ steps.issue.outputs.title }}
-          ISSUE_BODY: ${{ steps.packet.outputs.packet }}
+          ISSUE_BODY: ${{ steps.packet.outputs.routing_text }}
           ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
         shell: bash
         run: |
@@ -259,14 +259,17 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Claude classification: kind=$kind fallback_allowed=$fallback"
 
+      # Economy policy v1: one paid provider per workflow run. Cross-provider
+      # fallback is deliberately disabled to prevent one issue from spending
+      # through multiple providers before durable accounting is refreshed.
       - name: Execute bounded Gemini fallback
-        if: steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true' && vars.OC_GOVERNOR_ALLOW_CROSS_PROVIDER_FALLBACK == 'true' && contains(vars.OC_GOVERNOR_PROVIDER_ALLOWLIST, 'gemini') && steps.claude_provider.outputs.fallback_allowed == 'true'
+        if: ${{ false }}
         id: gemini
         continue-on-error: true
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ISSUE_TITLE: ${{ steps.issue.outputs.title }}
-          ISSUE_BODY: ${{ steps.issue.outputs.body }}
+          ISSUE_BODY: ${{ steps.packet.outputs.packet }}
         shell: bash
         run: |
           set -euo pipefail
@@ -372,13 +375,13 @@ jobs:
           echo "Gemini classification: kind=$kind fallback_allowed=$fallback"
 
       - name: Execute bounded OpenAI fallback
-        if: steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true' && vars.OC_GOVERNOR_ALLOW_CROSS_PROVIDER_FALLBACK == 'true' && contains(vars.OC_GOVERNOR_PROVIDER_ALLOWLIST, 'openai') && steps.gemini_provider.outputs.fallback_allowed == 'true'
+        if: ${{ false }}
         id: openai
         continue-on-error: true
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ISSUE_TITLE: ${{ steps.issue.outputs.title }}
-          ISSUE_BODY: ${{ steps.issue.outputs.body }}
+          ISSUE_BODY: ${{ steps.packet.outputs.packet }}
         shell: bash
         run: |
           set -euo pipefail
