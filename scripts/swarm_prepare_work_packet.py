@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Prepare a compact provider work packet before any paid model is invoked."""
 
 from __future__ import annotations
