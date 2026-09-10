@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 WORKFLOWS = Path(".github/workflows")
 PROVIDER_MARKERS = (
     "anthropics/claude-code-action",

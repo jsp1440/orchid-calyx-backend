@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 LEGACY = Path(".github/workflows/orchid-continuous-completion.yml")
 SWARM = Path(".github/workflows/orchid-swarm-controller.yml")
 CANARY = Path(".github/workflows/orchid-gemini-runtime-canary.yml")
