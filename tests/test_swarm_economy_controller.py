@@ -66,7 +66,9 @@ def test_reasoning_failure_gets_only_one_model_retry():
 
 
 def test_provider_error_fails_closed():
-    assert classify_retry(failure_class="provider-error", retry_count=0).action == "stop"
+    assert (
+        classify_retry(failure_class="provider-error", retry_count=0).action == "stop"
+    )
 
 
 def test_cost_per_completed_task_only_for_durable_success():
