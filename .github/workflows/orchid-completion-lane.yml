@@ -13,8 +13,12 @@ on:
         required: true
         type: string
 
+# Global paid-execution concurrency — enforces PAID_WORKER_CONCURRENCY=1 across
+# all provider workflows.  Per-issue duplicate-execution protection is provided
+# by the scheduler lease check (oc-running label) inside the execute job.
+# cancel-in-progress: false queues rather than kills a running execution.
 concurrency:
-  group: orchid-completion-lane-${{ github.repository }}-${{ inputs.issue_number }}
+  group: swarm-paid-execution-${{ github.repository }}
   cancel-in-progress: false
 
 permissions:

@@ -9,6 +9,12 @@ on:
     paths:
       - '.github/workflows/orchid-openai-runtime-canary.yml'
 
+# Global paid-execution concurrency — enforces PAID_WORKER_CONCURRENCY=1 across
+# all provider workflows.  cancel-in-progress: false queues rather than kills.
+concurrency:
+  group: swarm-paid-execution-${{ github.repository }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   issues: write
@@ -16,13 +22,33 @@ permissions:
 jobs:
   probe-openai:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       RUNTIME_TRACKER_ISSUE: 1031
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: NO-API mode guard
+        id: no_api
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+        run: python3 scripts/oc_no_api_guard.py
+
+      - name: Swarm governor precheck
+        id: governor
+        if: steps.no_api.outputs.blocked == 'false'
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+        run: python3 scripts/swarm_governor_precheck.py
+
       - name: Probe OpenAI authentication and clear stale provider-chain block
+        if: steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         shell: bash
         run: |
           set -euo pipefail
