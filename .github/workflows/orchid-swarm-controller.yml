@@ -284,7 +284,7 @@ jobs:
 
   refill:
     needs: [plan, workers, provider_free_workers]
-    if: always() && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.provider_free_workers.result != 'failure' && needs.plan.outputs.launch_count != '0'
+    if: always() && vars.OC_GOVERNOR_AUTO_REFILL == 'true' && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.provider_free_workers.result != 'failure' && needs.plan.outputs.launch_count != '0'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

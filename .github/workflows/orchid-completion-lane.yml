@@ -143,6 +143,16 @@ jobs:
           NO_API_MODE: ${{ vars.NO_API_MODE }}
         run: python3 scripts/oc_no_api_guard.py
 
+      - name: Load durable governor spend snapshot
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false'
+        id: ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/swarm_governor_github_ledger.py \
+            --ledger-issue 1330 \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Swarm governor precheck — primary provider
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false'
         id: governor
@@ -158,8 +168,8 @@ jobs:
           OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
           OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
           OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
-          OC_GOVERNOR_DAILY_SPEND_USD: ${{ vars.OC_GOVERNOR_DAILY_SPEND_USD }}
-          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ vars.OC_GOVERNOR_MONTHLY_SPEND_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ steps.ledger.outputs.daily_spend_usd }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.ledger.outputs.monthly_spend_usd }}
         run: python3 scripts/swarm_governor_precheck.py
 
       - name: Return issue to queue when governor blocks primary provider
@@ -510,14 +520,14 @@ jobs:
       - name: Record conservative provider cost reservation
         if: always() && steps.governor.outputs.authorized == 'true' && steps.claude.outcome != 'skipped'
         env:
-          OC_GOVERNOR_RUN_AUTHORIZED: "true"
-          OC_GOVERNOR_RESERVED_COST_USD: ${{ steps.route.outputs.estimated_cost_usd }}
-          OC_GOVERNOR_DAILY_SPEND_USD: ${{ vars.OC_GOVERNOR_DAILY_SPEND_USD }}
-          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ vars.OC_GOVERNOR_MONTHLY_SPEND_USD }}
-          OC_GOVERNOR_LAST_RUN_DATE: ${{ vars.OC_GOVERNOR_LAST_RUN_DATE }}
-          OC_GOVERNOR_LAST_RUN_MONTH: ${{ vars.OC_GOVERNOR_LAST_RUN_MONTH }}
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/swarm_governor_postrun.py
+        run: |
+          python3 scripts/swarm_governor_github_ledger.py \
+            --append \
+            --ledger-issue 1330 \
+            --issue-number "$ISSUE_NUMBER" \
+            --provider anthropic \
+            --reserved-usd "${{ steps.route.outputs.estimated_cost_usd }}"
 
       - name: Classify result, dispatch validation, release slot
         if: always() && steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
@@ -532,6 +542,7 @@ jobs:
           PACKET_FINGERPRINT: ${{ steps.packet.outputs.fingerprint }}
           PACKET_ESTIMATED_TOKENS: ${{ steps.packet.outputs.estimated_prompt_tokens }}
           PACKET_EXECUTION_CLASS: ${{ steps.packet.outputs.execution_class }}
+          ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
           GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
           GEMINI_KIND: ${{ steps.gemini_provider.outputs.kind }}
           GEMINI_FALLBACK: ${{ steps.gemini_provider.outputs.fallback_allowed }}
@@ -587,6 +598,11 @@ jobs:
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude failed with non-fallback classification=${CLAUDE_KIND:-unknown}. Failed closed; no provider bypass attempted." >/dev/null
             gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after non-fallback Claude failure on issue #${ISSUE_NUMBER}." >/dev/null
           else
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-validating --remove-label oc-repair --add-label oc-queued >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Preferred provider completed without a durable integration PR. Returned to the queue for a bounded implementation retry while other lanes continue." >/dev/null
+            if [[ "${ISSUE_LABELS:-}" == *oc-repair* ]]; then
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Preferred provider completed without a durable integration PR on the allowed repair attempt. Retry budget exhausted; issue parked in oc-runtime-backoff." >/dev/null
+            else
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Preferred provider completed without a durable integration PR. One bounded repair attempt remains; automatic refill remains disabled unless explicitly authorized." >/dev/null
+            fi
           fi
