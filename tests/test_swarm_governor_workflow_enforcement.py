@@ -40,11 +40,7 @@ GOVERNOR_PRECHECK_SCRIPT = "swarm_governor_precheck.py"
 
 # Workflows that have governor precheck step
 # (canary/recovery workflows + all new guarded ones)
-WORKFLOWS_WITH_GOVERNOR_PRECHECK = {
-    "orchid-openai-runtime-canary.yml",
-    "orchid-gemini-runtime-canary.yml",
-    "orchid-completion-lane.yml",
-}
+WORKFLOWS_WITH_GOVERNOR_PRECHECK = set(PROVIDER_WORKFLOWS)
 
 # All five workflows must have the global concurrency group and NO-API guard
 WORKFLOWS_REQUIRING_NO_API_GUARD = set(PROVIDER_WORKFLOWS)
@@ -551,3 +547,26 @@ def test_completion_lane_cross_provider_fallback_is_disabled() -> None:
     by_name = {s.get("name"): s for s in steps}
     assert by_name["Execute bounded Gemini fallback"]["if"] == "${{ false }}"
     assert by_name["Execute bounded OpenAI fallback"]["if"] == "${{ false }}"
+
+
+def test_completion_lane_runs_deterministic_preflight_before_provider() -> None:
+    wf = load_workflow("orchid-completion-lane.yml")
+    steps = all_steps(wf)
+    names = [s.get("name", "") for s in steps]
+    assert names.index("Prepare compact work packet") < names.index("Run deterministic preflight")
+    assert names.index("Run deterministic preflight") < names.index("Execute issue with Claude Code")
+
+
+def test_all_provider_workflows_require_explicit_paid_execution_policy() -> None:
+    for workflow_name in PROVIDER_WORKFLOWS:
+        wf = load_workflow(workflow_name)
+        steps = all_steps(wf)
+        prechecks = [s for s in steps if step_runs_script(s, GOVERNOR_PRECHECK_SCRIPT)]
+        assert prechecks, workflow_name
+        for step in prechecks:
+            env = step.get("env", {}) or {}
+            assert "OC_GOVERNOR_PAID_EXECUTION_ENABLED" in env, workflow_name
+            assert "OC_GOVERNOR_PROVIDER_ALLOWLIST" in env, workflow_name
+            assert "OC_GOVERNOR_PER_RUN_BUDGET_USD" in env, workflow_name
+            assert "OC_GOVERNOR_DAILY_BUDGET_USD" in env, workflow_name
+            assert "OC_GOVERNOR_MONTHLY_BUDGET_USD" in env, workflow_name
