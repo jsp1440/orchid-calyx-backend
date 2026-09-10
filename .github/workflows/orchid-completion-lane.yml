@@ -101,6 +101,23 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
           echo "Work packet fingerprint=${{ steps.packet.outputs.fingerprint }} class=${{ steps.packet.outputs.execution_class }} estimated_prompt_tokens=${{ steps.packet.outputs.estimated_prompt_tokens }}" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Run deterministic preflight
+        if: steps.lease.outputs.execute == 'true'
+        id: deterministic
+        env:
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          ISSUE_BODY: ${{ steps.issue.outputs.body }}
+          ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_deterministic_preflight.py \
+            --issue-number "$ISSUE_NUMBER" \
+            --title "$ISSUE_TITLE" \
+            --body "$ISSUE_BODY" \
+            --labels "$ISSUE_LABELS" \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Select bounded Claude route
         if: steps.lease.outputs.execute == 'true'
         id: route
@@ -117,7 +134,7 @@ jobs:
             --labels "$ISSUE_LABELS" \
             --github-output "$GITHUB_OUTPUT"
           route_telemetry="tier=$(grep '^tier=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-); model=$(grep '^model=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-); reason=$(grep '^reason=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)"
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Completion worker started from ${GITHUB_EVENT_NAME}; provider order=Claude→Gemini→OpenAI; route=${route_telemetry}. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Completion worker started from ${GITHUB_EVENT_NAME}; economy-policy=one-provider-per-run; primary=Claude; route=${route_telemetry}; packet=${{ steps.packet.outputs.fingerprint }}. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
 
       - name: NO-API mode guard
         if: steps.lease.outputs.execute == 'true'
@@ -180,6 +197,9 @@ jobs:
 
             Prepared work packet:
             ${{ steps.packet.outputs.packet }}
+
+            Deterministic preflight already completed:
+            ${{ steps.deterministic.outputs.diagnostics }}
 
             EXECUTE BEFORE EXPLAINING. Complete this bounded packet end-to-end. Do not re-read or summarize unrelated repository areas.
 
