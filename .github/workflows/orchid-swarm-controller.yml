@@ -57,6 +57,7 @@ jobs:
       launch_count: ${{ steps.plan.outputs.launch_count }}
       selected_numbers: ${{ steps.plan.outputs.selected_numbers }}
       refill_recommended: ${{ steps.plan.outputs.refill_recommended }}
+      provider_blocked: ${{ steps.no_api.outputs.blocked }}
       summary: ${{ steps.plan.outputs.summary }}
     env:
       GH_TOKEN: ${{ github.token }}
@@ -71,6 +72,24 @@ jobs:
         with:
           ref: oc-autonomous-integration
           fetch-depth: 1
+
+      - name: Enforce fail-closed NO-API mode
+        id: no_api
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+        run: python3 scripts/oc_no_api_guard.py
+
+      - name: Reconcile retired provider backoff into governed queue
+        if: steps.no_api.outputs.blocked == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          while read -r issue; do
+            [[ -n "$issue" ]] || continue
+            gh issue edit "$issue" --repo "$REPO" \
+              --remove-label oc-runtime-backoff --add-label oc-queued >/dev/null
+          done < <(gh issue list --repo "$REPO" --state open \
+            --label oc-runtime-backoff --limit 200 --json number --jq '.[].number')
 
       - name: Build repository snapshot
         shell: bash
@@ -99,7 +118,7 @@ jobs:
             | tee "$RUNNER_TEMP/swarm-plan.json"
 
       - name: Claim selected worker leases
-        if: steps.plan.outputs.launch_count != '0'
+        if: steps.plan.outputs.launch_count != '0' && steps.no_api.outputs.blocked == 'false'
         shell: bash
         env:
           SELECTED: ${{ steps.plan.outputs.selected_numbers }}
@@ -140,6 +159,7 @@ jobs:
             echo "- dependency cycles: $(jq -c '.dependency_graph.cycle_nodes' <<<\"$PLAN\")"
             echo "- resource conflicts suppressed: $(jq -r '.resource_lock_suppressed | length' <<<\"$PLAN\")"
             echo "- refill recommended: $(jq -r '.refill_recommended' <<<\"$PLAN\")"
+            echo "- provider execution blocked: ${{ steps.no_api.outputs.blocked }}"
             echo "- integration target: \`oc-autonomous-integration\`"
             echo "- main merge: disabled"
             echo "- production deploy: disabled"
@@ -147,7 +167,7 @@ jobs:
 
   workers:
     needs: plan
-    if: needs.plan.outputs.launch_count != '0'
+    if: needs.plan.outputs.launch_count != '0' && needs.plan.outputs.provider_blocked == 'false'
     # Reusable workflows cannot elevate GITHUB_TOKEN permissions above their
     # caller. Scope the implementation authority to worker jobs so planning and
     # refill retain the workflow-level read-biased control-plane permissions.
@@ -168,7 +188,7 @@ jobs:
 
   refill:
     needs: [plan, workers]
-    if: always() && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.plan.outputs.refill_recommended == 'true'
+    if: always() && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.plan.outputs.provider_blocked == 'false' && needs.plan.outputs.refill_recommended == 'true'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

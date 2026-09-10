@@ -26,6 +26,9 @@ permissions:
 
 jobs:
   execute:
+    # Job-level gating is intentional: when NO_API_MODE is active or absent,
+    # GitHub never initializes this provider-capable job or downloads its actions.
+    if: vars.NO_API_MODE == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 70
     env:
