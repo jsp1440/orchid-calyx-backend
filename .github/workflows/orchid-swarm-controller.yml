@@ -111,14 +111,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          provider_args=()
+          if [[ "${{ steps.no_api.outputs.blocked }}" == "true" ]]; then
+            provider_args+=(--provider-free-only)
+          fi
           python3 scripts/oc_swarm_controller.py \
             --input "$RUNNER_TEMP/swarm-snapshot.json" \
             --worker-slots "$WORKER_SLOTS" \
+            "${provider_args[@]}" \
             --github-output "$GITHUB_OUTPUT" \
             | tee "$RUNNER_TEMP/swarm-plan.json"
 
       - name: Claim selected worker leases
-        if: steps.plan.outputs.launch_count != '0' && steps.no_api.outputs.blocked == 'false'
+        if: steps.plan.outputs.launch_count != '0'
         shell: bash
         env:
           SELECTED: ${{ steps.plan.outputs.selected_numbers }}
@@ -186,9 +191,100 @@ jobs:
       issue_number: ${{ format('{0}', matrix.issue_number) }}
     secrets: inherit
 
+  provider_free_workers:
+    needs: plan
+    if: needs.plan.outputs.launch_count != '0' && needs.plan.outputs.provider_blocked == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ matrix.issue_number }}
+      INTEGRATION_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout integration control plane
+        uses: actions/checkout@v4
+        with:
+          ref: oc-autonomous-integration
+          fetch-depth: 1
+
+      - name: Execute deterministic provider-free reconciliation
+        id: reconcile
+        shell: bash
+        run: |
+          set -euo pipefail
+          issue=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json number,title,body,state,labels)
+          labels=$(jq -r '[.labels[].name] | join(" ")' <<<"$issue")
+          [[ "$labels" == *oc-running* ]] || {
+            echo "Issue #$ISSUE_NUMBER no longer owns its Swarm lease." >&2
+            exit 2
+          }
+          lease=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments \
+            --jq '[.comments[].body | select(test("^\\[OC-SWARM-V[0-9]+\\].*lease claimed:"; "i"))] | last // ""')
+          [[ -n "$lease" ]] || {
+            echo "Issue #$ISSUE_NUMBER has no durable Swarm lease receipt." >&2
+            exit 2
+          }
+          python3 scripts/oc_swarm_provider_free_worker.py \
+            --issue-json "$issue" \
+            --lease-comment "$lease" \
+            --files-json '[]' \
+            --integration-sha "$INTEGRATION_SHA" \
+            | tee "$RUNNER_TEMP/provider-free-result.json"
+          disposition=$(jq -r '.disposition' "$RUNNER_TEMP/provider-free-result.json")
+          echo "disposition=$disposition" >> "$GITHUB_OUTPUT"
+
+      - name: Publish durable result and release lease
+        shell: bash
+        env:
+          DISPOSITION: ${{ steps.reconcile.outputs.disposition }}
+        run: |
+          set -euo pipefail
+          result=$(jq -c . "$RUNNER_TEMP/provider-free-result.json")
+          case "$DISPOSITION" in
+            done)
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
+                --remove-label oc-repair --remove-label oc-blocked --remove-label oc-owner-gate \
+                --add-label oc-done >/dev/null
+              ;;
+            owner-gate)
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
+                --remove-label oc-repair --remove-label oc-blocked --add-label oc-owner-gate >/dev/null
+              ;;
+            blocked)
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
+                --remove-label oc-repair --remove-label oc-owner-gate --add-label oc-blocked >/dev/null
+              ;;
+            *)
+              echo "Unknown provider-free disposition: $DISPOSITION" >&2
+              exit 2
+              ;;
+          esac
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "[OC-SWARM-V4] Provider-free worker completed, actual write set validated, and lease released: \`$result\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+
+      - name: Fail closed and release lease after reconciliation error
+        if: failure()
+        shell: bash
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
+            --remove-label oc-repair --remove-label oc-owner-gate --add-label oc-blocked >/dev/null 2>&1 || true
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "[OC-SWARM-V4] Provider-free reconciliation failed closed; execution lease released and issue blocked. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+
   refill:
-    needs: [plan, workers]
-    if: always() && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.plan.outputs.provider_blocked == 'false' && needs.plan.outputs.refill_recommended == 'true'
+    needs: [plan, workers, provider_free_workers]
+    if: always() && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.provider_free_workers.result != 'failure' && needs.plan.outputs.launch_count != '0'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

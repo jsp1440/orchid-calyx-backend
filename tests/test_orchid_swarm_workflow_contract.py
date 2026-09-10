@@ -36,3 +36,19 @@ def test_swarm_summary_parses_plan_as_json_not_a_quoted_json_string():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert '<<<"$PLAN"' in text
     assert '<<<\\"$PLAN\\"' not in text
+
+
+def test_no_api_mode_dispatches_only_provider_free_workers():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "--provider-free-only" in text
+    assert "provider_free_workers:" in text
+    assert "oc_swarm_provider_free_worker.py" in text
+    assert "needs.plan.outputs.provider_blocked == 'true'" in text
+    assert "--files-json '[]'" in text
+
+
+def test_every_launched_wave_gets_one_bounded_refill_attempt():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "needs.plan.outputs.launch_count != '0'" in text
+    assert "current >= maximum" in text
+    assert "--ref oc-autonomous-integration" in text
