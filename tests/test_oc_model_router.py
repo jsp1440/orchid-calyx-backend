@@ -77,3 +77,21 @@ def test_models_and_turn_budgets_are_configurable():
     )
     assert route.model == "custom-sonnet"
     assert route.max_turns == 11
+
+
+def test_route_reserves_conservative_estimated_cost():
+    cheap = choose_route(title="Update receipt", body="small")
+    standard = choose_route(title="Implement integration", body="")
+    deep = choose_route(title="Atomic concurrency architecture", body="")
+    assert cheap.estimated_cost_usd == "0.50"
+    assert standard.estimated_cost_usd == "1.25"
+    assert deep.estimated_cost_usd == "2.00"
+
+
+def test_estimated_cost_is_configurable_per_tier():
+    route = choose_route(
+        title="Implement integration",
+        body="",
+        estimated_cost_usd={"standard": "0.90"},
+    )
+    assert route.estimated_cost_usd == "0.90"
