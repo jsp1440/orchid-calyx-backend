@@ -5,6 +5,14 @@ on:
     paths:
       - 'runtime/swarm/**'
       - 'tests/test_swarm_execution_governor.py'
+      - 'tests/test_swarm_governor_workflow_enforcement.py'
+      - 'tests/test_swarm_economy_controller.py'
+      - 'tests/test_oc_model_router.py'
+      - 'scripts/swarm_prepare_work_packet.py'
+      - 'scripts/swarm_governor_precheck.py'
+      - 'scripts/swarm_governor_postrun.py'
+      - 'scripts/oc_model_router.py'
+      - '.github/workflows/orchid-completion-lane.yml'
       - '.github/workflows/swarm-execution-governor-001.yml'
   workflow_dispatch:
 
@@ -26,16 +34,16 @@ jobs:
           cache: pip
 
       - name: Install test dependencies
-        run: pip install pytest ruff
+        run: pip install pytest ruff pyyaml
 
       - name: Compile swarm package
         run: python -m compileall -q runtime/swarm
 
       - name: Ruff lint
-        run: ruff check runtime/swarm tests/test_swarm_execution_governor.py
+        run: ruff check runtime/swarm scripts/swarm_prepare_work_packet.py scripts/swarm_governor_precheck.py scripts/swarm_governor_postrun.py scripts/oc_model_router.py tests/test_swarm_execution_governor.py tests/test_swarm_governor_workflow_enforcement.py tests/test_swarm_economy_controller.py tests/test_oc_model_router.py
 
       - name: Ruff format check
-        run: ruff format --check runtime/swarm tests/test_swarm_execution_governor.py
+        run: ruff format --check runtime/swarm scripts/swarm_prepare_work_packet.py scripts/swarm_governor_precheck.py scripts/swarm_governor_postrun.py scripts/oc_model_router.py tests/test_swarm_execution_governor.py tests/test_swarm_governor_workflow_enforcement.py tests/test_swarm_economy_controller.py tests/test_oc_model_router.py
 
       - name: Swarm Governor tests
-        run: pytest -q tests/test_swarm_execution_governor.py
+        run: pytest -q tests/test_swarm_execution_governor.py tests/test_swarm_governor_workflow_enforcement.py tests/test_swarm_economy_controller.py tests/test_oc_model_router.py
