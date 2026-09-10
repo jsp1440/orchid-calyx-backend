@@ -615,3 +615,11 @@ def test_no_execution_is_parked_without_paid_retry() -> None:
     text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
     assert '"$CLAUDE_KIND" == "no_execution"' in text
     assert "Parked in oc-runtime-backoff; no automatic paid retry." in text
+
+
+def test_claude_workflows_do_not_use_deprecated_colon_wildcard_syntax() -> None:
+    for workflow_name in ("orchid-completion-lane.yml", "claude-code-governed.yml"):
+        text = (WORKFLOWS_DIR / workflow_name).read_text()
+        assert ":*)" not in text, workflow_name
+        assert "Bash(git add *)" in text, workflow_name
+        assert "Bash(git push *)" in text, workflow_name
