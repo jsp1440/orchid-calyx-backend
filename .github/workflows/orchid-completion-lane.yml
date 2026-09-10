@@ -197,6 +197,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
           allowed_bots: "github-actions"
           prompt: |
             ORCHID CONTINUUM — CONTINUOUS COMPLETION LANE
@@ -236,10 +237,13 @@ jobs:
         id: claude_provider
         env:
           CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
+          CLAUDE_CONCLUSION: ${{ steps.claude.outputs.conclusion }}
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          CLAUDE_SESSION_ID: ${{ steps.claude.outputs.session_id }}
         shell: bash
         run: |
           set -euo pipefail
-          execution_log="/home/runner/work/_temp/claude-execution-output.json"
+          execution_log="${CLAUDE_EXECUTION_FILE:-}"
           terminal_reason=""
           result_text=""
           error_type=""
@@ -247,7 +251,9 @@ jobs:
           is_error="false"
           num_turns=""
           model_usage_count="0"
-          if [[ -f "$execution_log" ]]; then
+          execution_file_present=false
+          if [[ -n "$execution_log" && -f "$execution_log" ]]; then
+            execution_file_present=true
             terminal_reason=$(jq -r '[.. | objects | select(.type == "result")] | last | .terminal_reason // ""' "$execution_log" 2>/dev/null || true)
             result_text=$(jq -r '[.. | objects | select(.type == "result")] | last | .result // ""' "$execution_log" 2>/dev/null || true)
             error_type=$(jq -r '[.. | objects | select(.type == "assistant" and .is_api_error_message == true)] | last | .error // ""' "$execution_log" 2>/dev/null || true)
@@ -259,8 +265,20 @@ jobs:
           normalized=$(printf '%s %s %s %s' "$terminal_reason" "$result_text" "$error_type" "$subtype" | tr '[:upper:]' '[:lower:]')
           kind=healthy
           fallback=false
-          if [[ "$CLAUDE_OUTCOME" != "success" ]]; then
-            if [[ "$normalized" == *"error_max_turns"* || "$normalized" == *"max_turns"* || "$normalized" == *"max turns"* || "$normalized" == *"maximum turns"* ]]; then
+
+          # claude-code-action may return a successful GitHub step when it
+          # intentionally skips execution (for example workflow-auth validation).
+          # A successful wrapper step is therefore not proof that a model ran.
+          if [[ "$execution_file_present" != "true" ]]; then
+            kind=no_execution
+          elif [[ "$CLAUDE_CONCLUSION" == "failure" ]]; then
+            kind=provider_failure
+          elif [[ "$num_turns" == "" || ! "$num_turns" =~ ^[0-9]+$ || "$num_turns" -lt 1 || "$model_usage_count" == "0" ]]; then
+            kind=no_model_usage
+          elif [[ "$CLAUDE_OUTCOME" != "success" ]]; then
+            if [[ "$normalized" == *"workflow validation failed"* || "$normalized" == *"action skipped"* ]]; then
+              kind=workflow_validation_skip
+            elif [[ "$normalized" == *"error_max_turns"* || "$normalized" == *"max_turns"* || "$normalized" == *"max turns"* || "$normalized" == *"maximum turns"* ]]; then
               kind=max_turns
             elif [[ "$normalized" == *"authentication"* || "$normalized" == *"unauthorized"* || "$normalized" == *"forbidden"* || "$normalized" == *"permission"* || "$normalized" == *"invalid api key"* || "$normalized" == *"invalid_api_key"* ]]; then
               kind=security
@@ -573,6 +591,9 @@ jobs:
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Durable PR #$pr exists, but validation dispatch failed. Kept in oc-validating; scheduler will retry validation without redispatching a model. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
               exit 1
             fi
+          elif [[ "$CLAUDE_KIND" == "no_execution" || "$CLAUDE_KIND" == "no_model_usage" || "$CLAUDE_KIND" == "workflow_validation_skip" || "$CLAUDE_KIND" == "provider_failure" || "$CLAUDE_KIND" == "security" || "$CLAUDE_KIND" == "safe_provider" || "$CLAUDE_KIND" == "unknown" ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Provider execution did not produce verifiable model execution evidence (classification=$CLAUDE_KIND). Parked in oc-runtime-backoff; no automatic paid retry." >/dev/null
           elif [[ "$CLAUDE_KIND" == "max_turns" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --remove-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude reached the bounded task/turn ceiling. Provider runtime remains healthy; issue moved to oc-repair and the global circuit stays closed." >/dev/null
