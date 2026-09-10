@@ -30,3 +30,9 @@ def test_swarm_claims_only_queue_leases_and_reports_resources():
     assert "oc-repair-backoff" in text
     assert "Dependency/resource lease claimed" in text
     assert "resource conflicts suppressed" in text
+
+
+def test_swarm_summary_parses_plan_as_json_not_a_quoted_json_string():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert '<<<"$PLAN"' in text
+    assert '<<<\\"$PLAN\\"' not in text
