@@ -51,8 +51,7 @@ def main() -> int:
 
     if args.github_output:
         with open(args.github_output, "a", encoding="utf-8") as handle:
-            for key, value in payload.items():
-                handle.write(f"{key}={value}\n")
+            handle.writelines(f"{key}={value}\n" for key, value in payload.items())
             _write_multiline(handle, "packet", rendered)
             _write_multiline(handle, "routing_text", packet.routing_text)
     return 0
