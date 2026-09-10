@@ -17,11 +17,15 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import sys
 from typing import Any
 
 DEFAULT_WORKER_SLOTS = 8
 MAX_WORKER_SLOTS = 12
+PROVIDER_FREE_MARKER = re.compile(
+    r"^OC-SWARM-PROVIDER-FREE:\s*reconcile\s*$", re.IGNORECASE | re.MULTILINE
+)
 
 
 def _load_sibling(module_name: str, filename: str):
@@ -53,20 +57,47 @@ def _issue_index(snapshot: dict) -> dict[int, dict]:
     return result
 
 
-def build_swarm_plan(snapshot: dict, *, worker_slots: int = DEFAULT_WORKER_SLOTS) -> dict:
+def _provider_free_snapshot(snapshot: dict) -> dict:
+    """Hide provider-dependent queue entries without losing dependency state."""
+    filtered = dict(snapshot)
+    issues = []
+    for original in snapshot.get("issues") or []:
+        issue = dict(original)
+        if (
+            str(issue.get("state") or "").upper() == "OPEN"
+            and not PROVIDER_FREE_MARKER.search(str(issue.get("body") or ""))
+        ):
+            labels = []
+            for label in issue.get("labels") or []:
+                name = label if isinstance(label, str) else label.get("name")
+                if name != "oc-queued":
+                    labels.append(label)
+            issue["labels"] = labels
+        issues.append(issue)
+    filtered["issues"] = issues
+    return filtered
+
+
+def build_swarm_plan(
+    snapshot: dict,
+    *,
+    worker_slots: int = DEFAULT_WORKER_SLOTS,
+    provider_free_only: bool = False,
+) -> dict:
     """Return a dependency- and resource-aware worker matrix."""
     slots = _bounded_slots(worker_slots)
     scheduler = _load_sibling("oc_portfolio_scheduler", "oc_portfolio_scheduler.py")
     locks = _load_sibling("oc_swarm_resource_locks", "oc_swarm_resource_locks.py")
     deps = _load_sibling("oc_swarm_dependency_graph", "oc_swarm_dependency_graph.py")
 
-    canonical_input = dict(snapshot)
+    planning_snapshot = _provider_free_snapshot(snapshot) if provider_free_only else snapshot
+    canonical_input = dict(planning_snapshot)
     canonical_input["max_active_lanes"] = slots
     canonical_input.pop("stabilization_issue", None)
     plan = scheduler.build_plan(canonical_input)
 
-    issues = _issue_index(snapshot)
-    graph = deps.build_dependency_graph(snapshot.get("issues") or [])
+    issues = _issue_index(planning_snapshot)
+    graph = deps.build_dependency_graph(planning_snapshot.get("issues") or [])
     ready_ranked, dependency_suppressed = deps.filter_ready_candidates(
         plan.get("ranking") or [], graph
     )
@@ -166,6 +197,7 @@ def build_swarm_plan(snapshot: dict, *, worker_slots: int = DEFAULT_WORKER_SLOTS
             "resource_locking": True,
             "read_read_parallelism": True,
             "write_conflicts_fail_closed": True,
+            "provider_free_only": provider_free_only,
         },
     }
 
@@ -185,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, help="JSON snapshot path, or - for stdin")
     parser.add_argument("--worker-slots", type=int, default=DEFAULT_WORKER_SLOTS)
+    parser.add_argument("--provider-free-only", action="store_true")
     parser.add_argument("--github-output", help="optional GITHUB_OUTPUT path")
     args = parser.parse_args(argv)
 
@@ -194,7 +227,11 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.input, encoding="utf-8") as handle:
             snapshot = json.load(handle)
 
-    plan = build_swarm_plan(snapshot, worker_slots=args.worker_slots)
+    plan = build_swarm_plan(
+        snapshot,
+        worker_slots=args.worker_slots,
+        provider_free_only=args.provider_free_only,
+    )
     if args.github_output:
         _write_github_output(args.github_output, plan)
     json.dump(plan, sys.stdout, indent=2, sort_keys=True)

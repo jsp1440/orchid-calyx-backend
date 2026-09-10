@@ -34,11 +34,13 @@ def test_every_provider_capable_job_is_gated_before_initialization():
         assert "vars.NO_API_MODE == 'false'" in job_header, path
 
 
-def test_swarm_never_claims_or_dispatches_workers_in_no_api_mode():
+def test_swarm_routes_no_api_work_only_to_deterministic_worker():
     text = (WORKFLOWS / "orchid-swarm-controller.yml").read_text(encoding="utf-8")
     assert "provider_blocked: ${{ steps.no_api.outputs.blocked }}" in text
-    assert "steps.plan.outputs.launch_count != '0' && steps.no_api.outputs.blocked == 'false'" in text
+    assert "--provider-free-only" in text
     assert "needs.plan.outputs.provider_blocked == 'false'" in text
+    assert "needs.plan.outputs.provider_blocked == 'true'" in text
+    assert "oc_swarm_provider_free_worker.py" in text
 
 
 def test_legacy_scheduler_contains_no_provider_or_independent_planner_path():

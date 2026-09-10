@@ -161,3 +161,45 @@ def test_worker_slots_must_be_positive(monkeypatch):
         assert ">= 1" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_provider_free_mode_hides_unmarked_queue_without_losing_dependencies(monkeypatch):
+    captured = {}
+
+    class CapturingScheduler:
+        @staticmethod
+        def build_plan(snapshot):
+            captured.update(snapshot)
+            marked = next(issue for issue in snapshot["issues"] if issue["number"] == 101)
+            return {
+                "ranking": [
+                    {"number": marked["number"], "lane_id": "L3", "priority": 1, "repair": False}
+                ],
+                "active_lanes": [],
+                "eligible_count": 1,
+                "suppressed": [],
+                "generated_at": None,
+            }
+
+    def loader(name, filename):
+        if filename == "oc_portfolio_scheduler.py":
+            return CapturingScheduler
+        if filename == "oc_swarm_resource_locks.py":
+            return FakeLocks
+        if filename == "oc_swarm_dependency_graph.py":
+            return FakeDeps
+        raise AssertionError(filename)
+
+    snapshot = _snapshot()
+    snapshot["issues"][2]["body"] += "\nOC-SWARM-PROVIDER-FREE: reconcile"
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    plan = swarm.build_swarm_plan(snapshot, provider_free_only=True)
+
+    hidden = next(issue for issue in captured["issues"] if issue["number"] == 100)
+    marked = next(issue for issue in captured["issues"] if issue["number"] == 101)
+    dependency = next(issue for issue in captured["issues"] if issue["number"] == 99)
+    assert "oc-queued" not in hidden["labels"]
+    assert "oc-queued" in marked["labels"]
+    assert dependency["state"] == "CLOSED"
+    assert plan["selected_numbers"] == [101]
+    assert plan["safety"]["provider_free_only"] is True
