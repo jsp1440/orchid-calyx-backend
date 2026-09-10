@@ -606,9 +606,9 @@ def test_completion_lane_uses_explicit_github_token_for_claude_action() -> None:
 def test_completion_lane_classifier_uses_action_execution_file_output() -> None:
     text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
     assert "CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}" in text
-    assert 'kind=no_execution' in text
-    assert 'kind=no_model_usage' in text
-    assert 'kind=workflow_validation_skip' in text
+    assert "kind=no_execution" in text
+    assert "kind=no_model_usage" in text
+    assert "kind=workflow_validation_skip" in text
 
 
 def test_no_execution_is_parked_without_paid_retry() -> None:
