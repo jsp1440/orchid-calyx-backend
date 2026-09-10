@@ -47,7 +47,9 @@ def main() -> int:
         "estimated_prompt_tokens": str(packet.estimated_prompt_tokens),
         "packet_chars": str(len(rendered)),
     }
-    print(json.dumps({**payload, "file_hints": list(packet.file_hints)}, sort_keys=True))
+    print(
+        json.dumps({**payload, "file_hints": list(packet.file_hints)}, sort_keys=True)
+    )
 
     if args.github_output:
         with open(args.github_output, "a", encoding="utf-8") as handle:
