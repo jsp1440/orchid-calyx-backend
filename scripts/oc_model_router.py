@@ -110,7 +110,9 @@ def choose_route(
     """
 
     if default_tier not in TIERS or maximum_tier not in TIERS:
-        raise ValueError("default_tier and maximum_tier must be cheap, standard, or deep")
+        raise ValueError(
+            "default_tier and maximum_tier must be cheap, standard, or deep"
+        )
     if _rank(default_tier) > _rank(maximum_tier):
         raise ValueError("default_tier cannot exceed maximum_tier")
 
@@ -180,8 +182,12 @@ def main() -> int:
     parser.add_argument("--title", default="")
     parser.add_argument("--body", default="")
     parser.add_argument("--labels", default="")
-    parser.add_argument("--default-tier", default=os.getenv("OC_CLAUDE_DEFAULT_TIER", "cheap"))
-    parser.add_argument("--maximum-tier", default=os.getenv("OC_CLAUDE_MAXIMUM_TIER", "deep"))
+    parser.add_argument(
+        "--default-tier", default=os.getenv("OC_CLAUDE_DEFAULT_TIER", "cheap")
+    )
+    parser.add_argument(
+        "--maximum-tier", default=os.getenv("OC_CLAUDE_MAXIMUM_TIER", "deep")
+    )
     parser.add_argument("--github-output", default="")
     args = parser.parse_args()
 
