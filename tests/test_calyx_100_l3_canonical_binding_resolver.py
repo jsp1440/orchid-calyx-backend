@@ -152,4 +152,4 @@ async def test_postgres_binding_persistence_is_additive_and_scoped(tmp_path: Pat
         "INSERT INTO oc_document_intelligence.literature_evidence_bindings" in item
         for item in sql
     ) == len(paper.evidence)
-    assert not any(item.startswith("UPDATE ") or item.startswith("DELETE ") for item in sql)
+    assert not any(item.startswith(("UPDATE ", "DELETE ")) for item in sql)
