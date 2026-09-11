@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any
 
 SCHEMA_VERSION = "oc.atlas-product-path.v1"
 _SOURCE_PRECEDENCE = {
