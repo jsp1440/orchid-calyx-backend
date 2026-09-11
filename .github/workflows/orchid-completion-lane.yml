@@ -266,6 +266,8 @@ jobs:
           elif [[ "$api_error_status" =~ ^5[0-9][0-9]$ ]]; then
             kind=safe_provider
             fallback=true
+          elif [[ "$result_error" == "no_durable_change" ]]; then
+            kind=no_durable_change
           elif [[ "$CLAUDE_CONCLUSION" == "failure" && "$model_usage_count" != "0" ]]; then
             kind=provider_failure
           elif [[ "$num_turns" == "" || ! "$num_turns" =~ ^[0-9]+$ || "$num_turns" -lt 1 || "$model_usage_count" == "0" ]]; then
@@ -593,9 +595,9 @@ jobs:
           elif [[ "$CLAUDE_KIND" == "no_execution" || "$CLAUDE_KIND" == "no_model_usage" || "$CLAUDE_KIND" == "workflow_validation_skip" || "$CLAUDE_KIND" == "provider_failure" || "$CLAUDE_KIND" == "billing_exhausted" || "$CLAUDE_KIND" == "security" || "$CLAUDE_KIND" == "safe_provider" || "$CLAUDE_KIND" == "unknown" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Provider execution did not produce verifiable model execution evidence (classification=$CLAUDE_KIND). Parked in oc-runtime-backoff; no automatic paid retry." >/dev/null
-          elif [[ "$CLAUDE_KIND" == "max_turns" ]]; then
+          elif [[ "$CLAUDE_KIND" == "max_turns" || "$CLAUDE_KIND" == "no_durable_change" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --remove-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude reached the bounded task/turn ceiling. Provider runtime remains healthy; issue moved to oc-repair and the global circuit stays closed." >/dev/null
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude reached the bounded task/turn ceiling or completed without durable repository changes (classification=$CLAUDE_KIND). Provider runtime remains healthy; issue moved to oc-repair and the global circuit stays closed." >/dev/null
           elif [[ "$CLAUDE_FALLBACK" == "true" && "$GEMINI_OUTCOME" == "success" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was safely unavailable; Gemini completed without durable changes. Issue returned to bounded repair without opening the global circuit." >/dev/null

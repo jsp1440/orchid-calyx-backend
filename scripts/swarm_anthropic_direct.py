@@ -553,6 +553,42 @@ def main() -> int:
                 else:
                     error_kind = "provider_or_executor_error"
 
+        # Attempt best-effort salvage of partial file changes written to disk.
+        # When the model reached max_turns or hit a transient 5xx mid-turn, files
+        # it wrote via write_file are on disk but never committed.  Committing and
+        # pushing them makes the work visible for human-assisted repair without
+        # blocking settlement. Authentication failures and billing errors produce
+        # no partial work worth salvaging; no_durable_change never writes files.
+        partial_branch: str | None = None
+        if branch and error_kind in {"max_turns", "provider_or_executor_error"}:
+            try:
+                dirty = _run(["git", "status", "--porcelain"], timeout=30)
+                if dirty.stdout.strip():
+                    _run(["git", "add", "-A"], timeout=30)
+                    msg = (
+                        f"partial(oc): salvage partial changes for "
+                        f"#{args.issue_number} [{error_kind}]\n\n"
+                        f"Partial work committed by direct executor after {error_kind}; "
+                        f"turns={calls}."
+                    )
+                    commit = _run(["git", "commit", "-m", msg], timeout=60)
+                    if commit.returncode == 0:
+                        push = _run(
+                            ["git", "push", "-u", "origin", branch], timeout=120
+                        )
+                        if push.returncode == 0:
+                            partial_branch = branch
+                            print(
+                                f"[OC-ANTHROPIC-DIRECT] salvage: committed partial "
+                                f"changes to {branch}",
+                                file=sys.stderr,
+                            )
+            except Exception as _salvage_exc:  # noqa: BLE001
+                print(
+                    f"[OC-ANTHROPIC-DIRECT] salvage skipped: {_salvage_exc}",
+                    file=sys.stderr,
+                )
+
         result = {
             "type": "result",
             "subtype": "error",
@@ -573,6 +609,7 @@ def main() -> int:
             "api_error_status": error_status or None,
             "result": error_message or str(exc),
             "branch": branch,
+            "partial_branch": partial_branch,
         }
         _write_result(execution_path, result)
         _github_output(
