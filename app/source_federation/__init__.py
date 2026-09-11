@@ -10,9 +10,11 @@ from .inventory import (
 )
 from .queue_bridge import (
     BridgeSuppression,
+    IdempotentSourceTaskQueue,
     SourceChildTask,
     SourceQueueBridgeResult,
     bridge_source_candidates,
+    persist_source_candidates,
     source_task_key,
 )
 
@@ -21,11 +23,13 @@ __all__ = [
     "BridgeSuppression",
     "CandidateDisposition",
     "FederationCandidate",
+    "IdempotentSourceTaskQueue",
     "RightsState",
     "SourceChildTask",
     "SourceQueueBridgeResult",
     "bridge_source_candidates",
     "build_default_candidate_inventory",
     "deduplicate_candidates",
+    "persist_source_candidates",
     "source_task_key",
 ]
