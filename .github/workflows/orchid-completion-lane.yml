@@ -261,6 +261,8 @@ jobs:
             kind=billing_exhausted
           elif [[ "$api_error_status" == "401" || "$api_error_status" == "403" || "$normalized" == *"invalid api key"* || "$normalized" == *"invalid_api_key"* ]]; then
             kind=security
+          elif [[ "$normalized" == *"error_max_turns"* || "$normalized" == *"max_turns"* || "$normalized" == *"max turns"* || "$normalized" == *"maximum turns"* ]]; then
+            kind=max_turns
           elif [[ "$CLAUDE_CONCLUSION" == "failure" && "$model_usage_count" != "0" ]]; then
             kind=provider_failure
           elif [[ "$num_turns" == "" || ! "$num_turns" =~ ^[0-9]+$ || "$num_turns" -lt 1 || "$model_usage_count" == "0" ]]; then
