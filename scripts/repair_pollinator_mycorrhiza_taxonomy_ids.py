@@ -101,11 +101,13 @@ def _run_dry_run(database_url: str, targets, *, mapping_out: str, sql_out: str) 
         "access": "read_only_transaction_rolled_back",
         "targets": [],
     }
-    with psycopg.connect(database_url, connect_timeout=15) as conn:
+    with (
+        psycopg.connect(database_url, connect_timeout=15) as conn,
+        conn.cursor(row_factory=dict_row) as cur,
+    ):
         conn.read_only = True
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("SET TRANSACTION READ ONLY")
-            for target in targets:
+        cur.execute("SET TRANSACTION READ ONLY")
+        for target in targets:
             measurement = measure_repair_candidates(cur, target)
             plan = build_repair_plan(measurement)
             sql_text = generate_repair_sql(target, plan)
