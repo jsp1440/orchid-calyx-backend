@@ -105,3 +105,139 @@ def test_max_turns_uses_direct_executor_error_for_settlement() -> None:
     text = SCRIPT.read_text()
     assert 'error_kind = "max_turns"' in text
     assert 'raise DirectExecutorError("direct executor reached max turns")' in text
+
+
+def test_direct_executor_full_success_path_without_live_provider(
+    tmp_path, monkeypatch
+) -> None:
+    packet = tmp_path / "packet.md"
+    packet.write_text("Implement a bounded test change.\n")
+    execution_file = tmp_path / "execution.json"
+    github_output = tmp_path / "github_output.txt"
+
+    responses = iter(
+        [
+            {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tool-1",
+                        "name": "write_file",
+                        "input": {
+                            "path": "app/example.py",
+                            "content": "VALUE = 1\n",
+                        },
+                    }
+                ],
+                "usage": {"input_tokens": 25, "output_tokens": 10},
+            },
+            {
+                "content": [{"type": "text", "text": "Implementation complete."}],
+                "usage": {"input_tokens": 15, "output_tokens": 5},
+            },
+        ]
+    )
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GITHUB_RUN_ID", "999")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(github_output))
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "_prepare_branch", lambda *args, **kwargs: "dryrun/999")
+    monkeypatch.setattr(
+        direct,
+        "_open_draft_pr",
+        lambda *args, **kwargs: "https://example.invalid/pr/1",
+    )
+    monkeypatch.setattr(
+        direct,
+        "_anthropic_message",
+        lambda **kwargs: next(responses),
+    )
+
+    argv = [
+        "swarm_anthropic_direct.py",
+        "--issue-number",
+        "1264",
+        "--title",
+        "Synthetic canary",
+        "--packet-file",
+        str(packet),
+        "--model",
+        "claude-haiku-4-5",
+        "--max-turns",
+        "4",
+        "--base",
+        "oc-autonomous-integration",
+        "--execution-file",
+        str(execution_file),
+    ]
+    monkeypatch.setattr(direct.sys, "argv", argv)
+
+    assert direct.main() == 0
+    result = json.loads(execution_file.read_text())
+    assert result["subtype"] == "success"
+    assert result["is_error"] is False
+    assert result["num_turns"] == 2
+    assert result["pr_url"] == "https://example.invalid/pr/1"
+    assert result["modelUsage"]["claude-haiku-4-5"]["inputTokens"] == 40
+    assert result["modelUsage"]["claude-haiku-4-5"]["outputTokens"] == 15
+    assert (tmp_path / "app" / "example.py").read_text() == "VALUE = 1\n"
+
+    output_text = github_output.read_text()
+    assert "conclusion=success" in output_text
+    assert f"execution_file={execution_file}" in output_text
+    assert "pr_url=https://example.invalid/pr/1" in output_text
+
+
+def test_direct_executor_max_turns_writes_structured_failure_without_live_provider(
+    tmp_path, monkeypatch
+) -> None:
+    packet = tmp_path / "packet.md"
+    packet.write_text("Keep asking for a tool forever.\n")
+    execution_file = tmp_path / "execution.json"
+
+    def tool_response(**kwargs):
+        return {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "tool-loop",
+                    "name": "list_files",
+                    "input": {"pattern": "*.py"},
+                }
+            ],
+            "usage": {"input_tokens": 3, "output_tokens": 2},
+        }
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GITHUB_RUN_ID", "1000")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        direct, "_prepare_branch", lambda *args, **kwargs: "dryrun/1000"
+    )
+    monkeypatch.setattr(direct, "_anthropic_message", tool_response)
+    monkeypatch.setattr(direct, "_open_draft_pr", lambda *args, **kwargs: "")
+
+    argv = [
+        "swarm_anthropic_direct.py",
+        "--issue-number",
+        "1264",
+        "--title",
+        "Synthetic max-turn canary",
+        "--packet-file",
+        str(packet),
+        "--model",
+        "claude-haiku-4-5",
+        "--max-turns",
+        "2",
+        "--execution-file",
+        str(execution_file),
+    ]
+    monkeypatch.setattr(direct.sys, "argv", argv)
+
+    assert direct.main() == 1
+    result = json.loads(execution_file.read_text())
+    assert result["subtype"] == "error"
+    assert result["error"] == "max_turns"
+    assert result["num_turns"] == 2
+    assert len(result["modelUsage"]) == 1
