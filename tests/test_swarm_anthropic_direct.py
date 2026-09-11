@@ -357,3 +357,229 @@ def test_direct_executor_no_change_writes_structured_failure_without_live_provid
     assert result["error"] == "no_durable_change"
     assert result["num_turns"] == 1
     assert result["modelUsage"]["claude-haiku-4-5"]["inputTokens"] == 2
+
+
+def test_direct_executor_salvages_partial_changes_on_max_turns(
+    tmp_path, monkeypatch
+) -> None:
+    """DEFECT 2: Partial file writes are salvage-committed when max_turns is hit.
+
+    Before this fix the except handler wrote the error result and exited 1
+    without inspecting the git working tree.  Any files the model wrote via
+    write_file were silently lost.  After the fix a best-effort git add/commit/push
+    is attempted for max_turns and provider_or_executor_error.
+    """
+    packet = tmp_path / "packet.md"
+    packet.write_text("Keep asking for a tool forever.\n")
+    execution_file = tmp_path / "execution.json"
+
+    salvage_calls: list[list[str]] = []
+
+    def fake_run(cmd, *, timeout=120, check=False):
+        salvage_calls.append(cmd)
+
+        class FakeResult:
+            returncode = 0
+            stdout = (
+                "M app/partial.py\n" if cmd == ["git", "status", "--porcelain"] else ""
+            )
+            stderr = ""
+
+        return FakeResult()
+
+    def tool_response(**kwargs):
+        return {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "tool-loop",
+                    "name": "list_files",
+                    "input": {"pattern": "*.py"},
+                }
+            ],
+            "usage": {"input_tokens": 3, "output_tokens": 2},
+        }
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GITHUB_RUN_ID", "2000")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        direct, "_prepare_branch", lambda *args, **kwargs: "dryrun/2000"
+    )
+    monkeypatch.setattr(direct, "_anthropic_message", tool_response)
+    monkeypatch.setattr(direct, "_open_draft_pr", lambda *args, **kwargs: "")
+    monkeypatch.setattr(direct, "_run", fake_run)
+
+    argv = [
+        "swarm_anthropic_direct.py",
+        "--issue-number",
+        "1264",
+        "--title",
+        "Synthetic salvage test",
+        "--packet-file",
+        str(packet),
+        "--model",
+        "claude-haiku-4-5",
+        "--max-turns",
+        "2",
+        "--execution-file",
+        str(execution_file),
+    ]
+    monkeypatch.setattr(direct.sys, "argv", argv)
+
+    assert direct.main() == 1
+    result = json.loads(execution_file.read_text())
+    assert result["error"] == "max_turns"
+
+    # Salvage sequence must include git status, add, commit, and push.
+    cmd_names = [c[0] if c else "" for c in salvage_calls]
+    assert "git" in cmd_names
+
+    status_calls = [c for c in salvage_calls if c == ["git", "status", "--porcelain"]]
+    assert len(status_calls) >= 1, (
+        "git status --porcelain must be called during salvage"
+    )
+
+    add_calls = [c for c in salvage_calls if c[:2] == ["git", "add"]]
+    assert add_calls, "git add must be called when dirty working tree is found"
+
+    commit_calls = [c for c in salvage_calls if c[:2] == ["git", "commit"]]
+    assert commit_calls, "git commit must be called during salvage"
+
+    push_calls = [c for c in salvage_calls if c[:2] == ["git", "push"]]
+    assert push_calls, "git push must be called during salvage"
+
+    # The partial_branch field must appear in the result JSON after a successful salvage.
+    assert "partial_branch" in result, (
+        "execution result must include partial_branch field; got " + str(result.keys())
+    )
+    assert result["partial_branch"] == "dryrun/2000"
+
+
+def test_direct_executor_no_salvage_on_clean_working_tree(
+    tmp_path, monkeypatch
+) -> None:
+    """Salvage should skip git add/commit if the working tree is clean."""
+    packet = tmp_path / "packet.md"
+    packet.write_text("Keep asking for a tool forever.\n")
+    execution_file = tmp_path / "execution.json"
+
+    salvage_calls: list[list[str]] = []
+
+    def fake_run(cmd, *, timeout=120, check=False):
+        salvage_calls.append(cmd)
+
+        class FakeResult:
+            returncode = 0
+            stdout = ""  # empty = clean working tree
+            stderr = ""
+
+        return FakeResult()
+
+    def tool_response(**kwargs):
+        return {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "tool-loop",
+                    "name": "list_files",
+                    "input": {"pattern": "*.py"},
+                }
+            ],
+            "usage": {"input_tokens": 3, "output_tokens": 2},
+        }
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GITHUB_RUN_ID", "2001")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        direct, "_prepare_branch", lambda *args, **kwargs: "dryrun/2001"
+    )
+    monkeypatch.setattr(direct, "_anthropic_message", tool_response)
+    monkeypatch.setattr(direct, "_open_draft_pr", lambda *args, **kwargs: "")
+    monkeypatch.setattr(direct, "_run", fake_run)
+
+    argv = [
+        "swarm_anthropic_direct.py",
+        "--issue-number",
+        "1264",
+        "--title",
+        "Synthetic clean salvage test",
+        "--packet-file",
+        str(packet),
+        "--model",
+        "claude-haiku-4-5",
+        "--max-turns",
+        "2",
+        "--execution-file",
+        str(execution_file),
+    ]
+    monkeypatch.setattr(direct.sys, "argv", argv)
+
+    assert direct.main() == 1
+    result = json.loads(execution_file.read_text())
+    assert result["error"] == "max_turns"
+
+    add_calls = [c for c in salvage_calls if c[:2] == ["git", "add"]]
+    assert not add_calls, "git add must NOT be called on a clean working tree"
+
+    assert result.get("partial_branch") is None
+
+
+def test_direct_executor_no_salvage_on_auth_error(tmp_path, monkeypatch) -> None:
+    """Authentication errors do not produce partial work worth salvaging."""
+    packet = tmp_path / "packet.md"
+    packet.write_text("auth test\n")
+    execution_file = tmp_path / "execution.json"
+
+    run_calls: list[list[str]] = []
+
+    def fake_run(cmd, *, timeout=120, check=False):
+        run_calls.append(cmd)
+
+        class FakeResult:
+            returncode = 0
+            stdout = "M app/partial.py\n"
+            stderr = ""
+
+        return FakeResult()
+
+    def auth_error(**kwargs):
+        raise direct.AnthropicHTTPError(
+            401, {"error": {"type": "authentication_error", "message": "Unauthorized"}}
+        )
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "bad-key")
+    monkeypatch.setenv("GITHUB_RUN_ID", "2002")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        direct, "_prepare_branch", lambda *args, **kwargs: "dryrun/2002"
+    )
+    monkeypatch.setattr(direct, "_anthropic_message", auth_error)
+    monkeypatch.setattr(direct, "_open_draft_pr", lambda *args, **kwargs: "")
+    monkeypatch.setattr(direct, "_run", fake_run)
+
+    argv = [
+        "swarm_anthropic_direct.py",
+        "--issue-number",
+        "1264",
+        "--title",
+        "Synthetic auth test",
+        "--packet-file",
+        str(packet),
+        "--model",
+        "claude-haiku-4-5",
+        "--max-turns",
+        "4",
+        "--execution-file",
+        str(execution_file),
+    ]
+    monkeypatch.setattr(direct.sys, "argv", argv)
+
+    assert direct.main() == 1
+    result = json.loads(execution_file.read_text())
+    assert result["error"] == "authentication_error"
+
+    status_calls = [c for c in run_calls if c == ["git", "status", "--porcelain"]]
+    assert not status_calls, "salvage must NOT run for authentication_error"
+    assert result.get("partial_branch") is None
