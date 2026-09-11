@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from app.calyx_conversation.teaching_synthesis import (
     knowledge_gap_to_research_question,
