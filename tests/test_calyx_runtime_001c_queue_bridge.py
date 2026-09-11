@@ -62,8 +62,7 @@ def test_risky_finding_requires_review():
 
 def test_report_limit_is_bounded_and_duplicate_findings_collapse():
     findings = tuple(
-        _finding(finding_key=f"github:check-{index}")
-        for index in range(60)
+        _finding(finding_key=f"github:check-{index}") for index in range(60)
     )
     assert len(report_to_tasks(_report(*findings), limit=100)) == 50
     assert len(report_to_tasks(_report(_finding(), _finding()), limit=10)) == 1
