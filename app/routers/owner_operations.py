@@ -1100,7 +1100,7 @@ def live_audit_payload(audit_type: str) -> dict[str, Any]:
     return {
         "audit_id": audit_id,
         "audit_type": audit_type,
-        "generated_at": utc_now(),
+        "generated_at": generated_at,
         "source_systems": ["mission_control_metrics", "subsystem_completeness", "harvester_registry"],
         "record_counts": {name: metric.get("count", 0) for name, metric in (metrics.get("metrics") or {}).items()},
         "metric_source_warnings": source_warnings,
