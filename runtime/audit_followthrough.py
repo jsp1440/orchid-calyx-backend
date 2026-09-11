@@ -32,8 +32,8 @@ there until the existing approval path is used.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from typing import Any
 
 from runtime.autonomous_orchestrator import DefaultTaskExecutor
