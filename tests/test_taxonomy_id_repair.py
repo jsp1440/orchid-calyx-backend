@@ -65,7 +65,7 @@ class FakeCursor:
         if upper.startswith("UPDATE"):
             self.writes.append((flat, params))
             table = re.search(r"UPDATE (\S+)", flat).group(1)
-            resolved_id, row_pk = params
+            _resolved_id, row_pk = params
             rows = self.null_rows.get(table, [])
             match = next((r for r in rows if r[0] == row_pk), None)
             if match:
