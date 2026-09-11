@@ -557,7 +557,7 @@ def test_completion_lane_runs_deterministic_preflight_before_provider() -> None:
         "Run deterministic preflight"
     )
     assert names.index("Run deterministic preflight") < names.index(
-        "Execute issue with Claude Code"
+        "Execute issue with governed direct Anthropic API"
     )
 
 
@@ -595,12 +595,19 @@ def test_completion_lane_exhausted_retry_parks_in_backoff() -> None:
     assert "automatic refill remains disabled unless explicitly authorized." in text
 
 
-def test_completion_lane_uses_explicit_github_token_for_claude_action() -> None:
+def test_completion_lane_uses_direct_anthropic_executor_after_governor() -> None:
     wf = load_workflow("orchid-completion-lane.yml")
     steps = all_steps(wf)
-    claude = next(s for s in steps if s.get("name") == "Execute issue with Claude Code")
-    inputs = claude.get("with", {}) or {}
-    assert inputs.get("github_token") == "${{ github.token }}"
+    claude = next(
+        s
+        for s in steps
+        if s.get("name") == "Execute issue with governed direct Anthropic API"
+    )
+    run = claude.get("run", "") or ""
+    env = claude.get("env", {}) or {}
+    assert "scripts/swarm_anthropic_direct.py" in run
+    assert env.get("ANTHROPIC_API_KEY") == "${{ secrets.ANTHROPIC_API_KEY }}"
+    assert env.get("GH_TOKEN") == "${{ github.token }}"
 
 
 def test_completion_lane_classifier_uses_action_execution_file_output() -> None:
@@ -618,11 +625,14 @@ def test_no_execution_is_parked_without_paid_retry() -> None:
 
 
 def test_claude_workflows_do_not_use_deprecated_colon_wildcard_syntax() -> None:
-    for workflow_name in ("orchid-completion-lane.yml", "claude-code-governed.yml"):
-        text = (WORKFLOWS_DIR / workflow_name).read_text()
-        assert ":*)" not in text, workflow_name
-        assert "Bash(git add *)" in text, workflow_name
-        assert "Bash(git push *)" in text, workflow_name
+    completion = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
+    governed = (WORKFLOWS_DIR / "claude-code-governed.yml").read_text()
+    assert ":*)" not in completion
+    assert ":*)" not in governed
+    assert "Bash(git add *)" in governed
+    assert "Bash(git push *)" in governed
+    assert "anthropics/claude-code-action@v1" not in completion
+    assert "scripts/swarm_anthropic_direct.py" in completion
 
 
 def test_completion_lane_extracts_result_level_provider_error_fields() -> None:

@@ -190,47 +190,29 @@ jobs:
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
             --body "[OC-AUTO] NO-API mode active; all provider steps skipped. Issue returned to queue. Set NO_API_MODE=false (repository variable) to enable provider execution. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
 
-      - name: Execute issue with Claude Code
+      - name: Execute issue with governed direct Anthropic API
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         id: claude
         continue-on-error: true
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ github.token }}
-          allowed_bots: "github-actions"
-          prompt: |
-            ORCHID CONTINUUM — CONTINUOUS COMPLETION LANE
-
-            Repository: ${{ github.repository }}
-            Integration base: oc-autonomous-integration
-            Source issue: #${{ inputs.issue_number }} — ${{ steps.issue.outputs.title }}
-
-            Prepared work packet:
-            ${{ steps.packet.outputs.packet }}
-
-            Deterministic preflight already completed:
-            ${{ steps.deterministic.outputs.diagnostics }}
-
-            EXECUTE BEFORE EXPLAINING. Complete this bounded packet end-to-end. Do not re-read or summarize unrelated repository areas.
-
-            Rules:
-            - Start from current `oc-autonomous-integration`, inspect current `main` and overlapping PRs, and converge instead of duplicating work.
-            - If an open PR already contains `OC-AUTO-ISSUE: #${{ inputs.issue_number }}`, update that same PR/branch.
-            - Implement the largest safe bounded slice that can be completed in this run.
-            - Preserve taxonomy, provenance, uncertainty, locality sensitivity, and unavailable-vs-zero semantics. Never invent science.
-            - Test, fix, lint/typecheck/compile as appropriate before delivery.
-            - Commit and push durable work. Open/update exactly one draft PR targeting `oc-autonomous-integration` with these exact lines in its body:
-              `OC-AUTO-ISSUE: #${{ inputs.issue_number }}`
-              `OC-AUTO-REQUEUE: true|false`
-              `OC-AUTO-BLOCKED: true|false`
-            - Never merge to `main`, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create/disclose credentials, spend funds, force-push, or delete branches/repos.
-            - Final output: DONE, VALIDATION, PR/HEAD SHA, REMAINING, OWNER GATE if any.
-          claude_args: |
-            --model "${{ steps.route.outputs.model }}"
-            --max-turns ${{ steps.route.outputs.max_turns }}
-            --allowedTools "Edit,Read,Write,Bash(git diff *),Bash(git status *),Bash(git ls-files *),Bash(git log *),Bash(git rev-parse *),Bash(git add *),Bash(git commit *),Bash(git push *),Bash(git checkout *),Bash(git switch *),Bash(git branch *),Bash(git fetch *),Bash(git merge *),Bash(python *),Bash(python3 *),Bash(pytest *),Bash(ruff *),Bash(npm *),Bash(npx *),Bash(test *),Bash(gh pr *),Bash(gh issue *),Bash(gh run *)"
-            --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative. BLOCKED DOES NOT MEAN STOPPED FOR THE PROGRAM. Deliver durable GitHub work, never runner-local-only claims."
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          CLAUDE_MODEL: ${{ steps.route.outputs.model }}
+          CLAUDE_MAX_TURNS: ${{ steps.route.outputs.max_turns }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Never merge to `main`, deploy production, mutate production DB/KG/scientific state,
+          # activate taxonomy, publish science, create/disclose credentials, or bypass governor controls.
+          python3 scripts/swarm_anthropic_direct.py \
+            --issue-number "$ISSUE_NUMBER" \
+            --title "$ISSUE_TITLE" \
+            --packet-file "$RUNNER_TEMP/swarm-work-packet.md" \
+            --model "$CLAUDE_MODEL" \
+            --max-turns "$CLAUDE_MAX_TURNS" \
+            --base "$INTEGRATION_BRANCH" \
+            --execution-file "$RUNNER_TEMP/claude-direct-execution.json"
 
       - name: Classify Claude terminal state
         if: always() && steps.lease.outputs.execute == 'true'
