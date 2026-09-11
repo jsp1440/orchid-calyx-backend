@@ -173,3 +173,61 @@ def test_depleted_queue_refill_order_is_deterministic():
 
     assert first["proposals"] == second["proposals"]
     assert [item["source_ref"] for item in first["proposals"]] == ["#a", "#b"]
+
+
+def knowledge_gap_payload(**overrides):
+    return {
+        "schema": "oc.knowledge-gap-reserve-source.v1",
+        "taxon_id": "taxon-1",
+        "taxon_name": "Orchidaceae example",
+        "domain": "ecology",
+        "research_question": "What evidence resolves the ecology gap for taxon-1?",
+        "execution_mode": "bounded_research_mission",
+        "review_required": True,
+        "automatic_publication": False,
+        "knowledge_graph_mutation": False,
+        "taxonomy_mutation": False,
+        "sensitive_locality_disclosure": False,
+        **overrides,
+    }
+
+
+def test_preserves_canonical_knowledge_gap_payload_in_proposal():
+    payload = knowledge_gap_payload()
+    result = plan_refill(
+        snapshot(),
+        [candidate("#gap", "fp-gap", source_kind="objective", source_payload=payload)],
+        reserve_depth=1,
+    )
+    assert result["status"] == "refill_planned"
+    assert result["proposals"][0]["source_payload"] == payload
+
+
+def test_rejects_source_payload_authority_escalation():
+    result = plan_refill(
+        snapshot(),
+        [candidate("#gap", "fp-gap", source_kind="objective", source_payload=knowledge_gap_payload(automatic_publication=True))],
+        reserve_depth=1,
+    )
+    assert result["proposals"] == []
+    assert result["rejections"] == [
+        {"source_ref": "#gap", "reason": "authority_escalation"}
+    ]
+
+
+def test_rejects_malformed_or_oversized_source_payload():
+    malformed = knowledge_gap_payload(unexpected_instruction="publish now")
+    oversized = knowledge_gap_payload(research_question="x" * 5000)
+    result = plan_refill(
+        snapshot(),
+        [
+            candidate("#malformed", "fp-malformed", source_kind="objective", source_payload=malformed),
+            candidate("#oversized", "fp-oversized", source_kind="objective", source_payload=oversized),
+        ],
+        reserve_depth=2,
+    )
+    assert result["proposals"] == []
+    assert result["rejections"] == [
+        {"source_ref": "#malformed", "reason": "invalid_source_payload"},
+        {"source_ref": "#oversized", "reason": "source_payload_too_large"},
+    ]
