@@ -33,7 +33,8 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any
 
 from runtime.autonomous_orchestrator import DefaultTaskExecutor
 
@@ -154,7 +155,7 @@ class ActionableFinding:
     audit_id: str
     evidence: dict[str, Any]
     actionable: bool = True
-    non_actionable_reason: Optional[str] = None
+    non_actionable_reason: str | None = None
     task_type: str = DEFAULT_TASK_TYPE
     priority: int = 50
     # Whether *this* audit run still observes the condition. Findings are
@@ -167,7 +168,7 @@ class ActionableFinding:
     # timestamps as observed by the audit. Never synthesized here, because a
     # fabricated timestamp or run id is indistinguishable from a real one once
     # it is written to the durable task.
-    observed_at: Optional[str] = None
+    observed_at: str | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -195,22 +196,22 @@ class FindingRemediation:
 
     finding_key: str
     disposition: str
-    task: Optional[dict[str, Any]] = None
+    task: dict[str, Any] | None = None
     rationale: str = ""
-    task_key: Optional[str] = None
+    task_key: str | None = None
 
     def __post_init__(self) -> None:
         validate_disposition(self.disposition)
 
     @property
-    def effective_task_key(self) -> Optional[str]:
+    def effective_task_key(self) -> str | None:
         return self.task_key or (self.task or {}).get("task_key")
 
 
 def _task_payload(
     finding: ActionableFinding,
     *,
-    verification: Optional[dict[str, Any]] = None,
+    verification: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = {
         "audit_id": finding.audit_id,
@@ -260,8 +261,8 @@ def verification_failure(finding: ActionableFinding, existing: dict[str, Any]) -
 def build_remediation(
     finding: ActionableFinding,
     *,
-    executor: Optional[DefaultTaskExecutor] = None,
-    verification: Optional[dict[str, Any]] = None,
+    executor: DefaultTaskExecutor | None = None,
+    verification: dict[str, Any] | None = None,
 ) -> FindingRemediation:
     """Classify a single finding with no knowledge of any prior task state.
 
@@ -319,8 +320,8 @@ def build_remediation(
 def plan_remediation(
     findings: Iterable[ActionableFinding],
     *,
-    executor: Optional[DefaultTaskExecutor] = None,
-    existing_tasks_by_key: Optional[dict[str, dict[str, Any]]] = None,
+    executor: DefaultTaskExecutor | None = None,
+    existing_tasks_by_key: dict[str, dict[str, Any]] | None = None,
 ) -> list[FindingRemediation]:
     """Classify a batch of findings, deduping against in-flight/prior tasks.
 
@@ -567,8 +568,8 @@ def owner_facing_summary(remediations: Iterable[FindingRemediation]) -> dict[str
 def run_followthrough(
     findings: Iterable[ActionableFinding],
     *,
-    executor: Optional[DefaultTaskExecutor] = None,
-    existing_tasks_by_key: Optional[dict[str, dict[str, Any]]] = None,
+    executor: DefaultTaskExecutor | None = None,
+    existing_tasks_by_key: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Classify findings, enforce completeness, and return the summary shape.
 
@@ -763,7 +764,7 @@ def persist_followthrough(
     findings: Iterable[ActionableFinding],
     store: Any,
     *,
-    executor: Optional[DefaultTaskExecutor] = None,
+    executor: DefaultTaskExecutor | None = None,
 ) -> dict[str, Any]:
     """Plan, enforce, and durably persist follow-through for an audit's findings.
 
