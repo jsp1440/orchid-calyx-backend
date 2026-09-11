@@ -7,8 +7,10 @@ on:
       - 'tests/test_swarm_execution_governor.py'
       - 'tests/test_swarm_governor_workflow_enforcement.py'
       - 'tests/test_swarm_economy_controller.py'
+      - 'tests/test_swarm_anthropic_direct.py'
       - 'tests/test_oc_model_router.py'
       - 'scripts/swarm_prepare_work_packet.py'
+      - 'scripts/swarm_anthropic_direct.py'
       - 'scripts/swarm_deterministic_preflight.py'
       - 'scripts/swarm_governor_precheck.py'
       - 'scripts/swarm_governor_postrun.py'
@@ -41,10 +43,10 @@ jobs:
         run: python -m compileall -q runtime/swarm
 
       - name: Ruff lint
-        run: ruff check runtime/swarm scripts/swarm_prepare_work_packet.py scripts/swarm_deterministic_preflight.py scripts/swarm_governor_precheck.py scripts/swarm_governor_postrun.py scripts/oc_model_router.py tests/test_swarm_execution_governor.py tests/test_swarm_governor_workflow_enforcement.py tests/test_swarm_economy_controller.py tests/test_oc_model_router.py
+        run: ruff check runtime/swarm scripts/swarm_prepare_work_packet.py scripts/swarm_anthropic_direct.py scripts/swarm_deterministic_preflight.py scripts/swarm_governor_precheck.py scripts/swarm_governor_postrun.py scripts/oc_model_router.py tests/test_swarm_execution_governor.py tests/test_swarm_governor_workflow_enforcement.py tests/test_swarm_economy_controller.py tests/test_swarm_anthropic_direct.py tests/test_oc_model_router.py
 
       - name: Ruff format check
-        run: ruff format --check runtime/swarm scripts/swarm_prepare_work_packet.py scripts/swarm_deterministic_preflight.py scripts/swarm_governor_precheck.py scripts/swarm_governor_postrun.py scripts/oc_model_router.py tests/test_swarm_execution_governor.py tests/test_swarm_governor_workflow_enforcement.py tests/test_swarm_economy_controller.py tests/test_oc_model_router.py
+        run: ruff format --check runtime/swarm scripts/swarm_prepare_work_packet.py scripts/swarm_anthropic_direct.py scripts/swarm_deterministic_preflight.py scripts/swarm_governor_precheck.py scripts/swarm_governor_postrun.py scripts/oc_model_router.py tests/test_swarm_execution_governor.py tests/test_swarm_governor_workflow_enforcement.py tests/test_swarm_economy_controller.py tests/test_swarm_anthropic_direct.py tests/test_oc_model_router.py
 
       - name: Swarm Governor tests
-        run: pytest -q tests/test_swarm_execution_governor.py tests/test_swarm_governor_workflow_enforcement.py tests/test_swarm_economy_controller.py tests/test_oc_model_router.py
+        run: pytest -q tests/test_swarm_execution_governor.py tests/test_swarm_governor_workflow_enforcement.py tests/test_swarm_economy_controller.py tests/test_swarm_anthropic_direct.py tests/test_oc_model_router.py
