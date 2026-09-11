@@ -674,7 +674,7 @@ async def executive_session(request: Request) -> dict[str, Any]:
                 "completeness": "/api/mission-control/completeness",
             },
         },
-        "generated_at": generated_at,
+        "generated_at": utc_now(),
     }
 
 
