@@ -666,3 +666,11 @@ def test_max_turns_precedes_generic_provider_failure_classification() -> None:
     max_turns = text.index("kind=max_turns")
     provider_failure = text.index("kind=provider_failure")
     assert max_turns < provider_failure
+
+
+def test_anthropic_http_5xx_precedes_generic_provider_failure() -> None:
+    text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
+    http_5xx = text.index('api_error_status" =~ ^5')
+    provider_failure = text.index("kind=provider_failure")
+    assert http_5xx < provider_failure
+    assert "kind=safe_provider" in text
