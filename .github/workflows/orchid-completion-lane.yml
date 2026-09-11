@@ -203,6 +203,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Never merge to `main`, deploy production, mutate production DB/KG/scientific state,
+          # activate taxonomy, publish science, create/disclose credentials, or bypass governor controls.
           python3 scripts/swarm_anthropic_direct.py \
             --issue-number "$ISSUE_NUMBER" \
             --title "$ISSUE_TITLE" \
