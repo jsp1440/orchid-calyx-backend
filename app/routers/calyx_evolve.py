@@ -53,6 +53,7 @@ from runtime.calyx_evolve.status import (
 )
 
 router = APIRouter(prefix="/api/calyx-evolve", tags=["CALYX-EVOLVE-001"])
+_AUTH_DEPENDENCY = Depends(verify_owner_or_api_key)
 
 #: Upper bound on candidates one request may run.  The loop is bounded by
 #: design; this stops a single call from queueing an unbounded sweep.
@@ -101,7 +102,7 @@ def _governance_block() -> dict[str, Any]:
 
 @router.get("/contract")
 def evolve_contract(
-    auth: dict[str, object] = Depends(verify_owner_or_api_key),
+    auth: dict[str, object] = _AUTH_DEPENDENCY,
 ) -> dict[str, Any]:
     """Versions, metric catalogue, fixture descriptor and governance invariants."""
 
@@ -122,7 +123,7 @@ def evolve_contract(
 
 @router.get("/campaigns")
 def list_campaigns(
-    auth: dict[str, object] = Depends(verify_owner_or_api_key),
+    auth: dict[str, object] = _AUTH_DEPENDENCY,
 ) -> dict[str, Any]:
     return campaign_index(get_memory())
 
@@ -130,7 +131,7 @@ def list_campaigns(
 @router.get("/campaigns/{campaign_id}")
 def read_campaign(
     campaign_id: str,
-    auth: dict[str, object] = Depends(verify_owner_or_api_key),
+    auth: dict[str, object] = _AUTH_DEPENDENCY,
 ) -> dict[str, Any]:
     status = campaign_status(get_memory(), campaign_id)
     if status is None:
@@ -142,7 +143,7 @@ def read_campaign(
 def read_candidate_comparison(
     campaign_id: str,
     candidate_id: str,
-    auth: dict[str, object] = Depends(verify_owner_or_api_key),
+    auth: dict[str, object] = _AUTH_DEPENDENCY,
 ) -> dict[str, Any]:
     comparison = candidate_comparison(get_memory(), campaign_id, candidate_id)
     if comparison is None:
@@ -157,7 +158,7 @@ def read_candidate_comparison(
 def create_staging_experiment(
     campaign_id: str,
     request: ExperimentRequest,
-    auth: dict[str, object] = Depends(verify_owner_or_api_key),
+    auth: dict[str, object] = _AUTH_DEPENDENCY,
 ) -> dict[str, Any]:
     """Run one bounded, staging-only cycle of the deterministic candidate ladder.
 
