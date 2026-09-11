@@ -35,11 +35,11 @@ from runtime.autonomous_orchestrator import DefaultTaskExecutor
 
 def _finding(**overrides) -> ActionableFinding:
     defaults = {
-        finding_key="backend:queue_depth",
-        title="Queue depth above threshold",
-        audit_source="AUDIT-MEASUREMENT-002",
-        audit_id="AUD-0000FEED0000",
-        evidence={"status": "degraded", "depth": 42},
+        "finding_key": "backend:queue_depth",
+        "title": "Queue depth above threshold",
+        "audit_source": "AUDIT-MEASUREMENT-002",
+        "audit_id": "AUD-0000FEED0000",
+        "evidence": {"status": "degraded", "depth": 42},
     }
     defaults.update(overrides)
     return ActionableFinding(**defaults)
