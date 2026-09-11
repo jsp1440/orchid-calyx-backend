@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Protocol
 
 from runtime.self_audit import (
@@ -23,6 +24,76 @@ class IdempotentTaskQueue(Protocol):
         payload: dict[str, Any],
         priority: int = 0,
     ) -> dict[str, Any]: ...
+
+
+class DurableSelfAuditQueue:
+    """Persist keyed findings through the existing Calyx orchestrator store."""
+
+    def __init__(self, orchestrator: Any) -> None:
+        self.orchestrator = orchestrator
+
+    def create_task_once(
+        self,
+        *,
+        task_key: str,
+        task_type: str,
+        title: str,
+        payload: dict[str, Any],
+        priority: int = 0,
+    ) -> dict[str, Any]:
+        normalized_key = task_key.strip()
+        if not normalized_key:
+            raise ValueError("task_key is required")
+
+        required_approval = (
+            self.orchestrator.executor.risky_action(task_type, payload) is not None
+        )
+        status = "needs_review" if required_approval else "pending"
+        task: dict[str, Any] | None = None
+
+        with (
+            self.orchestrator.connect() as conn,
+            conn.cursor() as cur,
+        ):
+            self.orchestrator.ensure_schema(cur)
+            cur.execute(
+                """
+                INSERT INTO oc_admin.calyx_tasks
+                    (task_key, task_type, title, payload, status, priority, required_approval)
+                VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s)
+                ON CONFLICT (task_key) DO NOTHING
+                RETURNING *
+                """,
+                (
+                    normalized_key,
+                    task_type,
+                    title,
+                    json.dumps(payload, sort_keys=True, separators=(",", ":")),
+                    status,
+                    priority,
+                    required_approval,
+                ),
+            )
+            row = cur.fetchone()
+            if row is not None:
+                task = dict(row)
+                self.orchestrator.log_observation(
+                    cur,
+                    task_id=task["id"],
+                    agent_id=None,
+                    event_type="task_created",
+                    action="queued" if status == "pending" else "approval_required",
+                    status=status,
+                    details={
+                        "task_key": normalized_key,
+                        "required_approval": required_approval,
+                    },
+                )
+            conn.commit()
+
+        if task is None:
+            return {"status": "duplicate", "task_key": normalized_key}
+        return {"status": "created", "task": task}
 
 
 def finding_to_task(finding: AuditFinding) -> dict[str, Any]:
