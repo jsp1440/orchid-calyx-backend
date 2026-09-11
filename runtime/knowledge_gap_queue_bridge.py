@@ -80,6 +80,7 @@ def knowledge_gap_candidate(
 
     return {
         "source_kind": "objective",
+        "queue_source_kind": "brain-knowledge-gap",
         "source_ref": f"calyx-synthesis-gap:{objective_key}",
         "title": (
             f"Research {normalized_domain.replace('_', ' ')} gap for "

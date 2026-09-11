@@ -14,6 +14,13 @@ from typing import Any
 from scripts.oc_health_contract import evaluate
 
 AUTHORIZED_SOURCE_KINDS = {"issue", "template", "objective"}
+AUTHORIZED_QUEUE_SOURCE_KINDS = {
+    "autonomous-orchestrator",
+    "brain-knowledge-gap",
+    "self-audit",
+    "connector-queue",
+    "bounded-engineering-executor",
+}
 MAX_SOURCE_PAYLOAD_BYTES = 4096
 KNOWLEDGE_GAP_PAYLOAD_SCHEMA = "oc.knowledge-gap-reserve-source.v1"
 KNOWLEDGE_GAP_STRING_FIELDS = {
@@ -112,6 +119,13 @@ def _candidate_reason(
         or not candidate.get("source_ref")
     ):
         return "unauthorized_source"
+
+    queue_source_kind = candidate.get("queue_source_kind")
+    if (
+        queue_source_kind is not None
+        and queue_source_kind not in AUTHORIZED_QUEUE_SOURCE_KINDS
+    ):
+        return "unauthorized_queue_source"
 
     boundaries = {
         str(value) for value in candidate.get("protected_boundaries") or []
@@ -233,6 +247,8 @@ def plan_refill(
             "material_fingerprint": fingerprint,
             "semantic_key": semantic_key,
         }
+        if candidate.get("queue_source_kind") is not None:
+            proposal["queue_source_kind"] = candidate["queue_source_kind"]
         if candidate.get("source_payload") is not None:
             proposal["source_payload"] = candidate["source_payload"]
         result["proposals"].append(proposal)

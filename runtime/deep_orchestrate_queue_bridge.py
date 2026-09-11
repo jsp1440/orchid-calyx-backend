@@ -44,6 +44,7 @@ def _candidate(leaf: TaskLeaf) -> dict[str, Any]:
         boundaries.append("governance")
     return {
         "source_kind": "issue",
+        "queue_source_kind": "autonomous-orchestrator",
         "source_ref": f"#{leaf.issue_number}",
         "title": leaf.title,
         "material_fingerprint": _fingerprint(leaf),

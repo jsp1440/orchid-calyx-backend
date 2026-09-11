@@ -54,6 +54,7 @@ def test_depleted_reserve_admits_only_ready_issue_backed_leaves():
 
     assert result["status"] == "refill_planned"
     assert [item["source_ref"] for item in result["proposals"]] == ["#1023"]
+    assert result["proposals"][0]["queue_source_kind"] == "autonomous-orchestrator"
     assert result["source_rejections"] == [
         {"task_key": "unmaterialized-idea", "reason": "missing_issue_lineage"}
     ]

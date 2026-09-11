@@ -97,6 +97,7 @@ def test_depleted_queue_refills_from_gap_deterministically():
     assert first["status"] == "refill_planned"
     assert first["proposals"] == second["proposals"]
     assert first["proposals"][0]["source_kind"] == "objective"
+    assert first["proposals"][0]["queue_source_kind"] == "brain-knowledge-gap"
     assert first["proposals"][0]["labels"] == ["oc-queued"]
 
 
