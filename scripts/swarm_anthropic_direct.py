@@ -22,7 +22,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-import requests
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
@@ -258,31 +259,39 @@ def _anthropic_message(
     max_tokens: int,
     timeout: int,
 ) -> dict[str, Any]:
-    response = requests.post(
+    payload = json.dumps(
+        {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": messages,
+            "tools": TOOLS,
+        }
+    ).encode("utf-8")
+    req = urlrequest.Request(
         ANTHROPIC_URL,
+        data=payload,
+        method="POST",
         headers={
             "x-api-key": api_key,
             "anthropic-version": ANTHROPIC_VERSION,
             "content-type": "application/json",
         },
-        json={
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": messages,
-            "tools": TOOLS,
-        },
-        timeout=timeout,
     )
-    if response.status_code >= 400:
+    try:
+        with urlrequest.urlopen(req, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urlerror.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
         try:
-            detail = response.json()
+            detail = json.loads(raw)
         except ValueError:
-            detail = {"error": {"message": response.text[:1000]}}
-        err = RuntimeError(f"anthropic_http_{response.status_code}: {json.dumps(detail)[:2000]}")
-        setattr(err, "status_code", response.status_code)
+            detail = {"error": {"message": raw[:1000]}}
+        err = RuntimeError(
+            f"anthropic_http_{exc.code}: {json.dumps(detail)[:2000]}"
+        )
+        setattr(err, "status_code", exc.code)
         setattr(err, "detail", detail)
-        raise err
-    return response.json()
+        raise err from exc
 
 
 def _content_text(content: list[dict[str, Any]]) -> str:
