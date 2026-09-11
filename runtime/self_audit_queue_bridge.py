@@ -37,8 +37,7 @@ def finding_to_task(finding: AuditFinding) -> dict[str, Any]:
         raise ValueError("self-audit recommended_action is required")
 
     requires_approval = (
-        finding.requires_human_approval
-        or action in PROHIBITED_AUTONOMOUS_ACTIONS
+        finding.requires_human_approval or action in PROHIBITED_AUTONOMOUS_ACTIONS
     )
     return {
         "task_key": f"self-audit:{finding_key}",
