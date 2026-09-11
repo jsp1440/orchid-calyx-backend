@@ -1,17 +1,34 @@
 """Provider-free bridge from admitted sources to deduplicated queue candidates.
 
-The bridge is deliberately pure: it prepares bounded child-task payloads but never
-creates issues, fetches source data, or mutates scientific records.
+The bridge prepares bounded child-task payloads and can persist them through the
+canonical Calyx task queue. It never fetches source data or mutates scientific
+records.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any, Protocol
 
 from .inventory import CandidateDisposition, FederationCandidate
 
 _PARENT_ISSUE = 1086
+_PRIORITY_VALUE = {"P2": 20, "P3": 10}
+
+
+class IdempotentSourceTaskQueue(Protocol):
+    """Narrow canonical queue contract required by the federation bridge."""
+
+    def create_task_once(
+        self,
+        *,
+        task_key: str,
+        task_type: str,
+        title: str,
+        payload: dict[str, Any],
+        priority: int = 0,
+    ) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,3 +172,80 @@ def bridge_source_candidates(
         )
 
     return SourceQueueBridgeResult(tuple(create), tuple(suppressed))
+
+
+def persist_source_candidates(
+    candidates: Iterable[FederationCandidate],
+    queue: IdempotentSourceTaskQueue,
+    *,
+    existing_task_keys: Iterable[str] = (),
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Persist admitted candidates through the canonical durable task queue.
+
+    Candidate admission and existing GitHub lineage are evaluated before any
+    write. The queue's unique task-key constraint provides replay safety across
+    processes; the bridge's stable fingerprint provides semantic identity.
+    """
+
+    candidate_list = tuple(candidates)
+    plan = bridge_source_candidates(
+        candidate_list,
+        existing_task_keys=existing_task_keys,
+    )
+    safe_limit = max(0, min(50, int(limit)))
+    selected = plan.create[:safe_limit]
+    created: list[str] = []
+    duplicates: list[str] = []
+
+    for task in selected:
+        result = queue.create_task_once(
+            task_key=task.task_key,
+            task_type="source_federation_adapter_evaluation",
+            title=task.title,
+            payload={
+                "schema": "oc.source-federation-task.v1",
+                "capability_key": task.capability_key,
+                "source_fingerprint": task.source_fingerprint,
+                "priority": task.priority,
+                "body": task.body,
+                "execution_mode": "draft_only",
+                "network_fetch_authorized": False,
+                "scientific_publication_authorized": False,
+                "knowledge_graph_mutation_authorized": False,
+                "taxonomy_mutation_authorized": False,
+                "automatic_merge": False,
+                "automatic_deploy": False,
+            },
+            priority=_PRIORITY_VALUE[task.priority],
+        )
+        if result.get("status") == "created":
+            created.append(task.task_key)
+        else:
+            duplicates.append(task.task_key)
+
+    if created:
+        status = "refill_planned"
+    elif selected:
+        status = "reserve_satisfied"
+    else:
+        status = "queue_empty_healthy"
+
+    return {
+        "schema": "oc.source-federation-queue.v1",
+        "status": status,
+        "candidate_count": len(candidate_list),
+        "eligible_count": len(plan.create),
+        "selected_count": len(selected),
+        "created_task_keys": created,
+        "duplicate_task_keys": duplicates,
+        "suppressed": [
+            {
+                "task_key": item.task_key,
+                "reason": item.reason,
+                "blockers": list(item.blockers),
+            }
+            for item in plan.suppressed
+        ],
+        "truncated_count": max(0, len(plan.create) - len(selected)),
+    }
