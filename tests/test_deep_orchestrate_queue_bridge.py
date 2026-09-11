@@ -9,18 +9,26 @@ from app.calyx_orchestrator.deep_orchestrate import (
 from runtime.deep_orchestrate_queue_bridge import plan_deep_orchestrate_refill
 
 
-def leaf(key, issue_number, *, priority=Priority.P1, **extra):
+def leaf(
+    key,
+    issue_number,
+    *,
+    priority=Priority.P1,
+    authority_class=AUTH_WORKSPACE,
+    consequence_risk="low",
+    dependencies=None,
+):
     return TaskLeaf(
         key=key,
         title=f"Implement {key}",
         repo="orchid-calyx-backend",
         module="app/calyx_orchestrator",
         priority=priority,
-        authority_class=AUTH_WORKSPACE,
-        consequence_risk="low",
+        authority_class=authority_class,
+        consequence_risk=consequence_risk,
         issue_number=issue_number,
+        dependencies=list(dependencies or []),
         acceptance_criteria=["focused tests pass"],
-        **extra,
     )
 
 
