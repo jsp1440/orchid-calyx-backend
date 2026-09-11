@@ -157,7 +157,9 @@ def _writable(path: Path) -> bool:
     )
 
 
-def _run(cmd: list[str], *, timeout: int = 120, check: bool = False) -> subprocess.CompletedProcess[str]:
+def _run(
+    cmd: list[str], *, timeout: int = 120, check: bool = False
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         cmd,
         cwd=REPO_ROOT,
@@ -335,14 +337,21 @@ def _prepare_branch(issue_number: str, run_id: str, base: str) -> str:
 
 
 def _open_draft_pr(issue_number: str, branch: str, base: str, title: str) -> str:
-    status = _run(["git", "status", "--porcelain"], timeout=30, check=True).stdout.strip()
+    status = _run(
+        ["git", "status", "--porcelain"], timeout=30, check=True
+    ).stdout.strip()
     if not status:
         return ""
 
     _run(["git", "diff", "--check"], timeout=60, check=True)
     _run(["git", "add", "-A"], timeout=30, check=True)
     _run(
-        ["git", "commit", "-m", f"feat(oc): implement issue #{issue_number} via direct Claude"],
+        [
+            "git",
+            "commit",
+            "-m",
+            f"feat(oc): implement issue #{issue_number} via direct Claude",
+        ],
         timeout=60,
         check=True,
     )
@@ -515,7 +524,12 @@ def main() -> int:
             }
         )
         return 0
-    except (DirectExecutorError, OSError, ValueError, subprocess.SubprocessError) as exc:
+    except (
+        DirectExecutorError,
+        OSError,
+        ValueError,
+        subprocess.SubprocessError,
+    ) as exc:
         if not error_kind:
             status = exc.status_code if isinstance(exc, AnthropicHTTPError) else ""
             error_status = str(status or "")
@@ -530,7 +544,10 @@ def main() -> int:
             if not error_kind:
                 if error_status in {"401", "403"}:
                     error_kind = "authentication_error"
-                elif "credit" in error_message.lower() or "billing" in error_message.lower():
+                elif (
+                    "credit" in error_message.lower()
+                    or "billing" in error_message.lower()
+                ):
                     error_kind = "billing_error"
                 else:
                     error_kind = "provider_or_executor_error"
@@ -567,7 +584,10 @@ def main() -> int:
                 "output_tokens": output_tokens,
             }
         )
-        print(f"[OC-ANTHROPIC-DIRECT] {error_kind}: {error_message or exc}", file=sys.stderr)
+        print(
+            f"[OC-ANTHROPIC-DIRECT] {error_kind}: {error_message or exc}",
+            file=sys.stderr,
+        )
         return 1
 
 
