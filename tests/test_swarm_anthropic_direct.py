@@ -82,7 +82,13 @@ def test_direct_executor_builds_anthropic_messages_request() -> None:
 
 def test_direct_executor_toolset_has_no_arbitrary_shell() -> None:
     names = {tool["name"] for tool in direct.TOOLS}
-    assert names == {"read_file", "list_files", "search_text", "write_file", "run_check"}
+    assert names == {
+        "read_file",
+        "list_files",
+        "search_text",
+        "write_file",
+        "run_check",
+    }
 
 
 def test_direct_executor_blocks_governor_self_modification() -> None:
