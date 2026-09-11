@@ -650,3 +650,10 @@ def test_billing_and_auth_errors_precede_generic_no_model_usage() -> None:
     no_model = text.index("kind=no_model_usage")
     assert billing < no_model
     assert security < no_model
+
+
+def test_completion_lane_classifies_anthropic_usage_limit_as_billing_exhausted() -> None:
+    text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
+    assert "reached your specified api usage limits" in text
+    assert "api usage limit" in text
+    assert "kind=billing_exhausted" in text
