@@ -3,7 +3,7 @@ from pathlib import Path
 WORKFLOWS = Path(".github/workflows")
 PROVIDER_MARKERS = (
     "anthropics/claude-code-action",
-    "swarm_anthropic_direct.py",
+    "ANTHROPIC_API_KEY",
     "@google/gemini-cli",
     "@openai/codex",
     "api.openai.com",
