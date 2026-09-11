@@ -99,3 +99,9 @@ def test_direct_executor_blocks_governor_self_modification() -> None:
         "runtime/swarm/governor.py",
     ):
         assert direct._writable(direct._safe_path(raw)) is False
+
+
+def test_max_turns_uses_direct_executor_error_for_settlement() -> None:
+    text = SCRIPT.read_text()
+    assert 'error_kind = "max_turns"' in text
+    assert 'raise DirectExecutorError("direct executor reached max turns")' in text
