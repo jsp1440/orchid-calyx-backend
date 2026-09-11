@@ -247,6 +247,8 @@ jobs:
           terminal_reason=""
           result_text=""
           error_type=""
+          result_error=""
+          api_error_status=""
           subtype=""
           is_error="false"
           num_turns=""
@@ -257,12 +259,14 @@ jobs:
             terminal_reason=$(jq -r '[.. | objects | select(.type == "result")] | last | .terminal_reason // ""' "$execution_log" 2>/dev/null || true)
             result_text=$(jq -r '[.. | objects | select(.type == "result")] | last | .result // ""' "$execution_log" 2>/dev/null || true)
             error_type=$(jq -r '[.. | objects | select(.type == "assistant" and .is_api_error_message == true)] | last | .error // ""' "$execution_log" 2>/dev/null || true)
+            result_error=$(jq -r '[.. | objects | select(.type == "result")] | last | .error // ""' "$execution_log" 2>/dev/null || true)
+            api_error_status=$(jq -r '[.. | objects | select(.type == "result")] | last | .api_error_status // ""' "$execution_log" 2>/dev/null || true)
             subtype=$(jq -r '[.. | objects | select(.type == "result")] | last | .subtype // ""' "$execution_log" 2>/dev/null || true)
             is_error=$(jq -r '[.. | objects | select(.type == "result")] | last | .is_error // false' "$execution_log" 2>/dev/null || true)
             num_turns=$(jq -r '[.. | objects | select(.type == "result")] | last | .num_turns // ""' "$execution_log" 2>/dev/null || true)
             model_usage_count=$(jq -r '[.. | objects | select(.type == "result")] | last | (.modelUsage // {}) | length' "$execution_log" 2>/dev/null || true)
           fi
-          normalized=$(printf '%s %s %s %s' "$terminal_reason" "$result_text" "$error_type" "$subtype" | tr '[:upper:]' '[:lower:]')
+          normalized=$(printf '%s %s %s %s %s %s' "$terminal_reason" "$result_text" "$error_type" "$result_error" "$api_error_status" "$subtype" | tr '[:upper:]' '[:lower:]')
           kind=healthy
           fallback=false
 
@@ -271,7 +275,11 @@ jobs:
           # A successful wrapper step is therefore not proof that a model ran.
           if [[ "$execution_file_present" != "true" ]]; then
             kind=no_execution
-          elif [[ "$CLAUDE_CONCLUSION" == "failure" ]]; then
+          elif [[ "$result_error" == "billing_error" || "$normalized" == *"credit balance"* || "$normalized" == *"insufficient credit"* ]]; then
+            kind=billing_exhausted
+          elif [[ "$api_error_status" == "401" || "$api_error_status" == "403" || "$normalized" == *"invalid api key"* || "$normalized" == *"invalid_api_key"* ]]; then
+            kind=security
+          elif [[ "$CLAUDE_CONCLUSION" == "failure" && "$model_usage_count" != "0" ]]; then
             kind=provider_failure
           elif [[ "$num_turns" == "" || ! "$num_turns" =~ ^[0-9]+$ || "$num_turns" -lt 1 || "$model_usage_count" == "0" ]]; then
             kind=no_model_usage
@@ -282,7 +290,9 @@ jobs:
               kind=max_turns
             elif [[ "$normalized" == *"authentication"* || "$normalized" == *"unauthorized"* || "$normalized" == *"forbidden"* || "$normalized" == *"permission"* || "$normalized" == *"invalid api key"* || "$normalized" == *"invalid_api_key"* ]]; then
               kind=security
-            elif [[ "$normalized" == *"billing_error"* || "$normalized" == *"credit balance"* || "$normalized" == *"insufficient credit"* || "$normalized" == *"rate_limit"* || "$normalized" == *"rate limit"* || "$normalized" == *"overloaded"* || "$normalized" == *"service unavailable"* || "$normalized" == *"connection_error"* || "$normalized" == *"timeout"* ]]; then
+            elif [[ "$normalized" == *"billing_error"* || "$normalized" == *"credit balance"* || "$normalized" == *"insufficient credit"* ]]; then
+              kind=billing_exhausted
+            elif [[ "$normalized" == *"rate_limit"* || "$normalized" == *"rate limit"* || "$normalized" == *"overloaded"* || "$normalized" == *"service unavailable"* || "$normalized" == *"connection_error"* || "$normalized" == *"timeout"* ]]; then
               kind=safe_provider
               fallback=true
             elif [[ "$is_error" == "true" && "$subtype" == "success" && "$num_turns" =~ ^[0-9]+$ && "$num_turns" -le 1 && "$model_usage_count" == "0" ]]; then
@@ -301,6 +311,8 @@ jobs:
             echo "fallback_allowed=$fallback"
             echo "terminal_reason=${terminal_reason:-unknown}"
             echo "error_type=${error_type:-unknown}"
+            echo "result_error=${result_error:-unknown}"
+            echo "api_error_status=${api_error_status:-unknown}"
             echo "is_error=${is_error:-unknown}"
             echo "num_turns=${num_turns:-unknown}"
             echo "model_usage_count=${model_usage_count:-unknown}"
@@ -591,7 +603,7 @@ jobs:
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Durable PR #$pr exists, but validation dispatch failed. Kept in oc-validating; scheduler will retry validation without redispatching a model. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
               exit 1
             fi
-          elif [[ "$CLAUDE_KIND" == "no_execution" || "$CLAUDE_KIND" == "no_model_usage" || "$CLAUDE_KIND" == "workflow_validation_skip" || "$CLAUDE_KIND" == "provider_failure" || "$CLAUDE_KIND" == "security" || "$CLAUDE_KIND" == "safe_provider" || "$CLAUDE_KIND" == "unknown" ]]; then
+          elif [[ "$CLAUDE_KIND" == "no_execution" || "$CLAUDE_KIND" == "no_model_usage" || "$CLAUDE_KIND" == "workflow_validation_skip" || "$CLAUDE_KIND" == "provider_failure" || "$CLAUDE_KIND" == "billing_exhausted" || "$CLAUDE_KIND" == "security" || "$CLAUDE_KIND" == "safe_provider" || "$CLAUDE_KIND" == "unknown" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
             gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Provider execution did not produce verifiable model execution evidence (classification=$CLAUDE_KIND). Parked in oc-runtime-backoff; no automatic paid retry." >/dev/null
           elif [[ "$CLAUDE_KIND" == "max_turns" ]]; then
