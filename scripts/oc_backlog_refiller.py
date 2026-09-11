@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Dependency-aware, idempotent reserve-queue refill planner.
 
 This module is deliberately side-effect free. It consumes the canonical
