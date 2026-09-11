@@ -33,7 +33,12 @@ def leaf(
 
 
 def snapshot(*issues, **extra):
-    return {"issues": list(issues), "leases": [], **extra}
+    return {
+        "issues": list(issues),
+        "leases": [],
+        "dispatch_fingerprints": [],
+        **extra,
+    }
 
 
 def test_depleted_reserve_admits_only_ready_issue_backed_leaves():
