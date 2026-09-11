@@ -148,9 +148,8 @@ def _run_execute(database_url: str, targets, *, mapping_out: str, sql_out: str) 
         for target in targets:
             measurement = measure_repair_candidates(cur, target)
             plan = build_repair_plan(measurement)
-            # The mapping and SQL are written before the transaction is
-            # committed, so the provenance of a write always exists on
-            # disk even if the write itself is rolled back or interrupted.
+            # Write provenance artifacts before any commit so an interrupted or
+            # rolled-back execution remains auditable.
             artifacts = write_artifacts(
                 target,
                 measurement,
@@ -171,16 +170,16 @@ def _run_execute(database_url: str, targets, *, mapping_out: str, sql_out: str) 
                         "artifacts": artifacts,
                     }
                 )
-                    continue
-                conn.commit()
-                report["targets"].append(
-                    {
-                        "domain": target.domain,
-                        "table": target.table,
-                        "result": result,
-                        "artifacts": artifacts,
-                    }
-                )
+                continue
+            conn.commit()
+            report["targets"].append(
+                {
+                    "domain": target.domain,
+                    "table": target.table,
+                    "result": result,
+                    "artifacts": artifacts,
+                }
+            )
     return report
 
 
