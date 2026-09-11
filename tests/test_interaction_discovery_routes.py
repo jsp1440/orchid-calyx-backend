@@ -3,29 +3,26 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import app.semantic_index.routes as semantic_index_routes
+from app.semantic_index import repository_runtime
 from app.calyx_conversation.interaction_discovery_ingest import (
     ingest_globi_interactions_for_canonical_dataset,
 )
 from app.interaction_discovery.routes import router
 from app.interaction_discovery.service import discover_interactions
 from app.semantic_index.memory_repository import MemoryIndexRepository
-from app.semantic_index.provider import DeterministicLocalProvider
-from app.semantic_index.service import SemanticIndexService
 
 
 def _fresh_repository(monkeypatch) -> None:
     """Isolate each test's semantic-index state.
 
-    app.semantic_index.routes caches REPO/SERVICE as module globals, shared
-    across the whole test session; monkeypatching a fresh in-memory
-    repository per test keeps GloBI documents from one test visible to
-    another.
+    The semantic-index runtime is shared across the whole test session;
+    replacing it with a fresh activated in-memory runtime keeps GloBI
+    documents from one test visible to another.
     """
     repository = MemoryIndexRepository()
-    service = SemanticIndexService(repository, DeterministicLocalProvider())
-    monkeypatch.setattr(semantic_index_routes, "REPO", repository)
-    monkeypatch.setattr(semantic_index_routes, "SERVICE", service)
+    runtime = repository_runtime.SemanticIndexRepositoryRuntime(database_url="")
+    runtime._activate(repository)
+    monkeypatch.setattr(repository_runtime, "RUNTIME", runtime)
 
 
 def _ingest_sample(**overrides) -> dict:
