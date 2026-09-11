@@ -257,7 +257,7 @@ jobs:
           # A successful wrapper step is therefore not proof that a model ran.
           if [[ "$execution_file_present" != "true" ]]; then
             kind=no_execution
-          elif [[ "$result_error" == "billing_error" || "$normalized" == *"credit balance"* || "$normalized" == *"insufficient credit"* ]]; then
+          elif [[ "$result_error" == "billing_error" || "$normalized" == *"credit balance"* || "$normalized" == *"insufficient credit"* || "$normalized" == *"reached your specified api usage limits"* || "$normalized" == *"api usage limit"* ]]; then
             kind=billing_exhausted
           elif [[ "$api_error_status" == "401" || "$api_error_status" == "403" || "$normalized" == *"invalid api key"* || "$normalized" == *"invalid_api_key"* ]]; then
             kind=security
