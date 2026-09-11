@@ -331,6 +331,21 @@ def _prepare_branch(issue_number: str, run_id: str, base: str) -> str:
     branch = f"claude-direct/issue-{issue_number}-{run_id}"
     _run(["git", "fetch", "origin", base], timeout=120, check=True)
     _run(["git", "checkout", "-B", branch, f"origin/{base}"], timeout=60, check=True)
+    _run(
+        ["git", "config", "user.name", "orchid-continuum-orchestrator[bot]"],
+        timeout=30,
+        check=True,
+    )
+    _run(
+        [
+            "git",
+            "config",
+            "user.email",
+            "41898282+github-actions[bot]@users.noreply.github.com",
+        ],
+        timeout=30,
+        check=True,
+    )
     return branch
 
 
