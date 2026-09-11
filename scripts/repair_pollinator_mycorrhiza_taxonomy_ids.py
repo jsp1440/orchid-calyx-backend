@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.readiness.taxonomy_id_repair import (  # noqa: E402
+from app.readiness.taxonomy_id_repair import (
     REPAIR_PACKAGE,
     REPAIR_TARGETS,
     RESOLUTION_POLICY,
@@ -106,26 +106,26 @@ def _run_dry_run(database_url: str, targets, *, mapping_out: str, sql_out: str) 
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute("SET TRANSACTION READ ONLY")
             for target in targets:
-                measurement = measure_repair_candidates(cur, target)
-                plan = build_repair_plan(measurement)
-                sql_text = generate_repair_sql(target, plan)
-                report["targets"].append(
-                    {
-                        "domain": target.domain,
-                        "table": target.table,
-                        "measurement": measurement,
-                        "planned_updates": len(plan["actions"]),
-                        "generated_sql": sql_text,
-                        "artifacts": write_artifacts(
-                            target,
-                            measurement,
-                            plan,
-                            sql_text,
-                            mapping_out=mapping_out,
-                            sql_out=sql_out,
-                        ),
-                    }
-                )
+            measurement = measure_repair_candidates(cur, target)
+            plan = build_repair_plan(measurement)
+            sql_text = generate_repair_sql(target, plan)
+            report["targets"].append(
+                {
+                    "domain": target.domain,
+                    "table": target.table,
+                    "measurement": measurement,
+                    "planned_updates": len(plan["actions"]),
+                    "generated_sql": sql_text,
+                    "artifacts": write_artifacts(
+                        target,
+                        measurement,
+                        plan,
+                        sql_text,
+                        mapping_out=mapping_out,
+                        sql_out=sql_out,
+                    ),
+                }
+            )
         conn.rollback()
     return report
 
@@ -141,34 +141,36 @@ def _run_execute(database_url: str, targets, *, mapping_out: str, sql_out: str) 
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "targets": [],
     }
-    with psycopg.connect(database_url, connect_timeout=15) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            for target in targets:
-                measurement = measure_repair_candidates(cur, target)
-                plan = build_repair_plan(measurement)
-                # The mapping and SQL are written before the transaction is
-                # committed, so the provenance of a write always exists on
-                # disk even if the write itself is rolled back or interrupted.
-                artifacts = write_artifacts(
-                    target,
-                    measurement,
-                    plan,
-                    generate_repair_sql(target, plan),
-                    mapping_out=mapping_out,
-                    sql_out=sql_out,
+    with (
+        psycopg.connect(database_url, connect_timeout=15) as conn,
+        conn.cursor(row_factory=dict_row) as cur,
+    ):
+        for target in targets:
+            measurement = measure_repair_candidates(cur, target)
+            plan = build_repair_plan(measurement)
+            # The mapping and SQL are written before the transaction is
+            # committed, so the provenance of a write always exists on
+            # disk even if the write itself is rolled back or interrupted.
+            artifacts = write_artifacts(
+                target,
+                measurement,
+                plan,
+                generate_repair_sql(target, plan),
+                mapping_out=mapping_out,
+                sql_out=sql_out,
+            )
+            result = apply_repair_plan(cur, target, plan, execute=True)
+            if result["rows_updated"] != result["planned"]:
+                conn.rollback()
+                result["status"] = "rolled_back_mismatch"
+                report["targets"].append(
+                    {
+                        "domain": target.domain,
+                        "table": target.table,
+                        "result": result,
+                        "artifacts": artifacts,
+                    }
                 )
-                result = apply_repair_plan(cur, target, plan, execute=True)
-                if result["rows_updated"] != result["planned"]:
-                    conn.rollback()
-                    result["status"] = "rolled_back_mismatch"
-                    report["targets"].append(
-                        {
-                            "domain": target.domain,
-                            "table": target.table,
-                            "result": result,
-                            "artifacts": artifacts,
-                        }
-                    )
                     continue
                 conn.commit()
                 report["targets"].append(
