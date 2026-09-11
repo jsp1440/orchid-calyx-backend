@@ -1,4 +1,10 @@
-from scripts.oc_control_plane_health import UNKNOWN, build_health, classify_ci
+from scripts.oc_control_plane_health import (
+    UNKNOWN,
+    build_contract_snapshot,
+    build_health,
+    classify_ci,
+    evaluate_completion_pulse,
+)
 
 
 def test_runner_zero_with_no_steps_is_external_infrastructure_not_code_failure():
@@ -46,3 +52,90 @@ def test_zero_running_reason_uses_runner_evidence():
     })
     assert health["current_running_lease"] is None
     assert health["reason_no_work_running"] == "scheduler_job_never_received_a_runner"
+
+
+def test_contract_snapshot_preserves_exact_head_provider_and_lease_evidence():
+    pulse = {
+        "generated_at": "2026-09-11T20:00:00Z",
+        "issues": [
+            {
+                "number": 1264,
+                "labels": ["oc-validating"],
+                "validation_target": {"pr": 1357, "head_sha": "abc123"},
+            }
+        ],
+        "leases": [],
+        "dispatch_fingerprints": ["1264:abc123"],
+        "provider_availability_state": "no_api",
+        "integration_head": "integration-sha",
+        "integration_ready": True,
+        "deterministic_work_available": True,
+    }
+
+    snapshot = build_contract_snapshot(pulse)
+
+    assert snapshot["schema"] == "oc.completion-health-snapshot.v1"
+    assert snapshot["issues"][0]["validation_target"]["head_sha"] == "abc123"
+    assert snapshot["provider"]["status"] == "no_api"
+    assert snapshot["integration"] == {
+        "head_sha": "integration-sha",
+        "ready": True,
+    }
+
+
+def test_healthy_completion_pulse_is_checked_by_canonical_contract():
+    checked = evaluate_completion_pulse(
+        {
+            "issues": [{"number": 1264, "labels": ["oc-queued"]}],
+            "leases": [],
+            "dispatch_fingerprints": ["1264:material-v1"],
+            "provider": {"status": "no_api"},
+            "deterministic_work_available": True,
+        }
+    )
+
+    assert checked["report"]["healthy"] is True
+    assert checked["report"]["counts"]["queued"] == 1
+    assert checked["report"]["exception_decision"]["action"] == (
+        "park_provider_and_continue_deterministic_work"
+    )
+
+
+def test_inconsistent_completion_pulse_fails_closed_with_repair_signal():
+    checked = evaluate_completion_pulse(
+        {
+            "issues": [
+                {
+                    "number": 1264,
+                    "labels": ["oc-running", "oc-runtime-backoff"],
+                }
+            ],
+            "leases": [],
+            "dispatch_fingerprints": ["1264:material-v1", "1264:material-v1"],
+            "provider": {"status": "no_api"},
+            "deterministic_work_available": True,
+        }
+    )
+
+    report = checked["report"]
+    assert report["healthy"] is False
+    assert {
+        "executable_parked_conflict",
+        "running_lease_cardinality",
+        "duplicate_dispatch_fingerprint",
+    } <= {violation["type"] for violation in report["violations"]}
+    assert report["exception_decision"]["exception_class"] == "engineering_exception"
+    assert report["exception_decision"]["should_interrupt_owner"] is False
+
+
+def test_legacy_health_receipt_embeds_contract_evidence():
+    receipt = build_health(
+        {
+            "issues": [{"number": 1264, "labels": ["oc-queued"]}],
+            "leases": [],
+            "dispatch_fingerprints": [],
+        }
+    )
+
+    assert receipt["contract_snapshot"]["issues"][0]["number"] == 1264
+    assert receipt["contract_health"]["healthy"] is True
