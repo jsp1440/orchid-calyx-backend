@@ -8,11 +8,28 @@ GitHub mutation and must preserve repository governance.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from scripts.oc_health_contract import evaluate
 
 AUTHORIZED_SOURCE_KINDS = {"issue", "template", "objective"}
+MAX_SOURCE_PAYLOAD_BYTES = 4096
+KNOWLEDGE_GAP_PAYLOAD_SCHEMA = "oc.knowledge-gap-reserve-source.v1"
+KNOWLEDGE_GAP_STRING_FIELDS = {
+    "schema",
+    "taxon_id",
+    "taxon_name",
+    "domain",
+    "research_question",
+    "execution_mode",
+}
+KNOWLEDGE_GAP_FALSE_AUTHORITY_FIELDS = {
+    "automatic_publication",
+    "knowledge_graph_mutation",
+    "taxonomy_mutation",
+    "sensitive_locality_disclosure",
+}
 PROTECTED_BOUNDARIES = {
     "production",
     "scientific",
@@ -50,6 +67,40 @@ def _semantic_keys(snapshot: dict[str, Any]) -> set[str]:
     return seen
 
 
+def _source_payload_reason(candidate: dict[str, Any]) -> str | None:
+    payload = candidate.get("source_payload")
+    if payload is None:
+        return None
+    if not isinstance(payload, dict):
+        return "invalid_source_payload"
+
+    allowed = (
+        KNOWLEDGE_GAP_STRING_FIELDS
+        | KNOWLEDGE_GAP_FALSE_AUTHORITY_FIELDS
+        | {"review_required"}
+    )
+    if set(payload) != allowed:
+        return "invalid_source_payload"
+    if payload.get("schema") != KNOWLEDGE_GAP_PAYLOAD_SCHEMA:
+        return "invalid_source_payload"
+    if any(
+        not isinstance(payload.get(field), str) or not payload[field].strip()
+        for field in KNOWLEDGE_GAP_STRING_FIELDS
+    ):
+        return "invalid_source_payload"
+    if payload.get("execution_mode") != "bounded_research_mission":
+        return "authority_escalation"
+    if payload.get("review_required") is not True:
+        return "authority_escalation"
+    if any(payload.get(field) is not False for field in KNOWLEDGE_GAP_FALSE_AUTHORITY_FIELDS):
+        return "authority_escalation"
+
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    if len(encoded) > MAX_SOURCE_PAYLOAD_BYTES:
+        return "source_payload_too_large"
+    return None
+
+
 def _candidate_reason(
     candidate: dict[str, Any],
     completed: set[str],
@@ -67,6 +118,10 @@ def _candidate_reason(
     }
     if boundaries & PROTECTED_BOUNDARIES:
         return "protected_boundary"
+
+    payload_reason = _source_payload_reason(candidate)
+    if payload_reason:
+        return payload_reason
 
     fingerprint = candidate.get("material_fingerprint")
     if not fingerprint:
@@ -178,6 +233,8 @@ def plan_refill(
             "material_fingerprint": fingerprint,
             "semantic_key": semantic_key,
         }
+        if candidate.get("source_payload") is not None:
+            proposal["source_payload"] = candidate["source_payload"]
         result["proposals"].append(proposal)
         seen_fp.add(fingerprint)
         if semantic_key:
