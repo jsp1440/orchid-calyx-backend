@@ -34,13 +34,13 @@ from runtime.autonomous_orchestrator import DefaultTaskExecutor
 
 
 def _finding(**overrides) -> ActionableFinding:
-    defaults = dict(
+    defaults = {
         finding_key="backend:queue_depth",
         title="Queue depth above threshold",
         audit_source="AUDIT-MEASUREMENT-002",
         audit_id="AUD-0000FEED0000",
         evidence={"status": "degraded", "depth": 42},
-    )
+    }
     defaults.update(overrides)
     return ActionableFinding(**defaults)
 
@@ -269,7 +269,7 @@ def test_risky_task_type_routes_through_the_existing_owner_gate():
 def test_cross_repository_payload_is_owner_gated_via_default_task_executor():
     finding = _finding(evidence={"cross_repository": True})
     executor = DefaultTaskExecutor()
-    remediation = build_remediation(finding, executor=executor)
+    build_remediation(finding, executor=executor)
     # The finding's own evidence isn't what DefaultTaskExecutor.risky_action
     # inspects (it looks at task_type/action/operation in the payload), so
     # this asserts the *reuse* of that exact function rather than a
