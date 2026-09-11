@@ -76,7 +76,7 @@ def test_repeated_cycle_suppresses_unchanged_semantic_lineage():
         snapshot(
             {
                 "number": 1023,
-                "labels": ["oc-running"],
+                "labels": ["oc-queued"],
                 "material_fingerprint": proposal["material_fingerprint"],
                 "semantic_key": proposal["semantic_key"],
             }
