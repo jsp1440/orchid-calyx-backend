@@ -68,6 +68,7 @@ def run_verdict(script: str, tmp_path: Path, outcome: str, record: object | None
             "GH_TOKEN": "x",
             "GITHUB_REPOSITORY": "owner/repo",
             "OUTCOME": outcome,
+            "NO_API_BLOCKED": "false",
             "RUN_URL": "https://example.invalid/run/1",
             "CLAUDE_EXECUTION_LOG": str(log),
         },

@@ -94,10 +94,6 @@ def execute_job(job_type: str, payload: dict) -> dict:
         from app.routers.owner_operations import live_audit_payload
         audit_type = payload.get("audit_type", "overall")
         result = live_audit_payload(audit_type)
-        # An audit job that produced actionable findings is not "completed"
-        # just because the report rendered; it is only complete once every
-        # finding sits in a resolved disposition. Reporting the pending state
-        # is what keeps narrative-only audits out of the job log.
         completion = result.get("followthrough_completion_state") or {}
         state = completion.get("state") or "unknown"
         summary = result.get("followthrough_owner_summary") or {}

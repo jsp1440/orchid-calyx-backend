@@ -1,0 +1,286 @@
+name: Orchid Provider Recovery Canary
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/orchid-gemini-runtime-canary.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/orchid-gemini-runtime-canary.yml'
+  issues:
+    types: [labeled]
+
+# Global paid-execution concurrency — enforces PAID_WORKER_CONCURRENCY=1 across
+# all provider workflows.  cancel-in-progress: false queues rather than kills.
+concurrency:
+  group: swarm-paid-execution-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  canary:
+    # Fail closed before npm can download either provider CLI.
+    if: vars.NO_API_MODE == 'false' && (github.event_name != 'issues' || (github.event.issue.number == 1031 && github.event.label.name == 'oc-runtime-degraded'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUNTIME_TRACKER_ISSUE: "1031"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: NO-API mode guard
+        id: no_api
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+        run: python3 scripts/oc_no_api_guard.py
+
+      - name: Swarm governor precheck
+        id: governor
+        if: steps.no_api.outputs.blocked == 'false'
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: gemini
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_RETRY_COUNT: "0"
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD: ${{ vars.OC_GOVERNOR_CANARY_ESTIMATED_COST_USD || '0.10' }}
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ vars.OC_GOVERNOR_DAILY_SPEND_USD }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ vars.OC_GOVERNOR_MONTHLY_SPEND_USD }}
+        run: python3 scripts/swarm_governor_precheck.py
+      - name: Execute bounded Gemini edit canary
+        id: gemini
+        if: steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
+        continue-on-error: true
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe="gemini_canary_probe.txt"
+          cleanup() { rm -f "$probe"; }
+          trap cleanup EXIT
+
+          if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+            echo "kind=config_missing" >> "$GITHUB_OUTPUT"
+            exit 20
+          fi
+
+          gemini_home="$RUNNER_TEMP/gemini-home"
+          mkdir -p "$gemini_home/.gemini"
+          cat > "$gemini_home/.gemini/settings.json" <<'JSON'
+          {
+            "tools": {
+              "exclude": ["run_shell_command", "web_fetch", "google_web_search"]
+            },
+            "telemetry": {
+              "enabled": false
+            }
+          }
+          JSON
+
+          set +e
+          HOME="$gemini_home" env -u GH_TOKEN GEMINI_API_KEY="$GEMINI_API_KEY" GEMINI_CLI_TRUST_WORKSPACE=true \
+            timeout 5m npx -y @google/gemini-cli@latest \
+            --approval-mode auto_edit \
+            --output-format json \
+            -p 'ORCHID GEMINI EDIT CANARY. Do not use shell or web tools. Create exactly one file named gemini_canary_probe.txt in the repository root containing exactly ORCHID_GEMINI_EDIT_CANARY_OK followed by a newline. Do not modify any other file. Then reply exactly ORCHID_GEMINI_EDIT_CANARY_OK.' \
+            > "$RUNNER_TEMP/gemini-result.json" 2> "$RUNNER_TEMP/gemini-stderr.log"
+          status=$?
+          set -e
+
+          if (( status == 0 )) && [[ -f "$probe" ]] && [[ "$(cat "$probe")" == "ORCHID_GEMINI_EDIT_CANARY_OK" ]]; then
+            changed=$(git status --porcelain --untracked-files=all | awk '{print $2}')
+            if [[ "$changed" == "$probe" ]]; then
+              echo "kind=healthy_edit" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "kind=scope_violation" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          combined="$RUNNER_TEMP/gemini-diagnostic.txt"
+          cat "$RUNNER_TEMP/gemini-stderr.log" "$RUNNER_TEMP/gemini-result.json" > "$combined" 2>/dev/null || true
+          if grep -Eqi '401|403|unauthor|forbidden|invalid.?api.?key|api.?key.*invalid|auth' "$combined"; then
+            kind=authentication_or_permission_error
+          elif grep -Eqi '429|quota|rate.?limit|billing|credit|resource.?exhausted' "$combined"; then
+            kind=quota_or_billing_error
+          elif grep -Eqi 'unknown option|unknown argument|invalid option|usage:' "$combined"; then
+            kind=cli_argument_error
+          elif grep -Eqi 'tool.*denied|denied.*tool|confirmation|approval' "$combined"; then
+            kind=edit_tool_denied
+          elif [[ $status -eq 124 ]]; then
+            kind=timeout
+          else
+            kind=provider_or_cli_error
+          fi
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "Gemini edit canary classified result as $kind (exit=$status)."
+          exit 1
+
+      - name: Execute bounded OpenAI edit canary
+        id: openai
+        if: ${{ false }}
+        continue-on-error: true
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe="openai_canary_probe.txt"
+          cleanup() { rm -f "$probe"; }
+          trap cleanup EXIT
+
+          if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+            echo "kind=config_missing" >> "$GITHUB_OUTPUT"
+            exit 20
+          fi
+
+          codex_home="$RUNNER_TEMP/codex-home"
+          mkdir -p "$codex_home"
+          cat > "$codex_home/config.toml" <<'TOML'
+          sandbox_mode = "workspace-write"
+          approval_policy = "never"
+          web_search = "disabled"
+          allow_login_shell = false
+
+          [sandbox_workspace_write]
+          network_access = false
+
+          [shell_environment_policy]
+          inherit = "core"
+          ignore_default_excludes = false
+          exclude = ["*KEY*", "*SECRET*", "*TOKEN*"]
+          TOML
+
+          set +e
+          env -u GH_TOKEN CODEX_HOME="$codex_home" OPENAI_API_KEY="$OPENAI_API_KEY" \
+            timeout 5m npx -y @openai/codex@latest exec \
+            --sandbox workspace-write \
+            'ORCHID OPENAI EDIT CANARY. Work only in this repository. Do not use network access, inspect credentials, or modify git metadata. Create exactly one file named openai_canary_probe.txt in the repository root containing exactly ORCHID_OPENAI_EDIT_CANARY_OK followed by a newline. Do not modify any other file. Then finish.' \
+            > "$RUNNER_TEMP/openai-result.log" 2> "$RUNNER_TEMP/openai-stderr.log"
+          status=$?
+          set -e
+
+          if (( status == 0 )) && [[ -f "$probe" ]] && [[ "$(cat "$probe")" == "ORCHID_OPENAI_EDIT_CANARY_OK" ]]; then
+            changed=$(git status --porcelain --untracked-files=all | awk '{print $2}')
+            if [[ "$changed" == "$probe" ]]; then
+              echo "kind=healthy_edit" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "kind=scope_violation" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          combined="$RUNNER_TEMP/openai-diagnostic.txt"
+          cat "$RUNNER_TEMP/openai-stderr.log" "$RUNNER_TEMP/openai-result.log" > "$combined" 2>/dev/null || true
+          if grep -Eqi '401|403|unauthor|forbidden|invalid.?api.?key|api.?key.*invalid|authentication' "$combined"; then
+            kind=authentication_or_permission_error
+          elif grep -Eqi '429|quota|rate.?limit|billing|credit|insufficient_quota' "$combined"; then
+            kind=quota_or_billing_error
+          elif grep -Eqi 'unknown option|unknown argument|invalid option|usage:' "$combined"; then
+            kind=cli_argument_error
+          elif [[ $status -eq 124 ]]; then
+            kind=timeout
+          else
+            kind=provider_or_cli_error
+          fi
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "OpenAI edit canary classified result as $kind (exit=$status)."
+          exit 1
+
+      - name: Publish normalized provider-chain result and recover circuit when proven healthy
+        if: always()
+        env:
+          GEMINI_KIND: ${{ steps.gemini.outputs.kind }}
+          GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
+          OPENAI_KIND: ${{ steps.openai.outputs.kind }}
+          OPENAI_OUTCOME: ${{ steps.openai.outcome }}
+          NO_API_BLOCKED: ${{ steps.no_api.outputs.blocked }}
+          GOVERNOR_AUTHORIZED: ${{ steps.governor.outputs.authorized }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # NO-API mode or governor block: provider was intentionally skipped — do not
+          # affect circuit state or post a misleading failure comment.
+          if [[ "${NO_API_BLOCKED:-true}" == "true" ]]; then
+            echo "[OC-CANARY] NO-API mode active; provider steps skipped. Circuit state unchanged."
+            exit 0
+          fi
+          if [[ "${GOVERNOR_AUTHORIZED:-false}" != "true" ]]; then
+            echo "[OC-CANARY] Governor precheck blocked; provider steps skipped. Circuit state unchanged."
+            exit 0
+          fi
+
+          provider="none"
+          state=FAILED
+          if [[ "${GEMINI_KIND:-}" == healthy_edit && "${GEMINI_OUTCOME:-}" == success ]]; then
+            provider=gemini
+            state=PASSED
+          elif [[ "${OPENAI_KIND:-}" == healthy_edit && "${OPENAI_OUTCOME:-}" == success ]]; then
+            provider=openai
+            state=PASSED
+          fi
+
+          gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
+            --body "ORCHID PROVIDER RECOVERY CANARY — **${state}**. provider=${provider}; gemini=${GEMINI_KIND:-not_run}; openai=${OPENAI_KIND:-not_run}. Probe files are runner-local and deleted; no provider transcript or secret material persisted. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+
+          # PR/push executions are observational CI only. A temporary provider quota
+          # condition must not make the fallback-infrastructure change unmergeable.
+          if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_EVENT_NAME" == push ]]; then
+            exit 0
+          fi
+
+          if [[ "$state" == PASSED && "$GITHUB_EVENT_NAME" == issues ]]; then
+            gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
+              --remove-label oc-runtime-degraded \
+              --remove-label oc-provider-chain-blocked \
+              --remove-label oc-provider-billing-exhausted \
+              >/dev/null 2>&1 || true
+            mapfile -t parked < <(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label oc-runtime-backoff --limit 200 --json number,labels --jq '.[] | [.number, ([.labels[].name] | join(" "))] | @tsv')
+            for row in "${parked[@]:-}"; do
+              [[ -n "$row" ]] || continue
+              issue=${row%%$'\t'*}
+              labels=${row#*$'\t'}
+              if [[ "$labels" == *oc-repair-backoff* ]]; then
+                gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --remove-label oc-queued --remove-label oc-running --remove-label oc-repair >/dev/null 2>&1 || true
+                gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Provider recovery canary passed via ${provider}, but repair backoff remains authoritative; issue was not returned to the execution queue." >/dev/null 2>&1 || true
+                continue
+              fi
+              gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+              gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Provider recovery canary passed via ${provider}. Global breaker cleared; issue returned to bounded repair without weakening acceptance or owner gates." >/dev/null 2>&1 || true
+            done
+            gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **RECOVERED VIA ${provider^^}**. Bounded edit canary passed; parked issues returned to repair and ordinary scheduler dispatch may resume." >/dev/null
+          fi
+
+          # When both providers had genuine failures (not CLI infra issues), park the
+          # full provider chain so the scheduler stops dispatching and the continuous-
+          # completion circuit routes all retries through this canary.  Only set on
+          # an issues-event invocation (real recovery attempt, not CI on a PR/push).
+          if [[ "$state" == FAILED && "$GITHUB_EVENT_NAME" == issues ]]; then
+            gemini_genuine=false
+            openai_genuine=false
+            [[ "${GEMINI_KIND:-}" =~ ^(quota_or_billing_error|authentication_or_permission_error|provider_or_cli_error|timeout)$ ]] && gemini_genuine=true || true
+            [[ "${OPENAI_OUTCOME:-}" != "skipped" && "${OPENAI_KIND:-}" =~ ^(quota_or_billing_error|authentication_or_permission_error|provider_or_cli_error|timeout)$ ]] && openai_genuine=true || true
+            if [[ "$gemini_genuine" == true && "$openai_genuine" == true ]]; then
+              gh issue edit "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
+                --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
+              gh issue comment "$RUNTIME_TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" \
+                --body "ORCHID PROVIDER RECOVERY CANARY — **ALL PROVIDERS BLOCKED**. gemini=${GEMINI_KIND:-not_run}; openai=${OPENAI_KIND:-not_run}. Dispatch parked via oc-provider-chain-blocked until recovery. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+            fi
+          fi
+
+          [[ "$state" == PASSED ]]

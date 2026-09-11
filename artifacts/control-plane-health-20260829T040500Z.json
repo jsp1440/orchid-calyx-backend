@@ -1,0 +1,48 @@
+{
+  "schema": "orchid.control-plane-health.v1",
+  "generated_at": "2026-08-29T04:05:00Z",
+  "repository": "jsp1440/orchid-calyx-backend",
+  "scheduler_heartbeat": {
+    "state": "ATTEMPTED_NOT_EXECUTED",
+    "run_id": 33232573978,
+    "run_started_at": "2026-08-29T03:55:27Z"
+  },
+  "last_dispatch_time": "UNKNOWN",
+  "current_running_lease": null,
+  "running_lease_count": 0,
+  "queued_p0_count": 2,
+  "validating_count": 2,
+  "stale_lease_count": 0,
+  "blocked_backoff_count": 4,
+  "provider_availability_state": {
+    "claude": "DEGRADED_LABEL_PRESENT",
+    "gemini": "UNKNOWN",
+    "openai": "UNKNOWN",
+    "provider_chain_blocked": false
+  },
+  "ci_infrastructure_state": {
+    "state": "EXTERNAL_INFRASTRUCTURE_BLOCKED",
+    "reason": "runner_allocation_failure",
+    "run_id": 33232573978,
+    "job_id": 99047833434,
+    "runner_id": 0,
+    "executed_step_count": 0
+  },
+  "integration_head": "68a47511247a1fefa805efc6f2e55450213c23a3",
+  "main_head": "0a189740309ff9221be62ec3e844e72023e2dca0",
+  "integration_ahead_by": 207,
+  "integration_behind_by": 0,
+  "last_successful_exact_head_validation": "UNKNOWN",
+  "last_integration_promotion": {
+    "sha": "68a47511247a1fefa805efc6f2e55450213c23a3",
+    "at": "2026-08-26T05:21:17Z"
+  },
+  "last_main_promotion": {
+    "sha": "0a189740309ff9221be62ec3e844e72023e2dca0",
+    "at": "2026-08-25T07:48:41Z"
+  },
+  "duplicate_authoritative_mission_count": 0,
+  "canonical_stabilization_issue": 1193,
+  "local_repaired_plan_selected": [1193],
+  "reason_no_work_running": "scheduler_job_never_received_a_runner"
+}
