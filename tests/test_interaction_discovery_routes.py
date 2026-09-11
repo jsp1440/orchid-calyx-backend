@@ -3,12 +3,12 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.semantic_index import repository_runtime
 from app.calyx_conversation.interaction_discovery_ingest import (
     ingest_globi_interactions_for_canonical_dataset,
 )
 from app.interaction_discovery.routes import router
 from app.interaction_discovery.service import discover_interactions
+from app.semantic_index import repository_runtime
 from app.semantic_index.memory_repository import MemoryIndexRepository
 
 
