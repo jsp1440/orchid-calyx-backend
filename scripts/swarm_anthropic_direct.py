@@ -32,7 +32,15 @@ ANTHROPIC_VERSION = "2023-06-01"
 PROTECTED_PREFIXES = (
     ".git/",
     ".github/workflows/",
+    "runtime/swarm/",
 )
+PROTECTED_FILES = {
+    "scripts/oc_no_api_guard.py",
+    "scripts/swarm_anthropic_direct.py",
+    "scripts/swarm_governor_precheck.py",
+    "scripts/swarm_governor_postrun.py",
+    "scripts/swarm_governor_github_ledger.py",
+}
 PROTECTED_BASENAMES = {
     ".env",
     ".env.local",
@@ -122,9 +130,12 @@ def _relative(path: Path) -> str:
 
 def _writable(path: Path) -> bool:
     rel = _relative(path)
-    if path.name in PROTECTED_BASENAMES:
+    if path.name in PROTECTED_BASENAMES or rel in PROTECTED_FILES:
         return False
-    return not any(rel == p.rstrip("/") or rel.startswith(p) for p in PROTECTED_PREFIXES)
+    return not any(
+        rel == prefix.rstrip("/") or rel.startswith(prefix)
+        for prefix in PROTECTED_PREFIXES
+    )
 
 
 def _run(cmd: list[str], *, timeout: int = 120, check: bool = False) -> subprocess.CompletedProcess[str]:
@@ -372,7 +383,7 @@ def main() -> int:
     parser.add_argument("--packet-file", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--max-turns", type=int, default=12)
-    parser.add_argument("--max-tokens", type=int, default=4096)
+    parser.add_argument("--max-tokens", type=int, default=3072)
     parser.add_argument("--base", default="oc-autonomous-integration")
     parser.add_argument("--execution-file", required=True)
     args = parser.parse_args()
@@ -407,12 +418,14 @@ def main() -> int:
             {"role": "user", "content": f"{system}\n\n{packet}"}
         ]
 
-        for turn in range(1, args.max_turns + 1):
+        bounded_turns = min(max(args.max_turns, 1), 12)
+        bounded_tokens = min(max(args.max_tokens, 256), 3072)
+        for turn in range(1, bounded_turns + 1):
             response = _anthropic_message(
                 api_key=api_key,
                 model=args.model,
                 messages=messages,
-                max_tokens=args.max_tokens,
+                max_tokens=bounded_tokens,
                 timeout=120,
             )
             calls += 1
