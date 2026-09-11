@@ -237,16 +237,29 @@ def test_mission_answer_surfaces_evidence_status_citations_and_governed_provenan
         auth("owner-a"),
     )
 
+    # SUPERSEDED by CALYX-CONVERSATIONAL-SYNTHESIS-001. These assertions used to
+    # require one labelled block per subsystem ("Evidence summary:", "External
+    # literature context:", "Governed provenance:"), which is the
+    # source-inventory behaviour the reasoning contract exists to prevent -- the
+    # test was pinning the defect. They now assert the same GUARANTEES against
+    # the integrated answer plus its inspectable structure: a conclusion is
+    # offered, contradiction is disclosed as contradiction, gaps are named, and
+    # provenance stays available without being narrated at the user.
     answer = result["answer"]
-    assert "Scientific conclusion:" in answer
-    assert "Evidence summary:" in answer
-    assert "Supporting sources/citations:" in answer
-    assert "Strength of evidence:" in answer
-    assert "Limitations and uncertainty:" in answer
-    assert "Disagreements or conflicting evidence:" in answer
-    assert "Evidence vs inference:" in answer
-    assert "Governed provenance: evidence packet packet-123, interpretation 987." in answer
-    assert "Journal of Orchid Physiology" in answer
+    structure = result["synthesis_structure"]
+
+    assert answer.strip()
+    assert "Evidence summary:" not in answer
+    assert "Governed provenance:" not in answer
+    # Machinery is inspectable, not conversational.
+    assert "packet-123" not in answer
+    assert structure["governed_provenance"]["evidence_packet_id"] == "packet-123"
+    assert structure["governed_provenance"]["interpretation_id"] == 987
+    assert any("Journal of Orchid Physiology" in item for item in structure["citations"])
+    # Contradiction and missing evidence survive into the answer itself.
+    assert structure["unresolved_conflict"] is True
+    assert "hold the conclusion loosely" in answer
+    assert "orchid-specific replicated field studies" in answer
 
 
 def test_mission_without_conclusion_returns_explicit_evidence_status_explanation():
@@ -274,6 +287,11 @@ def test_mission_without_conclusion_returns_explicit_evidence_status_explanation
         },
     )
 
-    assert "Scientific conclusion: no evidence-grounded conclusion could be justified" in reply.text
-    assert "Evidence summary: the mission did not surface any supporting evidence records" in reply.text
-    assert "Limitations and uncertainty: missing or incomplete evidence for orchid-specific tracer experiments." in reply.text
+    # SUPERSEDED with the block labels above: an empty mission must still refuse
+    # to answer and must name the gap, but it says so conversationally and must
+    # never phrase an empty index as a measured zero or biological absence.
+    lowered = reply.text.lower()
+    assert "can't answer that from evidence yet" in lowered
+    assert "not an indication that the biology works either way" in lowered
+    assert "orchid-specific tracer experiments" in reply.text
+    assert "Evidence summary:" not in reply.text

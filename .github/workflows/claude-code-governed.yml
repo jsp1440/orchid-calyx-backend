@@ -10,13 +10,21 @@ on:
   issues:
     types: [opened, assigned]
 
+# Global paid-execution concurrency — enforces PAID_WORKER_CONCURRENCY=1 across
+# all provider workflows.  cancel-in-progress: false queues rather than kills.
+concurrency:
+  group: swarm-paid-execution-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   claude:
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      vars.NO_API_MODE == 'false' && (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -31,7 +39,33 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: NO-API mode guard
+        id: no_api
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+        run: python3 scripts/oc_no_api_guard.py
+
+      - name: Swarm governor precheck
+        id: governor
+        if: steps.no_api.outputs.blocked == 'false'
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: anthropic
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_RETRY_COUNT: "0"
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD: ${{ vars.OC_GOVERNOR_INTERACTIVE_ESTIMATED_COST_USD || '2.00' }}
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ vars.OC_GOVERNOR_DAILY_SPEND_USD }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ vars.OC_GOVERNOR_MONTHLY_SPEND_USD }}
+        run: python3 scripts/swarm_governor_precheck.py
+
       - name: Run Claude Code
+        if: steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -40,7 +74,6 @@ jobs:
           additional_permissions: |
             actions: read
           claude_args: |
-            --model claude-sonnet-5
             --max-turns 75
-            --allowedTools "Edit,Read,Write,Bash(git diff:*),Bash(git status:*),Bash(git ls-files:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git branch:*),Bash(git fetch:*),Bash(python:*),Bash(python3:*),Bash(pytest:*),Bash(ruff:*),Bash(npm:*),Bash(npx:*),Bash(test:*),Bash(gh pr:*),Bash(gh issue:*)"
+            --allowedTools "Edit,Read,Write,Bash(git diff *),Bash(git status *),Bash(git ls-files *),Bash(git log *),Bash(git rev-parse *),Bash(git add *),Bash(git commit *),Bash(git push *),Bash(git checkout *),Bash(git switch *),Bash(git branch *),Bash(git fetch *),Bash(python *),Bash(python3 *),Bash(pytest *),Bash(ruff *),Bash(npm *),Bash(npx *),Bash(test *),Bash(gh pr *),Bash(gh issue *)"
             --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative; model output is not project state. Reuse existing authoritative work. TWO-DAY COMPLETION MODE: execute before explaining; keep implementation scope bounded enough to finish, test, commit, push, and open/update exactly one DRAFT pull request before stopping. Run focused validation and required CI. Never merge or auto-merge, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create or disclose credentials, spend funds, force-push, or delete branches/repositories. Use the available Read/Glob/Grep tools instead of shell commands when possible. Complete requested validation and final GitHub comment before stopping."

@@ -9,6 +9,7 @@ from app.review_api.dependencies import authenticated_principal
 from app.routers.health import add_mission_control_cors_headers
 
 from .activation_service import UniversityActivationService
+from .ai_data_science_routes import router as ai_data_science_router
 from .config import learner_auth_enabled, session_writes_enabled, university_enabled
 from .durable_config import durable_sessions_enabled
 from .fixtures import CHAPTER, LABORATORY
@@ -216,5 +217,6 @@ def review_session(
     )
 
 
+router.include_router(ai_data_science_router)
 router.include_router(session_discovery_router)
 router.include_router(reviewer_router)

@@ -13,7 +13,7 @@ from typing import Any, Protocol
 from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
 from app.semantic_index.provider import DeterministicLocalProvider
-from app.semantic_index.routes import REPO
+from app.semantic_index.repository_runtime import get_repository_runtime
 from runtime.continuum_graph_tool import (
     KnowledgeGraphReadProtocol,
     ReadOnlyKnowledgeGraphTool,
@@ -80,7 +80,7 @@ class ContinuumConversationService:
         graph_tool: KnowledgeGraphReadProtocol | None = None,
     ) -> None:
         self.retrieval = retrieval or RetrievalEngine(
-            REPO, DeterministicLocalProvider()
+            get_repository_runtime().read(), DeterministicLocalProvider()
         )
         self.graph_tool = graph_tool or ReadOnlyKnowledgeGraphTool()
 

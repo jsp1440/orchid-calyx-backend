@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from .agent_security_gateway import (
+    SecuredCodingAgentProvider,
+    SecuredRepositoryInspectionGateway,
+    build_github_coding_security_gateway,
+)
 from .github_agent_ci_policy import RequiredCiCheckPolicy
 from .github_agent_dispatch_cycle import (
     GitHubCodingAgentDispatchCycle,
@@ -40,15 +45,29 @@ def build_production_github_coding_agent_dispatch_cycle(
     or bypassed here. Wiring this factory's result into `app.main`, a route,
     or a recurring worker is a separate, later, owner-governed activation
     decision that this module deliberately does not take.
+
+    All outbound repository inspection and coding-agent dispatch also pass
+    through the provider-neutral Agent Security Gateway. Provider substitution
+    cannot widen tool authority, and the existing draft-only/no-merge/no-deploy
+    governance remains unchanged.
     """
     repository_allowlist = tuple(policy.repository_allowlist)
-    inspector = GitHubRepositoryConvergenceInspector(
+    security = build_github_coding_security_gateway(repository_allowlist)
+    raw_inspector = GitHubRepositoryConvergenceInspector(
         transport=transport,
         repository_allowlist=repository_allowlist,
     )
-    provider = GitHubCopilotCloudProvider(
+    inspector = SecuredRepositoryInspectionGateway(
+        inner=raw_inspector,
+        security=security,
+    )
+    raw_provider = GitHubCopilotCloudProvider(
         transport=transport,
         repository_allowlist=repository_allowlist,
+    )
+    provider = SecuredCodingAgentProvider(
+        inner=raw_provider,
+        security=security,
     )
     executor = GitHubCodingAgentExecutor(inspector=inspector, provider=provider)
     observer = GitHubIssueLinkedPullRequestObserver(

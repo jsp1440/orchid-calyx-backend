@@ -1,99 +1,71 @@
-"""The autonomous execution lanes must survive an unrelated job failing.
-
-Observed livelock, 2026-08-20. ``prepare`` selects backlog issues and labels
-them ``oc-running``. The lanes then do the work and release the label. But the
-lanes were gated only on ``needs.prepare.outputs.issueN != ''``.
-
-An ``if:`` expression that never calls ``always()``, ``failure()`` or
-``cancelled()`` gets an implicit ``success()`` ANDed in, and ``success()``
-considers the *whole* needs chain, not just the direct parent. ``lane1`` needs
-``prepare``, which needs ``planner``. So whenever ``planner`` failed - which it
-did on every run, its Claude action erroring - GitHub skipped all three lanes
-even though ``prepare`` itself had succeeded and had already marked the issues
-``oc-running``.
-
-The result was a perfect livelock rather than an outage, which is why it went
-unnoticed: issues were claimed with nothing executing them, reclaimed 95 minutes
-later as stale, then re-claimed within a minute by the next ``prepare``. Issue
-#1030 cycled through that four times across five hours and produced no durable
-pull request.
-
-``prepare`` already guards itself with ``always()`` precisely so a planner
-failure cannot stop it. These tests hold the lanes to the same contract.
-"""
-
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest
 
 yaml = pytest.importorskip("yaml")
 
-WORKFLOW = Path(".github/workflows/orchid-continuous-completion.yml")
-LANES = ("lane1", "lane2", "lane3")
+WORKFLOWS = Path(".github/workflows")
+LEGACY = WORKFLOWS / "orchid-continuous-completion.yml"
+LANE = WORKFLOWS / "orchid-completion-lane.yml"
 
 
 @pytest.fixture(scope="module")
-def jobs() -> dict:
-    return yaml.safe_load(WORKFLOW.read_text())["jobs"]
+def legacy_text() -> str:
+    return LEGACY.read_text(encoding="utf-8")
 
 
-def test_every_lane_is_present(jobs):
-    for lane in LANES:
-        assert lane in jobs, f"{lane} is missing from the completion workflow"
+@pytest.fixture(scope="module")
+def lane_text() -> str:
+    return LANE.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("lane", LANES)
-def test_lane_is_not_skipped_when_an_unrelated_upstream_job_fails(jobs, lane):
-    """Without always(), a failed planner silently disables the lane."""
-    condition = jobs[lane]["if"]
-    assert "always()" in condition, (
-        f"{lane} must call always(); otherwise the implicit success() over its "
-        "needs chain lets a failed planner skip it while prepare has already "
-        "labelled the issue oc-running"
-    )
+def test_legacy_entry_point_only_redirects_to_swarm(legacy_text):
+    document = yaml.safe_load(legacy_text)
+    assert set(document[True]) == {"workflow_dispatch"}
+    assert set(document["jobs"]) == {"redirect"}
+    assert "gh workflow run orchid-swarm-controller.yml" in legacy_text
+    assert "orchid-completion-lane.yml" not in legacy_text
+    assert "oc_portfolio_scheduler.py" not in legacy_text
 
 
-@pytest.mark.parametrize("lane", LANES)
-def test_lane_still_requires_prepare_to_have_succeeded(jobs, lane):
-    """always() must not become 'run regardless'.
-
-    The lane needs a real slot. Reading outputs from a prepare that failed would
-    start a lane against an issue nobody selected.
-    """
-    condition = jobs[lane]["if"]
-    assert "needs.prepare.result == 'success'" in condition, (
-        f"{lane} must still require prepare to have succeeded"
-    )
+def test_legacy_redirect_has_read_only_repository_permissions(legacy_text):
+    permissions = yaml.safe_load(legacy_text)["permissions"]
+    assert permissions == {"actions": "write", "contents": "read"}
+    assert "--ref oc-autonomous-integration" in legacy_text
 
 
-@pytest.mark.parametrize("lane,index", [(l, i) for i, l in enumerate(LANES, start=1)])
-def test_lane_still_requires_a_non_empty_slot(jobs, lane, index):
-    condition = jobs[lane]["if"]
-    assert f"needs.prepare.outputs.issue{index} != ''" in condition, (
-        f"{lane} must still refuse to run on an empty slot"
-    )
+def test_provider_lane_is_gated_before_job_initialization(lane_text):
+    document = yaml.safe_load(lane_text)
+    execute = document["jobs"]["execute"]
+    assert execute["if"] == "vars.NO_API_MODE == 'false'"
+    assert "scripts/swarm_anthropic_direct.py" in lane_text
+    assert "anthropics/claude-code-action@v1" not in lane_text
+    assert "@google/gemini-cli" in lane_text
+    assert "@openai/codex" in lane_text
 
 
-def test_prepare_survives_a_planner_failure(jobs):
-    """The behaviour the lanes are being aligned with."""
-    condition = jobs["prepare"]["if"]
-    assert "always()" in condition
-    assert "needs.inventory.result == 'success'" in condition
+def test_lane_requires_a_live_scheduler_lease(lane_text):
+    lease = lane_text.index("name: Verify scheduler lease")
+    provider = lane_text.index("scripts/swarm_anthropic_direct.py")
+    assert lease < provider
+    assert "oc-running" in lane_text[lease:provider]
+    assert "Stale/duplicate completion dispatch suppressed" in lane_text[lease:provider]
 
 
-def test_prepare_is_what_claims_issues_so_lanes_must_be_able_to_release_them(jobs):
-    """Guards the invariant that made this a livelock rather than an outage.
+def test_lane_targets_integration_and_never_merges_main(lane_text):
+    assert "INTEGRATION_BRANCH: oc-autonomous-integration" in lane_text
+    assert "--base \"$INTEGRATION_BRANCH\"" in lane_text
+    assert "gh pr merge" not in lane_text
+    assert "deploy production" in lane_text
+    assert "Never merge to `main`" in lane_text
 
-    prepare applies oc-running. Only a lane removes it. If prepare can run while
-    the lanes cannot, issues are claimed by something that will never release
-    them.
-    """
-    prepare_run = " ".join(
-        step.get("run", "") for step in jobs["prepare"]["steps"] if isinstance(step, dict)
-    )
-    assert "--add-label oc-running" in prepare_run, (
-        "prepare is expected to claim issues; if that moved, this test's premise "
-        "and the lane gating both need rechecking"
-    )
+
+def test_lane_preserves_exact_head_validation_dispatch(lane_text):
+    assert "orchid-autonomous-validation.yml" in lane_text
+
+
+def test_lane_keeps_scientific_safety_contract(lane_text):
+    assert "sensitive-locality protections" in lane_text
+    assert "Never invent science" in lane_text
+    assert "activate taxonomy" in lane_text
+    assert "publish science" in lane_text

@@ -23,6 +23,50 @@ _ORCHID_GENERA = (
     "Lycaste",
 )
 
+# Lowercase words that look like potential genus names but are not botanical.
+# Filtering prevents generic English words from being treated as taxa.
+_NON_TAXON_WORDS = frozenset(
+    {
+        "the",
+        "and",
+        "orchid",
+        "family",
+        "species",
+        "genus",
+        "plant",
+        "flower",
+        "root",
+        "leaf",
+        "stem",
+        "orchidaceae",
+        "biology",
+        "botany",
+        "science",
+        "research",
+        "study",
+        "common",
+        "native",
+        "tropical",
+        "temperate",
+        "alpine",
+        "winter",
+        "summer",
+        "spring",
+        "autumn",
+        "fall",
+        "please",
+        "what",
+        "where",
+        "how",
+        "why",
+        "which",
+        "tell",
+        "about",
+        "calyx",
+        "continuum",
+    }
+)
+
 _PHYSIOLOGY_CLUSTERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "seasonal_flowering",
@@ -143,13 +187,85 @@ _FLOWERING_TERMS = (
 )
 
 
-def _mentioned_genera(question: str) -> list[str]:
+def _extract_potential_genera(text: str) -> list[str]:
+    """Extract capitalized words from text that resemble botanical genus names.
+
+    Accepts any word that:
+    - Starts with an uppercase letter followed by lowercase letters (Title case)
+    - Is at least 4 characters long
+    - Is not in the non-taxon stopword list
+    - Appears in a binomial context (word followed by a lowercase word, suggesting
+      a species epithet) OR appears to be a standalone capitalized botanical word
+
+    Returns deduplicated list preserving first-seen order.
+    """
+    # Binomial pattern: "Genus species" — capitalized genus followed by lowercase epithet
+    binomial_re = re.compile(r"\b([A-Z][a-z]{2,})\s+[a-z]{2,}")
+    # Also catch isolated capitalized words that look like genera (≥5 chars, Title case)
+    isolated_re = re.compile(r"\b([A-Z][a-z]{4,})\b")
+
+    seen: dict[str, str] = {}
+    for match in binomial_re.finditer(text):
+        word = match.group(1)
+        key = word.casefold()
+        if key not in _NON_TAXON_WORDS and key not in seen:
+            seen[key] = word
+
+    for match in isolated_re.finditer(text):
+        word = match.group(1)
+        key = word.casefold()
+        if key not in _NON_TAXON_WORDS and key not in seen:
+            seen[key] = word
+
+    return list(seen.values())
+
+
+def _mentioned_genera(question: str, extra_taxa: list[str] | None = None) -> list[str]:
+    """Return genera mentioned in the question.
+
+    Combines:
+    1. The canonical hardcoded genus list (for known well-studied orchid genera)
+    2. Any potential genus names extracted from the question text
+    3. Any genera from explicit taxa supplied by the caller (e.g. ["Calypso bulbosa"])
+
+    Preserves order: hardcoded matches first, then extracted, then explicit.
+    Deduplicates case-insensitively.
+    """
     normalized = question.casefold()
-    return [
-        genus
-        for genus in _ORCHID_GENERA
-        if re.search(rf"\b{re.escape(genus.casefold())}\b", normalized)
-    ]
+    seen: set[str] = set()
+    result: list[str] = []
+
+    # 1. Hardcoded canonical genera
+    for genus in _ORCHID_GENERA:
+        if re.search(rf"\b{re.escape(genus.casefold())}\b", normalized):
+            key = genus.casefold()
+            if key not in seen:
+                seen.add(key)
+                result.append(genus)
+
+    # 2. Potential genera extracted from the question text itself
+    for genus in _extract_potential_genera(question):
+        key = genus.casefold()
+        if key not in seen:
+            seen.add(key)
+            result.append(genus)
+
+    # 3. Genera from explicit taxa supplied by the caller
+    if extra_taxa:
+        for taxon in extra_taxa:
+            # Treat first word of each taxon as the genus
+            parts = str(taxon or "").strip().split()
+            if not parts:
+                continue
+            genus = parts[0]
+            if not genus[0].isupper():
+                continue
+            key = genus.casefold()
+            if key not in seen and key not in _NON_TAXON_WORDS:
+                seen.add(key)
+                result.append(genus)
+
+    return result
 
 
 def _wet_winter_intent(question: str) -> bool:
@@ -206,10 +322,23 @@ def _epmc_or(terms: tuple[str, ...], *, limit: int = 5) -> str:
     return " OR ".join(values)
 
 
-def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
-    """Build focused Europe PMC searches from a natural-language Calyx question."""
+def _query_plan(
+    question: str,
+    *,
+    max_queries: int = 8,
+    taxa: list[str] | None = None,
+) -> list[str]:
+    """Build focused Europe PMC searches from a natural-language Calyx question.
 
-    genera = _mentioned_genera(question)
+    Args:
+        question: Natural-language research question.
+        max_queries: Maximum number of query strings to produce.
+        taxa: Optional explicit list of scientific names (binomials or genera) to
+              include in the plan, e.g. ["Calypso bulbosa", "Pleione humilis"].
+              These supplement any taxa detected from the question text.
+    """
+
+    genera = _mentioned_genera(question, extra_taxa=taxa)
     clusters = _active_clusters(question)
     wet_winter = _wet_winter_intent(question)
     ordered_genera = sorted(
@@ -256,6 +385,14 @@ def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
                 f'"{term}"' if " " in term else term for term in combined_terms[:6]
             )
             queries.append(f'(orchid OR Orchidaceae) AND ({expr})')
+
+    # Fallback: when no cluster terms fired but genera are present, emit bare
+    # genus queries so any taxon produces at least one retrievable plan entry.
+    if not queries and ordered_genera:
+        for genus in ordered_genera[:max_queries]:
+            queries.append(f'"{genus}" AND (orchid OR Orchidaceae OR ecology OR physiology OR cultivation)')
+            if len(queries) >= max_queries:
+                break
 
     deduplicated: list[str] = []
     seen: set[str] = set()
@@ -304,14 +441,18 @@ def _record_from_europe_pmc(record: dict[str, Any], *, query: str) -> dict[str, 
     }
 
 
-def _relevance_score(record: dict[str, Any], question: str) -> float:
+def _relevance_score(
+    record: dict[str, Any],
+    question: str,
+    taxa: list[str] | None = None,
+) -> float:
     """Rank records for the actual physiological question, not generic orchid match."""
 
     question_cf = question.casefold()
     title = str(record.get("title") or "").casefold()
     abstract = str(record.get("abstract") or "").casefold()
     text = title + " " + abstract
-    mentioned = _mentioned_genera(question)
+    mentioned = _mentioned_genera(question, extra_taxa=taxa)
     active = _active_clusters(question)
     wet_winter = _wet_winter_intent(question)
 
@@ -392,15 +533,29 @@ def _relevance_score(record: dict[str, Any], question: str) -> float:
     return round(score, 3)
 
 
-def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
-    """Discover and relevance-rank external literature for a Calyx research turn."""
+def search_europe_pmc(
+    query: str,
+    *,
+    limit: int = 8,
+    taxa: list[str] | None = None,
+) -> dict[str, Any]:
+    """Discover and relevance-rank external literature for a Calyx research turn.
+
+    Args:
+        query: Natural-language research question.
+        limit: Maximum results to return.
+        taxa: Optional explicit list of scientific binomials or genera to include
+              in the query plan, e.g. ["Calypso bulbosa", "Pleione humilis"].
+              Enables evidence retrieval for any orchid taxon, not just the
+              canonical hardcoded genus list.
+    """
 
     timeout = max(
         1.0,
         min(float(os.getenv("CALYX_EXTERNAL_LITERATURE_TIMEOUT_SECONDS", "12")), 30.0),
     )
     result_limit = max(1, min(int(limit), 25))
-    query_plan = _query_plan(query)
+    query_plan = _query_plan(query, taxa=taxa)
     candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
     diagnostics: list[dict[str, Any]] = []
@@ -436,7 +591,7 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
             if not identity or identity in seen:
                 continue
             seen.add(identity)
-            record["relevance_score"] = _relevance_score(record, query)
+            record["relevance_score"] = _relevance_score(record, query, taxa=taxa)
             candidates.append(record)
 
     candidates.sort(
@@ -471,8 +626,17 @@ def augment_retrieval_with_external_literature(
     query: str,
     *,
     limit: int = 8,
+    taxa: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Attach discovery and bridge it into the review-bound Brain research index."""
+    """Attach discovery and bridge it into the review-bound Brain research index.
+
+    Args:
+        retrieval: Local retrieval result dict.
+        query: Natural-language research question.
+        limit: Maximum external results to return.
+        taxa: Optional explicit scientific names to include in query planning,
+              e.g. ["Calypso bulbosa", "Pleione humilis"].
+    """
 
     result = dict(retrieval)
     local_results = result.get("results") or []
@@ -498,7 +662,7 @@ def augment_retrieval_with_external_literature(
         return result
 
     try:
-        external = search_europe_pmc(query, limit=limit)
+        external = search_europe_pmc(query, limit=limit, taxa=taxa)
         external["status"] = "available" if external.get("results") else "empty"
     except (requests.RequestException, ValueError, TypeError) as exc:
         external = {

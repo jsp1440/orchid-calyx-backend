@@ -4,7 +4,9 @@ import pytest
 
 from app.calyx_conversation.routes import (
     AnalysisRequest,
+    ConversationRequest,
     DatasetAnalysisRequest,
+    _compose_answer,
     run_analysis,
     run_dataset_analysis,
     safe_expression,
@@ -126,3 +128,53 @@ def test_memory_conversation_store_persists_transcript_and_context():
     assert first["message_id"] != second["message_id"]
     assert store.recent(limit=1)[0]["message_count"] == 2
     assert "What do we know?" in store.history_text(cid)
+
+
+_EMPTY_RETRIEVAL = {"results": [], "total_eligible_results": 0, "ranking_configuration_version": "test"}
+
+
+def test_compose_answer_without_epistemic_projection():
+    answer = _compose_answer("test question", _EMPTY_RETRIEVAL, None, None, None, None)
+    assert "Epistemic memory" not in answer
+    assert "Question: test question" in answer
+
+
+def test_compose_answer_with_epistemic_projection_includes_node_summary():
+    epistemic = {
+        "nodes": [
+            {"node_id": "reasoning:abc:root", "node_type": "REASONING_LEDGER_REVISION"},
+            {"node_id": "reasoning:abc:entry:1", "node_type": "LEDGER_ENTRY"},
+        ],
+        "edges": [
+            {"edge_id": "e1", "predicate": "contains"},
+        ],
+    }
+    answer = _compose_answer("orchid habitats", _EMPTY_RETRIEVAL, None, None, None, None, epistemic)
+    assert "Epistemic memory" in answer
+    assert "nodes=2" in answer
+    assert "edges=1" in answer
+    assert "canonical_knowledge=False" in answer
+    assert "Question: orchid habitats" in answer
+
+
+def test_compose_answer_empty_epistemic_projection_shows_zero_counts():
+    answer = _compose_answer("q", _EMPTY_RETRIEVAL, None, None, None, None, {"nodes": [], "edges": []})
+    assert "Epistemic memory" in answer
+    assert "nodes=0" in answer
+
+
+def test_conversation_request_accepts_epistemic_projection():
+    req = ConversationRequest(
+        message="What orchids grow in bogs?",
+        epistemic_projection={
+            "nodes": [{"node_id": "n1", "node_type": "REASONING_LEDGER_REVISION"}],
+            "edges": [],
+        },
+    )
+    assert req.epistemic_projection is not None
+    assert len(req.epistemic_projection["nodes"]) == 1
+
+
+def test_conversation_request_epistemic_projection_defaults_to_none():
+    req = ConversationRequest(message="Minimal request")
+    assert req.epistemic_projection is None

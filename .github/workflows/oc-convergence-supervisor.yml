@@ -1,0 +1,114 @@
+name: OC Convergence Supervisor
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  push:
+    branches: [oc-autonomous-integration]
+  workflow_dispatch:
+  pull_request:
+    branches: [oc-autonomous-integration]
+    types: [opened, synchronize, ready_for_review, reopened]
+
+concurrency:
+  group: oc-convergence-supervisor-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  converge-one-green-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      INTEGRATION_BRANCH: oc-autonomous-integration
+    steps:
+      - name: Select oldest explicitly authorized convergence PR
+        id: select
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 \
+            --json number,body,createdAt \
+            --jq '[.[] | select((.body // "") | contains("OC-AUTO-CONVERGENCE: true"))] | sort_by(.createdAt) | .[0].number // empty')
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          [[ -z "$pr" ]] || echo "Selected PR #$pr"
+
+      - name: Verify exact-head validation and integration boundary
+        if: steps.select.outputs.pr != ''
+        id: verify
+        shell: bash
+        env:
+          PR: ${{ steps.select.outputs.pr }}
+        run: |
+          set -euo pipefail
+          data=$(gh pr view "$PR" --repo "$REPO" --json baseRefName,headRefName,headRefOid,isDraft,mergeStateStatus,body)
+          base=$(jq -r '.baseRefName' <<<"$data")
+          head=$(jq -r '.headRefName' <<<"$data")
+          sha=$(jq -r '.headRefOid' <<<"$data")
+          state=$(jq -r '.mergeStateStatus' <<<"$data")
+          body=$(jq -r '.body // ""' <<<"$data")
+
+          [[ "$base" == "$INTEGRATION_BRANCH" ]] || { echo "::error::PR #$PR targets $base"; exit 1; }
+          grep -Fq 'OC-AUTO-CONVERGENCE: true' <<<"$body" || { echo "::error::Missing convergence authorization marker"; exit 1; }
+          if grep -Fq 'OC-AUTO-HOLD: true' <<<"$body"; then
+            echo "hold=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          runs=$(gh run list --repo "$REPO" --workflow orchid-autonomous-validation.yml --branch "$head" --limit 30 --json headSha,status,conclusion || echo '[]')
+          result=$(jq -r --arg sha "$sha" '[.[] | select(.headSha == $sha)][0] | if . then [.status, (.conclusion // "")] | join(" ") else "" end' <<<"$runs")
+          if [[ -z "$result" ]]; then
+            gh workflow run orchid-autonomous-validation.yml --repo "$REPO" --ref "$head"
+            echo "waiting=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$result" != completed* ]]; then
+            echo "waiting=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$result" != "completed success" ]]; then
+            gh pr comment "$PR" --repo "$REPO" --body "[OC-AUTO] Convergence held: exact-head backend validation is \`$result\` at \`$sha\`."
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$state" == "BEHIND" ]]; then
+            gh api -X PUT "repos/$REPO/pulls/$PR/update-branch" >/dev/null
+            echo "waiting=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$state" == "DIRTY" || "$state" == "BLOCKED" ]]; then
+            gh pr comment "$PR" --repo "$REPO" --body "[OC-AUTO] Convergence held: merge state is \`$state\` at \`$sha\`."
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "draft=$(jq -r '.isDraft' <<<"$data")" >> "$GITHUB_OUTPUT"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Mark ready and merge exactly one green convergence PR
+        if: steps.select.outputs.pr != '' && steps.verify.outputs.ready == 'true' && steps.verify.outputs.hold != 'true' && steps.verify.outputs.waiting != 'true' && steps.verify.outputs.blocked != 'true'
+        shell: bash
+        env:
+          PR: ${{ steps.select.outputs.pr }}
+          EXPECTED_SHA: ${{ steps.verify.outputs.sha }}
+          WAS_DRAFT: ${{ steps.verify.outputs.draft }}
+        run: |
+          set -euo pipefail
+          current=$(gh pr view "$PR" --repo "$REPO" --json headRefOid,baseRefName --jq '[.headRefOid,.baseRefName] | @tsv')
+          IFS=$'\t' read -r current_sha current_base <<<"$current"
+          [[ "$current_sha" == "$EXPECTED_SHA" ]] || { echo "::error::PR head moved; refusing merge"; exit 1; }
+          [[ "$current_base" == "$INTEGRATION_BRANCH" ]] || { echo "::error::Base changed; refusing merge"; exit 1; }
+          if [[ "$WAS_DRAFT" == "true" ]]; then
+            gh pr ready "$PR" --repo "$REPO"
+          fi
+          gh pr merge "$PR" --repo "$REPO" --squash --delete-branch=false
+          echo "Merged PR #$PR at validated head $EXPECTED_SHA into $INTEGRATION_BRANCH."

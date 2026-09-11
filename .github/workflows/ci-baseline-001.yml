@@ -5,10 +5,18 @@ on:
     paths:
       - ".github/workflows/build-087b-validation.yml"
       - ".github/workflows/ci-baseline-001.yml"
+      - ".github/workflows/partner-data-security.yml"
       - "app/scientific_interpretation/postgres_repository.py"
       - "app/design_planning/postgres_repository.py"
+      - "app/data_governance/**"
+      - "app/security.py"
+      - "api_occurrence_points.py"
       - "tests/test_ci_baseline_001.py"
+      - "tests/test_partner_data_*.py"
+      - "tests/test_exact_occurrence_api_security.py"
+      - "tests/test_security_fail_closed.py"
       - "docs/brain/CI-BASELINE-001-CURRENT-MAIN.md"
+      - "docs/security/**"
   workflow_dispatch:
 
 permissions:
@@ -35,14 +43,47 @@ jobs:
           python -m py_compile \
             app/scientific_interpretation/postgres_repository.py \
             app/design_planning/postgres_repository.py \
-            tests/test_ci_baseline_001.py
+            app/data_governance/__init__.py \
+            app/data_governance/access.py \
+            app/data_governance/disclosure.py \
+            app/data_governance/model_gate.py \
+            app/data_governance/models.py \
+            app/data_governance/output_guard.py \
+            app/data_governance/policy.py \
+            app/security.py \
+            api_occurrence_points.py \
+            tests/test_ci_baseline_001.py \
+            tests/test_partner_data_access_bridge.py \
+            tests/test_partner_data_disclosure.py \
+            tests/test_partner_data_governance.py \
+            tests/test_partner_data_model_output_guards.py \
+            tests/test_exact_occurrence_api_security.py \
+            tests/test_security_fail_closed.py
       - name: Ruff changed baseline surface
         run: |
           python -m ruff check \
             app/scientific_interpretation/postgres_repository.py \
             app/design_planning/postgres_repository.py \
-            tests/test_ci_baseline_001.py
+            app/data_governance \
+            app/security.py \
+            api_occurrence_points.py \
+            tests/test_ci_baseline_001.py \
+            tests/test_partner_data_access_bridge.py \
+            tests/test_partner_data_disclosure.py \
+            tests/test_partner_data_governance.py \
+            tests/test_partner_data_model_output_guards.py \
+            tests/test_exact_occurrence_api_security.py \
+            tests/test_security_fail_closed.py
       - name: Focused regression tests
-        run: python -m pytest -q tests/test_ci_baseline_001.py
+        run: |
+          python -m pytest -q \
+            tests/test_ci_baseline_001.py \
+            tests/test_mission_control_role_001b_capabilities.py \
+            tests/test_partner_data_access_bridge.py \
+            tests/test_partner_data_disclosure.py \
+            tests/test_partner_data_governance.py \
+            tests/test_partner_data_model_output_guards.py \
+            tests/test_exact_occurrence_api_security.py \
+            tests/test_security_fail_closed.py
       - name: Diff hygiene
         run: git diff --check

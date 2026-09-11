@@ -6,6 +6,20 @@ on:
       issue_number:
         required: true
         type: string
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Orchid Continuum issue number to execute
+        required: true
+        type: string
+
+# Global paid-execution concurrency — enforces PAID_WORKER_CONCURRENCY=1 across
+# all provider workflows.  Per-issue duplicate-execution protection is provided
+# by the scheduler lease check (oc-running label) inside the execute job.
+# cancel-in-progress: false queues rather than kills a running execution.
+concurrency:
+  group: swarm-paid-execution-${{ github.repository }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -16,6 +30,9 @@ permissions:
 
 jobs:
   execute:
+    # Job-level gating is intentional: when NO_API_MODE is active or absent,
+    # GitHub never initializes this provider-capable job or downloads its actions.
+    if: vars.NO_API_MODE == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 70
     env:
@@ -29,13 +46,32 @@ jobs:
           ref: ${{ env.INTEGRATION_BRANCH }}
           fetch-depth: 0
 
-      - name: Load issue context
+      - name: Verify scheduler lease
+        id: lease
+        shell: bash
+        run: |
+          set -euo pipefail
+          labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(" ")' 2>/dev/null || true)
+          if [[ "$labels" == *oc-repair-backoff* ]]; then
+            echo "execute=false" >> "$GITHUB_OUTPUT"
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair --remove-label oc-validating >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Completion dispatch suppressed before provider execution because repair backoff is authoritative; execution labels were cleared. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+          elif [[ "$labels" == *oc-running* ]]; then
+            echo "execute=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "execute=false" >> "$GITHUB_OUTPUT"
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Stale/duplicate completion dispatch suppressed before provider execution because this issue no longer owns an oc-running lease. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+          fi
+
+      - name: Load issue context and publish worker receipt
+        if: steps.lease.outputs.execute == 'true'
         id: issue
         shell: bash
         run: |
           set -euo pipefail
           title=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json title --jq '.title')
           body=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json body --jq '.body')
+          labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name] | join(" ")')
           {
             echo 'title<<EOF'
             echo "$title"
@@ -43,60 +79,552 @@ jobs:
             echo 'body<<EOF'
             echo "$body"
             echo EOF
+            echo "labels=$labels"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Execute issue with Claude Code
+      - name: Prepare compact work packet
+        if: steps.lease.outputs.execute == 'true'
+        id: packet
+        env:
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          ISSUE_BODY: ${{ steps.issue.outputs.body }}
+          ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_prepare_work_packet.py \
+            --issue-number "$ISSUE_NUMBER" \
+            --title "$ISSUE_TITLE" \
+            --body "$ISSUE_BODY" \
+            --labels "$ISSUE_LABELS" \
+            --packet-file "$RUNNER_TEMP/swarm-work-packet.md" \
+            --github-output "$GITHUB_OUTPUT"
+          echo "Work packet fingerprint=${{ steps.packet.outputs.fingerprint }} class=${{ steps.packet.outputs.execution_class }} estimated_prompt_tokens=${{ steps.packet.outputs.estimated_prompt_tokens }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run deterministic preflight
+        if: steps.lease.outputs.execute == 'true'
+        id: deterministic
+        env:
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          ISSUE_BODY: ${{ steps.issue.outputs.body }}
+          ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_deterministic_preflight.py \
+            --issue-number "$ISSUE_NUMBER" \
+            --title "$ISSUE_TITLE" \
+            --body "$ISSUE_BODY" \
+            --labels "$ISSUE_LABELS" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Select bounded Claude route
+        if: steps.lease.outputs.execute == 'true'
+        id: route
+        env:
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          ISSUE_BODY: ${{ steps.packet.outputs.routing_text }}
+          ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/oc_model_router.py \
+            --title "$ISSUE_TITLE" \
+            --body "$ISSUE_BODY" \
+            --labels "$ISSUE_LABELS" \
+            --github-output "$GITHUB_OUTPUT"
+          route_telemetry="tier=$(grep '^tier=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-); model=$(grep '^model=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-); reason=$(grep '^reason=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Completion worker started from ${GITHUB_EVENT_NAME}; economy-policy=one-provider-per-run; primary=Claude; route=${route_telemetry}; packet=${{ steps.packet.outputs.fingerprint }}. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+
+      - name: NO-API mode guard
+        if: steps.lease.outputs.execute == 'true'
+        id: no_api
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+        run: python3 scripts/oc_no_api_guard.py
+
+      - name: Load durable governor spend snapshot
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false'
+        id: ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/swarm_governor_github_ledger.py \
+            --ledger-issue 1330 \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Swarm governor precheck — primary provider
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false'
+        id: governor
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: anthropic
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_RETRY_COUNT: ${{ contains(steps.issue.outputs.labels, 'oc-repair') && '1' || '0' }}
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD: ${{ steps.route.outputs.estimated_cost_usd }}
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ steps.ledger.outputs.daily_spend_usd }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.ledger.outputs.monthly_spend_usd }}
+        run: python3 scripts/swarm_governor_precheck.py
+
+      - name: Return issue to queue when governor blocks primary provider
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Swarm governor blocked provider execution before credentials were initialized. reason=${{ steps.governor.outputs.reason }}; packet=${{ steps.packet.outputs.fingerprint }}. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+
+      - name: Return issue to queue when NO-API mode blocks all providers
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "[OC-AUTO] NO-API mode active; all provider steps skipped. Issue returned to queue. Set NO_API_MODE=false (repository variable) to enable provider execution. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+
+      - name: Execute issue with governed direct Anthropic API
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         id: claude
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            ORCHID CONTINUUM — CONTINUOUS COMPLETION LANE
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          CLAUDE_MODEL: ${{ steps.route.outputs.model }}
+          CLAUDE_MAX_TURNS: ${{ steps.route.outputs.max_turns }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Never merge to `main`, deploy production, mutate production DB/KG/scientific state,
+          # activate taxonomy, publish science, create/disclose credentials, or bypass governor controls.
+          python3 scripts/swarm_anthropic_direct.py \
+            --issue-number "$ISSUE_NUMBER" \
+            --title "$ISSUE_TITLE" \
+            --packet-file "$RUNNER_TEMP/swarm-work-packet.md" \
+            --model "$CLAUDE_MODEL" \
+            --max-turns "$CLAUDE_MAX_TURNS" \
+            --base "$INTEGRATION_BRANCH" \
+            --execution-file "$RUNNER_TEMP/claude-direct-execution.json"
 
-            Repository: ${{ github.repository }}
-            Integration base: oc-autonomous-integration
-            Source issue: #${{ inputs.issue_number }} — ${{ steps.issue.outputs.title }}
+      - name: Classify Claude terminal state
+        if: always() && steps.lease.outputs.execute == 'true'
+        id: claude_provider
+        env:
+          CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
+          CLAUDE_CONCLUSION: ${{ steps.claude.outputs.conclusion }}
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          CLAUDE_SESSION_ID: ${{ steps.claude.outputs.session_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          execution_log="${CLAUDE_EXECUTION_FILE:-}"
+          terminal_reason=""
+          result_text=""
+          error_type=""
+          result_error=""
+          api_error_status=""
+          subtype=""
+          is_error="false"
+          num_turns=""
+          model_usage_count="0"
+          execution_file_present=false
+          if [[ -n "$execution_log" && -f "$execution_log" ]]; then
+            execution_file_present=true
+            terminal_reason=$(jq -r '[.. | objects | select(.type == "result")] | last | .terminal_reason // ""' "$execution_log" 2>/dev/null || true)
+            result_text=$(jq -r '[.. | objects | select(.type == "result")] | last | .result // ""' "$execution_log" 2>/dev/null || true)
+            error_type=$(jq -r '[.. | objects | select(.type == "assistant" and .is_api_error_message == true)] | last | .error // ""' "$execution_log" 2>/dev/null || true)
+            result_error=$(jq -r '[.. | objects | select(.type == "result")] | last | .error // ""' "$execution_log" 2>/dev/null || true)
+            api_error_status=$(jq -r '[.. | objects | select(.type == "result")] | last | .api_error_status // ""' "$execution_log" 2>/dev/null || true)
+            subtype=$(jq -r '[.. | objects | select(.type == "result")] | last | .subtype // ""' "$execution_log" 2>/dev/null || true)
+            is_error=$(jq -r '[.. | objects | select(.type == "result")] | last | .is_error // false' "$execution_log" 2>/dev/null || true)
+            num_turns=$(jq -r '[.. | objects | select(.type == "result")] | last | .num_turns // ""' "$execution_log" 2>/dev/null || true)
+            model_usage_count=$(jq -r '[.. | objects | select(.type == "result")] | last | (.modelUsage // {}) | length' "$execution_log" 2>/dev/null || true)
+          fi
+          normalized=$(printf '%s %s %s %s %s %s' "$terminal_reason" "$result_text" "$error_type" "$result_error" "$api_error_status" "$subtype" | tr '[:upper:]' '[:lower:]')
+          kind=healthy
+          fallback=false
 
-            Issue requirements:
-            ${{ steps.issue.outputs.body }}
+          # claude-code-action may return a successful GitHub step when it
+          # intentionally skips execution (for example workflow-auth validation).
+          # A successful wrapper step is therefore not proof that a model ran.
+          if [[ "$execution_file_present" != "true" ]]; then
+            kind=no_execution
+          elif [[ "$result_error" == "billing_error" || "$normalized" == *"credit balance"* || "$normalized" == *"insufficient credit"* || "$normalized" == *"reached your specified api usage limits"* || "$normalized" == *"api usage limit"* ]]; then
+            kind=billing_exhausted
+          elif [[ "$api_error_status" == "401" || "$api_error_status" == "403" || "$normalized" == *"invalid api key"* || "$normalized" == *"invalid_api_key"* ]]; then
+            kind=security
+          elif [[ "$normalized" == *"error_max_turns"* || "$normalized" == *"max_turns"* || "$normalized" == *"max turns"* || "$normalized" == *"maximum turns"* ]]; then
+            kind=max_turns
+          elif [[ "$api_error_status" =~ ^5[0-9][0-9]$ ]]; then
+            kind=safe_provider
+            fallback=true
+          elif [[ "$result_error" == "no_durable_change" ]]; then
+            kind=no_durable_change
+          elif [[ "$CLAUDE_CONCLUSION" == "failure" && "$model_usage_count" != "0" ]]; then
+            kind=provider_failure
+          elif [[ "$num_turns" == "" || ! "$num_turns" =~ ^[0-9]+$ || "$num_turns" -lt 1 || "$model_usage_count" == "0" ]]; then
+            kind=no_model_usage
+          elif [[ "$CLAUDE_OUTCOME" != "success" ]]; then
+            if [[ "$normalized" == *"workflow validation failed"* || "$normalized" == *"action skipped"* ]]; then
+              kind=workflow_validation_skip
+            elif [[ "$normalized" == *"error_max_turns"* || "$normalized" == *"max_turns"* || "$normalized" == *"max turns"* || "$normalized" == *"maximum turns"* ]]; then
+              kind=max_turns
+            elif [[ "$normalized" == *"authentication"* || "$normalized" == *"unauthorized"* || "$normalized" == *"forbidden"* || "$normalized" == *"permission"* || "$normalized" == *"invalid api key"* || "$normalized" == *"invalid_api_key"* ]]; then
+              kind=security
+            elif [[ "$normalized" == *"billing_error"* || "$normalized" == *"credit balance"* || "$normalized" == *"insufficient credit"* ]]; then
+              kind=billing_exhausted
+            elif [[ "$normalized" == *"rate_limit"* || "$normalized" == *"rate limit"* || "$normalized" == *"overloaded"* || "$normalized" == *"service unavailable"* || "$normalized" == *"connection_error"* || "$normalized" == *"timeout"* ]]; then
+              kind=safe_provider
+              fallback=true
+            elif [[ "$is_error" == "true" && "$subtype" == "success" && "$num_turns" =~ ^[0-9]+$ && "$num_turns" -le 1 && "$model_usage_count" == "0" ]]; then
+              # Claude Code can surface an opaque provider-side failure as
+              # subtype=success + is_error=true with no model usage. That is the
+              # observed degraded-runtime signature: no repository work ran and
+              # there is no security/permission evidence to fail closed on.
+              kind=safe_provider
+              fallback=true
+            else
+              kind=unknown
+            fi
+          fi
+          {
+            echo "kind=$kind"
+            echo "fallback_allowed=$fallback"
+            echo "terminal_reason=${terminal_reason:-unknown}"
+            echo "error_type=${error_type:-unknown}"
+            echo "result_error=${result_error:-unknown}"
+            echo "api_error_status=${api_error_status:-unknown}"
+            echo "is_error=${is_error:-unknown}"
+            echo "num_turns=${num_turns:-unknown}"
+            echo "model_usage_count=${model_usage_count:-unknown}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Claude classification: kind=$kind fallback_allowed=$fallback"
 
-            EXECUTE BEFORE EXPLAINING. This lane is part of a continuously refilling completion system.
+      # Economy policy v1: one paid provider per workflow run. Cross-provider
+      # fallback is deliberately disabled to prevent one issue from spending
+      # through multiple providers before durable accounting is refreshed.
+      - name: Execute bounded Gemini fallback
+        if: ${{ false }}
+        id: gemini
+        continue-on-error: true
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          ISSUE_BODY: ${{ steps.packet.outputs.packet }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/gemini-stderr.log"
+          : > "$RUNNER_TEMP/gemini-result.json"
+          if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+            echo "config_missing" > "$RUNNER_TEMP/gemini-status.txt"
+            exit 20
+          fi
 
-            Rules:
-            - Start from current `oc-autonomous-integration`, inspect current `main` and overlapping PRs, and converge instead of duplicating work.
-            - If an open PR already contains `OC-AUTO-ISSUE: #${{ inputs.issue_number }}`, update that same PR/branch.
-            - Implement the largest safe bounded slice that can be completed in this run.
-            - Preserve taxonomy, provenance, uncertainty, locality sensitivity, and unavailable-vs-zero semantics. Never invent science.
-            - Test, fix, lint/typecheck/compile as appropriate before delivery.
-            - Commit and push durable work. Open/update exactly one draft PR targeting `oc-autonomous-integration` with these exact lines in its body:
-              `OC-AUTO-ISSUE: #${{ inputs.issue_number }}`
-              `OC-AUTO-REQUEUE: true|false`
-              `OC-AUTO-BLOCKED: true|false`
-            - `OC-AUTO-REQUEUE: true` means this is a coherent partial slice and more acceptance work remains after integration.
-            - `OC-AUTO-BLOCKED: true` is only for a genuine external/owner blocker preventing further safe work on this issue. One blocked issue never stops the program.
-            - Never merge to `main`, deploy production, mutate production DB/KG/scientific state, activate taxonomy, publish science, create/disclose credentials, spend funds, force-push, or delete branches/repos.
-            - Final output: DONE, VALIDATION, PR/HEAD SHA, REMAINING, OWNER GATE if any.
-          claude_args: |
-            --model claude-sonnet-5
-            --max-turns 75
-            --allowedTools "Edit,Read,Write,Bash(git diff:*),Bash(git status:*),Bash(git ls-files:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git branch:*),Bash(git fetch:*),Bash(git merge:*),Bash(python:*),Bash(python3:*),Bash(pytest:*),Bash(ruff:*),Bash(npm:*),Bash(npx:*),Bash(test:*),Bash(gh pr:*),Bash(gh issue:*)"
-            --append-system-prompt "Read CLAUDE.md and AGENTS.md before editing. Orchid Continuum Brain and GitHub are authoritative. BLOCKED DOES NOT MEAN STOPPED FOR THE PROGRAM. Deliver durable GitHub work, never runner-local-only claims."
+          branch="oc-auto-${ISSUE_NUMBER}-gemini-${GITHUB_RUN_ID}"
+          git checkout -B "$branch" "$INTEGRATION_BRANCH"
+          git config user.name "orchid-continuum-orchestrator[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          prompt=$(cat <<EOF
+          ORCHID CONTINUUM — GOVERNED GEMINI FALLBACK
+
+          Claude was safely classified unavailable. Implement the largest safe coherent repository-local slice for issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}.
+
+          ${ISSUE_BODY}
+
+          EDIT FILES ONLY. Do not use shell tools. Do not create commits, branches, pull requests, issues, releases, deployments, credentials, or external publications; the workflow owns packaging. Preserve taxonomy, provenance, uncertainty, sensitive-locality protections, unavailable-vs-zero semantics, scientific review boundaries, tests, security checks, governance, and owner gates. Never invent science. Do not mutate production data, activate taxonomy, publish science, spend funds, or perform destructive operations.
+          EOF
+          )
+
+          gemini_home="$RUNNER_TEMP/gemini-home"
+          mkdir -p "$gemini_home/.gemini"
+          cat > "$gemini_home/.gemini/settings.json" <<'JSON'
+          {
+            "tools": {
+              "exclude": ["run_shell_command"]
+            }
+          }
+          JSON
+
+          set +e
+          HOME="$gemini_home" env -u GH_TOKEN GEMINI_API_KEY="$GEMINI_API_KEY" GEMINI_CLI_TRUST_WORKSPACE=true \
+            timeout 35m npx -y @google/gemini-cli@latest \
+            --approval-mode auto_edit --output-format json -p "$prompt" \
+            > "$RUNNER_TEMP/gemini-result.json" 2> "$RUNNER_TEMP/gemini-stderr.log"
+          status=$?
+          set -e
+          echo "$status" > "$RUNNER_TEMP/gemini-exit.txt"
+
+          if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+            git diff --check
+            git add -A
+            git commit -m "feat(auto): Gemini fallback slice for #${ISSUE_NUMBER}"
+            git push origin "HEAD:$branch"
+            body=$(cat <<EOF
+          Governed Gemini fallback slice after Claude safe-provider failure.
+
+          Provider: Gemini fallback
+          Claude classification: ${{ steps.claude_provider.outputs.kind }}
+          Gemini exit status: ${status}
+
+          Independent exact-head validation remains mandatory. No production mutation, taxonomy activation, scientific publication, sensitive-locality relaxation, credential change, spending action, or destructive operation was authorized.
+
+          OC-AUTO-ISSUE: #${ISSUE_NUMBER}
+          OC-AUTO-REQUEUE: true
+          OC-AUTO-BLOCKED: false
+          EOF
+            )
+            gh pr create --repo "$GITHUB_REPOSITORY" --base "$INTEGRATION_BRANCH" --head "$branch" --draft --title "Gemini fallback: #${ISSUE_NUMBER} ${ISSUE_TITLE}" --body "$body" >/dev/null
+            exit 0
+          fi
+          exit "$status"
+
+      - name: Classify Gemini terminal state
+        if: always() && steps.claude_provider.outputs.fallback_allowed == 'true'
+        id: gemini_provider
+        env:
+          GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          kind=healthy
+          fallback=false
+          if [[ "$GEMINI_OUTCOME" != "success" ]]; then
+            if [[ -f "$RUNNER_TEMP/gemini-status.txt" ]] && grep -q 'config_missing' "$RUNNER_TEMP/gemini-status.txt"; then
+              kind=config
+            elif grep -Eqi '401|403|unauthor|forbidden|invalid.?api.?key|authentication|permission' "$RUNNER_TEMP/gemini-stderr.log" "$RUNNER_TEMP/gemini-result.json" 2>/dev/null; then
+              kind=security
+              # Preserve the hard Gemini credential finding, but do not turn one
+              # provider's configuration failure into a product-wide outage.
+              # OpenAI/Codex has its own authentication and security classifier.
+              fallback=true
+            elif grep -Eqi '429|quota|rate.?limit|billing|credit|overloaded|service unavailable|temporarily unavailable|timeout|timed out|connection' "$RUNNER_TEMP/gemini-stderr.log" "$RUNNER_TEMP/gemini-result.json" 2>/dev/null; then
+              kind=safe_provider
+              fallback=true
+            elif [[ "$(cat "$RUNNER_TEMP/gemini-exit.txt" 2>/dev/null || true)" == "124" ]]; then
+              kind=safe_provider
+              fallback=true
+            else
+              kind=unknown
+            fi
+          fi
+          {
+            echo "kind=$kind"
+            echo "fallback_allowed=$fallback"
+          } >> "$GITHUB_OUTPUT"
+          echo "Gemini classification: kind=$kind fallback_allowed=$fallback"
+
+      - name: Execute bounded OpenAI fallback
+        if: ${{ false }}
+        id: openai
+        continue-on-error: true
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          ISSUE_BODY: ${{ steps.packet.outputs.packet }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/openai-stdout.log"
+          : > "$RUNNER_TEMP/openai-stderr.log"
+          if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+            echo "config_missing" > "$RUNNER_TEMP/openai-status.txt"
+            exit 20
+          fi
+
+          branch="oc-auto-${ISSUE_NUMBER}-openai-${GITHUB_RUN_ID}"
+          git checkout -B "$branch" "$INTEGRATION_BRANCH"
+          git config user.name "orchid-continuum-orchestrator[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          prompt=$(cat <<EOF
+          ORCHID CONTINUUM — GOVERNED OPENAI SECOND FALLBACK
+
+          Claude and Gemini were both safely classified unavailable for provider-capacity reasons. Implement the largest safe coherent repository-local slice for issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}.
+
+          ${ISSUE_BODY}
+
+          Work only inside the checked-out repository. Do not use git or gh, do not access network resources from model-generated commands, and do not create commits, branches, pull requests, issues, releases, deployments, credentials, or external publications; the workflow owns packaging. Preserve taxonomy, provenance, uncertainty, sensitive-locality protections, unavailable-vs-zero semantics, scientific review boundaries, tests, security checks, governance, and owner gates. Never invent science. Do not mutate production data, activate taxonomy, publish science, spend funds, or perform destructive operations. You may inspect/edit repository files and run local tests within the workspace sandbox.
+          EOF
+          )
+
+          set +e
+          timeout 30s npx -y @openai/codex@0.151.0 --version 2>> "$RUNNER_TEMP/openai-stderr.log"
+          env -u GH_TOKEN OPENAI_API_KEY="$OPENAI_API_KEY" timeout 35m \
+            npx -y @openai/codex@0.151.0 --ask-for-approval never exec \
+            --sandbox workspace-write --skip-git-repo-check --ephemeral -C "$GITHUB_WORKSPACE" "$prompt" \
+            > "$RUNNER_TEMP/openai-stdout.log" 2>> "$RUNNER_TEMP/openai-stderr.log"
+          status=$?
+          set -e
+          echo "$status" > "$RUNNER_TEMP/openai-exit.txt"
+
+          if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+            git diff --check
+            git add -A
+            git commit -m "feat(auto): OpenAI fallback slice for #${ISSUE_NUMBER}"
+            git push origin "HEAD:$branch"
+            body=$(cat <<EOF
+          Governed OpenAI fallback slice after Claude unavailability and a terminal Gemini classification.
+
+          Provider: OpenAI fallback
+          Claude classification: ${{ steps.claude_provider.outputs.kind }}
+          Gemini classification: ${{ steps.gemini_provider.outputs.kind }}
+          OpenAI CLI exit status: ${status}
+
+          Independent exact-head validation remains mandatory. No production mutation, taxonomy activation, scientific publication, sensitive-locality relaxation, credential change, spending action, or destructive operation was authorized.
+
+          OC-AUTO-ISSUE: #${ISSUE_NUMBER}
+          OC-AUTO-REQUEUE: true
+          OC-AUTO-BLOCKED: false
+          EOF
+            )
+            gh pr create --repo "$GITHUB_REPOSITORY" --base "$INTEGRATION_BRANCH" --head "$branch" --draft --title "OpenAI fallback: #${ISSUE_NUMBER} ${ISSUE_TITLE}" --body "$body" >/dev/null
+            exit 0
+          fi
+          exit "$status"
+
+      - name: Classify OpenAI terminal state
+        if: always() && steps.gemini_provider.outputs.fallback_allowed == 'true'
+        id: openai_provider
+        env:
+          OPENAI_OUTCOME: ${{ steps.openai.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          kind=healthy
+          stderr_log="$RUNNER_TEMP/openai-stderr.log"
+          exit_code="$(cat "$RUNNER_TEMP/openai-exit.txt" 2>/dev/null || true)"
+          if [[ "$OPENAI_OUTCOME" != "success" ]]; then
+            if [[ -f "$RUNNER_TEMP/openai-status.txt" ]] && grep -q 'config_missing' "$RUNNER_TEMP/openai-status.txt"; then
+              kind=config
+            elif grep -Eqi '(^|[^0-9])(401|403)([^0-9]|$)|unauthori[sz]ed|invalid.?api.?key|authentication (failed|required)|missing scopes?:|insufficient permissions.*operation' "$stderr_log" 2>/dev/null; then
+              kind=security
+            elif grep -Eqi '429|quota|rate.?limit|billing|credit|overloaded|service unavailable|temporarily unavailable|timeout|timed out|connection|websocket.*(reset|closed|failed)' "$stderr_log" 2>/dev/null || [[ "$exit_code" == "124" ]]; then
+              kind=safe_provider
+            elif grep -Eqi 'unknown (argument|option)|unexpected argument|unrecognized option|usage:|config.*(invalid|error)|failed to (load|parse).*config|permission denied|operation not permitted|sandbox.*(denied|permission)|workspace.*trust' "$stderr_log" 2>/dev/null; then
+              kind=runtime_config
+            else
+              kind=unknown
+            fi
+          fi
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "OpenAI classification: kind=$kind exit=${exit_code:-unknown}"
+
+          if [[ "$OPENAI_OUTCOME" != "success" && -f "$stderr_log" ]]; then
+            {
+              echo "### OpenAI fallback diagnostic"
+              echo
+              echo "classification: \`$kind\`"
+              echo "exit: \`${exit_code:-unknown}\`"
+              echo
+              echo '```text'
+              tail -c 4000 "$stderr_log" \
+                | sed -E \
+                    -e 's/sk-[A-Za-z0-9_-]{16,}/[REDACTED_OPENAI_KEY]/g' \
+                    -e 's/(Authorization:[[:space:]]*Bearer)[[:space:]]+[^[:space:]]+/\1 [REDACTED]/Ig' \
+                    -e 's/(OPENAI_API_KEY=)[^[:space:]]+/\1[REDACTED]/g'
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Record conservative provider cost reservation
+        if: always() && steps.governor.outputs.authorized == 'true' && steps.claude.outcome != 'skipped'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/swarm_governor_github_ledger.py \
+            --append \
+            --ledger-issue 1330 \
+            --issue-number "$ISSUE_NUMBER" \
+            --provider anthropic \
+            --reserved-usd "${{ steps.route.outputs.estimated_cost_usd }}"
 
       - name: Classify result, dispatch validation, release slot
-        if: always()
+        if: always() && steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
+        env:
+          CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
+          CLAUDE_KIND: ${{ steps.claude_provider.outputs.kind }}
+          CLAUDE_FALLBACK: ${{ steps.claude_provider.outputs.fallback_allowed }}
+          ROUTE_TIER: ${{ steps.route.outputs.tier }}
+          ROUTE_MODEL: ${{ steps.route.outputs.model }}
+          ROUTE_REASON: ${{ steps.route.outputs.reason }}
+          ROUTE_RESERVED_COST: ${{ steps.route.outputs.estimated_cost_usd }}
+          PACKET_FINGERPRINT: ${{ steps.packet.outputs.fingerprint }}
+          PACKET_ESTIMATED_TOKENS: ${{ steps.packet.outputs.estimated_prompt_tokens }}
+          PACKET_EXECUTION_CLASS: ${{ steps.packet.outputs.execution_class }}
+          ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
+          GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
+          GEMINI_KIND: ${{ steps.gemini_provider.outputs.kind }}
+          GEMINI_FALLBACK: ${{ steps.gemini_provider.outputs.fallback_allowed }}
+          OPENAI_OUTCOME: ${{ steps.openai.outcome }}
+          OPENAI_KIND: ${{ steps.openai_provider.outputs.kind }}
         shell: bash
         run: |
           set -euo pipefail
           marker="OC-AUTO-ISSUE: #${ISSUE_NUMBER}"
-          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq ".[] | select(.body != null and (.body | contains(\"$marker\"))) | .number" | head -1)
+          route_telemetry="tier=${ROUTE_TIER:-unknown}; model=${ROUTE_MODEL:-unknown}; reason=${ROUTE_REASON:-unknown}; reserved_cost_usd=${ROUTE_RESERVED_COST:-unknown}; packet=${PACKET_FINGERPRINT:-unknown}; packet_est_tokens=${PACKET_ESTIMATED_TOKENS:-unknown}; execution_class=${PACKET_EXECUTION_CLASS:-unknown}"
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq "[.[] | select(.body != null and (.body | contains(\"$marker\")))][0].number // empty")
           gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running >/dev/null 2>&1 || true
 
+          latest_labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
+          if [[ "$latest_labels" == *oc-repair-backoff* ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair --remove-label oc-validating >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Worker settlement preserved authoritative repair backoff; no queue, repair, or validation eligibility was restored. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+            exit 0
+          fi
+
           if [[ -n "$pr" ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-blocked --add-label oc-validating >/dev/null 2>&1 || true
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --remove-label oc-blocked --remove-label oc-runtime-backoff --add-label oc-validating >/dev/null 2>&1 || true
             head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefName --jq '.headRefName')
-            gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$head" >/dev/null
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered/updated integration PR #$pr, dispatched independent backend validation, and released its execution slot." >/dev/null
+            if gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$head" >/dev/null; then
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered/updated integration PR #$pr, dispatched independent backend validation, and released its execution slot. Route=${route_telemetry}; Claude=${CLAUDE_KIND:-unknown}; Gemini=${GEMINI_KIND:-not-run}; OpenAI=${OPENAI_KIND:-not-run}. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+            else
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --add-label oc-validating >/dev/null 2>&1 || true
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Durable PR #$pr exists, but validation dispatch failed. Kept in oc-validating; scheduler will retry validation without redispatching a model. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+              exit 1
+            fi
+          elif [[ "$CLAUDE_KIND" == "no_execution" || "$CLAUDE_KIND" == "no_model_usage" || "$CLAUDE_KIND" == "workflow_validation_skip" || "$CLAUDE_KIND" == "provider_failure" || "$CLAUDE_KIND" == "billing_exhausted" || "$CLAUDE_KIND" == "security" || "$CLAUDE_KIND" == "safe_provider" || "$CLAUDE_KIND" == "unknown" ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Provider execution did not produce verifiable model execution evidence (classification=$CLAUDE_KIND). Parked in oc-runtime-backoff; no automatic paid retry." >/dev/null
+          elif [[ "$CLAUDE_KIND" == "max_turns" || "$CLAUDE_KIND" == "no_durable_change" ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --remove-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude reached the bounded task/turn ceiling or completed without durable repository changes (classification=$CLAUDE_KIND). Provider runtime remains healthy; issue moved to oc-repair and the global circuit stays closed." >/dev/null
+          elif [[ "$CLAUDE_FALLBACK" == "true" && "$GEMINI_OUTCOME" == "success" ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was safely unavailable; Gemini completed without durable changes. Issue returned to bounded repair without opening the global circuit." >/dev/null
+          elif [[ "$GEMINI_FALLBACK" == "true" && "$OPENAI_OUTCOME" == "success" ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was unavailable and Gemini ended with classification=${GEMINI_KIND:-unknown}; independently authorized OpenAI completed without durable changes. The Gemini credential/security finding remains visible, while the issue returned to bounded repair without opening the global circuit." >/dev/null
+          elif [[ "$CLAUDE_FALLBACK" == "true" && "$GEMINI_FALLBACK" != "true" ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was safely unavailable but Gemini failed with non-substitutable classification=${GEMINI_KIND:-unknown}. Failed closed; OpenAI was not attempted." >/dev/null
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after Gemini non-substitutable failure on issue #${ISSUE_NUMBER}." >/dev/null
+          elif [[ "$GEMINI_FALLBACK" == "true" ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was unavailable, Gemini ended with classification=${GEMINI_KIND:-unknown}, and independently authorized OpenAI did not produce durable work (classification=${OPENAI_KIND:-unknown}, outcome=${OPENAI_OUTCOME:-unknown}). All eligible providers exhausted; issue parked without provider thrashing." >/dev/null
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after all eligible providers failed on issue #${ISSUE_NUMBER}." >/dev/null
+          elif [[ "$CLAUDE_OUTCOME" != "success" ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+            gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude failed with non-fallback classification=${CLAUDE_KIND:-unknown}. Failed closed; no provider bypass attempted." >/dev/null
+            gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after non-fallback Claude failure on issue #${ISSUE_NUMBER}." >/dev/null
           else
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-validating --add-label oc-queued >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane ended without a durable integration PR. Returned to the queue while other lanes continue." >/dev/null
+            if [[ "${ISSUE_LABELS:-}" == *oc-repair* ]]; then
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Preferred provider completed without a durable integration PR on the allowed repair attempt. Retry budget exhausted; issue parked in oc-runtime-backoff." >/dev/null
+            else
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
+              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Preferred provider completed without a durable integration PR. One bounded repair attempt remains; automatic refill remains disabled unless explicitly authorized." >/dev/null
+            fi
           fi
