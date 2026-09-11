@@ -51,6 +51,7 @@ def finding_to_task(finding: AuditFinding) -> dict[str, Any]:
             "finding": finding.as_dict(),
             "source": finding.source,
             "recommended_action": action,
+            "action": action,
             "execution_mode": "draft_only",
             "automatic_merge": False,
             "automatic_deploy": False,
