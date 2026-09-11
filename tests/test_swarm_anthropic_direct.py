@@ -83,3 +83,13 @@ def test_direct_executor_builds_anthropic_messages_request() -> None:
 def test_direct_executor_toolset_has_no_arbitrary_shell() -> None:
     names = {tool["name"] for tool in direct.TOOLS}
     assert names == {"read_file", "list_files", "search_text", "write_file", "run_check"}
+
+
+def test_direct_executor_blocks_governor_self_modification() -> None:
+    for raw in (
+        "scripts/swarm_governor_precheck.py",
+        "scripts/swarm_governor_github_ledger.py",
+        "scripts/swarm_anthropic_direct.py",
+        "runtime/swarm/governor.py",
+    ):
+        assert direct._writable(direct._safe_path(raw)) is False
