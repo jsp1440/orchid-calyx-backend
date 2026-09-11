@@ -38,14 +38,15 @@ def test_provider_lane_is_gated_before_job_initialization(lane_text):
     document = yaml.safe_load(lane_text)
     execute = document["jobs"]["execute"]
     assert execute["if"] == "vars.NO_API_MODE == 'false'"
-    assert "anthropics/claude-code-action@v1" in lane_text
+    assert "scripts/swarm_anthropic_direct.py" in lane_text
+    assert "anthropics/claude-code-action@v1" not in lane_text
     assert "@google/gemini-cli" in lane_text
     assert "@openai/codex" in lane_text
 
 
 def test_lane_requires_a_live_scheduler_lease(lane_text):
     lease = lane_text.index("name: Verify scheduler lease")
-    provider = lane_text.index("uses: anthropics/claude-code-action@v1")
+    provider = lane_text.index("scripts/swarm_anthropic_direct.py")
     assert lease < provider
     assert "oc-running" in lane_text[lease:provider]
     assert "Stale/duplicate completion dispatch suppressed" in lane_text[lease:provider]
