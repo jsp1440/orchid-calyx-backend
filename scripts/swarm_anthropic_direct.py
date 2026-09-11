@@ -39,9 +39,7 @@ class AnthropicHTTPError(DirectExecutorError):
     def __init__(self, status_code: int, detail: dict[str, Any]) -> None:
         self.status_code = status_code
         self.detail = detail
-        super().__init__(
-            f"anthropic_http_{status_code}: {json.dumps(detail)[:2000]}"
-        )
+        super().__init__(f"anthropic_http_{status_code}: {json.dumps(detail)[:2000]}")
 
 
 class ToolExecutionError(DirectExecutorError):
