@@ -878,6 +878,65 @@ class CalyxAutonomousOrchestrator:
             conn.commit()
         return {"task": task}
 
+    def create_task_once(
+        self,
+        *,
+        task_key: str,
+        task_type: str,
+        title: str,
+        payload: dict[str, Any],
+        priority: int = 0,
+    ) -> dict[str, Any]:
+        """Create one durable task lineage, suppressing unchanged replay."""
+
+        normalized_key = task_key.strip()
+        if not normalized_key:
+            raise ValueError("task_key is required")
+
+        required_approval = self.executor.risky_action(task_type, payload) is not None
+        status = "needs_review" if required_approval else "pending"
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                self.ensure_schema(cur)
+                cur.execute(
+                    """
+                    INSERT INTO oc_admin.calyx_tasks
+                        (task_key, task_type, title, payload, status, priority, required_approval)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (task_key) DO NOTHING
+                    RETURNING *
+                    """,
+                    (
+                        normalized_key,
+                        task_type,
+                        title,
+                        _json(payload),
+                        status,
+                        priority,
+                        required_approval,
+                    ),
+                )
+                row = cur.fetchone()
+                if row is not None:
+                    task = dict(row)
+                    self.log_observation(
+                        cur,
+                        task_id=task["id"],
+                        agent_id=None,
+                        event_type="task_created",
+                        action="queued" if status == "pending" else "approval_required",
+                        status=status,
+                        details={
+                            "task_key": normalized_key,
+                            "required_approval": required_approval,
+                        },
+                    )
+            conn.commit()
+
+        if row is None:
+            return {"status": "duplicate", "task_key": normalized_key}
+        return {"status": "created", "task": task}
+
     def approve_task(self, task_id: int) -> dict[str, Any]:
         with self.connect() as conn:
             with conn.cursor() as cur:
