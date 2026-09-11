@@ -21,13 +21,32 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
+
+
+class DirectExecutorError(RuntimeError):
+    """Base error for bounded direct-executor failures."""
+
+
+class AnthropicHTTPError(DirectExecutorError):
+    """Safe structured Anthropic HTTP failure."""
+
+    def __init__(self, status_code: int, detail: dict[str, Any]) -> None:
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(
+            f"anthropic_http_{status_code}: {json.dumps(detail)[:2000]}"
+        )
+
+
+class ToolExecutionError(DirectExecutorError):
+    """Safe model-tool execution failure."""
+
 
 PROTECTED_PREFIXES = (
     ".git/",
@@ -297,12 +316,7 @@ def _anthropic_message(
             detail = json.loads(raw)
         except ValueError:
             detail = {"error": {"message": raw[:1000]}}
-        err = RuntimeError(
-            f"anthropic_http_{exc.code}: {json.dumps(detail)[:2000]}"
-        )
-        setattr(err, "status_code", exc.code)
-        setattr(err, "detail", detail)
-        raise err from exc
+        raise AnthropicHTTPError(exc.code, detail) from exc
 
 
 def _content_text(content: list[dict[str, Any]]) -> str:
@@ -449,7 +463,7 @@ def main() -> int:
                 else:
                     try:
                         tool_result = handler(dict(block.get("input") or {}))
-                    except Exception as exc:  # fail tool call, not whole session
+                    except (OSError, ValueError, subprocess.SubprocessError) as exc:
                         tool_result = f"ERROR: {type(exc).__name__}: {exc}"
                 results.append(
                     {
@@ -501,11 +515,11 @@ def main() -> int:
             }
         )
         return 0
-    except Exception as exc:
+    except (DirectExecutorError, OSError, ValueError, subprocess.SubprocessError) as exc:
         if not error_kind:
-            status = getattr(exc, "status_code", "")
+            status = exc.status_code if isinstance(exc, AnthropicHTTPError) else ""
             error_status = str(status or "")
-            detail = getattr(exc, "detail", {})
+            detail = exc.detail if isinstance(exc, AnthropicHTTPError) else {}
             message = ""
             if isinstance(detail, dict):
                 error = detail.get("error") or {}
