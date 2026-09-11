@@ -241,3 +241,71 @@ def test_direct_executor_max_turns_writes_structured_failure_without_live_provid
     assert result["error"] == "max_turns"
     assert result["num_turns"] == 2
     assert len(result["modelUsage"]) == 1
+
+
+def test_direct_executor_honors_24_turn_route_budget_without_live_provider(
+    tmp_path, monkeypatch
+) -> None:
+    packet = tmp_path / "packet.md"
+    packet.write_text("Exercise full cheap-tier turn budget.\n")
+    execution_file = tmp_path / "execution.json"
+    calls = {"count": 0}
+
+    def tool_response(**kwargs):
+        calls["count"] += 1
+        if calls["count"] < 24:
+            return {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": f"tool-{calls['count']}",
+                        "name": "list_files",
+                        "input": {"pattern": "*.py"},
+                    }
+                ],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        return {
+            "content": [{"type": "text", "text": "Done."}],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GITHUB_RUN_ID", "1001")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        direct, "_prepare_branch", lambda *args, **kwargs: "dryrun/1001"
+    )
+    monkeypatch.setattr(direct, "_anthropic_message", tool_response)
+    monkeypatch.setattr(
+        direct,
+        "_open_draft_pr",
+        lambda *args, **kwargs: "https://example.invalid/pr/24",
+    )
+
+    argv = [
+        "swarm_anthropic_direct.py",
+        "--issue-number",
+        "1264",
+        "--title",
+        "Synthetic 24-turn canary",
+        "--packet-file",
+        str(packet),
+        "--model",
+        "claude-haiku-4-5",
+        "--max-turns",
+        "24",
+        "--execution-file",
+        str(execution_file),
+    ]
+    monkeypatch.setattr(direct.sys, "argv", argv)
+
+    assert direct.main() == 0
+    result = json.loads(execution_file.read_text())
+    assert result["num_turns"] == 24
+    assert calls["count"] == 24
+
+
+def test_direct_executor_hard_caps_requested_turns_at_24() -> None:
+    text = SCRIPT.read_text()
+    assert "bounded_turns = min(max(args.max_turns, 1), 24)" in text

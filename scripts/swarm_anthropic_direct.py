@@ -439,7 +439,10 @@ def main() -> int:
             {"role": "user", "content": f"{system}\n\n{packet}"}
         ]
 
-        bounded_turns = min(max(args.max_turns, 1), 12)
+        # The economy router's cheap tier is budgeted for up to 24 turns.
+        # Honor that route ceiling instead of silently truncating it to 12,
+        # while still keeping a hard repository-local cap.
+        bounded_turns = min(max(args.max_turns, 1), 24)
         bounded_tokens = min(max(args.max_tokens, 256), 3072)
         for turn in range(1, bounded_turns + 1):
             response = _anthropic_message(
