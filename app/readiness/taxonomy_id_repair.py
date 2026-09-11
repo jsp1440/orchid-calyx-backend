@@ -54,7 +54,12 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from app.readiness.relationship_measurement import _columns, _safe, _scalar, _table_exists
+from app.readiness.relationship_measurement import (
+    _columns,
+    _safe,
+    _scalar,
+    _table_exists,
+)
 
 # Identifies the resolution policy that produced a mapping row. Bump this when
 # the matching rules change, so an old mapping artifact can never be silently
