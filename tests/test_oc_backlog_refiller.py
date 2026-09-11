@@ -231,3 +231,27 @@ def test_rejects_malformed_or_oversized_source_payload():
         {"source_ref": "#malformed", "reason": "invalid_source_payload"},
         {"source_ref": "#oversized", "reason": "source_payload_too_large"},
     ]
+
+
+def test_preserves_valid_queue_source_identity_and_rejects_unknown_identity():
+    result = plan_refill(
+        snapshot(),
+        [
+            candidate(
+                "#brain",
+                "fp-brain",
+                queue_source_kind="brain-knowledge-gap",
+            ),
+            candidate(
+                "#invented",
+                "fp-invented",
+                queue_source_kind="invented-queue",
+            ),
+        ],
+        reserve_depth=2,
+    )
+
+    assert result["proposals"][0]["queue_source_kind"] == "brain-knowledge-gap"
+    assert result["rejections"] == [
+        {"source_ref": "#invented", "reason": "unauthorized_queue_source"}
+    ]
