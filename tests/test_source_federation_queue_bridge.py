@@ -7,8 +7,21 @@ from app.source_federation import (
     RightsState,
     bridge_source_candidates,
     build_default_candidate_inventory,
+    persist_source_candidates,
     source_task_key,
 )
+
+
+class FakeQueue:
+    def __init__(self) -> None:
+        self.tasks: dict[str, dict[str, object]] = {}
+
+    def create_task_once(self, **task: object) -> dict[str, object]:
+        task_key = str(task["task_key"])
+        if task_key in self.tasks:
+            return {"status": "duplicate", "task_key": task_key}
+        self.tasks[task_key] = task
+        return {"status": "created", "task": task}
 
 
 def _admitted_candidate(**overrides: object) -> FederationCandidate:
@@ -115,3 +128,97 @@ def test_non_low_cost_candidate_is_conservatively_p3() -> None:
     task = bridge_source_candidates((candidate,)).create[0]
 
     assert task.priority == "P3"
+
+
+def test_durable_bridge_refills_once_and_replay_deduplicates() -> None:
+    candidate = _admitted_candidate()
+    queue = FakeQueue()
+
+    first = persist_source_candidates((candidate,), queue)
+    second = persist_source_candidates((candidate,), queue)
+
+    assert first["status"] == "refill_planned"
+    assert first["created_task_keys"] == [source_task_key(candidate)]
+    assert second["status"] == "reserve_satisfied"
+    assert second["created_task_keys"] == []
+    assert second["duplicate_task_keys"] == [source_task_key(candidate)]
+    assert len(queue.tasks) == 1
+
+
+def test_durable_payload_cannot_authorize_fetch_publication_or_mutation() -> None:
+    queue = FakeQueue()
+
+    result = persist_source_candidates((_admitted_candidate(),), queue)
+    task = queue.tasks[result["created_task_keys"][0]]
+    payload = task["payload"]
+
+    assert task["task_type"] == "source_federation_adapter_evaluation"
+    assert task["priority"] == 20
+    assert payload["execution_mode"] == "draft_only"
+    assert payload["network_fetch_authorized"] is False
+    assert payload["scientific_publication_authorized"] is False
+    assert payload["knowledge_graph_mutation_authorized"] is False
+    assert payload["taxonomy_mutation_authorized"] is False
+    assert payload["automatic_merge"] is False
+    assert payload["automatic_deploy"] is False
+
+
+def test_unadmitted_protected_source_is_suppressed_before_queue_write() -> None:
+    queue = FakeQueue()
+    candidate = _admitted_candidate(
+        locality_risk="high: specimen coordinates",
+        locality_controls=(),
+    )
+
+    result = persist_source_candidates((candidate,), queue)
+
+    assert result["status"] == "queue_empty_healthy"
+    assert result["eligible_count"] == 0
+    assert result["created_task_keys"] == []
+    assert result["suppressed"][0]["reason"] == "not-admitted"
+    assert "locality_controls_missing" in result["suppressed"][0]["blockers"]
+    assert queue.tasks == {}
+
+
+def test_existing_delivery_lineage_is_suppressed_before_queue_write() -> None:
+    queue = FakeQueue()
+    candidate = _admitted_candidate()
+
+    result = persist_source_candidates(
+        (candidate,),
+        queue,
+        existing_task_keys=(source_task_key(candidate),),
+    )
+
+    assert result["status"] == "queue_empty_healthy"
+    assert result["suppressed"][0]["reason"] == "existing-delivery-lineage"
+    assert queue.tasks == {}
+
+
+def test_durable_bridge_bounds_refill_and_reports_truncation() -> None:
+    queue = FakeQueue()
+    candidates = tuple(
+        _admitted_candidate(identity=f"doi:10.0000/example-{index}")
+        for index in range(3)
+    )
+
+    result = persist_source_candidates(candidates, queue, limit=2)
+
+    assert result["status"] == "refill_planned"
+    assert result["candidate_count"] == 3
+    assert result["eligible_count"] == 3
+    assert result["selected_count"] == 2
+    assert result["truncated_count"] == 1
+    assert len(queue.tasks) == 2
+
+
+def test_zero_limit_is_healthy_depletion_not_planner_failure() -> None:
+    queue = FakeQueue()
+
+    result = persist_source_candidates((_admitted_candidate(),), queue, limit=0)
+
+    assert result["status"] == "queue_empty_healthy"
+    assert result["eligible_count"] == 1
+    assert result["selected_count"] == 0
+    assert result["truncated_count"] == 1
+    assert queue.tasks == {}
