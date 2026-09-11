@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 try:  # Keep pure executor tests importable even when DB deps are absent.
     import psycopg
@@ -278,7 +278,7 @@ DEFAULT_TASKS: list[dict[str, Any]] = [
 ]
 
 
-def _literature_extractor_names() -> Optional[list[str]]:
+def _literature_extractor_names() -> list[str] | None:
     """Return the canonical registered literature extractor names, or None.
 
     Reuses ``app.literature_extraction.registry.DEFAULT_REGISTRY`` instead of
@@ -294,7 +294,7 @@ def _literature_extractor_names() -> Optional[list[str]]:
     return DEFAULT_REGISTRY.names()
 
 
-def _literature_source_query() -> Optional[Any]:
+def _literature_source_query() -> Any | None:
     """Return the canonical KG source-registry entry for the literature domain.
 
     Reuses ``runtime.knowledge_graph.source_registry`` (the successor slice of
@@ -615,7 +615,7 @@ class DefaultTaskExecutor:
         missing = [key for key in required_keys if key not in result]
         return "needs_review" if missing else "pass"
 
-    def risky_action(self, task_type: str, payload: dict[str, Any]) -> Optional[str]:
+    def risky_action(self, task_type: str, payload: dict[str, Any]) -> str | None:
         if payload.get("cross_repository") is True:
             return "cross_repository"
         candidates = {task_type, str(payload.get("action", "")), str(payload.get("operation", ""))}
@@ -629,7 +629,7 @@ class DefaultTaskExecutor:
 class CalyxAutonomousOrchestrator:
     """Persistent task queue, agent registry, observation log, and run-once API."""
 
-    def __init__(self, database_url: Optional[str] = None, executor: Optional[DefaultTaskExecutor] = None) -> None:
+    def __init__(self, database_url: str | None = None, executor: DefaultTaskExecutor | None = None) -> None:
         self.database_url = database_url or os.getenv("DATABASE_URL")
         self.executor = executor or DefaultTaskExecutor()
 
@@ -748,12 +748,11 @@ class CalyxAutonomousOrchestrator:
         return {"status": "seeded", "agents_inserted": agents, "tasks_inserted": tasks}
 
     def runtime_enabled(self) -> bool:
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                self.ensure_schema(cur)
-                cur.execute("SELECT enabled FROM oc_admin.calyx_runtime_state WHERE id = 1")
-                row = cur.fetchone()
-                return bool(row and row["enabled"])
+        with self.connect() as conn, conn.cursor() as cur:
+            self.ensure_schema(cur)
+            cur.execute("SELECT enabled FROM oc_admin.calyx_runtime_state WHERE id = 1")
+            row = cur.fetchone()
+            return bool(row and row["enabled"])
 
     def set_runtime_enabled(self, enabled: bool, updated_by: str = "api") -> dict[str, Any]:
         with self.connect() as conn:
@@ -828,27 +827,25 @@ class CalyxAutonomousOrchestrator:
         return inserted
 
     def list_agents(self) -> dict[str, Any]:
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                self.ensure_schema(cur)
-                cur.execute("SELECT * FROM oc_admin.calyx_agents ORDER BY enabled DESC, priority DESC, agent_name ASC")
-                return {"agents": [dict(row) for row in cur.fetchall()]}
+        with self.connect() as conn, conn.cursor() as cur:
+            self.ensure_schema(cur)
+            cur.execute("SELECT * FROM oc_admin.calyx_agents ORDER BY enabled DESC, priority DESC, agent_name ASC")
+            return {"agents": [dict(row) for row in cur.fetchall()]}
 
     def list_tasks(self, limit: int = 100) -> dict[str, Any]:
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                self.ensure_schema(cur)
-                cur.execute(
-                    """
+        with self.connect() as conn, conn.cursor() as cur:
+            self.ensure_schema(cur)
+            cur.execute(
+                """
                     SELECT t.*, a.agent_name
                     FROM oc_admin.calyx_tasks t
                     LEFT JOIN oc_admin.calyx_agents a ON a.id = t.assigned_agent_id
                     ORDER BY t.created_at DESC, t.id DESC
                     LIMIT %s
                     """,
-                    (limit,),
-                )
-                return {"tasks": [dict(row) for row in cur.fetchall()]}
+                (limit,),
+            )
+            return {"tasks": [dict(row) for row in cur.fetchall()]}
 
     def create_task(self, task_type: str, title: str, payload: dict[str, Any], priority: int = 0) -> dict[str, Any]:
         required_approval = self.executor.risky_action(task_type, payload) is not None
@@ -953,7 +950,7 @@ class CalyxAutonomousOrchestrator:
                 "evaluation_result": outcome.evaluation_result,
                 "result": outcome.result,
             }
-        except Exception as exc:  # pragma: no cover - defensive runtime guard
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive runtime guard
             with self.connect() as conn:
                 with conn.cursor() as cur:
                     self.ensure_schema(cur)
@@ -979,113 +976,112 @@ class CalyxAutonomousOrchestrator:
             return {"status": "failed", "task_id": task["id"], "error": str(exc)}
 
     def _select_next_task(self) -> dict[str, Any]:
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                self.ensure_schema(cur)
-                cur.execute(
-                    """
-                    SELECT *
-                    FROM oc_admin.calyx_tasks
-                    WHERE status = 'pending'
-                    ORDER BY priority DESC, id ASC
-                    FOR UPDATE SKIP LOCKED
-                    """
-                )
-                tasks = [dict(row) for row in cur.fetchall()]
-                if not tasks:
-                    return {"status": "no_eligible_tasks"}
+        with self.connect() as conn, conn.cursor() as cur:
+            self.ensure_schema(cur)
+            cur.execute(
+                """
+                SELECT *
+                FROM oc_admin.calyx_tasks
+                WHERE status = 'pending'
+                ORDER BY priority DESC, id ASC
+                FOR UPDATE SKIP LOCKED
+                """
+            )
+            tasks = [dict(row) for row in cur.fetchall()]
+            if not tasks:
+                return {"status": "no_eligible_tasks"}
 
-                cur.execute("SELECT * FROM oc_admin.calyx_agents WHERE enabled = TRUE ORDER BY priority DESC, id ASC")
-                agents = [dict(row) for row in cur.fetchall()]
+            cur.execute("SELECT * FROM oc_admin.calyx_agents WHERE enabled = TRUE ORDER BY priority DESC, id ASC")
+            agents = [dict(row) for row in cur.fetchall()]
 
-                for task in tasks:
-                    risky = self.executor.risky_action(task["task_type"], task.get("payload") or {})
-                    if risky and not task.get("approved_at"):
-                        cur.execute(
-                            """
-                            UPDATE oc_admin.calyx_tasks
-                            SET status = 'needs_review',
-                                required_approval = TRUE,
-                                evaluation_result = 'needs_review',
-                                updated_at = NOW()
-                            WHERE id = %s
-                            """,
-                            (task["id"],),
-                        )
-                        self.log_observation(
-                            cur,
-                            task_id=task["id"],
-                            agent_id=None,
-                            event_type="approval_gate",
-                            action="skipped",
-                            status="needs_review",
-                            details={"risky_action": risky},
-                        )
-                        continue
-
-                    agent = self._agent_for_task(task, agents)
-                    if not agent:
-                        cur.execute(
-                            """
-                            UPDATE oc_admin.calyx_tasks
-                            SET status = 'blocked',
-                                evaluation_result = 'needs_review',
-                                last_error = 'No enabled agent can execute this task type',
-                                updated_at = NOW()
-                            WHERE id = %s
-                            """,
-                            (task["id"],),
-                        )
-                        self.log_observation(
-                            cur,
-                            task_id=task["id"],
-                            agent_id=None,
-                            event_type="agent_selection",
-                            action="blocked",
-                            status="blocked",
-                            details={"task_type": task["task_type"]},
-                        )
-                        continue
-
+            for task in tasks:
+                risky = self.executor.risky_action(task["task_type"], task.get("payload") or {})
+                if risky and not task.get("approved_at"):
                     cur.execute(
                         """
                         UPDATE oc_admin.calyx_tasks
-                        SET status = 'running',
-                            assigned_agent_id = %s,
-                            started_at = NOW(),
+                        SET status = 'needs_review',
+                            required_approval = TRUE,
+                            evaluation_result = 'needs_review',
                             updated_at = NOW()
                         WHERE id = %s
-                        RETURNING *
                         """,
-                        (agent["id"], task["id"]),
+                        (task["id"],),
                     )
-                    selected_task = dict(cur.fetchone())
-                    cur.execute(
-                        """
-                        INSERT INTO oc_admin.calyx_runs
-                            (task_id, agent_id, status, started_at)
-                        VALUES (%s, %s, 'running', NOW())
-                        RETURNING id
-                        """,
-                        (task["id"], agent["id"]),
-                    )
-                    run_id = cur.fetchone()["id"]
                     self.log_observation(
                         cur,
                         task_id=task["id"],
-                        agent_id=agent["id"],
-                        event_type="agent_selection",
-                        action="selected",
-                        status="running",
-                        details={"agent_name": agent["agent_name"]},
+                        agent_id=None,
+                        event_type="approval_gate",
+                        action="skipped",
+                        status="needs_review",
+                        details={"risky_action": risky},
                     )
-                    conn.commit()
-                    return {"status": "selected", "task": selected_task, "agent": agent, "run_id": run_id}
+                    continue
 
+                agent = self._agent_for_task(task, agents)
+                if not agent:
+                    cur.execute(
+                        """
+                        UPDATE oc_admin.calyx_tasks
+                        SET status = 'blocked',
+                            evaluation_result = 'needs_review',
+                            last_error = 'No enabled agent can execute this task type',
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (task["id"],),
+                    )
+                    self.log_observation(
+                        cur,
+                        task_id=task["id"],
+                        agent_id=None,
+                        event_type="agent_selection",
+                        action="blocked",
+                        status="blocked",
+                        details={"task_type": task["task_type"]},
+                    )
+                    continue
+
+                cur.execute(
+                    """
+                    UPDATE oc_admin.calyx_tasks
+                    SET status = 'running',
+                        assigned_agent_id = %s,
+                        started_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (agent["id"], task["id"]),
+                )
+                selected_task = dict(cur.fetchone())
+                cur.execute(
+                    """
+                    INSERT INTO oc_admin.calyx_runs
+                        (task_id, agent_id, status, started_at)
+                    VALUES (%s, %s, 'running', NOW())
+                    RETURNING id
+                    """,
+                    (task["id"], agent["id"]),
+                )
+                run_id = cur.fetchone()["id"]
+                self.log_observation(
+                    cur,
+                    task_id=task["id"],
+                    agent_id=agent["id"],
+                    event_type="agent_selection",
+                    action="selected",
+                    status="running",
+                    details={"agent_name": agent["agent_name"]},
+                )
                 conn.commit()
-                return {"status": "no_eligible_tasks"}
+                return {"status": "selected", "task": selected_task, "agent": agent, "run_id": run_id}
 
-    def _agent_for_task(self, task: dict[str, Any], agents: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+            conn.commit()
+            return {"status": "no_eligible_tasks"}
+
+    def _agent_for_task(self, task: dict[str, Any], agents: list[dict[str, Any]]) -> dict[str, Any] | None:
         for agent in agents:
             allowed = agent.get("allowed_task_types") or []
             if "*" in allowed or task["task_type"] in allowed:
@@ -1101,7 +1097,7 @@ class CalyxAutonomousOrchestrator:
         status: str,
         evaluation_result: str,
         result: dict[str, Any],
-        error_text: Optional[str],
+        error_text: str | None,
     ) -> None:
         cur.execute(
             """
@@ -1141,8 +1137,8 @@ class CalyxAutonomousOrchestrator:
         self,
         cur,
         *,
-        task_id: Optional[int],
-        agent_id: Optional[int],
+        task_id: int | None,
+        agent_id: int | None,
         event_type: str,
         action: str,
         status: str,
@@ -1158,11 +1154,10 @@ class CalyxAutonomousOrchestrator:
         )
 
     def observations(self, limit: int = 100) -> dict[str, Any]:
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                self.ensure_schema(cur)
-                cur.execute(
-                    """
+        with self.connect() as conn, conn.cursor() as cur:
+            self.ensure_schema(cur)
+            cur.execute(
+                """
                     SELECT o.*, t.task_type, a.agent_name
                     FROM oc_admin.calyx_observations o
                     LEFT JOIN oc_admin.calyx_tasks t ON t.id = o.task_id
@@ -1170,16 +1165,15 @@ class CalyxAutonomousOrchestrator:
                     ORDER BY o.id DESC
                     LIMIT %s
                     """,
-                    (limit,),
-                )
-                return {"observations": [dict(row) for row in cur.fetchall()]}
+                (limit,),
+            )
+            return {"observations": [dict(row) for row in cur.fetchall()]}
 
     def runs(self, limit: int = 50) -> dict[str, Any]:
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                self.ensure_schema(cur)
-                cur.execute(
-                    """
+        with self.connect() as conn, conn.cursor() as cur:
+            self.ensure_schema(cur)
+            cur.execute(
+                """
                     SELECT r.*, t.task_type, t.title, a.agent_name
                     FROM oc_admin.calyx_runs r
                     LEFT JOIN oc_admin.calyx_tasks t ON t.id = r.task_id
@@ -1187,9 +1181,9 @@ class CalyxAutonomousOrchestrator:
                     ORDER BY r.id DESC
                     LIMIT %s
                     """,
-                    (limit,),
-                )
-                return {"runs": [dict(row) for row in cur.fetchall()]}
+                (limit,),
+            )
+            return {"runs": [dict(row) for row in cur.fetchall()]}
 
     def health(self) -> dict[str, Any]:
         with self.connect() as conn:
