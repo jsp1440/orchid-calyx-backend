@@ -273,7 +273,9 @@ def test_direct_executor_honors_24_turn_route_budget_without_live_provider(
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("GITHUB_RUN_ID", "1001")
     monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(direct, "_prepare_branch", lambda *args, **kwargs: "dryrun/1001")
+    monkeypatch.setattr(
+        direct, "_prepare_branch", lambda *args, **kwargs: "dryrun/1001"
+    )
     monkeypatch.setattr(direct, "_anthropic_message", tool_response)
     monkeypatch.setattr(
         direct,
