@@ -495,7 +495,7 @@ def main() -> int:
         )
         if not pr_url:
             error_kind = "no_durable_change"
-            raise RuntimeError("model completed without repository changes")
+            raise DirectExecutorError("model completed without repository changes")
 
         result = {
             "type": "result",
