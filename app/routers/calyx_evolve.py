@@ -56,7 +56,7 @@ router = APIRouter(prefix="/api/calyx-evolve", tags=["CALYX-EVOLVE-001"])
 _AUTH_DEPENDENCY = Depends(verify_owner_or_api_key)
 
 #: Upper bound on candidates one request may run.  The loop is bounded by
-#: design; this stops a single call from queueing an unbounded sweep.
+#: design; this stops a single call from running an unbounded sweep.
 MAX_CANDIDATES_PER_REQUEST = 8
 
 #: Process-local memory used only when no DATABASE_URL is configured, so the
