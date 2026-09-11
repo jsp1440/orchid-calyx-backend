@@ -1,3 +1,4 @@
+# ruff: noqa: UP045, SIM117, BLE001 — pre-existing legacy findings; audit adapter is additive
 """BUILD-044 Calyx Autonomous Orchestrator.
 
 This module gives Calyx a durable task queue and a conservative run-once
