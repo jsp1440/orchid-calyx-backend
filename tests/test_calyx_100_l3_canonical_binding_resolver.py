@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -72,10 +73,9 @@ class CanonicalCursor:
         return self.rows[0] if self.rows else None
 
 
-@pytest.mark.asyncio
-async def test_resolver_uses_only_unique_existing_canonical_identities(tmp_path: Path) -> None:
+def test_resolver_uses_only_unique_existing_canonical_identities(tmp_path: Path) -> None:
     literature = LiteratureResultRepository(tmp_path / "literature")
-    paper = await extract_and_persist(_source(tmp_path / "paper.txt"), literature)
+    paper = asyncio.run(extract_and_persist(_source(tmp_path / "paper.txt"), literature))
     raw_bytes = literature.get_raw_bytes(paper.paper_id)
     assert raw_bytes is not None
     cursor = CanonicalCursor(paper)
@@ -97,10 +97,9 @@ async def test_resolver_uses_only_unique_existing_canonical_identities(tmp_path:
     resolved.binding.validate_integrity(paper, raw_bytes)
 
 
-@pytest.mark.asyncio
-async def test_resolver_refuses_ambiguous_source_record(tmp_path: Path) -> None:
+def test_resolver_refuses_ambiguous_source_record(tmp_path: Path) -> None:
     literature = LiteratureResultRepository(tmp_path / "literature")
-    paper = await extract_and_persist(_source(tmp_path / "paper.txt"), literature)
+    paper = asyncio.run(extract_and_persist(_source(tmp_path / "paper.txt"), literature))
     raw_bytes = literature.get_raw_bytes(paper.paper_id)
     assert raw_bytes is not None
 
@@ -112,10 +111,9 @@ async def test_resolver_refuses_ambiguous_source_record(tmp_path: Path) -> None:
     assert caught.value.code == "SOURCE_BINDING_AMBIGUOUS"
 
 
-@pytest.mark.asyncio
-async def test_resolver_refuses_ambiguous_evidence_anchor(tmp_path: Path) -> None:
+def test_resolver_refuses_ambiguous_evidence_anchor(tmp_path: Path) -> None:
     literature = LiteratureResultRepository(tmp_path / "literature")
-    paper = await extract_and_persist(_source(tmp_path / "paper.txt"), literature)
+    paper = asyncio.run(extract_and_persist(_source(tmp_path / "paper.txt"), literature))
     raw_bytes = literature.get_raw_bytes(paper.paper_id)
     assert raw_bytes is not None
 
@@ -128,10 +126,9 @@ async def test_resolver_refuses_ambiguous_evidence_anchor(tmp_path: Path) -> Non
     assert "ANCHOR_BINDING_AMBIGUOUS" in caught.value.details["run_failures"].values()
 
 
-@pytest.mark.asyncio
-async def test_postgres_binding_persistence_is_additive_and_scoped(tmp_path: Path) -> None:
+def test_postgres_binding_persistence_is_additive_and_scoped(tmp_path: Path) -> None:
     literature = LiteratureResultRepository(tmp_path / "literature")
-    paper = await extract_and_persist(_source(tmp_path / "paper.txt"), literature)
+    paper = asyncio.run(extract_and_persist(_source(tmp_path / "paper.txt"), literature))
     raw_bytes = literature.get_raw_bytes(paper.paper_id)
     assert raw_bytes is not None
     cursor = CanonicalCursor(paper)
