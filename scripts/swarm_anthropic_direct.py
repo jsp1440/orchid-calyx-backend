@@ -482,7 +482,7 @@ def main() -> int:
             messages.append({"role": "user", "content": results})
         else:
             error_kind = "max_turns"
-            raise RuntimeError("direct executor reached max turns")
+            raise DirectExecutorError("direct executor reached max turns")
 
         pr_url = _open_draft_pr(
             args.issue_number,
