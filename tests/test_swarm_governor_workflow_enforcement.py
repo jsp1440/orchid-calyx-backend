@@ -659,3 +659,10 @@ def test_completion_lane_classifies_anthropic_usage_limit_as_billing_exhausted()
     assert "reached your specified api usage limits" in text
     assert "api usage limit" in text
     assert "kind=billing_exhausted" in text
+
+
+def test_max_turns_precedes_generic_provider_failure_classification() -> None:
+    text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
+    max_turns = text.index('kind=max_turns')
+    provider_failure = text.index('kind=provider_failure')
+    assert max_turns < provider_failure
