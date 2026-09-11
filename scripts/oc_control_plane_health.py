@@ -8,6 +8,8 @@ import sys
 from collections.abc import Iterable
 from datetime import datetime, timezone
 
+from scripts.oc_health_contract import evaluate as evaluate_health_contract
+
 UNKNOWN = "UNKNOWN"
 
 
@@ -49,6 +51,77 @@ def classify_ci(runs: Iterable[dict]) -> dict:
     return {"state": "CODE_OR_CHECK_FAILURE", "reason": "runner_executed_non_success", "run_id": latest.get("id")}
 
 
+
+def build_contract_snapshot(snapshot: dict) -> dict:
+    """Normalize one observer pulse into the canonical health-contract shape.
+
+    Missing collections become empty collections, while malformed records are
+    retained so the contract checker can reject them. Provider state is kept
+    separate from queue state and no UNKNOWN value is converted into a healthy
+    or zero-valued claim.
+    """
+    raw_issues = snapshot.get("issues")
+    issues = list(raw_issues) if isinstance(raw_issues, list) else raw_issues
+    raw_leases = snapshot.get("leases", snapshot.get("active_leases"))
+    leases = list(raw_leases) if isinstance(raw_leases, list) else raw_leases
+    raw_fingerprints = snapshot.get(
+        "dispatch_fingerprints", snapshot.get("material_change_fingerprints")
+    )
+    fingerprints = (
+        list(raw_fingerprints)
+        if isinstance(raw_fingerprints, list)
+        else raw_fingerprints
+    )
+
+    provider = snapshot.get("provider")
+    if not isinstance(provider, dict):
+        provider = {
+            "status": snapshot.get(
+                "provider_chain_state",
+                snapshot.get("provider_availability_state", UNKNOWN),
+            )
+        }
+    integration = snapshot.get("integration")
+    if not isinstance(integration, dict):
+        integration = {
+            "head_sha": snapshot.get("integration_head", UNKNOWN),
+            "ready": snapshot.get("integration_ready", UNKNOWN),
+        }
+
+    return {
+        "schema": "oc.completion-health-snapshot.v1",
+        "generated_at": snapshot.get("generated_at")
+        or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "issues": [] if raw_issues is None else issues,
+        "leases": [] if raw_leases is None else leases,
+        "dispatch_fingerprints": (
+            [] if raw_fingerprints is None else fingerprints
+        ),
+        "autonomous_prs": snapshot.get("autonomous_prs") or [],
+        "provider": provider,
+        "integration": integration,
+        "exceptions": snapshot.get("exceptions") or [],
+        "exception_context": snapshot.get("exception_context") or {},
+        "autonomous_repair_available": bool(
+            snapshot.get("autonomous_repair_available", False)
+        ),
+        "independent_authorized_work_available": bool(
+            snapshot.get("independent_authorized_work_available", False)
+        ),
+        "deterministic_work_available": bool(
+            snapshot.get("deterministic_work_available", False)
+        ),
+    }
+
+
+def evaluate_completion_pulse(snapshot: dict) -> dict:
+    """Build and evaluate one pulse without mutating queue or provider state."""
+    contract_snapshot = build_contract_snapshot(snapshot)
+    return {
+        "snapshot": contract_snapshot,
+        "report": evaluate_health_contract(contract_snapshot),
+    }
+
 def build_health(snapshot: dict) -> dict:
     issues = list(snapshot.get("issues") or [])
     running = [i for i in issues if "oc-running" in _labels(i)]
@@ -67,6 +140,7 @@ def build_health(snapshot: dict) -> dict:
         else:
             reason = UNKNOWN
     exact_head = snapshot.get("last_successful_exact_head_validation", UNKNOWN)
+    contract = evaluate_completion_pulse(snapshot)
     return {
         "schema": "orchid.control-plane-health.v1",
         "generated_at": snapshot.get("generated_at") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -87,6 +161,8 @@ def build_health(snapshot: dict) -> dict:
         "last_main_promotion": snapshot.get("last_main_promotion", UNKNOWN),
         "duplicate_authoritative_mission_count": snapshot.get("duplicate_authoritative_mission_count", UNKNOWN),
         "reason_no_work_running": reason,
+        "contract_snapshot": contract["snapshot"],
+        "contract_health": contract["report"],
     }
 
 
