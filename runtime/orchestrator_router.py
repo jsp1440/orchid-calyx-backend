@@ -23,6 +23,24 @@ class CreateTaskRequest(BaseModel):
     priority: int = 0
 
 
+class AuditFindingRequest(BaseModel):
+    finding_key: str | None = None
+    title: str = Field(..., min_length=1)
+    category: str = Field(default="engineering")
+    actionable: bool = True
+    evidence: list[str] = Field(default_factory=list)
+    task_type: str | None = None
+    task_key: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    priority: int = 50
+
+
+class IngestAuditFindingsRequest(BaseModel):
+    audit_id: str = Field(..., min_length=1)
+    audit_run_id: str | None = None
+    findings: list[AuditFindingRequest] = Field(default_factory=list)
+
+
 def orchestrator() -> CalyxAutonomousOrchestrator:
     return CalyxAutonomousOrchestrator()
 
@@ -46,6 +64,9 @@ def action_contract() -> dict[str, dict[str, Any]]:
         "createTask": requires_auth("Creates a durable orchestrator task."),
         "approveTask": requires_auth("Approves a queued task for autonomous execution.", risk="high"),
         "runOnce": requires_auth("Executes one orchestrator loop against durable task state.", risk="high"),
+        "ingestAuditFindings": requires_auth(
+            "Classifies audit findings, dedupes against unresolved tasks, and queues deduplicated remediation work."
+        ),
     }
 
 
@@ -142,6 +163,39 @@ def run_once():
 
     try:
         return {**orchestrator().run_once(), "decision": decision["decision"], "allowedActions": action_contract()}
+    except OrchestratorConfigError as exc:
+        handle_config_error(exc)
+
+
+@router.post("/audit/findings", dependencies=AUTH_REQUIRED)
+def ingest_audit_findings(request: IngestAuditFindingsRequest):
+    """ORCHESTRATION-AUDIT-FOLLOWTHROUGH-001: classify findings and queue remediation.
+
+    Every finding in the request receives a terminal disposition. Actionable
+    findings without an unresolved matching task get a deduplicated
+    remediation task created automatically at the existing safe-autonomy
+    level; high-risk task types stop at the existing owner-approval gate.
+    """
+
+    decision = evaluate_orchestrator_action(
+        "ingest_audit_findings",
+        evidence=["authenticated API request", f"audit_id={request.audit_id}"],
+    )
+    try:
+        result = orchestrator().ingest_audit_findings(
+            audit_id=request.audit_id,
+            findings=[finding.model_dump() for finding in request.findings],
+            audit_run_id=request.audit_run_id,
+        )
+        return {**result, "decision": decision["decision"], "allowedActions": action_contract()}
+    except OrchestratorConfigError as exc:
+        handle_config_error(exc)
+
+
+@router.get("/audit/followthrough")
+def audit_followthrough(audit_id: str | None = None):
+    try:
+        return orchestrator().audit_followthrough_view(audit_id=audit_id)
     except OrchestratorConfigError as exc:
         handle_config_error(exc)
 

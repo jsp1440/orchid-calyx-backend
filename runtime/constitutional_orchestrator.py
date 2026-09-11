@@ -15,6 +15,22 @@ from typing import Any
 from uuid import uuid4
 
 
+# ORCHESTRATION-AUDIT-FOLLOWTHROUGH-001: an audit is only complete once every
+# actionable finding carries one of these terminal dispositions. Kept in sync
+# with runtime.autonomous_orchestrator.FINDING_DISPOSITIONS.
+TERMINAL_FINDING_DISPOSITIONS = frozenset(
+    {
+        "auto_remediation_queued",
+        "auto_remediation_in_progress",
+        "verified_resolved",
+        "owner_approval_required",
+        "external_blocker",
+        "scientific_data_gap",
+        "no_action_needed",
+    }
+)
+
+
 class AutonomyLevel(IntEnum):
     """Delegated authority levels for Calyx actions."""
 
@@ -220,6 +236,69 @@ class ConstitutionalMissionOrchestrator:
         )
         return {"decision": asdict(record)}
 
+    def evaluate_audit_completion(
+        self,
+        *,
+        mission_id: str,
+        audit_id: str,
+        findings: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Enforce ``audit_requires_followthrough``: block narrative-only completion.
+
+        ``findings`` is the same shape Mission Control and autonomous agents
+        report after running an audit: each entry carries at least
+        ``actionable`` and the ``disposition`` that
+        ``CalyxAutonomousOrchestrator.ingest_audit_findings`` assigned it. An
+        audit may only be reported complete once every actionable finding
+        holds a disposition in ``TERMINAL_FINDING_DISPOSITIONS``.
+        """
+
+        undispositioned = [
+            finding.get("finding_key") or finding.get("title") or "unknown_finding"
+            for finding in findings
+            if finding.get("actionable", True) and finding.get("disposition") not in TERMINAL_FINDING_DISPOSITIONS
+        ]
+
+        if undispositioned:
+            question = self._open_question(
+                mission_id=mission_id,
+                question=f"Audit {audit_id} has actionable findings without a terminal disposition.",
+                reason="audit_requires_followthrough: " + ", ".join(undispositioned),
+            )
+            record = self._record_decision(
+                mission_id=mission_id,
+                action=f"audit_completion:{audit_id}",
+                requested_autonomy_level=int(AutonomyLevel.PROPOSE),
+                approved_autonomy_level=int(AutonomyLevel.OBSERVE),
+                status="blocked_narrative_only",
+                risk_level="medium",
+                confidence=0.6,
+                constitutional_policies=["audit_requires_followthrough"],
+                rationale="Narrative-only completion is prohibited while actionable findings lack terminal dispositions.",
+                rollback_checkpoint=None,
+                governance_question_id=question.question_id,
+            )
+            return {
+                "decision": asdict(record),
+                "governance_question": asdict(question),
+                "undispositioned_findings": undispositioned,
+            }
+
+        record = self._record_decision(
+            mission_id=mission_id,
+            action=f"audit_completion:{audit_id}",
+            requested_autonomy_level=int(AutonomyLevel.PROPOSE),
+            approved_autonomy_level=int(AutonomyLevel.PROPOSE),
+            status="approved",
+            risk_level="low",
+            confidence=0.9,
+            constitutional_policies=["audit_requires_followthrough"],
+            rationale="All findings hold a terminal disposition; audit follow-through is satisfied.",
+            rollback_checkpoint=None,
+            governance_question_id=None,
+        )
+        return {"decision": asdict(record)}
+
     def _policies_for_action(self, action: str) -> list[ConstitutionalPolicy]:
         lower = action.lower()
         policies = [self.policies["preserve_provenance"], self.policies["prefer_reversible_changes"]]
@@ -258,6 +337,8 @@ class ConstitutionalMissionOrchestrator:
             policies.append(self.policies["distinguish_evidence_from_inference"])
         if any(term in lower for term in ["homepage", "frontend", "university", "grant", "lesson"]):
             policies.append(self.policies["reveal_relationships"])
+        if any(term in lower for term in ["audit", "finding", "followthrough", "follow-through"]):
+            policies.append(self.policies["audit_requires_followthrough"])
         return policies
 
     def _record_decision(self, **kwargs: Any) -> DecisionRecord:
@@ -323,6 +404,19 @@ class ConstitutionalMissionOrchestrator:
                 requires_rollback=True,
                 requires_provenance=True,
                 protected=True,
+            ),
+            ConstitutionalPolicy(
+                policy_id="audit_requires_followthrough",
+                title="Audit follow-through is mandatory",
+                principle=(
+                    "An audit is not complete when it produces findings. Every actionable finding must "
+                    "receive a terminal disposition and, where remediation is possible, a deduplicated "
+                    "task routed through the governed task queue before the audit may be reported complete. "
+                    "Narrative-only completion is prohibited."
+                ),
+                max_autonomy_level=AutonomyLevel.TRUSTED_EXECUTION,
+                requires_rollback=True,
+                requires_provenance=True,
             ),
         ]
         return {policy.policy_id: policy for policy in policies}
