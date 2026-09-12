@@ -28,8 +28,16 @@ def result(
         evaluator_version="1",
         passed=passed,
         score=metric(score),
-        cost_usd=(metric(cost, "usd") if cost is not None else MetricValue(MeasurementState.UNKNOWN)),
-        latency_ms=(metric(latency, "ms") if latency is not None else MetricValue(MeasurementState.UNKNOWN)),
+        cost_usd=(
+            metric(cost, "usd")
+            if cost is not None
+            else MetricValue(MeasurementState.UNKNOWN)
+        ),
+        latency_ms=(
+            metric(latency, "ms")
+            if latency is not None
+            else MetricValue(MeasurementState.UNKNOWN)
+        ),
         evidence={"mandatory_gate": mandatory},
     )
 
@@ -76,17 +84,27 @@ def test_promotes_measurably_better_candidate_with_rollback_and_memory():
         baseline=baseline,
         candidate=candidate,
         evidence=evidence(
-            [result("precision", 0.80), result("citation_anchor_valid", 1.0, mandatory=True)],
-            [result("precision", 0.90), result("citation_anchor_valid", 1.0, mandatory=True)],
+            [
+                result("precision", 0.80),
+                result("citation_anchor_valid", 1.0, mandatory=True),
+            ],
+            [
+                result("precision", 0.90),
+                result("citation_anchor_valid", 1.0, mandatory=True),
+            ],
         ),
-        policy=PromotionPolicy(minimum_primary_score=0.75, minimum_absolute_improvement=0.05),
+        policy=PromotionPolicy(
+            minimum_primary_score=0.75, minimum_absolute_improvement=0.05
+        ),
         decision_id="decision-1",
         scope={"task_class": task.task_class_id},
     )
     assert outcome.decision.state == StrategyDecisionState.PROMOTE
     assert outcome.decision.rollback_strategy_fingerprint == baseline.fingerprint
     assert outcome.memory_summary["measured_outcome"] == "benefit"
-    assert outcome.memory_summary["rollback_strategy_fingerprint"] == baseline.fingerprint
+    assert (
+        outcome.memory_summary["rollback_strategy_fingerprint"] == baseline.fingerprint
+    )
 
 
 def test_equivalent_quality_lower_cost_can_promote():
@@ -96,8 +114,14 @@ def test_equivalent_quality_lower_cost_can_promote():
         baseline=baseline,
         candidate=candidate,
         evidence=evidence(
-            [result("precision", 0.90, cost=1.00), result("citation_anchor_valid", 1.0, mandatory=True)],
-            [result("precision", 0.90, cost=0.40), result("citation_anchor_valid", 1.0, mandatory=True)],
+            [
+                result("precision", 0.90, cost=1.00),
+                result("citation_anchor_valid", 1.0, mandatory=True),
+            ],
+            [
+                result("precision", 0.90, cost=0.40),
+                result("citation_anchor_valid", 1.0, mandatory=True),
+            ],
         ),
         policy=PromotionPolicy(
             minimum_primary_score=0.80,
@@ -118,7 +142,10 @@ def test_mandatory_gate_failure_rejects_even_if_candidate_is_better_and_cheaper(
         baseline=baseline,
         candidate=candidate,
         evidence=evidence(
-            [result("precision", 0.80, cost=1.00), result("citation_anchor_valid", 1.0, mandatory=True)],
+            [
+                result("precision", 0.80, cost=1.00),
+                result("citation_anchor_valid", 1.0, mandatory=True),
+            ],
             [
                 result("precision", 0.99, cost=0.01),
                 result("citation_anchor_valid", 0.0, mandatory=True, passed=False),
@@ -139,8 +166,14 @@ def test_no_material_benefit_keeps_baseline_and_records_suppression_ready_outcom
         baseline=baseline,
         candidate=candidate,
         evidence=evidence(
-            [result("precision", 0.90), result("citation_anchor_valid", 1.0, mandatory=True)],
-            [result("precision", 0.91), result("citation_anchor_valid", 1.0, mandatory=True)],
+            [
+                result("precision", 0.90),
+                result("citation_anchor_valid", 1.0, mandatory=True),
+            ],
+            [
+                result("precision", 0.91),
+                result("citation_anchor_valid", 1.0, mandatory=True),
+            ],
         ),
         policy=PromotionPolicy(minimum_absolute_improvement=0.05),
         decision_id="decision-4",
@@ -157,8 +190,14 @@ def test_high_risk_improvement_requires_owner_approval_for_full_promotion():
         "baseline": baseline,
         "candidate": candidate,
         "evidence": evidence(
-            [result("precision", 0.80), result("citation_anchor_valid", 1.0, mandatory=True)],
-            [result("precision", 0.95), result("citation_anchor_valid", 1.0, mandatory=True)],
+            [
+                result("precision", 0.80),
+                result("citation_anchor_valid", 1.0, mandatory=True),
+            ],
+            [
+                result("precision", 0.95),
+                result("citation_anchor_valid", 1.0, mandatory=True),
+            ],
         ),
         "policy": PromotionPolicy(minimum_absolute_improvement=0.05),
         "scope": {"taxon": "fixture-only"},
