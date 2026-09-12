@@ -21,7 +21,6 @@ from runtime.research_station_store import (
     build_record_store,
 )
 
-
 RESEARCH_SCHEMA_VERSION = "calyx-research-station/v1"
 PROJECT_STATES = {"planned", "active", "blocked", "completed", "archived"}
 TASK_STATES = {"todo", "in_progress", "blocked", "done"}
