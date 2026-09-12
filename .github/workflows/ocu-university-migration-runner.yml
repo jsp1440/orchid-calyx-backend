@@ -1,0 +1,44 @@
+name: OCU University Migration Runner
+
+on:
+  pull_request:
+    paths:
+      - 'migrations/ocu_sci_008_durable_sessions.sql'
+      - 'scripts/preflight_university_activation.py'
+      - 'scripts/apply_university_durable_migration.py'
+      - 'tests/test_university_guarded_migration_runner.py'
+      - '.github/workflows/ocu-university-migration-runner.yml'
+  workflow_dispatch:
+
+jobs:
+  postgres-migration-runner:
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orchid_university_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d orchid_university_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      OCU_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_university_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project dependencies
+        run: pip install -r requirements.txt
+      - name: Validate durable migration invariants
+        run: python scripts/validate_university_durable_migration.py
+      - name: Run guarded migration contract and PostgreSQL integration tests
+        run: python -m unittest tests/test_university_guarded_migration_runner.py
+      - name: Compile migration runner
+        run: python -m py_compile scripts/apply_university_durable_migration.py tests/test_university_guarded_migration_runner.py
