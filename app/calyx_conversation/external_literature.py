@@ -259,6 +259,19 @@ def extract_taxa(
     return found
 
 
+def _extract_potential_genera(text: str) -> list[str]:
+    """Return genus subjects from conservatively validated scientific names."""
+    genera: list[str] = []
+    seen: set[str] = set()
+    for taxon in extract_taxa(text):
+        genus = taxon.split()[0]
+        key = genus.casefold()
+        if key not in seen:
+            seen.add(key)
+            genera.append(genus)
+    return genera
+
+
 def _mentioned_genera(
     question: str, extra_taxa: list[str] | None = None
 ) -> list[str]:
@@ -330,10 +343,15 @@ def _epmc_or(terms: tuple[str, ...], *, limit: int = 5) -> str:
     return " OR ".join(values)
 
 
-def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
+def _query_plan(
+    question: str,
+    *,
+    taxa: list[str] | None = None,
+    max_queries: int = 8,
+) -> list[str]:
     """Build focused Europe PMC searches from a natural-language Calyx question."""
 
-    genera = _mentioned_genera(question)
+    genera = _mentioned_genera(question, taxa)
     clusters = _active_clusters(question)
     wet_winter = _wet_winter_intent(question)
     ordered_genera = sorted(
@@ -344,6 +362,10 @@ def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
         ),
     )
     queries: list[str] = []
+
+    if not clusters:
+        for genus in ordered_genera[:max_queries]:
+            queries.append(f'"{genus}" AND (orchid OR Orchidaceae)')
 
     genus_budget = 5 if wet_winter else 4
     cluster_budget = 2 if wet_winter else 3

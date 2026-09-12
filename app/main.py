@@ -25,8 +25,13 @@ from app.mission_control_briefing.routes import (
     router as mission_control_briefing_router,
 )
 from app.mission_control_release.routes import router as mission_control_release_router
-from app.missions.routers import router as missions_router
-from app.missions.routers import runtime_queue_router, templates_router
+from app.missions.routers import (
+    router as missions_router,
+)
+from app.missions.routers import (
+    runtime_queue_router,
+    templates_router,
+)
 from app.ontology.routers import router as ontology_router
 from app.publication.routers import router as publication_router
 from app.reasoning_ledger.routes import (
@@ -57,6 +62,9 @@ from app.routers.health import (
 from app.scientific_interpretation.routes import (
     router as scientific_interpretation_router,
 )
+from app.scientific_observability.routes import (
+    router as scientific_observability_router,
+)
 from app.security import (
     get_api_key,
     get_owner_access_code,
@@ -73,7 +81,9 @@ from runtime.autonomous_runner import (
     execute_next_job,
 )
 from runtime.cds_router import router as cds_router
-from runtime.constitutional_orchestrator import AutonomyLevel
+from runtime.constitutional_orchestrator import (
+    AutonomyLevel,
+)
 from runtime.constitutional_orchestrator import (
     orchestrator as constitutional_orchestrator,
 )
@@ -570,6 +580,7 @@ app.include_router(design_intelligence_router)
 app.include_router(design_planning_router)
 app.include_router(implementation_planning_router)
 app.include_router(scientific_interpretation_router)
+app.include_router(scientific_observability_router)
 app.include_router(ontology_router)
 app.include_router(concepts_router)
 app.include_router(brain_router)

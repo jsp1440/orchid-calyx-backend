@@ -1,0 +1,196 @@
+{
+  "FIXTURE": true,
+  "fixture_notice": "Labeled fixture. Not a scientific finding or occurrence record.",
+  "accepted_name": "Laelia anceps",
+  "correlation_id": "OC:EVENT:3d33769e57074827bccfa5e3534dd6de",
+  "proof": {
+    "1_correlation_begins_at_acquisition": true,
+    "2_ids_propagate_each_stage": true,
+    "3_reconstructable_from_immutable_events": [
+      "OC:EVENT:6d5fb835553a4b03bb7d3fbbca9258bd",
+      "OC:EVENT:c91d613bfad5401198a4897269f78b4d",
+      "OC:EVENT:aa9014fc69a7448f986c5f9e5747e830",
+      "OC:EVENT:8792d3e52bb14bb8afdd45988d7aad1b",
+      "OC:EVENT:7b3fef92d6624cca8260868544426343",
+      "OC:EVENT:bcd8d990e838468ca4313584bafcd086",
+      "OC:EVENT:b29f438945c44bcda7e60a5d6e4fa3a9"
+    ],
+    "4_provenance_and_anchor_survive": true,
+    "5_absence_withholding_counterevidence_distinct": {
+      "safe_statuses_present": [
+        "ok",
+        "withheld"
+      ],
+      "confidence_unknown_preserved_as_null": true,
+      "counterevidence_preserved": true,
+      "withheld_distinct_from_error": true
+    },
+    "6_protected_locality_fail_closed": {
+      "latitude_redacted": true,
+      "longitude_redacted": true,
+      "raw_prompt_redacted": true,
+      "exposure_anomaly_raised": true
+    },
+    "7_mission_control_readiness": {
+      "contract_version": "sci-obs-readiness-v1",
+      "generated_at": "2026-08-25T22:12:07.802554+00:00",
+      "overall_state": "blocked",
+      "dimensions": {
+        "engineering_health": {
+          "key": "engineering_health",
+          "state": "available",
+          "numerator": 1,
+          "denominator": 1,
+          "score": 1.0,
+          "missing_requirements": [],
+          "upstream_blockers": [],
+          "limitation": null,
+          "calculation_version": "sci-obs-readiness-v1",
+          "measured_at": "2026-08-25T22:12:07.802487+00:00"
+        },
+        "integration_health": {
+          "key": "integration_health",
+          "state": "conditional",
+          "numerator": 1,
+          "denominator": 2,
+          "score": 0.5,
+          "missing_requirements": [
+            "frontend_consumer_contract_pinned"
+          ],
+          "upstream_blockers": [],
+          "limitation": null,
+          "calculation_version": "sci-obs-readiness-v1",
+          "measured_at": "2026-08-25T22:12:07.802520+00:00"
+        },
+        "data_readiness": {
+          "key": "data_readiness",
+          "state": "conditional",
+          "numerator": 2,
+          "denominator": 8,
+          "score": 0.25,
+          "missing_requirements": [
+            "traits",
+            "pollinators",
+            "mycorrhizae",
+            "literature",
+            "images",
+            "provenance"
+          ],
+          "upstream_blockers": [],
+          "limitation": null,
+          "calculation_version": "sci-obs-readiness-v1",
+          "measured_at": "2026-08-25T22:12:07.802524+00:00"
+        },
+        "scientific_evidence_readiness": {
+          "key": "scientific_evidence_readiness",
+          "state": "blocked",
+          "numerator": 0,
+          "denominator": 1,
+          "score": 0.0,
+          "missing_requirements": [],
+          "upstream_blockers": [
+            "conflicting_evidence_pending_review"
+          ],
+          "limitation": null,
+          "calculation_version": "sci-obs-readiness-v1",
+          "measured_at": "2026-08-25T22:12:07.802526+00:00"
+        },
+        "product_workflow_readiness": {
+          "key": "product_workflow_readiness",
+          "state": "conditional",
+          "numerator": 2,
+          "denominator": 3,
+          "score": 0.6667,
+          "missing_requirements": [
+            "frontend_trace_consumer"
+          ],
+          "upstream_blockers": [],
+          "limitation": null,
+          "calculation_version": "sci-obs-readiness-v1",
+          "measured_at": "2026-08-25T22:12:07.802529+00:00"
+        },
+        "freshness": {
+          "key": "freshness",
+          "state": "available",
+          "numerator": 1,
+          "denominator": 1,
+          "score": 1.0,
+          "missing_requirements": [],
+          "upstream_blockers": [],
+          "limitation": null,
+          "calculation_version": "sci-obs-readiness-v1",
+          "measured_at": "2026-08-25T22:12:07.802531+00:00"
+        }
+      },
+      "component_coverage": {
+        "taxonomy": {
+          "state": "available",
+          "present": true
+        },
+        "provenance": {
+          "state": "available",
+          "present": true
+        },
+        "occurrences": {
+          "state": "available",
+          "present": true
+        },
+        "traits": {
+          "state": "unknown",
+          "present": false
+        },
+        "pollinators": {
+          "state": "unavailable",
+          "present": null
+        },
+        "mycorrhizae": {
+          "state": "unavailable",
+          "present": null
+        },
+        "literature": {
+          "state": "unavailable",
+          "present": null
+        },
+        "images": {
+          "state": "unknown",
+          "present": false
+        }
+      },
+      "human_approval_required": true,
+      "publication_authority": false
+    },
+    "8_verification_workbench_anomaly": {
+      "anomaly_count": 2,
+      "bindings": [
+        {
+          "review_type": "SCI_OBS_ANOMALY:PROTECTED_LOCALITY_EXPOSURE",
+          "batch_key": "sci-obs:OC:EVENT:3d33769e57074827bccfa5e3534dd6de:OC:EVENT:aa9014fc69a7448f986c5f9e5747e830:PROTECTED_LOCALITY_EXPOSURE",
+          "risk_class": "CRITICAL",
+          "embargoed": true
+        },
+        {
+          "review_type": "SCI_OBS_ANOMALY:CONFLICTING_EVIDENCE",
+          "batch_key": "sci-obs:OC:EVENT:3d33769e57074827bccfa5e3534dd6de:OC:EVENT:7b3fef92d6624cca8260868544426343:CONFLICTING_EVIDENCE",
+          "risk_class": "MEDIUM",
+          "embargoed": false
+        }
+      ],
+      "handoff_idempotent": true,
+      "no_authoritative_mutation": true
+    },
+    "9_frontend_consumer": {
+      "trace_surface_event_present": true,
+      "next_bounded_lane": "SCI-OBS-005 frontend reviewer-safe trace surface"
+    }
+  },
+  "replay_idempotency": {
+    "events_recorded": 7,
+    "expected_unique_events": 7,
+    "all_replays_noop": true
+  },
+  "authority_boundary": {
+    "publishes": false,
+    "mutates_authoritative_state": false,
+    "grants_scientific_authority": false
+  }
+}
