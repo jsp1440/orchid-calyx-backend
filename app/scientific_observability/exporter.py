@@ -17,7 +17,8 @@ ever handed to this boundary.
 from __future__ import annotations
 
 import os
-from typing import Any, Callable, Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 EXPORT_ENABLED_ENV = "SCI_OBS_EXPORT_ENABLED"
 
