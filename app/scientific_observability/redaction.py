@@ -14,15 +14,11 @@ observation copy before it is stored or exported.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.data_governance.disclosure import (
-    _EXACT_LOCATION_KEYS,
-    _GENERALIZED_LOCATION_KEYS,
-    _IMAGE_KEYS,
-)
+from app.data_governance.disclosure import _EXACT_LOCATION_KEYS
 
 # Reuse canonical locality/image key-sets. Generalized location keys (country,
 # region) are NOT redacted — they are the safe, generalized disclosure level.
@@ -134,8 +130,8 @@ def redact_event_dict(event: Mapping[str, Any]) -> tuple[dict[str, Any], Redacti
 
 
 __all__ = [
-    "RedactionReport",
-    "redact_payload",
-    "redact_event_dict",
     "REDACTION_PLACEHOLDER",
+    "RedactionReport",
+    "redact_event_dict",
+    "redact_payload",
 ]
