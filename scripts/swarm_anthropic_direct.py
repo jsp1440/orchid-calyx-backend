@@ -101,12 +101,17 @@ TOOLS = [
     },
     {
         "name": "write_file",
-        "description": "Replace a repository text file with supplied UTF-8 content.",
+        "description": (
+            "Write UTF-8 content. For a small edit to an existing file, provide "
+            "old_text to replace exactly one matching literal with content. "
+            "Prefer small edits to avoid truncating large whole-file tool calls."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
                 "content": {"type": "string"},
+                "old_text": {"type": "string", "minLength": 1},
             },
             "required": ["path", "content"],
         },
@@ -225,10 +230,20 @@ def _tool_search_text(args: dict[str, Any]) -> str:
 
 
 def _tool_write_file(args: dict[str, Any]) -> str:
+    if not isinstance(args["path"], str) or not isinstance(args["content"], str):
+        raise TypeError("write_file requires string path and content")
     path = _safe_path(str(args["path"]))
     if not _writable(path):
         return f"ERROR: protected path is not writable: {_relative(path)}"
-    content = str(args["content"])
+    content = args["content"]
+    if "old_text" in args:
+        old_text = args["old_text"]
+        if not isinstance(old_text, str) or not old_text:
+            raise ValueError("old_text must be a nonempty string")
+        current = path.read_text(encoding="utf-8")
+        if current.count(old_text) != 1:
+            raise ValueError("old_text must match exactly once; read the file again")
+        content = current.replace(old_text, content, 1)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return f"WROTE {_relative(path)} bytes={len(content.encode('utf-8'))}"
@@ -400,6 +415,25 @@ def _open_draft_pr(issue_number: str, branch: str, base: str, title: str) -> str
 
 def _write_result(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    # Keep execution/usage evidence in the durable job log as well as the
+    # runner-local classifier input. Never log model text or raw API errors.
+    receipt = {
+        key: payload[key]
+        for key in (
+            "type",
+            "subtype",
+            "is_error",
+            "num_turns",
+            "modelUsage",
+            "pr_url",
+            "branch",
+            "partial_branch",
+            "error",
+            "api_error_status",
+        )
+        if key in payload
+    }
+    print("[OC-DIRECT-RECEIPT] " + json.dumps(receipt, sort_keys=True), flush=True)
 
 
 def _github_output(values: dict[str, Any]) -> None:
@@ -488,7 +522,13 @@ def main() -> int:
                 else:
                     try:
                         tool_result = handler(dict(block.get("input") or {}))
-                    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                    except (
+                        OSError,
+                        ValueError,
+                        KeyError,
+                        TypeError,
+                        subprocess.SubprocessError,
+                    ) as exc:
                         tool_result = f"ERROR: {type(exc).__name__}: {exc}"
                 results.append(
                     {
@@ -544,6 +584,8 @@ def main() -> int:
         DirectExecutorError,
         OSError,
         ValueError,
+        KeyError,
+        TypeError,
         subprocess.SubprocessError,
     ) as exc:
         if not error_kind:
