@@ -4,11 +4,16 @@ import hashlib
 import json
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, ClassVar
 
 from app.mission_control_access import AccessPrincipal, CapabilityService
 
-from .models import ReviewDecisionInput, ReviewDecisionType, ReviewTaskInput, ReviewTaskState
+from .models import (
+    ReviewDecisionInput,
+    ReviewDecisionType,
+    ReviewTaskInput,
+    ReviewTaskState,
+)
 from .repository import MemoryReviewTaskRepository
 
 
@@ -32,7 +37,7 @@ class ReviewTaskError(ValueError):
 class GovernedReviewTaskService:
     """Authoritative, auditable review task engine for Mission Control."""
 
-    ROUTING_CAPABILITIES = {
+    ROUTING_CAPABILITIES: ClassVar[dict[str, str]] = {
         "HUMAN_REVIEW_REQUIRED": "review.science",
         "ROUTE_TO_VERIFICATION_WORKBENCH": "scientific_review",
         "EXPERT_REVIEW_REQUIRED": "review.expert",
