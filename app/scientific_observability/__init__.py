@@ -18,10 +18,10 @@ from .service import ObservabilityService, RecordResult
 from .store import ObservationStore, get_default_store
 
 __all__ = [
+    "ObservabilityService",
     "ObservationEventType",
     "ObservationStore",
     "ObservationValidationError",
-    "ObservabilityService",
     "PipelineStage",
     "RecordResult",
     "SafeStatus",
