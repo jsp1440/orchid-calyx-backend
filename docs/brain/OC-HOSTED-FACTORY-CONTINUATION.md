@@ -76,3 +76,15 @@ No claim of concurrent multiworker reliability follows from sequential canaries:
 GitHub concurrency can replace pending runs, existing stale queue evidence remains,
 and main/default-branch promotion and canonical Brain synchronization are separate
 boundaries. #1361 still legitimately depends on unvalidated producer #1360/#1362.
+
+### Required-status authority recovered before activation
+
+Fresh GitHub metadata on 2026-09-12 reports integration protected=false, enforcement
+'off', contexts/checks empty, and no rulesets. All seven Actions checks on initial
+implementation 39a6273a passed, but optional recurseml/analysis returned error. The
+same optional error exists on historical accepted #1369 and #1368. It is retained
+as failure evidence, never called green. The initial draft incorrectly required
+all optional combined statuses to succeed; the corrected adapter derives required
+status authority from GitHub policy, enforces all required contexts/app bindings,
+retains complete advisory status evidence, and fails closed on active/unknown
+rulesets. No existing required gate or check was removed or waived.

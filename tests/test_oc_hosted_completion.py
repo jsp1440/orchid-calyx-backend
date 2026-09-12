@@ -604,6 +604,16 @@ def test_truncated_api_inventory_is_never_accepted(monkeypatch):
         "stale_run",
         "missing_check",
         "pending_check",
+        "optional_error",
+        "required_error",
+        "required_missing",
+        "required_success",
+        "required_app_mismatch",
+        "required_app_success",
+        "active_ruleset",
+        "unknown_ruleset",
+        "truncated_status",
+        "required_error_with_matching_check",
     ],
 )
 def test_hosted_validation_requires_actual_exact_head_execution(
@@ -635,6 +645,10 @@ def test_hosted_validation_requires_actual_exact_head_execution(
         ],
     }
     checks = [{"name": "validate", "status": "completed", "conclusion": "success"}]
+    status = {"total_count": 0, "state": "pending", "statuses": []}
+    protection = {"contexts": [], "checks": []}
+    branch = {"protected": False, "commit": {"sha": BASE}}
+    rulesets = []
     if failure == "skipped_step":
         job["steps"][0]["conclusion"] = "skipped"
     elif failure == "runner_zero":
@@ -647,6 +661,48 @@ def test_hosted_validation_requires_actual_exact_head_execution(
         checks.clear()
     elif failure == "pending_check":
         checks[0]["status"] = "in_progress"
+    elif failure in {
+        "optional_error",
+        "required_error",
+        "required_success",
+        "required_error_with_matching_check",
+    }:
+        status["statuses"] = [
+            {
+                "context": "recurseml/analysis",
+                "state": "error",
+                "description": "External analyzer unavailable",
+                "id": 4321,
+            }
+        ]
+        status.update(total_count=1, state="failure")
+        if failure != "optional_error":
+            branch["protected"] = True
+            protection["contexts"] = ["recurseml/analysis"]
+        if failure == "required_success":
+            status["statuses"][0]["state"] = "success"
+            status["state"] = "success"
+        if failure == "required_error_with_matching_check":
+            checks.append(
+                {
+                    "name": "recurseml/analysis",
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            )
+    elif failure == "required_missing":
+        branch["protected"] = True
+        protection["contexts"] = ["required-policy-check"]
+    elif failure in {"required_app_mismatch", "required_app_success"}:
+        branch["protected"] = True
+        protection["checks"] = [{"context": "validate", "app_id": 100}]
+        checks[0]["app"] = {"id": 100 if failure == "required_app_success" else 200}
+    elif failure == "active_ruleset":
+        rulesets = [{"id": 1, "enforcement": "active"}]
+    elif failure == "unknown_ruleset":
+        rulesets = [{"id": 1}]
+    elif failure == "truncated_status":
+        status["total_count"] = 1
 
     def fake_pages(repo, path, field=None):
         if "workflows/" in path:
@@ -655,22 +711,40 @@ def test_hosted_validation_requires_actual_exact_head_execution(
             return [job]
         if path.endswith("/check-runs"):
             return checks
+        if path == "rulesets":
+            return rulesets
         raise AssertionError(path)
 
     def fake_api(repo, path):
         if path.endswith("/status"):
-            return {"total_count": 0}
+            return status
         if path == f"branches/{hosted.BRANCH}":
-            return {"protected": False, "commit": {"sha": BASE}}
+            return branch
+        if path == f"branches/{hosted.BRANCH}/protection/required_status_checks":
+            return protection
+        if path == "rulesets":
+            return rulesets
         raise AssertionError(path)
 
     monkeypatch.setattr(hosted, "pages", fake_pages)
     monkeypatch.setattr(hosted, "api", fake_api)
-    if failure:
+    if failure not in {
+        None,
+        "optional_error",
+        "required_success",
+        "required_app_success",
+    }:
         with pytest.raises(ValueError):
             hosted.validation(material["context"], material)
     else:
-        assert hosted.validation(material["context"], material)["run"]["id"] == 3000
+        result = hosted.validation(material["context"], material)
+        assert result["run"]["id"] == 3000
+        assert result["commit_status_evidence"] == status
+        assert result["required_status_contexts"] == protection["contexts"]
+        assert result["ruleset_evidence"] == rulesets
+        if failure == "optional_error":
+            assert result["commit_status_evidence"]["state"] == "failure"
+            assert result["commit_status_evidence"]["statuses"][0]["state"] == "error"
 
 
 def test_reserved_attempt_cannot_be_replayed_or_spent_again(

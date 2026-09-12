@@ -364,10 +364,19 @@ def validation(context, material):
     )
     status = api(repo, f"commits/{head}/status")
     require(
-        status["total_count"] == 0 or status["state"] == "success",
-        "commit_status_not_green",
+        type(status.get("total_count")) is int
+        and isinstance(status.get("statuses"), list)
+        and status["total_count"] == len(status["statuses"]),
+        "commit_status_evidence_incomplete",
     )
     branch = api(repo, f"branches/{BRANCH}")
+    rulesets = pages(repo, "rulesets")
+    require(
+        isinstance(rulesets, list)
+        and not any(rule.get("enforcement") != "disabled" for rule in rulesets),
+        "ruleset_policy_requires_review",
+    )
+    required_contexts = []
     if branch["protected"]:
         protection = api(repo, f"branches/{BRANCH}/protection/required_status_checks")
         names = {c["name"] for c in checks}
@@ -375,11 +384,35 @@ def validation(context, material):
             s["context"] for s in status["statuses"] if s["state"] == "success"
         )
         require(set(protection["contexts"]) <= names, "required_checks_missing")
+        required_contexts = protection["contexts"]
+        require(
+            all(
+                s["state"] == "success"
+                for s in status["statuses"]
+                if s["context"] in required_contexts
+            ),
+            "required_status_not_green",
+        )
+        for required in protection.get("checks") or []:
+            require(
+                any(
+                    c["name"] == required["context"]
+                    and (
+                        required.get("app_id") is None
+                        or c.get("app", {}).get("id") == required["app_id"]
+                    )
+                    for c in checks
+                ),
+                "required_check_app_missing",
+            )
     return {
         "run": run,
         "jobs": jobs,
         "checks": checks,
         "base_sha": branch["commit"]["sha"],
+        "commit_status_evidence": status,
+        "required_status_contexts": required_contexts,
+        "ruleset_evidence": rulesets,
     }
 
 
