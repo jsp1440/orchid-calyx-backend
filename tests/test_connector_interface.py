@@ -6,6 +6,7 @@ import pytest
 
 from runtime.connector_interface import ConnectorInterface
 
+# SYNTH-CANARY-001: This file participates in the synthetic direct-executor canary (#1355).
 
 class MockConnector(ConnectorInterface):
     """Mock connector for testing."""
