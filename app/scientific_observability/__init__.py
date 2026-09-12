@@ -6,6 +6,7 @@ readiness metric shape, and the Verification Workbench review boundary.
 Observation events carry no publication or mutation authority.
 """
 
+from .agent_context import ContextValidationError, build_governed_agent_context
 from .models import (
     ObservationEventType,
     ObservationValidationError,
@@ -32,12 +33,14 @@ from .workflow import (
     WorkflowState,
     WorkflowType,
     WorkflowValidationError,
+    legal_next_states,
     parse_workflow_metadata,
     workflow_metadata,
 )
 
 __all__ = [
     "ClassifiedFactor",
+    "ContextValidationError",
     "MeasurementClass",
     "ObservabilityService",
     "ObservationEventType",
@@ -57,7 +60,9 @@ __all__ = [
     "WorkflowState",
     "WorkflowType",
     "WorkflowValidationError",
+    "build_governed_agent_context",
     "get_default_store",
+    "legal_next_states",
     "parse_workflow_metadata",
     "rank_opportunities",
     "score_opportunity",
