@@ -37,8 +37,8 @@ def _event(
         sequence=sequence,
         occurred_at=datetime(2026, 9, 12, sequence, tzinfo=timezone.utc),
         recorded_at=datetime(2026, 9, 12, sequence, tzinfo=timezone.utc),
-        event_type=ObservationEventType.WORKFLOW_STAGE_COMPLETED,
-        pipeline_stage=PipelineStage.VERIFICATION,
+        event_type=ObservationEventType.API_CONTRACT_PRODUCED,
+        pipeline_stage=PipelineStage.API_PRODUCER,
         component="app/scientific_observability",
         safe_status=SafeStatus(status=SafeStatusState.OK),
         extensions=workflow_metadata(
@@ -101,7 +101,7 @@ def test_snapshot_ignores_non_workflow_events_without_inventing_work() -> None:
     store = ObservationStore()
     event = ScientificObservationEvent(
         event_type=ObservationEventType.EVIDENCE_ASSERTION_CREATED,
-        pipeline_stage=PipelineStage.VERIFICATION,
+        pipeline_stage=PipelineStage.API_PRODUCER,
         component="app/scientific_observability",
     )
     store.append(event.to_dict())
