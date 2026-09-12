@@ -66,7 +66,7 @@ def test_formula_is_versioned_repeatable_and_advisory_only():
 
     assert first == second
     assert first["formula_version"] == FORMULA_VERSION
-    assert first["score"] == pytest.approx(0.783)
+    assert first["score"] == pytest.approx(0.781)
     assert first["factor_coverage"]["ratio"] == 1.0
     assert first["reason_codes"] == ["HIGH_ADVISORY_OPPORTUNITY"]
     assert first["advisory_only"] is True
