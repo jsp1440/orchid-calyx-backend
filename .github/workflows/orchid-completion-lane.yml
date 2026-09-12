@@ -6,6 +6,10 @@ on:
       issue_number:
         required: true
         type: string
+      lease_comment_id:
+        required: false
+        default: ""
+        type: string
   workflow_dispatch:
     inputs:
       issue_number:
@@ -49,8 +53,23 @@ jobs:
       - name: Verify scheduler lease
         id: lease
         shell: bash
+        env:
+          LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
         run: |
           set -euo pipefail
+          # Swarm supplies a specific durable claim. Legacy manual dispatches
+          # retain their existing label-based check below.
+          if [[ -n "$LEASE_COMMENT_ID" ]]; then
+            if python3 -m scripts.oc_swarm_claim \
+              --verify-issue "$ISSUE_NUMBER" --lease-comment-id "$LEASE_COMMENT_ID" \
+              --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+              --run-attempt "$GITHUB_RUN_ATTEMPT"; then
+              echo "execute=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "execute=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
           labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(" ")' 2>/dev/null || true)
           if [[ "$labels" == *oc-repair-backoff* ]]; then
             echo "execute=false" >> "$GITHUB_OUTPUT"

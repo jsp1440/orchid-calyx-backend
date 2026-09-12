@@ -118,6 +118,28 @@ def test_claim_does_not_invent_missing_material_fingerprint():
     assert health.build_health(snapshot)["healthy"] is False
 
 
+def test_confirmed_claim_is_observable_before_worker_start():
+    data = evidence()
+    receipt = claim()
+    receipt["body"] += f" packet={FINGERPRINT}."
+    add_issue(data, issue(1, ["oc-running"]), [receipt])
+    snapshot = observe(data)
+    assert snapshot["leases"][0]["material_fingerprint"] == FINGERPRINT
+    assert health.build_health(snapshot)["healthy"] is True
+
+
+def test_claim_worker_fingerprint_disagreement_is_incomplete_evidence():
+    data = evidence()
+    receipt = claim()
+    receipt["body"] += f" packet={'c' * 16}."
+    add_issue(data, issue(1, ["oc-running"]), [receipt, started()])
+    result = health.build_health(observe(data))
+    assert result["healthy"] is False
+    assert result["observation_errors"] == [
+        {"source": "comments:1", "reason": "claim_worker_fingerprint_mismatch"}
+    ]
+
+
 def test_released_receipts_are_not_resurrected_as_orphans():
     data = evidence()
     add_issue(data, issue(1, ["oc-blocked"]), [claim(), started(), {

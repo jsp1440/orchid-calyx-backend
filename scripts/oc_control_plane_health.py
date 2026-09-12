@@ -343,10 +343,13 @@ def collect_github_snapshot(repository: str, run_id: int, *, read_json=_github_g
             if _is_settlement(body):
                 claims = []
             elif _CLAIM.search(body):
-                claims.append({"comment": comment, "fingerprint": None})
+                packet = _PACKET.search(body)
+                claims.append({"comment": comment, "fingerprint": packet.group(1) if packet else None})
             elif body.startswith("[OC-AUTO] Completion worker started") and claims:
                 packet = _PACKET.search(body)
                 if packet:
+                    if claims[-1]["fingerprint"] not in {None, packet.group(1)}:
+                        errors.append({"source": f"comments:{number}", "reason": "claim_worker_fingerprint_mismatch"})
                     claims[-1]["fingerprint"] = packet.group(1)
         for claim in claims:
             comment = claim["comment"]
