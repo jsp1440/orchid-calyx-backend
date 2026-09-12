@@ -347,10 +347,56 @@ def _content_text(content: list[dict[str, Any]]) -> str:
     )
 
 
-def _prepare_branch(issue_number: str, run_id: str, base: str) -> str:
+def _resume_from_packet(packet: str, issue_number: str) -> tuple[str, str] | None:
+    declarations = re.findall(r"^OC-SWARM-RESUME:[ \t]*(.*)$", packet, re.MULTILINE)
+    if not declarations:
+        return None
+    if len(declarations) != 1:
+        raise DirectExecutorError("resume declaration must be unique")
+    match = re.fullmatch(
+        rf"(claude-direct/issue-{re.escape(issue_number)}-[0-9]+)@([a-f0-9]{{40}})",
+        declarations[0].strip(),
+    )
+    if not match:
+        raise DirectExecutorError(
+            "resume must bind this issue to an exact partial head"
+        )
+    return match.group(1), match.group(2)
+
+
+def _prepare_branch(
+    issue_number: str,
+    run_id: str,
+    base: str,
+    *,
+    resume: tuple[str, str] | None = None,
+) -> str:
     branch = f"claude-direct/issue-{issue_number}-{run_id}"
     _run(["git", "fetch", "origin", base], timeout=120, check=True)
-    _run(["git", "checkout", "-B", branch, f"origin/{base}"], timeout=60, check=True)
+    if resume:
+        if base != "oc-autonomous-integration":
+            raise DirectExecutorError("resume requires the integration boundary")
+        branch, expected_sha = resume
+        _run(["git", "fetch", "origin", branch], timeout=120, check=True)
+        actual_sha = _run(
+            ["git", "rev-parse", f"origin/{branch}"], check=True
+        ).stdout.strip()
+        if actual_sha != expected_sha:
+            raise DirectExecutorError("partial branch moved; refresh the repair packet")
+        # A normal merge must retain both the partial work and current control
+        # plane. Fail before a provider call if ancestry or protected scope is
+        # unavailable; never force-push or silently reset the remote branch.
+        _run(["git", "merge-base", expected_sha, f"origin/{base}"], check=True)
+        files = _run(
+            ["git", "diff", "--name-only", f"origin/{base}...{expected_sha}"],
+            check=True,
+        ).stdout.splitlines()
+        if not files or any(not _writable(_safe_path(path)) for path in files):
+            raise DirectExecutorError("partial branch has no admissible work set")
+        start = expected_sha
+    else:
+        start = f"origin/{base}"
+    _run(["git", "checkout", "-B", branch, start], timeout=60, check=True)
     _run(
         ["git", "config", "user.name", "orchid-continuum-orchestrator[bot]"],
         timeout=30,
@@ -366,6 +412,13 @@ def _prepare_branch(issue_number: str, run_id: str, base: str) -> str:
         timeout=30,
         check=True,
     )
+    if resume:
+        _run(["git", "merge", "--no-edit", f"origin/{base}"], timeout=120, check=True)
+        print(
+            "[OC-DIRECT-RESUME] "
+            + json.dumps({"branch": branch, "source_sha": resume[1]}),
+            flush=True,
+        )
     return branch
 
 
@@ -481,7 +534,12 @@ def main() -> int:
     final_text = ""
 
     try:
-        branch = _prepare_branch(args.issue_number, run_id, args.base)
+        branch = _prepare_branch(
+            args.issue_number,
+            run_id,
+            args.base,
+            resume=_resume_from_packet(packet, args.issue_number),
+        )
         system = (
             "You are the Orchid Continuum bounded engineering executor. Work only on the supplied "
             "task. Use repository tools to inspect and edit. Do not modify .github/workflows, "
