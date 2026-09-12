@@ -31,6 +31,15 @@ _FORBIDDEN_KEYS = (
 )
 _SECRET_MARKERS = ("sk-", "BEGIN PRIVATE KEY", "Bearer ")
 
+_PURPOSES = {
+    WorkflowType.SOURCE_INGESTION: "ingest evidence through governed stages",
+    WorkflowType.TAXONOMY_RECONCILIATION: "prepare taxonomy reconciliation for review",
+    WorkflowType.SCIENTIFIC_VERIFICATION: "verify evidence without publishing conclusions",
+    WorkflowType.CALYX_MISSION: "complete a bounded Calyx mission",
+    WorkflowType.BUILD_CI_VALIDATION: "validate a bounded integration candidate",
+    WorkflowType.GOVERNED_AGENT_TASK: "prepare a bounded implementation for review",
+}
+
 _STAGE_INSTRUCTIONS = {
     WorkflowStage.QUEUE: "record the authorized workflow in the governed queue",
     WorkflowStage.ACQUIRE: "acquire the declared source through its governed boundary",
@@ -187,6 +196,9 @@ def generate_reviewable_runbook(
         workflow_type = WorkflowType(reconstruction.get("workflow_type"))
     except (TypeError, ValueError) as exc:
         raise RunbookValidationError("unsupported workflow type") from exc
+    purpose = _PURPOSES[workflow_type]
+    if context.get("goal") != purpose:
+        raise RunbookValidationError("governed workflow purpose was altered")
 
     steps: list[dict[str, Any]] = []
     recovery: list[dict[str, str]] = []
@@ -233,7 +245,7 @@ def generate_reviewable_runbook(
         "source_context_version": CONTEXT_VERSION,
         "workflow_id": reconstruction["workflow_id"],
         "workflow_type": workflow_type.value,
-        "purpose": context.get("goal"),
+        "purpose": purpose,
         "prerequisites": [
             "AUTHORIZED_PROJECT_CONTEXT",
             "CANONICAL_OBSERVATION_LEDGER",
