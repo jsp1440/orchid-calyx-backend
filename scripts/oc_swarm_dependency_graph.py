@@ -23,6 +23,11 @@ ISSUE_REF = re.compile(r"#(\d+)")
 DONE_LABEL = "oc-done"
 
 
+class MalformedDependencyDeclaration(Exception):
+    """Raised when a dependency declaration is syntactically invalid."""
+    pass
+
+
 def _labels(issue: dict) -> set[str]:
     result: set[str] = set()
     for label in issue.get("labels") or []:
@@ -33,14 +38,63 @@ def _labels(issue: dict) -> set[str]:
     return result
 
 
+def _validate_dependency_declaration(declaration_text: str) -> tuple[list[int], str | None]:
+    """Parse and validate a dependency declaration.
+    
+    Args:
+        declaration_text: The text after 'OC-SWARM-DEPENDS-ON:'
+        
+    Returns:
+        (issue_numbers, error_reason) where error_reason is None if valid,
+        or a machine-readable error string if malformed.
+    """
+    # Strip whitespace
+    text = declaration_text.strip()
+    
+    # Empty declaration is malformed
+    if not text:
+        return [], "dependency-declaration-empty"
+    
+    # Find all issue references
+    refs = [int(value) for value in ISSUE_REF.findall(text)]
+    
+    # If no issue references found, it's malformed
+    if not refs:
+        return [], "dependency-declaration-no-references"
+    
+    # Check if there's any non-reference content that could indicate malformation
+    # Remove all valid issue references from the text
+    cleaned = re.sub(r"#\d+", "", text)
+    # Remove common separators and whitespace
+    cleaned = re.sub(r"[\s,;]+", "", cleaned)
+    
+    # If there's leftover content, it's mixed valid/invalid
+    if cleaned:
+        return [], "dependency-declaration-mixed-content"
+    
+    # Check for zero or negative numbers (shouldn't happen with \d+ but be safe)
+    if any(ref <= 0 for ref in refs):
+        return [], "dependency-declaration-invalid-number"
+    
+    # Return sorted unique references
+    return sorted(set(refs)), None
+
+
 def dependencies(issue: dict) -> list[int]:
     """Return the explicit dependency issue numbers for one issue."""
     body = str(issue.get("body") or "")
     match = DEPENDS_MARKER.search(body)
     if not match:
         return []
-    refs = sorted({int(value) for value in ISSUE_REF.findall(match.group(1))})
-    return refs
+    
+    # Use the validation function
+    issue_numbers, error = _validate_dependency_declaration(match.group(1))
+    
+    # Store malformation status in the issue for later use in build_dependency_graph
+    if error:
+        issue["_dependency_malformed"] = error
+    
+    return issue_numbers
 
 
 def _is_satisfied(issue: dict | None) -> bool:
@@ -87,11 +141,17 @@ def build_dependency_graph(issues: Iterable[dict]) -> dict[str, Any]:
 
     status: dict[int, dict[str, Any]] = {}
     for number, deps in edges.items():
+        # Check if the issue has a malformed dependency declaration
+        malformed = index[number].get("_dependency_malformed")
+        
         missing = [dep for dep in deps if dep not in index]
         unsatisfied = [dep for dep in deps if dep in index and not _is_satisfied(index[dep])]
         cycle = number in cycle_nodes
-        ready = not missing and not unsatisfied and not cycle
-        status[number] = {
+        
+        # Mark as not ready if there's a malformed declaration
+        ready = not missing and not unsatisfied and not cycle and not malformed
+        
+        status_entry: dict[str, Any] = {
             "issue_number": number,
             "dependencies": deps,
             "missing": missing,
@@ -99,6 +159,12 @@ def build_dependency_graph(issues: Iterable[dict]) -> dict[str, Any]:
             "cycle": cycle,
             "ready": ready,
         }
+        
+        # Add malformed reason if present
+        if malformed:
+            status_entry["malformed"] = malformed
+        
+        status[number] = status_entry
 
     return {
         "schema": "oc.swarm-dependency-graph.v1",
@@ -126,14 +192,22 @@ def filter_ready_candidates(
         if row.get("ready"):
             ready.append(item)
             continue
-        reason = "dependency-cycle" if row.get("cycle") else "dependency-blocked"
-        blocked.append(
-            {
-                "issue_number": number,
-                "reason": reason,
-                "dependencies": list(row.get("dependencies") or []),
-                "missing": list(row.get("missing") or []),
-                "unsatisfied": list(row.get("unsatisfied") or []),
-            }
-        )
+        
+        # Determine the blocking reason
+        if row.get("malformed"):
+            reason = row["malformed"]
+        elif row.get("cycle"):
+            reason = "dependency-cycle"
+        else:
+            reason = "dependency-blocked"
+        
+        blocked_entry: dict[str, Any] = {
+            "issue_number": number,
+            "reason": reason,
+            "dependencies": list(row.get("dependencies") or []),
+            "missing": list(row.get("missing") or []),
+            "unsatisfied": list(row.get("unsatisfied") or []),
+        }
+        
+        blocked.append(blocked_entry)
     return ready, blocked
