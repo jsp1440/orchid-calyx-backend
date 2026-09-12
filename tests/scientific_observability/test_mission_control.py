@@ -23,8 +23,8 @@ from app.scientific_observability.workflow import (
 
 def _event(
     *,
-    event_id: str,
-    correlation_id: str,
+    event_id,
+    correlation_id,
     sequence: int,
     previous: WorkflowState | None,
     resulting: WorkflowState,
@@ -56,9 +56,9 @@ def _event(
 
 def test_snapshot_is_bounded_deterministic_and_preserves_unavailable() -> None:
     store = ObservationStore()
-    correlation = str(OCIDFactory.new(OCIDKind.EVENT))
-    first = str(OCIDFactory.new(OCIDKind.EVENT))
-    second = str(OCIDFactory.new(OCIDKind.EVENT))
+    correlation = OCIDFactory.new(OCIDKind.EVENT)
+    first = OCIDFactory.new(OCIDKind.EVENT)
+    second = OCIDFactory.new(OCIDKind.EVENT)
     store.append(
         _event(
             event_id=first,
