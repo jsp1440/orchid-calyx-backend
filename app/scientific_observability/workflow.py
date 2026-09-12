@@ -240,6 +240,13 @@ def _validate_transition(
         )
 
 
+def legal_next_states(state: WorkflowState) -> tuple[WorkflowState, ...]:
+    """Return the canonical legal next states in stable vocabulary order."""
+
+    allowed = _ALLOWED_TRANSITIONS[state]
+    return tuple(candidate for candidate in WorkflowState if candidate in allowed)
+
+
 class WorkflowReconstructor:
     """Read-only reconstruction and deterministic finding generation."""
 
