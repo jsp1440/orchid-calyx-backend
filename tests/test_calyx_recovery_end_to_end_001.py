@@ -15,7 +15,6 @@ is present, when it is absent, and when it was never consultable at all.
 
 from __future__ import annotations
 
-
 from runtime.research_executor import BlockerCode, MemoryRequestStore
 from runtime.research_executor_worker import (
     WORKER_ENABLED_ENV,
