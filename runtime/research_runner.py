@@ -19,13 +19,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from runtime.research_executor import BlockerCode, RunOutcome
-from runtime.scientific_reads import (
-    AVAILABLE,
-    EMPTY,
-    UNAVAILABLE,
-    ScientificReading,
-    ScientificReadThrough,
-)
+from runtime.scientific_reads import ScientificReading, ScientificReadThrough
 
 
 def _taxa_of(request: Mapping[str, Any]) -> list[str]:
