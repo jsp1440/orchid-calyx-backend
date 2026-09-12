@@ -17,6 +17,9 @@ on:
       - 'tests/test_orchid_continuous_completion_lane_gating.py'
       - 'scripts/oc_hosted_completion.py'
       - 'tests/test_oc_hosted_completion.py'
+      - 'tests/test_oc_denied_worker_settlement.py'
+      - 'scripts/oc_swarm_claim.py'
+      - 'scripts/oc_control_plane_health.py'
       - 'app/calyx_orchestrator/checker_dispatch.py'
       - '.github/workflows/oc-convergence-supervisor.yml'
       - '.github/workflows/orchid-swarm-controller.yml'
@@ -42,14 +45,14 @@ jobs:
           pip install pytest ruff pyyaml
 
       - name: Ruff
-        run: ruff check scripts/oc_hosted_completion.py app/calyx_orchestrator/checker_dispatch.py tests/test_oc_hosted_completion.py tests/test_checker_dispatch.py tests/test_orchid_continuous_completion_lane_gating.py
+        run: ruff check scripts/oc_swarm_claim.py scripts/oc_control_plane_health.py tests/test_oc_denied_worker_settlement.py scripts/oc_hosted_completion.py app/calyx_orchestrator/checker_dispatch.py tests/test_oc_hosted_completion.py tests/test_checker_dispatch.py tests/test_orchid_continuous_completion_lane_gating.py
 
       - name: Orchestration contract tests
-        run: pytest -q tests/test_oc_hosted_completion.py tests/test_checker_dispatch.py tests/test_factory_policy.py tests/test_factory_bridge.py tests/test_event_continuation.py tests/test_oc_swarm_claim.py tests/test_oc_completion_health_observer.py tests/test_orchid_continuous_completion_lane_gating.py tests/test_orchid_swarm_v4_workflow_contract.py
+        run: pytest -q tests/test_oc_denied_worker_settlement.py tests/test_oc_hosted_completion.py tests/test_checker_dispatch.py tests/test_factory_policy.py tests/test_factory_bridge.py tests/test_event_continuation.py tests/test_oc_swarm_claim.py tests/test_oc_completion_health_observer.py tests/test_orchid_continuous_completion_lane_gating.py tests/test_orchid_swarm_v4_workflow_contract.py
 
       - name: Hosted adapter formatting and compilation
         run: |
-          ruff format --check scripts/oc_hosted_completion.py tests/test_oc_hosted_completion.py app/calyx_orchestrator/checker_dispatch.py tests/test_checker_dispatch.py
+          ruff format --check tests/test_oc_denied_worker_settlement.py scripts/oc_hosted_completion.py tests/test_oc_hosted_completion.py app/calyx_orchestrator/checker_dispatch.py tests/test_checker_dispatch.py
           python -m compileall -q scripts/oc_hosted_completion.py app/calyx_orchestrator
 
       - name: Every orchestration run block is valid shell
