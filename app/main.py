@@ -1,10 +1,6 @@
 import os
 from typing import Any
 
-from fastapi import Depends, FastAPI
-from pydantic import BaseModel
-from starlette.responses import Response as StarletteResponse
-
 from app.atlas_intelligence.api import router as atlas_intelligence_router
 from app.brain.routes import router as brain_router
 from app.candidate_knowledge.routes import router as candidate_knowledge_router
@@ -27,6 +23,8 @@ from app.mission_control_briefing.routes import (
 from app.mission_control_release.routes import router as mission_control_release_router
 from app.missions.routers import (
     router as missions_router,
+)
+from app.missions.routers import (
     runtime_queue_router,
     templates_router,
 )
@@ -34,6 +32,8 @@ from app.ontology.routers import router as ontology_router
 from app.publication.routers import router as publication_router
 from app.reasoning_ledger.routes import (
     project_router as reasoning_ledger_project_router,
+)
+from app.reasoning_ledger.routes import (
     router as reasoning_ledger_router,
 )
 from app.reasoning_publication.routes import router as reasoning_publication_router
@@ -58,7 +58,9 @@ from app.routers.health import (
 from app.scientific_interpretation.routes import (
     router as scientific_interpretation_router,
 )
-from app.scientific_observability.routes import router as scientific_observability_router
+from app.scientific_observability.routes import (
+    router as scientific_observability_router,
+)
 from app.security import (
     get_api_key,
     get_owner_access_code,
@@ -69,6 +71,8 @@ from app.semantic.routers import router as semantic_router
 from app.semantic_index.routes import router as semantic_index_router
 from app.source_registry.routes import router as source_registry_router
 from app.vision_lexicon.routes import router as vision_lexicon_router
+from fastapi import Depends, FastAPI
+from pydantic import BaseModel
 from runtime.autonomous_runner import (
     enqueue_default_jobs,
     execute_all_pending_jobs,
@@ -77,15 +81,19 @@ from runtime.autonomous_runner import (
 from runtime.cds_router import router as cds_router
 from runtime.constitutional_orchestrator import (
     AutonomyLevel,
+)
+from runtime.constitutional_orchestrator import (
     orchestrator as constitutional_orchestrator,
 )
 from runtime.constitutional_router import router as constitutional_router
 from runtime.kernel_router import router as kernel_router
 from runtime.orchestrator_router import router as orchestrator_router
 from runtime.planner_router import router as planner_router
-from runtime.router_fastapi import router as runtime_router, science_router
+from runtime.router_fastapi import router as runtime_router
+from runtime.router_fastapi import science_router
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
+from starlette.responses import Response as StarletteResponse
 
 app = FastAPI()
 
