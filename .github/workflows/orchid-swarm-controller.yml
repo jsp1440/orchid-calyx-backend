@@ -53,8 +53,8 @@ jobs:
   plan:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
-      launch_count: ${{ steps.plan.outputs.launch_count }}
+      matrix: ${{ steps.claim.outputs.matrix }}
+      launch_count: ${{ steps.claim.outputs.launch_count }}
       selected_numbers: ${{ steps.plan.outputs.selected_numbers }}
       refill_recommended: ${{ steps.plan.outputs.refill_recommended }}
       provider_blocked: ${{ steps.no_api.outputs.blocked }}
@@ -123,29 +123,27 @@ jobs:
             | tee "$RUNNER_TEMP/swarm-plan.json"
 
       - name: Claim selected worker leases
-        if: steps.plan.outputs.launch_count != '0'
+        id: claim
         shell: bash
-        env:
-          SELECTED: ${{ steps.plan.outputs.selected_numbers }}
-          PLAN: ${{ steps.plan.outputs.summary }}
         run: |
           set -euo pipefail
-          for issue in $(jq -r '.[]' <<<"$SELECTED"); do
-            labels=$(gh issue view "$issue" --repo "$REPO" --json state,labels \
-              --jq 'select(.state == "OPEN") | [.labels[].name] | join(" ")' 2>/dev/null || true)
-            [[ -n "$labels" ]] || continue
-            [[ "$labels" == *oc-queued* ]] || continue
-            [[ "$labels" != *oc-running* ]] || continue
-            [[ "$labels" != *oc-owner-gate* ]] || continue
-            [[ "$labels" != *oc-blocked* ]] || continue
-            [[ "$labels" != *oc-runtime-backoff* ]] || continue
-            [[ "$labels" != *oc-repair-backoff* ]] || continue
-            claim=$(jq -c --argjson issue "$issue" '.workers[] | select(.issue_number == $issue) | {reads,writes,dependencies}' <<<"$PLAN")
-            gh issue edit "$issue" --repo "$REPO" \
-              --remove-label oc-validating --add-label oc-running >/dev/null
-            gh issue comment "$issue" --repo "$REPO" \
-              --body "[OC-SWARM-V4] Dependency/resource lease claimed: \`$claim\`. Wave ${WAVE}/${MAX_WAVES}. Controller run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
-          done
+          python3 -m scripts.oc_swarm_claim \
+            --plan "$RUNNER_TEMP/swarm-plan.json" \
+            --snapshot "$RUNNER_TEMP/swarm-snapshot.json" \
+            --repository "$REPO" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --github-output "$GITHUB_OUTPUT" \
+            | tee "$RUNNER_TEMP/swarm-claims.json"
+
+      - name: Retain claim handoff evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-claims-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/swarm-claims.json
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Publish swarm summary
         shell: bash
@@ -155,7 +153,9 @@ jobs:
           {
             echo "## Orchid Swarm v4 Wave ${WAVE}/${MAX_WAVES}"
             echo
-            echo "- launch_count: $(jq -r '.launch_count' <<<"$PLAN")"
+            echo "- planned_count: $(jq -r '.launch_count' <<<"$PLAN")"
+            echo "- confirmed_launch_count: ${{ steps.claim.outputs.launch_count }}"
+            echo "- claim errors: $(jq -r '.errors | length' "$RUNNER_TEMP/swarm-claims.json")"
             echo "- active workers: $(jq -r '.active_worker_count' <<<"$PLAN")"
             echo "- capacity: $(jq -r '.available_capacity' <<<"$PLAN")"
             echo "- selected: $(jq -c '.selected_numbers' <<<"$PLAN")"
@@ -189,6 +189,7 @@ jobs:
     uses: ./.github/workflows/orchid-completion-lane.yml
     with:
       issue_number: ${{ format('{0}', matrix.issue_number) }}
+      lease_comment_id: ${{ format('{0}', matrix.lease_comment_id) }}
     secrets: inherit
 
   provider_free_workers:
@@ -205,6 +206,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       ISSUE_NUMBER: ${{ matrix.issue_number }}
+      LEASE_COMMENT_ID: ${{ matrix.lease_comment_id }}
       INTEGRATION_SHA: ${{ github.sha }}
     steps:
       - name: Checkout integration control plane
@@ -213,7 +215,22 @@ jobs:
           ref: oc-autonomous-integration
           fetch-depth: 1
 
+      - name: Verify provider-free worker claim
+        id: lease
+        shell: bash
+        run: |
+          set -euo pipefail
+          if python3 -m scripts.oc_swarm_claim \
+            --verify-issue "$ISSUE_NUMBER" --lease-comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"; then
+            echo "execute=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "execute=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Execute deterministic provider-free reconciliation
+        if: steps.lease.outputs.execute == 'true'
         id: reconcile
         shell: bash
         run: |
@@ -225,8 +242,8 @@ jobs:
             echo "Issue #$ISSUE_NUMBER no longer owns its Swarm lease." >&2
             exit 2
           }
-          lease=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments \
-            --jq '[.comments[].body | select(test("^\\[OC-SWARM-V[0-9]+\\].*lease claimed:"; "i"))] | last // ""')
+          lease=$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/issues/comments/$LEASE_COMMENT_ID" --jq '.body')
           [[ -n "$lease" ]] || {
             echo "Issue #$ISSUE_NUMBER has no durable Swarm lease receipt." >&2
             exit 2
@@ -241,6 +258,7 @@ jobs:
           echo "disposition=$disposition" >> "$GITHUB_OUTPUT"
 
       - name: Publish durable result and release lease
+        if: steps.lease.outputs.execute == 'true'
         shell: bash
         env:
           DISPOSITION: ${{ steps.reconcile.outputs.disposition }}
@@ -273,7 +291,7 @@ jobs:
             --body "[OC-SWARM-V4] Provider-free worker completed, actual write set validated, and lease released: \`$result\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
 
       - name: Fail closed and release lease after reconciliation error
-        if: failure()
+        if: failure() && steps.lease.outputs.execute == 'true'
         shell: bash
         run: |
           gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \

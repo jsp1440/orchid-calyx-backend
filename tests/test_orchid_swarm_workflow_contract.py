@@ -22,13 +22,12 @@ def test_swarm_workflow_targets_integration_not_main():
 
 def test_swarm_claims_only_queue_leases_and_reports_resources():
     text = WORKFLOW.read_text(encoding="utf-8")
-    assert "oc-queued" in text
-    assert "oc-running" in text
-    assert "oc-owner-gate" in text
-    assert "oc-blocked" in text
-    assert "oc-runtime-backoff" in text
-    assert "oc-repair-backoff" in text
-    assert "Dependency/resource lease claimed" in text
+    assert "python3 -m scripts.oc_swarm_claim" in text
+    claim = (ROOT / "scripts" / "oc_swarm_claim.py").read_text(encoding="utf-8")
+    for label in ("oc-queued", "oc-running", "oc-owner-gate", "oc-blocked",
+                  "oc-runtime-backoff", "oc-repair-backoff"):
+        assert label in claim
+    assert "Dependency/resource lease claimed" in claim
     assert "resource conflicts suppressed" in text
 
 

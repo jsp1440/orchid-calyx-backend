@@ -1,0 +1,1169 @@
+{
+  "dependency_1361": {
+    "dependencies": [
+      1360
+    ],
+    "issue_number": 1361,
+    "missing": [],
+    "reason": "dependency-blocked",
+    "unsatisfied": [
+      1360
+    ]
+  },
+  "health": {
+    "blocked_backoff_count": 9,
+    "ci_infrastructure_state": {
+      "reason": "executed_success",
+      "run_id": 34672666097,
+      "state": "HEALTHY"
+    },
+    "contract_health": {
+      "counts": {
+        "blocked": 2,
+        "queued": 1,
+        "repair_backoff": 7,
+        "running": 1,
+        "runtime_backoff": 0,
+        "validating": 10
+      },
+      "exception_decision": {
+        "action": "park_and_reconcile",
+        "autonomous_repair_available": false,
+        "exception_class": "engineering_exception",
+        "independent_authorized_work_available": false,
+        "owner_decision_required": false,
+        "owner_exception_category": null,
+        "should_interrupt_owner": false
+      },
+      "exceptions": [
+        {
+          "issue": 1085,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1027,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1026,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1024,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1022,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1021,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1008,
+          "owner_approval_required": true
+        }
+      ],
+      "healthy": false,
+      "integration": {
+        "head_sha": "c3cac45773fed2839969b0b0927d19f0ec8335dc",
+        "ready": "UNKNOWN"
+      },
+      "issues": {
+        "blocked": [
+          1264,
+          1050
+        ],
+        "queued": [
+          1361
+        ],
+        "repair_backoff": [
+          1193,
+          1168,
+          1140,
+          1136,
+          1096,
+          1084,
+          1023
+        ],
+        "running": [
+          1360
+        ],
+        "runtime_backoff": [],
+        "validating": [
+          1236,
+          1187,
+          1139,
+          1129,
+          1114,
+          1089,
+          1088,
+          1087,
+          1030,
+          832
+        ]
+      },
+      "provider": {
+        "disabled": true,
+        "status": "no_api"
+      },
+      "validating_targets": [
+        {
+          "head_sha": null,
+          "issue": 1236,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1187,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1139,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1129,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1114,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1089,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1088,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1087,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1030,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 832,
+          "pr": null
+        }
+      ],
+      "violations": [
+        {
+          "active_leases": 0,
+          "issue": 1360,
+          "type": "running_lease_cardinality"
+        },
+        {
+          "issue": 1236,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1187,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1139,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1129,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1114,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1089,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1088,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1087,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1030,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 832,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        }
+      ]
+    },
+    "contract_snapshot": {
+      "autonomous_prs": [
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "ae9b814e13dd7c60dcede2f90851f5e16148e05c",
+          "number": 1364
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "1a9ad49faf3d1211d7b670e5b18b97f3283ed3fb",
+          "number": 1363
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "10652adbf81d5f19b6e609b53eed9d511d3b4ea2",
+          "number": 1362
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "2acf9e22f1efa72ab6faa9f24f082178d94824f3",
+          "number": 1169
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "902d25d89a982bbf17211320fa1b54c6f2832ee9",
+          "number": 1113
+        }
+      ],
+      "autonomous_repair_available": false,
+      "deterministic_work_available": false,
+      "dispatch_fingerprints": [],
+      "exception_context": {},
+      "exceptions": [
+        {
+          "issue": 1085,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1027,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1026,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1024,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1022,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1021,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1008,
+          "owner_approval_required": true
+        }
+      ],
+      "generated_at": "2026-09-12T04:27:44.742757Z",
+      "independent_authorized_work_available": false,
+      "integration": {
+        "head_sha": "c3cac45773fed2839969b0b0927d19f0ec8335dc",
+        "ready": "UNKNOWN"
+      },
+      "issues": [
+        {
+          "labels": [
+            "oc-p1",
+            "oc-queued"
+          ],
+          "number": 1361
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-running"
+          ],
+          "number": 1360
+        },
+        {
+          "labels": [],
+          "number": 1345
+        },
+        {
+          "labels": [],
+          "number": 1336
+        },
+        {
+          "labels": [],
+          "number": 1330
+        },
+        {
+          "labels": [
+            "oc-active-tracker",
+            "oc-tracker"
+          ],
+          "number": 1299
+        },
+        {
+          "labels": [],
+          "number": 1298
+        },
+        {
+          "labels": [
+            "oc-done",
+            "oc-p0"
+          ],
+          "number": 1271
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1264
+        },
+        {
+          "labels": [],
+          "number": 1242
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 1236
+        },
+        {
+          "labels": [],
+          "number": 1194
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-repair-backoff"
+          ],
+          "number": 1193
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1187
+        },
+        {
+          "labels": [],
+          "number": 1182
+        },
+        {
+          "labels": [],
+          "number": 1181
+        },
+        {
+          "labels": [],
+          "number": 1175
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-repair-backoff"
+          ],
+          "number": 1168
+        },
+        {
+          "labels": [],
+          "number": 1166
+        },
+        {
+          "labels": [],
+          "number": 1153
+        },
+        {
+          "labels": [],
+          "number": 1151
+        },
+        {
+          "labels": [],
+          "number": 1141
+        },
+        {
+          "labels": [
+            "oc-p2",
+            "oc-repair-backoff"
+          ],
+          "number": 1140
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-validating"
+          ],
+          "number": 1139
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-repair-backoff"
+          ],
+          "number": 1136
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1129
+        },
+        {
+          "labels": [],
+          "number": 1125
+        },
+        {
+          "labels": [],
+          "number": 1123
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1114
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-repair-backoff"
+          ],
+          "number": 1096
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-validating"
+          ],
+          "number": 1089
+        },
+        {
+          "labels": [
+            "oc-p3",
+            "oc-validating"
+          ],
+          "number": 1088
+        },
+        {
+          "labels": [
+            "oc-p2",
+            "oc-validating"
+          ],
+          "number": 1087
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p0"
+          ],
+          "number": 1085
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-repair-backoff"
+          ],
+          "number": 1084
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1050
+        },
+        {
+          "labels": [
+            "oc-runtime-degraded"
+          ],
+          "number": 1031
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 1030
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1027
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1026
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p0",
+            "oc-p4"
+          ],
+          "number": 1024
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-repair-backoff"
+          ],
+          "number": 1023
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1022
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1021
+        },
+        {
+          "labels": [],
+          "number": 1011
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1008
+        },
+        {
+          "labels": [],
+          "number": 1005
+        },
+        {
+          "labels": [],
+          "number": 1003
+        },
+        {
+          "labels": [],
+          "number": 858
+        },
+        {
+          "labels": [],
+          "number": 842
+        },
+        {
+          "labels": [],
+          "number": 833
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 832
+        },
+        {
+          "labels": [],
+          "number": 831
+        },
+        {
+          "labels": [],
+          "number": 830
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 793
+        },
+        {
+          "labels": [],
+          "number": 739
+        },
+        {
+          "labels": [],
+          "number": 736
+        },
+        {
+          "labels": [],
+          "number": 729
+        },
+        {
+          "labels": [],
+          "number": 716
+        },
+        {
+          "labels": [],
+          "number": 710
+        },
+        {
+          "labels": [],
+          "number": 701
+        },
+        {
+          "labels": [],
+          "number": 699
+        },
+        {
+          "labels": [],
+          "number": 692
+        },
+        {
+          "labels": [],
+          "number": 691
+        },
+        {
+          "labels": [],
+          "number": 683
+        },
+        {
+          "labels": [],
+          "number": 680
+        },
+        {
+          "labels": [],
+          "number": 639
+        },
+        {
+          "labels": [],
+          "number": 617
+        },
+        {
+          "labels": [],
+          "number": 580
+        },
+        {
+          "labels": [],
+          "number": 543
+        },
+        {
+          "labels": [],
+          "number": 523
+        },
+        {
+          "labels": [
+            "ci"
+          ],
+          "number": 486
+        },
+        {
+          "labels": [
+            "ci"
+          ],
+          "number": 481
+        },
+        {
+          "labels": [],
+          "number": 480
+        },
+        {
+          "labels": [],
+          "number": 479
+        },
+        {
+          "labels": [],
+          "number": 478
+        },
+        {
+          "labels": [],
+          "number": 477
+        },
+        {
+          "labels": [],
+          "number": 476
+        },
+        {
+          "labels": [],
+          "number": 475
+        },
+        {
+          "labels": [],
+          "number": 474
+        },
+        {
+          "labels": [],
+          "number": 473
+        },
+        {
+          "labels": [],
+          "number": 471
+        },
+        {
+          "labels": [],
+          "number": 470
+        },
+        {
+          "labels": [],
+          "number": 468
+        },
+        {
+          "labels": [],
+          "number": 467
+        },
+        {
+          "labels": [],
+          "number": 466
+        },
+        {
+          "labels": [],
+          "number": 465
+        },
+        {
+          "labels": [],
+          "number": 464
+        },
+        {
+          "labels": [],
+          "number": 462
+        },
+        {
+          "labels": [],
+          "number": 457
+        },
+        {
+          "labels": [],
+          "number": 456
+        },
+        {
+          "labels": [],
+          "number": 455
+        },
+        {
+          "labels": [],
+          "number": 454
+        },
+        {
+          "labels": [],
+          "number": 453
+        },
+        {
+          "labels": [],
+          "number": 452
+        },
+        {
+          "labels": [],
+          "number": 451
+        },
+        {
+          "labels": [],
+          "number": 450
+        },
+        {
+          "labels": [],
+          "number": 447
+        },
+        {
+          "labels": [],
+          "number": 446
+        },
+        {
+          "labels": [],
+          "number": 445
+        },
+        {
+          "labels": [],
+          "number": 435
+        },
+        {
+          "labels": [],
+          "number": 434
+        },
+        {
+          "labels": [],
+          "number": 419
+        },
+        {
+          "labels": [],
+          "number": 418
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 416
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 414
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 409
+        },
+        {
+          "labels": [],
+          "number": 401
+        },
+        {
+          "labels": [],
+          "number": 400
+        },
+        {
+          "labels": [],
+          "number": 398
+        },
+        {
+          "labels": [],
+          "number": 397
+        },
+        {
+          "labels": [],
+          "number": 396
+        },
+        {
+          "labels": [],
+          "number": 395
+        },
+        {
+          "labels": [],
+          "number": 394
+        },
+        {
+          "labels": [],
+          "number": 386
+        },
+        {
+          "labels": [],
+          "number": 384
+        },
+        {
+          "labels": [],
+          "number": 320
+        },
+        {
+          "labels": [],
+          "number": 319
+        },
+        {
+          "labels": [],
+          "number": 318
+        },
+        {
+          "labels": [],
+          "number": 317
+        },
+        {
+          "labels": [],
+          "number": 316
+        },
+        {
+          "labels": [],
+          "number": 315
+        },
+        {
+          "labels": [],
+          "number": 314
+        },
+        {
+          "labels": [],
+          "number": 312
+        },
+        {
+          "labels": [],
+          "number": 311
+        },
+        {
+          "labels": [],
+          "number": 308
+        },
+        {
+          "labels": [],
+          "number": 298
+        },
+        {
+          "labels": [],
+          "number": 296
+        },
+        {
+          "labels": [],
+          "number": 294
+        },
+        {
+          "labels": [],
+          "number": 292
+        },
+        {
+          "labels": [],
+          "number": 290
+        },
+        {
+          "labels": [],
+          "number": 287
+        },
+        {
+          "labels": [],
+          "number": 264
+        },
+        {
+          "labels": [],
+          "number": 198
+        },
+        {
+          "labels": [],
+          "number": 195
+        },
+        {
+          "labels": [],
+          "number": 192
+        },
+        {
+          "labels": [],
+          "number": 190
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 186
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 184
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 181
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 173
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 171
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 143
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 141
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 127
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 126
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 123
+        },
+        {
+          "labels": [],
+          "number": 78
+        },
+        {
+          "labels": [],
+          "number": 76
+        }
+      ],
+      "leases": [],
+      "provider": {
+        "disabled": true,
+        "status": "no_api"
+      },
+      "schema": "oc.completion-health-snapshot.v1"
+    },
+    "current_running_lease": 1360,
+    "duplicate_authoritative_mission_count": "UNKNOWN",
+    "generated_at": "2026-09-12T04:27:44.742757Z",
+    "healthy": false,
+    "integration_head": "c3cac45773fed2839969b0b0927d19f0ec8335dc",
+    "last_dispatch_time": "UNKNOWN",
+    "last_integration_promotion": "UNKNOWN",
+    "last_main_promotion": "UNKNOWN",
+    "last_successful_exact_head_validation": "UNKNOWN",
+    "main_head": "0fc7fc5bfbee3fb9cebde99eb45c6ba1b525d674",
+    "observation_complete": true,
+    "observation_errors": [],
+    "provider_availability_state": "no_api",
+    "queued_p0_count": 0,
+    "reason_no_work_running": null,
+    "running_lease_count": 1,
+    "scheduler_heartbeat": "2026-09-12T04:18:55Z",
+    "schema": "orchid.control-plane-health.v1",
+    "stale_lease_count": 0,
+    "validating_count": 10
+  },
+  "observed_at": "2026-09-12T04:27:44.742757Z",
+  "plan": {
+    "active_resource_locks": [
+      {
+        "issue_number": 1360,
+        "lane_id": "L1",
+        "reads": [
+          "scientific-memory",
+          "source-federation"
+        ],
+        "writes": [
+          "literature"
+        ]
+      }
+    ],
+    "active_worker_count": 1,
+    "available_capacity": 7,
+    "canonical_suppressed": [],
+    "dependency_graph": {
+      "cycle_nodes": [],
+      "edge_count": 1
+    },
+    "dependency_suppressed": [
+      {
+        "dependencies": [
+          1360
+        ],
+        "issue_number": 1361,
+        "missing": [],
+        "reason": "dependency-blocked",
+        "unsatisfied": [
+          1360
+        ]
+      }
+    ],
+    "effective_worker_slots": 8,
+    "eligible_count": 1,
+    "generated_at": "2026-09-12T04:29:11.438301Z",
+    "launch_count": 0,
+    "matrix": {
+      "include": []
+    },
+    "refill_recommended": true,
+    "requested_worker_slots": 8,
+    "resource_lock_suppressed": [],
+    "safety": {
+      "bounded": true,
+      "dependency_cycles_fail_closed": true,
+      "dependency_graph": true,
+      "merge_to_main": false,
+      "missing_dependencies_fail_closed": true,
+      "owner_gates_preserved": true,
+      "production_deploy": false,
+      "provider_calls_in_planner": false,
+      "provider_free_only": false,
+      "read_read_parallelism": true,
+      "resource_locking": true,
+      "write_conflicts_fail_closed": true
+    },
+    "schema": "oc.swarm-plan.v4",
+    "selected_numbers": [],
+    "waiting_count": 1,
+    "workers": []
+  },
+  "read_count": 37,
+  "read_endpoints": [
+    "repos/jsp1440/orchid-calyx-backend/git/ref/heads/oc-autonomous-integration",
+    "repos/jsp1440/orchid-calyx-backend/git/ref/heads/main",
+    "repos/jsp1440/orchid-calyx-backend/issues?state=open&per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues?state=open&per_page=100&page=2",
+    "repos/jsp1440/orchid-calyx-backend/pulls?state=open&base=oc-autonomous-integration&per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues/1360/comments?per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues/1360",
+    "repos/jsp1440/orchid-calyx-backend/issues/1264/comments?per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues/1264",
+    "repos/jsp1440/orchid-calyx-backend/issues/1193/comments?per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues/1193/comments?per_page=100&page=2",
+    "repos/jsp1440/orchid-calyx-backend/issues/1193",
+    "repos/jsp1440/orchid-calyx-backend/issues/1168/comments?per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues/1168",
+    "repos/jsp1440/orchid-calyx-backend/issues/1140/comments?per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues/1140",
+    "repos/jsp1440/orchid-calyx-backend/issues/1136/comments?per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues/1136",
+    "repos/jsp1440/orchid-calyx-backend/issues/1096/comments?per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues/1096",
+    "repos/jsp1440/orchid-calyx-backend/issues/1084/comments?per_page=100&page=9",
+    "repos/jsp1440/orchid-calyx-backend/issues/1084/comments?per_page=100&page=10",
+    "repos/jsp1440/orchid-calyx-backend/issues/1084/comments?per_page=100&page=11",
+    "repos/jsp1440/orchid-calyx-backend/issues/1084/comments?per_page=100&page=12",
+    "repos/jsp1440/orchid-calyx-backend/issues/1084/comments?per_page=100&page=13",
+    "repos/jsp1440/orchid-calyx-backend/issues/1084",
+    "repos/jsp1440/orchid-calyx-backend/issues/1050/comments?per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues/1050",
+    "repos/jsp1440/orchid-calyx-backend/issues/1023/comments?per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues/1023/comments?per_page=100&page=2",
+    "repos/jsp1440/orchid-calyx-backend/issues/1023",
+    "repos/jsp1440/orchid-calyx-backend/actions/runs/34672666097",
+    "repos/jsp1440/orchid-calyx-backend/actions/runs/34672666097/jobs?per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues?state=open&per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/issues?state=open&per_page=100&page=2",
+    "repos/jsp1440/orchid-calyx-backend/pulls?state=open&base=oc-autonomous-integration&per_page=100&page=1",
+    "repos/jsp1440/orchid-calyx-backend/git/ref/heads/oc-autonomous-integration"
+  ],
+  "scheduler_run": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/34672666097",
+  "schema": "oc.swarm-recovery-evidence.v1",
+  "scope": {
+    "hosted_observer_activation": false,
+    "new_worker_execution_proven": false,
+    "production_writes": false,
+    "provider_calls": false,
+    "provider_policy_source": "No repository variable read: observer uses fail-closed default; historical scheduler log separately records NO_API_MODE=false. This field is not a live provider-health claim.",
+    "queue_writes": false
+  },
+  "source": "Fresh sequential GitHub connector GETs; actual repository planner, claim zero-worker path and health observer executed locally",
+  "zero_worker_handoff": {
+    "confirmed": [],
+    "errors": [],
+    "healthy": true,
+    "launch_count": 0,
+    "matrix": {
+      "include": []
+    },
+    "planned_count": 0,
+    "run_attempt": 1,
+    "run_id": 34672666097,
+    "schema": "oc.swarm-claim-handoff.v1",
+    "skipped": []
+  }
+}

@@ -2,36 +2,48 @@ name: Orchid Continuous Completion Observer
 
 on:
   workflow_run:
-    workflows: ["Orchid Continuous Completion"]
+    workflows: ["Orchid Swarm Controller", "Orchid Continuous Completion"]
+    branches: [oc-autonomous-integration]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Completed integration controller run to observe (read-only)
+        required: true
+        type: string
 
 permissions:
   actions: read
   contents: read
+  issues: read
+  pull-requests: read
 
 jobs:
   report:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Publish terminal scheduler result
+      # Use the observer's trusted revision, never the triggering run's code.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Observe canonical completion health
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          RESULT: ${{ github.event.workflow_run.conclusion }}
-          EVENT: ${{ github.event.workflow_run.event }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
         run: |
           set -euo pipefail
-          failed=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")' 2>/dev/null || true)
-          detail=""
-          [[ -z "$failed" ]] || detail=" Failed jobs: ${failed}."
-          {
-            echo "### Orchid Continuous Engine"
-            echo ""
-            echo "Result: **${RESULT}**"
-            echo "Event: ${EVENT}"
-            echo "Head: \`${SHA}\`"
-            echo "Run: ${RUN_ID}"
-            [[ -z "$detail" ]] || echo "${detail}"
-            echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}"
-          } >> "$GITHUB_STEP_SUMMARY"
+          python3 -m scripts.oc_control_plane_health \
+            --repository "$GITHUB_REPOSITORY" --run-id "$RUN_ID" \
+            --check --summary "$GITHUB_STEP_SUMMARY" \
+            > "$RUNNER_TEMP/completion-health.json"
+      - name: Preserve health evidence even when the contract fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: completion-health
+          path: ${{ runner.temp }}/completion-health.json
+          if-no-files-found: error
+          retention-days: 7
