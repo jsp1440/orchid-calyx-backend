@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -154,6 +153,6 @@ router = APIRouter(
 
 @router.get("/strategies")
 def strategy_status(
-    repo: InMemoryEvaluationRepository = Depends(get_evaluation_repository),
+    repo: InMemoryEvaluationRepository = Depends(get_evaluation_repository),  # noqa: B008
 ) -> dict[str, Any]:
     return build_strategy_status(repo)

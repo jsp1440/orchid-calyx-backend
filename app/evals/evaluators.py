@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from .models import EvaluationResult, MeasurementState, MetricValue, stable_fingerprint
 
@@ -90,7 +91,7 @@ class EvaluatorRegistry:
         return tuple(results)
 
 
-def ratio_metric(value: float | int) -> MetricValue:
+def ratio_metric(value: float) -> MetricValue:
     return MetricValue(MeasurementState.MEASURED, value, "ratio")
 
 

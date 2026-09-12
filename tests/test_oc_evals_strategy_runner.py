@@ -1,7 +1,10 @@
 import pytest
 
-from app.evals.evaluators import FrozenEvaluationOutput, build_default_scientific_registry
-from app.evals.models import EvaluationCase, StrategySpec
+from app.evals.evaluators import (
+    FrozenEvaluationOutput,
+    build_default_scientific_registry,
+)
+from app.evals.models import EvaluationCase, StrategySpec, stable_fingerprint
 from app.evals.strategy_runner import (
     BoundedStrategyExperimentRunner,
     DuplicateExperimentDispatch,
@@ -136,7 +139,7 @@ def test_suppressed_unchanged_candidate_is_not_dispatched():
     baseline = strategy("baseline")
     candidate = strategy("candidate")
     eval_case = case()
-    material = __import__("app.evals.models", fromlist=["stable_fingerprint"]).stable_fingerprint(
+    material = stable_fingerprint(
         {
             "task_class_id": "taxonomy-research",
             "baseline": baseline.fingerprint,
@@ -190,8 +193,6 @@ def test_material_change_allows_retest_after_prior_suppression():
     old_candidate = strategy("candidate", "1")
     new_candidate = strategy("candidate", "2")
     eval_case = case()
-
-    from app.evals.models import stable_fingerprint
 
     old_material = stable_fingerprint(
         {

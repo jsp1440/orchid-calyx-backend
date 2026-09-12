@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Iterable
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Any
 
 from .models import (
     EvaluationResult,
@@ -62,7 +63,7 @@ def _result_by_id(results: Iterable[EvaluationResult], evaluator_id: str) -> Eva
     matches = [result for result in results if result.evaluator_id == evaluator_id]
     if not matches:
         return None
-    return sorted(matches, key=lambda result: result.evaluator_version)[-1]
+    return max(matches, key=lambda result: result.evaluator_version)
 
 
 def _measured_value(result: EvaluationResult | None) -> float | None:

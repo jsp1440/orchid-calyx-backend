@@ -17,11 +17,11 @@ __all__ = [
     "EvaluationResult",
     "EvaluationRun",
     "EvaluationTaskClass",
+    "InMemoryEvaluationRepository",
     "MeasurementState",
     "MetricValue",
     "StrategyDecision",
     "StrategyDecisionState",
     "StrategySpec",
-    "InMemoryEvaluationRepository",
     "stable_fingerprint",
 ]

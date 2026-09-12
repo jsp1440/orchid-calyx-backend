@@ -166,9 +166,11 @@ class StrategyDecision:
     supersedes_decision_id: str | None = None
 
     def __post_init__(self) -> None:
-        if self.state in {StrategyDecisionState.PROMOTE, StrategyDecisionState.LIMITED_CANARY}:
-            if not self.rollback_strategy_fingerprint:
-                raise ValueError("promote/canary decisions require rollback strategy identity")
+        if (
+            self.state in {StrategyDecisionState.PROMOTE, StrategyDecisionState.LIMITED_CANARY}
+            and not self.rollback_strategy_fingerprint
+        ):
+            raise ValueError("promote/canary decisions require rollback strategy identity")
 
     @property
     def fingerprint(self) -> str:

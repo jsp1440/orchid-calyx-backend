@@ -152,17 +152,17 @@ def test_no_material_benefit_keeps_baseline_and_records_suppression_ready_outcom
 
 def test_high_risk_improvement_requires_owner_approval_for_full_promotion():
     task, baseline, candidate = strategies(risk_class="high")
-    common = dict(
-        task_class=task,
-        baseline=baseline,
-        candidate=candidate,
-        evidence=evidence(
+    common = {
+        "task_class": task,
+        "baseline": baseline,
+        "candidate": candidate,
+        "evidence": evidence(
             [result("precision", 0.80), result("citation_anchor_valid", 1.0, mandatory=True)],
             [result("precision", 0.95), result("citation_anchor_valid", 1.0, mandatory=True)],
         ),
-        policy=PromotionPolicy(minimum_absolute_improvement=0.05),
-        scope={"taxon": "fixture-only"},
-    )
+        "policy": PromotionPolicy(minimum_absolute_improvement=0.05),
+        "scope": {"taxon": "fixture-only"},
+    }
     canary = decide_strategy(**common, decision_id="decision-5")
     assert canary.decision.state == StrategyDecisionState.LIMITED_CANARY
     assert canary.requires_human_approval is True

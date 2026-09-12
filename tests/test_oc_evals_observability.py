@@ -3,8 +3,8 @@ from fastapi.testclient import TestClient
 
 from app.evals.models import (
     EvaluationResult,
-    MetricValue,
     MeasurementState,
+    MetricValue,
     StrategyDecision,
     StrategyDecisionState,
 )
