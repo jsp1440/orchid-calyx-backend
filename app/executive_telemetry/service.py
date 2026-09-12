@@ -9,7 +9,11 @@ from app.scientific_observability.readiness import (
     DimensionState,
     build_readiness,
 )
-from runtime.executive.telemetry import activation_matrix, collect_subsystems, source_recommendations
+from runtime.executive.telemetry import (
+    activation_matrix,
+    collect_subsystems,
+    source_recommendations,
+)
 
 
 def _now() -> str:
@@ -81,7 +85,7 @@ def build_executive_state(*, include_operations: bool = False) -> dict[str, Any]
     try:
         subsystem_models = collect_subsystems()
         subsystem_rows = [item.as_dict() for item in subsystem_models]
-    except Exception as exc:  # pragma: no cover - deployment degradation path
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - deployment degradation path
         subsystem_rows = []
         partial_failures.append(
             {
@@ -93,7 +97,7 @@ def build_executive_state(*, include_operations: bool = False) -> dict[str, Any]
 
     try:
         recommendations = source_recommendations()
-    except Exception as exc:  # pragma: no cover - deployment degradation path
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - deployment degradation path
         recommendations = []
         partial_failures.append(
             {
