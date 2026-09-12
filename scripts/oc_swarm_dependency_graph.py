@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from typing import Any
 
 DEPENDS_MARKER = re.compile(
-    r"^OC-SWARM-DEPENDS-ON:\s*(.*)$", re.IGNORECASE | re.MULTILINE
+    r"^OC-SWARM-DEPENDS-ON:[ \t]*(.*)$", re.IGNORECASE | re.MULTILINE
 )
 ISSUE_REF = re.compile(r"#(\d+)")
 DONE_LABEL = "oc-done"
@@ -31,6 +31,61 @@ def _labels(issue: dict) -> set[str]:
         elif isinstance(label, dict) and label.get("name"):
             result.add(str(label["name"]))
     return result
+
+
+def _validate_dependencies_declaration(issue: dict) -> str | None:
+    """Validate the OC-SWARM-DEPENDS-ON declaration for an issue.
+
+    Returns:
+        None if the declaration is valid (or absent), or a machine-readable
+        error string if the declaration is malformed.
+    """
+    body = str(issue.get("body") or "")
+    matches = list(DEPENDS_MARKER.finditer(body))
+
+    # No declaration at all is valid.
+    if not matches:
+        return None
+
+    # Multiple declarations are invalid (repeated lines must fail).
+    if len(matches) > 1:
+        return "malformed-declaration-repeated"
+
+    match = matches[0]
+    decl_text = match.group(1)
+
+    # Empty or whitespace-only declaration is invalid.
+    if not decl_text or not decl_text.strip():
+        return "malformed-declaration-empty"
+
+    # Extract all issue references.
+    raw_refs = ISSUE_REF.findall(decl_text)
+    if not raw_refs:
+        # Non-reference: declaration line has no valid #NNN pattern.
+        return "malformed-declaration-non-reference"
+
+    # Convert to integers and validate: reject #0 and any invalid.
+    has_invalid = False
+
+    for ref_str in raw_refs:
+        num = int(ref_str)
+        if num == 0:
+            has_invalid = True
+            break
+
+    if has_invalid:
+        return "malformed-declaration-zero-reference"
+
+    # Check for mixed valid/invalid by looking for non-#NNN content after stripping references.
+    # If the declaration has content that is not a valid reference or comma/whitespace, reject it.
+    stripped = decl_text
+    for ref_str in raw_refs:
+        stripped = stripped.replace(f"#{ref_str}", "", 1)
+    # What remains should be only commas and whitespace.
+    if stripped and stripped.strip() and not all(c in ", \t\n\r" for c in stripped):
+        return "malformed-declaration-mixed-invalid"
+
+    return None
 
 
 def dependencies(issue: dict) -> list[int]:
@@ -53,7 +108,16 @@ def _is_satisfied(issue: dict | None) -> bool:
 def build_dependency_graph(issues: Iterable[dict]) -> dict[str, Any]:
     rows = [issue for issue in issues if issue.get("number") is not None]
     index = {int(issue["number"]): issue for issue in rows}
-    edges = {number: dependencies(issue) for number, issue in index.items()}
+    edges: dict[int, list[int]] = {}
+    errors: dict[int, str] = {}
+
+    for number, issue in index.items():
+        error = _validate_dependencies_declaration(issue)
+        if error is not None:
+            errors[number] = error
+            edges[number] = []
+        else:
+            edges[number] = dependencies(issue)
 
     # DFS cycle detection over known nodes only. Missing nodes are handled as
     # unsatisfied dependencies rather than graph vertices.
@@ -87,18 +151,30 @@ def build_dependency_graph(issues: Iterable[dict]) -> dict[str, Any]:
 
     status: dict[int, dict[str, Any]] = {}
     for number, deps in edges.items():
-        missing = [dep for dep in deps if dep not in index]
-        unsatisfied = [dep for dep in deps if dep in index and not _is_satisfied(index[dep])]
-        cycle = number in cycle_nodes
-        ready = not missing and not unsatisfied and not cycle
-        status[number] = {
-            "issue_number": number,
-            "dependencies": deps,
-            "missing": missing,
-            "unsatisfied": unsatisfied,
-            "cycle": cycle,
-            "ready": ready,
-        }
+        # If there's a validation error for this issue, mark it as blocked.
+        if number in errors:
+            status[number] = {
+                "issue_number": number,
+                "dependencies": [],
+                "missing": [],
+                "unsatisfied": [],
+                "cycle": False,
+                "ready": False,
+                "error": errors[number],
+            }
+        else:
+            missing = [dep for dep in deps if dep not in index]
+            unsatisfied = [dep for dep in deps if dep in index and not _is_satisfied(index[dep])]
+            cycle = number in cycle_nodes
+            ready = not missing and not unsatisfied and not cycle
+            status[number] = {
+                "issue_number": number,
+                "dependencies": deps,
+                "missing": missing,
+                "unsatisfied": unsatisfied,
+                "cycle": cycle,
+                "ready": ready,
+            }
 
     return {
         "schema": "oc.swarm-dependency-graph.v1",
