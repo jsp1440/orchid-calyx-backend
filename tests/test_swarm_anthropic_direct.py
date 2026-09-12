@@ -583,3 +583,35 @@ def test_direct_executor_no_salvage_on_auth_error(tmp_path, monkeypatch) -> None
     status_calls = [c for c in run_calls if c == ["git", "status", "--porcelain"]]
     assert not status_calls, "salvage must NOT run for authentication_error"
     assert result.get("partial_branch") is None
+
+
+def test_prepare_branch_configures_git_identity(monkeypatch) -> None:
+    calls: list[tuple[list[str], int, bool]] = []
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(cmd, *, timeout=120, check=False):
+        calls.append((cmd, timeout, check))
+        return Result()
+
+    monkeypatch.setattr(direct, "_run", fake_run)
+
+    branch = direct._prepare_branch("1355", "12345", "oc-autonomous-integration")
+
+    assert branch == "claude-direct/issue-1355-12345"
+    commands = [cmd for cmd, _, _ in calls]
+    assert [
+        "git",
+        "config",
+        "user.name",
+        "orchid-continuum-orchestrator[bot]",
+    ] in commands
+    assert [
+        "git",
+        "config",
+        "user.email",
+        "41898282+github-actions[bot]@users.noreply.github.com",
+    ] in commands
