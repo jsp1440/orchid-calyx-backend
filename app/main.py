@@ -57,6 +57,7 @@ from app.routers.health import (
 from app.scientific_interpretation.routes import (
     router as scientific_interpretation_router,
 )
+from app.scientific_observability.routes import router as scientific_observability_router
 from app.security import (
     get_api_key,
     get_owner_access_code,
@@ -570,6 +571,7 @@ app.include_router(design_intelligence_router)
 app.include_router(design_planning_router)
 app.include_router(implementation_planning_router)
 app.include_router(scientific_interpretation_router)
+app.include_router(scientific_observability_router)
 app.include_router(ontology_router)
 app.include_router(concepts_router)
 app.include_router(brain_router)
