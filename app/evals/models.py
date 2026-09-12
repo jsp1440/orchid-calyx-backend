@@ -49,7 +49,9 @@ class MetricValue:
         if self.state == MeasurementState.MEASURED and self.value is None:
             raise ValueError("MEASURED metric requires value")
         if self.state != MeasurementState.MEASURED and self.value is not None:
-            raise ValueError("unavailable/unknown metric must not carry a numeric value")
+            raise ValueError(
+                "unavailable/unknown metric must not carry a numeric value"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,10 +169,13 @@ class StrategyDecision:
 
     def __post_init__(self) -> None:
         if (
-            self.state in {StrategyDecisionState.PROMOTE, StrategyDecisionState.LIMITED_CANARY}
+            self.state
+            in {StrategyDecisionState.PROMOTE, StrategyDecisionState.LIMITED_CANARY}
             and not self.rollback_strategy_fingerprint
         ):
-            raise ValueError("promote/canary decisions require rollback strategy identity")
+            raise ValueError(
+                "promote/canary decisions require rollback strategy identity"
+            )
 
     @property
     def fingerprint(self) -> str:
