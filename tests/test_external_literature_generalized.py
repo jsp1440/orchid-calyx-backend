@@ -166,5 +166,3 @@ def test_query_plan_explicit_taxa_without_question_context():
     assert any("Pleione" in q for q in queries), (
         f"Expected 'Pleione' in queries, got {queries}"
     )
-
-
