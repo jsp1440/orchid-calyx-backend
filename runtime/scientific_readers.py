@@ -126,6 +126,7 @@ def canonical_reader(domain: str, candidates: Sequence[str]) -> Callable[[str], 
             return unavailable(domain, "DATABASE_URL is not configured for this process")
 
         import psycopg
+
         from runtime.scientific_intelligence.adapters import _table_exists
 
         try:
