@@ -283,6 +283,11 @@ def _tool_run_check(args: dict[str, Any]) -> str:
         return f"ERROR: unsupported check: {name}"
 
     result = _run(cmd, timeout=180)
+    print(
+        "[OC-DIRECT-CHECK] "
+        + json.dumps({"check": name, "target": target, "exit_code": result.returncode}),
+        flush=True,
+    )
     combined = (result.stdout or "") + (result.stderr or "")
     return _truncate(f"exit_code={result.returncode}\n{combined}", 16000)
 
@@ -530,6 +535,17 @@ def main() -> int:
                         subprocess.SubprocessError,
                     ) as exc:
                         tool_result = f"ERROR: {type(exc).__name__}: {exc}"
+                print(
+                    "[OC-DIRECT-TOOL] "
+                    + json.dumps(
+                        {
+                            "turn": turn,
+                            "tool": name if handler else "unsupported",
+                            "input_error": tool_result.startswith("ERROR:"),
+                        }
+                    ),
+                    flush=True,
+                )
                 results.append(
                     {
                         "type": "tool_result",
