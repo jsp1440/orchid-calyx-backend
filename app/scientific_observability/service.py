@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.review_tasks.models import ReviewTaskInput
+from app.review_tasks.service import GovernedReviewTaskService
 
 from . import anomalies as anomaly_rules
 from .anomalies import Anomaly
@@ -25,6 +26,7 @@ class RecordResult:
     created: bool
     anomalies: list[Anomaly] = field(default_factory=list)
     review_bindings: list[ReviewTaskInput] = field(default_factory=list)
+    persisted_review_tasks: list[dict[str, Any]] = field(default_factory=list)
     redaction: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -42,16 +44,39 @@ class RecordResult:
                 }
                 for b in self.review_bindings
             ],
+            "persisted_review_tasks": [
+                {
+                    "task_id": task["task_id"],
+                    "review_type": task["review_type"],
+                    "risk_class": task["risk_class"],
+                    "batch_key": task["batch_key"],
+                    "embargoed": task["embargoed"],
+                    "display_policy": task["display_policy"],
+                    "state": task["state"],
+                    "reused": bool(task.get("reused")),
+                }
+                for task in self.persisted_review_tasks
+            ],
             "redaction": self.redaction,
         }
 
 
 class ObservabilityService:
-    def __init__(self, store: ObservationStore | None = None) -> None:
+    def __init__(
+        self,
+        store: ObservationStore | None = None,
+        *,
+        review_service: GovernedReviewTaskService | None = None,
+    ) -> None:
         # An empty ObservationStore is falsy (it defines __len__), so an
         # explicit ``is None`` check is required — ``store or ...`` would
         # silently discard a freshly-constructed empty store.
         self._store = store if store is not None else get_default_store()
+        # Production callers inject the PostgreSQL-backed canonical review
+        # service. Leaving it absent preserves a read/record-only boundary for
+        # isolated instrumentation and tests; it never falls back to a second,
+        # process-local review queue.
+        self._review_service = review_service
 
     @property
     def store(self) -> ObservationStore:
@@ -78,11 +103,17 @@ class ObservabilityService:
             prior_readiness_state=prior_readiness_state,
         )
         bindings = [anomaly_rules.to_review_task_input(a) for a in found]
+        persisted = (
+            [self._review_service.create(binding) for binding in bindings]
+            if self._review_service is not None
+            else []
+        )
         return RecordResult(
             event=stored,
             created=created,
             anomalies=found,
             review_bindings=bindings,
+            persisted_review_tasks=persisted,
             redaction=redaction.to_dict(),
         )
 
