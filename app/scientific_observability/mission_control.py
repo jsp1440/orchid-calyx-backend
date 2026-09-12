@@ -15,7 +15,11 @@ from .ranking import (
 )
 from .runbook import RunbookValidationError, generate_reviewable_runbook
 from .store import ObservationStore
-from .workflow import WorkflowReconstructor, WorkflowValidationError, parse_workflow_metadata
+from .workflow import (
+    WorkflowReconstructor,
+    WorkflowValidationError,
+    parse_workflow_metadata,
+)
 
 SNAPSHOT_VERSION = "workflow-intelligence-mission-control-v1"
 MAX_WORKFLOWS = 50
