@@ -130,7 +130,7 @@ def _static_fields(fields: dict) -> None:
         from runtime.research_executor_worker import executor_readiness
 
         fields["executor_readiness"] = {"state": WORKING, **executor_readiness()}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         fields["executor_readiness"] = {
             "state": UNKNOWN,
             "detail": f"{type(exc).__name__}: {exc}",
@@ -197,7 +197,7 @@ def _probe_graph(cur) -> dict:
     """Persisted graph nodes/edges, if any candidate relation exists."""
     try:
         from runtime.scientific_intelligence import adapters as a
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return {"state": UNKNOWN, "detail": f"adapters unavailable: {exc}"}
 
     found: dict[str, object] = {}
@@ -227,9 +227,8 @@ def _probe_graph(cur) -> dict:
 def _probe_domain(cur, domain: str) -> dict:
     """Row counts and column presence for one scientific domain."""
     try:
-        from runtime.scientific_intelligence import adapters as a
         from runtime.scientific_readers import _candidates
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return {"state": UNKNOWN, "detail": f"reader module unavailable: {exc}"}
 
     candidates = _candidates().get(domain) or EXTRA_DOMAIN_CANDIDATES.get(domain, ())
@@ -323,8 +322,10 @@ def main() -> int:
         return 0
 
     try:
-        with psycopg.connect(url, row_factory=dict_row, connect_timeout=10) as conn:
-            with conn.cursor() as cur:
+        with (
+            psycopg.connect(url, row_factory=dict_row, connect_timeout=10) as conn,
+            conn.cursor() as cur,
+        ):
                 # Identity by name only. The connection string never appears.
                 cur.execute(
                     "SELECT current_database() AS db, current_user AS usr, version() AS v"
@@ -395,7 +396,7 @@ def main() -> int:
                 # unmaterialised graph does not mean the database lacks data,
                 # and a materialised one is not a survey.
                 fields["knowledge_graph_materialization"] = _probe_graph(cur)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         # The exception type and message only. A psycopg error can carry the
         # host; the class name and a truncated message do not carry secrets.
         fields["database_connectivity"] = {
