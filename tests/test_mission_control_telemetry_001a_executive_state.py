@@ -45,3 +45,34 @@ def test_administrator_receives_operational_details_without_scientific_authority
 def test_executive_state_requires_authentication() -> None:
     response = client.get("/api/executive/state")
     assert response.status_code == 401
+
+def test_executive_state_exposes_truthful_scientific_readiness() -> None:
+    app.dependency_overrides[authenticated_principal] = lambda: AccessPrincipal(
+        principal_id="scientific-readiness-user",
+        roles=(MissionControlRole.PUBLIC,),
+        authenticated=True,
+    )
+    payload = client.get("/api/executive/state").json()
+    readiness = payload["scientific_readiness"]
+
+    assert readiness["contract_version"] == "sci-obs-readiness-v1"
+    assert set(readiness["dimensions"]) == {
+        "engineering_health",
+        "integration_health",
+        "data_readiness",
+        "scientific_evidence_readiness",
+        "product_workflow_readiness",
+        "freshness",
+    }
+    for dimension in readiness["dimensions"].values():
+        assert dimension["state"] == "unavailable"
+        assert dimension["numerator"] is None
+        assert dimension["denominator"] is None
+        assert dimension["score"] is None
+        assert dimension["missing_requirements"]
+    assert readiness["publication_authority"] is False
+    assert readiness["human_approval_required"] is True
+    assert all(
+        component["state"] == "unavailable" and component["present"] is None
+        for component in readiness["component_coverage"].values()
+    )
