@@ -213,6 +213,44 @@ def _is_settlement(body: str) -> bool:
     return bool(_RELEASE.search(body)) or body.startswith(_SETTLEMENT_PREFIXES)
 
 
+def _denied_release_matches(comment: dict, claim: dict, repository: str, number: int) -> bool:
+    """Recognize only an authenticated denial bound to this exact claimed work."""
+    if (comment.get("user") or {}).get("login") != "github-actions[bot]":
+        return False
+    claimed = claim["comment"]
+    if (claimed.get("user") or {}).get("login") != "github-actions[bot]":
+        return False
+    try:
+        payload = json.loads(re.search(r"`(\{[^\n]+\})`", claimed["body"])[1])
+        if payload.get("schema") != "oc.swarm-claim.v1" or payload.get("issue_number") != number:
+            return False
+        if (not isinstance(payload.get("material_fingerprint"), str)
+                or not re.fullmatch(r"[a-f0-9]{16,64}", payload["material_fingerprint"])
+                or type(claimed.get("id")) is not int or claimed["id"] <= 0
+                or claim.get("fingerprint") != payload.get("material_fingerprint")
+                or not re.fullmatch(re.escape(repository) + r":[1-9]\d*:[1-9]\d*:" + str(number),
+                                    payload.get("lease_id") or "")):
+            return False
+        body = comment["body"]
+        if body.startswith("[OC-SWARM-V4] Provider admission denied;"):
+            release = json.loads(re.search(r"`(\{[^\n]+\})`", body)[1])
+            return (release.get("schema") == "oc.swarm-denied-release.v1"
+                    and release.get("issue_number") == number
+                    and release.get("lease_comment_id") == claimed.get("id")
+                    and release.get("lease_id") == payload.get("lease_id")
+                    and release.get("material_fingerprint") == payload.get("material_fingerprint")
+                    and release.get("state") == "oc-blocked" and release.get("provider_called") is False)
+        pattern = (r"^\[OC-AUTO\] Swarm governor blocked provider execution before credentials were initialized\. "
+                   r"reason=[A-Z_]+; packet=([a-f0-9]{16,64})\. Run https://github\.com/"
+                   + re.escape(repository) + r"/actions/runs/(\d+)\.$")
+        match = re.fullmatch(pattern, body)
+        return bool(match and payload.get("material_fingerprint") == match[1]
+                    and re.fullmatch(re.escape(f"{repository}:{match[2]}:") + r"[1-9]\d*:" + str(number),
+                                     payload.get("lease_id") or ""))
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def _github_get(endpoint: str):
     """The only transport: bounded GETs, no shell, no raw error/body logging."""
     result = subprocess.run(
@@ -340,7 +378,14 @@ def collect_github_snapshot(repository: str, run_id: int, *, read_json=_github_g
         claims = []
         for comment in comments:
             body = str(comment.get("body") or "")
-            if _is_settlement(body):
+            if body.startswith(("[OC-AUTO] Swarm governor blocked provider execution before credentials were initialized.",
+                                "[OC-SWARM-V4] Provider admission denied;")):
+                matched = [claim for claim in claims if _denied_release_matches(comment, claim, repository, number)]
+                if len(matched) == 1:
+                    claims.remove(matched[0])
+                else:
+                    errors.append({"source": f"comments:{number}", "reason": "governor_release_unconfirmed"})
+            elif _is_settlement(body):
                 claims = []
             elif _CLAIM.search(body):
                 packet = _PACKET.search(body)

@@ -146,6 +146,45 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
             "skipped": skipped, "errors": errors}
 
 
+def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
+                      comment_id, reason, call=github):
+    """Release only our confirmed claim after denial; never restore paid eligibility."""
+    if not re.fullmatch(r"[A-Z_]+", reason):
+        raise ValueError("invalid governor denial reason")
+    args = ["issue", "view", str(issue_number), "--repo", repository,
+            "--json", "number,title,body,state,labels"]
+    issue = call(args)
+    receipt = call(["api", "--method", "GET",
+                    f"repos/{repository}/issues/comments/{comment_id}"])
+    if (issue.get("number") != issue_number
+            or (receipt.get("user") or {}).get("login") != "github-actions[bot]"
+            or receipt.get("issue_url") != f"https://api.github.com/repos/{repository}/issues/{issue_number}"):
+        raise ValueError("denied worker claim origin invalid")
+    verify_worker_claim(issue, receipt, repository=repository, run_id=run_id,
+                        run_attempt=run_attempt, comment_id=comment_id)
+    expected = dict(issue, labels=sorted((_labels(issue) - {"oc-running", "oc-queued"}) | {"oc-blocked"}))
+    call(["issue", "edit", str(issue_number), "--repo", repository,
+          "--remove-label", "oc-running", "--remove-label", "oc-queued", "--add-label", "oc-blocked"])
+    current = call(args)
+    if current["state"].upper() != "OPEN" or _material(current) != _material(expected):
+        raise ValueError("denied worker parking unconfirmed")
+    packet = build_work_packet(issue_number=str(issue_number), title=issue["title"],
+                               body=issue.get("body") or "", labels=_labels(issue))
+    release = {"schema": "oc.swarm-denied-release.v1", "issue_number": issue_number,
+               "lease_id": f"{repository}:{run_id}:{run_attempt}:{issue_number}",
+               "lease_comment_id": comment_id, "material_fingerprint": packet.fingerprint,
+               "reason": reason, "state": "oc-blocked", "provider_called": False}
+    body = "[OC-SWARM-V4] Provider admission denied; execution lease released: `" + json.dumps(release, sort_keys=True) + "`."
+    saved = call(["api", "--method", "POST", f"repos/{repository}/issues/{issue_number}/comments",
+                  "--input", "-"], {"body": body})
+    if not saved or saved.get("body") != body or not saved.get("id"):
+        raise ValueError("denied worker receipt unconfirmed")
+    confirmed = call(["api", "--method", "GET", f"repos/{repository}/issues/comments/{saved['id']}"])
+    if confirmed.get("body") != body:
+        raise ValueError("denied worker receipt readback failed")
+    return release
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--plan")
@@ -156,9 +195,16 @@ def main():
     parser.add_argument("--run-id", required=True, type=int)
     parser.add_argument("--run-attempt", type=int, default=1)
     parser.add_argument("--github-output")
+    parser.add_argument("--park-denied", help="Governor denial reason; release verified worker into blocked")
     args = parser.parse_args()
     if args.verify_issue is not None:
         try:
+            if args.park_denied:
+                result = park_denied_worker(repository=args.repository, issue_number=args.verify_issue,
+                                            run_id=args.run_id, run_attempt=args.run_attempt,
+                                            comment_id=args.lease_comment_id, reason=args.park_denied)
+                print(json.dumps(result, sort_keys=True))
+                return 0
             issue = github(["issue", "view", str(args.verify_issue), "--repo", args.repository,
                             "--json", "number,title,body,state,labels"])
             receipt = github(["api", "--method", "GET",

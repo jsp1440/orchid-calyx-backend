@@ -199,13 +199,21 @@ jobs:
           OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.ledger.outputs.monthly_spend_usd }}
         run: python3 scripts/swarm_governor_precheck.py
 
-      - name: Return issue to queue when governor blocks primary provider
+      - name: Park denied provider work without restoring paid eligibility
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized != 'true'
         shell: bash
+        env:
+          LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
+          DENIAL_REASON: ${{ steps.governor.outputs.reason || 'GOVERNOR_ADMISSION_UNCONFIRMED' }}
         run: |
           set -euo pipefail
-          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Swarm governor blocked provider execution before credentials were initialized. reason=${{ steps.governor.outputs.reason }}; packet=${{ steps.packet.outputs.fingerprint }}. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+          # A verified Swarm claim is required for unattended state mutation.
+          # Legacy manual dispatches without a durable claim fail closed here.
+          [[ -n "$LEASE_COMMENT_ID" ]]
+          python3 -m scripts.oc_swarm_claim \
+            --verify-issue "$ISSUE_NUMBER" --lease-comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --park-denied "$DENIAL_REASON"
 
       - name: Return issue to queue when NO-API mode blocks all providers
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'true'

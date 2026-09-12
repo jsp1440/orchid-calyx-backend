@@ -1,6 +1,8 @@
 # Hosted factory continuation
 
-Status: PARTIAL — implementation and isolated tests; no live proof for this change yet.
+Status: PARTIAL / BLOCKED — hosted infrastructure merged in #1370 at
+05ca7d3e19471e43d947ca80361d92203fc96241; useful live proof #1371 stopped
+before provider initialization at the unchanged monthly budget ceiling.
 
 Baseline: integration `889196f029f397aa17f8142e11f0753611033f3a`, successful
 maker #1365 / PR #1369, canonical Brain recovery `c1949ffc4fb699cc91162da1f9c6b2a15ba80ffe`.
@@ -88,3 +90,39 @@ all optional combined statuses to succeed; the corrected adapter derives require
 status authority from GitHub policy, enforces all required contexts/app bindings,
 retains complete advisory status evidence, and fails closed on active/unknown
 rulesets. No existing required gate or check was removed or waived.
+
+
+### Actual bounded launch — BLOCKED at paid admission
+
+Initial launch #1371 produced Swarm run 34678424277: claim5644219216,
+packet289d2911fe5e5789, worker103512386892, admission5644220292,
+denial5644220478. Dependencies were eligible and #1361 remained blocked by #1360.
+The governor read monthly reservations9.75 plus proposed0.50 against ceiling10.00;
+daily2.50/10.00 and per-run0.50/2.00 were within limits. No credentials initialized,
+model call, PR, checker call, factory decision or oc-done occurred. Scheduler green
+is not useful execution evidence.
+
+The existing denial path returned the task to queued. A second hosted admission
+(run34678449115, claim5644222071, start5644223160, denial5644223368) hit the same
+ceiling before provider execution. The coordinator then parked #1371 in oc-blocked
+(comment5644224895). This was manual failure containment after a failed proof,
+not unattended success. No second independent task was launched.
+
+Ledger audit:18 entries,18 distinct run IDs, total9.75 this month; all actual costs
+unknown. There is no evidenced duplicate or safe refund. This attempt made zero
+provider requests and added zero reservations. Limits and reservations were not
+lowered, raised, reset, refunded or bypassed.
+
+The denial lifecycle follow-up parks only an exactly verified bot claim, verifies
+blocked labels and a durable release receipt, and never restores paid eligibility.
+The observer recognizes historical denials only for the matching repository/run/
+fingerprint and modern releases for the exact claim comment/lease/fingerprint.
+Unmatched, forged, malformed or ambiguous release evidence remains an error.
+
+Fresh pre-fix observer:39 live GETs, complete, unhealthy with14 violations: the
+11 earlier violations plus two orphan claim interpretations and duplicate packet
+fingerprint from the denied retries. Replay with the corrected denial parser
+retains all records and all11 original violations; it recognizes the two actual
+denials as scoped releases. Replay is not new hosted proof. Full task execution,
+hosted checker/factory/settlement/Brain capture and two-run repeatability remain
+UNPROVEN. Legitimate monthly budget headroom is the next external blocker.
