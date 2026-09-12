@@ -98,11 +98,15 @@ class BoundedStrategyExperimentRunner:
             }
         )
         if material_fingerprint in self._suppressed_candidates:
-            raise DuplicateExperimentDispatch("candidate is suppressed for unchanged material fingerprint")
+            raise DuplicateExperimentDispatch(
+                "candidate is suppressed for unchanged material fingerprint"
+            )
         if material_fingerprint in self._completed:
             return self._completed[material_fingerprint]
         if budget.max_executions < 2:
-            raise ExperimentBudgetExceeded("baseline/candidate comparison requires two executions")
+            raise ExperimentBudgetExceeded(
+                "baseline/candidate comparison requires two executions"
+            )
 
         baseline_artifact = self._execute_once(baseline, case)
         candidate_artifact = self._execute_once(candidate, case)
@@ -140,21 +144,31 @@ class BoundedStrategyExperimentRunner:
             candidate=candidate_artifact,
             baseline_run=baseline_run,
             candidate_run=candidate_run,
-            baseline_result_fingerprints=tuple(item.fingerprint for item in baseline_results),
-            candidate_result_fingerprints=tuple(item.fingerprint for item in candidate_results),
+            baseline_result_fingerprints=tuple(
+                item.fingerprint for item in baseline_results
+            ),
+            candidate_result_fingerprints=tuple(
+                item.fingerprint for item in candidate_results
+            ),
         )
         self._completed[material_fingerprint] = result
         return result
 
-    def _execute_once(self, strategy: StrategySpec, case: EvaluationCase) -> StrategyExecutionArtifact:
+    def _execute_once(
+        self, strategy: StrategySpec, case: EvaluationCase
+    ) -> StrategyExecutionArtifact:
         dispatch_key = stable_fingerprint(
             {"strategy": strategy.fingerprint, "case": case.fingerprint}
         )
         if dispatch_key in self._dispatched_runs:
-            raise DuplicateExperimentDispatch("duplicate model/tool dispatch suppressed")
+            raise DuplicateExperimentDispatch(
+                "duplicate model/tool dispatch suppressed"
+            )
         artifact = self.executor(strategy, case)
         if artifact.strategy_fingerprint != strategy.fingerprint:
-            raise ValueError("executor returned stale or mismatched strategy fingerprint")
+            raise ValueError(
+                "executor returned stale or mismatched strategy fingerprint"
+            )
         if artifact.case_fingerprint != case.fingerprint:
             raise ValueError("executor returned stale or mismatched case fingerprint")
         self._dispatched_runs.add(dispatch_key)
@@ -169,9 +183,13 @@ class BoundedStrategyExperimentRunner:
     ) -> None:
         for strategy in (baseline, candidate):
             if strategy.task_class_id != task_class_id:
-                raise ValueError("strategy task class does not match experiment task class")
+                raise ValueError(
+                    "strategy task class does not match experiment task class"
+                )
         if case.task_class_id != task_class_id:
-            raise ValueError("evaluation case task class does not match experiment task class")
+            raise ValueError(
+                "evaluation case task class does not match experiment task class"
+            )
         if baseline.fingerprint == candidate.fingerprint:
             raise ValueError("candidate must materially differ from baseline")
 
@@ -182,13 +200,19 @@ class BoundedStrategyExperimentRunner:
         candidate: StrategyExecutionArtifact,
     ) -> None:
         artifacts = (baseline, candidate)
-        if any(item.attempts > 1 + budget.max_retries_per_strategy for item in artifacts):
+        if any(
+            item.attempts > 1 + budget.max_retries_per_strategy for item in artifacts
+        ):
             raise ExperimentBudgetExceeded("retry budget exceeded")
         if budget.max_cost_usd is not None:
-            known_costs = [item.cost_usd for item in artifacts if item.cost_usd is not None]
+            known_costs = [
+                item.cost_usd for item in artifacts if item.cost_usd is not None
+            ]
             if known_costs and sum(known_costs) > budget.max_cost_usd:
                 raise ExperimentBudgetExceeded("cost budget exceeded")
         if budget.max_latency_ms is not None:
-            known_latency = [item.latency_ms for item in artifacts if item.latency_ms is not None]
+            known_latency = [
+                item.latency_ms for item in artifacts if item.latency_ms is not None
+            ]
             if known_latency and sum(known_latency) > budget.max_latency_ms:
                 raise ExperimentBudgetExceeded("latency budget exceeded")
