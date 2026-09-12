@@ -130,8 +130,10 @@ def canonical_reader(domain: str, candidates: Sequence[str]) -> Callable[[str], 
         from runtime.scientific_intelligence.adapters import _table_exists
 
         try:
-            with psycopg.connect(url, connect_timeout=5) as conn:
-                with conn.cursor() as cur:
+            with (
+                psycopg.connect(url, connect_timeout=5) as conn,
+                conn.cursor() as cur,
+            ):
                     relation = next(
                         (name for name in candidates if _table_exists(cur, name)), None
                     )
