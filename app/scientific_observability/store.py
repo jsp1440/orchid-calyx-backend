@@ -13,9 +13,10 @@ the vertical proof and tests. No production migration is applied by this code.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from copy import deepcopy
 from threading import RLock
-from typing import Any, Iterable
+from typing import Any
 
 from .redaction import RedactionReport, redact_event_dict
 
