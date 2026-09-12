@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
 from .models import EvaluationResult, MeasurementState, MetricValue, stable_fingerprint
@@ -47,11 +47,16 @@ class EvaluatorRegistry:
         self._evaluators[key] = (spec, fn)
 
     def specs(self) -> tuple[EvaluatorSpec, ...]:
-        return tuple(spec for spec, _ in sorted(self._evaluators.values(), key=lambda item: (item[0].evaluator_id, item[0].version)))
+        return tuple(
+            spec
+            for spec, _ in sorted(
+                self._evaluators.values(), key=lambda item: (item[0].evaluator_id, item[0].version)
+            )
+        )
 
     @property
     def fingerprint(self) -> str:
-        return stable_fingerprint([spec for spec in self.specs()])
+        return stable_fingerprint([asdict(spec) for spec in self.specs()])
 
     def evaluate(
         self,
@@ -61,7 +66,7 @@ class EvaluatorRegistry:
         evaluator_ids: tuple[str, ...] | None = None,
     ) -> tuple[EvaluationResult, ...]:
         selected = []
-        for (evaluator_id, version), (spec, fn) in sorted(self._evaluators.items()):
+        for (evaluator_id, _version), (spec, fn) in sorted(self._evaluators.items()):
             if evaluator_ids is None or evaluator_id in evaluator_ids:
                 selected.append((spec, fn))
         results: list[EvaluationResult] = []
@@ -105,7 +110,10 @@ def boolean_field_evaluator(
 
     def evaluate(output: FrozenEvaluationOutput):
         if field_name not in output.payload:
-            return None, MetricValue(MeasurementState.UNKNOWN), {"field": field_name, "reason": "missing"}
+            return None, MetricValue(MeasurementState.UNKNOWN), {
+                "field": field_name,
+                "reason": "missing",
+            }
         passed = bool(output.payload[field_name])
         return passed, ratio_metric(1.0 if passed else 0.0), {"field": field_name}
 
@@ -113,7 +121,8 @@ def boolean_field_evaluator(
 
 
 def numeric_ratio_evaluator(
-    *, evaluator_id: str,
+    *,
+    evaluator_id: str,
     version: str,
     field_name: str,
     category: str,
@@ -130,7 +139,10 @@ def numeric_ratio_evaluator(
     def evaluate(output: FrozenEvaluationOutput):
         value = output.payload.get(field_name)
         if not isinstance(value, (int, float)):
-            return None, MetricValue(MeasurementState.UNKNOWN), {"field": field_name, "reason": "missing_or_non_numeric"}
+            return None, MetricValue(MeasurementState.UNKNOWN), {
+                "field": field_name,
+                "reason": "missing_or_non_numeric",
+            }
         numeric = float(value)
         passed = None if threshold is None else numeric >= threshold
         return passed, ratio_metric(numeric), {"field": field_name, "threshold": threshold}
@@ -159,11 +171,19 @@ def build_default_scientific_registry() -> EvaluatorRegistry:
             evaluator_id=evaluator_id,
             version="1",
             field_name=field_name,
-            category="scientific" if evaluator_id not in {"structured_output_valid", "idempotent"} else "task",
+            category=(
+                "scientific"
+                if evaluator_id not in {"structured_output_valid", "idempotent"}
+                else "task"
+            ),
             mandatory_gate=mandatory,
         )
         registry.register(spec, fn)
-    for evaluator_id, field_name in (("precision", "precision"), ("recall", "recall"), ("completeness", "completeness")):
+    for evaluator_id, field_name in (
+        ("precision", "precision"),
+        ("recall", "recall"),
+        ("completeness", "completeness"),
+    ):
         spec, fn = numeric_ratio_evaluator(
             evaluator_id=evaluator_id,
             version="1",
