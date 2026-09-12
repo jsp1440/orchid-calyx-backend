@@ -91,7 +91,7 @@ class PostgresProjectRecordStore:
     def put(self, *, owner_key, project_id, kind, record_id, record) -> None:
         def _work(cur):
             if cur is None:
-                return None
+                return
             from psycopg.types.json import Jsonb
 
             cur.execute(
@@ -104,7 +104,6 @@ class PostgresProjectRecordStore:
                 """,
                 (owner_key, project_id, kind, record_id, Jsonb(dict(record))),
             )
-            return None
 
         self._db_execute(_work)
 
