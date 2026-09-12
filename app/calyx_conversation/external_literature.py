@@ -363,6 +363,10 @@ def _query_plan(
     )
     queries: list[str] = []
 
+    if not clusters:
+        for genus in ordered_genera[:max_queries]:
+            queries.append(f'"{genus}" AND (orchid OR Orchidaceae)')
+
     genus_budget = 5 if wet_winter else 4
     cluster_budget = 2 if wet_winter else 3
     for genus in ordered_genera[:genus_budget]:
