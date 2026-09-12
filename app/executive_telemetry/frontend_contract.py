@@ -111,6 +111,7 @@ def build_frontend_contract(
         "panels": panels,
         "panel_index": {item["id"]: item for item in panels},
         "navigation_order": NAVIGATION,
+        "scientific_readiness": state.get("scientific_readiness"),
         "placeholder_policy": {
             "unknown_forbidden": True,
             "unavailable_required_when_missing": True,
