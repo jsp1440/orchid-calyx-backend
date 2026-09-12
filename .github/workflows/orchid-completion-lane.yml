@@ -6,6 +6,14 @@ on:
       issue_number:
         required: true
         type: string
+      wave:
+        required: false
+        default: "1"
+        type: string
+      max_waves:
+        required: false
+        default: "1"
+        type: string
       lease_comment_id:
         required: false
         default: ""
@@ -583,6 +591,7 @@ jobs:
             --reserved-usd "${{ steps.route.outputs.estimated_cost_usd }}"
 
       - name: Classify result, dispatch validation, release slot
+        id: settlement
         if: always() && steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         env:
           CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
@@ -617,6 +626,7 @@ jobs:
           fi
 
           if [[ -n "$pr" ]]; then
+            echo "pr=$pr" >> "$GITHUB_OUTPUT"
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --remove-label oc-blocked --remove-label oc-runtime-backoff --add-label oc-validating >/dev/null 2>&1 || true
             head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefName --jq '.headRefName')
             if gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$head" >/dev/null; then
@@ -662,3 +672,20 @@ jobs:
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Preferred provider completed without a durable integration PR. One bounded repair attempt remains; automatic refill remains disabled unless explicitly authorized." >/dev/null
             fi
           fi
+
+      - name: Dispatch trusted hosted completion consumer
+        if: steps.settlement.outcome == 'success' && steps.settlement.outputs.pr != '' && inputs.lease_comment_id != ''
+        env:
+          PR: ${{ steps.settlement.outputs.pr }}
+          LEASE: ${{ inputs.lease_comment_id }}
+          WAVE: ${{ inputs.wave || '1' }}
+          MAX_WAVES: ${{ inputs.max_waves || '1' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')
+          gh workflow run oc-convergence-supervisor.yml --repo "$GITHUB_REPOSITORY" \
+            --ref oc-autonomous-integration \
+            -f issue="$ISSUE_NUMBER" -f pr="$PR" -f maker_head="$head" \
+            -f worker_run="$GITHUB_RUN_ID" -f worker_attempt="$GITHUB_RUN_ATTEMPT" \
+            -f lease="$LEASE" -f wave="$WAVE" -f max_waves="$MAX_WAVES"
