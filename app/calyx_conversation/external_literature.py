@@ -259,12 +259,17 @@ def extract_taxa(
     return found
 
 
-def _mentioned_genera(question: str) -> list[str]:
-    """Genus-level subjects, derived from whatever taxa the question names."""
+def _mentioned_genera(
+    question: str, extra_taxa: list[str] | None = None
+) -> list[str]:
+    """Genus-level subjects from validated names and explicit caller taxa."""
     genera: list[str] = []
     seen: set[str] = set()
-    for taxon in extract_taxa(question):
-        genus = taxon.split()[0]
+    for taxon in [*extract_taxa(question), *(extra_taxa or [])]:
+        parts = str(taxon or "").strip().split()
+        if not parts or not parts[0][0].isupper():
+            continue
+        genus = parts[0]
         if genus.casefold() not in seen:
             seen.add(genus.casefold())
             genera.append(genus)
