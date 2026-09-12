@@ -53,10 +53,14 @@ def payload() -> dict[str, object]:
     }
 
 
-def make_executor(*, cost: float | None = 0.0, latency: int | None = 10, attempts: int = 1):
+def make_executor(
+    *, cost: float | None = 0.0, latency: int | None = 10, attempts: int = 1
+):
     calls: list[str] = []
 
-    def execute(spec: StrategySpec, eval_case: EvaluationCase) -> StrategyExecutionArtifact:
+    def execute(
+        spec: StrategySpec, eval_case: EvaluationCase
+    ) -> StrategyExecutionArtifact:
         calls.append(spec.strategy_id)
         return StrategyExecutionArtifact(
             strategy_fingerprint=spec.fingerprint,
@@ -76,7 +80,9 @@ def make_executor(*, cost: float | None = 0.0, latency: int | None = 10, attempt
 
 def test_baseline_candidate_run_is_idempotent_without_duplicate_dispatch():
     executor, calls = make_executor()
-    runner = BoundedStrategyExperimentRunner(build_default_scientific_registry(), executor)
+    runner = BoundedStrategyExperimentRunner(
+        build_default_scientific_registry(), executor
+    )
     baseline = strategy("baseline")
     candidate = strategy("candidate")
     eval_case = case()
@@ -104,7 +110,9 @@ def test_baseline_candidate_run_is_idempotent_without_duplicate_dispatch():
 
 def test_requires_budget_for_both_baseline_and_candidate():
     executor, calls = make_executor()
-    runner = BoundedStrategyExperimentRunner(build_default_scientific_registry(), executor)
+    runner = BoundedStrategyExperimentRunner(
+        build_default_scientific_registry(), executor
+    )
 
     with pytest.raises(ExperimentBudgetExceeded, match="two executions"):
         runner.run(
@@ -120,7 +128,9 @@ def test_requires_budget_for_both_baseline_and_candidate():
 
 def test_cost_and_retry_budgets_fail_closed():
     executor, _ = make_executor(cost=0.6, attempts=2)
-    runner = BoundedStrategyExperimentRunner(build_default_scientific_registry(), executor)
+    runner = BoundedStrategyExperimentRunner(
+        build_default_scientific_registry(), executor
+    )
 
     with pytest.raises(ExperimentBudgetExceeded):
         runner.run(
@@ -163,7 +173,9 @@ def test_suppressed_unchanged_candidate_is_not_dispatched():
 
 
 def test_stale_executor_artifact_is_rejected():
-    def stale_executor(spec: StrategySpec, eval_case: EvaluationCase) -> StrategyExecutionArtifact:
+    def stale_executor(
+        spec: StrategySpec, eval_case: EvaluationCase
+    ) -> StrategyExecutionArtifact:
         return StrategyExecutionArtifact(
             strategy_fingerprint="stale",
             case_fingerprint=eval_case.fingerprint,
@@ -174,7 +186,9 @@ def test_stale_executor_artifact_is_rejected():
             ),
         )
 
-    runner = BoundedStrategyExperimentRunner(build_default_scientific_registry(), stale_executor)
+    runner = BoundedStrategyExperimentRunner(
+        build_default_scientific_registry(), stale_executor
+    )
     with pytest.raises(ValueError, match="strategy fingerprint"):
         runner.run(
             task_class_id="taxonomy-research",
