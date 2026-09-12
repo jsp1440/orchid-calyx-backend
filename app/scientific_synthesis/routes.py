@@ -13,6 +13,7 @@ from .discovery import (
     CrossrefProvider,
     LiteratureDiscoveryService,
 )
+from .governance import GovernanceDecision, check_manifest_governance
 from .models import (
     ArticleDraft,
     ArticleSentence,
@@ -296,3 +297,56 @@ def build_manifest(payload: RunManifestIn):
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+
+# ── Governance Admission Check ─────────────────────────────────────────────
+
+
+class GovernanceCheckIn(BaseModel):
+    manifest: dict[str, Any] = Field(
+        description="oc-run-evidence-manifest-v1 dict as returned by POST /synthesis/run-manifest"
+    )
+    proposed_action: str = Field(
+        min_length=1,
+        description=(
+            "One of: canonical_knowledge_mutation, automatic_scientific_publication, "
+            "canonical_activation, human_review_submission, read_evidence, "
+            "build_synthesis, build_manifest"
+        ),
+    )
+
+
+class GovernanceCheckOut(BaseModel):
+    outcome: str
+    admitted: bool
+    reason: str
+    blocking_flags: list[str]
+
+
+@router.post("/governance-check", response_model=GovernanceCheckOut)
+def check_governance(payload: GovernanceCheckIn) -> GovernanceCheckOut:
+    """Evaluate whether a proposed action is permitted by a manifest's governance flags.
+
+    Takes a RunEvidenceManifest (oc-run-evidence-manifest-v1) and a proposed action
+    type and returns a typed admission decision. The check is deterministic and
+    provider-free: it reads governance flags already embedded in the manifest.
+
+    This is the executable governance/admission step in the autonomy chain:
+      immutable decision manifest → governance-check → blueprint/task decomposition
+
+    Returns 422 when the manifest contract is invalid, the fingerprint is malformed,
+    or the action is not in the governed action set.
+    """
+    try:
+        decision: GovernanceDecision = check_manifest_governance(
+            payload.manifest, payload.proposed_action
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+    return GovernanceCheckOut(
+        outcome=decision.outcome.value,
+        admitted=decision.admitted,
+        reason=decision.reason,
+        blocking_flags=decision.blocking_flags,
+    )
