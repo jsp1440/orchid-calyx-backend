@@ -14,6 +14,15 @@ from .models import (
     SafeStatusState,
     ScientificObservationEvent,
 )
+from .ranking import (
+    ClassifiedFactor,
+    MeasurementClass,
+    OpportunityInput,
+    RankingFactor,
+    RankingValidationError,
+    rank_opportunities,
+    score_opportunity,
+)
 from .service import ObservabilityService, RecordResult
 from .store import ObservationStore, get_default_store
 from .workflow import (
@@ -28,11 +37,16 @@ from .workflow import (
 )
 
 __all__ = [
+    "ClassifiedFactor",
+    "MeasurementClass",
     "ObservabilityService",
     "ObservationEventType",
     "ObservationStore",
     "ObservationValidationError",
+    "OpportunityInput",
     "PipelineStage",
+    "RankingFactor",
+    "RankingValidationError",
     "RecordResult",
     "SafeStatus",
     "SafeStatusState",
@@ -45,5 +59,7 @@ __all__ = [
     "WorkflowValidationError",
     "get_default_store",
     "parse_workflow_metadata",
+    "rank_opportunities",
+    "score_opportunity",
     "workflow_metadata",
 ]
