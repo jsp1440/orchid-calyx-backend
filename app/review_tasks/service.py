@@ -34,6 +34,7 @@ class GovernedReviewTaskService:
 
     ROUTING_CAPABILITIES = {
         "HUMAN_REVIEW_REQUIRED": "review.science",
+        "ROUTE_TO_VERIFICATION_WORKBENCH": "scientific_review",
         "EXPERT_REVIEW_REQUIRED": "review.expert",
         "PUBLICATION_REVIEW_REQUIRED": "review.publish",
     }
