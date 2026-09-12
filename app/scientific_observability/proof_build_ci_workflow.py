@@ -207,6 +207,34 @@ def _trusted_fixture_ranking(reconstruction: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _missing_evidence_probe(
+    events: list[ScientificObservationEvent],
+) -> dict[str, Any]:
+    """Run a persisted negative control over the same bounded fixture."""
+
+    store = ObservationStore()
+    payloads: list[dict[str, Any]] = []
+    for event in events:
+        payload = event.to_dict()
+        workflow = payload["extensions"]["workflow"]
+        workflow["evidence_refs"] = []
+        if workflow["resulting_state"] == WorkflowState.FAILED.value:
+            workflow["blocker_refs"] = ["issue:639"]
+        payloads.append(payload)
+
+    first = [store.append(payload)[1] for payload in payloads]
+    replay = [store.append(payload)[1] for payload in payloads]
+    reconstruction = WorkflowReconstructor(store).reconstruct(
+        str(events[0].correlation_id)
+    )
+    return {
+        "unique": len(store),
+        "first_created": all(first),
+        "replay_noop": all(not created for created in replay),
+        "reconstruction": reconstruction,
+    }
+
+
 def run_proof(
     events: list[ScientificObservationEvent] | None = None,
 ) -> dict[str, Any]:
@@ -225,6 +253,8 @@ def run_proof(
     context = build_governed_agent_context(reconstruction, ranking)
     runbook = generate_reviewable_runbook(reconstruction, context)
     snapshot = build_mission_control_snapshot(store)
+    finding_probe = _missing_evidence_probe(fixture_events)
+    cost_benefit = snapshot["workflows"][0]["cost_benefit"]
 
     return {
         "contract_version": "workflow-intelligence-e2e-proof-v1",
@@ -242,6 +272,7 @@ def run_proof(
         "context": context,
         "runbook": runbook,
         "mission_control": snapshot,
+        "finding_probe": finding_probe,
         "proof": {
             "failure_retry_recovery": (
                 any(
@@ -254,9 +285,47 @@ def run_proof(
             ),
             "completion_evidence_present": bool(reconstruction["evidence_refs"]),
             "no_unresolved_findings": reconstruction["findings"] == [],
+            "operational_finding_present": (
+                finding_probe["reconstruction"]["findings"]
+                == [
+                    {
+                        "rule_version": "workflow-intelligence-v1",
+                        "reason_code": "MISSING_COMPLETION_EVIDENCE",
+                        "inputs": {
+                            "resulting_state": "completed",
+                            "evidence_reference_count": 0,
+                        },
+                        "requires_human_review": True,
+                    }
+                ]
+                and finding_probe["reconstruction"]["blocker_refs"] == ["issue:639"]
+                and finding_probe["replay_noop"] is True
+            ),
             "ranking_preserves_unavailable": (
                 "frequency" in ranking["unavailable_factors"]
                 and "manual_time" in ranking["unavailable_factors"]
+            ),
+            "cost_benefit_preserves_unavailable": (
+                all(
+                    cost_benefit[key]["classification"] == "UNAVAILABLE"
+                    and cost_benefit[key]["value"] is None
+                    and cost_benefit[key]["source_ref"] is None
+                    for key in (
+                        "execution_count",
+                        "ci_usage",
+                        "provider_model_usage",
+                        "api_cost",
+                        "ci_hosting_cost",
+                        "manual_time",
+                        "projected_savings",
+                        "resource_usage",
+                    )
+                )
+                and cost_benefit["duration"]["classification"] == "CALCULATED"
+                and cost_benefit["retry_count"]["classification"] == "CALCULATED"
+                and cost_benefit["estimated_values_present"] is False
+                and cost_benefit["authoritative_state_mutated"] is False
+                and cost_benefit["spending_authority"] is False
             ),
             "context_is_terminal": context["status"] == "TERMINAL",
             "runbook_review_required": (

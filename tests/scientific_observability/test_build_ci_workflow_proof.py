@@ -6,6 +6,11 @@ from app.scientific_observability.proof_build_ci_workflow import (
     build_fixture_events,
     run_proof,
 )
+from app.scientific_observability.ranking import (
+    ClassifiedFactor,
+    MeasurementClass,
+    RankingValidationError,
+)
 
 
 def test_build_ci_workflow_proves_complete_canonical_path() -> None:
@@ -29,6 +34,39 @@ def test_build_ci_workflow_proves_complete_canonical_path() -> None:
     assert report["context"]["next_legal_actions"] == []
     assert report["runbook"]["contract_version"] == "reviewable-runbook-v1"
     assert report["mission_control"]["workflow_count"] == 1
+
+    finding_probe = report["finding_probe"]
+    assert finding_probe["unique"] == 6
+    assert finding_probe["first_created"] is True
+    assert finding_probe["replay_noop"] is True
+    finding = finding_probe["reconstruction"]["findings"][0]
+    assert finding["reason_code"] == "MISSING_COMPLETION_EVIDENCE"
+    assert finding_probe["reconstruction"]["blocker_refs"] == ["issue:639"]
+
+    cost = report["mission_control"]["workflows"][0]["cost_benefit"]
+    for key in (
+        "execution_count",
+        "ci_usage",
+        "provider_model_usage",
+        "api_cost",
+        "ci_hosting_cost",
+        "manual_time",
+        "projected_savings",
+        "resource_usage",
+    ):
+        assert cost[key]["classification"] == "UNAVAILABLE"
+        assert cost[key]["value"] is None
+        assert cost[key]["source_ref"] is None
+    assert cost["duration"]["classification"] == "CALCULATED"
+    assert cost["retry_count"] == {
+        "classification": "CALCULATED",
+        "value": 1,
+        "unit": "retries",
+        "source_ref": cost["duration"]["source_ref"],
+    }
+    assert cost["estimated_values_present"] is False
+    assert cost["authoritative_state_mutated"] is False
+    assert cost["spending_authority"] is False
 
 
 def test_build_ci_workflow_rejects_cross_environment_contamination() -> None:
@@ -55,3 +93,8 @@ def test_build_ci_workflow_rejects_unlabeled_fixture_input() -> None:
 
     with pytest.raises(ValueError, match="unlabeled"):
         run_proof(unlabeled)
+
+
+def test_unavailable_cost_classification_rejects_fabricated_zero() -> None:
+    with pytest.raises(RankingValidationError, match="must not contain"):
+        ClassifiedFactor(MeasurementClass.UNAVAILABLE, 0)
