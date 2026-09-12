@@ -8,7 +8,7 @@ import pytest
 
 from app.kernel.identity import OCIDFactory, OCIDKind
 from app.scientific_observability.anomalies import AnomalyCode, detect, to_review_task_input
-from app.scientific_observability.exporter import export, export_enabled, to_otel_span
+from app.scientific_observability.exporter import export, export_enabled
 from app.scientific_observability.models import (
     ObservationEventType,
     ObservationValidationError,
@@ -28,12 +28,14 @@ from app.scientific_observability.store import ObservationStore
 
 
 def _event(**kw) -> ScientificObservationEvent:
-    defaults = dict(
-        event_type=ObservationEventType.EVIDENCE_ASSERTION_CREATED,
-        pipeline_stage=PipelineStage.TAXONOMY_EVIDENCE_RESOLUTION,
-        component="app/evidence_aggregation",
-        safe_status=SafeStatus(status=SafeStatusState.OK, reason_code="ASSERTION_CREATED"),
-    )
+    defaults = {
+        "event_type": ObservationEventType.EVIDENCE_ASSERTION_CREATED,
+        "pipeline_stage": PipelineStage.TAXONOMY_EVIDENCE_RESOLUTION,
+        "component": "app/evidence_aggregation",
+        "safe_status": SafeStatus(
+            status=SafeStatusState.OK, reason_code="ASSERTION_CREATED"
+        ),
+    }
     defaults.update(kw)
     return ScientificObservationEvent(**defaults)
 
@@ -65,7 +67,7 @@ def test_parent_cannot_equal_self_and_must_be_event_kind():
 
 def test_timestamps_must_be_tz_aware_and_ordered():
     with pytest.raises(ObservationValidationError):
-        _event(occurred_at=datetime(2026, 1, 1))  # naive
+        _event(occurred_at=datetime(2026, 1, 1))  # noqa: DTZ001  # naive
     later = datetime.now(timezone.utc)
     with pytest.raises(ObservationValidationError):
         _event(occurred_at=later, recorded_at=later - timedelta(seconds=5))
@@ -218,8 +220,11 @@ def test_protected_locality_binding_is_embargoed():
     store = ObservationStore()
     ev = _event(source={"source_id": "s", "source_anchor_id": "a"}, extensions={"latitude": 1.0})
     stored, _, report = store.append(ev.to_dict())
-    anomaly = [a for a in detect(stored, redaction=report)
-               if a.code == AnomalyCode.PROTECTED_LOCALITY_EXPOSURE][0]
+    anomaly = next(
+        a
+        for a in detect(stored, redaction=report)
+        if a.code == AnomalyCode.PROTECTED_LOCALITY_EXPOSURE
+    )
     binding = to_review_task_input(anomaly)
     assert binding.embargoed is True
     assert binding.display_policy == "SEALED_PARTNER"
