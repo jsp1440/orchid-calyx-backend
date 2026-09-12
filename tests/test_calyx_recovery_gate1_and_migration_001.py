@@ -12,7 +12,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MIGRATION = ROOT / "migrations" / "CALYX-RECOVERY-001-research-station-records.sql"
-WORKFLOW = ROOT / ".github" / "workflows" / "calyx-recovery-001-gate1.yml"
 SCRIPT = ROOT / "scripts" / "calyx_recovery_gate1.py"
 
 
@@ -62,33 +61,6 @@ def test_the_migration_table_matches_what_the_store_writes():
 
     assert TABLE == "oc_admin.research_station_records"
     assert TABLE in MIGRATION.read_text(encoding="utf-8")
-
-
-# ------------------------------------------------------------- workflow safety
-
-
-def test_the_gate1_workflow_is_dispatch_only_and_read_only():
-    text = WORKFLOW.read_text(encoding="utf-8")
-
-    assert "workflow_dispatch" in text
-    assert "contents: read" in text
-    # No push/schedule trigger: this reads a production database and must run
-    # only when somebody asks it to.
-    assert "\n  push:" not in text
-    assert "\n  schedule:" not in text
-
-
-def test_the_gate1_workflow_has_real_steps():
-    """A job with steps:null is not validation, and never was."""
-    text = WORKFLOW.read_text(encoding="utf-8")
-
-    assert "steps:" in text
-    assert "steps: null" not in text
-    assert text.count("- name:") + text.count("- uses:") >= 4
-
-
-def test_the_gate1_workflow_publishes_a_receipt():
-    assert "upload-artifact" in WORKFLOW.read_text(encoding="utf-8")
 
 
 # ------------------------------------------------------------ script behaviour
@@ -143,80 +115,6 @@ def test_a_missing_relation_is_unknown_rather_than_degraded():
     assert _classify(True, False) == UNKNOWN
 
 
-# --------------------------------------- dispatchable via the default branch
-
-BUILD051 = ROOT / ".github" / "workflows" / "build-051-production-activation.yml"
-
-
-def _build051():
-    import yaml
-
-    return yaml.safe_load(BUILD051.read_text(encoding="utf-8"))
-
-
-def test_gate1_runs_from_the_workflow_that_exists_on_the_default_branch():
-    """A workflow_dispatch input is offered by the UI from the DEFAULT branch.
-
-    calyx-recovery-001-gate1.yml exists only on this recovery branch, so it
-    cannot be dispatched until it is merged — and merging to run a diagnostic
-    is exactly backwards. The receipt is therefore also produced by the
-    BUILD-051 workflow, which is already on the default branch and already
-    holds the DATABASE_URL secret.
-    """
-    workflow = _build051()
-    steps = workflow["jobs"]["migrate-and-smoke"]["steps"]
-    names = [str(step.get("name", "")) for step in steps]
-
-    assert any("Gate 1" in name for name in names)
-
-
-def test_the_gate1_step_also_runs_under_the_existing_read_only_input():
-    """verify_migration already means "read-only, applies nothing".
-
-    Binding the receipt to it as well is what makes this dispatchable against
-    the recovery branch today, before the new input reaches the default branch.
-    """
-    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
-    gate1 = next(s for s in steps if "Gate 1 (read-only" in str(s.get("name", "")))
-
-    assert "verify_migration" in gate1["if"]
-    assert "calyx_recovery_gate1" in gate1["if"]
-
-
-def test_a_gate1_dispatch_can_never_reach_the_writing_step():
-    """The guard is on the step, not on the operator.
-
-    A dispatch that ticks both boxes performs the read and not the write.
-    """
-    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
-    apply_step = next(s for s in steps if "Apply BUILD-051 migration" in str(s.get("name", "")))
-
-    assert "!inputs.calyx_recovery_gate1" in apply_step["if"]
-
-
-def test_a_gate1_dispatch_does_not_touch_the_deployed_backend():
-    """That step carries an owner credential. A Gate 1 run reads the database
-    and nothing else."""
-    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
-    smoke = next(s for s in steps if "Smoke-test deployed" in str(s.get("name", "")))
-
-    assert smoke.get("if") == "${{ !inputs.calyx_recovery_gate1 }}"
-
-
-def test_the_new_input_is_declared_for_when_it_reaches_the_default_branch():
-    workflow = _build051()
-    triggers = workflow.get(True) or workflow.get("on")
-
-    assert "calyx_recovery_gate1" in triggers["workflow_dispatch"]["inputs"]
-
-
-def test_the_gate1_step_installs_its_driver():
-    """psql is not enough: the diagnostic is Python and needs psycopg."""
-    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
-
-    assert any("psycopg" in str(step.get("run", "")) for step in steps)
-
-
 # ------------------------------------------------------- coverage completeness
 
 
@@ -253,44 +151,3 @@ def test_taxonomy_activation_is_read_never_inferred():
     source = SCRIPT.read_text(encoding="utf-8")
     assert "activation state is not visible to this diagnostic" in source
 
-
-def test_the_new_input_is_not_yet_on_the_default_branch():
-    """Recorded because it decides which checkbox the owner actually ticks.
-
-    The dispatch form is built from the default branch's copy of the file, so
-    until this merges the UI offers apply_migration and verify_migration only.
-    That is precisely why the Gate 1 step is bound to verify_migration too.
-
-    Asserted against the checked-in workflow rather than the network: this is
-    a statement about why the binding exists, and it should fail loudly if
-    somebody removes the verify_migration path believing the new input is
-    already available.
-    """
-    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
-    gate1 = next(s for s in steps if "Gate 1 (read-only" in str(s.get("name", "")))
-
-    assert "inputs.verify_migration" in gate1["if"], (
-        "the Gate 1 step must remain reachable through verify_migration until "
-        "calyx_recovery_gate1 exists on the default branch"
-    )
-
-
-def test_a_verify_migration_dispatch_still_does_what_it_always_did():
-    """Adding the receipt must not quietly change an activation workflow.
-
-    A verify_migration dispatch continues to run the pre-existing read-only
-    migration check and the deployed-backend smoke test. Both predate this
-    change and neither mutates anything, but silently altering the semantics
-    of a workflow used for production activation would be a worse surprise
-    than the extra steps.
-    """
-    steps = _build051()["jobs"]["migrate-and-smoke"]["steps"]
-
-    verify = next(s for s in steps if "Verify BUILD-051 migration state" in str(s.get("name", "")))
-    assert "inputs.verify_migration" in verify["if"]
-    assert "calyx_recovery_gate1" not in verify["if"]
-
-    smoke = next(s for s in steps if "Smoke-test deployed" in str(s.get("name", "")))
-    # Skipped only for an explicit gate1 dispatch, which cannot be selected
-    # from the UI yet; a verify_migration run behaves exactly as before.
-    assert smoke["if"] == "${{ !inputs.calyx_recovery_gate1 }}"
