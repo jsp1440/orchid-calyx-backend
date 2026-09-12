@@ -10,7 +10,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 MIGRATION = ROOT / "migrations" / "CALYX-RECOVERY-001-research-station-records.sql"
 WORKFLOW = ROOT / ".github" / "workflows" / "calyx-recovery-001-gate1.yml"
