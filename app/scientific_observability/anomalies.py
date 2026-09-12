@@ -137,13 +137,13 @@ def detect(
         and not event.get("parent_event_id")
         and evidence.get("verification_state") not in {"withheld", "review_required"}
     ):
-            found.append(
-                _anomaly(
-                    AnomalyCode.UNTRACEABLE_AI_CONCLUSION,
+        found.append(
+            _anomaly(
+                AnomalyCode.UNTRACEABLE_AI_CONCLUSION,
                     "AI participated but the conclusion has no anchor or upstream lineage",
-                    event,
-                )
+                event,
             )
+        )
 
     if etype == "api.contract.refused" and reason_code in {"PRODUCER_CONSUMER_MISMATCH", "CONTRACT_MISMATCH"}:
         found.append(
@@ -195,7 +195,9 @@ def detect(
             and (event.get("extensions") or {}).get("readiness_state") == "blocked"
         )
     ):
-            found.append(_anomaly(AnomalyCode.READINESS_REGRESSION, "Module readiness regressed", event))
+        found.append(
+            _anomaly(AnomalyCode.READINESS_REGRESSION, "Module readiness regressed", event)
+        )
 
     return found
 
