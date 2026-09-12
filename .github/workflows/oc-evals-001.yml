@@ -1,0 +1,28 @@
+name: OC-EVALS-001 Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/evals/**'
+      - 'app/routers/health.py'
+      - 'migrations/20260912_oc_evals_001a.sql'
+      - 'tests/test_oc_evals_*.py'
+      - '.github/workflows/oc-evals-001.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt pytest httpx ruff
+      - run: python -m ruff check app/evals tests/test_oc_evals_contracts.py tests/test_oc_evals_evaluators.py tests/test_oc_evals_strategy_runner.py tests/test_oc_evals_promotion.py tests/test_oc_evals_observability.py
+      - run: python -m ruff format --check app/evals tests/test_oc_evals_contracts.py tests/test_oc_evals_evaluators.py tests/test_oc_evals_strategy_runner.py tests/test_oc_evals_promotion.py tests/test_oc_evals_observability.py
+      - run: python -m pytest -q tests/test_oc_evals_contracts.py tests/test_oc_evals_evaluators.py tests/test_oc_evals_strategy_runner.py tests/test_oc_evals_promotion.py tests/test_oc_evals_observability.py
+      - run: python -m compileall -q app/evals
+      - run: git diff --check
