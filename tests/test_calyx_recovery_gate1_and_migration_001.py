@@ -150,4 +150,3 @@ def test_taxonomy_activation_is_read_never_inferred():
     assert TAXONOMY_RELEASE_CANDIDATES
     source = SCRIPT.read_text(encoding="utf-8")
     assert "activation state is not visible to this diagnostic" in source
-
