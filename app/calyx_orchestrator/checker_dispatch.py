@@ -293,6 +293,8 @@ def parse_evidence(comment_body: str) -> CheckerEvidence | None:
     try:
         payload = json.loads(json_text)
         verdict = CheckerVerdict(str(payload["verdict"]))
+        if type(payload["required_checks_passed"]) is not bool:
+            return None
         return CheckerEvidence(
             repository=str(payload["repository"]),
             issue_number=int(payload["issue_number"]),
@@ -301,7 +303,7 @@ def parse_evidence(comment_body: str) -> CheckerEvidence | None:
             checker_id=str(payload["checker_id"]),
             maker_id=str(payload["maker_id"]),
             verdict=verdict,
-            required_checks_passed=bool(payload["required_checks_passed"]),
+            required_checks_passed=payload["required_checks_passed"],
             reason=str(payload["reason"]),
             material_fingerprint=str(payload["material_fingerprint"]),
             repair_lineage=payload.get("repair_lineage"),

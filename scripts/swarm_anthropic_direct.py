@@ -57,6 +57,7 @@ PROTECTED_FILES = {
     "scripts/swarm_governor_precheck.py",
     "scripts/swarm_governor_postrun.py",
     "scripts/swarm_governor_github_ledger.py",
+    "scripts/oc_hosted_completion.py",
 }
 PROTECTED_BASENAMES = {
     ".env",

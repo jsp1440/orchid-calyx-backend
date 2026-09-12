@@ -240,7 +240,9 @@ def test_checker_fail_evidence_routes_to_prepare_repair() -> None:
 
 
 def test_checker_fail_with_repair_lineage_is_recorded() -> None:
-    ev = _evidence(verdict=CheckerVerdict.FAIL, repair_lineage="abc123-repair-attempt-1")
+    ev = _evidence(
+        verdict=CheckerVerdict.FAIL, repair_lineage="abc123-repair-attempt-1"
+    )
     assert ev.verdict is CheckerVerdict.FAIL
     assert ev.repair_lineage == "abc123-repair-attempt-1"
 
@@ -422,3 +424,14 @@ def test_validate_reports_all_mismatches_not_just_first() -> None:
     assert "REPOSITORY_MISMATCH" in reasons
     assert "ISSUE_NUMBER_MISMATCH" in reasons
     assert "HEAD_SHA_MISMATCH" in reasons
+
+
+@pytest.mark.parametrize("value", ["false", "true", 0, 1, None, [], {}])
+def test_required_checks_requires_json_boolean(value):
+    original = serialize_evidence(_evidence())
+    body = original.replace(
+        '"required_checks_passed": true',
+        '"required_checks_passed": ' + __import__("json").dumps(value),
+    )
+    assert body != original
+    assert parse_evidence(body) is None

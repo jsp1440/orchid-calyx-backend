@@ -188,6 +188,8 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     uses: ./.github/workflows/orchid-completion-lane.yml
     with:
+      wave: ${{ inputs.wave || '1' }}
+      max_waves: ${{ inputs.max_waves || '4' }}
       issue_number: ${{ format('{0}', matrix.issue_number) }}
       lease_comment_id: ${{ format('{0}', matrix.lease_comment_id) }}
     secrets: inherit
@@ -302,7 +304,7 @@ jobs:
 
   refill:
     needs: [plan, workers, provider_free_workers]
-    if: always() && vars.OC_GOVERNOR_AUTO_REFILL == 'true' && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.provider_free_workers.result != 'failure' && needs.plan.outputs.launch_count != '0'
+    if: always() && needs.plan.outputs.provider_blocked == 'true' && vars.OC_GOVERNOR_AUTO_REFILL == 'true' && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.provider_free_workers.result != 'failure' && needs.plan.outputs.launch_count != '0'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
