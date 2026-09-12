@@ -42,7 +42,9 @@ def test_default_registry_is_reproducible_for_frozen_output():
     first = registry.evaluate(run_identity_fingerprint="run-1", output=output)
     second = registry.evaluate(run_identity_fingerprint="run-1", output=output)
     assert first == second
-    assert all(result.evidence["output_fingerprint"] == output.fingerprint for result in first)
+    assert all(
+        result.evidence["output_fingerprint"] == output.fingerprint for result in first
+    )
     assert mandatory_gate_failures(first) == ()
 
 
@@ -52,7 +54,10 @@ def test_deliberate_scientific_and_safety_violations_fail_mandatory_gates():
         run_identity_fingerprint="run-2",
         output=_output(citation_anchor_valid=False, protected_locality_safe=False),
     )
-    assert mandatory_gate_failures(results) == ("citation_anchor_valid", "protected_locality_safe")
+    assert mandatory_gate_failures(results) == (
+        "citation_anchor_valid",
+        "protected_locality_safe",
+    )
 
 
 def test_missing_metric_is_unknown_not_zero():
