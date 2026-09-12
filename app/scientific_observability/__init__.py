@@ -16,6 +16,16 @@ from .models import (
 )
 from .service import ObservabilityService, RecordResult
 from .store import ObservationStore, get_default_store
+from .workflow import (
+    WorkflowActorType,
+    WorkflowReconstructor,
+    WorkflowStage,
+    WorkflowState,
+    WorkflowType,
+    WorkflowValidationError,
+    parse_workflow_metadata,
+    workflow_metadata,
+)
 
 __all__ = [
     "ObservabilityService",
@@ -27,5 +37,13 @@ __all__ = [
     "SafeStatus",
     "SafeStatusState",
     "ScientificObservationEvent",
+    "WorkflowActorType",
+    "WorkflowReconstructor",
+    "WorkflowStage",
+    "WorkflowState",
+    "WorkflowType",
+    "WorkflowValidationError",
     "get_default_store",
+    "parse_workflow_metadata",
+    "workflow_metadata",
 ]
