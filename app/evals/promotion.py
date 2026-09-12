@@ -59,7 +59,9 @@ class PromotionOutcome:
     reasons: tuple[str, ...] = ()
 
 
-def _result_by_id(results: Iterable[EvaluationResult], evaluator_id: str) -> EvaluationResult | None:
+def _result_by_id(
+    results: Iterable[EvaluationResult], evaluator_id: str
+) -> EvaluationResult | None:
     matches = [result for result in results if result.evaluator_id == evaluator_id]
     if not matches:
         return None
@@ -82,7 +84,9 @@ def _mandatory_failures(results: Iterable[EvaluationResult]) -> tuple[str, ...]:
     return tuple(sorted(set(failures)))
 
 
-def _aggregate_metric(results: Iterable[EvaluationResult], field_name: str) -> float | None:
+def _aggregate_metric(
+    results: Iterable[EvaluationResult], field_name: str
+) -> float | None:
     values: list[float] = []
     for result in results:
         metric = getattr(result, field_name)
@@ -175,13 +179,18 @@ def decide_strategy(
     requires_human_approval = task_class.risk_class.lower() in {
         value.lower() for value in policy.high_risk_classes
     }
-    if state == StrategyDecisionState.PROMOTE and requires_human_approval and not owner_approved:
+    if (
+        state == StrategyDecisionState.PROMOTE
+        and requires_human_approval
+        and not owner_approved
+    ):
         state = StrategyDecisionState.LIMITED_CANARY
         reasons.append("owner_approval_required_for_full_promotion")
 
     rollback = (
         baseline.fingerprint
-        if state in {StrategyDecisionState.PROMOTE, StrategyDecisionState.LIMITED_CANARY}
+        if state
+        in {StrategyDecisionState.PROMOTE, StrategyDecisionState.LIMITED_CANARY}
         else None
     )
     decision = StrategyDecision(
@@ -227,7 +236,8 @@ def decide_strategy(
         "decision": state.value,
         "measured_outcome": (
             "benefit"
-            if state in {StrategyDecisionState.PROMOTE, StrategyDecisionState.LIMITED_CANARY}
+            if state
+            in {StrategyDecisionState.PROMOTE, StrategyDecisionState.LIMITED_CANARY}
             else "unmeasured"
             if state == StrategyDecisionState.UNMEASURED
             else "no-benefit"
