@@ -40,6 +40,26 @@ def test_direct_executor_rejects_arbitrary_validation_command() -> None:
     assert result == "ERROR: unsupported check: curl"
 
 
+def test_validation_receipt_retains_exit_code_without_command_output(
+    monkeypatch, capsys
+):
+    from subprocess import CompletedProcess
+
+    monkeypatch.setattr(
+        direct,
+        "_run",
+        lambda cmd, **kwargs: CompletedProcess(cmd, 1, "private test output", ""),
+    )
+    result = direct._tool_run_check(
+        {"name": "pytest", "target": "tests/test_example.py"}
+    )
+    logged = capsys.readouterr().out
+    assert '"exit_code": 1' in logged
+    assert '"check": "pytest"' in logged
+    assert "private test output" not in logged
+    assert "private test output" in result
+
+
 def test_direct_executor_builds_anthropic_messages_request() -> None:
     captured = {}
 

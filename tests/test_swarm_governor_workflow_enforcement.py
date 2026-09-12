@@ -72,6 +72,28 @@ def get_concurrency(workflow: dict) -> dict | None:
     return workflow.get("concurrency")
 
 
+def test_completion_worker_validation_dependencies_precede_paid_execution() -> None:
+    steps = all_steps(load_workflow("orchid-completion-lane.yml"))
+    execution = next(i for i, s in enumerate(steps) if s.get("id") == "claude")
+    setup = next(
+        i
+        for i, s in enumerate(steps)
+        if s.get("name") == "Prepare worker validation Python"
+    )
+    install = next(
+        i
+        for i, s in enumerate(steps)
+        if s.get("name") == "Install worker validation dependencies"
+    )
+    assert setup < install < execution
+    for index in (setup, install):
+        step = steps[index]
+        assert step["if"] == steps[execution]["if"]
+        assert "ANTHROPIC_API_KEY" not in str(step)
+    assert "-r requirements.txt" in steps[install]["run"]
+    assert "pip install pytest ruff" in steps[install]["run"]
+
+
 # ─── concurrency group ───────────────────────────────────────────────────────
 
 

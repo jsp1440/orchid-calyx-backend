@@ -209,6 +209,21 @@ jobs:
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
             --body "[OC-AUTO] NO-API mode active; all provider steps skipped. Issue returned to queue. Set NO_API_MODE=false (repository variable) to enable provider execution. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
 
+      - name: Prepare worker validation Python
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install worker validation dependencies
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
+        run: |
+          python3 -m pip install -r requirements.txt
+          python3 -m pip install pytest ruff
+          python3 -m pytest --version
+          python3 -m ruff --version
+
       - name: Execute issue with governed direct Anthropic API
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         id: claude
