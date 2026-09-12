@@ -24,6 +24,7 @@ from .ranking import (
     rank_opportunities,
     score_opportunity,
 )
+from .runbook import RunbookValidationError, generate_reviewable_runbook
 from .service import ObservabilityService, RecordResult
 from .store import ObservationStore, get_default_store
 from .workflow import (
@@ -51,6 +52,7 @@ __all__ = [
     "RankingFactor",
     "RankingValidationError",
     "RecordResult",
+    "RunbookValidationError",
     "SafeStatus",
     "SafeStatusState",
     "ScientificObservationEvent",
@@ -61,6 +63,7 @@ __all__ = [
     "WorkflowType",
     "WorkflowValidationError",
     "build_governed_agent_context",
+    "generate_reviewable_runbook",
     "get_default_store",
     "legal_next_states",
     "parse_workflow_metadata",

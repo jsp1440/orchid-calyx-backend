@@ -305,6 +305,7 @@ class WorkflowReconstructor:
             stages.append(
                 {
                     "event_id": event.get("event_id"),
+                    "recorded_at": event.get("recorded_at"),
                     "sequence": event.get("sequence"),
                     "stage": observation.stage.value,
                     "previous_state": (
