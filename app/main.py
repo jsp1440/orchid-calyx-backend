@@ -25,14 +25,15 @@ from app.mission_control_briefing.routes import (
     router as mission_control_briefing_router,
 )
 from app.mission_control_release.routes import router as mission_control_release_router
-from app.missions.routers import router as missions_router
-from app.missions.routers import runtime_queue_router, templates_router
+from app.missions.routers import (
+    router as missions_router,
+    runtime_queue_router,
+    templates_router,
+)
 from app.ontology.routers import router as ontology_router
 from app.publication.routers import router as publication_router
 from app.reasoning_ledger.routes import (
     project_router as reasoning_ledger_project_router,
-)
-from app.reasoning_ledger.routes import (
     router as reasoning_ledger_router,
 )
 from app.reasoning_publication.routes import router as reasoning_publication_router
@@ -74,16 +75,15 @@ from runtime.autonomous_runner import (
     execute_next_job,
 )
 from runtime.cds_router import router as cds_router
-from runtime.constitutional_orchestrator import AutonomyLevel
 from runtime.constitutional_orchestrator import (
+    AutonomyLevel,
     orchestrator as constitutional_orchestrator,
 )
 from runtime.constitutional_router import router as constitutional_router
 from runtime.kernel_router import router as kernel_router
 from runtime.orchestrator_router import router as orchestrator_router
 from runtime.planner_router import router as planner_router
-from runtime.router_fastapi import router as runtime_router
-from runtime.router_fastapi import science_router
+from runtime.router_fastapi import router as runtime_router, science_router
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
