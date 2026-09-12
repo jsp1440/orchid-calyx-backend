@@ -33,12 +33,16 @@ class EvaluatorSpec:
         return stable_fingerprint(self)
 
 
-EvaluatorFn = Callable[[FrozenEvaluationOutput], tuple[bool | None, MetricValue, dict[str, Any]]]
+EvaluatorFn = Callable[
+    [FrozenEvaluationOutput], tuple[bool | None, MetricValue, dict[str, Any]]
+]
 
 
 @dataclass
 class EvaluatorRegistry:
-    _evaluators: dict[tuple[str, str], tuple[EvaluatorSpec, EvaluatorFn]] = field(default_factory=dict)
+    _evaluators: dict[tuple[str, str], tuple[EvaluatorSpec, EvaluatorFn]] = field(
+        default_factory=dict
+    )
 
     def register(self, spec: EvaluatorSpec, fn: EvaluatorFn) -> None:
         key = (spec.evaluator_id, spec.version)
@@ -51,7 +55,8 @@ class EvaluatorRegistry:
         return tuple(
             spec
             for spec, _ in sorted(
-                self._evaluators.values(), key=lambda item: (item[0].evaluator_id, item[0].version)
+                self._evaluators.values(),
+                key=lambda item: (item[0].evaluator_id, item[0].version),
             )
         )
 
@@ -96,7 +101,8 @@ def ratio_metric(value: float) -> MetricValue:
 
 
 def boolean_field_evaluator(
-    *, evaluator_id: str,
+    *,
+    evaluator_id: str,
     version: str,
     field_name: str,
     category: str,
@@ -111,10 +117,14 @@ def boolean_field_evaluator(
 
     def evaluate(output: FrozenEvaluationOutput):
         if field_name not in output.payload:
-            return None, MetricValue(MeasurementState.UNKNOWN), {
-                "field": field_name,
-                "reason": "missing",
-            }
+            return (
+                None,
+                MetricValue(MeasurementState.UNKNOWN),
+                {
+                    "field": field_name,
+                    "reason": "missing",
+                },
+            )
         passed = bool(output.payload[field_name])
         return passed, ratio_metric(1.0 if passed else 0.0), {"field": field_name}
 
@@ -140,13 +150,21 @@ def numeric_ratio_evaluator(
     def evaluate(output: FrozenEvaluationOutput):
         value = output.payload.get(field_name)
         if not isinstance(value, (int, float)):
-            return None, MetricValue(MeasurementState.UNKNOWN), {
-                "field": field_name,
-                "reason": "missing_or_non_numeric",
-            }
+            return (
+                None,
+                MetricValue(MeasurementState.UNKNOWN),
+                {
+                    "field": field_name,
+                    "reason": "missing_or_non_numeric",
+                },
+            )
         numeric = float(value)
         passed = None if threshold is None else numeric >= threshold
-        return passed, ratio_metric(numeric), {"field": field_name, "threshold": threshold}
+        return (
+            passed,
+            ratio_metric(numeric),
+            {"field": field_name, "threshold": threshold},
+        )
 
     return spec, evaluate
 
