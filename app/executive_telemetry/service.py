@@ -3,7 +3,17 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from runtime.executive.telemetry import activation_matrix, collect_subsystems, source_recommendations
+from app.scientific_observability.readiness import (
+    DIMENSIONS,
+    DimensionScore,
+    DimensionState,
+    build_readiness,
+)
+from runtime.executive.telemetry import (
+    activation_matrix,
+    collect_subsystems,
+    source_recommendations,
+)
 
 
 def _now() -> str:
@@ -44,6 +54,30 @@ def _public_subsystem(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _scientific_readiness(*, generated_at: str, blockers: list[str]) -> dict[str, Any]:
+    """Build the truthful SCI-OBS readiness view for Mission Control.
+
+    The executive telemetry service does not invent measurements. Until a
+    canonical producer supplies a dimension, it remains unavailable with an
+    explicit missing requirement and any upstream blockers. This preserves the
+    scientific-observability contract while keeping the read endpoint free of
+    authoritative side effects.
+    """
+
+    dimensions = {
+        key: DimensionScore(
+            key=key,
+            state=DimensionState.UNAVAILABLE,
+            missing_requirements=[f"canonical {key} measurement unavailable"],
+            upstream_blockers=list(blockers),
+            limitation="No canonical measurement was supplied to executive telemetry.",
+            measured_at=generated_at,
+        )
+        for key in DIMENSIONS
+    }
+    return build_readiness(dimensions, {})
+
+
 def build_executive_state(*, include_operations: bool = False) -> dict[str, Any]:
     generated_at = _now()
     partial_failures: list[dict[str, Any]] = []
@@ -51,7 +85,7 @@ def build_executive_state(*, include_operations: bool = False) -> dict[str, Any]
     try:
         subsystem_models = collect_subsystems()
         subsystem_rows = [item.as_dict() for item in subsystem_models]
-    except Exception as exc:  # pragma: no cover - deployment degradation path
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - deployment degradation path
         subsystem_rows = []
         partial_failures.append(
             {
@@ -63,7 +97,7 @@ def build_executive_state(*, include_operations: bool = False) -> dict[str, Any]
 
     try:
         recommendations = source_recommendations()
-    except Exception as exc:  # pragma: no cover - deployment degradation path
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - deployment degradation path
         recommendations = []
         partial_failures.append(
             {
@@ -103,6 +137,10 @@ def build_executive_state(*, include_operations: bool = False) -> dict[str, Any]
         ),
         "recommendation_summary": recommendation_summary,
         "active_blockers": blockers,
+        "scientific_readiness": _scientific_readiness(
+            generated_at=generated_at,
+            blockers=blockers,
+        ),
         "data_freshness": {
             str(item.get("id")): item.get("telemetry_freshness") or "unavailable"
             for item in subsystem_rows
