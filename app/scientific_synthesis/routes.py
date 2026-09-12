@@ -13,6 +13,7 @@ from .discovery import (
     CrossrefProvider,
     LiteratureDiscoveryService,
 )
+from .governance import GovernanceDecision, check_manifest_governance
 from .models import (
     ArticleDraft,
     ArticleSentence,
@@ -24,7 +25,6 @@ from .models import (
     SynthesisClaim,
     VerificationState,
 )
-from .governance import GovernanceDecision, check_manifest_governance
 from .run_manifest import build_run_evidence_manifest
 from .service import ScientificSynthesisService
 
