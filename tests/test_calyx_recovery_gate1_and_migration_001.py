@@ -10,7 +10,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 MIGRATION = ROOT / "migrations" / "CALYX-RECOVERY-001-research-station-records.sql"
@@ -120,6 +119,7 @@ def test_without_a_database_every_field_is_unknown_not_zero(monkeypatch):
         [sys.executable, str(SCRIPT)],
         capture_output=True,
         text=True,
+        check=False,
         cwd=str(ROOT),
         env={"PATH": "/usr/bin:/bin", "HOME": "/tmp"},
     )
@@ -236,8 +236,8 @@ def test_every_domain_the_recovery_requires_is_probed():
 def test_no_domain_is_probed_against_an_empty_candidate_list():
     """UNKNOWN must mean "the schema lacks it", never "nobody wrote candidates"."""
     sys.path.insert(0, str(ROOT))
-    from scripts.calyx_recovery_gate1 import EXTRA_DOMAIN_CANDIDATES, SCIENTIFIC_DOMAINS
     from runtime.scientific_readers import _candidates
+    from scripts.calyx_recovery_gate1 import EXTRA_DOMAIN_CANDIDATES, SCIENTIFIC_DOMAINS
 
     shared = _candidates()
     for domain in SCIENTIFIC_DOMAINS:
