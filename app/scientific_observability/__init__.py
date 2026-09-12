@@ -19,13 +19,13 @@ from .store import ObservationStore, get_default_store
 
 __all__ = [
     "ObservationEventType",
+    "ObservationStore",
     "ObservationValidationError",
+    "ObservabilityService",
     "PipelineStage",
+    "RecordResult",
     "SafeStatus",
     "SafeStatusState",
     "ScientificObservationEvent",
-    "ObservabilityService",
-    "RecordResult",
-    "ObservationStore",
     "get_default_store",
 ]
