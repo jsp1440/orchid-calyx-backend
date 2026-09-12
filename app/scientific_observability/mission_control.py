@@ -40,7 +40,7 @@ def _unavailable_metric(unit: str | None = None) -> dict[str, Any]:
 
 
 def _calculated_metric(
-    value: int | float,
+    value: float,
     unit: str,
     source_ref: str,
 ) -> dict[str, Any]:
