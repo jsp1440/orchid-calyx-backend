@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from .agent_context import ContextValidationError, build_governed_agent_context
@@ -27,6 +28,65 @@ MAX_WORKFLOWS = 50
 
 def _unavailable() -> ClassifiedFactor:
     return ClassifiedFactor(MeasurementClass.UNAVAILABLE, None)
+
+
+def _unavailable_metric(unit: str | None = None) -> dict[str, Any]:
+    return {
+        "classification": MeasurementClass.UNAVAILABLE.value,
+        "value": None,
+        "unit": unit,
+        "source_ref": None,
+    }
+
+
+def _calculated_metric(
+    value: int | float,
+    unit: str,
+    source_ref: str,
+) -> dict[str, Any]:
+    return {
+        "classification": MeasurementClass.CALCULATED.value,
+        "value": value,
+        "unit": unit,
+        "source_ref": source_ref,
+    }
+
+
+def _cost_benefit(reconstruction: dict[str, Any]) -> dict[str, Any]:
+    """Expose trustworthy operational values and preserve every absence."""
+
+    source_ref = f"event:{reconstruction['correlation_id']}"
+    stages = reconstruction["stages"]
+    duration: dict[str, Any] = _unavailable_metric("seconds")
+    if stages:
+        first = stages[0].get("recorded_at")
+        last = stages[-1].get("recorded_at")
+        if isinstance(first, str) and isinstance(last, str):
+            try:
+                elapsed = (datetime.fromisoformat(last) - datetime.fromisoformat(first)).total_seconds()
+            except ValueError:
+                elapsed = -1
+            if elapsed >= 0:
+                duration = _calculated_metric(elapsed, "seconds", source_ref)
+
+    return {
+        "contract_version": "workflow-cost-benefit-v1",
+        "execution_count": _unavailable_metric("executions"),
+        "duration": duration,
+        "retry_count": _calculated_metric(
+            reconstruction["retry_count"], "retries", source_ref
+        ),
+        "ci_usage": _unavailable_metric("compute_minutes"),
+        "provider_model_usage": _unavailable_metric("model_calls"),
+        "api_cost": _unavailable_metric("usd"),
+        "ci_hosting_cost": _unavailable_metric("usd"),
+        "manual_time": _unavailable_metric("seconds"),
+        "projected_savings": _unavailable_metric("usd"),
+        "resource_usage": _unavailable_metric(),
+        "estimated_values_present": False,
+        "authoritative_state_mutated": False,
+        "spending_authority": False,
+    }
 
 
 def _ranking_for(reconstruction: dict[str, Any]) -> dict[str, Any]:
@@ -124,6 +184,7 @@ def build_mission_control_snapshot(store: ObservationStore) -> dict[str, Any]:
                     "classification": MeasurementClass.UNAVAILABLE.value,
                     "value": None,
                 },
+                "cost_benefit": _cost_benefit(reconstruction),
                 "ranking": ranking,
                 "agent_context": context,
                 "runbook": runbook,
