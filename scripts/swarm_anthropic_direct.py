@@ -417,10 +417,22 @@ def _write_result(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     # Keep execution/usage evidence in the durable job log as well as the
     # runner-local classifier input. Never log model text or raw API errors.
-    receipt = {key: payload[key] for key in (
-        "type", "subtype", "is_error", "num_turns", "modelUsage", "pr_url",
-        "branch", "partial_branch", "error", "api_error_status",
-    ) if key in payload}
+    receipt = {
+        key: payload[key]
+        for key in (
+            "type",
+            "subtype",
+            "is_error",
+            "num_turns",
+            "modelUsage",
+            "pr_url",
+            "branch",
+            "partial_branch",
+            "error",
+            "api_error_status",
+        )
+        if key in payload
+    }
     print("[OC-DIRECT-RECEIPT] " + json.dumps(receipt, sort_keys=True), flush=True)
 
 
@@ -510,7 +522,13 @@ def main() -> int:
                 else:
                     try:
                         tool_result = handler(dict(block.get("input") or {}))
-                    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+                    except (
+                        OSError,
+                        ValueError,
+                        KeyError,
+                        TypeError,
+                        subprocess.SubprocessError,
+                    ) as exc:
                         tool_result = f"ERROR: {type(exc).__name__}: {exc}"
                 results.append(
                     {
