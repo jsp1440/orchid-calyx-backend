@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
+from .mission_control import build_mission_control_snapshot
 from .service import ObservabilityService
 from .store import get_default_store
 
@@ -66,3 +67,10 @@ def query_events(
         safe_status=safe_status,
     )
     return _envelope({"event_count": len(events), "events": events})
+
+
+@router.get("/workflow-intelligence")
+def get_workflow_intelligence() -> dict[str, Any]:
+    """Return bounded provider-free workflow intelligence for Mission Control."""
+
+    return _envelope(build_mission_control_snapshot(get_default_store()))
