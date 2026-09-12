@@ -131,8 +131,12 @@ def detect(
             )
 
     # An AI-derived conclusion with no source anchor and no lineage is untraceable.
-    if event.get("ai") and not source.get("source_anchor_id") and not event.get("parent_event_id"):
-        if evidence.get("verification_state") not in {"withheld", "review_required"}:
+    if (
+        event.get("ai")
+        and not source.get("source_anchor_id")
+        and not event.get("parent_event_id")
+        and evidence.get("verification_state") not in {"withheld", "review_required"}
+    ):
             found.append(
                 _anomaly(
                     AnomalyCode.UNTRACEABLE_AI_CONCLUSION,
@@ -184,10 +188,13 @@ def detect(
             )
         )
 
-    if etype == "module.readiness.changed":
-        if reason_code == "READINESS_REGRESSED" or (
-            prior_readiness_state == "ready" and (event.get("extensions") or {}).get("readiness_state") == "blocked"
-        ):
+    if etype == "module.readiness.changed" and (
+        reason_code == "READINESS_REGRESSED"
+        or (
+            prior_readiness_state == "ready"
+            and (event.get("extensions") or {}).get("readiness_state") == "blocked"
+        )
+    ):
             found.append(_anomaly(AnomalyCode.READINESS_REGRESSION, "Module readiness regressed", event))
 
     return found
