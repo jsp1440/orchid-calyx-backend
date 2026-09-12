@@ -1,6 +1,10 @@
 import os
 from typing import Any
 
+from fastapi import Depends, FastAPI
+from pydantic import BaseModel
+from starlette.responses import Response as StarletteResponse
+
 from app.atlas_intelligence.api import router as atlas_intelligence_router
 from app.brain.routes import router as brain_router
 from app.candidate_knowledge.routes import router as candidate_knowledge_router
@@ -71,8 +75,6 @@ from app.semantic.routers import router as semantic_router
 from app.semantic_index.routes import router as semantic_index_router
 from app.source_registry.routes import router as source_registry_router
 from app.vision_lexicon.routes import router as vision_lexicon_router
-from fastapi import Depends, FastAPI
-from pydantic import BaseModel
 from runtime.autonomous_runner import (
     enqueue_default_jobs,
     execute_all_pending_jobs,
@@ -93,7 +95,6 @@ from runtime.router_fastapi import router as runtime_router
 from runtime.router_fastapi import science_router
 from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
-from starlette.responses import Response as StarletteResponse
 
 app = FastAPI()
 
