@@ -222,6 +222,7 @@ def test_empty_declaration_on_one_line_valid_on_next_line():
     """Two sequential declarations where first is empty still rejects both."""
     body = "OC-SWARM-DEPENDS-ON:\nOC-SWARM-DEPENDS-ON: #1"
     row = issue(10, body=body)
-    deps_list, error = deps.dependencies(row)
+    error = deps._validate_dependencies_declaration(row)
+    deps_list = deps.dependencies(row)
     assert deps_list == []
     assert error == "malformed-declaration-repeated"
