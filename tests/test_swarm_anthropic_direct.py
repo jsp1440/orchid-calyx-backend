@@ -107,8 +107,10 @@ def test_max_turns_uses_direct_executor_error_for_settlement() -> None:
     assert 'raise DirectExecutorError("direct executor reached max turns")' in text
 
 
+@pytest.mark.parametrize("malformed", [None, {}, {"path": "app/example.py"},
+                                      {"path": "app/example.py", "content": None}, []])
 def test_direct_executor_full_success_path_without_live_provider(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, malformed
 ) -> None:
     packet = tmp_path / "packet.md"
     packet.write_text("Implement a bounded test change.\n")
@@ -137,6 +139,12 @@ def test_direct_executor_full_success_path_without_live_provider(
             },
         ]
     )
+    if malformed is not None:
+        responses = iter([{
+            "content": [{"type": "tool_use", "id": "malformed-write",
+                         "name": "write_file", "input": malformed}],
+            "usage": {"input_tokens": 3, "output_tokens": 2},
+        }, *responses])
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("GITHUB_RUN_ID", "999")
@@ -177,10 +185,10 @@ def test_direct_executor_full_success_path_without_live_provider(
     result = json.loads(execution_file.read_text())
     assert result["subtype"] == "success"
     assert result["is_error"] is False
-    assert result["num_turns"] == 2
+    assert result["num_turns"] == (2 if malformed is None else 3)
     assert result["pr_url"] == "https://example.invalid/pr/1"
-    assert result["modelUsage"]["claude-haiku-4-5"]["inputTokens"] == 40
-    assert result["modelUsage"]["claude-haiku-4-5"]["outputTokens"] == 15
+    assert result["modelUsage"]["claude-haiku-4-5"]["inputTokens"] == (40 if malformed is None else 43)
+    assert result["modelUsage"]["claude-haiku-4-5"]["outputTokens"] == (15 if malformed is None else 17)
     assert (tmp_path / "app" / "example.py").read_text() == "VALUE = 1\n"
 
     output_text = github_output.read_text()
@@ -615,3 +623,38 @@ def test_prepare_branch_configures_git_identity(monkeypatch) -> None:
         "user.email",
         "41898282+github-actions[bot]@users.noreply.github.com",
     ] in commands
+
+
+def test_small_edit_replaces_exactly_one_match(tmp_path, monkeypatch):
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    target = tmp_path / "example.py"
+    target.write_text("before\nVALUE = 1\nafter\n")
+    direct._tool_write_file({"path": "example.py", "old_text": "VALUE = 1", "content": "VALUE = 2"})
+    assert target.read_text() == "before\nVALUE = 2\nafter\n"
+
+
+@pytest.mark.parametrize("old_text", ["", "missing", "x", None])
+def test_invalid_small_edit_never_changes_the_file(tmp_path, monkeypatch, old_text):
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    target = tmp_path / "example.py"
+    target.write_text("x\nx\n")
+    with pytest.raises(ValueError):
+        direct._tool_write_file({"path": "example.py", "old_text": old_text, "content": "replacement"})
+    assert target.read_text() == "x\nx\n"
+
+
+def test_small_edit_preserves_protected_path_boundary():
+    assert direct._tool_write_file({"path": "scripts/swarm_anthropic_direct.py",
+                                    "old_text": "anything", "content": "anything"}).startswith("ERROR: protected")
+
+
+def test_durable_execution_summary_excludes_model_text_and_retains_usage(tmp_path, capsys):
+    payload = {"type": "result", "subtype": "error", "num_turns": 2,
+               "modelUsage": {"model": {"inputTokens": 100, "outputTokens": 30}},
+               "error": "max_turns", "result": "private model output"}
+    direct._write_result(tmp_path / "receipt.json", payload)
+    output = capsys.readouterr().out
+    assert "private model output" not in output
+    receipt = json.loads(output.split("[OC-DIRECT-RECEIPT] ")[1])
+    assert receipt["modelUsage"] == payload["modelUsage"]
+    assert receipt["error"] == "max_turns" and receipt["num_turns"] == 2
