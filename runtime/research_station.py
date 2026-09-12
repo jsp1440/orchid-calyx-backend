@@ -12,7 +12,7 @@ import os
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from app.calyx_orchestrator.artifact_registry import ImmutableArtifactRegistry
 from runtime.research_station_store import (
