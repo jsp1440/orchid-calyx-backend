@@ -50,7 +50,10 @@ def _evidence_payload(provenance: dict[str, Any]) -> dict[str, Any]:
 
 
 def _decision_active_strategy(decision) -> str:
-    if decision.state in {StrategyDecisionState.PROMOTE, StrategyDecisionState.LIMITED_CANARY}:
+    if decision.state in {
+        StrategyDecisionState.PROMOTE,
+        StrategyDecisionState.LIMITED_CANARY,
+    }:
         return decision.candidate_strategy_fingerprint
     return decision.baseline_strategy_fingerprint
 
@@ -74,9 +77,21 @@ def build_strategy_status(repo: InMemoryEvaluationRepository) -> dict[str, Any]:
                         "evaluation_fingerprint": fingerprint,
                         "status": "UNAVAILABLE",
                         "score": {"state": "UNAVAILABLE", "value": None, "unit": None},
-                        "latency_ms": {"state": "UNAVAILABLE", "value": None, "unit": None},
-                        "cost_usd": {"state": "UNAVAILABLE", "value": None, "unit": None},
-                        "usage_units": {"state": "UNAVAILABLE", "value": None, "unit": None},
+                        "latency_ms": {
+                            "state": "UNAVAILABLE",
+                            "value": None,
+                            "unit": None,
+                        },
+                        "cost_usd": {
+                            "state": "UNAVAILABLE",
+                            "value": None,
+                            "unit": None,
+                        },
+                        "usage_units": {
+                            "state": "UNAVAILABLE",
+                            "value": None,
+                            "unit": None,
+                        },
                     }
                 )
                 continue
@@ -127,7 +142,9 @@ def build_strategy_status(repo: InMemoryEvaluationRepository) -> dict[str, Any]:
         "counts": {
             "task_classes": len(rows),
             "promoted": sum(row["decision_state"] == "PROMOTE" for row in rows),
-            "limited_canary": sum(row["decision_state"] == "LIMITED_CANARY" for row in rows),
+            "limited_canary": sum(
+                row["decision_state"] == "LIMITED_CANARY" for row in rows
+            ),
             "rejected_or_no_benefit": sum(
                 row["decision_state"]
                 in {
