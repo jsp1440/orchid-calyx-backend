@@ -152,7 +152,7 @@ _NOT_A_TAXON_WORD = frozenset(
     {
         # sentence-initial words that scan as a capitalised genus
         "could", "would", "should", "which", "these", "those", "there", "their",
-        "where", "when", "what", "does", "will", "does", "have", "here",
+        "where", "when", "what", "does", "will", "have", "here",
         "review", "compare", "describe", "explain", "summarise", "summarize",
         "please", "given", "using", "based", "under", "about", "after",
         "before", "during", "within", "across", "between", "orchid", "orchids",
@@ -162,8 +162,8 @@ _NOT_A_TAXON_WORD = frozenset(
         # words that scan as a species epithet
         "this", "that", "them", "they", "with", "from", "into", "over",
         "than", "then", "also", "such", "some", "many", "most", "more",
-        "less", "other", "same", "both", "each", "been", "were", "have",
-        "does", "make", "made", "used", "show", "shows", "found", "help",
+        "less", "other", "same", "both", "each", "been", "were",
+        "make", "made", "used", "show", "shows", "found", "help",
         "affect", "affects", "grow", "grows", "growing", "flower", "flowers",
         "flowering", "carbon", "water", "light", "shade", "winter", "summer",
         "spring", "autumn", "native", "wild", "range", "ranges", "habitat",
