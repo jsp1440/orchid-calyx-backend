@@ -115,7 +115,9 @@ def build_feedback(
 ) -> Callable[[Mapping[str, Any]], None]:
     """Report a terminal request back to the issue that asked for it."""
     if send is None:
-        from app.routers.github_research_bridge import _send_feedback as send  # noqa: PLC0415
+        from app.routers.github_research_bridge import (
+            _send_feedback as send,
+        )
 
     def _feedback(record: Mapping[str, Any]) -> None:
         prepared = _status_comment(record)
