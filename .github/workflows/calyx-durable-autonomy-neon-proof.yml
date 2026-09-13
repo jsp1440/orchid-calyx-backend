@@ -1,0 +1,65 @@
+name: Durable Autonomy — Neon/PostgreSQL Proof
+
+on:
+  push:
+    branches:
+      - oc-autonomous-integration
+    paths:
+      - "app/calyx_orchestrator/durable_reservoir.py"
+      - "app/calyx_orchestrator/durable_reservoir_models.py"
+      - "app/calyx_orchestrator/bounded_dispatcher.py"
+      - "app/calyx_orchestrator/leaf_worker.py"
+      - "app/calyx_orchestrator/owner_authorization_gate.py"
+      - "tests/test_durable_reservoir_postgres.py"
+      - "tests/test_durable_e2e_conductor_proof.py"
+      - "alembic/versions/a1b2c3d4e5f6_add_durable_reservoir_tables.py"
+      - ".github/workflows/calyx-durable-autonomy-neon-proof.yml"
+  workflow_dispatch:
+
+jobs:
+  neon-durable-autonomy-proof:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: oc-autonomous-integration
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install psycopg2-binary pytest ruff
+
+      - name: Ruff lint — orchestration files
+        run: |
+          ruff check \
+            app/calyx_orchestrator/durable_reservoir.py \
+            app/calyx_orchestrator/durable_reservoir_models.py \
+            app/calyx_orchestrator/bounded_dispatcher.py \
+            app/calyx_orchestrator/leaf_worker.py \
+            app/calyx_orchestrator/owner_authorization_gate.py \
+            tests/test_durable_reservoir_postgres.py \
+            tests/test_durable_e2e_conductor_proof.py
+
+      - name: Run durable E2E conductor proof (SQLite / provider-free)
+        run: pytest tests/test_durable_e2e_conductor_proof.py -v
+
+      - name: Apply Alembic migration to Neon
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: alembic upgrade head
+
+      - name: Run Neon/PostgreSQL durable autonomy proof
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          pytest tests/test_durable_reservoir_postgres.py -v \
+            --tb=short \
+            -p no:warnings

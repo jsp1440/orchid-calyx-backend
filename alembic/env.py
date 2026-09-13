@@ -10,6 +10,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+import app.calyx_orchestrator.durable_reservoir_models  # noqa: E402, F401
 from app.models import Base
 target_metadata = Base.metadata
 
