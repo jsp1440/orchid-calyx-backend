@@ -81,14 +81,29 @@ def verify_scientific_firewall(
 
 def _audience_intro(profile: VoiceProfile) -> str:
     if profile.audience == "grower":
-        return "Here is the practical interpretation Calyx can support from the current Orchid Continuum evidence."
+        return (
+            "Here is the practical interpretation Calyx can support from the "
+            "current Orchid Continuum evidence."
+        )
     if profile.audience == "student":
-        return "Here is the evidence-backed reasoning path, with the scientific limits kept explicit."
+        return (
+            "Here is the evidence-backed reasoning path, with the scientific "
+            "limits kept explicit."
+        )
     if profile.audience == "researcher":
-        return "Calyx assembled the current inspectable causal pathways and indexed evidence for review."
+        return (
+            "Calyx assembled the current inspectable causal pathways and indexed "
+            "evidence for review."
+        )
     if profile.audience == "conservation":
-        return "Here is the current evidence-backed interpretation, preserving uncertainty and provenance for conservation use."
-    return "Here is Calyx's evidence-backed interpretation from the current Orchid Continuum record."
+        return (
+            "Here is the current evidence-backed interpretation, preserving "
+            "uncertainty and provenance for conservation use."
+        )
+    return (
+        "Here is Calyx's evidence-backed interpretation from the current Orchid "
+        "Continuum record."
+    )
 
 
 def _path_heading(profile: VoiceProfile) -> str:
@@ -114,8 +129,12 @@ def _evidence_heading(profile: VoiceProfile) -> str:
 def deterministic_render(canonical_answer: str, profile: VoiceProfile) -> str:
     """Apply presentation-only replacements without invoking any model provider."""
 
+    canonical_intro = (
+        "Calyx built a read-only causal reasoning map from Orchid Continuum graph "
+        "state and searched indexed evidence before answering."
+    )
     answer = canonical_answer.replace(
-        "Calyx built a read-only causal reasoning map from Orchid Continuum graph state and searched indexed evidence before answering.",
+        canonical_intro,
         _audience_intro(profile),
         1,
     )
@@ -129,7 +148,9 @@ def deterministic_render(canonical_answer: str, profile: VoiceProfile) -> str:
     # the heading in answers where a separate heading exists in the future.
     if "Supporting indexed evidence:\n" in answer:
         answer = answer.replace(
-            "Supporting indexed evidence:", _evidence_heading(profile), 1
+            "Supporting indexed evidence:",
+            _evidence_heading(profile),
+            1,
         )
 
     if profile.teaching_mode:
