@@ -1,0 +1,152 @@
+name: Orchid Portfolio Steward
+
+# Additive reconciler: reads oc-prepared issues from the frontend repo and
+# advances eligible items to oc-queued via the Portfolio Steward pipeline.
+# NO-API mode is permanently enforced — no paid model API is ever invoked.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Hourly on the hour (UTC)
+    - cron: "0 * * * *"
+
+env:
+  FRONTEND_REPO: jsp1440/orchid-continuum-frontend
+  NO_API_MODE: "true"
+  PROVIDER_LAUNCH_AUTHORIZED: "false"
+
+jobs:
+  portfolio-steward-reconcile:
+    name: Portfolio Steward Reconcile
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout backend
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --quiet -r requirements.txt
+
+      - name: Fetch oc-prepared issues from frontend
+        env:
+          GH_TOKEN: ${{ secrets.CALYX_GITHUB_CODING_AGENT_TOKEN }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/portfolio-steward"
+
+          gh issue list \
+            --repo "$FRONTEND_REPO" \
+            --label oc-prepared \
+            --state open \
+            --limit 50 \
+            --json number,title,labels,createdAt \
+            > "$RUNNER_TEMP/portfolio-steward/prepared-issues.json"
+
+          echo "oc-prepared issues fetched:"
+          jq length "$RUNNER_TEMP/portfolio-steward/prepared-issues.json"
+
+      - name: Fetch all open frontend issues for snapshot
+        env:
+          GH_TOKEN: ${{ secrets.CALYX_GITHUB_CODING_AGENT_TOKEN }}
+        run: |
+          gh issue list \
+            --repo "$FRONTEND_REPO" \
+            --state open \
+            --limit 200 \
+            --json number,title,labels,createdAt \
+            > "$RUNNER_TEMP/portfolio-steward/all-issues.json"
+
+          echo "Total open frontend issues fetched:"
+          jq length "$RUNNER_TEMP/portfolio-steward/all-issues.json"
+
+      - name: Run Portfolio Steward reconciler
+        id: reconcile
+        run: |
+          python3 scripts/oc_portfolio_steward_reconcile.py \
+            --prepared-issues "$RUNNER_TEMP/portfolio-steward/prepared-issues.json" \
+            --all-issues      "$RUNNER_TEMP/portfolio-steward/all-issues.json" \
+            --frontend-repo   "$FRONTEND_REPO" \
+            --github-output   "$GITHUB_OUTPUT" \
+            --reserve-depth   3 \
+            | tee "$RUNNER_TEMP/portfolio-steward/reconcile-report.json"
+
+      - name: Apply oc-queued transitions
+        env:
+          GH_TOKEN: ${{ secrets.CALYX_GITHUB_CODING_AGENT_TOKEN }}
+          ADMITTED_NUMBERS: ${{ steps.reconcile.outputs.admitted_numbers }}
+        run: |
+          echo "Admitted issue numbers: $ADMITTED_NUMBERS"
+
+          python3 - <<'PYEOF'
+          import json, subprocess, sys, os
+
+          admitted_raw = os.environ.get("ADMITTED_NUMBERS", "[]")
+          try:
+              admitted = json.loads(admitted_raw)
+          except json.JSONDecodeError:
+              admitted = []
+
+          frontend_repo = os.environ["FRONTEND_REPO"]
+          gh_token = os.environ.get("GH_TOKEN", "")
+
+          failures = []
+          for issue_number in admitted:
+              result = subprocess.run(
+                  [
+                      "gh", "issue", "edit", str(issue_number),
+                      "--repo", frontend_repo,
+                      "--add-label", "oc-queued",
+                      "--remove-label", "oc-prepared",
+                  ],
+                  capture_output=True,
+                  text=True,
+                  env={**os.environ, "GH_TOKEN": gh_token},
+              )
+              if result.returncode == 0:
+                  print(f"✓ #{issue_number}: oc-prepared → oc-queued")
+              else:
+                  err = result.stderr.strip()[:256]
+                  print(f"✗ #{issue_number}: label transition failed — {err}", file=sys.stderr)
+                  # Fail-closed: mark issue oc-blocked on mutation failure
+                  subprocess.run(
+                      [
+                          "gh", "issue", "edit", str(issue_number),
+                          "--repo", frontend_repo,
+                          "--add-label", "oc-blocked",
+                      ],
+                      capture_output=True,
+                      text=True,
+                      env={**os.environ, "GH_TOKEN": gh_token},
+                  )
+                  failures.append({"issue_number": issue_number, "error": err})
+
+          if failures:
+              print(f"\nFAIL-CLOSED: {len(failures)} transition(s) failed. Issues marked oc-blocked.", file=sys.stderr)
+              sys.exit(1)
+          PYEOF
+
+      - name: Summarize reconciliation
+        if: always()
+        run: |
+          echo "## Portfolio Steward Reconciliation"
+          echo "Admitted count: ${{ steps.reconcile.outputs.admitted_count }}"
+          echo "Admitted numbers: ${{ steps.reconcile.outputs.admitted_numbers }}"
+          echo "Suppressed (dedup): ${{ steps.reconcile.outputs.suppressed_count }}"
+          echo "Rejected: ${{ steps.reconcile.outputs.rejected_count }}"
+          echo "NO-API mode: ${{ steps.reconcile.outputs.no_api_mode }}"
+
+          if [ -f "$RUNNER_TEMP/portfolio-steward/reconcile-report.json" ]; then
+            jq '{schema, admitted_count, suppressed_count, bridge_status, no_api_mode}' \
+              "$RUNNER_TEMP/portfolio-steward/reconcile-report.json" || true
+          fi
